@@ -1,0 +1,134 @@
+{
+  "generated_at": "2026-04-07T13:00:52Z",
+  "start_year": 2016,
+  "end_year": 2026,
+  "endpoints": {
+    "sidotrade": {
+      "estimated_requests": 11,
+      "results": [
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-201612__strtYymm-201601.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "201601",
+            "endYymm": "201612"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-201712__strtYymm-201701.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "201701",
+            "endYymm": "201712"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-201812__strtYymm-201801.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "201801",
+            "endYymm": "201812"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-201912__strtYymm-201901.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "201901",
+            "endYymm": "201912"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202012__strtYymm-202001.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202001",
+            "endYymm": "202012"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202112__strtYymm-202101.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202101",
+            "endYymm": "202112"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202212__strtYymm-202201.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202201",
+            "endYymm": "202212"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202312__strtYymm-202301.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202301",
+            "endYymm": "202312"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202412__strtYymm-202401.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202401",
+            "endYymm": "202412"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202512__strtYymm-202501.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202612__strtYymm-202601.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612"
+          }
+        }
+      ]
+    }
+  },
+  "warnings": []
+}

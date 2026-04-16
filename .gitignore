@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+venv_backup/
+*.egg-info/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+stock_data.db
+
+# Logs
+*.log
+nohup.out
+backend.log
+server.log
+collector.log
+
+# Sensitive / Credentials
+env
+kis_token.json
+telegram_sent.json
+*.session
+
+# OS
+.DS_Store
+
+# Large data files
+*.csv
+*.xlsx
+backfill_progress.json
+bulk_progress.txt
+ticker_cache.csv
+docs_cache/
+
+# Build
+.vite/
+StockAnalysis.app/

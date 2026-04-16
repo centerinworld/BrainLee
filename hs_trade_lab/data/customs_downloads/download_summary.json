@@ -1,0 +1,19 @@
+{
+  "completed_at": "2026-04-07",
+  "downloaded_endpoints": {
+    "idfytempertrade": 22,
+    "itemtrade": 11,
+    "nationtrade": 11,
+    "sidoitemtrade": 187,
+    "sidotempertrade": 374,
+    "sidotrade": 11
+  },
+  "blocked_endpoints": {
+    "newtempertrade": "403 Forbidden on getNewtempertradeList",
+    "nnewtempertrade": "not attempted because full cross-product requires ~407,804 requests and likely higher traffic approval"
+  },
+  "notes": [
+    "Files are stored as per-request jsonl.gz under each endpoint directory.",
+    "The latest manifest.json reflects the most recent single run, not the whole history."
+  ]
+}

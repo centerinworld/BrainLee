@@ -1,0 +1,70 @@
+from pathlib import Path
+
+# Base Directory
+BASE_DIR = Path(__file__).resolve().parent
+
+# ── .env 파일 자동 로드 ────────────────────────────────────────
+# python-dotenv가 설치되어 있으면 사용, 없으면 직접 파싱.
+# 우선순위: 시스템 환경변수 > .env 파일
+_env_file = BASE_DIR / ".env"
+if _env_file.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_file, override=False)
+    except ImportError:
+        # python-dotenv 미설치 시 직접 파싱
+        with open(_env_file) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#") or "=" not in _line:
+                    continue
+                _key, _, _val = _line.partition("=")
+                _key = _key.strip()
+                _val = _val.strip().strip('"').strip("'")
+                if _key and _key not in os.environ:
+                    os.environ[_key] = _val
+# ──────────────────────────────────────────────────────────────
+
+# Database
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/stock.db")
+
+# Logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# API prefix
+API_V1_STR = "/api"
+
+
+# ── API 키 — .env 또는 시스템 환경변수에서 읽음 ─────────────────
+def _require_env(key: str) -> str:
+    value = os.getenv(key)
+    if not value:
+        raise EnvironmentError(
+            f"\n[설정 오류] 필수 환경변수 '{key}'가 설정되지 않았습니다.\n"
+            f"  해결 방법:\n"
+            f"    1) {BASE_DIR}/.env 파일을 만들고 아래 내용 추가:\n"
+            f"         {key}=여기에_값_입력\n"
+            f"    2) 또는 터미널에서: export {key}=값  후 재시작\n"
+        )
+    return value
+
+
+DART_API_KEY   = _require_env("DART_API_KEY")
+KIS_APP_KEY    = _require_env("KIS_APP_KEY")
+KIS_APP_SECRET = _require_env("KIS_APP_SECRET")
+# ──────────────────────────────────────────────────────────────
+
+KIS_URL = "https://openapi.koreainvestment.com:9443"
+
+# 수집 주기 (초) — 기본 5분
+COLLECT_CYCLE_DELAY = int(os.getenv("COLLECT_CYCLE_DELAY", "300"))
+
+# 스탁이지 로그인
+STOCKEASY_EMAIL    = "center.in.world@gmail.com"
+STOCKEASY_PASSWORD = "$$A769841a"
+
+# 텔레그램
+TELEGRAM_BOT_TOKEN = "8720680580:AAHUt8FSOR26oMhXF0QCDzDWlNYfM9uGFNU"
+TELEGRAM_CHAT_ID   = "1133750736"  # 채널이면 앞에 -100 붙음
+```
+
