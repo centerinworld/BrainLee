@@ -75,6 +75,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   const [loading, setLoading]         = React.useState(false);
   const [invSubTab, setInvSubTab]     = React.useState('both_buy');
   const [invMktTab, setInvMktTab]     = React.useState('kospi');
+  const [cumDays, setCumDays]         = React.useState(60);
 
   React.useEffect(() => {
     fetch(API('/api/market-indicators/available-dates?limit=30'))
@@ -108,14 +109,27 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   }, [trendMkt, trendDays]);
 
   const fmtAmt = (v) => {
-    if (!v && v !== 0) return '-';
+    if (v == null || v === 0) return '-';
     const abs = Math.abs(v);
     const sign = v < 0 ? '-' : '+';
     if (abs >= 100000) return `${sign}${(abs/100000).toFixed(1)}조`;
     if (abs >= 10000)  return `${sign}${Math.round(abs/1000)}천억`;
     if (abs >= 1000)   return `${sign}${(abs/1000).toFixed(1)}천억`;
+    if (abs < 1)       return `${sign}${abs.toFixed(1)}억`;
     return `${sign}${Math.round(abs)}억`;
   };
+
+  // 누적 차트용 데이터 (cumDays 기간 기준으로 재계산)
+  const cumData = React.useMemo(() => {
+    if (!trendData?.data?.length) return [];
+    const slice = trendData.data.slice(-cumDays);
+    let ci = 0, cf = 0;
+    return slice.map(item => {
+      ci += (item.inst_amt || 0);
+      cf += (item.frn_amt || 0);
+      return { ...item, cum_inst: Math.round(ci), cum_frn: Math.round(cf) };
+    });
+  }, [trendData, cumDays]);
   const fmtChg = (v) => {
     if (!v && v !== 0) return { txt: '-', color: 'var(--text-secondary)' };
     return { txt: fmtAmt(v), color: v >= 0 ? '#f87171' : '#60a5fa' };
@@ -228,6 +242,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
               <th style={{padding:'0.4rem 0.5rem',textAlign:'left',color:'var(--text-secondary)'}}>종목</th>
               <th style={{padding:'0.4rem 0.5rem',textAlign:'left',color:'var(--text-secondary)'}}>시장</th>
               <th style={{padding:'0.4rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>현재가</th>
+              <th style={{padding:'0.4rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>등락률</th>
               <th style={{padding:'0.4rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>회전율(%)</th>
               <th style={{padding:'0.4rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>거래량</th>
               <th style={{padding:'0.4rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>기관(억)</th>
@@ -238,8 +253,9 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
             {rows.map((r, i) => {
               const mktShort = r.market?.includes('유가') || r.market?.toLowerCase().includes('kospi') ? 'KOSPI' :
                                r.market?.includes('코스닥') ? 'KOSDAQ' : r.market || '-';
-              const instC = (r.inst_net_buy_amt || 0) >= 0 ? '#f87171' : '#60a5fa';
-              const frnC  = (r.frn_net_buy_amt  || 0) >= 0 ? '#f87171' : '#60a5fa';
+              const instC = !r.inst_net_buy_amt ? 'var(--text-secondary)' : r.inst_net_buy_amt >= 0 ? '#f87171' : '#60a5fa';
+              const frnC  = !r.frn_net_buy_amt  ? 'var(--text-secondary)' : r.frn_net_buy_amt  >= 0 ? '#f87171' : '#60a5fa';
+              const chgC  = r.chg_pct == null ? 'var(--text-secondary)' : r.chg_pct >= 0 ? '#f87171' : '#60a5fa';
               return (
                 <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}
                   onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.04)'}
@@ -258,7 +274,10 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                       {mktShort}
                     </span>
                   </td>
-                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right'}}>{r.close?.toLocaleString()}원</td>
+                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:600}}>{r.close?.toLocaleString()}원</td>
+                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:chgC}}>
+                    {r.chg_pct != null ? `${r.chg_pct >= 0 ? '▲' : '▼'}${Math.abs(r.chg_pct).toFixed(2)}%` : '-'}
+                  </td>
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:'#fbbf24'}}>{r.turnover_pct?.toFixed(2)}%</td>
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>{r.volume?.toLocaleString()}</td>
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:instC,fontWeight:600}}>{fmtAmt(r.inst_net_buy_amt)}</td>
@@ -496,38 +515,60 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
 
               {/* 일별 순매수 바 차트 */}
               <div className="glass-panel" style={{padding:'1rem'}}>
-                <h3 style={{margin:'0 0 1rem',fontSize:'0.9rem',fontWeight:700}}>
+                <h3 style={{margin:'0 0 0.8rem',fontSize:'0.9rem',fontWeight:700}}>
                   일별 투자자 순매수 (억원)
+                  <span style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginLeft:'0.7rem',fontWeight:400}}>
+                    ▶ 빨강=순매수 / 파랑=순매도
+                  </span>
                 </h3>
-                <ResponsiveContainer width="100%" height={250}>
+                <ResponsiveContainer width="100%" height={260}>
                   <ComposedChart data={trendData.data} margin={{top:5,right:10,bottom:5,left:10}}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                     <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
                     <YAxis tick={{fontSize:10,fill:'#94a3b8'}} />
                     <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
-                      formatter={(v,n) => [`${v?.toLocaleString()}억`, n]} />
-                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" />
-                    <Bar dataKey="inst_amt" fill="#f87171" name="기관" opacity={0.8} />
-                    <Bar dataKey="frn_amt"  fill="#fbbf24" name="외국인" opacity={0.8} />
-                    <Bar dataKey="ind_amt"  fill="#60a5fa" name="개인" opacity={0.8} />
-                    <Legend wrapperStyle={{fontSize:'0.78rem',color:'var(--text-secondary)'}} />
+                      formatter={(v,n) => [`${v != null ? v.toLocaleString() : 0}억`, n]}
+                      labelFormatter={l=>`날짜: ${l}`} />
+                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />
+                    <Bar dataKey="inst_amt" name="기관" maxBarSize={16}>
+                      {trendData.data.map((entry, i) => (
+                        <Cell key={i} fill={(entry.inst_amt||0) >= 0 ? '#f87171' : '#60a5fa'} opacity={0.85} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="frn_amt" name="외국인" maxBarSize={16}>
+                      {trendData.data.map((entry, i) => (
+                        <Cell key={i} fill={(entry.frn_amt||0) >= 0 ? '#fbbf24' : '#6366f1'} opacity={0.85} />
+                      ))}
+                    </Bar>
+                    <Legend wrapperStyle={{fontSize:'0.78rem',color:'var(--text-secondary)'}}
+                      formatter={(v) => <span style={{color: v==='기관'?'#f87171':'#fbbf24'}}>{v}</span>} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
 
               {/* 누적 순매수 라인 차트 */}
               <div className="glass-panel" style={{padding:'1rem'}}>
-                <h3 style={{margin:'0 0 1rem',fontSize:'0.9rem',fontWeight:700}}>
-                  누적 순매수 추이 (기관/외국인)
-                </h3>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.8rem',flexWrap:'wrap',gap:'0.4rem'}}>
+                  <h3 style={{margin:0,fontSize:'0.9rem',fontWeight:700}}>누적 순매수 추이 (기관/외국인)</h3>
+                  <div style={{display:'flex',gap:'0.3rem'}}>
+                    {[[20,'1개월'],[60,'3개월'],[90,'6개월'],[250,'1년']].map(([d,l])=>(
+                      <button key={d} onClick={()=>setCumDays(d)} style={{
+                        padding:'0.2rem 0.55rem',borderRadius:'5px',border:'none',cursor:'pointer',fontSize:'0.72rem',
+                        background:cumDays===d?'var(--accent-mint)':'rgba(255,255,255,0.07)',
+                        color:cumDays===d?'#000':'var(--text-secondary)',fontWeight:cumDays===d?700:400,
+                      }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
                 <ResponsiveContainer width="100%" height={220}>
-                  <ComposedChart data={trendData.data} margin={{top:5,right:10,bottom:5,left:10}}>
+                  <ComposedChart data={cumData} margin={{top:5,right:10,bottom:5,left:10}}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                     <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
                     <YAxis tick={{fontSize:10,fill:'#94a3b8'}} />
                     <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
-                      formatter={(v,n) => [`${v?.toLocaleString()}억`, n]} />
-                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" />
+                      formatter={(v,n) => [`${v?.toLocaleString()}억`, n]}
+                      labelFormatter={l=>`날짜: ${l}`} />
+                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />
                     <Line type="monotone" dataKey="cum_inst" stroke="#f87171" dot={false} strokeWidth={2} name="기관 누적" />
                     <Line type="monotone" dataKey="cum_frn"  stroke="#fbbf24" dot={false} strokeWidth={2} name="외국인 누적" />
                     <Legend wrapperStyle={{fontSize:'0.78rem',color:'var(--text-secondary)'}} />

@@ -302,10 +302,39 @@ def get_turnover_top(
         """
         params.append(limit)
         rows = conn.execute(sql, params).fetchall()
+
+        # 전일 종가 & 등락률 추가
+        if rows:
+            codes = [r["stock_code"] for r in rows]
+            prev_rows = conn.execute(
+                f"""SELECT stock_code, close AS prev_close
+                    FROM price_history
+                    WHERE stock_code IN ({','.join('?'*len(codes))})
+                      AND close > 0
+                      AND substr(date, 1, 10) < ?
+                    GROUP BY stock_code
+                    HAVING date = MAX(date)""",
+                codes + [trade_date],
+            ).fetchall()
+            prev_map = {r["stock_code"]: r["prev_close"] for r in prev_rows}
+        else:
+            prev_map = {}
+
+        data = []
+        for r in rows:
+            d = dict(r)
+            prev = prev_map.get(d["stock_code"])
+            d["prev_close"] = prev
+            if prev and prev > 0 and d.get("close"):
+                d["chg_pct"] = round((d["close"] - prev) / prev * 100, 2)
+            else:
+                d["chg_pct"] = None
+            data.append(d)
+
         return {
             "trade_date": trade_date,
             "market":     market,
-            "data":       [dict(r) for r in rows],
+            "data":       data,
         }
     finally:
         conn.close()
@@ -337,8 +366,9 @@ def get_investor_trend(
                       SUM(COALESCE(frn_net_buy_amt,  0)/100) AS frn_amt,
                       SUM(COALESCE(ind_net_buy_amt,  0)/100) AS ind_amt
                FROM price_history
-               WHERE stock_code = ? AND date >= ? AND close > 0
+               WHERE stock_code = ? AND date >= ?
                GROUP BY d
+               HAVING MAX(close) > 0
                ORDER BY d ASC""",
             (code, since),
         ).fetchall()
