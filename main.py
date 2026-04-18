@@ -1409,6 +1409,77 @@ def trigger_screener_refresh():
     return {"status": "started", "message": "스크리너 재계산 시작 — 약 60~120초 후 새로고침 하세요."}
 
 
+# ── 네이버 수급 강제 수집 ────────────────────────────────────────────────
+import subprocess as _sp
+
+_naver_investor_proc: "_sp.Popen | None" = None
+_NAVER_LOG = "/tmp/naver_investor_force.log"
+
+
+@app.post("/api/commands/naver-investor-force")
+def trigger_naver_investor_force(years: float = 3.0, limit: int = 0):
+    """
+    네이버 수급 --force 전체 수집 (백그라운드 프로세스).
+    조기 종료 없이 과거 모든 날짜 qty 채움 → 완료 후 amt 역산까지 자동 실행.
+    약 10시간 소요 (전체 종목 기준).
+    """
+    global _naver_investor_proc
+    if _naver_investor_proc and _naver_investor_proc.poll() is None:
+        return {"status": "already_running", "message": "이미 실행 중입니다. /api/commands/naver-investor-force/status 확인"}
+
+    cmd = [
+        "python3", "/Applications/stock_dashboard/collect_naver_investor.py",
+        "--force", f"--years={years}",
+    ]
+    if limit:
+        cmd.append(f"--limit={limit}")
+
+    # 완료 후 자동으로 amt 역산까지 실행하는 래퍼 스크립트 인라인
+    wrapper = (
+        f"python3 /Applications/stock_dashboard/collect_naver_investor.py "
+        f"--force --years={years}"
+        + (f" --limit={limit}" if limit else "")
+        + f" && python3 /Applications/stock_dashboard/compute_investor_amounts.py"
+    )
+    with open(_NAVER_LOG, "w") as _lf:
+        _naver_investor_proc = _sp.Popen(
+            ["bash", "-c", wrapper],
+            stdout=_lf, stderr=_lf,
+            cwd="/Applications/stock_dashboard",
+        )
+
+    return {
+        "status": "started",
+        "pid": _naver_investor_proc.pid,
+        "message": f"네이버 수급 --force 수집 시작 (years={years}, limit={limit or '전체'}). "
+                   "완료 후 자동으로 amt 역산 실행. 로그: " + _NAVER_LOG,
+    }
+
+
+@app.get("/api/commands/naver-investor-force/status")
+def naver_investor_force_status():
+    """네이버 수급 강제 수집 진행 상태 확인."""
+    global _naver_investor_proc
+    if _naver_investor_proc is None:
+        return {"status": "not_started"}
+    rc = _naver_investor_proc.poll()
+    if rc is None:
+        # 최근 로그 10줄 반환
+        try:
+            with open(_NAVER_LOG, "r") as f:
+                lines = f.readlines()
+            tail = "".join(lines[-10:])
+        except Exception:
+            tail = ""
+        return {"status": "running", "pid": _naver_investor_proc.pid, "log_tail": tail}
+    return {
+        "status": "done" if rc == 0 else "error",
+        "returncode": rc,
+        "message": "정상 완료 (qty + amt 역산 모두 완료)" if rc == 0 else "오류 발생 — 로그 확인",
+        "log_path": _NAVER_LOG,
+    }
+
+
 # ── DART 공시 조회 캐시 (stock_code → {items, cached_at}) ─────────────
 _disclosure_cache: dict = {}
 _DISCLOSURE_CACHE_TTL = 300  # 5분
