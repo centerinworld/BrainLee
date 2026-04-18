@@ -97,6 +97,7 @@ class CollectionScheduler:
             ("KRX일별수집",    self._loop_krx_daily),   # ★ KRX API 전종목 OHLCV
             ("전종목수급수집",  self._loop_supply_daily), # ★ KIS 전종목 30일 수급
             ("네이버밸류에이션", self._loop_naver_fundamentals),  # ★ 네이버 PBR/PER/EPS
+            ("현금흐름배치",    self._loop_cashflow_batch),       # ★ DART 현금흐름표 월간
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -186,6 +187,21 @@ class CollectionScheduler:
         while not self._stop_event.is_set():
             self._wait_until(2, 0)
             _run_job_safe("네이버밸류에이션", self._job_naver_fundamentals)
+
+    def _loop_cashflow_batch(self) -> None:
+        """매월 2일 04:00 — DART 전종목 현금흐름표 배치 수집."""
+        self._wait_secs(40)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            if now.day == 2 and now.hour < 4:
+                next_run = now.replace(hour=4, minute=0, second=0, microsecond=0)
+            else:
+                next_month = (now.replace(day=1) + timedelta(days=32)).replace(day=2)
+                next_run   = next_month.replace(hour=4, minute=0, second=0, microsecond=0)
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("현금흐름배치", self._job_cashflow_batch)
 
     # ══════════════════════════════════════════════════════════
     # 잡 구현
@@ -656,6 +672,21 @@ class CollectionScheduler:
             except Exception:
                 pass
         return list(codes)
+
+    def _job_cashflow_batch(self) -> None:
+        """DART 전종목 현금흐름표 배치 수집 (missing_only=True)."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["venv/bin/python3", "collect_dart_cashflow_batch.py", "--missing", "--years", "5"],
+                capture_output=True, text=True, timeout=14400,
+                cwd="/Applications/stock_dashboard",
+            )
+            logger.info(f"[현금흐름배치] 완료: {result.stdout[-300:] if result.stdout else ''}")
+            if result.returncode != 0:
+                logger.error(f"[현금흐름배치] 오류: {result.stderr[-300:]}")
+        except Exception as e:
+            logger.error(f"[현금흐름배치] 잡 오류: {e}")
 
     def _job_naver_fundamentals(self) -> None:
         """네이버금융 전종목 PBR/PER/EPS 배치 수집."""
