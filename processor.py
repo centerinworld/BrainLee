@@ -6,6 +6,21 @@ _VALID_YEAR_MIN = 2000
 _VALID_YEAR_MAX = 2030
 _VALID_QUARTERS = {1, 2, 3, 4}
 _QUARTER_TO_MONTH = {1: 3, 2: 6, 3: 9, 4: 12}
+_MONTH_TO_Q_LABEL = {'03': '1Q', '06': '2Q', '09': '3Q', '12': '4Q'}
+
+
+def _fmt_q_period(raw_period: str) -> str:
+    """'2025.03' → '25년1Q', '2025.12' → '25년4Q'"""
+    if len(raw_period) < 7:
+        return raw_period
+    yr = raw_period[:4]
+    mo = raw_period[5:7]
+    return f"{yr[2:]}년{_MONTH_TO_Q_LABEL.get(mo, mo)}"
+
+
+def _fmt_annual_period(raw_period: str) -> str:
+    """'2025.12' → '2025년'"""
+    return f"{raw_period[:4]}년"
 
 
 def _sanitize_balance_sheet(assets, liabilities, equity):
@@ -201,7 +216,10 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
 
         result.sort(key=lambda x: x['period'])
         # 최근 8분기만 반환
-        return result[-8:] if len(result) > 8 else result
+        result = result[-8:] if len(result) > 8 else result
+        for r in result:
+            r['period'] = _fmt_q_period(r['period'])
+        return result
 
     # ── 연간 데이터 ──────────────────────────────────────────────
     annual_data_raw = (
@@ -256,6 +274,8 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
                 "eps":         d.eps, "bps": d.bps, "dps": d.dps,
             })
         result.reverse()
+        for r in result:
+            r['period'] = _fmt_q_period(r['period'])
         return result
 
     # ── 연간 레코드의 정합성 검증: 연간값이 단일 분기 수준이면 분기합으로 보정 ──
@@ -337,6 +357,8 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
             "eps":         eps, "bps": bps, "dps": dps,
         })
     result.reverse()
+    for r in result:
+        r['period'] = _fmt_annual_period(r['period'])
     return result
 
 

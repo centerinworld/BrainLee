@@ -96,6 +96,7 @@ class CollectionScheduler:
             ("공공데이터",      self._loop_public_data),
             ("KRX일별수집",    self._loop_krx_daily),   # ★ KRX API 전종목 OHLCV
             ("전종목수급수집",  self._loop_supply_daily), # ★ KIS 전종목 30일 수급
+            ("네이버밸류에이션", self._loop_naver_fundamentals),  # ★ 네이버 PBR/PER/EPS
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -178,6 +179,13 @@ class CollectionScheduler:
         while not self._stop_event.is_set():
             self._wait_until(18, 30, skip_weekend=True)
             _run_job_safe("공공데이터", self._job_public_data)
+
+    def _loop_naver_fundamentals(self) -> None:
+        """매일 02:00 — 네이버금융 전종목 PBR/PER/EPS 배치 수집."""
+        self._wait_secs(35)
+        while not self._stop_event.is_set():
+            self._wait_until(2, 0)
+            _run_job_safe("네이버밸류에이션", self._job_naver_fundamentals)
 
     # ══════════════════════════════════════════════════════════
     # 잡 구현
@@ -648,3 +656,18 @@ class CollectionScheduler:
             except Exception:
                 pass
         return list(codes)
+
+    def _job_naver_fundamentals(self) -> None:
+        """네이버금융 전종목 PBR/PER/EPS 배치 수집."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["venv/bin/python3", "collect_naver_fundamentals.py", "--missing"],
+                capture_output=True, text=True, timeout=7200,
+                cwd="/Applications/stock_dashboard",
+            )
+            logger.info(f"[네이버밸류에이션] 완료: {result.stdout[-200:] if result.stdout else ''}")
+            if result.returncode != 0:
+                logger.error(f"[네이버밸류에이션] 오류: {result.stderr[-200:]}")
+        except Exception as e:
+            logger.error(f"[네이버밸류에이션] 잡 오류: {e}")

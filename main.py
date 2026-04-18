@@ -1189,9 +1189,9 @@ def get_cashflow_table(stock_code: str, type: str = "annual", db: Session = Depe
     result = []
     for r in reversed(rows):
         if is_annual:
-            period = f"{r.year}"
+            period = f"{r.year}년"
         elif r.quarter and r.quarter > 0:
-            period = f"{str(r.year)[2:]}년{r.quarter}Q"   # e.g. '23년2Q'
+            period = f"{str(r.year)[2:]}년{r.quarter}Q"
         else:
             period = f"{r.year}Q?"
         fcf = None

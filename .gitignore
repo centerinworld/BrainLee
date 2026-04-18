@@ -39,3 +39,4 @@ docs_cache/
 # Build
 .vite/
 StockAnalysis.app/
+reports/

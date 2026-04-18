@@ -2489,6 +2489,10 @@ const App = () => {
             return (
               <>
                 <div style={{ width:'1px', height:'60px', background:'rgba(255,255,255,0.15)', margin:'0 0.5rem' }} />
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
+                <div style={{ fontSize:'0.62rem', color:'rgba(255,255,255,0.35)', letterSpacing:'0.03em' }}>
+                  수급 기준일: <span style={{ color:'rgba(255,255,255,0.55)', fontWeight:600 }}>{today?.date?.slice(0,10) || '-'}</span>
+                </div>
                 <div style={{ display:'flex', gap:'1.2rem', fontSize:'0.8rem', alignItems:'flex-start' }}>
                   {supplyData.map(({lbl,val1,amt1,val5,amt5}) => (
                     <div key={lbl} style={{ textAlign:'center', minWidth:'70px' }}>
@@ -2552,42 +2556,43 @@ const App = () => {
                     );
                   })()}
                 </div>
+                </div>
               </>
             );
           })()}
         </header>
 
-        {/* 재무 지표 4개 */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'0.75rem' }}>
+        {/* 재무 지표 + 52주 고저가 (6칸) */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:'0.75rem' }}>
           {[
-            { label:'매출액',  val: formatWon(summStats?.revenue) },
+            { label:'매출액',   val: formatWon(summStats?.revenue) },
             { label:'영업이익', val: formatWon(summStats?.operating_profit) },
-            { label:'OPM',    val: summStats?.opm != null ? Number(summStats.opm).toFixed(1)+'%' : '-' },
-            { label:'ROE',    val: summStats?.roe != null ? Number(summStats.roe).toFixed(1)+'%' : '-' },
-          ].map(({label,val}) => (
+            { label:'OPM',     val: summStats?.opm != null ? Number(summStats.opm).toFixed(1)+'%' : '-' },
+            { label:'ROE',     val: summStats?.roe != null ? Number(summStats.roe).toFixed(1)+'%' : '-' },
+            { label:'52주 최고가', val: summStats?.high52 != null ? summStats.high52.toLocaleString('ko-KR')+'원' : '-',
+              sub: summStats?.high52 && latestClose ? `현재 ${((latestClose/summStats.high52-1)*100).toFixed(1)}%` : '',
+              color: summStats?.high52 && latestClose && latestClose >= summStats.high52 * 0.95 ? '#22c55e' : '#ef4444' },
+            { label:'52주 최저가', val: summStats?.low52 != null ? summStats.low52.toLocaleString('ko-KR')+'원' : '-',
+              sub: summStats?.low52 && latestClose ? `현재 +${((latestClose/summStats.low52-1)*100).toFixed(1)}%` : '',
+              color:'#fbbf24' },
+          ].map(({label,val,sub,color}) => (
             <div key={label} className="glass-panel" style={{ padding:'0.9rem 1rem' }}>
               <p style={{ fontSize:'0.75rem', color:'var(--text-secondary)', marginBottom:'0.3rem' }}>{label}</p>
-              <h3 style={{ fontSize:'1.1rem' }}>{val || '-'}</h3>
+              <h3 style={{ fontSize:'1rem', color: color||'inherit' }}>{val || '-'}</h3>
+              {sub && <p style={{ fontSize:'0.65rem', color:'var(--text-secondary)', marginTop:'0.2rem' }}>{sub}</p>}
             </div>
           ))}
         </div>
 
-        {/* 밸류에이션 + 52주 고저가 */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:'0.75rem' }}>
+        {/* 밸류에이션: PBR / PER / EPS */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'0.75rem' }}>
           {[
-            { label:'PBR', val: summStats?.pbr != null ? Number(summStats.pbr).toFixed(1)+'x' : '-',
+            { label:'PBR', val: summStats?.pbr != null ? Number(summStats.pbr).toFixed(2)+'x' : '-',
               sub: summStats?.pbr != null ? (summStats.source||'네이버금융') : (collecting ? '📡 조회 중...' : '자정 업데이트 후 표시'), dim: summStats?.pbr==null, color:'var(--accent-purple)' },
             { label:'PER (TTM)', val: summStats?.per != null ? Number(summStats.per).toFixed(1)+'x' : '-',
-              sub: summStats?.trailing_eps != null ? `EPS ${fmtNum(summStats.trailing_eps)}원` : (collecting ? '📡 조회 중...' : '자정 업데이트 후 표시'), dim: summStats?.per==null, color:'var(--accent-purple)' },
-            { label:'Forward PER', val: summStats?.forward_per != null ? Number(summStats.forward_per).toFixed(1)+'x' : '-',
-              sub: '한국 종목 미제공', dim: summStats?.forward_per==null, color:'var(--accent-purple)' },
-            { label:'52주 최고가', val: summStats?.high52 != null ? summStats.high52.toLocaleString('ko-KR')+'원' : '-',
-              sub: summStats?.high52 && latestClose ? `현재 ${((latestClose/summStats.high52-1)*100).toFixed(1)}%` : '52주 최고가',
-              dim: summStats?.high52==null,
-              color: summStats?.high52 && latestClose && latestClose >= summStats.high52 * 0.95 ? '#22c55e' : '#ef4444' },
-            { label:'52주 최저가', val: summStats?.low52 != null ? summStats.low52.toLocaleString('ko-KR')+'원' : '-',
-              sub: summStats?.low52 && latestClose ? `현재 +${((latestClose/summStats.low52-1)*100).toFixed(1)}%` : '52주 최저가',
-              dim: summStats?.low52==null, color:'#fbbf24' },
+              sub: collecting ? '📡 조회 중...' : (summStats?.per==null ? '자정 업데이트 후 표시' : (summStats.source||'네이버금융')), dim: summStats?.per==null, color:'var(--accent-purple)' },
+            { label:'EPS (원)', val: summStats?.trailing_eps != null ? fmtNum(summStats.trailing_eps)+'원' : (summStats?.eps != null ? fmtNum(summStats.eps)+'원' : '-'),
+              sub: 'TTM 기준', dim: summStats?.trailing_eps==null && summStats?.eps==null, color:'#34d399' },
           ].map(({label,val,sub,dim,color}) => (
             <div key={label} className="glass-panel" style={{ padding:'0.9rem 1rem' }}>
               <p style={{ fontSize:'0.75rem', color:'var(--text-secondary)', marginBottom:'0.3rem' }}>{label}</p>
@@ -2720,7 +2725,7 @@ const App = () => {
                 <ResponsiveContainer width="100%" height={180}>
                   <ComposedChart data={d2} margin={{top:5,right:5,bottom:0,left:0}} barCategoryGap="20%">
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#64748b'}} tickLine={false} interval="preserveStartEnd"
+                    <XAxis dataKey="date" tick={{fontSize:11,fill:'#94a3b8',fontWeight:600}} tickLine={false} interval="preserveStartEnd"
                       tickFormatter={d => d ? d.slice(5).replace('-','/') : ''} />
                     <YAxis yAxisId="bar" domain={[dataMin => Math.min(0, dataMin), dataMax => Math.max(0, dataMax)]} tick={{fontSize:9,fill:'#64748b'}} tickLine={false} axisLine={false} width={62}
                       tickFormatter={v=>{const a=Math.abs(v),s=v<0?'-':'';if(a>=10000)return s+(a/10000).toFixed(1)+'만주';if(a>=1000)return s+(a/1000).toFixed(0)+'천주';return s+a.toLocaleString('ko-KR')+'주';}}/>
