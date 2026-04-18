@@ -600,6 +600,8 @@ class CollectionScheduler:
                     if not exists:
                         continue
                     # 기존 수급 데이터가 없는 날짜만 업데이트 (기존 데이터 불변)
+                    # 금액(amt)이 없는 경우에만 업데이트
+                    # qty가 이미 있어도 amt가 0이면 갱신 (naver 수집 후 KIS amt 보완)
                     conn.execute("""
                         UPDATE price_history
                         SET inst_net_buy     = ?,
@@ -609,8 +611,8 @@ class CollectionScheduler:
                             frn_net_buy_amt  = ?,
                             ind_net_buy_amt  = ?
                         WHERE stock_code=? AND date=?
-                          AND (inst_net_buy IS NULL OR inst_net_buy = 0)
-                          AND (frn_net_buy  IS NULL OR frn_net_buy  = 0)
+                          AND (inst_net_buy_amt IS NULL OR inst_net_buy_amt = 0)
+                          AND (frn_net_buy_amt  IS NULL OR frn_net_buy_amt  = 0)
                     """, (iq, fq, dq, ia, fa, da, code, d))
                     total_saved += conn.execute("SELECT changes()").fetchone()[0]
 

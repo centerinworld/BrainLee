@@ -36,12 +36,14 @@ def _db():
 
 
 def _latest_trade_date(conn: _sl.Connection) -> str:
-    """가장 최근 거래일 찾기 (데이터가 충분히 있는 날을 선호)"""
-    # 1. 수급 데이터가 50건 이상 있는 가장 최근 날짜 (주말 제외)
+    """가장 최근 거래일 찾기 (수량 또는 금액 수급 데이터가 있는 날)"""
+    # amt 또는 qty 기준으로 수급 데이터가 있는 가장 최근 날짜
     sql = """
         SELECT substr(date, 1, 10) as dt
         FROM price_history
-        WHERE (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0)
+        WHERE (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0
+               OR inst_net_buy != 0 OR frn_net_buy != 0)
+          AND stock_code NOT LIKE '%^%'
         GROUP BY dt
         HAVING COUNT(*) >= 1
         ORDER BY dt DESC
@@ -89,10 +91,23 @@ def get_investor_top(
                     ELSE (SELECT close FROM price_history WHERE stock_code=ph.stock_code AND close > 0 ORDER BY date DESC LIMIT 1)
                 END AS close,
                 ph.volume,
-                ROUND(ph.inst_net_buy_amt / 100.0, 1) AS inst_amt,   -- 백만원→억원
-                ROUND(ph.frn_net_buy_amt  / 100.0, 1) AS frn_amt,
-                ROUND(ph.ind_net_buy_amt  / 100.0, 1) AS ind_amt,
-                ROUND((COALESCE(ph.inst_net_buy_amt, 0) + COALESCE(ph.frn_net_buy_amt, 0)) / 100.0, 1) AS both_amt,
+                -- amt 우선, 없으면 qty×종가로 역산 (백만원→억원: /100, qty×원→억원: /1e8)
+                CASE WHEN COALESCE(ph.inst_net_buy_amt,0) != 0
+                     THEN ROUND(ph.inst_net_buy_amt / 100.0, 1)
+                     ELSE ROUND(COALESCE(ph.inst_net_buy,0) * COALESCE(NULLIF(ph.close,0),0) / 1e8, 1)
+                END AS inst_amt,
+                CASE WHEN COALESCE(ph.frn_net_buy_amt,0) != 0
+                     THEN ROUND(ph.frn_net_buy_amt / 100.0, 1)
+                     ELSE ROUND(COALESCE(ph.frn_net_buy,0) * COALESCE(NULLIF(ph.close,0),0) / 1e8, 1)
+                END AS frn_amt,
+                CASE WHEN COALESCE(ph.ind_net_buy_amt,0) != 0
+                     THEN ROUND(ph.ind_net_buy_amt / 100.0, 1)
+                     ELSE ROUND(COALESCE(ph.ind_net_buy,0) * COALESCE(NULLIF(ph.close,0),0) / 1e8, 1)
+                END AS ind_amt,
+                CASE WHEN COALESCE(ph.inst_net_buy_amt,0) != 0 OR COALESCE(ph.frn_net_buy_amt,0) != 0
+                     THEN ROUND((COALESCE(ph.inst_net_buy_amt,0) + COALESCE(ph.frn_net_buy_amt,0)) / 100.0, 1)
+                     ELSE ROUND((COALESCE(ph.inst_net_buy,0) + COALESCE(ph.frn_net_buy,0)) * COALESCE(NULLIF(ph.close,0),0) / 1e8, 1)
+                END AS both_amt,
                 ROUND(COALESCE(ph.inst_net_buy, (ph.inst_net_buy_amt * 1000000.0 / NULLIF(ph.close, 0)))) AS inst_qty,
                 ROUND(COALESCE(ph.frn_net_buy, (ph.frn_net_buy_amt * 1000000.0 / NULLIF(ph.close, 0))))   AS frn_qty,
                 ROUND(COALESCE(ph.ind_net_buy, (ph.ind_net_buy_amt * 1000000.0 / NULLIF(ph.close, 0))))   AS ind_qty,
@@ -231,14 +246,21 @@ def precompute_indicator_cache():
         conn = _db()
         trade_date = _latest_trade_date(conn)
         conn.close()
-        # investor-top (캐시 TTL 무시하고 강제 재계산)
-        _indicator_cache_v5.pop((trade_date, 20), None)
-        _indicator_cache_v5.pop(("", 20), None)
+        # 캐시 전체 초기화 후 재계산 (조건 변경으로 인한 stale 캐시 방지)
+        _indicator_cache_v5.clear()
         get_investor_top(date_str=trade_date, limit=20)
         get_turnover_top(date_str=trade_date, market="ALL", limit=20)
         logger.info(f"[시장지표캐시] 사전계산 완료 — 기준일: {trade_date}")
     except Exception as e:
         logger.error(f"[시장지표캐시] 사전계산 실패: {e}")
+
+
+@router.post("/cache/clear")
+def clear_indicator_cache():
+    """캐시 수동 초기화 (서버 재시작 없이 갱신)."""
+    count = len(_indicator_cache_v5)
+    _indicator_cache_v5.clear()
+    return {"cleared": count}
 
 
 @router.get("/turnover-top")
@@ -503,20 +525,22 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
                  AND stock_code NOT LIKE 'NQ%'
                  AND stock_code NOT LIKE '%-F'
                  AND stock_code NOT LIKE '%=%'
-                 AND (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0)
+                 AND (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0
+                      OR inst_net_buy != 0 OR frn_net_buy != 0)
                  AND strftime('%w', date) NOT IN ('0', '6')
                GROUP BY d
                HAVING cnt >= 1
                ORDER BY d DESC LIMIT ?""",
             (limit,),
         ).fetchall()
-        # 20건 미만인 날도 fallback으로 포함 (주말은 여전히 제외)
+        # 데이터 없는 경우 fallback (주말은 여전히 제외)
         if not rows:
             rows = conn.execute(
                 """SELECT DISTINCT substr(date,1,10) AS d
                    FROM price_history
                    WHERE stock_code NOT LIKE '%^%'
-                     AND (COALESCE(inst_net_buy_amt, 0) != 0 OR COALESCE(frn_net_buy_amt, 0) != 0)
+                     AND (COALESCE(inst_net_buy_amt,0) != 0 OR COALESCE(frn_net_buy_amt,0) != 0
+                          OR COALESCE(inst_net_buy,0) != 0 OR COALESCE(frn_net_buy,0) != 0)
                      AND strftime('%w', date) NOT IN ('0', '6')
                    ORDER BY d DESC LIMIT ?""",
                 (limit,),
