@@ -6,6 +6,7 @@ routes/market_indicators.py — 시장 지표 API
   GET  /api/market-indicators/investor-trend    투자자별 매매동향 추이 (지수, 멀티일)
   GET  /api/market-indicators/market-summary    KOSPI/KOSDAQ 현황 요약
   GET  /api/market-indicators/index-investor    오늘의 지수 투자자 순매수 (KOSPI/KOSDAQ)
+  GET  /api/market-indicators/futures           KOSPI200/KOSDAQ150 선물 현황 (KRX API)
 """
 
 from __future__ import annotations
@@ -551,3 +552,141 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
         return all_dates
     finally:
         conn.close()
+
+
+# ── GET /api/market-indicators/futures ─────────────────────────
+_futures_cache: dict = {}   # {date_str: (ts, data)}
+_FUTURES_CACHE_TTL = 60     # 1분 (실시간에 가깝게)
+
+_KRX_BASE = "https://data-dbg.krx.co.kr/svc/apis"
+
+def _krx_headers() -> dict:
+    try:
+        import config as _cfg
+        return {"AUTH_KEY": _cfg.KRX_API_KEY}
+    except Exception:
+        return {}
+
+
+def _n(val) -> float:
+    """KRX 응답값 → float 변환 (쉼표 제거)"""
+    try:
+        return float(str(val).replace(",", "")) if val not in ("", "-", None) else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fetch_krx_futures(bas_dd: str) -> list[dict]:
+    """KRX API drv/fut_bydd_trd 호출 → 선물 일별 현황"""
+    import requests as _req
+    url = f"{_KRX_BASE}/drv/fut_bydd_trd"
+    try:
+        r = _req.get(url, params={"basDd": bas_dd}, headers=_krx_headers(), timeout=10)
+        if r.status_code == 200:
+            return r.json().get("OutBlock_1", [])
+    except Exception as e:
+        logger.warning(f"[futures] KRX fut_bydd_trd {bas_dd}: {e}")
+    return []
+
+
+def _fetch_krx_night_futures(bas_dd: str) -> list[dict]:
+    """KRX API drv/ngt_fut_bydd_trd 호출 → 야간선물 일별 현황"""
+    import requests as _req
+    url = f"{_KRX_BASE}/drv/ngt_fut_bydd_trd"
+    try:
+        r = _req.get(url, params={"basDd": bas_dd}, headers=_krx_headers(), timeout=10)
+        if r.status_code == 200:
+            return r.json().get("OutBlock_1", [])
+    except Exception as e:
+        logger.warning(f"[futures] KRX ngt_fut_bydd_trd {bas_dd}: {e}")
+    return []
+
+
+def _pick_front_month(rows: list[dict], name_keyword: str) -> dict | None:
+    """종목명에 키워드 포함된 계약 중 최근월물(만기 가장 빠른 것) 선택"""
+    matched = [r for r in rows if name_keyword in str(r.get("ISU_ABBRV", "") or r.get("ISU_NM", ""))]
+    if not matched:
+        return None
+    # 종목코드 기준 정렬: 근월물이 보통 코드 순서상 앞에 옴
+    matched.sort(key=lambda r: str(r.get("ISU_CD", "")))
+    return matched[0]
+
+
+def _row_to_futures_item(r: dict, label: str, color: str, session: str = "정규") -> dict:
+    close   = _n(r.get("TDD_CLSPRC") or r.get("CLSPRC"))
+    prev    = _n(r.get("BASISPRC") or r.get("BAS_PRC"))
+    chg     = _n(r.get("CMPPREVDD_PRC") or r.get("CMPPRVDD_PRC"))
+    chg_pct = _n(r.get("FLUC_RT"))
+    volume  = _n(r.get("ACC_TRDVOL") or r.get("TDD_VOL"))
+    oi      = _n(r.get("OPNINT_QTY") or r.get("OPNINTQTY"))
+    isu_cd  = str(r.get("ISU_CD", ""))
+    name    = str(r.get("ISU_ABBRV") or r.get("ISU_NM") or label)
+
+    # chg_pct가 없거나 0이면 직접 계산
+    if chg_pct == 0 and prev > 0 and close > 0:
+        chg_pct = round((close - prev) / prev * 100, 2)
+    if chg == 0 and close > 0 and prev > 0:
+        chg = round(close - prev, 2)
+
+    return {
+        "label":    label,
+        "name":     name,
+        "code":     isu_cd,
+        "session":  session,
+        "color":    color,
+        "close":    close,
+        "change":   chg,
+        "change_pct": chg_pct,
+        "volume":   int(volume),
+        "open_interest": int(oi),
+    }
+
+
+@router.get("/futures")
+def get_futures():
+    """
+    KOSPI200 선물 / KOSDAQ150 선물 / KOSPI200 야간선물 현황.
+    KRX API drv/fut_bydd_trd (정규) + drv/ngt_fut_bydd_trd (야간) 사용.
+    데이터는 60초 캐싱.
+    """
+    today = date.today()
+    # 주말이면 가장 최근 금요일 기준
+    wd = today.weekday()
+    if wd == 5:   # 토
+        today = today - timedelta(days=1)
+    elif wd == 6: # 일
+        today = today - timedelta(days=2)
+    bas_dd = today.strftime("%Y%m%d")
+
+    now = time.time()
+    cached = _futures_cache.get(bas_dd)
+    if cached and (now - cached[0]) < _FUTURES_CACHE_TTL:
+        return cached[1]
+
+    items: list[dict] = []
+
+    # ── 정규선물 ──
+    reg_rows = _fetch_krx_futures(bas_dd)
+    if reg_rows:
+        k200 = _pick_front_month(reg_rows, "KOSPI200")
+        kq150 = _pick_front_month(reg_rows, "KOSDAQ150")
+        if k200:
+            items.append(_row_to_futures_item(k200, "KOSPI200 선물", "#34d399", "정규"))
+        if kq150:
+            items.append(_row_to_futures_item(kq150, "KOSDAQ150 선물", "#60a5fa", "정규"))
+
+    # ── 야간선물 ──
+    ngt_rows = _fetch_krx_night_futures(bas_dd)
+    if ngt_rows:
+        nk200 = _pick_front_month(ngt_rows, "KOSPI200")
+        if nk200:
+            items.append(_row_to_futures_item(nk200, "KOSPI200 야간선물", "#a78bfa", "야간"))
+
+    result = {
+        "items":   items,
+        "bas_dd":  bas_dd,
+        "note":    "KRX 정규선물(drv/fut_bydd_trd) + 야간선물(drv/ngt_fut_bydd_trd) 근월물 기준",
+        "updated": datetime.now().strftime("%H:%M:%S"),
+    }
+    _futures_cache[bas_dd] = (now, result)
+    return result

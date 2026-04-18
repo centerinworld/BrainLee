@@ -1822,8 +1822,19 @@ const App = () => {
     const [kosdaqTab,  setKosdaqTab]  = React.useState('90');
     const [nasdaqTab,  setNasdaqTab]  = React.useState('90');
     const [sp500Tab,   setSp500Tab]   = React.useState('90');
+    const [futuresData, setFuturesData] = React.useState(null);
     React.useEffect(() => {
       const iv = setInterval(() => setLastUpdated(new Date().toLocaleTimeString('ko-KR')), 300000);
+      return () => clearInterval(iv);
+    }, []);
+    React.useEffect(() => {
+      const fetchFutures = () =>
+        fetch(API('/api/market-indicators/futures'))
+          .then(r => r.ok ? r.json() : null)
+          .then(d => d && setFuturesData(d))
+          .catch(() => {});
+      fetchFutures();
+      const iv = setInterval(fetchFutures, 60000); // 1분 갱신
       return () => clearInterval(iv);
     }, []);
 
@@ -2079,6 +2090,72 @@ const App = () => {
             </div>
           );
         })}
+      </div>
+
+      {/* ══ PARA 1-a: 선물 현황 ══ */}
+      <div className="glass-panel" style={{ padding:'1rem 1.4rem' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+          <span style={{ fontSize:'0.78rem', fontWeight:700, color:'rgba(255,255,255,0.75)', letterSpacing:'0.04em' }}>
+            선물 현황 <span style={{ fontSize:'0.65rem', color:'rgba(255,255,255,0.35)', fontWeight:400, marginLeft:'0.4rem' }}>근월물 기준 · KRX</span>
+          </span>
+          {futuresData?.updated && (
+            <span style={{ fontSize:'0.62rem', color:'rgba(255,255,255,0.3)' }}>기준: {futuresData.updated}</span>
+          )}
+        </div>
+        {!futuresData ? (
+          <div style={{ textAlign:'center', padding:'1rem', color:'rgba(255,255,255,0.25)', fontSize:'0.75rem' }}>불러오는 중...</div>
+        ) : futuresData.items?.length === 0 ? (
+          <div style={{ textAlign:'center', padding:'1rem', color:'rgba(255,255,255,0.25)', fontSize:'0.75rem' }}>
+            선물 데이터 없음 (장 종료 후 또는 KRX 데이터 미수신)
+          </div>
+        ) : (
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.8rem' }}>
+            <thead>
+              <tr style={{ borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
+                {['종목','세션','현재가','전일대비','등락률','거래량','미결제약정'].map(h => (
+                  <th key={h} style={{ padding:'0.3rem 0.6rem', textAlign: h==='종목'||h==='세션' ? 'left' : 'right',
+                    fontSize:'0.68rem', color:'rgba(255,255,255,0.4)', fontWeight:600 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {futuresData.items.map((f, i) => {
+                const clr = f.change_pct > 0 ? '#ef4444' : f.change_pct < 0 ? '#3b82f6' : 'rgba(255,255,255,0.4)';
+                const arr = f.change_pct >= 0 ? '▲' : '▼';
+                const sessionBg = f.session === '야간' ? 'rgba(167,139,250,0.12)' : 'transparent';
+                const sessionClr = f.session === '야간' ? '#a78bfa' : '#94a3b8';
+                return (
+                  <tr key={i} style={{ borderBottom:'1px solid rgba(255,255,255,0.04)', background: sessionBg }}>
+                    <td style={{ padding:'0.45rem 0.6rem' }}>
+                      <span style={{ fontWeight:700, color: f.color, fontSize:'0.82rem' }}>{f.label}</span>
+                      <span style={{ fontSize:'0.62rem', color:'rgba(255,255,255,0.3)', marginLeft:'0.4rem' }}>{f.code}</span>
+                    </td>
+                    <td style={{ padding:'0.45rem 0.6rem' }}>
+                      <span style={{ fontSize:'0.68rem', fontWeight:700, color: sessionClr,
+                        background: f.session==='야간'?'rgba(167,139,250,0.18)':'rgba(255,255,255,0.07)',
+                        padding:'0.1rem 0.4rem', borderRadius:'3px' }}>{f.session}</span>
+                    </td>
+                    <td style={{ padding:'0.45rem 0.6rem', textAlign:'right', fontWeight:700, color:'rgba(255,255,255,0.9)', fontSize:'0.85rem' }}>
+                      {f.close > 0 ? f.close.toLocaleString('ko-KR', {maximumFractionDigits:2}) : '-'}
+                    </td>
+                    <td style={{ padding:'0.45rem 0.6rem', textAlign:'right', fontWeight:700, color: clr }}>
+                      {f.change !== 0 ? `${f.change > 0 ? '+' : ''}${f.change.toLocaleString('ko-KR', {maximumFractionDigits:2})}` : '-'}
+                    </td>
+                    <td style={{ padding:'0.45rem 0.6rem', textAlign:'right', fontWeight:700, color: clr }}>
+                      {f.change_pct !== 0 ? `${arr} ${Math.abs(f.change_pct).toFixed(2)}%` : '-'}
+                    </td>
+                    <td style={{ padding:'0.45rem 0.6rem', textAlign:'right', color:'rgba(255,255,255,0.55)', fontSize:'0.75rem' }}>
+                      {f.volume > 0 ? f.volume.toLocaleString('ko-KR') : '-'}
+                    </td>
+                    <td style={{ padding:'0.45rem 0.6rem', textAlign:'right', color:'rgba(255,255,255,0.55)', fontSize:'0.75rem' }}>
+                      {f.open_interest > 0 ? f.open_interest.toLocaleString('ko-KR') : '-'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* ══ PARA 1-b: 나스닥 / S&P500 ══ */}
