@@ -14,9 +14,32 @@ from xml.etree import ElementTree as ET
 PROJECT_DIR = Path("/Applications/stock_dashboard/hs_trade_lab/semiconductor_value_lab")
 DATA_DIR = PROJECT_DIR / "data"
 DB_PATH = DATA_DIR / "semiconductor_value_lab.db"
-WORKBOOK_PATH = Path("/Users/brainlee/Downloads/반도체 업종 Value Stream의 사본.xlsx")
 ROOT_STOCK_DB = Path("/Applications/stock_dashboard/stock.db")
 EXPORT_DIR = Path("/Users/brainlee/Downloads")
+
+
+def _find_workbook() -> Path:
+    """Downloads 폴더에서 'value' 또는 '반도체' 키워드를 포함한 엑셀 파일을 자동 탐색."""
+    search_dirs = [
+        Path("/Users/brainlee/Downloads"),
+        Path("/Users/brainlee/Desktop"),
+        Path.home() / "Downloads",
+        Path.home() / "Desktop",
+    ]
+    keywords = ["value", "반도체", "semiconductor"]
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for ext in ("*.xlsx", "*.xlsm", "*.xls"):
+            for f in sorted(d.glob(ext), key=lambda p: p.stat().st_mtime, reverse=True):
+                name_lower = f.name.lower()
+                if any(kw in name_lower for kw in keywords):
+                    return f
+    # 기존 경로 fallback
+    return Path("/Users/brainlee/Downloads/반도체 업종 Value Stream의 사본.xlsx")
+
+
+WORKBOOK_PATH = _find_workbook()
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -507,7 +530,15 @@ def insert_meta(conn: sqlite3.Connection, pairs: dict[str, str]) -> None:
 
 
 def rebuild() -> None:
-    reader = WorkbookReader(WORKBOOK_PATH)
+    wb_path = _find_workbook()
+    if not wb_path.exists():
+        raise FileNotFoundError(
+            f"엑셀 파일을 찾을 수 없습니다.\n"
+            f"탐색 경로: Downloads, Desktop 폴더에서 value/반도체/semiconductor 키워드 포함 파일\n"
+            f"마지막 시도 경로: {wb_path}"
+        )
+    print(f"[rebuild] 엑셀 파일: {wb_path}")
+    reader = WorkbookReader(wb_path)
     summary_rows = reader.rows("종합")
     stock_rows = reader.rows("전종목")
     annual_rows = reader.rows("실적Y")
@@ -529,7 +560,7 @@ def rebuild() -> None:
     insert_meta(
         cache_conn,
         {
-            "workbook_path": str(WORKBOOK_PATH),
+            "workbook_path": str(wb_path),
             "rebuilt_at": datetime.now().isoformat(timespec="seconds"),
             "current_label": refs.current_label,
             "ref_a": refs.ref_a,
