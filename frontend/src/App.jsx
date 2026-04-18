@@ -6011,6 +6011,21 @@ const App = () => {
       }
     };
 
+    const [signals, setSignals]         = React.useState(null);
+    const [signalLoading, setSignalLoading] = React.useState(false);
+    const [mainTab, setMainTab]          = React.useState('sectors'); // 'sectors' | 'signals'
+    const [sigScope, setSigScope]        = React.useState('all');
+    const [sigCategory, setSigCategory]  = React.useState('all');
+
+    const loadSignals = async () => {
+      setSignalLoading(true);
+      try {
+        const r = await fetch(HS_API(`/api/analysis2/signals?months=36&scope=${sigScope}`));
+        if (r.ok) setSignals(await r.json());
+      } catch {}
+      finally { setSignalLoading(false); }
+    };
+
     React.useEffect(() => { loadSectors(); }, [months]);
     React.useEffect(() => {
       if (selSector) {
@@ -6020,6 +6035,7 @@ const App = () => {
         loadSectorHs(selSector.sector_key);
       }
     }, [selSector, months]);
+    React.useEffect(() => { if (mainTab === 'signals') loadSignals(); }, [mainTab, sigScope]);
 
     const TabButton = ({ active, onClick, children }) => (
       <button
@@ -6394,10 +6410,205 @@ const App = () => {
           </div>
         </div>
 
+        {/* ── 메인 탭 ── */}
+        <div style={{display:'flex', gap:'0.5rem', borderBottom:'1px solid var(--glass-border)', paddingBottom:'0.5rem'}}>
+          {[['sectors','🏭 섹터·기업 분석'],['signals','⚡ 투자 시그널 보드']].map(([key, label]) => (
+            <button key={key} onClick={() => setMainTab(key)} style={{
+              padding:'0.4rem 1rem', borderRadius:'8px 8px 0 0', fontSize:'0.8rem', cursor:'pointer',
+              fontWeight: mainTab === key ? 700 : 400,
+              border: mainTab === key ? '1px solid rgba(167,139,250,0.4)' : '1px solid transparent',
+              borderBottom: mainTab === key ? '2px solid #a78bfa' : '1px solid transparent',
+              background: mainTab === key ? 'rgba(167,139,250,0.12)' : 'transparent',
+              color: mainTab === key ? '#a78bfa' : 'var(--text-secondary)',
+            }}>{label}</button>
+          ))}
+        </div>
+
         {error && (
           <div style={{padding:'0.75rem 1rem', background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.3)',
             borderRadius:'10px', color:'#f87171', fontSize:'0.8rem'}}>⚠️ {error}</div>
         )}
+
+        {/* ── 시그널 보드 탭 ── */}
+        {mainTab === 'signals' && (() => {
+          const SIG_META = {
+            ATH_EXPORT:       {emoji:'🔴', label:'역대 최고 수출', cat:'강세', color:'#ef4444', bg:'rgba(239,68,68,0.1)'},
+            NEAR_ATH_EXPORT:  {emoji:'🟠', label:'역대급 수출 (95%+)', cat:'강세', color:'#f97316', bg:'rgba(249,115,22,0.1)'},
+            ATH_IMPORT:       {emoji:'🔵', label:'역대 최고 수입', cat:'수주급증', color:'#3b82f6', bg:'rgba(59,130,246,0.1)'},
+            SURGE_EXPORT_50:  {emoji:'🔴', label:'수출 폭증 +50%', cat:'강세', color:'#ef4444', bg:'rgba(239,68,68,0.12)'},
+            SURGE_EXPORT_30:  {emoji:'🟡', label:'수출 급증 +30%', cat:'강세', color:'#f59e0b', bg:'rgba(245,158,11,0.1)'},
+            IMPORT_SURGE_50:  {emoji:'💥', label:'수입 폭증 +50%', cat:'수주폭증', color:'#8b5cf6', bg:'rgba(139,92,246,0.12)'},
+            IMPORT_SURGE_30:  {emoji:'🔵', label:'수입 급증 +30%', cat:'수주증가', color:'#60a5fa', bg:'rgba(96,165,250,0.1)'},
+            CONSEC_GROWTH_6M: {emoji:'🟢', label:'6개월 연속 수출↑', cat:'강세', color:'#34d399', bg:'rgba(52,211,153,0.1)'},
+            CONSEC_GROWTH_3M: {emoji:'🟡', label:'3개월 연속 수출↑', cat:'강세', color:'#fbbf24', bg:'rgba(251,191,36,0.1)'},
+            ACCELERATION:     {emoji:'⚡', label:'수출 성장 가속', cat:'강세', color:'#a78bfa', bg:'rgba(167,139,250,0.1)'},
+            REBOUND:          {emoji:'📈', label:'수출 바닥 반등', cat:'반등', color:'#34d399', bg:'rgba(52,211,153,0.08)'},
+            DECLINE_30:       {emoji:'🔻', label:'수출 급감 -30%', cat:'약세', color:'#64748b', bg:'rgba(100,116,139,0.1)'},
+            DECLINE_20:       {emoji:'🔽', label:'수출 감소 -20%', cat:'약세', color:'#94a3b8', bg:'rgba(148,163,184,0.08)'},
+            REVERSAL_DOWN:    {emoji:'⚠️', label:'수출 고점 반락', cat:'약세', color:'#f87171', bg:'rgba(248,113,113,0.08)'},
+          };
+          const cats = ['all','강세','수주증가','수주폭증','반등','약세'];
+          const allSigs = (signals?.signals || []).filter(s => sigCategory === 'all' || s.category === sigCategory);
+          return (
+            <div style={{display:'flex', flexDirection:'column', gap:'1rem'}}>
+              {/* 필터 바 */}
+              <div className="glass-panel" style={{padding:'0.8rem 1.2rem', display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap'}}>
+                <div style={{display:'flex', gap:'0.4rem', alignItems:'center'}}>
+                  <span style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>범위:</span>
+                  {[['all','전체'],['sector','섹터'],['company','기업']].map(([k,l]) => (
+                    <button key={k} onClick={() => setSigScope(k)} style={{
+                      padding:'0.2rem 0.6rem', borderRadius:'6px', fontSize:'0.72rem', cursor:'pointer',
+                      fontWeight: sigScope===k ? 700 : 400,
+                      border: sigScope===k ? '1px solid #a78bfa' : '1px solid var(--glass-border)',
+                      background: sigScope===k ? 'rgba(167,139,250,0.14)' : 'transparent',
+                      color: sigScope===k ? '#a78bfa' : 'var(--text-secondary)',
+                    }}>{l}</button>
+                  ))}
+                </div>
+                <div style={{display:'flex', gap:'0.4rem', alignItems:'center'}}>
+                  <span style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>카테고리:</span>
+                  {cats.map(c => (
+                    <button key={c} onClick={() => setSigCategory(c)} style={{
+                      padding:'0.2rem 0.6rem', borderRadius:'6px', fontSize:'0.72rem', cursor:'pointer',
+                      fontWeight: sigCategory===c ? 700 : 400,
+                      border: sigCategory===c ? '1px solid #a78bfa' : '1px solid var(--glass-border)',
+                      background: sigCategory===c ? 'rgba(167,139,250,0.14)' : 'transparent',
+                      color: sigCategory===c ? '#a78bfa' : 'var(--text-secondary)',
+                    }}>{c === 'all' ? '전체' : c}</button>
+                  ))}
+                </div>
+                <button onClick={loadSignals} disabled={signalLoading} style={{
+                  marginLeft:'auto', padding:'0.25rem 0.65rem', borderRadius:'6px', fontSize:'0.75rem',
+                  cursor:'pointer', border:'1px solid var(--glass-border)', background:'rgba(255,255,255,0.05)', color:'var(--text-secondary)'}}>
+                  {signalLoading ? '⏳' : '🔄 새로고침'}
+                </button>
+                {signals?.generated_at && (
+                  <span style={{fontSize:'0.65rem', color:'rgba(255,255,255,0.3)'}}>산출: {signals.generated_at}</span>
+                )}
+              </div>
+
+              {/* 시그널 요약 카운트 */}
+              {signals && (() => {
+                const cnt = {};
+                (signals.signals||[]).forEach(s => { cnt[s.category] = (cnt[s.category]||0)+1; });
+                return (
+                  <div style={{display:'flex', gap:'0.6rem', flexWrap:'wrap'}}>
+                    {Object.entries(cnt).map(([cat, n]) => (
+                      <div key={cat} onClick={() => setSigCategory(cat === sigCategory ? 'all' : cat)}
+                        style={{padding:'0.4rem 0.9rem', borderRadius:'8px', fontSize:'0.75rem', cursor:'pointer',
+                          background:'rgba(255,255,255,0.05)', border:'1px solid var(--glass-border)',
+                          color: cat==='약세'?'#64748b': cat==='반등'?'#34d399': cat.includes('수주')?'#60a5fa':'#f59e0b',
+                          fontWeight:700}}>
+                        {cat} <span style={{marginLeft:'0.3rem', opacity:0.7}}>{n}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* 시그널 카드 그리드 */}
+              {signalLoading ? (
+                <div className="glass-panel" style={{padding:'3rem', textAlign:'center', color:'var(--text-secondary)'}}>
+                  <div style={{width:'28px',height:'28px',border:'2px solid rgba(167,139,250,0.3)',borderTop:'2px solid #a78bfa',
+                    borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 0.5rem'}}/>
+                  시그널 산출 중...
+                </div>
+              ) : !signals ? (
+                <div className="glass-panel" style={{padding:'3rem', textAlign:'center', color:'var(--text-secondary)'}}>
+                  새로고침 버튼을 눌러 시그널을 불러오세요
+                </div>
+              ) : allSigs.length === 0 ? (
+                <div className="glass-panel" style={{padding:'2rem', textAlign:'center', color:'var(--text-secondary)'}}>
+                  해당 카테고리 시그널 없음
+                </div>
+              ) : (
+                <div style={{display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap:'0.75rem'}}>
+                  {allSigs.map((sig, i) => {
+                    const meta = SIG_META[sig.signal_type] || {emoji:'•', label:sig.label, color:'#94a3b8', bg:'rgba(148,163,184,0.08)'};
+                    const isStrong = sig.score >= 85;
+                    return (
+                      <div key={i} className="glass-panel" style={{
+                        padding:'0.9rem 1.1rem',
+                        border: isStrong ? `1px solid ${meta.color}55` : '1px solid var(--glass-border)',
+                        background: meta.bg,
+                        position:'relative',
+                        overflow:'hidden',
+                      }}>
+                        {isStrong && <div style={{position:'absolute', top:0, left:0, width:'3px', height:'100%', background:meta.color}} />}
+                        <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'0.5rem'}}>
+                          <div>
+                            <div style={{fontSize:'0.68rem', color:meta.color, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase'}}>
+                              {meta.emoji} {meta.label}
+                            </div>
+                            <div style={{fontSize:'0.95rem', fontWeight:800, color:'#fff', marginTop:'0.15rem'}}>
+                              {sig.scope_type === 'sector' ? '🏭 ' : '🏢 '}{sig.scope_name}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right', flexShrink:0}}>
+                            <div style={{fontSize:'0.62rem', color:'rgba(255,255,255,0.4)', marginBottom:'0.1rem'}}>{sig.period}</div>
+                            <div style={{fontSize:'0.72rem', fontWeight:700, color:meta.color, background:`${meta.color}22`,
+                              padding:'0.1rem 0.4rem', borderRadius:'4px'}}>
+                              {sig.score}점
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{display:'flex', gap:'0.5rem', flexWrap:'wrap', marginTop:'0.4rem'}}>
+                          {sig.export_value > 0 && (
+                            <div style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.6)'}}>
+                              📤 수출 <span style={{color:'#f59e0b', fontWeight:700}}>${(sig.export_value/1e6).toFixed(0)}M</span>
+                            </div>
+                          )}
+                          {sig.yoy_pct != null && (
+                            <div style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.6)'}}>
+                              YoY <span style={{color: sig.yoy_pct>=0?'#ef4444':'#3b82f6', fontWeight:700}}>
+                                {sig.yoy_pct>=0?'+':''}{sig.yoy_pct.toFixed(1)}%
+                              </span>
+                            </div>
+                          )}
+                          {sig.import_value > 0 && (sig.signal_type==='ATH_IMPORT'||sig.signal_type?.includes('IMPORT')) && (
+                            <div style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.6)'}}>
+                              📥 수입 <span style={{color:'#60a5fa', fontWeight:700}}>${(sig.import_value/1e6).toFixed(0)}M</span>
+                            </div>
+                          )}
+                          {sig.yoy_imp_pct != null && sig.signal_type?.includes('IMPORT') && (
+                            <div style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.6)'}}>
+                              YoY <span style={{color:'#60a5fa', fontWeight:700}}>
+                                {sig.yoy_imp_pct>=0?'+':''}{sig.yoy_imp_pct.toFixed(1)}%
+                              </span>
+                            </div>
+                          )}
+                          {sig.mom_pct != null && (
+                            <div style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.6)'}}>
+                              MoM <span style={{color: sig.mom_pct>=0?'#ef4444':'#3b82f6', fontWeight:700}}>
+                                {sig.mom_pct>=0?'+':''}{sig.mom_pct.toFixed(1)}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{marginTop:'0.4rem', fontSize:'0.68rem', color:'rgba(255,255,255,0.35)'}}>
+                          {sig.scope_type === 'company' ? '기업 수출입' : '섹터 합산'} • {sig.category}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 범례 */}
+              <div className="glass-panel" style={{padding:'0.75rem 1.2rem', display:'flex', gap:'1rem', flexWrap:'wrap', alignItems:'center'}}>
+                <span style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.4)', fontWeight:600}}>시그널 해석:</span>
+                <span style={{fontSize:'0.68rem', color:'#f59e0b'}}>🟡 수출증가 = 매출확대</span>
+                <span style={{fontSize:'0.68rem', color:'#60a5fa'}}>🔵 수입급증 = 수주증가·준비</span>
+                <span style={{fontSize:'0.68rem', color:'#34d399'}}>📈 반등 = 저점탈출</span>
+                <span style={{fontSize:'0.68rem', color:'#94a3b8'}}>🔻 급감 = 업황둔화 주의</span>
+                <span style={{fontSize:'0.65rem', color:'rgba(255,255,255,0.25)', marginLeft:'auto'}}>관세청 HS코드 기반 · BeOn 채널 교차검증</span>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── 섹터·기업 분석 탭 ── */}
+        {mainTab === 'sectors' && <>
 
         {/* ── 상단: 섹터별 수출 추세 표 ── */}
         <div className="glass-panel" style={{overflow:'hidden'}}>
@@ -6757,6 +6968,8 @@ const App = () => {
             ) : null}
           </div>
         </div>
+
+        </>}
       </div>
     );
   };

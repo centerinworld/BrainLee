@@ -823,3 +823,129 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
             for row in rows
         ],
     }
+
+
+# ── 수출입 시그널 보드 ─────────────────────────────────────────────────────
+_SIGNAL_LABELS = {
+    "ATH_EXPORT":       ("🔴", "역대 최고 수출액",      "강세", 95),
+    "NEAR_ATH_EXPORT":  ("🟠", "역대급 수출 (95%+)",   "강세", 80),
+    "ATH_IMPORT":       ("🔵", "역대 최고 수입액",      "수주급증", 88),
+    "SURGE_EXPORT_50":  ("🔴", "수출 폭증 (+50% YoY)", "강세", 85),
+    "SURGE_EXPORT_30":  ("🟡", "수출 급증 (+30% YoY)", "강세", 72),
+    "IMPORT_SURGE_50":  ("💥", "수입 폭증 (+50% YoY)", "수주폭증", 88),
+    "IMPORT_SURGE_30":  ("🔵", "수입 급증 (+30% YoY)", "수주증가", 70),
+    "CONSEC_GROWTH_6M": ("🟢", "6개월 연속 수출 증가",  "강세", 78),
+    "CONSEC_GROWTH_3M": ("🟡", "3개월 연속 수출 증가",  "강세", 60),
+    "ACCELERATION":     ("⚡", "수출 성장 가속",         "강세", 65),
+    "REBOUND":          ("📈", "수출 바닥 반등",          "반등", 68),
+    "DECLINE_30":       ("🔻", "수출 급감 (-30% YoY)", "약세", 75),
+    "DECLINE_20":       ("🔽", "수출 감소 (-20% YoY)", "약세", 62),
+    "REVERSAL_DOWN":    ("⚠️",  "수출 고점 반락",          "약세", 60),
+}
+
+
+def _compute_signals_from_series(monthly, scope_type, scope_key, scope_name):
+    if len(monthly) < 3:
+        return []
+    exports = [float(m.get("export_val") or m.get("export_value") or 0) for m in monthly]
+    imports = [float(m.get("import_val") or m.get("import_value") or 0) for m in monthly]
+    periods = [m.get("period_ym") or m.get("period") or "" for m in monthly]
+    latest_exp, latest_imp, latest_period = exports[-1], imports[-1], periods[-1]
+    max_exp = max(exports) if exports else 0
+    max_imp = max(imports) if imports else 0
+
+    yoy_exp = round(((latest_exp - exports[-13]) / exports[-13]) * 100, 1) if len(exports) >= 13 and exports[-13] > 0 else None
+    yoy_imp = round(((latest_imp - imports[-13]) / imports[-13]) * 100, 1) if len(imports) >= 13 and imports[-13] > 0 else None
+    mom_exp = round(((latest_exp - exports[-2]) / exports[-2]) * 100, 1) if len(exports) >= 2 and exports[-2] > 0 else None
+    mom_prev = round(((exports[-2] - exports[-3]) / exports[-3]) * 100, 1) if len(exports) >= 3 and exports[-3] > 0 else None
+
+    signals = []
+
+    def _add(sig_type, extra=None):
+        emoji, label, cat, score = _SIGNAL_LABELS[sig_type]
+        rec = {"signal_type": sig_type, "emoji": emoji, "label": label, "category": cat,
+               "score": score, "scope_type": scope_type, "scope_key": scope_key,
+               "scope_name": scope_name, "period": latest_period,
+               "export_value": round(latest_exp), "import_value": round(latest_imp),
+               "yoy_pct": yoy_exp, "mom_pct": mom_exp, "yoy_imp_pct": yoy_imp}
+        if extra:
+            rec.update(extra)
+        signals.append(rec)
+
+    if latest_exp > 0 and max_exp > 0:
+        if latest_exp >= max_exp * 0.999:
+            _add("ATH_EXPORT")
+        elif latest_exp >= max_exp * 0.95:
+            _add("NEAR_ATH_EXPORT")
+
+    if latest_imp > 0 and max_imp > 0 and latest_imp >= max_imp * 0.999:
+        _add("ATH_IMPORT")
+
+    if yoy_exp is not None:
+        if yoy_exp >= 50:     _add("SURGE_EXPORT_50")
+        elif yoy_exp >= 30:   _add("SURGE_EXPORT_30")
+        elif yoy_exp <= -30:  _add("DECLINE_30")
+        elif yoy_exp <= -20:  _add("DECLINE_20")
+
+    if yoy_imp is not None:
+        if yoy_imp >= 50:   _add("IMPORT_SURGE_50")
+        elif yoy_imp >= 30: _add("IMPORT_SURGE_30")
+
+    if len(exports) >= 7 and all(exports[-i-1] > exports[-i-2] for i in range(6)):
+        _add("CONSEC_GROWTH_6M")
+    elif len(exports) >= 4 and all(exports[-i-1] > exports[-i-2] for i in range(3)):
+        _add("CONSEC_GROWTH_3M")
+
+    if mom_exp is not None and mom_prev is not None and mom_exp > 0 and mom_prev > 0 and mom_exp > mom_prev * 1.5:
+        _add("ACCELERATION")
+
+    if len(exports) >= 4:
+        if exports[-1] > exports[-2] > exports[-3] and exports[-3] == min(exports[-min(14, len(exports)):]):
+            _add("REBOUND")
+        if exports[-1] < exports[-2] < exports[-3] and exports[-3] >= max(exports[-min(6, len(exports)):-3] or [0]) * 0.9 and exports[-3] > 0 and exports[-1] < exports[-3] * 0.85:
+            _add("REVERSAL_DOWN")
+
+    return signals
+
+
+@app.get("/api/analysis2/signals")
+def analysis2_signals(months: int = 36, scope: str = "all"):
+    """주식 투자자 수출입 시그널 보드. scope: all|sector|company"""
+    conn = _hs_db()
+    all_signals = []
+
+    if scope in ("all", "sector"):
+        rows = conn.execute(
+            "SELECT c.sector_key, c.sector_label, c.period_ym, c.export_value, c.import_value "
+            "FROM analysis2_sector_monthly_cache c "
+            "JOIN sector_preset sp ON sp.sector_key = c.sector_key "
+            "ORDER BY sp.sort_order, c.period_ym"
+        ).fetchall()
+        buckets = {}
+        for r in rows:
+            buckets.setdefault(r["sector_key"], {"label": r["sector_label"], "monthly": []})
+            buckets[r["sector_key"]]["monthly"].append(
+                {"period_ym": r["period_ym"], "export_val": r["export_value"] or 0, "import_val": r["import_value"] or 0}
+            )
+        for sk, data in buckets.items():
+            all_signals.extend(_compute_signals_from_series(data["monthly"][-months:], "sector", sk, data["label"]))
+
+    if scope in ("all", "company"):
+        rows = conn.execute(
+            "SELECT stock_code, stock_name, sector_key, period_ym, export_value, import_value "
+            "FROM analysis2_company_monthly_cache ORDER BY stock_code, sector_key, period_ym"
+        ).fetchall()
+        buckets = {}
+        for r in rows:
+            key = f"{r['stock_code']}|{r['sector_key']}"
+            buckets.setdefault(key, {"name": r["stock_name"], "code": r["stock_code"], "monthly": []})
+            buckets[key]["monthly"].append(
+                {"period_ym": r["period_ym"], "export_val": r["export_value"] or 0, "import_val": r["import_value"] or 0}
+            )
+        for key, data in buckets.items():
+            all_signals.extend(_compute_signals_from_series(data["monthly"][-months:], "company", data["code"], data["name"]))
+
+    conn.close()
+    deduped = sorted(all_signals, key=lambda s: s["score"], reverse=True)
+    return {"signals": deduped[:120], "total": len(deduped),
+            "generated_at": __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")}
