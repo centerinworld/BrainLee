@@ -334,7 +334,7 @@ class DARTCollector(BaseCollector):
 
         for kind in ["A", "B"]:
             try:
-                df = dart.list(today_str, today_str, kind=kind)
+                df = dart.list(corp_code='', start=today_str, end=today_str, kind=kind, final='')
                 if df is not None and not df.empty and "stock_code" in df.columns:
                     for code in df["stock_code"].dropna().unique():
                         codes.add(str(code).zfill(6))
@@ -362,7 +362,7 @@ class DARTCollector(BaseCollector):
 
         for kind in ["A", "B"]:
             try:
-                df = dart.list(week_ago, today_str, kind=kind)
+                df = dart.list(corp_code='', start=week_ago, end=today_str, kind=kind, final='')
                 if df is None or df.empty:
                     continue
                 if "stock_code" not in df.columns or "report_nm" not in df.columns:

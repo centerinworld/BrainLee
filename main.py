@@ -1515,8 +1515,8 @@ def get_disclosures(stock_code: str):
         start_str = start_dt.strftime("%Y%m%d")
         end_str   = end_dt.strftime("%Y%m%d")
 
-        # final=False → 정정 포함 전체 공시 조회
-        df = dart.list(stock_code, start=start_str, end=end_str, final=False)
+        # final='' → 정정 포함 전체 공시 조회 (final='T'이면 최종보고서만)
+        df = dart.list(corp_code=stock_code, start=start_str, end=end_str, final='')
 
         if df is None or df.empty:
             _disclosure_cache[stock_code] = {"items": [], "cached_at": _tm.time()}

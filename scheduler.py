@@ -264,7 +264,7 @@ class CollectionScheduler:
             dart      = collector.dart
             if dart:
                 for kind in ["A", "B"]:
-                    df = dart.list(today_str, today_str, kind=kind)
+                    df = dart.list(corp_code='', start=today_str, end=today_str, kind=kind, final='')
                     if df is not None and not df.empty and "stock_code" in df.columns:
                         for c in df["stock_code"].dropna().unique():
                             today_codes.add(str(c).zfill(6))
