@@ -6,7 +6,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "employment.db"
+DB_PATH       = Path(__file__).parent / "employment.db"
 STOCK_DB_PATH = Path(__file__).parent.parent / "stock.db"
 
 
@@ -18,58 +18,86 @@ def connect() -> sqlite3.Connection:
 
 
 def _ensure_tables(conn: sqlite3.Connection) -> None:
-    conn.executescript("""
+    # ── 업종별 월별 현황 (data.go.kr 집계) ────────────────────────
+    conn.execute("""
     CREATE TABLE IF NOT EXISTS employment_monthly (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        ym          TEXT NOT NULL,          -- '2024-03' 형식
-        sj_gy_fg    TEXT NOT NULL,          -- '1'=산재, '3'=고용
-        agri_fore_fis        REAL,  -- 농업,임업및어업
-        agri_hunt_fore       REAL,  -- 농업·수렵업및임업
-        ahou_gyhwaldong      REAL,  -- 가구내고용활동
-        art_sport_yeoga      REAL,  -- 예술,스포츠및여가
-        bogun_shoe_bokji     REAL,  -- 보건및사회복지사업
-        budongsanImdae       REAL,  -- 부동산임대및임대업
-        budongsanImdaeSaeop  REAL,  -- 부동산임대및사업서비스업
-        edu_service          REAL,  -- 교육서비스업
-        fis                  REAL,  -- 어업
-        fnn_boheom           REAL,  -- 금융및보험업
-        geonseoleop          REAL,  -- 건설업
-        inte_foreign_gigwan  REAL,  -- 국제및외국기관
-        jejoeop              REAL,  -- 제조업
-        jeongi_gas_step      REAL,  -- 전기,가스,증기및수도사업
-        jeongi_gas_tw        REAL,  -- 전기가스및상수도사업
-        jeonmun_sci          REAL,  -- 전문,과학및기술서비스업
-        minind               REAL,  -- 광업
-        publ_aim_brd         REAL,  -- 출판,영상,방송통신및정보서비스업
-        pub_hjng_shoe        REAL,  -- 공공행정,국방및사회보장행정
-        saeop_siseol_jiwon   REAL,  -- 사업시설관리및사업지원서비스업
-        sew_smat_rmatrev     REAL,  -- 하수,폐기물처리,원료재생및환경복원업
-        sukbak_aeh           REAL,  -- 숙박및음식점업
-        unsu                 REAL,  -- 운수업
-        unsu_changgo_tongsin REAL,  -- 운수,창고및통신업
-        whol_ret             REAL,  -- 도매및소매업
-        whol_ret_cons        REAL,  -- 도소매및소비자용품수리업
-        total                REAL,  -- 전체 합계 (사업장 또는 근로자 수)
-        saeopjang_wk_fg      TEXT,  -- '사업장' 또는 '근로자'
+        ym          TEXT NOT NULL,
+        sj_gy_fg    TEXT NOT NULL,
+        agri_fore_fis        REAL,
+        agri_hunt_fore       REAL,
+        ahou_gyhwaldong      REAL,
+        art_sport_yeoga      REAL,
+        bogun_shoe_bokji     REAL,
+        budongsanImdae       REAL,
+        budongsanImdaeSaeop  REAL,
+        edu_service          REAL,
+        fis                  REAL,
+        fnn_boheom           REAL,
+        geonseoleop          REAL,
+        inte_foreign_gigwan  REAL,
+        jejoeop              REAL,
+        jeongi_gas_step      REAL,
+        jeongi_gas_tw        REAL,
+        jeonmun_sci          REAL,
+        minind               REAL,
+        publ_aim_brd         REAL,
+        pub_hjng_shoe        REAL,
+        saeop_siseol_jiwon   REAL,
+        sew_smat_rmatrev     REAL,
+        sukbak_aeh           REAL,
+        unsu                 REAL,
+        unsu_changgo_tongsin REAL,
+        whol_ret             REAL,
+        whol_ret_cons        REAL,
+        total                REAL,
+        saeopjang_wk_fg      TEXT,
         raw_json             TEXT,
         fetched_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(ym, sj_gy_fg, saeopjang_wk_fg)
-    );
+    )
+    """)
 
-    CREATE TABLE IF NOT EXISTS employment_company (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        ym           TEXT NOT NULL,
-        stock_code   TEXT NOT NULL,
-        stock_name   TEXT NOT NULL,
-        sector_label TEXT,
-        worker_count INTEGER,
-        yoy_change   REAL,
-        mom_change   REAL,
-        fetched_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(ym, stock_code)
-    );
+    # ── DART corp_code 매핑 캐시 ───────────────────────────────────
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS dart_corp_map (
+        stock_code  TEXT PRIMARY KEY,
+        corp_code   TEXT NOT NULL,
+        corp_name   TEXT,
+        mapped_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
 
-    CREATE INDEX IF NOT EXISTS ix_emp_monthly_ym ON employment_monthly(ym, sj_gy_fg);
-    CREATE INDEX IF NOT EXISTS ix_emp_company_code ON employment_company(stock_code, ym);
+    # ── 상장기업 임직원 월별 현황 ──────────────────────────────────
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS employment_company_monthly (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        stock_code      TEXT NOT NULL,
+        stock_name      TEXT NOT NULL,
+        ym              TEXT NOT NULL,          -- '2024-12'
+        employee_count  INTEGER,                -- 임직원 합계
+        regular_count   INTEGER,                -- 정규직
+        contract_count  INTEGER,                -- 계약직+기타
+        is_actual       INTEGER DEFAULT 1,      -- 1=실제(DART), 0=보간
+        source          TEXT DEFAULT 'dart',
+        company_size    TEXT,                   -- '대기업','중견기업','중소기업'
+        mktcap          REAL,                   -- 시가총액(원)
+        sector_large    TEXT,
+        fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(stock_code, ym)
+    )
+    """)
+
+    conn.execute("""
+    CREATE INDEX IF NOT EXISTS ix_emp_monthly_ym
+        ON employment_monthly(ym, sj_gy_fg)
+    """)
+    conn.execute("""
+    CREATE INDEX IF NOT EXISTS ix_emp_company_code
+        ON employment_company_monthly(stock_code, ym)
+    """)
+    conn.execute("""
+    CREATE INDEX IF NOT EXISTS ix_emp_company_size
+        ON employment_company_monthly(company_size, ym)
     """)
     conn.commit()

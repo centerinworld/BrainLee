@@ -512,10 +512,11 @@ def get_index_investor(days: int = Query(default=20, ge=1, le=250)):
 # ── GET /api/market-indicators/available-dates ─────────────────
 @router.get("/available-dates")
 def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
-    """회전율/수급 데이터가 있는 최근 영업일 목록.
-    주말(토/일)은 제외하며, 1종목 이상 수급 데이터가 있는 날짜 포함."""
+    """최근 영업일 목록 (주말 제외, 가격 데이터 20종목 이상인 날).
+    수급 데이터 없는 날도 포함하여 당일처럼 수급 미수집일이 누락되는 문제 해결."""
     conn = _db()
     try:
+        # 가격 데이터 기준 (수급 여부 불문) — 20종목 이상이면 영업일로 간주
         rows = conn.execute(
             """SELECT substr(date,1,10) AS d, count(*) AS cnt
                FROM price_history
@@ -526,29 +527,16 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
                  AND stock_code NOT LIKE 'NQ%'
                  AND stock_code NOT LIKE '%-F'
                  AND stock_code NOT LIKE '%=%'
-                 AND (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0
-                      OR inst_net_buy != 0 OR frn_net_buy != 0)
+                 AND close > 0
                  AND strftime('%w', date) NOT IN ('0', '6')
                GROUP BY d
-               HAVING cnt >= 1
+               HAVING cnt >= 20
                ORDER BY d DESC LIMIT ?""",
             (limit,),
         ).fetchall()
-        # 데이터 없는 경우 fallback (주말은 여전히 제외)
-        if not rows:
-            rows = conn.execute(
-                """SELECT DISTINCT substr(date,1,10) AS d
-                   FROM price_history
-                   WHERE stock_code NOT LIKE '%^%'
-                     AND (COALESCE(inst_net_buy_amt,0) != 0 OR COALESCE(frn_net_buy_amt,0) != 0
-                          OR COALESCE(inst_net_buy,0) != 0 OR COALESCE(frn_net_buy,0) != 0)
-                     AND strftime('%w', date) NOT IN ('0', '6')
-                   ORDER BY d DESC LIMIT ?""",
-                (limit,),
-            ).fetchall()
-        
+
         all_dates = [r[0] for r in rows]
-        logger.info(f"Available dates found: {all_dates}")
+        logger.info(f"Available dates found: {len(all_dates)} dates, latest: {all_dates[:3] if all_dates else []}")
         return all_dates
     finally:
         conn.close()

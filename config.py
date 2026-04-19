@@ -73,6 +73,9 @@ KMYDATA_BASE = os.getenv("KMYDATA_BASE",  "https://oap.k-mydata.org")
 PUBLIC_DATA_API_KEY = os.getenv("PUBLIC_DATA_API_KEY", "")
 PUBLIC_DATA_BASE    = os.getenv("PUBLIC_DATA_BASE", "https://apis.data.go.kr/1160100/service")
 
+# ── 근로복지공단 고용/산재보험 ─────────────────────────────────────
+EMPLOYMENT_API_KEY  = os.getenv("EMPLOYMENT_API_KEY", "")
+
 # ── Telegram ──────────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "")
