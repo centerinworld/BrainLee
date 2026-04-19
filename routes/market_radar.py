@@ -19,7 +19,8 @@ DB_PATH = Path(__file__).parent.parent / "stock.db"
 
 
 def _db():
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -429,6 +430,37 @@ def _fetch_korean_prices_bulk(stock_codes: list[str]) -> dict[str, dict]:
     return _fetch_prices_from_db(stock_codes)
 
 
+def _fetch_overseas_fundamentals(symbols: list[str]) -> dict[str, dict]:
+    """overseas_fundamentals 테이블에서 PER/PBR/시총 조회."""
+    if not symbols:
+        return {}
+    conn = _db()
+    try:
+        # 테이블 없으면 빈 결과
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='overseas_fundamentals'"
+        ).fetchone()
+        if not has_table:
+            return {}
+        ph = ",".join("?" * len(symbols))
+        rows = conn.execute(
+            f"SELECT symbol, market_cap, per, pbr, eps, currency FROM overseas_fundamentals WHERE symbol IN ({ph})",
+            symbols,
+        ).fetchall()
+        return {
+            r["symbol"]: {
+                "market_cap": r["market_cap"],
+                "per":        r["per"],
+                "pbr":        r["pbr"],
+                "eps":        r["eps"],
+                "currency":   r["currency"],
+            }
+            for r in rows
+        }
+    finally:
+        conn.close()
+
+
 def _get_korean_top(sector_keys: list[str], limit: int = 8) -> list[dict]:
     """stock_universe + price_history에서 섹터 상위 종목 당일 등락률 조회."""
     if not sector_keys:
@@ -559,27 +591,33 @@ def get_sector_detail(sector_key: str):
         if s.get("country", "KR") == "KR"
     })
 
-    # 가격 일괄 조회
+    # 가격 + 펀더멘털 일괄 조회
     overseas_prices = _fetch_overseas_prices(all_overseas)
     korean_prices   = _fetch_korean_prices_bulk(all_korean)
+    overseas_funda  = _fetch_overseas_fundamentals(all_overseas)
 
     def _get_price(sym: str, country: str) -> dict:
         if country == "KR":
             p = korean_prices.get(sym, {})
-            return {
-                "price":    p.get("price"),
-                "chg_1d":   p.get("chg_1d", 0.0),
-                "chg_1w":   p.get("chg_1w"),
-                "has_data": bool(p),
-            }
         else:
             p = overseas_prices.get(sym, {})
+            f = overseas_funda.get(sym, {})
             return {
-                "price":    p.get("price"),
-                "chg_1d":   p.get("chg_1d", 0.0),
-                "chg_1w":   p.get("chg_1w"),
-                "has_data": bool(p),
+                "price":      p.get("price"),
+                "chg_1d":     p.get("chg_1d", 0.0),
+                "chg_1w":     p.get("chg_1w"),
+                "has_data":   bool(p),
+                "market_cap": f.get("market_cap"),
+                "per":        f.get("per"),
+                "pbr":        f.get("pbr"),
+                "currency":   f.get("currency", "USD"),
             }
+        return {
+            "price":    p.get("price"),
+            "chg_1d":   p.get("chg_1d", 0.0),
+            "chg_1w":   p.get("chg_1w"),
+            "has_data": bool(p),
+        }
 
     # 서브섹터별 조립
     result_subsectors = []
@@ -656,3 +694,39 @@ def get_all_radar():
     data = {"sectors": result, "fetched_at": time.strftime("%Y-%m-%d %H:%M:%S")}
     _radar_cache[cache_key] = {"data": data, "at": time.time()}
     return data
+
+
+# ── POST /api/market-radar/collect (수동 수집 트리거) ────────────
+@router.post("/collect")
+def trigger_overseas_collect():
+    """해외 주식 시세 즉시 수집 (백그라운드). yfinance 필요."""
+    import threading
+    def _collect():
+        try:
+            from collect_overseas import run_all
+            run_all()
+            # 캐시 무효화
+            _radar_cache.clear()
+        except Exception as e:
+            logger.error(f"[Radar] 수동 수집 오류: {e}")
+    threading.Thread(target=_collect, daemon=True, name="OverseasCollect").start()
+    return {"status": "started", "message": "해외 주식 수집 시작 (백그라운드, 약 30~60초)"}
+
+
+# ── GET /api/market-radar/fundamentals (해외 펀더멘털 조회) ──────
+@router.get("/fundamentals")
+def get_overseas_fundamentals():
+    """overseas_fundamentals 테이블 전체 조회."""
+    conn = _db()
+    try:
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='overseas_fundamentals'"
+        ).fetchone()
+        if not has_table:
+            return {"data": [], "message": "펀더멘털 데이터 없음 — /api/market-radar/collect 실행 필요"}
+        rows = conn.execute(
+            "SELECT * FROM overseas_fundamentals ORDER BY symbol"
+        ).fetchall()
+        return {"data": [dict(r) for r in rows]}
+    finally:
+        conn.close()

@@ -97,6 +97,7 @@
 | `signal_config` | 26 | scope, name, label, logic_type, params, is_active | 시그널 설정 |
 | `signal_result` | 936 | config_id, stock_code, signal(green/yellow/red), score | 시그널 결과 |
 | `stock_meta` | 1097 | stock_code, float_shares, shares_outstanding | 유동주식수 |
+| `overseas_fundamentals` | ~35 | symbol, name, sector, market_cap, per, pbr, eps, dividend_yield, currency, updated_at | 해외 주요종목 펀더멘털 ★신규(collect_overseas.py 매일 06시) |
 | `short_sell_daily` | 7만 | bas_dt, stock_code, short_qty, borrow_bal_qty, borrow_bal_pct | 대차잔고/공매도 |
 | `buy_candidates` | 28 | stock_code, target_price, memo | 매수 후보 |
 | `watchlist` | 61 | stock_code | 관심종목 |
@@ -254,12 +255,17 @@ POST /company/collect    # DART 임직원 수집 (mode=watchlist|all)
 
 ### routes/market_radar.py → /api/market-radar ★신규(2026-04-19)
 ```
-GET  /sectors            # 섹터 목록 (key, name, emoji)
-GET  /sector/{key}       # 섹터별 해외선행지표 + 국내종목 + 시그널 (캐시 5분)
-GET  /all                # 전체 섹터 시그널 요약
+GET  /sectors                   # 섹터 목록 (key, name, emoji)
+GET  /sector/{key}              # LEVEL1: 섹터 해외선행지표 + 국내 시총상위 + 시그널 (캐시 5분)
+GET  /sector/{key}/detail       # LEVEL2: 서브섹터별 세부 종목 테이블 + 시그널 (캐시 5분)
+GET  /all                       # 전체 섹터 시그널 요약
+GET  /fundamentals              # overseas_fundamentals 테이블 전체 (PER/PBR/시총)
+POST /collect                   # 해외 주식 수집 즉시 트리거 (백그라운드)
 ```
 섹터: semiconductor, battery, power_infra, pharma, defense, shipbuilding, energy
-시그널 기준: 해외 종목 1D 평균 ≥+1.5%→green, ≤-1.5%→red, ±0.3%→yellow, 그 외→neutral
+시그널 기준: 1D 평균 ≥+1.5%→green, ≤-1.5%→red, ±0.3%→yellow, 그 외→neutral
+가격 소스: price_history(DB) 우선 → yfinance 보완 (collect_overseas.py 매시간 수집)
+펀더멘털: overseas_fundamentals 테이블 (PER/PBR/시총) — collect_overseas.py 06~07시 수집
 
 ### routes/reports.py → /api/reports
 ```
@@ -496,4 +502,6 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
 | 2026-04-19 | `employment_monitor/` 신규 모듈 (db.py/collect.py/api.py/main.py): 고용/산재보험 업종별 현황 수집 (data.go.kr XML-only API). collect_dart.py 신규(DART 임직원 연간→월별보간). GET /api/employment/*. App.jsx EmploymentMonitor 탭 추가. EMPLOYMENT_API_KEY .env로 분리. available-dates 수급 필터 제거→가격 데이터 기준으로 변경(4.17 누락 해결). `routes/market_radar.py` 신규 (7섹터 해외선행지표+국내종목+시그널, GET /api/market-radar/*). App.jsx MarketRadarView 탭 추가. |
+| 2026-04-19 | SQLite DB 락 근본 해결: main.py 서버 시작 시 WAL 모드+busy_timeout=30초+NORMAL sync 활성화. 전체 routes/_db() 함수 timeout=30+PRAGMA busy_timeout=30000 추가 (signals/trend/telegram/reports/buy_candidates/market_indicators/market_radar). |
+| 2026-04-19 | 해외 주식 수집 체계 신규: `collect_overseas.py` (32종목 OHLCV→price_history, PER/PBR/시총→overseas_fundamentals, yfinance 사용). scheduler.py `_loop_overseas_prices` 추가 (1시간 간격, 펀더멘털은 06~07시만). `market_radar.py` LEVEL2에 PER/PBR/시총 컬럼 추가. POST /api/market-radar/collect + GET /api/market-radar/fundamentals 신규. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

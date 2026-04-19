@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS buy_candidates (
 
 
 def _db():
-    conn = _sl.connect(DB_PATH)
+    conn = _sl.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.row_factory = _sl.Row
     return conn
 

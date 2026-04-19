@@ -845,6 +845,21 @@ def _process_ai_combo_autotrade(combo_stocks: list):
 async def startup_event():
     from notifier import load_history as _notifier_load
     _notifier_load()
+
+    # WAL 모드 활성화 — 동시 읽기/쓰기 락 해소 (SQLite 기본값은 DELETE 저널 = 쓰기 중 읽기 차단)
+    import sqlite3 as _sqlite3
+    try:
+        _wal_conn = _sqlite3.connect("stock.db", timeout=30)
+        _wal_conn.execute("PRAGMA journal_mode=WAL")
+        _wal_conn.execute("PRAGMA busy_timeout=30000")   # 30초 대기 후 오류
+        _wal_conn.execute("PRAGMA synchronous=NORMAL")   # WAL에서 안전한 성능 설정
+        _wal_conn.execute("PRAGMA cache_size=-32000")    # 32MB 페이지 캐시
+        _wal_conn.commit()
+        _wal_conn.close()
+        logger.info("[DB] WAL 모드 활성화 완료")
+    except Exception as e:
+        logger.warning(f"[DB] WAL 모드 설정 실패: {e}")
+
     _scheduler.start()
 
     # 서버 시작 직후 시그널 캐시 즉시 워밍업 (프론트 첫 로딩 시 10초 대기 방지)

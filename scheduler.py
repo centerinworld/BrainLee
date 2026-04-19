@@ -98,6 +98,7 @@ class CollectionScheduler:
             ("전종목수급수집",  self._loop_supply_daily), # ★ KIS 전종목 30일 수급
             ("네이버밸류에이션", self._loop_naver_fundamentals),  # ★ 네이버 PBR/PER/EPS
             ("현금흐름배치",    self._loop_cashflow_batch),       # ★ DART 현금흐름표 월간
+            ("해외주가수집",    self._loop_overseas_prices),      # ★ yfinance 해외주식 1시간
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -710,3 +711,22 @@ class CollectionScheduler:
                 logger.error(f"[네이버밸류에이션] 오류: {result.stderr[-200:]}")
         except Exception as e:
             logger.error(f"[네이버밸류에이션] 잡 오류: {e}")
+
+    def _loop_overseas_prices(self) -> None:
+        """매 1시간 — yfinance 해외 주요 종목 OHLCV + 펀더멘털 수집."""
+        self._wait_secs(45)  # 서버 기동 후 45초 대기
+        while not self._stop_event.is_set():
+            _run_job_safe("해외주가", self._job_overseas_prices)
+            self._wait_secs(3600)  # 1시간 간격
+
+    def _job_overseas_prices(self) -> None:
+        """yfinance로 해외 주요 종목 시세 수집."""
+        try:
+            from collect_overseas import collect_prices, collect_fundamentals
+            collect_prices(days_back=5)
+            # 펀더멘털(PER/PBR/시총)은 하루 1회만 수집 (6시~7시 사이)
+            from datetime import datetime as _dt
+            if 6 <= _dt.now().hour < 7:
+                collect_fundamentals()
+        except Exception as e:
+            logger.error(f"[해외주가] 잡 오류: {e}")

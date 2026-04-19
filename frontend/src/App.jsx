@@ -8286,35 +8286,61 @@ const App = () => {
       );
     };
 
-    // 공통 종목 테이블 렌더
-    const StockTable = ({ stocks }) => (
-      <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:isMobile?'0.75rem':'0.82rem',minWidth: isMobile ? '420px' : '100%'}}>
-          <thead>
-            <tr style={{borderBottom:'1px solid var(--glass-border)'}}>
-              {['국가','심볼','종목명','현재가','전일','주간'].map(h=>(
-                <th key={h} style={{padding:'0.35rem 0.45rem',textAlign:['국가','심볼','종목명'].includes(h)?'left':'right',
-                  color:'var(--text-secondary)',fontWeight:600,whiteSpace:'nowrap'}}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {stocks.map((s,i)=>(
-              <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
-                <td style={{padding:'0.3rem 0.45rem'}}>{FLAG[s.country]||s.country}</td>
-                <td style={{padding:'0.3rem 0.45rem',fontWeight:700,color:'var(--accent-mint)',whiteSpace:'nowrap'}}>{s.symbol}</td>
-                <td style={{padding:'0.3rem 0.45rem'}}>
-                  <NameCell name={s.name} desc={s.desc} country={s.country} symbol={s.symbol} />
-                </td>
-                <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap'}}>{fmtPrice(s.price, s.country)}</td>
-                <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap'}}>{fmtChg(s.chg_1d)}</td>
-                <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap'}}>{fmtChg(s.chg_1w)}</td>
+    const fmtNum = (v, decimals=1) => v == null ? <span style={{color:'#4b5563'}}>-</span> : v.toFixed(decimals);
+    const fmtMktcapUSD = (v) => {
+      if (!v) return <span style={{color:'#4b5563'}}>-</span>;
+      if (v >= 1e12) return `$${(v/1e12).toFixed(2)}T`;
+      if (v >= 1e9)  return `$${(v/1e9).toFixed(1)}B`;
+      return `$${(v/1e6).toFixed(0)}M`;
+    };
+
+    // 공통 종목 테이블 렌더 (LEVEL 2용 — 해외: 시총/PER/PBR 추가)
+    const StockTable = ({ stocks }) => {
+      const hasOverseas = stocks.some(s => s.country !== 'KR');
+      const headers = hasOverseas
+        ? ['국가','심볼','종목명','현재가','전일','주간','시총','PER','PBR']
+        : ['국가','심볼','종목명','현재가','전일','주간'];
+      const leftCols = new Set(['국가','심볼','종목명']);
+      return (
+        <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:isMobile?'0.73rem':'0.82rem',minWidth: isMobile ? '480px' : '100%'}}>
+            <thead>
+              <tr style={{borderBottom:'1px solid var(--glass-border)'}}>
+                {headers.map(h=>(
+                  <th key={h} style={{padding:'0.35rem 0.45rem',textAlign:leftCols.has(h)?'left':'right',
+                    color:'var(--text-secondary)',fontWeight:600,whiteSpace:'nowrap'}}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
+            </thead>
+            <tbody>
+              {stocks.map((s,i)=>(
+                <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                  <td style={{padding:'0.3rem 0.45rem'}}>{FLAG[s.country]||s.country}</td>
+                  <td style={{padding:'0.3rem 0.45rem',fontWeight:700,color:'var(--accent-mint)',whiteSpace:'nowrap'}}>{s.symbol}</td>
+                  <td style={{padding:'0.3rem 0.45rem'}}>
+                    <NameCell name={s.name} desc={s.desc} country={s.country} symbol={s.symbol} />
+                  </td>
+                  <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap'}}>{fmtPrice(s.price, s.country)}</td>
+                  <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap'}}>{fmtChg(s.chg_1d)}</td>
+                  <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap'}}>{fmtChg(s.chg_1w)}</td>
+                  {hasOverseas && <>
+                    <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap',fontSize:'0.75rem'}}>
+                      {s.country !== 'KR' ? fmtMktcapUSD(s.market_cap) : '-'}
+                    </td>
+                    <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap',fontSize:'0.75rem'}}>
+                      {s.country !== 'KR' && s.per ? fmtNum(s.per) : '-'}
+                    </td>
+                    <td style={{padding:'0.3rem 0.45rem',textAlign:'right',whiteSpace:'nowrap',fontSize:'0.75rem'}}>
+                      {s.country !== 'KR' && s.pbr ? fmtNum(s.pbr) : '-'}
+                    </td>
+                  </>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    };
 
     // 시그널 배지 헤더
     const SignalHeader = ({ data, labelKey, avgKey }) => {

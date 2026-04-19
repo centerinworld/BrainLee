@@ -19,7 +19,9 @@ DB_PATH = "/Applications/stock_dashboard/stock.db"
 
 
 def _db():
-    return _sl.connect(DB_PATH)
+    conn = _sl.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA busy_timeout=30000")
+    return conn
 
 
 @router.get("/stock/{stock_code}")
