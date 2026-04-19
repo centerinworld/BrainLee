@@ -245,6 +245,12 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[월간업데이트] {e}")
 
+        try:
+            from employment_monitor.collect import collect_all
+            collect_all(months_back=3)
+        except Exception as e:
+            logger.warning(f"[고용보험] 월간 수집 오류: {e}")
+
     def _job_disclosure_check(self) -> None:
         """DART 공시 → 재무 공시 있는 종목만 재무 재수집."""
         import sqlite3 as _sl
