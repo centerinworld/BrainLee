@@ -535,8 +535,16 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
             (limit,),
         ).fetchall()
 
-        all_dates = [r[0] for r in rows]
-        logger.info(f"Available dates found: {len(all_dates)} dates, latest: {all_dates[:3] if all_dates else []}")
+        from datetime import datetime, timezone, timedelta
+        KST = timezone(timedelta(hours=9))
+        now_kst = datetime.now(KST)
+        # 16시 이전이면 오늘 날짜 제외 (장 마감 전 수급 데이터 미확정)
+        if now_kst.hour < 16:
+            today_str = now_kst.strftime("%Y-%m-%d")
+            all_dates = [r[0] for r in rows if r[0] < today_str]
+        else:
+            all_dates = [r[0] for r in rows]
+        logger.info(f"Available dates: {len(all_dates)}, latest: {all_dates[:3] if all_dates else []}")
         return all_dates
     finally:
         conn.close()

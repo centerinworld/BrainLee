@@ -8928,7 +8928,7 @@ const App = () => {
           </form>
         </header>
 
-        <div style={{flex:1,padding:isMobile?'1rem 0.75rem':'1.5rem',overflowY:'auto'}}>
+        <div style={{flex:1,minHeight:0,padding:isMobile?'1rem 0.75rem':'1.5rem',overflowY:'auto',WebkitOverflowScrolling:'touch'}}>
           {/* [버그 ② 수정] screener / insight 탭 렌더링 연결 */}
           {activeTab === 'macro'             && <MacroDashboard />}
           <div style={{display: activeTab === 'market_indicators' ? 'block' : 'none'}}><MarketIndicatorsView onChangeStock={changeStock} onChangeTab={changeTab} /></div>
