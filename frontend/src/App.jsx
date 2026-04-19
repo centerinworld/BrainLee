@@ -7,7 +7,7 @@ import {
   TrendingUp, Search, Cpu, Activity,
   LayoutDashboard, Database, Globe, BarChart3,
   Star, StarOff, Trash2, Plus, Eye, FileText, Target,
-  Newspaper, Send, FlaskConical, Ship, Wallet, Settings, Server, Users
+  Newspaper, Send, FlaskConical, Ship, Wallet, Settings, Server, Users, Radio
 } from 'lucide-react';
 
 // ──────────────────────────────────────────────────────────────
@@ -978,6 +978,7 @@ const App = () => {
     hs_trade:       "수출입분석",
     hs_trade2:      "수출입분석",
     employment:     "고용보험 모니터",
+    market_radar:   "시장 Radar — 섹터 선행지표",
   };
 
   // ── 매수후보 시그널 보드 ────────────────────────────────────────
@@ -8179,6 +8180,185 @@ const App = () => {
     );
   };
 
+  // ── 시장 Radar ───────────────────────────────────────────────
+  const MarketRadarView = () => {
+    const SECTOR_KEYS = [
+      { key: 'semiconductor', name: '반도체',     emoji: '💾' },
+      { key: 'battery',       name: '2차전지',    emoji: '🔋' },
+      { key: 'power_infra',   name: '전력인프라',  emoji: '⚡' },
+      { key: 'pharma',        name: '제약/바이오', emoji: '💊' },
+      { key: 'defense',       name: 'K방산/우주',  emoji: '🚀' },
+      { key: 'shipbuilding',  name: '조선/해운',   emoji: '🚢' },
+      { key: 'energy',        name: '에너지/소재', emoji: '⛽' },
+    ];
+    const SIGNAL_STYLE = {
+      green:       { color: '#22c55e', label: '🟢 매수 우호',  bg: 'rgba(34,197,94,0.12)' },
+      yellow_up:   { color: '#fbbf24', label: '🟡 약 상승',    bg: 'rgba(251,191,36,0.12)' },
+      neutral:     { color: '#94a3b8', label: '⚪ 중립',        bg: 'rgba(148,163,184,0.12)' },
+      yellow_down: { color: '#f97316', label: '🟡 약 하락',    bg: 'rgba(249,115,22,0.12)' },
+      red:         { color: '#ef4444', label: '🔴 하락 경계',  bg: 'rgba(239,68,68,0.12)' },
+    };
+    const COUNTRY_FLAG = { US: '🇺🇸', JP: '🇯🇵', TW: '🇹🇼', CN: '🇨🇳' };
+
+    const [activeSector, setActiveSector] = React.useState('semiconductor');
+    const [sectorData, setSectorData]     = React.useState(null);
+    const [allSignals, setAllSignals]     = React.useState({});
+    const [loading, setLoading]           = React.useState(false);
+
+    React.useEffect(() => {
+      fetch(API('/api/market-radar/all'))
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.sectors) {
+            const map = {};
+            data.sectors.forEach(s => { map[s.key] = s; });
+            setAllSignals(map);
+          }
+        });
+    }, []);
+
+    React.useEffect(() => {
+      setLoading(true);
+      setSectorData(null);
+      fetch(API(`/api/market-radar/sector/${activeSector}`))
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { setSectorData(data); setLoading(false); })
+        .catch(() => setLoading(false));
+    }, [activeSector]);
+
+    const fmtChg = (v) => {
+      if (v == null) return <span style={{color:'var(--text-secondary)'}}>-</span>;
+      const sign = v > 0 ? '+' : '';
+      return <span style={{color: v > 0 ? '#f87171' : v < 0 ? '#60a5fa' : '#94a3b8', fontWeight:600}}>{sign}{v.toFixed(2)}%</span>;
+    };
+    const fmtMktcap = (v) => {
+      if (!v) return '-';
+      if (v >= 1e12) return `${(v/1e12).toFixed(1)}조`;
+      if (v >= 1e8)  return `${Math.round(v/1e8)}억`;
+      return `${Math.round(v/1e6)}백만`;
+    };
+
+    const signal = sectorData ? (SIGNAL_STYLE[sectorData.signal] || SIGNAL_STYLE.neutral) : null;
+
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
+        {/* 섹터 탭 */}
+        <div style={{display:'flex',flexWrap:'wrap',gap:'0.4rem'}}>
+          {SECTOR_KEYS.map(s => {
+            const sig = allSignals[s.key];
+            const sc  = sig ? (SIGNAL_STYLE[sig.signal] || SIGNAL_STYLE.neutral).color : 'transparent';
+            return (
+              <button key={s.key} onClick={() => setActiveSector(s.key)} style={{
+                padding:'0.4rem 0.85rem', borderRadius:'8px', border:'none', cursor:'pointer',
+                fontSize:'0.82rem', fontWeight:600,
+                background: activeSector === s.key ? 'var(--accent-mint)' : 'var(--glass-bg)',
+                color: activeSector === s.key ? '#000' : 'var(--text-primary)',
+                display:'flex', alignItems:'center', gap:'0.4rem',
+              }}>
+                <span>{s.emoji}</span><span>{s.name}</span>
+                <span style={{width:'7px',height:'7px',borderRadius:'50%',background:sc,display:'inline-block'}} />
+              </button>
+            );
+          })}
+        </div>
+
+        {loading && <p style={{color:'var(--text-secondary)',padding:'1rem'}}>데이터 로딩 중… (yfinance 약 5~15초 소요)</p>}
+
+        {sectorData && !loading && (
+          <>
+            {/* 시그널 배지 */}
+            <div className="glass-panel" style={{padding:'1rem',display:'flex',alignItems:'center',gap:'1.5rem',flexWrap:'wrap'}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:'1.1rem',fontWeight:800}}>{sectorData.emoji} {sectorData.sector_name}</div>
+                <div style={{fontSize:'0.78rem',color:'var(--text-secondary)',marginTop:'0.25rem'}}>
+                  해외 선행지표 기반 섹터 시그널 · 5분 캐시
+                </div>
+              </div>
+              <div style={{
+                padding:'0.5rem 1.2rem', borderRadius:'10px',
+                background: signal.bg, border:`1px solid ${signal.color}`,
+                fontSize:'0.95rem', fontWeight:700, color: signal.color,
+              }}>{signal.label}</div>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>해외 평균 1D</div>
+                <div style={{fontSize:'1.1rem',fontWeight:700}}>{fmtChg(sectorData.overseas_avg_1d)}</div>
+              </div>
+            </div>
+
+            {/* 해외 선행 종목 */}
+            <div className="glass-panel" style={{padding:'1rem'}}>
+              <h3 style={{margin:'0 0 0.8rem',fontSize:'0.9rem',fontWeight:700}}>
+                🌐 해외 선행지표 종목
+              </h3>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.82rem'}}>
+                  <thead>
+                    <tr style={{borderBottom:'1px solid var(--glass-border)'}}>
+                      {['국가','심볼','종목명','현재가','전일(1D)','주간(1W)'].map(h=>(
+                        <th key={h} style={{padding:'0.4rem 0.5rem',textAlign:['국가','심볼','종목명'].includes(h)?'left':'right',
+                          color:'var(--text-secondary)',fontWeight:600}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sectorData.overseas.map((s,i)=>(
+                      <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                        <td style={{padding:'0.32rem 0.5rem'}}>{COUNTRY_FLAG[s.country]||s.country}</td>
+                        <td style={{padding:'0.32rem 0.5rem',fontWeight:700,color:'var(--accent-mint)'}}>{s.symbol}</td>
+                        <td style={{padding:'0.32rem 0.5rem',color:'var(--text-secondary)'}}>{s.name}</td>
+                        <td style={{padding:'0.32rem 0.5rem',textAlign:'right'}}>
+                          {s.price!=null ? `$${s.price.toLocaleString()}` : <span style={{color:'var(--text-secondary)'}}>-</span>}
+                        </td>
+                        <td style={{padding:'0.32rem 0.5rem',textAlign:'right'}}>{fmtChg(s.chg_1d)}</td>
+                        <td style={{padding:'0.32rem 0.5rem',textAlign:'right'}}>{fmtChg(s.chg_1w)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 국내 섹터 종목 */}
+            <div className="glass-panel" style={{padding:'1rem'}}>
+              <h3 style={{margin:'0 0 0.8rem',fontSize:'0.9rem',fontWeight:700}}>
+                🇰🇷 국내 섹터 종목 (시총 상위)
+              </h3>
+              {sectorData.korean.length === 0
+                ? <p style={{color:'var(--text-secondary)',fontSize:'0.82rem'}}>해당 섹터 종목 없음</p>
+                : (
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.82rem'}}>
+                      <thead>
+                        <tr style={{borderBottom:'1px solid var(--glass-border)'}}>
+                          {['코드','종목명','섹터','시총','현재가','전일(1D)'].map(h=>(
+                            <th key={h} style={{padding:'0.4rem 0.5rem',textAlign:['코드','종목명','섹터'].includes(h)?'left':'right',
+                              color:'var(--text-secondary)',fontWeight:600}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sectorData.korean.map((s,i)=>(
+                          <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                            <td style={{padding:'0.32rem 0.5rem',fontWeight:700,color:'var(--accent-mint)'}}>{s.stock_code}</td>
+                            <td style={{padding:'0.32rem 0.5rem'}}>{s.stock_name}</td>
+                            <td style={{padding:'0.32rem 0.5rem',color:'var(--text-secondary)',fontSize:'0.75rem'}}>{s.sector}</td>
+                            <td style={{padding:'0.32rem 0.5rem',textAlign:'right',fontSize:'0.78rem'}}>{fmtMktcap(s.mktcap)}</td>
+                            <td style={{padding:'0.32rem 0.5rem',textAlign:'right'}}>{s.close?.toLocaleString()}</td>
+                            <td style={{padding:'0.32rem 0.5rem',textAlign:'right'}}>{fmtChg(s.chg_1d)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              }
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   // ── 고용보험 모니터 ──────────────────────────────────────────
   const EmploymentMonitor = () => {
     const [tab, setTab]         = React.useState('monthly');   // monthly | trend | summary
@@ -8478,6 +8658,7 @@ const App = () => {
     // ── 상단 섹션 ──────────────────────────────────
     { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '종합현황' },
     { key: 'market_indicators',icon: <Globe size={17} style={{color:'#fbbf24'}} />,           label: '시장 지표' },
+    { key: 'market_radar',    icon: <Radio size={17} style={{color:'#a78bfa'}} />,            label: '시장 Radar' },
     { key: 'analysis',         icon: <BarChart3 size={17} />,                                 label: '개별 종목' },
     { key: 'semiconductor_sector', icon: <Cpu size={17} style={{color:'#60a5fa'}} />,         label: '반도체 섹터' },
     { key: 'screener',         icon: <Cpu size={17} style={{color:'#2dd4bf'}} />,              label: 'AI 종목' },
@@ -8603,6 +8784,7 @@ const App = () => {
           {/* [버그 ② 수정] screener / insight 탭 렌더링 연결 */}
           {activeTab === 'macro'             && <MacroDashboard />}
           <div style={{display: activeTab === 'market_indicators' ? 'block' : 'none'}}><MarketIndicatorsView onChangeStock={changeStock} onChangeTab={changeTab} /></div>
+          {activeTab === 'market_radar'      && <MarketRadarView />}
           {activeTab === 'analysis'          && <StockAnalysis />}
           {activeTab === 'semiconductor_sector' && (
             <div className="glass-panel" style={{padding:'0.9rem', height:'calc(100vh - 110px)'}}>
