@@ -350,18 +350,60 @@ def _calc_signal(changes: list[float]) -> str:
     return "neutral"
 
 
+def _fetch_prices_from_db(symbols: list[str]) -> dict[str, dict]:
+    """price_history에서 모든 종목(해외 포함) 최근 7거래일 종가 조회."""
+    if not symbols:
+        return {}
+    conn = _db()
+    try:
+        ph = ",".join("?" * len(symbols))
+        rows = conn.execute(
+            f"""SELECT stock_code,
+                       MAX(CASE WHEN rn=1 THEN close END) AS c1,
+                       MAX(CASE WHEN rn=2 THEN close END) AS c2,
+                       MAX(CASE WHEN rn=6 THEN close END) AS c6
+                FROM (
+                    SELECT stock_code, close,
+                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
+                    FROM price_history
+                    WHERE stock_code IN ({ph}) AND close > 0
+                ) sub
+                WHERE rn <= 7
+                GROUP BY stock_code""",
+            symbols,
+        ).fetchall()
+        result = {}
+        for r in rows:
+            c1 = r["c1"] or 0.0
+            c2 = r["c2"] or 0.0
+            c6 = r["c6"] or 0.0
+            if c1 > 0:
+                chg_1d = round((c1 - c2) / c2 * 100, 2) if c2 > 0 else 0.0
+                chg_1w = round((c1 - c6) / c6 * 100, 2) if c6 > 0 else None
+                result[r["stock_code"]] = {"price": c1, "chg_1d": chg_1d, "chg_1w": chg_1w}
+        return result
+    finally:
+        conn.close()
+
+
 def _fetch_overseas_prices(symbols: list[str]) -> dict[str, dict]:
-    """yfinance로 해외 종목 1D/1W 변화율 조회."""
+    """해외 종목 1D/1W 변화율 조회. DB 우선 → yfinance 보완."""
+    # 1) DB에서 일괄 조회 (price_history에 해외 종목이 수집된 경우)
+    result = _fetch_prices_from_db(symbols)
+    missing = [s for s in symbols if s not in result]
+    if not missing:
+        return result
+
+    # 2) DB에 없는 종목만 yfinance로 보완
     try:
         import yfinance as yf
     except ImportError:
         logger.warning("[Radar] yfinance 미설치 — pip install yfinance")
-        return {}
+        return result
 
-    result: dict[str, dict] = {}
     try:
-        tickers = yf.Tickers(" ".join(symbols))
-        for sym in symbols:
+        tickers = yf.Tickers(" ".join(missing))
+        for sym in missing:
             try:
                 ticker = tickers.tickers.get(sym)
                 if ticker is None:
@@ -384,41 +426,7 @@ def _fetch_overseas_prices(symbols: list[str]) -> dict[str, dict]:
 
 def _fetch_korean_prices_bulk(stock_codes: list[str]) -> dict[str, dict]:
     """price_history에서 국내 종목 최근 7거래일 종가 조회 → 1D/1W 변화율 계산."""
-    if not stock_codes:
-        return {}
-    conn = _db()
-    try:
-        ph = ",".join("?" * len(stock_codes))
-        rows = conn.execute(
-            f"""SELECT stock_code,
-                       MAX(CASE WHEN rn=1 THEN close END) AS c1,
-                       MAX(CASE WHEN rn=2 THEN close END) AS c2,
-                       MAX(CASE WHEN rn=6 THEN close END) AS c6
-                FROM (
-                    SELECT stock_code, close,
-                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
-                    FROM price_history
-                    WHERE stock_code IN ({ph}) AND close > 0
-                ) sub
-                WHERE rn <= 7
-                GROUP BY stock_code""",
-            stock_codes,
-        ).fetchall()
-        result = {}
-        for r in rows:
-            c1 = r["c1"] or 0.0
-            c2 = r["c2"] or 0.0
-            c6 = r["c6"] or 0.0
-            chg_1d = round((c1 - c2) / c2 * 100, 2) if c2 > 0 else 0.0
-            chg_1w = round((c1 - c6) / c6 * 100, 2) if c6 > 0 else 0.0
-            result[r["stock_code"]] = {
-                "price":  c1,
-                "chg_1d": chg_1d,
-                "chg_1w": chg_1w if c6 > 0 else None,
-            }
-        return result
-    finally:
-        conn.close()
+    return _fetch_prices_from_db(stock_codes)
 
 
 def _get_korean_top(sector_keys: list[str], limit: int = 8) -> list[dict]:
