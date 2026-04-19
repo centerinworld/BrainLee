@@ -44,7 +44,7 @@
 ├── models.py            # SQLAlchemy ORM 모델
 ├── kis_client.py        # KIS API 토큰 관리
 │
-├── routes/              # FastAPI 라우터 (main.py 38~56줄에 등록)
+├── routes/              # FastAPI 라우터 (main.py 38~60줄에 등록)
 │   ├── signals.py       → /api/signals/*
 │   ├── trend.py         → /api/trend/*  (가상매매)
 │   ├── portfolio.py     → /api/portfolio/*
@@ -54,6 +54,14 @@
 │   ├── telegram.py      → /api/telegram/*
 │   ├── backtest.py      → /api/backtest/*
 │   └── ingest.py        → /api/ingest/*
+│
+├── employment_monitor/  # 고용/산재보험 모니터 (별도 SQLite DB) ★2026-04-19 신규
+│   ├── __init__.py
+│   ├── db.py            # SQLite 스키마 (employment_monthly, employment_company)
+│   ├── collect.py       # data.go.kr API 수집기 (sjGyFg: 1=산재, 3=고용)
+│   ├── api.py           # FastAPI 라우터 → /api/employment/* (main.py에 등록)
+│   └── main.py          # 독립 FastAPI 앱 (port 8001, uvicorn employment_monitor.main:app)
+│   DB: employment_monitor/employment.db (main stock.db와 분리)
 │
 ├── collectors/          # 외부 데이터 수집기
 │   ├── kis_collector.py # KIS API (주가·수급·실시간)
@@ -229,6 +237,17 @@ GET  /available-dates    # 수급 데이터 있는 영업일 목록
 GET  /futures            # KOSPI200/KOSDAQ150/야간 선물 근월물 (KRX API, 60초 캐싱)
 ```
 
+### employment_monitor/api.py → /api/employment ★신규(2026-04-19)
+```
+GET  /monthly            # 업종별 월별 현황 (params: sj_gy_fg, saeopjang_wk_fg, months)
+GET  /trend/{sector}     # 업종 추이 + YoY/MoM (params: sj_gy_fg, saeopjang_wk_fg, months)
+GET  /summary            # 최신 전체 요약
+GET  /signal/{code}      # 종목 업종 고용 시그널 (stock_universe sector_large 기반 매핑)
+POST /collect            # 수동 수집 트리거 (백그라운드, params: months_back)
+GET  /available-months   # 수집된 연월 목록
+```
+⚠️ data.go.kr API 사용 시 서버 IP를 포털에서 허용 IP로 등록 필요 (403 host_not_allowed)
+
 ### routes/reports.py → /api/reports
 ```
 GET  /stock/{code}       # 종목 리포트 목록
@@ -320,16 +339,17 @@ def _cache():
 | `BacktestView` | backtest | 6084 |
 | `SettingsView` | settings | 6413 |
 | `TelegramMentions` | telegram | 6708 |
-| `SystemStatus` | system | 6951 |
+| `SystemStatus` | system | 8182 |
 | `MarketIndicatorsView` | market_indicators | 6991 |
+| `EmploymentMonitor` | employment | 8208 |
 
 ### 네비게이션 구조
 ```
-NAV_ITEMS 정의: 7459줄
-렌더 스위치:    7585줄
+NAV_ITEMS 정의: ~8489줄
+렌더 스위치:    ~8600줄
 
-순서: macro → market_indicators → analysis → screener → trend
-    → reports → telegram → backtest → hs_trade → hs_trade2
+순서: macro → market_indicators → analysis → semiconductor_sector
+    → screener → trend → reports → telegram → backtest → hs_trade2 → employment
     ── (구분선) ──
     buy_candidates → watchlist → portfolio
     ── (구분선) ──
@@ -461,4 +481,5 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-18 | 종합현황 MacroDashboard에 선물 현황 테이블 추가 (KOSPI200 선물/KOSDAQ150 선물/KOSPI200 야간선물). KRX API drv/fut_bydd_trd + drv/ngt_fut_bydd_trd 사용. GET /api/market-indicators/futures 신규. main.py에 네이버 수급 원격 강제 수집 API 추가 (POST /api/commands/naver-investor-force). |
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
+| 2026-04-19 | `employment_monitor/` 신규 모듈 (db.py/collect.py/api.py/main.py): 고용/산재보험 업종별 현황 수집 (data.go.kr). GET /api/employment/*. App.jsx EmploymentMonitor 탭 추가 (~8208줄). scheduler.py 월간배치에 고용보험 수집 추가. routes/buy_candidates.py: yfinance 제거→배치 SQL로 교체(로딩속도 개선). ⚠️ data.go.kr API 허용IP 등록 필요 |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
