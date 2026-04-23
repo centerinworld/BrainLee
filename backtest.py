@@ -269,8 +269,253 @@ def _is_buy_signal(
 
 
 # ══════════════════════════════════════════════════════════════
-#  매도 조건 — 날짜별 단일 계산
+#  Logic #5 — 시장 국면 적응형 (Regime-Adaptive Strategy)
 # ══════════════════════════════════════════════════════════════
+#
+# 설계 원칙:
+#   주식 시장은 4단계 국면(강세/중립/약세/대하락)을 순환한다.
+#   같은 매수 조건을 모든 국면에 적용하면, 좋은 장에서 과도하게
+#   진입하거나 나쁜 장에서 아예 기회를 잃는다.
+#   → 국면별 기준을 달리하여 "언제나 작동하는" 전략을 구현한다.
+#
+# 국면 분류 (KOSPI 기준):
+#   3 강세 : KOSPI > MA60            — 공격형 모멘텀
+#   2 중립 : MA120 < KOSPI ≤ MA60   — 균형형 (가치 강화)
+#   1 약세 : MA200 < KOSPI ≤ MA120  — 방어형 (깊은 가치만)
+#   0 대하락: KOSPI ≤ MA200          — 매수 금지
+#
+# 핵심 차별점 vs v5:
+#   ① 약세장(regime 1)에서도 선별 매수 (v5는 0거래)
+#   ② 재무 건전성(영업이익>0) 공통 필수 → 불황 생존 기업만
+#   ③ 국면별 익절/손절 조정 (약세장: 더 빠른 exit)
+#   ④ 수급 데이터 의존도 최소화 (역사적 백테스트 호환)
+#   ⑤ 최대 보유 35일 제한 (기회비용 방지)
+
+def _get_avg(arr: list) -> float:
+    return sum(arr) / len(arr) if arr else 0.0
+
+
+def _is_buy_signal_v6(
+    i: int,
+    sim_start_i: int,
+    dates: list,
+    prices: list,
+    volumes: list,
+    frn_net: list,
+    inst_net: list,
+    fin_rows: list,
+    regime: int = 3,          # 0=대하락, 1=약세, 2=중립, 3=강세
+) -> bool:
+    """
+    Logic #5 매수 시그널.
+    regime은 run_backtest()에서 날짜별로 미리 계산된 KOSPI 국면.
+    """
+    if i < sim_start_i:
+        return False
+
+    # 대하락 → 진입 금지
+    if regime == 0:
+        return False
+
+    curr = prices[i]
+    d    = dates[i]
+    p_slice = prices[max(0, i - 199): i + 1]
+
+    if len(p_slice) < 20:
+        return False
+
+    ma20 = _ma(p_slice[-20:], 20) if len(p_slice) >= 20 else None
+    ma60 = _ma(p_slice[-60:], 60) if len(p_slice) >= 60 else None
+
+    if ma20 is None or ma60 is None:
+        return False
+
+    # ── 공통: 재무 건전성 (영업이익 > 0) ─────────────────────────
+    # 불황 생존 기업만 편입. 재무 없으면 패스.
+    fin = _get_financial_as_of(fin_rows, d)
+    if fin is None:
+        return False
+    _y, _q, _rev, op, eps, bps, _eq, _ni, _roe, _ann = fin
+    if not (op and op > 0):
+        return False   # 영업적자 제외
+
+    # ── 국면 3 강세장: 공격형 모멘텀 ─────────────────────────────
+    if regime == 3:
+        if len(p_slice) < 120:
+            return False
+        ma120 = _ma(p_slice[-120:], 120)
+        ma200 = _ma(p_slice, len(p_slice)) if len(p_slice) >= 200 else None
+        if ma120 is None or ma200 is None:
+            return False
+
+        # 3중 정배열: curr > MA60 > MA120 > MA200
+        if not (curr > ma60 and ma60 > ma120 and ma120 > ma200):
+            return False
+        # 단기 정배열: MA20 > MA60
+        if not (ma20 > ma60):
+            return False
+        # 52주 고점 -15% 이내 (핵심 모멘텀 확인)
+        high52 = max(prices[max(0, i - 251): i + 1])
+        if curr < high52 * 0.85:
+            return False
+        # RSI(14) ≥ 55
+        rsi_val = _rsi(prices[max(0, i - 28): i + 1])
+        if rsi_val is None or rsi_val < 55:
+            return False
+        # 거래량 폭발 (2배)
+        vol_w = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
+        if not vol_w or not volumes[i] or volumes[i] <= _get_avg(vol_w) * 2.0:
+            return False
+
+        # 가치 기준 (완화: Graham 15%+ OR RS 5%+)
+        value_ok = False
+        if eps and bps and eps > 0 and bps > 0:
+            gp   = _graham_price(eps, bps)
+            disc = (gp - curr) / gp * 100 if gp and gp > 0 else 0
+            pbr  = curr / bps
+            per  = curr / eps
+            value_ok = disc >= 15 or (pbr < 1.0 and 0 < per < 15)
+        rs_ok = False
+        if i >= 62 and prices[i - 62] > 0:
+            rs_ok = (prices[i] - prices[i - 62]) / prices[i - 62] * 100 > 5.0
+        # 수급 보조 (있으면 plus)
+        frn5  = sum(frn_net[max(0, i - 4): i + 1])
+        inst5 = sum(inst_net[max(0, i - 4): i + 1])
+        supply_ok = (frn5 > 0 and inst5 > 0)
+        return value_ok or rs_ok or supply_ok
+
+    # ── 국면 2 중립장: 균형형 (가치 강화) ────────────────────────
+    elif regime == 2:
+        if len(p_slice) < 60:
+            return False
+        # 중기 정배열: curr > MA20 > MA60
+        if not (curr > ma20 and ma20 > ma60):
+            return False
+        # RSI 45~72 (과매도 탈출 + 과매수 진입 차단)
+        rsi_val = _rsi(prices[max(0, i - 28): i + 1])
+        if rsi_val is None or rsi_val < 45 or rsi_val > 72:
+            return False
+        # 52주 최저 대비 +20% 이상 (바닥권 회피)
+        low52 = min(prices[max(0, i - 251): i + 1])
+        if curr < low52 * 1.20:
+            return False
+        # 거래량 확인 (1.5배)
+        vol_w = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
+        if not vol_w or not volumes[i] or volumes[i] <= _get_avg(vol_w) * 1.5:
+            return False
+
+        # 중립장: Graham 할인 25%+ 이상 (더 엄격한 저평가 요구)
+        if not (eps and bps and eps > 0 and bps > 0):
+            return False
+        gp   = _graham_price(eps, bps)
+        disc = (gp - curr) / gp * 100 if gp and gp > 0 else 0
+        pbr  = curr / bps
+        per  = curr / eps
+        value_ok = disc >= 25 or (pbr < 0.7 and 0 < per < 10)
+        rs_ok = False
+        if i >= 62 and prices[i - 62] > 0:
+            rs_ok = (prices[i] - prices[i - 62]) / prices[i - 62] * 100 > 8.0
+        return value_ok or rs_ok
+
+    # ── 국면 1 약세장: 방어형 (깊은 가치 + 강한 반등 확인) ──────
+    elif regime == 1:
+        if len(p_slice) < 20:
+            return False
+        # 단기 정배열: curr > MA20 (최소 조건)
+        if curr <= ma20:
+            return False
+        # 최근 5거래일 연속 상승 모멘텀 확인
+        recent = prices[max(0, i - 4): i + 1]
+        if len(recent) < 3 or recent[-1] <= recent[0]:
+            return False
+        # RSI 42~68 (과매도 완전 탈출 + 과매수 제외)
+        rsi_val = _rsi(prices[max(0, i - 28): i + 1])
+        if rsi_val is None or rsi_val < 42 or rsi_val > 68:
+            return False
+        # 바닥 탈출 확인: 52주 최저 대비 +25% 이상
+        low52 = min(prices[max(0, i - 251): i + 1])
+        if curr < low52 * 1.25:
+            return False
+        # 거래량 1.3배 (약세장이라 기준 완화)
+        vol_w = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
+        if not vol_w or not volumes[i] or volumes[i] <= _get_avg(vol_w) * 1.3:
+            return False
+
+        # 약세장: Graham 할인 30%+ 이상 (매우 깊은 가치만)
+        if not (eps and bps and eps > 0 and bps > 0):
+            return False
+        gp   = _graham_price(eps, bps)
+        disc = (gp - curr) / gp * 100 if gp and gp > 0 else 0
+        pbr  = curr / bps
+        value_ok = disc >= 30 or (pbr < 0.5 and bps > 0)
+        # RS는 약세장에서 10%+ (강한 상대강도 필수)
+        rs_ok = False
+        if i >= 62 and prices[i - 62] > 0:
+            rs_ok = (prices[i] - prices[i - 62]) / prices[i - 62] * 100 > 10.0
+        return value_ok or rs_ok
+
+    return False
+
+
+def _check_sell_v6(
+    i: int,
+    prices: list,
+    pos: dict,
+    regime: int = 3,
+) -> Optional[str]:
+    """
+    Logic #5 매도 조건 (국면 적응형).
+
+    강세장: 익절+18%, 손절-6%, 추적손절-9%, MA60, 최대45일
+    중립장: 익절+12%, 손절-5%, 추적손절-7%, MA40, 최대35일
+    약세장: 익절+9%,  손절-4%, 추적손절-6%, MA20, 최대25일
+    """
+    curr = prices[i]
+
+    if curr > pos.get('peak_price', pos['entry_price']):
+        pos['peak_price'] = curr
+
+    pct       = (curr - pos['entry_price']) / pos['entry_price']
+    peak      = pos.get('peak_price', pos['entry_price'])
+    hold_days = pos.get('hold_days', 0)
+    pos['hold_days'] = hold_days + 1
+
+    # 국면별 파라미터
+    if regime == 3:
+        tp, sl, trail_sl, trail_trig, ma_n, max_hold = 0.18, -0.06, -0.09, 0.03, 60, 45
+    elif regime == 2:
+        tp, sl, trail_sl, trail_trig, ma_n, max_hold = 0.12, -0.05, -0.07, 0.02, 40, 35
+    else:  # 1 약세
+        tp, sl, trail_sl, trail_trig, ma_n, max_hold = 0.09, -0.04, -0.06, 0.01, 20, 25
+
+    # 익절 (즉시, 최소보유 무관)
+    if pct >= tp:
+        return f"익절(+{pct * 100:.0f}%)"
+
+    # 하드 손절 (즉시)
+    if pct <= sl:
+        return f"손절({sl * 100:.0f}%)"
+
+    # 최소 3일 이후 청산 조건
+    if hold_days >= 3:
+        # 추적 손절 (수익 구간에서만)
+        trail = (curr - peak) / peak if peak > 0 else 0
+        if trail <= trail_sl and pct > trail_trig:
+            return f"추적손절(고점-{abs(trail) * 100:.0f}%)"
+
+        # MA 붕괴
+        ma_val = _ma(prices[max(0, i - ma_n + 1): i + 1], ma_n)
+        if ma_val is not None and curr < ma_val:
+            return f"MA{ma_n} 붕괴"
+
+    # 최대 보유 기간
+    if hold_days >= max_hold:
+        return f"최대보유({hold_days}일)"
+
+    return None
+
+
+
 def _check_sell(
     i: int,
     prices: list,
@@ -328,12 +573,17 @@ def _run_portfolio(
     per_stock: float,
     max_positions: int,
     stop_loss: float = -0.08,
-    market_bullish: Optional[Dict[str, bool]] = None,  # ★ 시장 추세 필터 (날짜→bool)
+    market_bullish: Optional[Dict[str, bool]] = None,  # v5 시장 추세 필터 (날짜→bool)
+    strategy: str = 'v5',
+    kospi_regime: Optional[Dict[str, int]] = None,     # v6 국면 (날짜→0/1/2/3)
 ) -> Tuple[list, list]:
     """
     매일(sim_dates 하루씩) 전 종목을 스캔:
-      1) 기존 보유 종목 → 매도 조건 체크 (손절/MA60/MA20)
+      1) 기존 보유 종목 → 매도 조건 체크
       2) 빈 슬롯이 있으면 → 매수 조건 충족 종목 편입
+
+    strategy='v5': 기존 AI 콤보 (KOSPI MA120 필터)
+    strategy='v6': Logic #5 국면 적응형
 
     Returns: (trades, equity_curve)
     """
@@ -350,6 +600,8 @@ def _run_portfolio(
     }
 
     for day in sim_dates:
+        # Logic #5 용 당일 시장 국면
+        regime = (kospi_regime or {}).get(day, 3)
 
         # ── Step 1: 매도 체크 (보유 종목 전체) ─────────────
         sold_today = []
@@ -359,7 +611,10 @@ def _run_portfolio(
                 continue
             i  = idx_map[day]
             sd = stock_data[sc]
-            reason = _check_sell(i, sd['prices'], pos, stop_loss)
+            if strategy == 'v6':
+                reason = _check_sell_v6(i, sd['prices'], pos, regime)
+            else:
+                reason = _check_sell(i, sd['prices'], pos, stop_loss)
             if reason is None:
                 continue
             curr = sd['prices'][i]
@@ -381,18 +636,28 @@ def _run_portfolio(
             del positions[sc]
 
         # ── Step 2: 매수 스캔 (빈 슬롯이 있을 때만) ───────
-        # ★ 시장 추세 필터: KOSPI MA60 아래면 신규 매수 금지
-        if market_bullish is not None and not market_bullish.get(day, True):
-            # 하락장 → equity curve만 업데이트하고 매수 건너뜀
-            unrealized = 0.0
-            for sc, pos in positions.items():
-                idx_map = date_idx.get(sc, {})
-                if day in idx_map:
-                    i = idx_map[day]
-                    unrealized += (stock_data[sc]['prices'][i] - pos['entry_price']) * pos['qty']
-            realized = sum(t['profit_amt'] for t in trades)
-            equity_curve.append({'date': day, 'equity': round(total_capital + realized + unrealized)})
-            continue
+        if strategy == 'v6':
+            # Logic #5: 대하락(0)은 완전 차단, 나머지는 국면별 조건
+            if regime == 0:
+                unrealized = sum(
+                    (stock_data[sc]['prices'][date_idx[sc][day]] - pos['entry_price']) * pos['qty']
+                    for sc, pos in positions.items()
+                    if day in date_idx.get(sc, {})
+                )
+                realized = sum(t['profit_amt'] for t in trades)
+                equity_curve.append({'date': day, 'equity': round(total_capital + realized + unrealized)})
+                continue
+        else:
+            # v5: KOSPI MA120 이하면 매수 금지
+            if market_bullish is not None and not market_bullish.get(day, True):
+                unrealized = sum(
+                    (stock_data[sc]['prices'][date_idx[sc][day]] - pos['entry_price']) * pos['qty']
+                    for sc, pos in positions.items()
+                    if day in date_idx.get(sc, {})
+                )
+                realized = sum(t['profit_amt'] for t in trades)
+                equity_curve.append({'date': day, 'equity': round(total_capital + realized + unrealized)})
+                continue
 
         if len(positions) < max_positions:
             for sc, sd in stock_data.items():
@@ -404,12 +669,20 @@ def _run_portfolio(
                 if day not in idx_map:
                     continue
                 i = idx_map[day]
-                # 매수 시그널 실시간 계산
-                if not _is_buy_signal(
-                    i, sd['sim_start_i'],
-                    sd['dates'], sd['prices'], sd['volumes'],
-                    sd['frn'],   sd['inst'],   sd['fins'],
-                ):
+                if strategy == 'v6':
+                    sig = _is_buy_signal_v6(
+                        i, sd['sim_start_i'],
+                        sd['dates'], sd['prices'], sd['volumes'],
+                        sd['frn'],   sd['inst'],   sd['fins'],
+                        regime,
+                    )
+                else:
+                    sig = _is_buy_signal(
+                        i, sd['sim_start_i'],
+                        sd['dates'], sd['prices'], sd['volumes'],
+                        sd['frn'],   sd['inst'],   sd['fins'],
+                    )
+                if not sig:
                     continue
                 curr = sd['prices'][i]
                 qty  = max(1, int(per_stock / curr))
@@ -417,8 +690,8 @@ def _run_portfolio(
                     'entry_date':  day,
                     'entry_price': curr,
                     'qty':         qty,
-                    'peak_price':  curr,   # 추적손절용 고점 초기화
-                    'hold_days':   0,      # 최소보유일 카운터
+                    'peak_price':  curr,
+                    'hold_days':   0,
                 }
 
         # ── Step 3: 에쿼티 커브 ────────────────────────────
@@ -537,13 +810,17 @@ def run_backtest(start_date: str, end_date: str,
                  per_stock: float = 10_000_000,
                  max_positions: int = 10,
                  run_name: str = None,
-                 run_id: str = None) -> str:
+                 run_id: str = None,
+                 strategy: str = 'v5') -> str:
     """
     run_id가 주어지면 해당 레코드(이미 DB에 존재)를 직접 업데이트.
     없으면 새 run_id를 생성하고 INSERT.
+    strategy: 'v5' = AI 콤보 v5 (KOSPI MA120 필터)
+              'v6' = Logic #5 국면 적응형 (4단계 regime)
     """
     init_backtest_db()
-    run_name = run_name or f"백테스트 {start_date[:7]}~{end_date[:7]}"
+    strategy_label = {'v5': 'AI 콤보 v5', 'v6': 'Logic #5 국면적응형'}.get(strategy, strategy)
+    run_name = run_name or f"[{strategy_label}] {start_date[:7]}~{end_date[:7]}"
 
     if run_id is None:
         run_id = str(uuid.uuid4())[:8]
@@ -654,9 +931,9 @@ def run_backtest(start_date: str, end_date: str,
             except Exception:
                 continue
 
-        # ── ★ KOSPI 시장 추세 필터 생성 (v5: MA60→MA120 강화) ─────
-        # KOSPI > MA120 이면 상승장(매수 허용), 아니면 하락장(매수 금지)
+        # ── KOSPI 시장 추세/국면 계산 ───────────────────────────
         market_bullish: Dict[str, bool] = {}
+        kospi_regime:   Dict[str, int]  = {}
         try:
             kospi_rows = conn.execute("""
                 SELECT date, close FROM price_history
@@ -668,13 +945,28 @@ def run_backtest(start_date: str, end_date: str,
             for ki, kd in enumerate(k_dates):
                 if kd < start_date:
                     continue
+                curr   = k_prices[ki]
+                kma60  = _ma(k_prices[max(0, ki - 59):  ki + 1], 60)
                 kma120 = _ma(k_prices[max(0, ki - 119): ki + 1], 120)
+                kma200 = _ma(k_prices[max(0, ki - 199): ki + 1], 200)
+
+                # v5 필터: MA120 상방 여부
                 if kma120 is None:
-                    market_bullish[kd] = True   # 데이터 부족 시 허용
+                    market_bullish[kd] = True
                 else:
-                    market_bullish[kd] = k_prices[ki] > kma120
+                    market_bullish[kd] = curr > kma120
+
+                # v6 국면: 4단계 (3=강세 / 2=중립 / 1=약세 / 0=대하락)
+                if kma60 and curr > kma60:
+                    kospi_regime[kd] = 3
+                elif kma120 and curr > kma120:
+                    kospi_regime[kd] = 2
+                elif kma200 and curr > kma200:
+                    kospi_regime[kd] = 1
+                else:
+                    kospi_regime[kd] = 0
         except Exception:
-            pass  # KOSPI 데이터 없으면 필터 비활성화 (모든 날 True)
+            pass  # KOSPI 데이터 없으면 필터 비활성화
 
         conn.close()
 
@@ -683,8 +975,10 @@ def run_backtest(start_date: str, end_date: str,
         trades, equity_curve = _run_portfolio(
             sim_dates, stock_data,
             per_stock, max_positions,
-            stop_loss=-0.08,   # 1000억+ 대형주 기준 -8% (변동성 여유)
-            market_bullish=market_bullish if market_bullish else None,
+            stop_loss=-0.08,
+            market_bullish=market_bullish if (strategy == 'v5' and market_bullish) else None,
+            strategy=strategy,
+            kospi_regime=kospi_regime if (strategy == 'v6' and kospi_regime) else None,
         )
 
         # ── 종목명 매핑 ──────────────────────────────────────

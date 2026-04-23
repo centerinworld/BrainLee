@@ -7323,6 +7323,7 @@ const App = () => {
       start_date: '2023-04-01',
       end_date:   '2025-12-31',
       per_stock:  10000000,
+      strategy:   'v5',
       name:       '',
     });
 
@@ -7338,6 +7339,7 @@ const App = () => {
     const startBacktest = async () => {
       setRunning(true);
       try {
+        const strategyLabel = form.strategy === 'v6' ? 'Logic #5 국면적응형' : 'AI 콤보 v5';
         const r = await fetch(API('/api/backtest/run'), {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
@@ -7345,7 +7347,8 @@ const App = () => {
             start_date: form.start_date,
             end_date:   form.end_date,
             per_stock:  Number(form.per_stock),
-            name:       form.name || `백테스트 ${form.start_date.slice(0,7)}~${form.end_date.slice(0,7)}`,
+            strategy:   form.strategy,
+            name:       form.name || `[${strategyLabel}] ${form.start_date.slice(0,7)}~${form.end_date.slice(0,7)}`,
           }),
         });
         if (!r.ok) { setRunning(false); return; }
@@ -7398,9 +7401,9 @@ const App = () => {
           <div style={{padding:'0.5rem 0.8rem',background:'rgba(251,191,36,0.07)',
             border:'1px solid rgba(251,191,36,0.2)',borderRadius:'6px',
             fontSize:'0.7rem',color:'rgba(251,191,36,0.85)',lineHeight:1.6}}>
-            ⚠️ AI 적극검토(추세+가치+재무 중 2개↑ 동시 충족) 시그널 발생 시 매수, MA20 이탈 또는 -15% 손절 시 매도.
+            ⚠️ 전략 v5: AI 적극검토(추세+가치+재무 동시 충족) 시그널, KOSPI MA120 상방만 매수, 손절 -8% / 익절 +15%.
+            전략 v6(Logic #5): KOSPI 국면별 조건과 파라미터를 자동 전환.
             과거 데이터 기준 시뮬레이션으로 <strong>미래 수익을 보장하지 않습니다.</strong>
-            DB 가격 데이터: 2023-04 ~ 현재 (종목당 10만원 단위 가상 투자)
           </div>
         </div>
 
@@ -7424,7 +7427,27 @@ const App = () => {
                   style={{...inputS, width:'100%', boxSizing:'border-box'}} />
               </div>
             ))}
+            <div>
+              <div style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginBottom:'0.25rem'}}>전략 선택</div>
+              <select value={form.strategy} onChange={e => setForm(p => ({...p, strategy: e.target.value}))}
+                style={{...inputS, width:'100%', boxSizing:'border-box', cursor:'pointer'}}>
+                <option value="v5">AI 콤보 v5 (KOSPI MA120 필터)</option>
+                <option value="v6">Logic #5 — 국면 적응형</option>
+              </select>
+            </div>
           </div>
+          {form.strategy === 'v6' && (
+            <div style={{marginBottom:'0.7rem', padding:'0.6rem 0.9rem',
+              background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)',
+              borderRadius:'6px', fontSize:'0.7rem', color:'rgba(167,139,250,0.9)', lineHeight:1.7}}>
+              <strong>Logic #5 — 시장 국면 적응형</strong><br/>
+              KOSPI 위치로 4단계 국면 분류: <strong style={{color:'#34d399'}}>강세(MA60↑)</strong> /
+              <strong style={{color:'#60a5fa'}}> 중립(MA120↑)</strong> /
+              <strong style={{color:'#facc15'}}> 약세(MA200↑)</strong> /
+              <strong style={{color:'#f87171'}}> 대하락(대피)</strong><br/>
+              국면에 따라 매수 기준, 익절·손절 파라미터를 자동 조정합니다.
+            </div>
+          )}
           <button onClick={startBacktest} disabled={running} style={{
             padding:'0.5rem 1.4rem', borderRadius:'8px', fontWeight:700, cursor: running ? 'not-allowed' : 'pointer',
             background: running ? 'rgba(100,116,139,0.2)' : 'rgba(245,158,11,0.2)',

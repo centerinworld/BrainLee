@@ -32,11 +32,13 @@ def _db():
 @router.post("/run")
 async def start_backtest(payload: dict):
     """백테스트 비동기 실행. 즉시 run_id 반환."""
-    start   = payload.get("start_date", "2023-04-01")
-    end     = payload.get("end_date",   "2025-12-31")
-    per_s   = float(payload.get("per_stock", 10_000_000))
-    name    = payload.get("name", f"백테스트 {start[:7]}~{end[:7]}")
-    run_id  = str(uuid.uuid4())[:8]
+    start    = payload.get("start_date", "2023-04-01")
+    end      = payload.get("end_date",   "2025-12-31")
+    per_s    = float(payload.get("per_stock", 10_000_000))
+    strategy = payload.get("strategy", "v5")  # v5=AI콤보, v6=Logic#5 국면적응형
+    strategy_label = {'v5': 'AI 콤보 v5', 'v6': 'Logic #5 국면적응형'}.get(strategy, strategy)
+    name     = payload.get("name", f"[{strategy_label}] {start[:7]}~{end[:7]}")
+    run_id   = str(uuid.uuid4())[:8]
 
     conn = _db()
     conn.execute(
@@ -48,8 +50,8 @@ async def start_backtest(payload: dict):
 
     def _run():
         try:
-            # run_id를 직접 전달 → 내부에서 별도 UUID 생성 없이 동일 레코드에 저장
-            _bt.run_backtest(start, end, per_stock=per_s, run_name=name, run_id=run_id)
+            _bt.run_backtest(start, end, per_stock=per_s, run_name=name,
+                             run_id=run_id, strategy=strategy)
         except Exception as e:
             c = _sl.connect(DB_PATH, timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
