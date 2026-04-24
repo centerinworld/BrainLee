@@ -7339,7 +7339,7 @@ const App = () => {
     const startBacktest = async () => {
       setRunning(true);
       try {
-        const strategyLabel = form.strategy === 'v6' ? 'Logic #5 국면적응형' : 'AI 콤보 v5';
+        const strategyLabel = {v5:'AI 콤보 v5', v6:'Logic #5 국면적응형', v7:'Logic #6 멀티팩터'}[form.strategy] || form.strategy;
         const r = await fetch(API('/api/backtest/run'), {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
@@ -7401,8 +7401,7 @@ const App = () => {
           <div style={{padding:'0.5rem 0.8rem',background:'rgba(251,191,36,0.07)',
             border:'1px solid rgba(251,191,36,0.2)',borderRadius:'6px',
             fontSize:'0.7rem',color:'rgba(251,191,36,0.85)',lineHeight:1.6}}>
-            ⚠️ 전략 v5: AI 적극검토(추세+가치+재무 동시 충족) 시그널, KOSPI MA120 상방만 매수, 손절 -8% / 익절 +15%.
-            전략 v6(Logic #5): KOSPI 국면별 조건과 파라미터를 자동 전환.
+            ⚠️ v5: AI 콤보(추세+가치), KOSPI MA120 상방만 매수 · v6(Logic#5): KOSPI 국면 4단계 적응형 · v7(Logic#6): 동조효과+HS수출+고용 멀티팩터.
             과거 데이터 기준 시뮬레이션으로 <strong>미래 수익을 보장하지 않습니다.</strong>
           </div>
         </div>
@@ -7433,6 +7432,7 @@ const App = () => {
                 style={{...inputS, width:'100%', boxSizing:'border-box', cursor:'pointer'}}>
                 <option value="v5">AI 콤보 v5 (KOSPI MA120 필터)</option>
                 <option value="v6">Logic #5 — 국면 적응형</option>
+                <option value="v7">Logic #6 — 멀티팩터 (동조+수출+고용)</option>
               </select>
             </div>
           </div>
@@ -7446,6 +7446,20 @@ const App = () => {
               <strong style={{color:'#facc15'}}> 약세(MA200↑)</strong> /
               <strong style={{color:'#f87171'}}> 대하락(대피)</strong><br/>
               국면에 따라 매수 기준, 익절·손절 파라미터를 자동 조정합니다.
+            </div>
+          )}
+          {form.strategy === 'v7' && (
+            <div style={{marginBottom:'0.7rem', padding:'0.6rem 0.9rem',
+              background:'rgba(16,185,129,0.07)', border:'1px solid rgba(16,185,129,0.25)',
+              borderRadius:'6px', fontSize:'0.7rem', color:'rgba(52,211,153,0.95)', lineHeight:1.8}}>
+              <strong>Logic #6 — 멀티팩터 통합 전략</strong><br/>
+              <span style={{color:'rgba(255,255,255,0.75)'}}>5가지 팩터 가중 합산 (최소점수 충족 시 매수):</span><br/>
+              🌐 <strong>해외 동조효과 25%</strong> — 미국·일본·대만 섹터 선행 (전일 종가)<br/>
+              📈 <strong>기술적 모멘텀 30%</strong> — MA 정배열 · RSI · 거래량<br/>
+              💰 <strong>가치 품질 20%</strong> — Graham 할인 · PBR/PER<br/>
+              🚢 <strong>HS 수출 모멘텀 15%</strong> — 수출 YoY 증감 (15일 후행 적용)<br/>
+              👥 <strong>고용 증가 10%</strong> — 임직원 YoY 증감 (30일 후행 적용)<br/>
+              <span style={{color:'rgba(255,255,255,0.5)'}}>※ HS/고용 데이터 없는 종목은 neutral(1.5/3)로 처리</span>
             </div>
           )}
           <button onClick={startBacktest} disabled={running} style={{

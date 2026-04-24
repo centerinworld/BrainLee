@@ -36,7 +36,11 @@ async def start_backtest(payload: dict):
     end      = payload.get("end_date",   "2025-12-31")
     per_s    = float(payload.get("per_stock", 10_000_000))
     strategy = payload.get("strategy", "v5")  # v5=AI콤보, v6=Logic#5 국면적응형
-    strategy_label = {'v5': 'AI 콤보 v5', 'v6': 'Logic #5 국면적응형'}.get(strategy, strategy)
+    strategy_label = {
+        'v5': 'AI 콤보 v5',
+        'v6': 'Logic #5 국면적응형',
+        'v7': 'Logic #6 멀티팩터',
+    }.get(strategy, strategy)
     name     = payload.get("name", f"[{strategy_label}] {start[:7]}~{end[:7]}")
     run_id   = str(uuid.uuid4())[:8]
 

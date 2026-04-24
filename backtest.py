@@ -50,6 +50,7 @@ import uuid
 import math
 import argparse
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 
 DB_PATH = "/Applications/stock_dashboard/stock.db"
@@ -561,6 +562,449 @@ def _check_sell(
         if ma60 is not None and curr < ma60:
             return "MA60 붕괴"
 
+
+    return None
+
+
+# ══════════════════════════════════════════════════════════════
+#  Logic #6 — 멀티팩터 동조+수출+고용 통합 전략
+# ══════════════════════════════════════════════════════════════
+#
+# 설계 원칙:
+#   대한민국 주식은 3가지 비가격 정보를 선행지표로 활용할 수 있다.
+#   ① 해외 동조효과: 미국/일본/대만 반도체·배터리 등 섹터 선행
+#   ② HS수출 모멘텀: 수출 증가 → 해당 기업 실적 선행 (15일 후행 공개)
+#   ③ 고용 증가:     인원 증가 → 물량·매출 증가 선행 (30일 후행 공개)
+#   이 3가지를 기존 추세·가치 지표에 통합하여 종합 점수로 매수 결정.
+#
+# 점수 구성 (합계 1.0):
+#   기술적 모멘텀  30%  — MA정배열, RSI, 거래량
+#   해외 동조효과  25%  — 섹터 대응 해외주 1D/5D 평균 변동률
+#   가치 품질     20%  — Graham 할인, 영업이익>0
+#   HS 수출 모멘텀 15%  — YoY 수출증감 (없으면 neutral)
+#   고용 증가      10%  — YoY 임직원 증감 (없으면 neutral)
+#
+# 매수 임계: regime별 최소 점수 (0~1.0 스케일)
+#   강세(3): 0.50,  중립(2): 0.55,  약세(1): 0.62,  대하락(0): 진입금지
+#
+# 데이터 공개 지연 (미래참조 방지):
+#   HS수출  : period_ym 마지막날 + 15일 이후 사용
+#   고용    : ym 마지막날 + 30일 이후 사용
+#   재무    : 기존 _release_date() 동일 (45/90일)
+#   해외주가: 전일 종가 (1일 lag)
+
+# 섹터명 → 해외 선행 종목 매핑 (market_radar.py SECTORS 기반)
+_SECTOR_OVERSEAS: Dict[str, list] = {
+    "반도체":    ["NVDA", "AMD", "AVGO", "MU", "^SOX"],
+    "반도체장비": ["AMAT", "LRCX", "KLAC", "8035.T"],
+    "2차전지":   ["TSLA", "ALB"],
+    "전력장비":  ["ETN", "VRT"],
+    "제약":      ["LLY", "NVO"],
+    "바이오":    ["MRNA", "ABBV"],
+    "방산":      ["LMT", "NOC", "RTX"],
+    "해운":      ["ZIM", "STNG", "SBLK"],
+    "에너지":    ["XOM", "CVX"],
+    "소재":      ["FCX", "RIO"],
+}
+# 기본값: 글로벌 지수
+_DEFAULT_OVERSEAS = ["^GSPC", "^IXIC"]
+
+# HS DB 경로
+_HS_DB_PATH = str(Path(__file__).parent / "hs_trade_lab" / "data" / "hs_trade_lab.db")
+_EMP_DB_PATH = str(Path(__file__).parent / "employment_monitor" / "employment.db")
+
+
+def _precompute_overseas_signals(
+    conn: sqlite3.Connection,
+    sim_dates: list,
+    warmup_start: str,
+    sector_map: Dict[str, str],   # stock_code → sector_large
+) -> Dict[str, Dict[str, float]]:
+    """
+    날짜별·섹터별 해외 선행 시그널 점수(0~3) 사전계산.
+    Returns: {date: {sector_large: score}}
+    overseas_date는 1거래일 lag 적용.
+    """
+    # 필요한 해외 심볼 목록
+    needed = set(_DEFAULT_OVERSEAS)
+    for syms in _SECTOR_OVERSEAS.values():
+        needed.update(syms)
+
+    # price_history에서 overseas 가격 로드
+    ph: Dict[str, Dict[str, float]] = {}  # sym → {date: close}
+    for sym in needed:
+        rows = conn.execute(
+            "SELECT date, close FROM price_history "
+            "WHERE stock_code=? AND date>=? AND close>0 ORDER BY date ASC",
+            (sym, warmup_start)
+        ).fetchall()
+        if rows:
+            ph[sym] = {r[0]: float(r[1]) for r in rows}
+
+    # 결과: {date: {sector: score 0~3}}
+    result: Dict[str, Dict[str, float]] = {}
+
+    all_sectors = list(_SECTOR_OVERSEAS.keys()) + ["default"]
+    for day in sim_dates:
+        scores: Dict[str, float] = {}
+        # 전일 데이터 사용 (1-day lag)
+        prev_dates = [d for d in (ph.get("^GSPC") or {}) if d < day]
+        if not prev_dates:
+            result[day] = {s: 1.5 for s in all_sectors}  # neutral
+            continue
+        prev_day  = prev_dates[-1]
+        prev2_days = [d for d in prev_dates[:-1]]
+        prev5_day  = prev2_days[-4] if len(prev2_days) >= 4 else None
+
+        def _chg(sym: str) -> Optional[float]:
+            sp = ph.get(sym, {})
+            c  = sp.get(prev_day)
+            p  = sp.get(prev2_days[-1]) if prev2_days else None
+            if c and p and p > 0:
+                return (c - p) / p * 100
+            return None
+
+        def _chg5(sym: str) -> Optional[float]:
+            sp = ph.get(sym, {})
+            c  = sp.get(prev_day)
+            p  = sp.get(prev5_day) if prev5_day else None
+            if c and p and p > 0:
+                return (c - p) / p * 100
+            return None
+
+        def _score_sym_list(syms: list) -> float:
+            vals = [v for s in syms for v in [_chg(s), _chg5(s)] if v is not None]
+            if not vals:
+                return 1.5   # neutral
+            avg = sum(vals) / len(vals)
+            if avg >= 2.0:   return 3.0
+            if avg >= 0.5:   return 2.5
+            if avg >= -0.3:  return 1.5
+            if avg >= -1.5:  return 1.0
+            return 0.0
+
+        for sec, syms in _SECTOR_OVERSEAS.items():
+            scores[sec] = _score_sym_list(syms)
+        scores["default"] = _score_sym_list(_DEFAULT_OVERSEAS)
+        result[day] = scores
+
+    return result
+
+
+def _precompute_hs_signals(
+    sim_dates: list,
+    stock_codes: list,
+) -> Dict[str, Dict[str, float]]:
+    """
+    HS 수출 모멘텀 점수(0~3) 사전계산.
+    Returns: {stock_code: {date: score}}
+    HS data 공개: period_ym 마지막날 + 15일 이후 사용가능
+    """
+    try:
+        hs_conn = sqlite3.connect(_HS_DB_PATH, timeout=10)
+        hs_conn.row_factory = sqlite3.Row
+    except Exception:
+        return {}
+
+    result: Dict[str, Dict[str, float]] = {}
+    try:
+        # stock_code → hs_codes 매핑
+        maps = hs_conn.execute(
+            "SELECT stock_code, hs_code FROM hs_code_company_map "
+            "WHERE mapping_status IN ('confirmed','exact','composite') "
+            "AND stock_code IS NOT NULL AND stock_code != ''"
+        ).fetchall()
+
+        sc_to_hs: Dict[str, list] = {}
+        for r in maps:
+            sc = str(r["stock_code"]).strip()
+            hc = str(r["hs_code"]).strip()
+            if sc and hc:
+                sc_to_hs.setdefault(sc, []).append(hc)
+
+        # hs_code → (period_ym, export_value) 전체 로드
+        ts_rows = hs_conn.execute(
+            "SELECT hs_code, period_ym, export_value FROM trade_series_cache "
+            "WHERE flow_type='total' ORDER BY hs_code, period_ym"
+        ).fetchall()
+
+        hs_to_ts: Dict[str, Dict[str, float]] = {}
+        for r in ts_rows:
+            hc = str(r["hs_code"]).strip()
+            ym = str(r["period_ym"]).strip()
+            ev = float(r["export_value"] or 0)
+            hs_to_ts.setdefault(hc, {})[ym] = ev
+
+        for sc in stock_codes:
+            hs_list = sc_to_hs.get(sc)
+            if not hs_list:
+                continue
+
+            # 해당 종목 전체 월별 수출합산
+            monthly: Dict[str, float] = {}
+            for hc in hs_list:
+                for ym, ev in hs_to_ts.get(hc, {}).items():
+                    monthly[ym] = monthly.get(ym, 0) + ev
+
+            if not monthly:
+                continue
+
+            sc_scores: Dict[str, float] = {}
+            for day in sim_dates:
+                # 사용 가능한 최신 period_ym: day - 15일 이내
+                avail_dt = (datetime.strptime(day, "%Y-%m-%d") - timedelta(days=15))
+                avail_ym = avail_dt.strftime("%Y-%m")
+                # 사용 가능 월 목록
+                avail = sorted([ym for ym in monthly if ym <= avail_ym])
+                if len(avail) < 13:
+                    sc_scores[day] = 1.5  # 데이터 부족 → neutral
+                    continue
+                # 최근 3개월 평균 vs 전년 동기 3개월 평균
+                curr3   = [monthly[m] for m in avail[-3:]]
+                prev3   = [monthly[m] for m in avail[-15:-12]]
+                if not curr3 or not prev3 or sum(prev3) == 0:
+                    sc_scores[day] = 1.5
+                    continue
+                yoy = (sum(curr3) / len(curr3) - sum(prev3) / len(prev3)) \
+                      / (sum(prev3) / len(prev3)) * 100
+                if yoy >= 30:   sc_scores[day] = 3.0
+                elif yoy >= 10: sc_scores[day] = 2.5
+                elif yoy >= -5: sc_scores[day] = 1.5
+                elif yoy >= -20:sc_scores[day] = 0.8
+                else:           sc_scores[day] = 0.0
+
+            if sc_scores:
+                result[sc] = sc_scores
+    except Exception:
+        pass
+    finally:
+        try: hs_conn.close()
+        except Exception: pass
+
+    return result
+
+
+def _precompute_emp_signals(
+    sim_dates: list,
+    stock_codes: list,
+) -> Dict[str, Dict[str, float]]:
+    """
+    고용 증가 점수(0~3) 사전계산.
+    Returns: {stock_code: {date: score}}
+    고용 data 공개: ym 마지막날 + 30일 이후 사용가능
+    """
+    try:
+        emp_conn = sqlite3.connect(_EMP_DB_PATH, timeout=10)
+        emp_conn.row_factory = sqlite3.Row
+    except Exception:
+        return {}
+
+    result: Dict[str, Dict[str, float]] = {}
+    try:
+        # 전체 고용 데이터 로드
+        rows = emp_conn.execute(
+            "SELECT stock_code, ym, employee_count FROM employment_company_monthly "
+            "WHERE employee_count IS NOT NULL AND employee_count > 0 "
+            "ORDER BY stock_code, ym"
+        ).fetchall()
+
+        emp_data: Dict[str, Dict[str, int]] = {}
+        for r in rows:
+            sc = str(r["stock_code"]).strip()
+            ym = str(r["ym"]).strip()
+            ec = int(r["employee_count"])
+            if sc and ym:
+                emp_data.setdefault(sc, {})[ym] = ec
+
+        for sc in stock_codes:
+            monthly = emp_data.get(sc)
+            if not monthly or len(monthly) < 13:
+                continue
+
+            sc_scores: Dict[str, float] = {}
+            for day in sim_dates:
+                avail_dt = (datetime.strptime(day, "%Y-%m-%d") - timedelta(days=30))
+                avail_ym = avail_dt.strftime("%Y-%m")
+                avail    = sorted([ym for ym in monthly if ym <= avail_ym])
+                if len(avail) < 13:
+                    sc_scores[day] = 1.5
+                    continue
+                curr_ec = monthly[avail[-1]]
+                prev_ec = monthly[avail[-13]]  # 정확히 12개월 전
+                if prev_ec == 0:
+                    sc_scores[day] = 1.5
+                    continue
+                yoy = (curr_ec - prev_ec) / prev_ec * 100
+                if yoy >= 10:  sc_scores[day] = 3.0
+                elif yoy >= 3: sc_scores[day] = 2.5
+                elif yoy >= -1:sc_scores[day] = 1.5
+                elif yoy >= -5:sc_scores[day] = 0.8
+                else:          sc_scores[day] = 0.0
+            if sc_scores:
+                result[sc] = sc_scores
+    except Exception:
+        pass
+    finally:
+        try: emp_conn.close()
+        except Exception: pass
+
+    return result
+
+
+def _is_buy_signal_v7(
+    i: int,
+    sim_start_i: int,
+    dates: list,
+    prices: list,
+    volumes: list,
+    fin_rows: list,
+    sector_large: str,
+    stock_code: str,
+    regime: int,
+    overseas_day: Dict[str, float],   # {sector: score} for this date
+    hs_score_day: float,              # 0~3 (1.5=neutral)
+    emp_score_day: float,             # 0~3 (1.5=neutral)
+) -> bool:
+    """
+    Logic #6 멀티팩터 매수 시그널.
+    """
+    if i < sim_start_i or regime == 0:
+        return False
+
+    p_slice = prices[max(0, i - 249): i + 1]
+    if len(p_slice) < 60:
+        return False
+
+    curr = prices[i]
+    d    = dates[i]
+
+    ma20  = _ma(p_slice[-20:], 20) if len(p_slice) >= 20 else None
+    ma60  = _ma(p_slice[-60:], 60) if len(p_slice) >= 60 else None
+    ma120 = _ma(p_slice[-120:], 120) if len(p_slice) >= 120 else None
+
+    if ma20 is None or ma60 is None:
+        return False
+
+    # ── 재무 (공통 필수: 영업이익 > 0) ───────────────────────────
+    fin = _get_financial_as_of(fin_rows, d)
+    if fin is None:
+        return False
+    _y, _q, _rev, op, eps, bps, _eq, _ni, _roe, _ann = fin
+    if not (op and op > 0):
+        return False
+
+    # ── 1. 기술적 모멘텀 점수 (0~3, 가중 30%) ────────────────────
+    tech = 0.0
+    # MA 정배열
+    if ma120 and curr > ma60 and ma60 > ma120:
+        tech += 1.2   # 3중 정배열
+    elif curr > ma60:
+        tech += 0.8
+    elif curr > ma20:
+        tech += 0.3
+    # RSI
+    rsi = _rsi(prices[max(0, i - 28): i + 1])
+    if rsi is not None:
+        if 50 <= rsi <= 75:   tech += 0.9
+        elif 40 <= rsi < 50:  tech += 0.4
+    # 거래량
+    vol_w = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
+    if vol_w and volumes[i]:
+        vr = volumes[i] / _get_avg(vol_w)
+        if vr >= 2.0:   tech += 0.9
+        elif vr >= 1.3: tech += 0.5
+    tech = min(3.0, tech)
+
+    # ── 2. 해외 동조효과 점수 (0~3, 가중 25%) ────────────────────
+    ov_sec  = overseas_day.get(sector_large,  1.5)
+    ov_def  = overseas_day.get("default",     1.5)
+    overseas = (ov_sec * 0.7 + ov_def * 0.3)   # 섹터 70% + 글로벌 30%
+
+    # ── 3. 가치 품질 점수 (0~3, 가중 20%) ────────────────────────
+    value = 0.0
+    if eps and bps and eps > 0 and bps > 0:
+        gp   = _graham_price(eps, bps)
+        disc = (gp - curr) / gp * 100 if gp and gp > 0 else 0
+        pbr  = curr / bps
+        per  = curr / eps
+        if disc >= 25:                 value += 1.5
+        elif disc >= 10:               value += 0.8
+        if pbr < 1.0 and 0 < per < 15:value += 1.0
+        elif pbr < 2.0:                value += 0.5
+    # RS 상대강도
+    if i >= 62 and prices[i - 62] > 0:
+        rs = (curr - prices[i - 62]) / prices[i - 62] * 100
+        if rs >= 10:  value += 0.5
+        elif rs >= 3: value += 0.2
+    value = min(3.0, value)
+
+    # ── 4. HS 수출 모멘텀 (0~3, 가중 15%) ────────────────────────
+    hs_s = hs_score_day   # pre-computed (1.5 if no data)
+
+    # ── 5. 고용 증가 (0~3, 가중 10%) ─────────────────────────────
+    emp_s = emp_score_day  # pre-computed (1.5 if no data)
+
+    # ── 종합 점수 (0~1.0) ─────────────────────────────────────────
+    score = (
+        tech     * 0.30 +
+        overseas * 0.25 +
+        value    * 0.20 +
+        hs_s     * 0.15 +
+        emp_s    * 0.10
+    ) / 3.0   # 최대 3.0 → 1.0 정규화
+
+    # ── regime별 임계값 ──────────────────────────────────────────
+    threshold = {3: 0.50, 2: 0.55, 1: 0.62}.get(regime, 0.55)
+    return score >= threshold
+
+
+def _check_sell_v7(
+    i: int,
+    prices: list,
+    pos: dict,
+    regime: int,
+) -> Optional[str]:
+    """
+    Logic #6 국면별 적응형 매도.
+    강세(3): 익절+18%, 손절-7%, 추적-9%, MA60, 최대45일
+    중립(2): 익절+13%, 손절-6%, 추적-8%, MA40, 최대35일
+    약세(1): 익절+9%,  손절-5%, 추적-7%, MA20, 최대25일
+    """
+    params = {
+        3: dict(tp=0.18, sl=-0.07, trail=-0.09, ma_n=60, max_d=45),
+        2: dict(tp=0.13, sl=-0.06, trail=-0.08, ma_n=40, max_d=35),
+        1: dict(tp=0.09, sl=-0.05, trail=-0.07, ma_n=20, max_d=25),
+    }.get(regime, dict(tp=0.13, sl=-0.06, trail=-0.08, ma_n=40, max_d=35))
+
+    curr = prices[i]
+    if curr > pos.get("peak_price", pos["entry_price"]):
+        pos["peak_price"] = curr
+
+    pct       = (curr - pos["entry_price"]) / pos["entry_price"]
+    peak      = pos.get("peak_price", pos["entry_price"])
+    hold_days = pos.get("hold_days", 0)
+    pos["hold_days"] = hold_days + 1
+
+    # 익절
+    if pct >= params["tp"]:
+        return f"익절(+{pct*100:.0f}%)"
+    # 하드 손절
+    if pct <= params["sl"]:
+        return f"손절({params['sl']*100:.0f}%)"
+    # 최대 보유 초과
+    if hold_days >= params["max_d"]:
+        return f"보유기한({hold_days}일)"
+
+    if hold_days >= 5:
+        # 추적 손절
+        trail = (curr - peak) / peak if peak > 0 else 0
+        if trail <= params["trail"] and pct > 0.02:
+            return f"추적손절(고점-{abs(trail)*100:.0f}%)"
+        # MA 붕괴
+        ma = _ma(prices[max(0, i - params["ma_n"] + 1): i + 1], params["ma_n"])
+        if ma is not None and curr < ma:
+            return f"MA{params['ma_n']} 붕괴"
+
     return None
 
 
@@ -568,14 +1012,18 @@ def _check_sell(
 #  포트폴리오 시뮬레이션 — 날짜별 전체 스캔
 # ══════════════════════════════════════════════════════════════
 def _run_portfolio(
-    sim_dates: list,               # 시뮬레이션 기간 거래일 (ASC)
-    stock_data: Dict[str, dict],   # code → {dates, prices, volumes, frn, inst, fins, sim_start_i}
+    sim_dates: list,
+    stock_data: Dict[str, dict],
     per_stock: float,
     max_positions: int,
     stop_loss: float = -0.08,
-    market_bullish: Optional[Dict[str, bool]] = None,  # v5 시장 추세 필터 (날짜→bool)
+    market_bullish: Optional[Dict[str, bool]] = None,
     strategy: str = 'v5',
-    kospi_regime: Optional[Dict[str, int]] = None,     # v6 국면 (날짜→0/1/2/3)
+    kospi_regime: Optional[Dict[str, int]] = None,
+    overseas_signals: Optional[Dict[str, Dict[str, float]]] = None,  # v7: {date:{sector:score}}
+    hs_signals: Optional[Dict[str, Dict[str, float]]] = None,        # v7: {sc:{date:score}}
+    emp_signals: Optional[Dict[str, Dict[str, float]]] = None,       # v7: {sc:{date:score}}
+    sector_map: Optional[Dict[str, str]] = None,                     # v7: {sc:sector_large}
 ) -> Tuple[list, list]:
     """
     매일(sim_dates 하루씩) 전 종목을 스캔:
@@ -584,6 +1032,7 @@ def _run_portfolio(
 
     strategy='v5': 기존 AI 콤보 (KOSPI MA120 필터)
     strategy='v6': Logic #5 국면 적응형
+    strategy='v7': Logic #6 멀티팩터 (동조+수출+고용)
 
     Returns: (trades, equity_curve)
     """
@@ -611,7 +1060,9 @@ def _run_portfolio(
                 continue
             i  = idx_map[day]
             sd = stock_data[sc]
-            if strategy == 'v6':
+            if strategy == 'v7':
+                reason = _check_sell_v7(i, sd['prices'], pos, regime)
+            elif strategy == 'v6':
                 reason = _check_sell_v6(i, sd['prices'], pos, regime)
             else:
                 reason = _check_sell(i, sd['prices'], pos, stop_loss)
@@ -636,8 +1087,7 @@ def _run_portfolio(
             del positions[sc]
 
         # ── Step 2: 매수 스캔 (빈 슬롯이 있을 때만) ───────
-        if strategy == 'v6':
-            # Logic #5: 대하락(0)은 완전 차단, 나머지는 국면별 조건
+        if strategy in ('v6', 'v7'):
             if regime == 0:
                 unrealized = sum(
                     (stock_data[sc]['prices'][date_idx[sc][day]] - pos['entry_price']) * pos['qty']
@@ -648,7 +1098,6 @@ def _run_portfolio(
                 equity_curve.append({'date': day, 'equity': round(total_capital + realized + unrealized)})
                 continue
         else:
-            # v5: KOSPI MA120 이하면 매수 금지
             if market_bullish is not None and not market_bullish.get(day, True):
                 unrealized = sum(
                     (stock_data[sc]['prices'][date_idx[sc][day]] - pos['entry_price']) * pos['qty']
@@ -658,6 +1107,9 @@ def _run_portfolio(
                 realized = sum(t['profit_amt'] for t in trades)
                 equity_curve.append({'date': day, 'equity': round(total_capital + realized + unrealized)})
                 continue
+
+        # v7 당일 해외 시그널 (pre-computed)
+        ov_day = (overseas_signals or {}).get(day, {})
 
         if len(positions) < max_positions:
             for sc, sd in stock_data.items():
@@ -669,7 +1121,19 @@ def _run_portfolio(
                 if day not in idx_map:
                     continue
                 i = idx_map[day]
-                if strategy == 'v6':
+                if strategy == 'v7':
+                    sig = _is_buy_signal_v7(
+                        i, sd['sim_start_i'],
+                        sd['dates'], sd['prices'], sd['volumes'],
+                        sd['fins'],
+                        (sector_map or {}).get(sc, "기타"),
+                        sc,
+                        regime,
+                        ov_day,
+                        (hs_signals or {}).get(sc, {}).get(day, 1.5),
+                        (emp_signals or {}).get(sc, {}).get(day, 1.5),
+                    )
+                elif strategy == 'v6':
                     sig = _is_buy_signal_v6(
                         i, sd['sim_start_i'],
                         sd['dates'], sd['prices'], sd['volumes'],
@@ -819,7 +1283,11 @@ def run_backtest(start_date: str, end_date: str,
               'v6' = Logic #5 국면 적응형 (4단계 regime)
     """
     init_backtest_db()
-    strategy_label = {'v5': 'AI 콤보 v5', 'v6': 'Logic #5 국면적응형'}.get(strategy, strategy)
+    strategy_label = {
+        'v5': 'AI 콤보 v5',
+        'v6': 'Logic #5 국면적응형',
+        'v7': 'Logic #6 멀티팩터(동조+수출+고용)',
+    }.get(strategy, strategy)
     run_name = run_name or f"[{strategy_label}] {start_date[:7]}~{end_date[:7]}"
 
     if run_id is None:
@@ -970,6 +1438,47 @@ def run_backtest(start_date: str, end_date: str,
 
         conn.close()
 
+        # ── v7 전용: 섹터맵 + 3가지 멀티팩터 사전계산 ──────────
+        v7_sector_map:     Dict[str, str]                  = {}
+        v7_overseas:       Dict[str, Dict[str, float]]     = {}
+        v7_hs:             Dict[str, Dict[str, float]]     = {}
+        v7_emp:            Dict[str, Dict[str, float]]     = {}
+
+        if strategy == 'v7':
+            # 종목별 sector_large 조회
+            conn3 = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                sc_list = list(stock_data.keys())
+                for chunk_start in range(0, len(sc_list), 200):
+                    chunk = sc_list[chunk_start: chunk_start + 200]
+                    ph2   = ','.join('?' * len(chunk))
+                    for sc, sl in conn3.execute(
+                        f"SELECT stock_code, sector_large FROM stock_universe "
+                        f"WHERE stock_code IN ({ph2})", chunk
+                    ).fetchall():
+                        v7_sector_map[sc] = sl or "기타"
+            except Exception:
+                pass
+            finally:
+                conn3.close()
+
+            # 1. 해외 동조효과 사전계산
+            conn4 = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                v7_overseas = _precompute_overseas_signals(
+                    conn4, sim_dates, warmup_start, v7_sector_map
+                )
+            except Exception:
+                pass
+            finally:
+                conn4.close()
+
+            # 2. HS 수출 사전계산
+            v7_hs = _precompute_hs_signals(sim_dates, sc_list)
+
+            # 3. 고용 사전계산
+            v7_emp = _precompute_emp_signals(sim_dates, sc_list)
+
         # ── 포트폴리오 시뮬레이션 ───────────────────────────────
         total_capital = per_stock * max_positions
         trades, equity_curve = _run_portfolio(
@@ -978,7 +1487,11 @@ def run_backtest(start_date: str, end_date: str,
             stop_loss=-0.08,
             market_bullish=market_bullish if (strategy == 'v5' and market_bullish) else None,
             strategy=strategy,
-            kospi_regime=kospi_regime if (strategy == 'v6' and kospi_regime) else None,
+            kospi_regime=kospi_regime if strategy in ('v6', 'v7') else None,
+            overseas_signals=v7_overseas if strategy == 'v7' else None,
+            hs_signals=v7_hs      if strategy == 'v7' else None,
+            emp_signals=v7_emp    if strategy == 'v7' else None,
+            sector_map=v7_sector_map if strategy == 'v7' else None,
         )
 
         # ── 종목명 매핑 ──────────────────────────────────────
