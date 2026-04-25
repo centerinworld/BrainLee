@@ -7363,7 +7363,7 @@ const App = () => {
     const startBacktest = async () => {
       setRunning(true);
       try {
-        const strategyLabel = {v5:'AI 콤보 v5', v6:'Logic #5 국면적응형', v7:'Logic #6 멀티팩터'}[form.strategy] || form.strategy;
+        const strategyLabel = {v5:'AI 콤보 v5', v6:'Logic #5 국면적응형', v7:'Logic #6 멀티팩터', v8:'Logic #7 눌림목'}[form.strategy] || form.strategy;
         const r = await fetch(API('/api/backtest/run'), {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
@@ -7425,7 +7425,7 @@ const App = () => {
           <div style={{padding:'0.5rem 0.8rem',background:'rgba(251,191,36,0.07)',
             border:'1px solid rgba(251,191,36,0.2)',borderRadius:'6px',
             fontSize:'0.7rem',color:'rgba(251,191,36,0.85)',lineHeight:1.6}}>
-            ⚠️ v5: AI 콤보(추세+가치), KOSPI MA120 상방만 매수 · v6(Logic#5): KOSPI 국면 4단계 적응형 · v7(Logic#6): 동조효과+HS수출+고용 멀티팩터.
+            ⚠️ v5: AI 콤보(추세+가치) · v6(Logic#5): KOSPI 국면 4단계 적응형 · v7(Logic#6): 동조효과+HS+고용 멀티팩터 · v8(Logic#7): 눌림목(Pullback) 전략.
             과거 데이터 기준 시뮬레이션으로 <strong>미래 수익을 보장하지 않습니다.</strong>
           </div>
         </div>
@@ -7457,6 +7457,7 @@ const App = () => {
                 <option value="v5">AI 콤보 v5 (KOSPI MA120 필터)</option>
                 <option value="v6">Logic #5 — 국면 적응형</option>
                 <option value="v7">Logic #6 — 멀티팩터 (동조+수출+고용)</option>
+                <option value="v8">Logic #7 — 눌림목(Pullback) 전략</option>
               </select>
             </div>
           </div>
@@ -7484,6 +7485,20 @@ const App = () => {
               🚢 <strong>HS 수출 모멘텀 15%</strong> — 수출 YoY 증감 (15일 후행 적용)<br/>
               👥 <strong>고용 증가 10%</strong> — 임직원 YoY 증감 (30일 후행 적용)<br/>
               <span style={{color:'rgba(255,255,255,0.5)'}}>※ HS/고용 데이터 없는 종목은 neutral(1.5/3)로 처리</span>
+            </div>
+          )}
+          {form.strategy === 'v8' && (
+            <div style={{marginBottom:'0.7rem', padding:'0.6rem 0.9rem',
+              background:'rgba(251,146,60,0.07)', border:'1px solid rgba(251,146,60,0.25)',
+              borderRadius:'6px', fontSize:'0.7rem', color:'rgba(251,191,36,0.95)', lineHeight:1.8}}>
+              <strong>Logic #7 — 눌림목(Pullback) 전략</strong><br/>
+              <span style={{color:'rgba(255,255,255,0.75)'}}>추세 유지 중 단기 조정 구간 매수:</span><br/>
+              📐 <strong>MA 완전 정배열</strong> — MA60 &gt; MA120 &gt; MA200 (장기 상승 추세 확인)<br/>
+              🎯 <strong>눌림목 진입</strong> — MA20 ×0.98 ≤ 현재가 ≤ MA20 ×1.05<br/>
+              📉 <strong>RSI &lt; 50</strong> — 단기 과열 해소 확인<br/>
+              💧 <strong>수급 강도</strong> — (기관+외국인) 5일 합 &gt; 20일 평균거래량 ×5%<br/>
+              🏦 <strong>시장 필터</strong> — KOSPI: MA200 위 / KOSDAQ: MA60 위 · ADR &lt; 100<br/>
+              💰 <strong>청산</strong> — Scale-out +10%(절반익절) · 추적손절 고점-10% · Time Stop 5일
             </div>
           )}
           <button onClick={startBacktest} disabled={running} style={{

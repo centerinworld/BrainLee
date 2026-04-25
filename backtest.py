@@ -1035,6 +1035,200 @@ def _check_sell_v7(
 
 
 # ══════════════════════════════════════════════════════════════
+#  Logic #7 — 눌림목(Pullback) 전략 (v8)
+# ══════════════════════════════════════════════════════════════
+
+def _compute_kosdaq_regime(
+    conn, warmup_start: str, end_date: str, start_date: str
+) -> Dict[str, bool]:
+    """KOSDAQ ^KQ11 MA60 기준. True = 상승장(MA60 위)."""
+    bullish: Dict[str, bool] = {}
+    try:
+        rows = conn.execute("""
+            SELECT date, close FROM price_history
+            WHERE stock_code='^KQ11' AND date>=? AND date<=? AND close>0
+            ORDER BY date ASC
+        """, (warmup_start, end_date)).fetchall()
+        kq_dates  = [r[0] for r in rows]
+        kq_prices = [float(r[1]) for r in rows]
+        for ki, kd in enumerate(kq_dates):
+            if kd < start_date:
+                continue
+            kq_ma60 = _ma(kq_prices[max(0, ki - 59): ki + 1], 60)
+            bullish[kd] = (kq_ma60 is None) or (kq_prices[ki] > kq_ma60)
+    except Exception:
+        pass
+    return bullish
+
+
+def _compute_adr_signals(sim_dates: list, stock_data: Dict) -> Dict[str, float]:
+    """ADR (등락비율) = 상승종목수/하락종목수×100. 이미 로드된 price 데이터로 계산."""
+    from collections import defaultdict
+    advances: Dict[str, int] = defaultdict(int)
+    declines: Dict[str, int] = defaultdict(int)
+
+    for sd in stock_data.values():
+        dates  = sd['dates']
+        prices = sd['prices']
+        for j in range(1, len(dates)):
+            d    = dates[j]
+            prev = prices[j - 1]
+            curr = prices[j]
+            if prev > 0:
+                if curr > prev:
+                    advances[d] += 1
+                elif curr < prev:
+                    declines[d] += 1
+
+    adr: Dict[str, float] = {}
+    for d in sim_dates:
+        adv = advances.get(d, 0)
+        dec = declines.get(d, 0)
+        adr[d] = (adv / max(1, dec)) * 100
+    return adr
+
+
+def _is_buy_signal_v8(
+    i: int,
+    sim_start_i: int,
+    dates: list,
+    prices: list,
+    volumes: list,
+    frn: list,
+    inst: list,
+    fin_rows: list,
+    market: str,
+    kospi_regime: int,
+    kosdaq_bullish: bool,
+    adr_day: float,
+) -> bool:
+    """
+    Logic #7 눌림목(Pullback) 매수 전략.
+      1. 시장필터: KOSDAQ→MA60 위, KOSPI→MA200 위(regime≥1)
+      2. ADR < 100 (당일 하락종목≥상승종목 → 눌림목 환경)
+      3. MA 완전 정배열: MA60>MA120>MA200
+      4. 눌림목 구간: MA20×0.98 ≤ curr ≤ MA20×1.05
+      5. RSI < 50 (과열 해소)
+      6. 수급 강도: (inst+frn)5일합 > vol20평균×5%
+      7. 영업이익 > 0
+    """
+    if i < sim_start_i:
+        return False
+
+    # 시장 필터
+    if market == 'KOSDAQ':
+        if not kosdaq_bullish:
+            return False
+    else:
+        if kospi_regime == 0:
+            return False
+
+    # ADR 필터 (눌림목 환경: 당일 하락종목 ≥ 상승종목)
+    if adr_day >= 100:
+        return False
+
+    p_slice = prices[max(0, i - 249): i + 1]
+    if len(p_slice) < 200:
+        return False
+
+    curr = prices[i]
+    d    = dates[i]
+
+    ma20  = _ma(p_slice[-20:],  20)
+    ma60  = _ma(p_slice[-60:],  60)  if len(p_slice) >= 60  else None
+    ma120 = _ma(p_slice[-120:], 120) if len(p_slice) >= 120 else None
+    ma200 = _ma(p_slice[-200:], 200) if len(p_slice) >= 200 else None
+
+    if ma20 is None or ma60 is None or ma120 is None or ma200 is None:
+        return False
+
+    # MA 완전 정배열
+    if not (ma60 > ma120 > ma200):
+        return False
+
+    # 눌림목 구간 (MA20 -2% ~ +5%)
+    if not (ma20 * 0.98 <= curr <= ma20 * 1.05):
+        return False
+
+    # RSI < 50 (과열 해소 확인)
+    rsi = _rsi(prices[max(0, i - 28): i + 1])
+    if rsi is None or rsi >= 50:
+        return False
+
+    # 수급 강도: (inst+frn) 5일 합 > vol20 평균 × 5%
+    if i < 20:
+        return False
+    supply_5  = sum(abs(frn[j]) + abs(inst[j]) for j in range(i - 4, i + 1))
+    vol_slice = [v for v in volumes[max(0, i - 19): i + 1] if v > 0]
+    vol20_avg = _get_avg(vol_slice)
+    if vol20_avg <= 0 or supply_5 <= vol20_avg * 0.05:
+        return False
+
+    # 재무: 영업이익 > 0
+    fin = _get_financial_as_of(fin_rows, d)
+    if fin is None:
+        return False
+    _y, _q, _rev, op, eps, bps, _eq, _ni, _roe, _ann = fin
+    if not (op and op > 0):
+        return False
+
+    return True
+
+
+def _check_sell_v8(
+    i: int,
+    prices: list,
+    pos: dict,
+) -> Optional[str]:
+    """
+    Logic #7 눌림목 매도 전략.
+    - Time Stop: 5일 보유 + 수익률 ≤ 0
+    - Scale-out: +10% 도달 시 절반 익절 → 잔여분은 MA20 이탈/본전 청산
+    - 추적손절: 고점 +10% 발동 후 고점 대비 -10%
+    - 하드 손절: -8%
+    """
+    curr = prices[i]
+    if curr > pos.get('peak_price', pos['entry_price']):
+        pos['peak_price'] = curr
+
+    pct       = (curr - pos['entry_price']) / pos['entry_price']
+    peak      = pos.get('peak_price', pos['entry_price'])
+    hold_days = pos.get('hold_days', 0)
+    pos['hold_days'] = hold_days + 1
+
+    # Time Stop: 5일 보유 + 수익 없음
+    if hold_days >= 5 and pct <= 0:
+        return f"time_stop({hold_days}일무수익)"
+
+    # Scale-out: 첫 +10% 도달 → 절반 청산 신호
+    if pct >= 0.10 and not pos.get('scaled_out', False):
+        pos['scaled_out'] = True
+        pos['scale_stop'] = pos['entry_price']  # 잔여분 손절가 = 진입가(본전)
+        return "scale_out_partial"
+
+    # Scale-out 이후 잔여분 관리
+    if pos.get('scaled_out', False):
+        ma20 = _ma(prices[max(0, i - 19): i + 1], 20)
+        if ma20 is not None and curr < ma20:
+            return f"MA20붕괴(잔여분+{pct*100:.0f}%)"
+        if curr <= pos.get('scale_stop', 0):
+            return "손절(잔여분본전)"
+        return None
+
+    # 하드 손절 -8%
+    if pct <= -0.08:
+        return "손절(-8%)"
+
+    # 추적손절: 고점 +10% 이상 상승 후 고점 대비 -10%
+    if hold_days >= 5 and peak >= pos['entry_price'] * 1.10:
+        trail = (curr - peak) / peak
+        if trail <= -0.10:
+            return f"추적손절(고점-{abs(trail)*100:.0f}%)"
+
+    return None
+
+
+# ══════════════════════════════════════════════════════════════
 #  포트폴리오 시뮬레이션 — 날짜별 전체 스캔
 # ══════════════════════════════════════════════════════════════
 def _run_portfolio(
@@ -1051,6 +1245,9 @@ def _run_portfolio(
     emp_signals: Optional[Dict[str, Dict[str, float]]] = None,       # v7: {sc:{date:score}}
     sector_map: Optional[Dict[str, str]] = None,                     # v7: {sc:sector_large}
     v7_params: Optional[Dict] = None,                                # v7: optimizer override
+    kosdaq_regime: Optional[Dict[str, bool]] = None,                 # v8: {date:bool}
+    adr_signals: Optional[Dict[str, float]] = None,                  # v8: {date:float}
+    market_map: Optional[Dict[str, str]] = None,                     # v8: {sc:'KOSPI'/'KOSDAQ'}
 ) -> Tuple[list, list]:
     """
     매일(sim_dates 하루씩) 전 종목을 스캔:
@@ -1060,6 +1257,7 @@ def _run_portfolio(
     strategy='v5': 기존 AI 콤보 (KOSPI MA120 필터)
     strategy='v6': Logic #5 국면 적응형
     strategy='v7': Logic #6 멀티팩터 (동조+수출+고용)
+    strategy='v8': Logic #7 눌림목(Pullback) 전략
 
     Returns: (trades, equity_curve)
     """
@@ -1087,7 +1285,9 @@ def _run_portfolio(
                 continue
             i  = idx_map[day]
             sd = stock_data[sc]
-            if strategy == 'v7':
+            if strategy == 'v8':
+                reason = _check_sell_v8(i, sd['prices'], pos)
+            elif strategy == 'v7':
                 reason = _check_sell_v7(i, sd['prices'], pos, regime)
             elif strategy == 'v6':
                 reason = _check_sell_v6(i, sd['prices'], pos, regime)
@@ -1097,6 +1297,25 @@ def _run_portfolio(
                 continue
             curr = sd['prices'][i]
             pct  = (curr - pos['entry_price']) / pos['entry_price']
+            # Scale-out: 절반만 청산하고 포지션 유지
+            if reason == "scale_out_partial":
+                half_qty      = max(1, pos['qty'] // 2)
+                remaining_qty = pos['qty'] - half_qty
+                if remaining_qty > 0:
+                    trades.append({
+                        'stock_code':  sc,
+                        'entry_date':  pos['entry_date'],
+                        'exit_date':   day,
+                        'entry_price': pos['entry_price'],
+                        'exit_price':  curr,
+                        'qty':         half_qty,
+                        'profit_pct':  round(pct * 100, 2),
+                        'profit_amt':  round((curr - pos['entry_price']) * half_qty),
+                        'exit_reason': "scale_out(절반+10%)",
+                    })
+                    pos['qty'] = remaining_qty
+                    continue  # 잔여분 유지, sold_today에 추가 안 함
+                reason = "scale_out(전량+10%)"
             trades.append({
                 'stock_code':  sc,
                 'entry_date':  pos['entry_date'],
@@ -1148,7 +1367,17 @@ def _run_portfolio(
                 if day not in idx_map:
                     continue
                 i = idx_map[day]
-                if strategy == 'v7':
+                if strategy == 'v8':
+                    sig = _is_buy_signal_v8(
+                        i, sd['sim_start_i'],
+                        sd['dates'], sd['prices'], sd['volumes'],
+                        sd['frn'], sd['inst'], sd['fins'],
+                        (market_map or {}).get(sc, 'KOSPI'),
+                        regime,
+                        (kosdaq_regime or {}).get(day, True),
+                        (adr_signals or {}).get(day, 50.0),
+                    )
+                elif strategy == 'v7':
                     sig = _is_buy_signal_v7(
                         i, sd['sim_start_i'],
                         sd['dates'], sd['prices'], sd['volumes'],
@@ -1451,19 +1680,55 @@ def prepare_backtest_data(start_date: str, end_date: str, strategy: str = 'v7') 
         v7_hs  = _precompute_hs_signals(sim_dates, sc_list)
         v7_emp = _precompute_emp_signals(sim_dates, sc_list)
 
+    # ── v8 전용: KOSDAQ 국면 + ADR + 시장구분 ─────────────────
+    v8_kosdaq_bullish: Dict[str, bool]  = {}
+    v8_adr_signals:    Dict[str, float] = {}
+    v8_market_map:     Dict[str, str]   = {}
+
+    if strategy == 'v8':
+        conn_v8 = sqlite3.connect(DB_PATH, timeout=30)
+        try:
+            v8_kosdaq_bullish = _compute_kosdaq_regime(
+                conn_v8, warmup_start, end_date, start_date)
+        except Exception:
+            pass
+        finally:
+            conn_v8.close()
+
+        v8_adr_signals = _compute_adr_signals(sim_dates, stock_data)
+
+        sc_list_v8 = list(stock_data.keys())
+        conn_v8b = sqlite3.connect(DB_PATH, timeout=30)
+        try:
+            for i8 in range(0, len(sc_list_v8), 200):
+                chunk8 = sc_list_v8[i8: i8 + 200]
+                ph8    = ','.join('?' * len(chunk8))
+                for sc, mk in conn_v8b.execute(
+                    f"SELECT stock_code, market FROM stock_universe "
+                    f"WHERE stock_code IN ({ph8})", chunk8
+                ).fetchall():
+                    v8_market_map[sc] = mk or 'KOSPI'
+        except Exception:
+            pass
+        finally:
+            conn_v8b.close()
+
     return {
-        'start_date':     start_date,
-        'end_date':       end_date,
-        'warmup_start':   warmup_start,
-        'sim_dates':      sim_dates,
-        'stock_data':     stock_data,
-        'fin_all':        fin_all,
-        'market_bullish': market_bullish,
-        'kospi_regime':   kospi_regime,
-        'sector_map':     v7_sector_map,
-        'overseas':       v7_overseas,
-        'hs':             v7_hs,
-        'emp':            v7_emp,
+        'start_date':      start_date,
+        'end_date':        end_date,
+        'warmup_start':    warmup_start,
+        'sim_dates':       sim_dates,
+        'stock_data':      stock_data,
+        'fin_all':         fin_all,
+        'market_bullish':  market_bullish,
+        'kospi_regime':    kospi_regime,
+        'sector_map':      v7_sector_map,
+        'overseas':        v7_overseas,
+        'hs':              v7_hs,
+        'emp':             v7_emp,
+        'kosdaq_bullish':  v8_kosdaq_bullish,
+        'adr_signals':     v8_adr_signals,
+        'market_map':      v8_market_map,
     }
 
 
@@ -1489,6 +1754,7 @@ def run_backtest(start_date: str, end_date: str,
         'v5': 'AI 콤보 v5',
         'v6': 'Logic #5 국면적응형',
         'v7': 'Logic #6 멀티팩터(동조+수출+고용)',
+        'v8': 'Logic #7 눌림목(Pullback) 전략',
     }.get(strategy, strategy)
     run_name = run_name or f"[{strategy_label}] {start_date[:7]}~{end_date[:7]}"
 
@@ -1510,15 +1776,18 @@ def run_backtest(start_date: str, end_date: str,
         # ── 데이터 로드: 캐시(_preloaded)가 있으면 재사용, 없으면 DB에서 직접 로드 ─
         if _preloaded is not None:
             # optimizer 캐시 경로 (DB 재조회 생략 → 수십 배 빠름)
-            warmup_start   = _preloaded['warmup_start']
-            sim_dates      = _preloaded['sim_dates']
-            stock_data     = _preloaded['stock_data']
-            market_bullish = _preloaded['market_bullish']
-            kospi_regime   = _preloaded['kospi_regime']
-            v7_sector_map  = _preloaded.get('sector_map', {})
-            v7_overseas    = _preloaded.get('overseas', {})
-            v7_hs          = _preloaded.get('hs', {})
-            v7_emp         = _preloaded.get('emp', {})
+            warmup_start      = _preloaded['warmup_start']
+            sim_dates         = _preloaded['sim_dates']
+            stock_data        = _preloaded['stock_data']
+            market_bullish    = _preloaded['market_bullish']
+            kospi_regime      = _preloaded['kospi_regime']
+            v7_sector_map     = _preloaded.get('sector_map', {})
+            v7_overseas       = _preloaded.get('overseas', {})
+            v7_hs             = _preloaded.get('hs', {})
+            v7_emp            = _preloaded.get('emp', {})
+            v8_kosdaq_bullish = _preloaded.get('kosdaq_bullish', {})
+            v8_adr_signals    = _preloaded.get('adr_signals', {})
+            v8_market_map     = _preloaded.get('market_map', {})
             conn.close()
         else:
             # ── 워밍업 시작일 ─────────────────────────────────────
@@ -1663,6 +1932,39 @@ def run_backtest(start_date: str, end_date: str,
                 v7_hs  = _precompute_hs_signals(sim_dates, sc_list)
                 v7_emp = _precompute_emp_signals(sim_dates, sc_list)
 
+            # ── v8 전용: KOSDAQ 국면 + ADR + 시장구분 ─────────────
+            v8_kosdaq_bullish: Dict[str, bool]  = {}
+            v8_adr_signals:    Dict[str, float] = {}
+            v8_market_map:     Dict[str, str]   = {}
+
+            if strategy == 'v8':
+                conn_kq = sqlite3.connect(DB_PATH, timeout=30)
+                try:
+                    v8_kosdaq_bullish = _compute_kosdaq_regime(
+                        conn_kq, warmup_start, end_date, start_date)
+                except Exception:
+                    pass
+                finally:
+                    conn_kq.close()
+
+                v8_adr_signals = _compute_adr_signals(sim_dates, stock_data)
+
+                sc_list_v8 = list(stock_data.keys())
+                conn_mk = sqlite3.connect(DB_PATH, timeout=30)
+                try:
+                    for i_mk in range(0, len(sc_list_v8), 200):
+                        chunk_mk = sc_list_v8[i_mk: i_mk + 200]
+                        ph_mk    = ','.join('?' * len(chunk_mk))
+                        for sc, mk in conn_mk.execute(
+                            f"SELECT stock_code, market FROM stock_universe "
+                            f"WHERE stock_code IN ({ph_mk})", chunk_mk
+                        ).fetchall():
+                            v8_market_map[sc] = mk or 'KOSPI'
+                except Exception:
+                    pass
+                finally:
+                    conn_mk.close()
+
         # ── 포트폴리오 시뮬레이션 ───────────────────────────────
         total_capital = per_stock * max_positions
         trades, equity_curve = _run_portfolio(
@@ -1671,12 +1973,15 @@ def run_backtest(start_date: str, end_date: str,
             stop_loss=-0.08,
             market_bullish=market_bullish if (strategy == 'v5' and market_bullish) else None,
             strategy=strategy,
-            kospi_regime=kospi_regime if strategy in ('v6', 'v7') else None,
+            kospi_regime=kospi_regime if strategy in ('v6', 'v7', 'v8') else None,
             overseas_signals=v7_overseas if strategy == 'v7' else None,
-            hs_signals=v7_hs      if strategy == 'v7' else None,
-            emp_signals=v7_emp    if strategy == 'v7' else None,
+            hs_signals=v7_hs         if strategy == 'v7' else None,
+            emp_signals=v7_emp       if strategy == 'v7' else None,
             sector_map=v7_sector_map if strategy == 'v7' else None,
             v7_params=_override_params if strategy == 'v7' else None,
+            kosdaq_regime=v8_kosdaq_bullish if strategy == 'v8' else None,
+            adr_signals=v8_adr_signals      if strategy == 'v8' else None,
+            market_map=v8_market_map        if strategy == 'v8' else None,
         )
 
         # ── 종목명 매핑 ──────────────────────────────────────
@@ -1742,6 +2047,19 @@ def run_backtest(start_date: str, end_date: str,
             r3 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 3)
             filter_line = f"국면분포: 대하락{r0}일 / 약세{r1}일 / 중립{r2}일 / 강세{r3}일 (대하락 전면차단)"
             strategy_line = "★ Logic#6: 멀티팩터(해외동조30%+기술28%+가치17%+HS15%+고용10%) / 글로벌하락 패널티"
+        elif strategy == 'v8':
+            r0 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 0)
+            r3 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 3)
+            kq_bull = sum(1 for d in sim_dates if v8_kosdaq_bullish.get(d, True))
+            adr_lt100 = sum(1 for d in sim_dates if v8_adr_signals.get(d, 50) < 100)
+            filter_line = (
+                f"KOSPI 대하락 {r0}일 / KOSPI 강세 {r3}일 / "
+                f"KOSDAQ MA60 위 {kq_bull}일 / ADR<100 {adr_lt100}일/{len(sim_dates)}일"
+            )
+            strategy_line = (
+                "★ Logic#7: 눌림목(Pullback) / MA60>MA120>MA200 정배열 / "
+                "MA20±2~5% / RSI<50 / 수급강도>vol20×5% / Scale-out+10% / TrailStop+10%발동"
+            )
         else:
             filter_line = ""
             strategy_line = f"★ 전략 {strategy}"
