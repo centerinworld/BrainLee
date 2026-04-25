@@ -35,19 +35,27 @@ PERIOD_B = ("2023-07-01", "2025-04-30", "⑤2023하~2025 AI랠리")
 PERIOD_C = ("2020-01-01", "2021-12-31", "③2020~2021 코로나반등")
 
 
-def _run_period(start, end, label, params):
+import sqlite3 as _sql
+
+
+def _get_db_path() -> str:
+    for p in [os.path.join(_ROOT, "stock.db"),
+              "/Applications/stock_dashboard/stock.db"]:
+        if os.path.exists(p) and os.path.getsize(p) > 100_000:
+            return p
+    return os.path.join(_ROOT, "stock.db")
+
+
+def _run_with_cache(cache: Dict, params: Dict, label: str) -> Dict:
     try:
         run_id = _bt.run_backtest(
-            start_date=start, end_date=end,
+            start_date=cache["start_date"], end_date=cache["end_date"],
             per_stock=10_000_000, max_positions=10,
             run_name=f"[FT] {label}", strategy="v7",
             _override_params=params,
+            _preloaded=cache,
         )
-        import sqlite3
-        DB_PATH = os.path.join(_ROOT, "stock.db")
-        if not os.path.exists(DB_PATH):
-            DB_PATH = "/Applications/stock_dashboard/stock.db"
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = _sql.connect(_get_db_path(), timeout=30)
         row = conn.execute(
             "SELECT total_return_pct, max_drawdown_pct, win_rate, total_trades "
             "FROM backtest_runs WHERE run_id=?", (run_id,)
@@ -147,7 +155,17 @@ def run_finetune(csv_path: str, top_n: int = 10) -> None:
 
     print(f"\n{'='*60}")
     print(f"  미세 조정  —  {total}개 조합  (3기간 평가)")
-    print(f"{'='*60}\n")
+    print(f"{'='*60}")
+
+    # ── 3기간 데이터 사전 로드 (각 1회만) ───────────────────────
+    import time as _time
+    for label_i, (s_, e_, lbl) in enumerate([PERIOD_A, PERIOD_B, PERIOD_C], 1):
+        print(f"  [{label_i}/3] {lbl} 데이터 로드 중...")
+    t0 = _time.time()
+    cache_a = _bt.prepare_backtest_data(*PERIOD_A[:2], strategy="v7")
+    cache_b = _bt.prepare_backtest_data(*PERIOD_B[:2], strategy="v7")
+    cache_c = _bt.prepare_backtest_data(*PERIOD_C[:2], strategy="v7")
+    print(f"  데이터 로드 완료 ({_time.time()-t0:.0f}초)\n")
 
     results = []
     fieldnames = ["rank","score","ret_a","mdd_a","ret_b","mdd_b","ret_c","mdd_c",
@@ -160,9 +178,9 @@ def run_finetune(csv_path: str, top_n: int = 10) -> None:
         writer = csv.DictWriter(csvf, fieldnames=fieldnames)
         writer.writeheader()
         for idx, params in enumerate(combos, 1):
-            ra = _run_period(*PERIOD_A, params)
-            rb = _run_period(*PERIOD_B, params)
-            rc = _run_period(*PERIOD_C, params)
+            ra = _run_with_cache(cache_a, params, PERIOD_A[2])
+            rb = _run_with_cache(cache_b, params, PERIOD_B[2])
+            rc = _run_with_cache(cache_c, params, PERIOD_C[2])
             s  = _score(ra, rb, rc)
             row = {"rank":0, "score":round(s,3),
                    "ret_a":round(ra["total_return"],1), "mdd_a":round(ra["mdd"],1),

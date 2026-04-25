@@ -111,23 +111,38 @@ def _score(ret_a: float, ret_b: float, mdd_a: float, mdd_b: float) -> float:
     return bonus_a * 0.4 + ret_b * 0.6 - mdd_penalty
 
 
-def _run_period(start: str, end: str, label: str, params: Dict[str, Any]) -> Dict[str, float]:
-    """단일 기간 백테스트 실행 후 결과 반환."""
+import sqlite3 as _sql
+
+_DB_PATH: str = ""
+
+
+def _get_db_path() -> str:
+    global _DB_PATH
+    if _DB_PATH:
+        return _DB_PATH
+    for p in [os.path.join(_ROOT, "stock.db"),
+              "/Applications/stock_dashboard/stock.db"]:
+        if os.path.exists(p) and os.path.getsize(p) > 100_000:
+            _DB_PATH = p
+            return p
+    _DB_PATH = os.path.join(_ROOT, "stock.db")
+    return _DB_PATH
+
+
+def _run_with_cache(cache: Dict, params: Dict[str, Any], label: str) -> Dict[str, float]:
+    """캐시된 데이터로 단일 파라미터 조합 백테스트 실행."""
     try:
         run_id = _bt.run_backtest(
-            start_date=start,
-            end_date=end,
+            start_date=cache["start_date"],
+            end_date=cache["end_date"],
             per_stock=10_000_000,
             max_positions=10,
             run_name=f"[OPT] {label}",
             strategy="v7",
             _override_params=params,
+            _preloaded=cache,           # ← DB 재조회 생략
         )
-        import sqlite3
-        DB_PATH = os.path.join(_ROOT, "stock.db")
-        if not os.path.exists(DB_PATH):
-            DB_PATH = "/Applications/stock_dashboard/stock.db"
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = _sql.connect(_get_db_path(), timeout=30)
         row = conn.execute(
             "SELECT total_return_pct, max_drawdown_pct, ann_return_pct, win_rate, total_trades "
             "FROM backtest_runs WHERE run_id=?", (run_id,)
@@ -138,10 +153,10 @@ def _run_period(start: str, end: str, label: str, params: Dict[str, Any]) -> Dic
         if row:
             return {
                 "total_return": float(row[0] or 0),
-                "mdd": float(row[1] or 0),
-                "cagr": float(row[2] or 0),
-                "win_rate": float(row[3] or 0),
-                "trades": int(row[4] or 0),
+                "mdd":          float(row[1] or 0),
+                "cagr":         float(row[2] or 0),
+                "win_rate":     float(row[3] or 0),
+                "trades":       int(row[4]   or 0),
             }
     except Exception as e:
         logger.debug(f"run failed: {e}")
@@ -202,9 +217,22 @@ def run_optimization(top_n: int = 20, quick: bool = False) -> None:
     print(f"  Logic #6 파라미터 최적화  —  총 {total}개 조합")
     print(f"  기간A: {PERIOD_A[0]}~{PERIOD_A[1]}")
     print(f"  기간B: {PERIOD_B[0]}~{PERIOD_B[1]}")
-    print(f"{'='*65}\n")
+    print(f"{'='*65}")
+
+    # ── 데이터 사전 로드 (2기간 각 1회만 실행) ────────────────────
+    print(f"\n  [1/2] 기간A 데이터 로드 중...")
+    t_load = time.time()
+    cache_a = _bt.prepare_backtest_data(*PERIOD_A[:2], strategy="v7")
+    print(f"        완료 ({time.time()-t_load:.0f}초)  종목수: {len(cache_a['stock_data'])}")
+
+    print(f"  [2/2] 기간B 데이터 로드 중...")
+    t_load = time.time()
+    cache_b = _bt.prepare_backtest_data(*PERIOD_B[:2], strategy="v7")
+    print(f"        완료 ({time.time()-t_load:.0f}초)  종목수: {len(cache_b['stock_data'])}")
+    print(f"\n  이후 {total}개 조합은 캐시 재사용 (DB 재조회 없음)\n")
 
     results: List[Dict] = []
+    t_combo_start = time.time()
 
     with open(csv_path, "w", newline="", encoding="utf-8") as csvf:
         fieldnames = [
@@ -223,8 +251,8 @@ def run_optimization(top_n: int = 20, quick: bool = False) -> None:
             params = _build_params(w, th, pen, sw, vm)
             t0 = time.time()
 
-            ra = _run_period(*PERIOD_A, params)
-            rb = _run_period(*PERIOD_B, params)
+            ra = _run_with_cache(cache_a, params, PERIOD_A[2])
+            rb = _run_with_cache(cache_b, params, PERIOD_B[2])
 
             s = _score(ra["total_return"], rb["total_return"], ra["mdd"], rb["mdd"])
 
@@ -243,13 +271,16 @@ def run_optimization(top_n: int = 20, quick: bool = False) -> None:
             writer.writerow(row)
             csvf.flush()
 
-            elapsed = time.time() - t0
-            eta = elapsed * (total - idx)
+            elapsed_one = time.time() - t0
+            elapsed_tot = time.time() - t_combo_start
+            avg_per     = elapsed_tot / idx
+            eta         = avg_per * (total - idx)
             print(
                 f"  [{idx:4d}/{total}] "
                 f"A:{ra['total_return']:+6.1f}% "
                 f"B:{rb['total_return']:+6.1f}% "
                 f"score:{s:+6.2f}  "
+                f"{elapsed_one:.1f}s/콤보  "
                 f"eta:{eta/60:.0f}분  "
                 f"w={w[0]:.2f}/{w[1]:.2f}/{w[2]:.2f} "
                 f"thr={th[0]:.2f}/{th[1]:.2f}/{th[2]:.2f}"

@@ -1296,6 +1296,178 @@ def _calc_metrics(trades: list, equity_curve: list,
 
 
 # ══════════════════════════════════════════════════════════════
+#  데이터 사전 로드 (optimizer 캐시용)
+# ══════════════════════════════════════════════════════════════
+def prepare_backtest_data(start_date: str, end_date: str, strategy: str = 'v7') -> Dict:
+    """
+    주어진 기간의 모든 백테스트 데이터를 미리 로드한다.
+    optimizer에서 동일 기간을 여러 파라미터로 반복 실행할 때
+    이 결과를 캐시로 넘겨 DB 재조회를 생략한다.
+
+    반환값을 run_backtest()의 _preloaded 파라미터에 전달하면 됨.
+    """
+    warmup_start = (datetime.strptime(start_date, '%Y-%m-%d')
+                    - timedelta(days=450)).strftime('%Y-%m-%d')
+
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+
+    # ── 거래일 목록 ───────────────────────────────────────────
+    sim_dates = [r[0] for r in conn.execute("""
+        SELECT DISTINCT date FROM price_history
+        WHERE stock_code='^KS11' AND date>=? AND date<=? AND close>0
+        ORDER BY date ASC
+    """, (start_date, end_date)).fetchall()]
+    if not sim_dates:
+        sim_dates = [r[0] for r in conn.execute("""
+            SELECT DISTINCT date FROM price_history
+            WHERE date>=? AND date<=? AND close>0
+            ORDER BY date ASC
+        """, (start_date, end_date)).fetchall()]
+
+    # ── 재무 데이터 ───────────────────────────────────────────
+    fin_all: Dict[str, list] = {}
+    for r in conn.execute("""
+        SELECT stock_code, year, quarter,
+               revenue, operating_profit, eps, bps,
+               total_equity, net_income, roe,
+               CASE WHEN is_annual=1 THEN 1 ELSE 0 END
+        FROM financial_data
+        WHERE (is_annual=0 AND quarter BETWEEN 1 AND 3)
+           OR (is_annual=1)
+        ORDER BY stock_code, year, quarter
+    """).fetchall():
+        fin_all.setdefault(r[0], []).append(r[1:])
+
+    # ── 종목 목록 (시총 1000억+, 충분한 데이터 보유) ─────────
+    stock_codes = [r[0] for r in conn.execute("""
+        SELECT ph.stock_code, COUNT(*) AS cnt
+        FROM price_history ph
+        INNER JOIN (
+            SELECT stock_code FROM stock_universe
+            WHERE (market_cap IS NULL OR market_cap >= 100000000000)
+              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+            GROUP BY stock_code
+        ) su ON ph.stock_code = su.stock_code
+        WHERE ph.date>=? AND ph.date<=? AND ph.close>0
+        GROUP BY ph.stock_code
+        HAVING cnt >= 200
+    """, (warmup_start, end_date)).fetchall()]
+
+    # ── 종목별 OHLCV 로드 ─────────────────────────────────────
+    stock_data: Dict[str, dict] = {}
+    for sc in stock_codes:
+        try:
+            rows = conn.execute("""
+                SELECT date, close,
+                       COALESCE(volume, 0),
+                       COALESCE(frn_net_buy, 0),
+                       COALESCE(inst_net_buy, 0)
+                FROM price_history
+                WHERE stock_code=? AND date>=? AND date<=? AND close>0
+                ORDER BY date ASC
+            """, (sc, warmup_start, end_date)).fetchall()
+            if len(rows) < 200:
+                continue
+            dates   = [r[0] for r in rows]
+            prices  = [float(r[1]) for r in rows]
+            volumes = [float(r[2]) for r in rows]
+            frn     = [float(r[3]) for r in rows]
+            inst    = [float(r[4]) for r in rows]
+            sim_start_i = next(
+                (i for i, d in enumerate(dates) if d >= start_date),
+                len(dates)
+            )
+            stock_data[sc] = {
+                'dates': dates, 'prices': prices, 'volumes': volumes,
+                'frn': frn, 'inst': inst,
+                'fins': fin_all.get(sc, []),
+                'sim_start_i': sim_start_i,
+            }
+        except Exception:
+            continue
+
+    # ── KOSPI 국면 계산 ───────────────────────────────────────
+    market_bullish: Dict[str, bool] = {}
+    kospi_regime:   Dict[str, int]  = {}
+    try:
+        kospi_rows = conn.execute("""
+            SELECT date, close FROM price_history
+            WHERE stock_code='^KS11' AND date>=? AND date<=? AND close>0
+            ORDER BY date ASC
+        """, (warmup_start, end_date)).fetchall()
+        k_dates  = [r[0] for r in kospi_rows]
+        k_prices = [float(r[1]) for r in kospi_rows]
+        for ki, kd in enumerate(k_dates):
+            if kd < start_date:
+                continue
+            curr   = k_prices[ki]
+            kma60  = _ma(k_prices[max(0, ki - 59):  ki + 1], 60)
+            kma120 = _ma(k_prices[max(0, ki - 119): ki + 1], 120)
+            kma200 = _ma(k_prices[max(0, ki - 199): ki + 1], 200)
+            market_bullish[kd] = (kma120 is None) or (curr > kma120)
+            if kma60 and curr > kma60:        kospi_regime[kd] = 3
+            elif kma120 and curr > kma120:    kospi_regime[kd] = 2
+            elif kma200 and curr > kma200:    kospi_regime[kd] = 1
+            else:                             kospi_regime[kd] = 0
+    except Exception:
+        pass
+
+    conn.close()
+
+    # ── v7 전용: 섹터맵 + 멀티팩터 사전계산 ─────────────────
+    v7_sector_map:  Dict[str, str]              = {}
+    v7_overseas:    Dict[str, Dict[str, float]] = {}
+    v7_hs:          Dict[str, Dict[str, float]] = {}
+    v7_emp:         Dict[str, Dict[str, float]] = {}
+
+    if strategy == 'v7':
+        sc_list = list(stock_data.keys())
+        conn3 = sqlite3.connect(DB_PATH, timeout=30)
+        try:
+            for i in range(0, len(sc_list), 200):
+                chunk = sc_list[i: i + 200]
+                ph = ','.join('?' * len(chunk))
+                for sc, sl in conn3.execute(
+                    f"SELECT stock_code, sector_large FROM stock_universe "
+                    f"WHERE stock_code IN ({ph})", chunk
+                ).fetchall():
+                    v7_sector_map[sc] = sl or "기타"
+        except Exception:
+            pass
+        finally:
+            conn3.close()
+
+        conn4 = sqlite3.connect(DB_PATH, timeout=30)
+        try:
+            v7_overseas = _precompute_overseas_signals(
+                conn4, sim_dates, warmup_start, v7_sector_map)
+        except Exception:
+            pass
+        finally:
+            conn4.close()
+
+        v7_hs  = _precompute_hs_signals(sim_dates, sc_list)
+        v7_emp = _precompute_emp_signals(sim_dates, sc_list)
+
+    return {
+        'start_date':     start_date,
+        'end_date':       end_date,
+        'warmup_start':   warmup_start,
+        'sim_dates':      sim_dates,
+        'stock_data':     stock_data,
+        'fin_all':        fin_all,
+        'market_bullish': market_bullish,
+        'kospi_regime':   kospi_regime,
+        'sector_map':     v7_sector_map,
+        'overseas':       v7_overseas,
+        'hs':             v7_hs,
+        'emp':            v7_emp,
+    }
+
+
+# ══════════════════════════════════════════════════════════════
 #  메인 백테스트
 # ══════════════════════════════════════════════════════════════
 def run_backtest(start_date: str, end_date: str,
@@ -1304,7 +1476,8 @@ def run_backtest(start_date: str, end_date: str,
                  run_name: str = None,
                  run_id: str = None,
                  strategy: str = 'v5',
-                 _override_params: Optional[Dict] = None) -> str:
+                 _override_params: Optional[Dict] = None,
+                 _preloaded: Optional[Dict] = None) -> str:
     """
     run_id가 주어지면 해당 레코드(이미 DB에 존재)를 직접 업데이트.
     없으면 새 run_id를 생성하고 INSERT.
@@ -1334,179 +1507,161 @@ def run_backtest(start_date: str, end_date: str,
         conn.commit()
 
     try:
-        # ── 워밍업 시작일: start_date 보다 WARMUP_DAYS 거래일 이전 ──
-        # 달력 기준 약 450일 전(영업일 300일 여유분)
-        warmup_start = (datetime.strptime(start_date, '%Y-%m-%d')
-                        - timedelta(days=450)).strftime('%Y-%m-%d')
+        # ── 데이터 로드: 캐시(_preloaded)가 있으면 재사용, 없으면 DB에서 직접 로드 ─
+        if _preloaded is not None:
+            # optimizer 캐시 경로 (DB 재조회 생략 → 수십 배 빠름)
+            warmup_start   = _preloaded['warmup_start']
+            sim_dates      = _preloaded['sim_dates']
+            stock_data     = _preloaded['stock_data']
+            market_bullish = _preloaded['market_bullish']
+            kospi_regime   = _preloaded['kospi_regime']
+            v7_sector_map  = _preloaded.get('sector_map', {})
+            v7_overseas    = _preloaded.get('overseas', {})
+            v7_hs          = _preloaded.get('hs', {})
+            v7_emp         = _preloaded.get('emp', {})
+            conn.close()
+        else:
+            # ── 워밍업 시작일 ─────────────────────────────────────
+            warmup_start = (datetime.strptime(start_date, '%Y-%m-%d')
+                            - timedelta(days=450)).strftime('%Y-%m-%d')
 
-        # ── 시뮬레이션 거래일 목록 (start_date ~ end_date) ─────────
-        sim_dates = [r[0] for r in conn.execute("""
-            SELECT DISTINCT date FROM price_history
-            WHERE stock_code='^KS11' AND date>=? AND date<=? AND close>0
-            ORDER BY date ASC
-        """, (start_date, end_date)).fetchall()]
-
-        if not sim_dates:
-            # KOSPI 없으면 전체 종목에서 추출
+            # ── 시뮬레이션 거래일 목록 (start_date ~ end_date) ─────
             sim_dates = [r[0] for r in conn.execute("""
                 SELECT DISTINCT date FROM price_history
-                WHERE date>=? AND date<=? AND close>0
-                ORDER BY date ASC
-            """, (start_date, end_date)).fetchall()]
-
-        # ── 재무 데이터 로드 (분기 + 연간 모두, 공시 전 미래 참조 방지) ──
-        # 컬럼: year, quarter, rev, op, eps, bps, equity, net_inc, roe, is_annual
-        fin_all: Dict[str, list] = {}
-        for r in conn.execute("""
-            SELECT stock_code, year, quarter,
-                   revenue, operating_profit, eps, bps,
-                   total_equity, net_income, roe,
-                   CASE WHEN is_annual=1 THEN 1 ELSE 0 END
-            FROM financial_data
-            WHERE (is_annual=0 AND quarter BETWEEN 1 AND 3)
-               OR (is_annual=1)
-            ORDER BY stock_code, year, quarter
-        """).fetchall():
-            sc = r[0]
-            fin_all.setdefault(sc, []).append(r[1:])   # (y,q,rev,op,eps,bps,eq,ni,roe,is_ann)
-
-        # ── 종목 목록 (시총 1000억 이상 + 워밍업 포함 충분한 데이터 보유) ─
-        # 시총 필터로 변동성 높은 소형주 제거 (signal_engine TREND_MKTCAP_MIN=500억 보다 강화)
-        stock_codes = [r[0] for r in conn.execute("""
-            SELECT ph.stock_code, COUNT(*) AS cnt
-            FROM price_history ph
-            INNER JOIN (
-                SELECT stock_code FROM stock_universe
-                WHERE (market_cap IS NULL OR market_cap >= 100000000000)
-                  AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
-                GROUP BY stock_code
-            ) su ON ph.stock_code = su.stock_code
-            WHERE ph.date>=? AND ph.date<=? AND ph.close>0
-            GROUP BY ph.stock_code
-            HAVING cnt >= 200
-        """, (warmup_start, end_date)).fetchall()]
-
-        # ── 종목별 데이터 로드 ────────────────────────────────────
-        stock_data: Dict[str, dict] = {}
-        for sc in stock_codes:
-            try:
-                rows = conn.execute("""
-                    SELECT date, close,
-                           COALESCE(volume, 0),
-                           COALESCE(frn_net_buy, 0),
-                           COALESCE(inst_net_buy, 0)
-                    FROM price_history
-                    WHERE stock_code=? AND date>=? AND date<=? AND close>0
-                    ORDER BY date ASC
-                """, (sc, warmup_start, end_date)).fetchall()
-
-                if len(rows) < 200:
-                    continue
-
-                dates   = [r[0] for r in rows]
-                prices  = [float(r[1]) for r in rows]
-                volumes = [float(r[2]) for r in rows]
-                frn     = [float(r[3]) for r in rows]
-                inst    = [float(r[4]) for r in rows]
-                fins    = fin_all.get(sc, [])
-
-                # 시뮬레이션 시작 인덱스 (start_date 이후 첫 거래일)
-                sim_start_i = next(
-                    (i for i, d in enumerate(dates) if d >= start_date),
-                    len(dates)
-                )
-
-                stock_data[sc] = {
-                    'dates':       dates,
-                    'prices':      prices,
-                    'volumes':     volumes,
-                    'frn':         frn,
-                    'inst':        inst,
-                    'fins':        fins,
-                    'sim_start_i': sim_start_i,
-                }
-            except Exception:
-                continue
-
-        # ── KOSPI 시장 추세/국면 계산 ───────────────────────────
-        market_bullish: Dict[str, bool] = {}
-        kospi_regime:   Dict[str, int]  = {}
-        try:
-            kospi_rows = conn.execute("""
-                SELECT date, close FROM price_history
                 WHERE stock_code='^KS11' AND date>=? AND date<=? AND close>0
                 ORDER BY date ASC
-            """, (warmup_start, end_date)).fetchall()
-            k_dates  = [r[0] for r in kospi_rows]
-            k_prices = [float(r[1]) for r in kospi_rows]
-            for ki, kd in enumerate(k_dates):
-                if kd < start_date:
+            """, (start_date, end_date)).fetchall()]
+            if not sim_dates:
+                sim_dates = [r[0] for r in conn.execute("""
+                    SELECT DISTINCT date FROM price_history
+                    WHERE date>=? AND date<=? AND close>0
+                    ORDER BY date ASC
+                """, (start_date, end_date)).fetchall()]
+
+            # ── 재무 데이터 로드 ──────────────────────────────────
+            fin_all: Dict[str, list] = {}
+            for r in conn.execute("""
+                SELECT stock_code, year, quarter,
+                       revenue, operating_profit, eps, bps,
+                       total_equity, net_income, roe,
+                       CASE WHEN is_annual=1 THEN 1 ELSE 0 END
+                FROM financial_data
+                WHERE (is_annual=0 AND quarter BETWEEN 1 AND 3)
+                   OR (is_annual=1)
+                ORDER BY stock_code, year, quarter
+            """).fetchall():
+                fin_all.setdefault(r[0], []).append(r[1:])
+
+            # ── 종목 목록 ─────────────────────────────────────────
+            stock_codes = [r[0] for r in conn.execute("""
+                SELECT ph.stock_code, COUNT(*) AS cnt
+                FROM price_history ph
+                INNER JOIN (
+                    SELECT stock_code FROM stock_universe
+                    WHERE (market_cap IS NULL OR market_cap >= 100000000000)
+                      AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                    GROUP BY stock_code
+                ) su ON ph.stock_code = su.stock_code
+                WHERE ph.date>=? AND ph.date<=? AND ph.close>0
+                GROUP BY ph.stock_code
+                HAVING cnt >= 200
+            """, (warmup_start, end_date)).fetchall()]
+
+            # ── 종목별 OHLCV 로드 ─────────────────────────────────
+            stock_data: Dict[str, dict] = {}
+            for sc in stock_codes:
+                try:
+                    rows = conn.execute("""
+                        SELECT date, close,
+                               COALESCE(volume, 0),
+                               COALESCE(frn_net_buy, 0),
+                               COALESCE(inst_net_buy, 0)
+                        FROM price_history
+                        WHERE stock_code=? AND date>=? AND date<=? AND close>0
+                        ORDER BY date ASC
+                    """, (sc, warmup_start, end_date)).fetchall()
+                    if len(rows) < 200:
+                        continue
+                    dates   = [r[0] for r in rows]
+                    prices  = [float(r[1]) for r in rows]
+                    volumes = [float(r[2]) for r in rows]
+                    frn     = [float(r[3]) for r in rows]
+                    inst    = [float(r[4]) for r in rows]
+                    sim_start_i = next(
+                        (i for i, d in enumerate(dates) if d >= start_date),
+                        len(dates)
+                    )
+                    stock_data[sc] = {
+                        'dates': dates, 'prices': prices, 'volumes': volumes,
+                        'frn': frn, 'inst': inst,
+                        'fins': fin_all.get(sc, []),
+                        'sim_start_i': sim_start_i,
+                    }
+                except Exception:
                     continue
-                curr   = k_prices[ki]
-                kma60  = _ma(k_prices[max(0, ki - 59):  ki + 1], 60)
-                kma120 = _ma(k_prices[max(0, ki - 119): ki + 1], 120)
-                kma200 = _ma(k_prices[max(0, ki - 199): ki + 1], 200)
 
-                # v5 필터: MA120 상방 여부
-                if kma120 is None:
-                    market_bullish[kd] = True
-                else:
-                    market_bullish[kd] = curr > kma120
-
-                # v6 국면: 4단계 (3=강세 / 2=중립 / 1=약세 / 0=대하락)
-                if kma60 and curr > kma60:
-                    kospi_regime[kd] = 3
-                elif kma120 and curr > kma120:
-                    kospi_regime[kd] = 2
-                elif kma200 and curr > kma200:
-                    kospi_regime[kd] = 1
-                else:
-                    kospi_regime[kd] = 0
-        except Exception:
-            pass  # KOSPI 데이터 없으면 필터 비활성화
-
-        conn.close()
-
-        # ── v7 전용: 섹터맵 + 3가지 멀티팩터 사전계산 ──────────
-        v7_sector_map:     Dict[str, str]                  = {}
-        v7_overseas:       Dict[str, Dict[str, float]]     = {}
-        v7_hs:             Dict[str, Dict[str, float]]     = {}
-        v7_emp:            Dict[str, Dict[str, float]]     = {}
-
-        if strategy == 'v7':
-            # 종목별 sector_large 조회
-            conn3 = sqlite3.connect(DB_PATH, timeout=30)
+            # ── KOSPI 국면 계산 ───────────────────────────────────
+            market_bullish: Dict[str, bool] = {}
+            kospi_regime:   Dict[str, int]  = {}
             try:
+                kospi_rows = conn.execute("""
+                    SELECT date, close FROM price_history
+                    WHERE stock_code='^KS11' AND date>=? AND date<=? AND close>0
+                    ORDER BY date ASC
+                """, (warmup_start, end_date)).fetchall()
+                k_dates  = [r[0] for r in kospi_rows]
+                k_prices = [float(r[1]) for r in kospi_rows]
+                for ki, kd in enumerate(k_dates):
+                    if kd < start_date:
+                        continue
+                    curr   = k_prices[ki]
+                    kma60  = _ma(k_prices[max(0, ki - 59):  ki + 1], 60)
+                    kma120 = _ma(k_prices[max(0, ki - 119): ki + 1], 120)
+                    kma200 = _ma(k_prices[max(0, ki - 199): ki + 1], 200)
+                    market_bullish[kd] = (kma120 is None) or (curr > kma120)
+                    if kma60 and curr > kma60:        kospi_regime[kd] = 3
+                    elif kma120 and curr > kma120:    kospi_regime[kd] = 2
+                    elif kma200 and curr > kma200:    kospi_regime[kd] = 1
+                    else:                             kospi_regime[kd] = 0
+            except Exception:
+                pass
+
+            conn.close()
+
+            # ── v7 전용: 섹터맵 + 멀티팩터 사전계산 ─────────────
+            v7_sector_map:  Dict[str, str]              = {}
+            v7_overseas:    Dict[str, Dict[str, float]] = {}
+            v7_hs:          Dict[str, Dict[str, float]] = {}
+            v7_emp:         Dict[str, Dict[str, float]] = {}
+
+            if strategy == 'v7':
                 sc_list = list(stock_data.keys())
-                for chunk_start in range(0, len(sc_list), 200):
-                    chunk = sc_list[chunk_start: chunk_start + 200]
-                    ph2   = ','.join('?' * len(chunk))
-                    for sc, sl in conn3.execute(
-                        f"SELECT stock_code, sector_large FROM stock_universe "
-                        f"WHERE stock_code IN ({ph2})", chunk
-                    ).fetchall():
-                        v7_sector_map[sc] = sl or "기타"
-            except Exception:
-                pass
-            finally:
-                conn3.close()
+                conn3 = sqlite3.connect(DB_PATH, timeout=30)
+                try:
+                    for chunk_start in range(0, len(sc_list), 200):
+                        chunk = sc_list[chunk_start: chunk_start + 200]
+                        ph2   = ','.join('?' * len(chunk))
+                        for sc, sl in conn3.execute(
+                            f"SELECT stock_code, sector_large FROM stock_universe "
+                            f"WHERE stock_code IN ({ph2})", chunk
+                        ).fetchall():
+                            v7_sector_map[sc] = sl or "기타"
+                except Exception:
+                    pass
+                finally:
+                    conn3.close()
 
-            # 1. 해외 동조효과 사전계산
-            conn4 = sqlite3.connect(DB_PATH, timeout=30)
-            try:
-                v7_overseas = _precompute_overseas_signals(
-                    conn4, sim_dates, warmup_start, v7_sector_map
-                )
-            except Exception:
-                pass
-            finally:
-                conn4.close()
+                conn4 = sqlite3.connect(DB_PATH, timeout=30)
+                try:
+                    v7_overseas = _precompute_overseas_signals(
+                        conn4, sim_dates, warmup_start, v7_sector_map)
+                except Exception:
+                    pass
+                finally:
+                    conn4.close()
 
-            # 2. HS 수출 사전계산
-            v7_hs = _precompute_hs_signals(sim_dates, sc_list)
-
-            # 3. 고용 사전계산
-            v7_emp = _precompute_emp_signals(sim_dates, sc_list)
+                v7_hs  = _precompute_hs_signals(sim_dates, sc_list)
+                v7_emp = _precompute_emp_signals(sim_dates, sc_list)
 
         # ── 포트폴리오 시뮬레이션 ───────────────────────────────
         total_capital = per_stock * max_positions
