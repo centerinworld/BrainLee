@@ -864,6 +864,7 @@ def _is_buy_signal_v7(
     overseas_day: Dict[str, float],   # {sector: score} for this date
     hs_score_day: float,              # 0~3 (1.5=neutral)
     emp_score_day: float,             # 0~3 (1.5=neutral)
+    v7p: Optional[Dict] = None,       # override params from optimizer
 ) -> bool:
     """
     Logic #6 멀티팩터 매수 시그널.
@@ -893,7 +894,25 @@ def _is_buy_signal_v7(
     if not (op and op > 0):
         return False
 
-    # ── 1. 기술적 모멘텀 점수 (0~3, 가중 30%) ────────────────────
+    # ─ 파라미터 (override or defaults) ──────────────────────────
+    p = v7p or {}
+    overseas_w = p.get("overseas_w",  0.30)
+    tech_w     = p.get("tech_w",      0.28)
+    value_w    = p.get("value_w",     0.17)
+    hs_w       = p.get("hs_w",        0.15)
+    emp_w      = p.get("emp_w",       0.10)
+    sec_weight = p.get("sec_weight",  0.65)
+    vol_strong = p.get("vol_strong",  2.0)
+    vol_mild   = p.get("vol_mild",    1.3)
+    thr_bull   = p.get("thr_bull",    0.52)
+    thr_neut   = p.get("thr_neutral", 0.57)
+    thr_bear   = p.get("thr_bear",    0.64)
+    pen_lo_bnd = p.get("pen_low_bnd",  1.0)
+    pen_hi_bnd = p.get("pen_high_bnd", 1.3)
+    pen_lo_add = p.get("pen_low_add",  0.10)
+    pen_hi_add = p.get("pen_high_add", 0.05)
+
+    # ── 1. 기술적 모멘텀 점수 (0~3) ──────────────────────────────
     tech = 0.0
     # MA 정배열
     if ma120 and curr > ma60 and ma60 > ma120:
@@ -907,20 +926,20 @@ def _is_buy_signal_v7(
     if rsi is not None:
         if 50 <= rsi <= 75:   tech += 0.9
         elif 40 <= rsi < 50:  tech += 0.4
-    # 거래량
+    # 거래량 (파라미터화)
     vol_w = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
     if vol_w and volumes[i]:
         vr = volumes[i] / _get_avg(vol_w)
-        if vr >= 2.0:   tech += 0.9
-        elif vr >= 1.3: tech += 0.5
+        if vr >= vol_strong:   tech += 0.9
+        elif vr >= vol_mild:   tech += 0.5
     tech = min(3.0, tech)
 
-    # ── 2. 해외 동조효과 점수 (0~3, 가중 30%) ────────────────────
+    # ── 2. 해외 동조효과 점수 (0~3) ──────────────────────────────
     ov_sec    = overseas_day.get(sector_large, 1.5)
-    ov_global = (overseas_day.get("default",  1.5))   # ^GSPC + ^IXIC
-    overseas  = (ov_sec * 0.65 + ov_global * 0.35)
+    ov_global = overseas_day.get("default",   1.5)   # ^GSPC + ^IXIC
+    overseas  = ov_sec * sec_weight + ov_global * (1.0 - sec_weight)
 
-    # ── 3. 가치 품질 점수 (0~3, 가중 17%) ────────────────────────
+    # ── 3. 가치 품질 점수 (0~3) ──────────────────────────────────
     value = 0.0
     if eps and bps and eps > 0 and bps > 0:
         gp   = _graham_price(eps, bps)
@@ -938,29 +957,29 @@ def _is_buy_signal_v7(
         elif rs >= 3: value += 0.2
     value = min(3.0, value)
 
-    # ── 4. HS 수출 모멘텀 (0~3, 가중 15%) ────────────────────────
+    # ── 4. HS 수출 모멘텀 (0~3) ──────────────────────────────────
     hs_s = hs_score_day   # pre-computed (1.5 if no data)
 
-    # ── 5. 고용 증가 (0~3, 가중 10%) ─────────────────────────────
+    # ── 5. 고용 증가 (0~3) ───────────────────────────────────────
     emp_s = emp_score_day  # pre-computed (1.5 if no data)
 
     # ── 종합 점수 (0~1.0) ─────────────────────────────────────────
-    # 가중치: 기술28% + 해외30% + 가치17% + HS15% + 고용10% = 100%
     score = (
-        tech     * 0.28 +
-        overseas * 0.30 +
-        value    * 0.17 +
-        hs_s     * 0.15 +
-        emp_s    * 0.10
+        tech     * tech_w     +
+        overseas * overseas_w +
+        value    * value_w    +
+        hs_s     * hs_w       +
+        emp_s    * emp_w
     ) / 3.0   # 최대 3.0 → 1.0 정규화
 
     # ── regime별 임계값 ──────────────────────────────────────────
-    threshold = {3: 0.52, 2: 0.57, 1: 0.64}.get(regime, 0.57)
+    threshold = {3: thr_bull, 2: thr_neut, 1: thr_bear}.get(regime, thr_neut)
 
-    # ── 글로벌 하락장 패널티 (^GSPC+^IXIC 동시 약세 시 진입 억제) ──
-    # ov_global이 bearish면 임계값을 추가 상향 → 신중 진입
-    if ov_global < 1.0:    threshold += 0.10  # 강한 글로벌 약세
-    elif ov_global < 1.3:  threshold += 0.05  # 약한 글로벌 약세
+    # ── 글로벌 하락장 패널티 ─────────────────────────────────────
+    if pen_lo_bnd > 0 and ov_global < pen_lo_bnd:
+        threshold += pen_lo_add
+    elif pen_hi_bnd > 0 and ov_global < pen_hi_bnd:
+        threshold += pen_hi_add
 
     return score >= threshold
 
@@ -1031,6 +1050,7 @@ def _run_portfolio(
     hs_signals: Optional[Dict[str, Dict[str, float]]] = None,        # v7: {sc:{date:score}}
     emp_signals: Optional[Dict[str, Dict[str, float]]] = None,       # v7: {sc:{date:score}}
     sector_map: Optional[Dict[str, str]] = None,                     # v7: {sc:sector_large}
+    v7_params: Optional[Dict] = None,                                # v7: optimizer override
 ) -> Tuple[list, list]:
     """
     매일(sim_dates 하루씩) 전 종목을 스캔:
@@ -1139,6 +1159,7 @@ def _run_portfolio(
                         ov_day,
                         (hs_signals or {}).get(sc, {}).get(day, 1.5),
                         (emp_signals or {}).get(sc, {}).get(day, 1.5),
+                        v7_params,
                     )
                 elif strategy == 'v6':
                     sig = _is_buy_signal_v6(
@@ -1282,7 +1303,8 @@ def run_backtest(start_date: str, end_date: str,
                  max_positions: int = 10,
                  run_name: str = None,
                  run_id: str = None,
-                 strategy: str = 'v5') -> str:
+                 strategy: str = 'v5',
+                 _override_params: Optional[Dict] = None) -> str:
     """
     run_id가 주어지면 해당 레코드(이미 DB에 존재)를 직접 업데이트.
     없으면 새 run_id를 생성하고 INSERT.
@@ -1499,6 +1521,7 @@ def run_backtest(start_date: str, end_date: str,
             hs_signals=v7_hs      if strategy == 'v7' else None,
             emp_signals=v7_emp    if strategy == 'v7' else None,
             sector_map=v7_sector_map if strategy == 'v7' else None,
+            v7_params=_override_params if strategy == 'v7' else None,
         )
 
         # ── 종목명 매핑 ──────────────────────────────────────
