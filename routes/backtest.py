@@ -40,6 +40,7 @@ async def start_backtest(payload: dict):
         'v5': 'AI 콤보 v5',
         'v6': 'Logic #5 국면적응형',
         'v7': 'Logic #6 멀티팩터',
+        'v8': 'Logic #7 눌림목(Pullback)',
     }.get(strategy, strategy)
     name     = payload.get("name", f"[{strategy_label}] {start[:7]}~{end[:7]}")
     run_id   = str(uuid.uuid4())[:8]

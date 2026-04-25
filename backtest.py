@@ -166,107 +166,103 @@ def _rsi(prices: list, n: int = 14) -> Optional[float]:
 #  매수 시그널 — AI 적극검토 콤보 로직 완전 재현
 # ══════════════════════════════════════════════════════════════
 def _is_buy_signal(
-    i: int,            # 현재 인덱스 (전체 배열 기준, 워밍업 포함)
-    sim_start_i: int,  # 시뮬레이션 시작 인덱스 (워밍업 이후)
+    i: int,
+    sim_start_i: int,
     dates: list,
     prices: list,
     volumes: list,
     frn_net: list,
     inst_net: list,
     fin_rows: list,
+    market: str = 'KOSPI',
+    kospi_regime: int = 3,
+    kosdaq_bullish: bool = True,
+    adr_day: float = 50.0,
 ) -> bool:
     """
-    AI 적극검토 콤보 로직 재현 (signal_engine.py 와 동일 기준):
+    AI 콤보 전략 v5 — 스나이퍼 로직 (V1가치 + V6수급 + V4눌림목 교집합).
 
-    [A] 추세 스크리너 — 전부 필수 (Minervini)
-      ① 장기 정배열: curr > MA120 > MA200
-      ② 단기 정배열: MA20 > MA60 이상
-      ③ 52주 고점 -20% 이내
-      ④ RSI(14) ≥ 60  (TREND_RSI_MIN=60)
-      ⑤ 거래량 > 20일평균 × 2.0배  (TREND_VOL_RATIO_MIN=2.0)
-
-    [B] 가치 OR 수급 — 하나 이상 충족 (콤보 추가 스크리너)
-      ▸ 가치: Graham 할인 ≥ 25% OR (PBR < 0.7 AND 0 < PER < 10), AND 영업이익 > 0
-      ▸ 수급: 기관 5일 순매수 > 0 AND 외국인 5일 순매수 > 0 (동반 매수)
+    [업데이트] Minervini 돌파 → 눌림목+가치+절대수급 교집합
+      ① 시장 필터: KOSPI → 지수 MA120 위(regime≥2) / KOSDAQ → 지수 MA60 위
+                  ADR < 100 (시장 과열 방지)
+      ② 가치 트랩 방지: 종목 현재가 > MA120
+      ③ MA 정배열: MA120 > MA200
+      ④ 눌림목 진입: MA20 × 0.98 ≤ 현재가 ≤ MA20 × 1.02
+      ⑤ RSI < 50 (단기 과열 해소)
+      ⑥ 절대 수급 강도: (inst+frn)5일합 > vol20 평균 × 5%
+      ⑦ 가치 조건: Graham 할인 ≥ 25% OR (PBR<1.0 AND PER<15), 영업이익>0
     """
     if i < sim_start_i:
+        return False
+
+    # ① 시장 필터
+    if market == 'KOSDAQ':
+        if not kosdaq_bullish:
+            return False
+    else:
+        if kospi_regime < 2:
+            return False
+    if adr_day >= 100:
+        return False
+
+    p_slice = prices[max(0, i - 249): i + 1]
+    if len(p_slice) < 120:
         return False
 
     curr = prices[i]
     d    = dates[i]
 
-    # ══ [A] 추세 스크리너 (Minervini — 전부 필수) ══════════════
-    p_slice = prices[max(0, i - 199): i + 1]
-    if len(p_slice) < 120:
+    ma20  = _ma(p_slice[-20:],  20)
+    ma60  = _ma(p_slice[-60:],  60)  if len(p_slice) >= 60  else None
+    ma120 = _ma(p_slice[-120:], 120) if len(p_slice) >= 120 else None
+    ma200 = _ma(p_slice[-200:], 200) if len(p_slice) >= 200 else None
+
+    if ma20 is None or ma60 is None or ma120 is None:
         return False
 
-    ma20  = sum(p_slice[-20:]) / 20  if len(p_slice) >= 20  else None
-    ma60  = sum(p_slice[-60:]) / 60  if len(p_slice) >= 60  else None
-    ma120 = sum(p_slice[-120:]) / 120 if len(p_slice) >= 120 else None
-    ma200 = sum(p_slice) / len(p_slice) if len(p_slice) >= 200 else None
-
-    if ma120 is None or ma200 is None or ma20 is None or ma60 is None:
+    # ② 가치 트랩 방지: 현재가 > MA120
+    if curr <= ma120:
         return False
 
-    # ① 장기 정배열
-    if not (curr > ma120 and curr > ma200 and ma120 > ma200):
+    # ③ MA 정배열: MA120 > MA200
+    if ma200 is not None and ma120 <= ma200:
         return False
 
-    # ② 단기 정배열 (MA20 > MA60 최소 조건)
-    if not (ma20 > ma60):
+    # ④ 눌림목 구간: MA20 ±2%
+    if not (ma20 * 0.98 <= curr <= ma20 * 1.02):
         return False
 
-    # ③ 52주 고점 -20% 이내
-    high52 = max(prices[max(0, i - 251): i + 1])
-    if curr < high52 * 0.80:
-        return False
-
-    # ④ RSI(14) ≥ 60
+    # ⑤ RSI < 50 (단기 과열 해소)
     rsi_val = _rsi(prices[max(0, i - 28): i + 1])
-    if rsi_val is None or rsi_val < 60:
+    if rsi_val is None or rsi_val >= 50:
         return False
 
-    # ⑤ 거래량 > 20일 평균 × 2.0배
-    vol_window = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
-    if not vol_window or not volumes[i] or volumes[i] <= 0:
+    # ⑥ 절대 수급 강도: (inst+frn)5일합 > vol20 평균 × 5%
+    if i < 20:
         return False
-    avg20v = sum(vol_window) / len(vol_window)
-    if volumes[i] <= avg20v * 2.0:
+    supply_5  = sum(abs(frn_net[j]) + abs(inst_net[j]) for j in range(i - 4, i + 1))
+    vol_slice = [v for v in volumes[max(0, i - 19): i + 1] if v > 0]
+    vol20_avg = _get_avg(vol_slice)
+    if vol20_avg <= 0 or supply_5 <= vol20_avg * 0.05:
         return False
 
-    # ══ [B] 가치 OR 수급 OR RS강도 (하나 이상 필수) ════════════
-    # ※ 수급 데이터가 부족한 구간(57일치 제한)을 RS 상대강도로 보완
-    # signal_engine 콤보 = 추세 + (가치 OR 재무). 재무 대용으로 RS 사용.
-
-    # 가치 스크리너 (Graham 공시일 지연 적용)
-    value_ok = False
+    # ⑦ 가치 조건 + 영업이익 > 0
     fin = _get_financial_as_of(fin_rows, d)
-    if fin is not None:
-        _y, _q, _rev, op, eps, bps, _eq, _ni, _roe, _ann = fin
-        if op and op > 0 and bps and bps > 0 and eps and eps > 0:
-            pbr  = curr / bps
-            per  = curr / eps
-            gp   = _graham_price(eps, bps)
-            disc = (gp - curr) / gp * 100 if gp and gp > 0 else 0
-            # 심층 저평가: Graham 25% 이상 OR (PBR<0.7 AND PER<10)
-            value_ok = (disc >= 25) or (pbr < 0.7 and 0 < per < 10)
+    if fin is None:
+        return False
+    _y, _q, _rev, op, eps, bps, _eq, _ni, _roe, _ann = fin
+    if not (op and op > 0):
+        return False
+    if not (bps and bps > 0 and eps and eps > 0):
+        return False
+    pbr  = curr / bps
+    per  = curr / eps
+    gp   = _graham_price(eps, bps)
+    disc = (gp - curr) / gp * 100 if gp and gp > 0 else 0
+    if not ((disc >= 25) or (pbr < 1.0 and 0 < per < 15)):
+        return False
 
-    # 수급 스크리너: 기관 AND 외국인 5일 동반 순매수 (실시간 데이터)
-    frn5  = sum(frn_net[max(0, i - 4): i + 1])
-    inst5 = sum(inst_net[max(0, i - 4): i + 1])
-    supply_ok = (frn5 > 0 and inst5 > 0)
-
-    # RS 상대강도: 종목 3개월 수익률이 KOSPI보다 +5%p 이상 아웃퍼폼
-    # (재무 스크리너 대용 — signal_engine RS 계산과 동일 기준)
-    rs_ok = False
-    if len(prices) >= 63 and i >= 62:
-        stock_3m = (prices[i] - prices[i - 62]) / prices[i - 62] * 100 if prices[i - 62] > 0 else 0
-        # kospi_ret는 호출 함수에서 주입되지 않으므로 price_history 없이 근사:
-        # 동일 인덱스 기준으로는 계산 불가 → 단순 절대 수익률 기준으로 대체
-        # 3개월 수익률 > +5% (상대강도 최소 기준)
-        rs_ok = stock_3m > 5.0
-
-    return value_ok or supply_ok or rs_ok
+    return True
 
 
 # ══════════════════════════════════════════════════════════════
@@ -305,17 +301,30 @@ def _is_buy_signal_v6(
     frn_net: list,
     inst_net: list,
     fin_rows: list,
-    regime: int = 3,          # 0=대하락, 1=약세, 2=중립, 3=강세
+    regime: int = 3,              # 0=대하락, 1=약세, 2=중립, 3=강세
+    market: str = 'KOSPI',
+    kospi_regime_ext: int = 3,    # 시장 지수 국면 (market filter용)
+    kosdaq_bullish: bool = True,
+    adr_day: float = 50.0,
 ) -> bool:
     """
-    Logic #5 매수 시그널.
-    regime은 run_backtest()에서 날짜별로 미리 계산된 KOSPI 국면.
+    Logic #5 매수 시그널 (시장 필터 + 절대 수급 강도 추가).
     """
     if i < sim_start_i:
         return False
 
     # 대하락 → 진입 금지
     if regime == 0:
+        return False
+
+    # 시장 필터: KOSPI MA120 위 / KOSDAQ MA60 위 / ADR < 100
+    if market == 'KOSDAQ':
+        if not kosdaq_bullish:
+            return False
+    else:
+        if kospi_regime_ext < 2:
+            return False
+    if adr_day >= 100:
         return False
 
     curr = prices[i]
@@ -340,35 +349,38 @@ def _is_buy_signal_v6(
     if not (op and op > 0):
         return False   # 영업적자 제외
 
-    # ── 국면 3 강세장: 공격형 모멘텀 ─────────────────────────────
+    # ── 공통: 절대 수급 강도 계산 ─────────────────────────────────
+    supply_5  = sum(abs(frn_net[j]) + abs(inst_net[j]) for j in range(i - 4, i + 1)) if i >= 4 else 0
+    vol_slice = [v for v in volumes[max(0, i - 19): i + 1] if v > 0]
+    vol20_avg = _get_avg(vol_slice)
+    supply_strong = (vol20_avg > 0 and supply_5 > vol20_avg * 0.05)
+
+    # ── 국면 3 강세장: 눌림목 + 가치 OR 수급 ─────────────────────
     if regime == 3:
         if len(p_slice) < 120:
             return False
         ma120 = _ma(p_slice[-120:], 120)
-        ma200 = _ma(p_slice, len(p_slice)) if len(p_slice) >= 200 else None
-        if ma120 is None or ma200 is None:
+        ma200 = _ma(p_slice[-200:], 200) if len(p_slice) >= 200 else None
+        if ma120 is None:
             return False
 
-        # 3중 정배열: curr > MA60 > MA120 > MA200
-        if not (curr > ma60 and ma60 > ma120 and ma120 > ma200):
+        # 가치 트랩 방지: 현재가 > MA120
+        if curr <= ma120:
             return False
-        # 단기 정배열: MA20 > MA60
-        if not (ma20 > ma60):
+        # MA 정배열: MA60 > MA120 (> MA200)
+        if not (ma60 > ma120):
             return False
-        # 52주 고점 -15% 이내 (핵심 모멘텀 확인)
-        high52 = max(prices[max(0, i - 251): i + 1])
-        if curr < high52 * 0.85:
+        if ma200 and not (ma120 > ma200):
             return False
-        # RSI(14) ≥ 55
+        # 눌림목 구간: MA20 ±5%
+        if not (ma20 * 0.95 <= curr <= ma20 * 1.05):
+            return False
+        # RSI < 55 (눌림목 구간에서 과열 해소 확인)
         rsi_val = _rsi(prices[max(0, i - 28): i + 1])
-        if rsi_val is None or rsi_val < 55:
-            return False
-        # 거래량 폭발 (2배)
-        vol_w = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
-        if not vol_w or not volumes[i] or volumes[i] <= _get_avg(vol_w) * 2.0:
+        if rsi_val is None or rsi_val >= 55:
             return False
 
-        # 가치 기준 (완화: Graham 15%+ OR RS 5%+)
+        # 가치 기준 OR 절대 수급 강도
         value_ok = False
         if eps and bps and eps > 0 and bps > 0:
             gp   = _graham_price(eps, bps)
@@ -376,36 +388,32 @@ def _is_buy_signal_v6(
             pbr  = curr / bps
             per  = curr / eps
             value_ok = disc >= 15 or (pbr < 1.0 and 0 < per < 15)
-        rs_ok = False
-        if i >= 62 and prices[i - 62] > 0:
-            rs_ok = (prices[i] - prices[i - 62]) / prices[i - 62] * 100 > 5.0
-        # 수급 보조 (있으면 plus)
-        frn5  = sum(frn_net[max(0, i - 4): i + 1])
-        inst5 = sum(inst_net[max(0, i - 4): i + 1])
-        supply_ok = (frn5 > 0 and inst5 > 0)
-        return value_ok or rs_ok or supply_ok
+        return value_ok or supply_strong
 
-    # ── 국면 2 중립장: 균형형 (가치 강화) ────────────────────────
+    # ── 국면 2 중립장: 눌림목 + 가치 (가치 트랩 방지 포함) ─────────
     elif regime == 2:
-        if len(p_slice) < 60:
+        if len(p_slice) < 120:
             return False
-        # 중기 정배열: curr > MA20 > MA60
-        if not (curr > ma20 and ma20 > ma60):
+        ma120 = _ma(p_slice[-120:], 120)
+        if ma120 is None:
             return False
-        # RSI 45~72 (과매도 탈출 + 과매수 진입 차단)
+
+        # 가치 트랩 방지: 현재가 > MA120
+        if curr <= ma120:
+            return False
+        # 중기 정배열: curr > MA20
+        if curr <= ma20:
+            return False
+        # RSI 35~60 (눌림목 + 반등 초기)
         rsi_val = _rsi(prices[max(0, i - 28): i + 1])
-        if rsi_val is None or rsi_val < 45 or rsi_val > 72:
+        if rsi_val is None or rsi_val < 35 or rsi_val > 60:
             return False
-        # 52주 최저 대비 +20% 이상 (바닥권 회피)
+        # 52주 최저 대비 +20% (바닥권 회피)
         low52 = min(prices[max(0, i - 251): i + 1])
         if curr < low52 * 1.20:
             return False
-        # 거래량 확인 (1.5배)
-        vol_w = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
-        if not vol_w or not volumes[i] or volumes[i] <= _get_avg(vol_w) * 1.5:
-            return False
 
-        # 중립장: Graham 할인 25%+ 이상 (더 엄격한 저평가 요구)
+        # 중립장: Graham 25%+ OR (PBR<0.7 AND PER<10)
         if not (eps and bps and eps > 0 and bps > 0):
             return False
         gp   = _graham_price(eps, bps)
@@ -413,47 +421,39 @@ def _is_buy_signal_v6(
         pbr  = curr / bps
         per  = curr / eps
         value_ok = disc >= 25 or (pbr < 0.7 and 0 < per < 10)
-        rs_ok = False
-        if i >= 62 and prices[i - 62] > 0:
-            rs_ok = (prices[i] - prices[i - 62]) / prices[i - 62] * 100 > 8.0
-        return value_ok or rs_ok
+        return value_ok or supply_strong
 
-    # ── 국면 1 약세장: 방어형 (깊은 가치 + 강한 반등 확인) ──────
+    # ── 국면 1 약세장: 방어형 (깊은 가치 + 가치 트랩 방지) ──────
     elif regime == 1:
-        if len(p_slice) < 20:
+        if len(p_slice) < 120:
             return False
-        # 단기 정배열: curr > MA20 (최소 조건)
+        ma120 = _ma(p_slice[-120:], 120)
+        if ma120 is None:
+            return False
+
+        # 가치 트랩 방지: 현재가 > MA120
+        if curr <= ma120:
+            return False
+        # 단기 정배열: curr > MA20
         if curr <= ma20:
             return False
-        # 최근 5거래일 연속 상승 모멘텀 확인
-        recent = prices[max(0, i - 4): i + 1]
-        if len(recent) < 3 or recent[-1] <= recent[0]:
-            return False
-        # RSI 42~68 (과매도 완전 탈출 + 과매수 제외)
+        # RSI 42~65
         rsi_val = _rsi(prices[max(0, i - 28): i + 1])
-        if rsi_val is None or rsi_val < 42 or rsi_val > 68:
+        if rsi_val is None or rsi_val < 42 or rsi_val > 65:
             return False
-        # 바닥 탈출 확인: 52주 최저 대비 +25% 이상
+        # 바닥 탈출: 52주 최저 대비 +25%
         low52 = min(prices[max(0, i - 251): i + 1])
         if curr < low52 * 1.25:
             return False
-        # 거래량 1.3배 (약세장이라 기준 완화)
-        vol_w = [v for v in volumes[max(0, i - 20): i] if v and v > 0]
-        if not vol_w or not volumes[i] or volumes[i] <= _get_avg(vol_w) * 1.3:
-            return False
 
-        # 약세장: Graham 할인 30%+ 이상 (매우 깊은 가치만)
+        # 약세장: Graham 30%+ OR (PBR<0.5)
         if not (eps and bps and eps > 0 and bps > 0):
             return False
         gp   = _graham_price(eps, bps)
         disc = (gp - curr) / gp * 100 if gp and gp > 0 else 0
         pbr  = curr / bps
         value_ok = disc >= 30 or (pbr < 0.5 and bps > 0)
-        # RS는 약세장에서 10%+ (강한 상대강도 필수)
-        rs_ok = False
-        if i >= 62 and prices[i - 62] > 0:
-            rs_ok = (prices[i] - prices[i - 62]) / prices[i - 62] * 100 > 10.0
-        return value_ok or rs_ok
+        return value_ok
 
     return False
 
@@ -465,14 +465,12 @@ def _check_sell_v6(
     regime: int = 3,
 ) -> Optional[str]:
     """
-    Logic #5 매도 조건 (국면 적응형).
-
-    강세장: 익절+18%, 손절-6%, 추적손절-9%, MA60, 최대45일
-    중립장: 익절+12%, 손절-5%, 추적손절-7%, MA40, 최대35일
-    약세장: 익절+9%,  손절-4%, 추적손절-6%, MA20, 최대25일
+    Logic #5 공통 3단계 청산 (국면별 손절률·최대보유 유지).
+    ① Time Stop: 5일 보유 + 수익 0% 이하
+    ② Scale-out: +10% → 절반 익절(scale_out_partial), 잔여분 MA20 이탈 청산
+    ③ 추적손절: 고점 +10% 이상 상승 후 고점 대비 -10%
     """
     curr = prices[i]
-
     if curr > pos.get('peak_price', pos['entry_price']):
         pos['peak_price'] = curr
 
@@ -481,37 +479,36 @@ def _check_sell_v6(
     hold_days = pos.get('hold_days', 0)
     pos['hold_days'] = hold_days + 1
 
-    # 국면별 파라미터
-    if regime == 3:
-        tp, sl, trail_sl, trail_trig, ma_n, max_hold = 0.18, -0.06, -0.09, 0.03, 60, 45
-    elif regime == 2:
-        tp, sl, trail_sl, trail_trig, ma_n, max_hold = 0.12, -0.05, -0.07, 0.02, 40, 35
-    else:  # 1 약세
-        tp, sl, trail_sl, trail_trig, ma_n, max_hold = 0.09, -0.04, -0.06, 0.01, 20, 25
+    sl, max_hold = {3: (-0.06, 45), 2: (-0.05, 35), 1: (-0.04, 25)}.get(regime, (-0.05, 35))
 
-    # 익절 (즉시, 최소보유 무관)
-    if pct >= tp:
-        return f"익절(+{pct * 100:.0f}%)"
+    if hold_days >= 5 and pct <= 0:
+        return f"time_stop({hold_days}일무수익)"
 
-    # 하드 손절 (즉시)
+    if pct >= 0.10 and not pos.get('scaled_out', False):
+        pos['scaled_out'] = True
+        pos['scale_stop'] = pos['entry_price']
+        return "scale_out_partial"
+
+    if pos.get('scaled_out', False):
+        ma20 = _ma(prices[max(0, i - 19): i + 1], 20)
+        if ma20 is not None and curr < ma20:
+            return f"MA20붕괴(잔여분+{pct*100:.0f}%)"
+        if curr <= pos.get('scale_stop', 0):
+            return "손절(잔여분본전)"
+        if hold_days >= max_hold:
+            return f"최대보유({hold_days}일)"
+        return None
+
     if pct <= sl:
-        return f"손절({sl * 100:.0f}%)"
+        return f"손절({sl*100:.0f}%)"
 
-    # 최소 3일 이후 청산 조건
-    if hold_days >= 3:
-        # 추적 손절 (수익 구간에서만)
-        trail = (curr - peak) / peak if peak > 0 else 0
-        if trail <= trail_sl and pct > trail_trig:
-            return f"추적손절(고점-{abs(trail) * 100:.0f}%)"
-
-        # MA 붕괴
-        ma_val = _ma(prices[max(0, i - ma_n + 1): i + 1], ma_n)
-        if ma_val is not None and curr < ma_val:
-            return f"MA{ma_n} 붕괴"
-
-    # 최대 보유 기간
     if hold_days >= max_hold:
         return f"최대보유({hold_days}일)"
+
+    if hold_days >= 5 and peak >= pos['entry_price'] * 1.10:
+        trail = (curr - peak) / peak
+        if trail <= -0.10:
+            return f"추적손절(고점-{abs(trail)*100:.0f}%)"
 
     return None
 
@@ -521,47 +518,47 @@ def _check_sell(
     i: int,
     prices: list,
     pos: dict,
-    stop_loss: float = -0.08,
+    stop_loss: float = -0.06,
 ) -> Optional[str]:
     """
-    매도 사유 문자열 반환, 없으면 None.
-    우선순위: 익절 > 하드손절 > 추적손절 > MA60 붕괴
-    v5 변경:
-      - 익절 +20% → +15%  (더 빠른 수익 확정)
-      - MA20 2일 이탈 제거  (단기 노이즈 청산 원인 → 제거)
-      - 최소 보유 5일: 진입 후 5거래일 미만이면 MA 청산 스킵
+    공통 3단계 청산 로직 (v5).
+    ① Time Stop: 5일 보유 + 수익 0% 이하 → 기회비용 절약
+    ② Scale-out: +10% → 절반 익절(scale_out_partial), 잔여분은 MA20 이탈 청산
+    ③ 추적손절: 고점 +10% 이상 상승 후 고점 대비 -10%
+    ④ 하드 손절: -6% (즉시)
     """
     curr = prices[i]
-
-    # 고점 업데이트
     if curr > pos.get('peak_price', pos['entry_price']):
         pos['peak_price'] = curr
 
-    pct      = (curr - pos['entry_price']) / pos['entry_price']
-    peak     = pos.get('peak_price', pos['entry_price'])
+    pct       = (curr - pos['entry_price']) / pos['entry_price']
+    peak      = pos.get('peak_price', pos['entry_price'])
     hold_days = pos.get('hold_days', 0)
-    pos['hold_days'] = hold_days + 1   # 매 호출 시 보유일 증가
+    pos['hold_days'] = hold_days + 1
 
-    # ★ 익절: +15% 이상 (즉시, 최소보유 무관)
-    if pct >= 0.15:
-        return f"익절(+{pct*100:.0f}%)"
+    if hold_days >= 5 and pct <= 0:
+        return f"time_stop({hold_days}일무수익)"
 
-    # ① 하드 손절 (-6%, 즉시, 최소보유 무관)
+    if pct >= 0.10 and not pos.get('scaled_out', False):
+        pos['scaled_out'] = True
+        pos['scale_stop'] = pos['entry_price']
+        return "scale_out_partial"
+
+    if pos.get('scaled_out', False):
+        ma20 = _ma(prices[max(0, i - 19): i + 1], 20)
+        if ma20 is not None and curr < ma20:
+            return f"MA20붕괴(잔여분+{pct*100:.0f}%)"
+        if curr <= pos.get('scale_stop', 0):
+            return "손절(잔여분본전)"
+        return None
+
     if pct <= stop_loss:
-        return f"손절({stop_loss * 100:.0f}%)"
+        return f"손절({stop_loss*100:.0f}%)"
 
-    # ★ 추적 손절: 고점 대비 -10% (최소 +3% 수익 구간 + 최소보유 5일 이후)
-    if hold_days >= 5:
-        trail_pct = (curr - peak) / peak if peak > 0 else 0
-        if trail_pct <= -0.10 and pct > 0.03:
-            return f"추적손절(고점-{abs(trail_pct)*100:.0f}%)"
-
-    # ② MA60 붕괴 (최소 보유 5일 이후만 적용)
-    if hold_days >= 5:
-        ma60 = _ma(prices[max(0, i - 59): i + 1], 60)
-        if ma60 is not None and curr < ma60:
-            return "MA60 붕괴"
-
+    if hold_days >= 5 and peak >= pos['entry_price'] * 1.10:
+        trail = (curr - peak) / peak
+        if trail <= -0.10:
+            return f"추적손절(고점-{abs(trail)*100:.0f}%)"
 
     return None
 
@@ -865,12 +862,36 @@ def _is_buy_signal_v7(
     hs_score_day: float,              # 0~3 (1.5=neutral)
     emp_score_day: float,             # 0~3 (1.5=neutral)
     v7p: Optional[Dict] = None,       # override params from optimizer
+    frn_net: list = None,
+    inst_net: list = None,
+    market: str = 'KOSPI',
+    kospi_regime_ext: int = 3,
+    kosdaq_bullish: bool = True,
+    adr_day: float = 50.0,
 ) -> bool:
     """
-    Logic #6 멀티팩터 매수 시그널.
+    Logic #6 멀티팩터 매수 시그널 (시장 필터 + 절대 수급 강도 추가).
     """
     if i < sim_start_i or regime == 0:
         return False
+
+    # 시장 필터: KOSPI MA120 위 / KOSDAQ MA60 위 / ADR < 100
+    if market == 'KOSDAQ':
+        if not kosdaq_bullish:
+            return False
+    else:
+        if kospi_regime_ext < 2:
+            return False
+    if adr_day >= 100:
+        return False
+
+    # 절대 수급 강도 필수 (V6/V7 업데이트: 단순 양수 → 절대 강도)
+    if frn_net is not None and inst_net is not None and i >= 20:
+        supply_5  = sum(abs(frn_net[j]) + abs(inst_net[j]) for j in range(i - 4, i + 1))
+        vol_sl    = [v for v in volumes[max(0, i - 19): i + 1] if v > 0]
+        vol20_avg = _get_avg(vol_sl)
+        if vol20_avg <= 0 or supply_5 <= vol20_avg * 0.05:
+            return False
 
     p_slice = prices[max(0, i - 249): i + 1]
     if len(p_slice) < 60:
@@ -991,45 +1012,50 @@ def _check_sell_v7(
     regime: int,
 ) -> Optional[str]:
     """
-    Logic #6 국면별 적응형 매도.
-    강세(3): 익절+18%, 손절-7%, 추적-9%, MA60, 최대45일
-    중립(2): 익절+13%, 손절-6%, 추적-8%, MA40, 최대35일
-    약세(1): 익절+9%,  손절-5%, 추적-7%, MA20, 최대25일
+    Logic #6 공통 3단계 청산 (국면별 손절률·최대보유 유지).
+    ① Time Stop: 5일 보유 + 수익 0% 이하
+    ② Scale-out: +10% → 절반 익절(scale_out_partial), 잔여분 MA20 이탈 청산
+    ③ 추적손절: 고점 +10% 이상 상승 후 고점 대비 -10%
     """
-    params = {
-        3: dict(tp=0.18, sl=-0.07, trail=-0.09, ma_n=60, max_d=45),
-        2: dict(tp=0.13, sl=-0.06, trail=-0.08, ma_n=40, max_d=35),
-        1: dict(tp=0.09, sl=-0.05, trail=-0.07, ma_n=20, max_d=25),
-    }.get(regime, dict(tp=0.13, sl=-0.06, trail=-0.08, ma_n=40, max_d=35))
-
     curr = prices[i]
-    if curr > pos.get("peak_price", pos["entry_price"]):
-        pos["peak_price"] = curr
+    if curr > pos.get('peak_price', pos['entry_price']):
+        pos['peak_price'] = curr
 
-    pct       = (curr - pos["entry_price"]) / pos["entry_price"]
-    peak      = pos.get("peak_price", pos["entry_price"])
-    hold_days = pos.get("hold_days", 0)
-    pos["hold_days"] = hold_days + 1
+    pct       = (curr - pos['entry_price']) / pos['entry_price']
+    peak      = pos.get('peak_price', pos['entry_price'])
+    hold_days = pos.get('hold_days', 0)
+    pos['hold_days'] = hold_days + 1
 
-    # 익절
-    if pct >= params["tp"]:
-        return f"익절(+{pct*100:.0f}%)"
-    # 하드 손절
-    if pct <= params["sl"]:
-        return f"손절({params['sl']*100:.0f}%)"
-    # 최대 보유 초과
-    if hold_days >= params["max_d"]:
+    sl, max_d = {3: (-0.07, 45), 2: (-0.06, 35), 1: (-0.05, 25)}.get(regime, (-0.06, 35))
+
+    if hold_days >= 5 and pct <= 0:
+        return f"time_stop({hold_days}일무수익)"
+
+    if pct >= 0.10 and not pos.get('scaled_out', False):
+        pos['scaled_out'] = True
+        pos['scale_stop'] = pos['entry_price']
+        return "scale_out_partial"
+
+    if pos.get('scaled_out', False):
+        ma20 = _ma(prices[max(0, i - 19): i + 1], 20)
+        if ma20 is not None and curr < ma20:
+            return f"MA20붕괴(잔여분+{pct*100:.0f}%)"
+        if curr <= pos.get('scale_stop', 0):
+            return "손절(잔여분본전)"
+        if hold_days >= max_d:
+            return f"보유기한({hold_days}일)"
+        return None
+
+    if pct <= sl:
+        return f"손절({sl*100:.0f}%)"
+
+    if hold_days >= max_d:
         return f"보유기한({hold_days}일)"
 
-    if hold_days >= 5:
-        # 추적 손절
-        trail = (curr - peak) / peak if peak > 0 else 0
-        if trail <= params["trail"] and pct > 0.02:
+    if hold_days >= 5 and peak >= pos['entry_price'] * 1.10:
+        trail = (curr - peak) / peak
+        if trail <= -0.10:
             return f"추적손절(고점-{abs(trail)*100:.0f}%)"
-        # MA 붕괴
-        ma = _ma(prices[max(0, i - params["ma_n"] + 1): i + 1], params["ma_n"])
-        if ma is not None and curr < ma:
-            return f"MA{params['ma_n']} 붕괴"
 
     return None
 
@@ -1389,6 +1415,12 @@ def _run_portfolio(
                         (hs_signals or {}).get(sc, {}).get(day, 1.5),
                         (emp_signals or {}).get(sc, {}).get(day, 1.5),
                         v7_params,
+                        frn_net=sd['frn'],
+                        inst_net=sd['inst'],
+                        market=(market_map or {}).get(sc, 'KOSPI'),
+                        kospi_regime_ext=regime,
+                        kosdaq_bullish=(kosdaq_regime or {}).get(day, True),
+                        adr_day=(adr_signals or {}).get(day, 50.0),
                     )
                 elif strategy == 'v6':
                     sig = _is_buy_signal_v6(
@@ -1396,12 +1428,20 @@ def _run_portfolio(
                         sd['dates'], sd['prices'], sd['volumes'],
                         sd['frn'],   sd['inst'],   sd['fins'],
                         regime,
+                        market=(market_map or {}).get(sc, 'KOSPI'),
+                        kospi_regime_ext=regime,
+                        kosdaq_bullish=(kosdaq_regime or {}).get(day, True),
+                        adr_day=(adr_signals or {}).get(day, 50.0),
                     )
                 else:
                     sig = _is_buy_signal(
                         i, sd['sim_start_i'],
                         sd['dates'], sd['prices'], sd['volumes'],
                         sd['frn'],   sd['inst'],   sd['fins'],
+                        market=(market_map or {}).get(sc, 'KOSPI'),
+                        kospi_regime=regime,
+                        kosdaq_bullish=(kosdaq_regime or {}).get(day, True),
+                        adr_day=(adr_signals or {}).get(day, 50.0),
                     )
                 if not sig:
                     continue
@@ -1680,38 +1720,37 @@ def prepare_backtest_data(start_date: str, end_date: str, strategy: str = 'v7') 
         v7_hs  = _precompute_hs_signals(sim_dates, sc_list)
         v7_emp = _precompute_emp_signals(sim_dates, sc_list)
 
-    # ── v8 전용: KOSDAQ 국면 + ADR + 시장구분 ─────────────────
+    # ── 전략 공통: KOSDAQ 국면 + ADR + 시장구분 ─────────────────
     v8_kosdaq_bullish: Dict[str, bool]  = {}
     v8_adr_signals:    Dict[str, float] = {}
     v8_market_map:     Dict[str, str]   = {}
 
-    if strategy == 'v8':
-        conn_v8 = sqlite3.connect(DB_PATH, timeout=30)
-        try:
-            v8_kosdaq_bullish = _compute_kosdaq_regime(
-                conn_v8, warmup_start, end_date, start_date)
-        except Exception:
-            pass
-        finally:
-            conn_v8.close()
+    conn_v8 = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        v8_kosdaq_bullish = _compute_kosdaq_regime(
+            conn_v8, warmup_start, end_date, start_date)
+    except Exception:
+        pass
+    finally:
+        conn_v8.close()
 
-        v8_adr_signals = _compute_adr_signals(sim_dates, stock_data)
+    v8_adr_signals = _compute_adr_signals(sim_dates, stock_data)
 
-        sc_list_v8 = list(stock_data.keys())
-        conn_v8b = sqlite3.connect(DB_PATH, timeout=30)
-        try:
-            for i8 in range(0, len(sc_list_v8), 200):
-                chunk8 = sc_list_v8[i8: i8 + 200]
-                ph8    = ','.join('?' * len(chunk8))
-                for sc, mk in conn_v8b.execute(
-                    f"SELECT stock_code, market FROM stock_universe "
-                    f"WHERE stock_code IN ({ph8})", chunk8
-                ).fetchall():
-                    v8_market_map[sc] = mk or 'KOSPI'
-        except Exception:
-            pass
-        finally:
-            conn_v8b.close()
+    sc_list_v8 = list(stock_data.keys())
+    conn_v8b = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        for i8 in range(0, len(sc_list_v8), 200):
+            chunk8 = sc_list_v8[i8: i8 + 200]
+            ph8    = ','.join('?' * len(chunk8))
+            for sc, mk in conn_v8b.execute(
+                f"SELECT stock_code, market FROM stock_universe "
+                f"WHERE stock_code IN ({ph8})", chunk8
+            ).fetchall():
+                v8_market_map[sc] = mk or 'KOSPI'
+    except Exception:
+        pass
+    finally:
+        conn_v8b.close()
 
     return {
         'start_date':      start_date,
@@ -1932,38 +1971,37 @@ def run_backtest(start_date: str, end_date: str,
                 v7_hs  = _precompute_hs_signals(sim_dates, sc_list)
                 v7_emp = _precompute_emp_signals(sim_dates, sc_list)
 
-            # ── v8 전용: KOSDAQ 국면 + ADR + 시장구분 ─────────────
+            # ── 전략 공통: KOSDAQ 국면 + ADR + 시장구분 ─────────────
             v8_kosdaq_bullish: Dict[str, bool]  = {}
             v8_adr_signals:    Dict[str, float] = {}
             v8_market_map:     Dict[str, str]   = {}
 
-            if strategy == 'v8':
-                conn_kq = sqlite3.connect(DB_PATH, timeout=30)
-                try:
-                    v8_kosdaq_bullish = _compute_kosdaq_regime(
-                        conn_kq, warmup_start, end_date, start_date)
-                except Exception:
-                    pass
-                finally:
-                    conn_kq.close()
+            conn_kq = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                v8_kosdaq_bullish = _compute_kosdaq_regime(
+                    conn_kq, warmup_start, end_date, start_date)
+            except Exception:
+                pass
+            finally:
+                conn_kq.close()
 
-                v8_adr_signals = _compute_adr_signals(sim_dates, stock_data)
+            v8_adr_signals = _compute_adr_signals(sim_dates, stock_data)
 
-                sc_list_v8 = list(stock_data.keys())
-                conn_mk = sqlite3.connect(DB_PATH, timeout=30)
-                try:
-                    for i_mk in range(0, len(sc_list_v8), 200):
-                        chunk_mk = sc_list_v8[i_mk: i_mk + 200]
-                        ph_mk    = ','.join('?' * len(chunk_mk))
-                        for sc, mk in conn_mk.execute(
-                            f"SELECT stock_code, market FROM stock_universe "
-                            f"WHERE stock_code IN ({ph_mk})", chunk_mk
-                        ).fetchall():
-                            v8_market_map[sc] = mk or 'KOSPI'
-                except Exception:
-                    pass
-                finally:
-                    conn_mk.close()
+            sc_list_v8 = list(stock_data.keys())
+            conn_mk = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                for i_mk in range(0, len(sc_list_v8), 200):
+                    chunk_mk = sc_list_v8[i_mk: i_mk + 200]
+                    ph_mk    = ','.join('?' * len(chunk_mk))
+                    for sc, mk in conn_mk.execute(
+                        f"SELECT stock_code, market FROM stock_universe "
+                        f"WHERE stock_code IN ({ph_mk})", chunk_mk
+                    ).fetchall():
+                        v8_market_map[sc] = mk or 'KOSPI'
+            except Exception:
+                pass
+            finally:
+                conn_mk.close()
 
         # ── 포트폴리오 시뮬레이션 ───────────────────────────────
         total_capital = per_stock * max_positions
@@ -1979,9 +2017,9 @@ def run_backtest(start_date: str, end_date: str,
             emp_signals=v7_emp       if strategy == 'v7' else None,
             sector_map=v7_sector_map if strategy == 'v7' else None,
             v7_params=_override_params if strategy == 'v7' else None,
-            kosdaq_regime=v8_kosdaq_bullish if strategy == 'v8' else None,
-            adr_signals=v8_adr_signals      if strategy == 'v8' else None,
-            market_map=v8_market_map        if strategy == 'v8' else None,
+            kosdaq_regime=v8_kosdaq_bullish,
+            adr_signals=v8_adr_signals,
+            market_map=v8_market_map,
         )
 
         # ── 종목명 매핑 ──────────────────────────────────────
