@@ -3018,9 +3018,33 @@ const App = () => {
             <>
               {/* 연간 현금흐름표 */}
               <section className="glass-panel" style={{ overflow:'auto' }}>
-                <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.6rem' }}>
+                <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap' }}>
                   <span style={{ fontSize:'0.8rem', fontWeight:600, color:'#34d399' }}>연간 현금흐름표</span>
                   <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)' }}>(억원)</span>
+                  {/* 감가상각비 모두 null이면 재수집 버튼 표시 */}
+                  {cfAnnual.length > 0 && cfAnnual.every(r => r.depreciation == null) && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetch(API(`/api/commands/refresh-cashflow/${stockCode}`), { method:'POST' });
+                          // 10초 후 재조회
+                          setTimeout(async () => {
+                            const [ra, rq] = await Promise.all([
+                              fetch(API(`/api/dashboard/cashflow/${stockCode}?type=annual`)),
+                              fetch(API(`/api/dashboard/cashflow/${stockCode}?type=quarter`)),
+                            ]);
+                            if (ra.ok) setCfAnnual(await ra.json());
+                            if (rq.ok) setCfQuarter(await rq.json());
+                          }, 10000);
+                        } catch(e) {}
+                      }}
+                      style={{ marginLeft:'auto', fontSize:'0.7rem', padding:'0.2rem 0.5rem',
+                               background:'rgba(251,191,36,0.15)', border:'1px solid #fbbf24',
+                               color:'#fbbf24', borderRadius:'4px', cursor:'pointer' }}
+                    >
+                      감가상각비 누락 — Naver 재수집
+                    </button>
+                  )}
                 </div>
                 {cfAnnual.length === 0 ? (
                   <div style={{ padding:'1.5rem', textAlign:'center', fontSize:'0.85rem', color:'var(--text-secondary)' }}>

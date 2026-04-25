@@ -70,11 +70,23 @@ _BLANK_CF = {
 
 # CF 계정과목 매핑
 _CF_MAP = [
-    (["영업활동으로인한현금흐름", "영업활동현금흐름"],          "operating_cf"),
-    (["투자활동으로인한현금흐름", "투자활동현금흐름"],          "investing_cf"),
-    (["재무활동으로인한현금흐름", "재무활동현금흐름"],          "financing_cf"),
-    (["유형자산의취득", "유형자산취득"],                        "capex"),
-    (["현금및현금성자산의순증감", "기말현금및현금성자산"],       "cash_end"),
+    (["영업활동으로인한현금흐름", "영업활동현금흐름",
+      "영업활동으로인한순현금흐름"],                            "operating_cf"),
+    (["투자활동으로인한현금흐름", "투자활동현금흐름",
+      "투자활동으로인한순현금흐름"],                            "investing_cf"),
+    (["재무활동으로인한현금흐름", "재무활동현금흐름",
+      "재무활동으로인한순현금흐름"],                            "financing_cf"),
+    (["유형자산의취득", "유형자산취득",
+      "유형자산의증가", "유형자산의구입"],                      "capex"),
+    (["현금및현금성자산의순증감", "기말현금및현금성자산",
+      "기말의현금및현금성자산", "현금및현금성자산의기말잔액",
+      "현금및현금성자산기말잔액"],                              "cash_end"),
+    (["감가상각비", "유형자산감가상각비", "유형자산상각비",
+      "감가상각비및상각비", "유무형자산상각비",
+      "감가상각비와무형자산상각비",
+      "사용권자산에대한감가상각비", "사용권자산상각비",
+      "유형자산의감가상각비", "유형및무형자산상각비",
+      "감가상각비(유무형자산)", "감가상각비및무형자산상각비"],   "depreciation"),
 ]
 
 
@@ -106,10 +118,11 @@ def _parse_cf_df(df) -> dict:
     """DART cash flow DataFrame → CF dict."""
     import pandas as _pd
     m = dict(_BLANK_CF)
+    m["depreciation"] = None   # 합산용으로 None 초기화
     if df is None or df.empty:
         return m
     for _, row in df.iterrows():
-        acc = str(row.get("account_nm", "")).replace(" ", "")
+        acc = str(row.get("account_nm", "")).replace(" ", "").replace("　", "")
         val_col = "thstrm_amount"
         if not acc or val_col not in row or _pd.isna(row[val_col]):
             continue
@@ -119,7 +132,13 @@ def _parse_cf_df(df) -> dict:
             continue
         for keywords, field in _CF_MAP:
             if any(kw in acc for kw in keywords):
-                m[field] = val
+                if field == "capex":
+                    m[field] = abs(val)
+                elif field == "depreciation":
+                    # 여러 상각비 항목 합산 (사용권자산 + 유형자산 등)
+                    m[field] = (m[field] or 0) + val
+                else:
+                    m[field] = val
                 break
     return m
 

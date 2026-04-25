@@ -342,23 +342,42 @@ def _collect_dart_cashflow(stock_code: str, db, latest_only: bool = False) -> in
             m = {k: None for k in ["operating_cf","investing_cf","financing_cf",
                                     "capex","cash_end","depreciation"]}
             for _, row in fn_data.iterrows():
-                acc = str(row.get("account_nm","")).replace(" ","")
+                acc = str(row.get("account_nm","")).replace(" ","").replace("　","")
                 vc  = "thstrm_amount"
                 if not acc or vc not in row or pd.isna(row[vc]): continue
                 try: val = float(str(row[vc]).replace(",",""))
                 except: continue
-                if   acc == "영업활동현금흐름" or acc == "영업활동으로인한현금흐름":
+
+                if any(acc == k for k in ["영업활동현금흐름","영업활동으로인한현금흐름",
+                                           "영업활동으로인한순현금흐름"]):
                     m["operating_cf"] = val
-                elif acc == "투자활동현금흐름" or acc == "투자활동으로인한현금흐름":
+                elif any(acc == k for k in ["투자활동현금흐름","투자활동으로인한현금흐름",
+                                             "투자활동으로인한순현금흐름"]):
                     m["investing_cf"] = val
-                elif acc == "재무활동현금흐름" or acc == "재무활동으로인한현금흐름":
+                elif any(acc == k for k in ["재무활동현금흐름","재무활동으로인한현금흐름",
+                                             "재무활동으로인한순현금흐름"]):
                     m["financing_cf"] = val
-                elif any(k in acc for k in ["유형자산의취득","유형자산취득"]):
+                elif any(k in acc for k in ["유형자산의취득","유형자산취득",
+                                             "유형자산의증가","유형자산의구입"]):
                     m["capex"] = abs(val) if val is not None else None
-                elif any(k in acc for k in ["현금및현금성자산의기말잔액","기말의현금및현금성자산"]):
+                elif any(k in acc for k in ["현금및현금성자산의기말잔액",
+                                             "기말의현금및현금성자산",
+                                             "기말현금및현금성자산",
+                                             "현금및현금성자산기말잔액"]):
                     m["cash_end"] = val
-                elif any(k in acc for k in ["감가상각비","유형자산상각비"]):
-                    m["depreciation"] = val
+                elif any(k in acc for k in [
+                    "감가상각비", "유형자산감가상각비", "유형자산상각비",
+                    "감가상각비및상각비", "유무형자산상각비",
+                    "감가상각비와무형자산상각비",
+                    "사용권자산에대한감가상각비", "사용권자산상각비",
+                    "유형자산의감가상각비", "유형및무형자산상각비",
+                    "감가상각비(유무형자산)", "감가상각비및무형자산상각비",
+                ]):
+                    # 여러 상각비 항목이 나뉘어 있을 경우 합산
+                    if m["depreciation"] is None:
+                        m["depreciation"] = val
+                    else:
+                        m["depreciation"] += val
 
             # 수집된 CF 값이 하나도 없으면 스킵
             if all(v is None for v in m.values()):
@@ -1159,7 +1178,7 @@ def get_financial_table(stock_code: str, type: str = "annual", db: Session = Dep
 _cf_collecting: set = set()   # 현금흐름 백그라운드 수집 중인 종목코드
 
 def _bg_collect_cashflow(stock_code: str):
-    """현금흐름표 백그라운드 수집 (별도 DB 세션)."""
+    """현금흐름표 백그라운드 수집. DART 후 감가상각비 누락 시 Naver fallback."""
     if stock_code in _cf_collecting:
         return
     _cf_collecting.add(stock_code)
@@ -1168,6 +1187,19 @@ def _bg_collect_cashflow(stock_code: str):
         _db = _SL()
         try:
             _collect_dart_cashflow(stock_code, _db, latest_only=False)
+            # 감가상각비가 여전히 NULL이면 Naver WISEreport로 보완
+            null_dep = _db.query(models.CashFlowData).filter(
+                models.CashFlowData.stock_code == stock_code,
+                models.CashFlowData.depreciation == None,
+            ).count()
+            if null_dep > 0:
+                try:
+                    from collect_naver_cashflow import scrape_and_save_cf
+                    n = scrape_and_save_cf(stock_code, force=False)
+                    if n:
+                        logger.info(f"[CF-Naver] {stock_code}: {n}건 감가상각비 보완")
+                except Exception as ne:
+                    logger.debug(f"[CF-Naver] {stock_code}: {ne}")
         finally:
             _db.close()
     except Exception as e:
@@ -1231,7 +1263,7 @@ def get_cashflow_table(stock_code: str, type: str = "annual", db: Session = Depe
 
 @app.post("/api/commands/refresh-cashflow/{stock_code}")
 def refresh_cashflow(stock_code: str, db: Session = Depends(get_db)):
-    """현금흐름표 강제 재수집."""
+    """현금흐름표 강제 재수집. DART 수집 후 감가상각비 누락 시 Naver fallback."""
     if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
         raise HTTPException(status_code=400, detail="국내 종목코드(6자리)만 지원합니다.")
     db.query(models.CashFlowData).filter(
@@ -1239,7 +1271,22 @@ def refresh_cashflow(stock_code: str, db: Session = Depends(get_db)):
     ).delete(synchronize_session=False)
     db.commit()
     saved = _collect_dart_cashflow(stock_code, db, latest_only=False)
-    return {"status": "ok", "saved": saved}
+
+    # DART 수집 후 depreciation이 여전히 NULL인 레코드가 있으면 Naver로 보완
+    null_dep = db.query(models.CashFlowData).filter(
+        models.CashFlowData.stock_code == stock_code,
+        models.CashFlowData.depreciation == None,
+    ).count()
+    naver_saved = 0
+    if null_dep > 0:
+        try:
+            from collect_naver_cashflow import scrape_and_save_cf
+            naver_saved = scrape_and_save_cf(stock_code, force=False)
+            logger.info(f"[CF-Naver] {stock_code}: {naver_saved}건 보완")
+        except Exception as e:
+            logger.warning(f"[CF-Naver] {stock_code} 실패: {e}")
+
+    return {"status": "ok", "saved": saved, "naver_saved": naver_saved}
 
 
 # ── 전체 종목 유통주식수 배치 수집 ──────────────────────────────────

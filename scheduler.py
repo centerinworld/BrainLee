@@ -98,6 +98,7 @@ class CollectionScheduler:
             ("전종목수급수집",  self._loop_supply_daily), # ★ KIS 전종목 30일 수급
             ("네이버밸류에이션", self._loop_naver_fundamentals),  # ★ 네이버 PBR/PER/EPS
             ("현금흐름배치",    self._loop_cashflow_batch),       # ★ DART 현금흐름표 월간
+            ("Naver감가상각비", self._loop_naver_cashflow_fill),  # ★ Naver CF 누락분 보완 (매월 3일)
             ("해외주가수집",    self._loop_overseas_prices),      # ★ yfinance 해외주식 1시간
         ]
         for name, target in jobs:
@@ -696,6 +697,36 @@ class CollectionScheduler:
                 logger.error(f"[현금흐름배치] 오류: {result.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[현금흐름배치] 잡 오류: {e}")
+
+    def _job_naver_cashflow_fill(self) -> None:
+        """Naver WISEreport로 감가상각비 NULL 종목 보완 (DART 수집 후 매월 3일 05:00)."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["venv/bin/python3", "collect_naver_cashflow.py", "--missing"],
+                capture_output=True, text=True, timeout=14400,
+                cwd="/Applications/stock_dashboard",
+            )
+            logger.info(f"[Naver-CF-보완] 완료: {result.stdout[-300:] if result.stdout else ''}")
+            if result.returncode != 0:
+                logger.error(f"[Naver-CF-보완] 오류: {result.stderr[-300:]}")
+        except Exception as e:
+            logger.error(f"[Naver-CF-보완] 잡 오류: {e}")
+
+    def _loop_naver_cashflow_fill(self) -> None:
+        """매월 3일 05:00 — DART 현금흐름 배치 다음날 Naver로 누락분 보완."""
+        self._wait_secs(50)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            if now.day == 3 and now.hour < 5:
+                next_run = now.replace(hour=5, minute=0, second=0, microsecond=0)
+            else:
+                next_month = (now.replace(day=1) + timedelta(days=32)).replace(day=3)
+                next_run   = next_month.replace(hour=5, minute=0, second=0, microsecond=0)
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("Naver감가상각비보완", self._job_naver_cashflow_fill)
 
     def _job_naver_fundamentals(self) -> None:
         """네이버금융 전종목 PBR/PER/EPS 배치 수집."""
