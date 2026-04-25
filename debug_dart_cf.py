@@ -25,8 +25,8 @@ print("[1] DART CF 계정명 전체 출력 (에이엘티 078150)")
 print("="*70)
 
 try:
-    import OpenDartReader
-    dart = OpenDartReader.OpenDartReader(config.DART_API_KEY)
+    import OpenDartReader as _ODR
+    dart = _ODR(config.DART_API_KEY)
 
     for year in [2024, 2023, 2022]:
         for rprt_code, label in [("11011", "사업보고서"), ("11014", "3분기")]:
