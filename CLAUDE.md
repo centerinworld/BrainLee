@@ -355,7 +355,7 @@ def _cache():
 | `SectorReports` | reports | 5748 |
 | `SignalSettings` | (settings 내부) | 5851 |
 | `AIInsight` | insight | 6031 |
-| `BacktestView` | backtest | 6084 |
+| `BacktestView` | backtest | 7341 |
 | `SettingsView` | settings | 6413 |
 | `TelegramMentions` | telegram | 6708 |
 | `SystemStatus` | system | 8182 |
@@ -505,6 +505,7 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-19 | SQLite DB 락 근본 해결: main.py 서버 시작 시 WAL 모드+busy_timeout=30초+NORMAL sync 활성화. 전체 routes/_db() 함수 timeout=30+PRAGMA busy_timeout=30000 추가 (signals/trend/telegram/reports/buy_candidates/market_indicators/market_radar). |
 | 2026-04-19 | 해외 주식 수집 체계 신규: `collect_overseas.py` (32종목 OHLCV→price_history, PER/PBR/시총→overseas_fundamentals, yfinance 사용). scheduler.py `_loop_overseas_prices` 추가 (1시간 간격, 펀더멘털은 06~07시만). `market_radar.py` LEVEL2에 PER/PBR/시총 컬럼 추가. POST /api/market-radar/collect + GET /api/market-radar/fundamentals 신규. |
 | 2026-04-23 | backtest.py Logic #5 구현: `_is_buy_signal_v6()` + `_check_sell_v6()` 신규 (KOSPI MA60/120/200 기반 4단계 국면 3=강세/2=중립/1=약세/0=대하락, 국면별 매수조건·익절·손절 파라미터 자동전환). `run_backtest()` strategy='v5'|'v6' 파라미터 추가, kospi_regime dict 날짜별 계산. routes/backtest.py strategy 파라미터 수신. App.jsx BacktestView 전략 선택 드롭다운 추가. |
+| 2026-04-25 | 가상매매 예산관리+백테스트 전체실행: signal_logic.py에 VIRTUAL_TOTAL_BUDGET(2억)/PER_STOCK_BASE(1천만)/PER_STOCK_STRONG(2천만)/BACKTEST_PERIODS(5종)/BACKTEST_STRATEGIES(4종) 추가. main.py AI자동매매 2억예산기반(match3→2천만/예산소진시최저점수매도). peak_monitor.py signal_logic import. routes/backtest.py /run-all(4전략×5기간=20회)/periods/strategies API 추가. backtest.py cagr/sharpe/pl_ratio 컬럼 저장. App.jsx BacktestView 전면개편(전략버튼4개/기간프리셋5개/전체실행/매트릭스탭). |
 | 2026-04-25 | backtest.py 전략 공통 시장필터+3단계청산 전면 적용: ①KOSPI(MA120+ADR<100)/KOSDAQ(MA60+ADR<100) 분리 필터 모든 전략 적용 ②3단계청산(TimeStop5일/ScaleOut+10%절반/MA20추적손절) v5~v7 교체 ③v5 눌림목+가치+절대수급 스나이퍼 전환 ④v6/v7 절대수급공식(5일합>vol20×5%) 통일 ⑤_run_portfolio v5/v6/v7 매수 호출에 market/kosdaq/adr 전달 ⑥KOSDAQ·ADR·시장구분 사전계산 v8전용→전 전략 공통 변경 ⑦routes/backtest.py strategy_label v8 추가 |
 | 2026-04-24 | backtest.py Logic #6 구현 (strategy='v7'): `_is_buy_signal_v7()` 5팩터 가중점수(기술30%+해외동조25%+가치20%+HS수출15%+고용10%), `_check_sell_v7()`, `_precompute_overseas/hs/emp_signals()` 사전계산 함수. `collect_overseas_history.py` 신규(해외 32종목+지수 8개 20년치 다운로드). `run_self_backtest.py` 신규(6개 기간 자동 백테스트). `docs/logic6_description.md` 신규(상세 설명 문서). 데이터 공개 후행 처리: HS+15일, 고용+30일, 해외주가 1-day lag. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
