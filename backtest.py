@@ -915,12 +915,12 @@ def _is_buy_signal_v7(
         elif vr >= 1.3: tech += 0.5
     tech = min(3.0, tech)
 
-    # ── 2. 해외 동조효과 점수 (0~3, 가중 25%) ────────────────────
-    ov_sec  = overseas_day.get(sector_large,  1.5)
-    ov_def  = overseas_day.get("default",     1.5)
-    overseas = (ov_sec * 0.7 + ov_def * 0.3)   # 섹터 70% + 글로벌 30%
+    # ── 2. 해외 동조효과 점수 (0~3, 가중 30%) ────────────────────
+    ov_sec    = overseas_day.get(sector_large, 1.5)
+    ov_global = (overseas_day.get("default",  1.5))   # ^GSPC + ^IXIC
+    overseas  = (ov_sec * 0.65 + ov_global * 0.35)
 
-    # ── 3. 가치 품질 점수 (0~3, 가중 20%) ────────────────────────
+    # ── 3. 가치 품질 점수 (0~3, 가중 17%) ────────────────────────
     value = 0.0
     if eps and bps and eps > 0 and bps > 0:
         gp   = _graham_price(eps, bps)
@@ -945,16 +945,23 @@ def _is_buy_signal_v7(
     emp_s = emp_score_day  # pre-computed (1.5 if no data)
 
     # ── 종합 점수 (0~1.0) ─────────────────────────────────────────
+    # 가중치: 기술28% + 해외30% + 가치17% + HS15% + 고용10% = 100%
     score = (
-        tech     * 0.30 +
-        overseas * 0.25 +
-        value    * 0.20 +
+        tech     * 0.28 +
+        overseas * 0.30 +
+        value    * 0.17 +
         hs_s     * 0.15 +
         emp_s    * 0.10
     ) / 3.0   # 최대 3.0 → 1.0 정규화
 
     # ── regime별 임계값 ──────────────────────────────────────────
-    threshold = {3: 0.50, 2: 0.55, 1: 0.62}.get(regime, 0.55)
+    threshold = {3: 0.52, 2: 0.57, 1: 0.64}.get(regime, 0.57)
+
+    # ── 글로벌 하락장 패널티 (^GSPC+^IXIC 동시 약세 시 진입 억제) ──
+    # ov_global이 bearish면 임계값을 추가 상향 → 신중 진입
+    if ov_global < 1.0:    threshold += 0.10  # 강한 글로벌 약세
+    elif ov_global < 1.3:  threshold += 0.05  # 약한 글로벌 약세
+
     return score >= threshold
 
 
@@ -1536,15 +1543,35 @@ def run_backtest(start_date: str, end_date: str,
         for t in trades:
             exit_reasons[t['exit_reason']] += 1
 
-        # 시장 필터 통계
-        bear_days  = sum(1 for v in market_bullish.values() if not v)
-        total_days = len(market_bullish)
-        filter_pct = round(bear_days / total_days * 100, 1) if total_days > 0 else 0
+        # 전략별 시장 필터 통계
+        total_days = len(sim_dates)
+        if strategy == 'v5':
+            bear_days  = sum(1 for v in market_bullish.values() if not v)
+            filter_pct = round(bear_days / total_days * 100, 1) if total_days else 0
+            filter_line = f"시장필터: 하락장 {bear_days}일/{total_days}일({filter_pct}%) 매수 차단"
+            strategy_line = "★ 전략 v5: 시장추세필터(KOSPI MA120) / 손절-8% / 추적손절-10% / 익절+15% / 최소보유5일 / 시총1000억+"
+        elif strategy == 'v6':
+            r0 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 0)
+            r1 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 1)
+            r2 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 2)
+            r3 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 3)
+            filter_line = f"국면분포: 대하락{r0}일 / 약세{r1}일 / 중립{r2}일 / 강세{r3}일"
+            strategy_line = "★ Logic#5: KOSPI 4단계 국면 적응형 / 국면별 익절·손절 자동전환"
+        elif strategy == 'v7':
+            r0 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 0)
+            r1 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 1)
+            r2 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 2)
+            r3 = sum(1 for d in sim_dates if (kospi_regime or {}).get(d, 3) == 3)
+            filter_line = f"국면분포: 대하락{r0}일 / 약세{r1}일 / 중립{r2}일 / 강세{r3}일 (대하락 전면차단)"
+            strategy_line = "★ Logic#6: 멀티팩터(해외동조30%+기술28%+가치17%+HS15%+고용10%) / 글로벌하락 패널티"
+        else:
+            filter_line = ""
+            strategy_line = f"★ 전략 {strategy}"
 
         summary_text = (
             f"기간: {start_date} ~ {end_date}  |  종목수: {len(stock_data)}\n"
-            f"★ 전략 v5: 시장추세필터(KOSPI MA120) / 손절-8% / 추적손절-10% / 익절+15% / 최소보유5일 / 시총1000억+\n"
-            f"시장필터: 하락장 {bear_days}일/{total_days}일({filter_pct}%) 매수 차단\n"
+            f"{strategy_line}\n"
+            f"{filter_line}\n"
             f"총 거래: {metrics['total_trades']}건  수익: {metrics['profit_trades']}건  "
             f"손실: {metrics['total_trades'] - metrics['profit_trades']}건\n"
             f"승률: {metrics['win_rate']}%  손익비: {metrics['pl_ratio']}배  "
