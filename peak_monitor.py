@@ -52,11 +52,21 @@ logger = logging.getLogger(__name__)
 # 설정
 # ──────────────────────────────────────────────────────────────
 import config
+from signal_logic import (
+    VIRTUAL_TOTAL_BUDGET,
+    VIRTUAL_PER_STOCK_BASE,
+    VIRTUAL_PER_STOCK_STRONG,
+    VIRTUAL_MAX_POSITIONS,
+    VIRTUAL_STRONG_MATCH_CNT,
+)
 
 STOCKEASY_EMAIL    = getattr(config, "STOCKEASY_EMAIL",    "")
 STOCKEASY_PASSWORD = getattr(config, "STOCKEASY_PASSWORD", "")
 BASE_API           = "http://127.0.0.1:8000"
-MAX_BUDGET         = 10_000_000   # 가상매매 한도 1,000만원
+
+# 예산 설정은 signal_logic.py에서 읽음 (직접 수정 금지)
+MAX_BUDGET         = VIRTUAL_PER_STOCK_BASE    # 스탁이지 전략 기본 투자금
+TOTAL_BUDGET       = VIRTUAL_TOTAL_BUDGET      # 전체 운용 예산 2억
 
 # ── 폴링 주기 (초) ──────────────────────────────────────────
 INTERVAL_MARKET_CLOSE = 60    # 15:00~16:30 — 장마감 집중 감시 (1분)

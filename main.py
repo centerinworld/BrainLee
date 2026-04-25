@@ -712,24 +712,111 @@ def _run_screener_precompute():
 
 
 def _process_ai_combo_autotrade(combo_stocks: list):
-    """AI 적극검토 종목 자동매매: 신규 편입 시 매수, 추세이탈 시 매도."""
+    """AI 적극검토 종목 자동매매: 신규 편입 시 매수, 추세이탈 시 매도.
+
+    예산 관리 (signal_logic.py에서 읽음):
+      - 총 예산 2억 / 종목당 기본 1천만 / 강한 시그널(3개 충족) 2천만
+      - 예산 소진 시 최저 점수(combo_score) 보유종목 먼저 매도
+    """
     import sqlite3 as _sl
     from datetime import datetime as _dt
+    from signal_logic import (
+        VIRTUAL_TOTAL_BUDGET, VIRTUAL_PER_STOCK_BASE, VIRTUAL_PER_STOCK_STRONG,
+        VIRTUAL_MAX_POSITIONS, VIRTUAL_STRONG_MATCH_CNT,
+    )
 
     conn = _sl.connect("stock.db")
     try:
-        # 현재 AI_COMBO 전략으로 보유 중인 종목
-        active = {r[0]: r for r in conn.execute(
+        # ── 보유 종목 조회 ─────────────────────────────────────────
+        active_rows = conn.execute(
             "SELECT stock_name, buy_price, quantity, id FROM peak_holding WHERE strategy='ai_combo' AND is_active=1"
-        ).fetchall()}
+        ).fetchall()
+        active = {r[0]: r for r in active_rows}
 
-        # 신규 편입: 3개 충족 우선, 그 다음 2개 충족 (최대 10종목)
-        sorted_combo = sorted(combo_stocks, key=lambda x: (x['match_count'], x.get('combo_score', 0)), reverse=True)
+        # ── 현재 투자 금액 계산 ────────────────────────────────────
+        invested = sum(r[1] * r[2] for r in active_rows)  # buy_price × quantity
+        available = max(0, VIRTUAL_TOTAL_BUDGET - invested)
 
-        for s in sorted_combo[:10]:  # 최대 10종목
-            name = s.get('stock_name') or s.get('stock_code')
-            code = s.get('stock_code', '')
+        # ── 신규 편입: 점수 높은 순 정렬 ─────────────────────────
+        sorted_combo = sorted(
+            combo_stocks,
+            key=lambda x: (x['match_count'], x.get('combo_score', 0)),
+            reverse=True
+        )
+
+        entry_date = _dt.now().strftime("%Y-%m-%d")
+
+        for s in sorted_combo:
+            if len(active) >= VIRTUAL_MAX_POSITIONS:
+                break
+
+            name      = s.get('stock_name') or s.get('stock_code')
+            code      = s.get('stock_code', '')
+            match_cnt = s.get('match_count', 2)
+
             if name in active:
+                continue
+
+            # ── 종목당 투자금 결정 ─────────────────────────────────
+            per_stock = (VIRTUAL_PER_STOCK_STRONG
+                         if match_cnt >= VIRTUAL_STRONG_MATCH_CNT
+                         else VIRTUAL_PER_STOCK_BASE)
+
+            # ── 예산 부족 → 최저 점수 보유종목 매도 후 슬롯 확보 ──
+            if available < per_stock and active:
+                # 보유 종목 중 combo_score가 가장 낮은 종목 찾기
+                scored_active = []
+                for aname, (asname, abuy, aqty, aid) in list(active.items()):
+                    acode_row = conn.execute(
+                        "SELECT su.stock_code FROM stock_universe su WHERE su.stock_name=? LIMIT 1",
+                        (aname,)
+                    ).fetchone()
+                    acode = acode_row[0] if acode_row else None
+                    # combo_score 캐시에서 조회 (없으면 0 처리)
+                    cscore = next(
+                        (x.get('combo_score', 0) for x in combo_stocks
+                         if x.get('stock_name') == aname or x.get('stock_code') == acode),
+                        0.0
+                    )
+                    scored_active.append((cscore, aname, asname, abuy, aqty, aid, acode))
+
+                if scored_active:
+                    scored_active.sort(key=lambda x: x[0])  # 점수 오름차순
+                    worst = scored_active[0]
+                    _, wname, _, wbuy, wqty, wid, wcode = worst
+
+                    # 현재가 조회
+                    wprice_row = conn.execute(
+                        "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
+                        (wcode,)
+                    ).fetchone() if wcode else None
+                    wcurr = wprice_row[0] if wprice_row else wbuy
+                    wprofit_pct = round((wcurr - wbuy) / wbuy * 100, 2) if wbuy > 0 else 0
+
+                    conn.execute("""
+                        UPDATE peak_holding SET is_active=0, sell_price=?, sold_at=CURRENT_TIMESTAMP,
+                        current_price=?, profit_pct=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+                    """, (wcurr, wcurr, wprofit_pct, wid))
+                    conn.execute("""
+                        INSERT INTO peak_trade (stock_name, tx_type, price, quantity, amount, profit_pct, tx_date, strategy)
+                        VALUES (?,?,?,?,?,?,CURRENT_DATE,'ai_combo')
+                    """, (wname, 'sell', wcurr, wqty, round(wcurr*wqty), wprofit_pct))
+                    conn.commit()
+
+                    freed = wbuy * wqty
+                    available += freed
+                    del active[wname]
+
+                    _send_telegram(
+                        f"[AI 자동매매 예산확보 매도]\n종목: {wname}\n"
+                        f"사유: 예산 부족 + 최저 점수 보유종목 정리\n"
+                        f"수익률: {wprofit_pct:+.2f}%  확보 예산: {freed/10000:.0f}만원",
+                        dedup_key=f"ai_combo_budget_sell_{wname}_{entry_date}"
+                    )
+                    logger.info(f"[AI자동매매] 예산확보 매도: {wname} {wprofit_pct:+.1f}%")
+
+            # 여전히 예산 부족이면 건너뜀
+            if available < per_stock:
                 continue
 
             # 현재가 조회
@@ -743,20 +830,15 @@ def _process_ai_combo_autotrade(combo_stocks: list):
             if price <= 0:
                 continue
 
-            MAX_BUDGET = 10_000_000
-            qty = max(1, int(MAX_BUDGET / price))
+            qty    = max(1, int(per_stock / price))
             amount = price * qty
-
-            entry_date = _dt.now().strftime("%Y-%m-%d")
             sector = s.get('sector', '')
-            match_cnt = s.get('match_count', 2)
 
             # 중복 방지
-            dup = conn.execute(
+            if conn.execute(
                 "SELECT id FROM peak_holding WHERE stock_name=? AND strategy='ai_combo' AND entry_date=?",
                 (name, entry_date)
-            ).fetchone()
-            if dup:
+            ).fetchone():
                 continue
 
             # DB 기록
@@ -772,25 +854,30 @@ def _process_ai_combo_autotrade(combo_stocks: list):
             """, (name, 'buy', price, qty, round(amount), entry_date, entry_date))
             conn.commit()
 
+            available -= amount
+            invested  += amount
+            active[name] = (name, price, qty, None)
+
             # 텔레그램 알림
             tags_str = ' | '.join((s.get('reasons') or s.get('tags') or [])[:4])
             cats = []
             if s.get('in_trend'): cats.append('추세')
             if s.get('in_value'): cats.append('가치')
             if s.get('in_fin'):   cats.append('재무')
+            budget_tag = "★강한시그널" if match_cnt >= VIRTUAL_STRONG_MATCH_CNT else "표준"
 
             msg = (
                 f"[AI 적극검토 매수신호]\n"
                 f"종목: {name} ({code})\n"
-                f"카테고리: {' + '.join(cats)} ({match_cnt}개 동시충족)\n"
+                f"카테고리: {' + '.join(cats)} ({match_cnt}개 동시충족) [{budget_tag}]\n"
                 f"매수가: {price:,.0f}원  수량: {qty}주  금액: {amount/10000:.0f}만원\n"
                 f"섹터: {sector or '-'}\n"
                 f"근거: {tags_str}\n"
-                f"전략: 시장가 매수 -> 추세이탈 시 매도\n"
+                f"잔여예산: {available/10000:.0f}만원 / 총 {VIRTUAL_TOTAL_BUDGET/100000000:.0f}억원\n"
                 f"실제 주문 아님 - 검토 후 수동 집행"
             )
             _send_telegram(msg, dedup_key=f"ai_combo_buy_{code}_{entry_date}")
-            logger.info(f"[AI자동매매] 매수신호: {name}({code}) {price:,.0f}원 x {qty}주")
+            logger.info(f"[AI자동매매] 매수: {name}({code}) {price:,.0f}원 x {qty}주 [{budget_tag}]")
 
         # 추세이탈 체크: 보유 중인 AI_COMBO 종목 중 정배열 깨진 것
         for name, (sname, buy_price, qty, hold_id) in active.items():

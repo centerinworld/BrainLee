@@ -74,10 +74,13 @@ def init_backtest_db():
             status      TEXT DEFAULT 'running',
             total_return_pct  REAL,
             ann_return_pct    REAL,
+            cagr              REAL,
             win_rate          REAL,
             total_trades      INTEGER,
             profit_trades     INTEGER,
             max_drawdown_pct  REAL,
+            sharpe            REAL,
+            pl_ratio          REAL,
             trades_json       TEXT,
             equity_json       TEXT,
             summary_text      TEXT,
@@ -2144,17 +2147,28 @@ def run_backtest(start_date: str, end_date: str,
 
 def _save_result(run_id: str, result: dict):
     conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    # cagr/sharpe/pl_ratio 컬럼이 없는 구 DB에도 호환되도록 ALTER TABLE 시도
+    for col_def in [("cagr", "REAL"), ("sharpe", "REAL"), ("pl_ratio", "REAL")]:
+        try:
+            conn.execute(f"ALTER TABLE backtest_runs ADD COLUMN {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass
     conn.execute("""
         UPDATE backtest_runs SET
             status='done',
-            total_return_pct=?, ann_return_pct=?, win_rate=?,
-            total_trades=?, profit_trades=?, max_drawdown_pct=?,
+            total_return_pct=?, ann_return_pct=?, cagr=?,
+            win_rate=?, total_trades=?, profit_trades=?,
+            max_drawdown_pct=?, sharpe=?, pl_ratio=?,
             trades_json=?, summary_text=?
         WHERE run_id=?
     """, (
-        result.get('total_return_pct', 0), result.get('ann_return_pct', 0),
-        result.get('win_rate', 0),         result.get('total_trades', 0),
-        result.get('profit_trades', 0),    result.get('max_drawdown_pct', 0),
+        result.get('total_return_pct', 0),  result.get('ann_return_pct', 0),
+        result.get('cagr', 0),              result.get('win_rate', 0),
+        result.get('total_trades', 0),      result.get('profit_trades', 0),
+        result.get('max_drawdown_pct', 0),  result.get('sharpe', 0),
+        result.get('pl_ratio', 0),
         json.dumps(result, ensure_ascii=False),
         result.get('summary', ''),
         run_id,

@@ -7339,10 +7339,34 @@ const App = () => {
 
   // ── 백테스트 뷰 ───────────────────────────────────────────
   const BacktestView = () => {
-    const [list,    setList]    = React.useState([]);
-    const [detail,  setDetail]  = React.useState(null);  // 선택된 결과
-    const [running, setRunning] = React.useState(false);
-    const [pollId,  setPollId]  = React.useState(null);
+    const STRATEGIES = [
+      { id:'v5', label:'Logic #1', name:'AI 콤보 v5',     color:'#f59e0b',
+        desc:'눌림목+가치+절대수급 스나이퍼 (MA정배열·RSI<50·Graham·수급강도 교집합)' },
+      { id:'v6', label:'Logic #2', name:'국면 적응형',     color:'#a78bfa',
+        desc:'KOSPI 4단계 regime별 매수기준·익절·손절 자동전환 (강세/중립/약세/대하락)' },
+      { id:'v7', label:'Logic #3', name:'멀티팩터',        color:'#34d399',
+        desc:'해외동조(25%)+기술(30%)+가치(17%)+HS수출(15%)+고용(10%) 가중 합산' },
+      { id:'v8', label:'Logic #4', name:'눌림목(Pullback)', color:'#fb923c',
+        desc:'MA60>MA120>MA200 정배열·MA20±2% 눌림목·RSI<50·절대수급 필수' },
+    ];
+    const PERIODS = [
+      { id:'bear_2022',    label:'① 하락장',    badge:'2022 하락·1년',   start:'2022-01-01', end:'2022-12-31',
+        desc:'대세 하락장 — 손절 로직과 MDD 방어력 테스트', color:'#f87171' },
+      { id:'sideways_2023',label:'② 박스피',    badge:'2023~24 횡보·1년', start:'2023-08-01', end:'2024-07-31',
+        desc:'횡보장 — 추적손절·익절이 노이즈에 털리지 않는지 테스트', color:'#facc15' },
+      { id:'bull_2023',    label:'③ 상승장',    badge:'2023 상승·7개월', start:'2023-01-01', end:'2023-07-31',
+        desc:'테마 주도 대세 상승장 — 주도주 포착 수익 극대화 테스트', color:'#34d399' },
+      { id:'volatile_2024',label:'④ 고변동성',  badge:'2024H2 변동·5개월', start:'2024-08-01', end:'2024-12-31',
+        desc:'극심한 변동성 속 손익비(R/R) 방어 테스트', color:'#fb923c' },
+      { id:'value_2024',   label:'⑤ 가치주 장세', badge:'2024 가치·1년', start:'2024-01-01', end:'2024-12-31',
+        desc:'기업 밸류업 구간 — 실적·가치주 주도 장세 테스트', color:'#a78bfa' },
+    ];
+
+    const [list,        setList]        = React.useState([]);
+    const [detail,      setDetail]      = React.useState(null);
+    const [running,     setRunning]     = React.useState(false);
+    const [runAllState, setRunAllState] = React.useState(null); // {total, done, ids}
+    const [activeTab,   setActiveTab2]  = React.useState('config'); // config | matrix
     const [form, setForm] = React.useState({
       start_date: '2023-04-01',
       end_date:   '2025-12-31',
@@ -7360,10 +7384,12 @@ const App = () => {
 
     React.useEffect(() => { loadList(); }, []);
 
+    const applyPeriod = (p) => setForm(f => ({...f, start_date: p.start, end_date: p.end}));
+
     const startBacktest = async () => {
       setRunning(true);
       try {
-        const strategyLabel = {v5:'AI 콤보 v5', v6:'Logic #5 국면적응형', v7:'Logic #6 멀티팩터', v8:'Logic #7 눌림목'}[form.strategy] || form.strategy;
+        const strat = STRATEGIES.find(s => s.id === form.strategy);
         const r = await fetch(API('/api/backtest/run'), {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
@@ -7372,12 +7398,11 @@ const App = () => {
             end_date:   form.end_date,
             per_stock:  Number(form.per_stock),
             strategy:   form.strategy,
-            name:       form.name || `[${strategyLabel}] ${form.start_date.slice(0,7)}~${form.end_date.slice(0,7)}`,
+            name:       form.name || `[${strat?.label} ${strat?.name}] ${form.start_date.slice(0,7)}~${form.end_date.slice(0,7)}`,
           }),
         });
         if (!r.ok) { setRunning(false); return; }
         const { run_id } = await r.json();
-        // 완료될 때까지 폴링
         const iv = setInterval(async () => {
           await loadList();
           const r2 = await fetch(API(`/api/backtest/${run_id}`));
@@ -7391,8 +7416,32 @@ const App = () => {
             }
           }
         }, 3000);
-        setPollId(iv);
       } catch(e) { setRunning(false); }
+    };
+
+    const startRunAll = async () => {
+      try {
+        const r = await fetch(API('/api/backtest/run-all'), {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ per_stock: Number(form.per_stock) }),
+        });
+        if (!r.ok) return;
+        const { run_ids, total } = await r.json();
+        setRunAllState({ total, done: 0, ids: run_ids });
+        setActiveTab2('matrix');
+        const iv = setInterval(async () => {
+          await loadList();
+          const freshList = await fetch(API('/api/backtest/list')).then(r => r.json()).catch(() => []);
+          const done = freshList.filter(x => run_ids.includes(x.run_id) && x.status === 'done').length;
+          const errs = freshList.filter(x => run_ids.includes(x.run_id) && x.status === 'error').length;
+          setRunAllState(p => p ? { ...p, done } : null);
+          if (done + errs >= total) {
+            clearInterval(iv);
+            setList(freshList);
+          }
+        }, 4000);
+      } catch(e) {}
     };
 
     const loadDetail = async (run_id) => {
@@ -7414,107 +7463,218 @@ const App = () => {
       color:'#fff',
     };
 
+    // ── 전체 실행 결과 매트릭스 ────────────────────────────────────
+    const MatrixView = () => {
+      const allRunIds = runAllState?.ids || [];
+      const matrixItems = list.filter(x => allRunIds.includes(x.run_id));
+
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+          {runAllState && (
+            <div style={{padding:'0.6rem 1rem',background:'rgba(245,158,11,0.08)',
+              border:'1px solid rgba(245,158,11,0.25)',borderRadius:'8px',
+              fontSize:'0.78rem',color:'#fbbf24'}}>
+              ⏳ 전체 실행 진행: {runAllState.done} / {runAllState.total} 완료
+              <div style={{marginTop:'0.4rem',height:'4px',background:'rgba(255,255,255,0.1)',borderRadius:'2px'}}>
+                <div style={{height:'100%',borderRadius:'2px',background:'#f59e0b',
+                  width:`${(runAllState.done/Math.max(runAllState.total,1))*100}%`,
+                  transition:'width 0.5s'}} />
+              </div>
+            </div>
+          )}
+          <div style={{overflowX:'auto'}}>
+            <table className="premium-table" style={{minWidth:'900px'}}>
+              <thead>
+                <tr>
+                  <th>기간</th>
+                  {STRATEGIES.map(s => (
+                    <th key={s.id} style={{textAlign:'center',color:s.color}}>
+                      {s.label}<br/><span style={{fontSize:'0.65rem',fontWeight:400}}>{s.name}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {PERIODS.map(p => (
+                  <tr key={p.id}>
+                    <td>
+                      <div style={{fontWeight:700,fontSize:'0.8rem',color:p.color}}>{p.label}</div>
+                      <div style={{fontSize:'0.65rem',color:'var(--text-secondary)'}}>{p.badge}</div>
+                    </td>
+                    {STRATEGIES.map(s => {
+                      const nameKey = `${s.label} ${s.name}`;
+                      const row = matrixItems.find(x =>
+                        x.name && x.name.includes(s.label) && x.name.includes(p.label)
+                      );
+                      if (!row) return (
+                        <td key={s.id} style={{textAlign:'center',color:'rgba(255,255,255,0.2)'}}>
+                          {(runAllState?.done < runAllState?.total) ? '⏳' : '-'}
+                        </td>
+                      );
+                      if (row.status === 'error') return <td key={s.id} style={{textAlign:'center',color:'#f87171',fontSize:'0.7rem'}}>오류</td>;
+                      if (row.status !== 'done') return <td key={s.id} style={{textAlign:'center',color:'#fbbf24',fontSize:'0.7rem'}}>실행중</td>;
+                      const ret = row.total_return_pct;
+                      const mdd = row.max_drawdown_pct;
+                      return (
+                        <td key={s.id} style={{textAlign:'center',cursor:'pointer'}} onClick={() => loadDetail(row.run_id)}>
+                          <div style={{fontWeight:800,fontSize:'0.88rem',color:clr(ret)}}>
+                            {ret != null ? (ret>=0?'+':'')+ret+'%' : '-'}
+                          </div>
+                          <div style={{fontSize:'0.65rem',color:'rgba(255,255,255,0.45)'}}>
+                            MDD {mdd != null ? mdd+'%' : '-'} · {row.win_rate != null ? row.win_rate+'%승' : ''}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div className="fade-in" style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
         {/* 헤더 */}
         <div className="glass-panel" style={{padding:'0.8rem 1.2rem'}}>
-          <div style={{display:'flex',alignItems:'center',gap:'0.6rem',marginBottom:'0.6rem'}}>
-            <Activity size={18} color="#f59e0b" />
-            <h2 style={{fontSize:'1rem',fontWeight:700}}>📊 백테스트</h2>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'0.5rem'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'0.6rem'}}>
+              <Activity size={18} color="#f59e0b" />
+              <h2 style={{fontSize:'1rem',fontWeight:700}}>📊 백테스트</h2>
+            </div>
+            <div style={{display:'flex',gap:'0.4rem'}}>
+              {['config','matrix'].map(t => (
+                <button key={t} onClick={() => setActiveTab2(t)} style={{
+                  padding:'0.3rem 0.8rem',borderRadius:'6px',fontSize:'0.75rem',cursor:'pointer',
+                  background: activeTab === t ? 'rgba(245,158,11,0.2)' : 'transparent',
+                  border:`1px solid ${activeTab === t ? 'rgba(245,158,11,0.5)' : 'var(--glass-border)'}`,
+                  color: activeTab === t ? '#f59e0b' : 'var(--text-secondary)',
+                }}>
+                  {t === 'config' ? '⚙️ 개별 설정' : '📈 전체 매트릭스'}
+                </button>
+              ))}
+            </div>
           </div>
-          <div style={{padding:'0.5rem 0.8rem',background:'rgba(251,191,36,0.07)',
+          <div style={{marginTop:'0.5rem',padding:'0.4rem 0.8rem',background:'rgba(251,191,36,0.07)',
             border:'1px solid rgba(251,191,36,0.2)',borderRadius:'6px',
-            fontSize:'0.7rem',color:'rgba(251,191,36,0.85)',lineHeight:1.6}}>
-            ⚠️ v5: AI 콤보(추세+가치) · v6(Logic#5): KOSPI 국면 4단계 적응형 · v7(Logic#6): 동조효과+HS+고용 멀티팩터 · v8(Logic#7): 눌림목(Pullback) 전략.
-            과거 데이터 기준 시뮬레이션으로 <strong>미래 수익을 보장하지 않습니다.</strong>
+            fontSize:'0.7rem',color:'rgba(251,191,36,0.85)',lineHeight:1.5}}>
+            ⚠️ 과거 데이터 시뮬레이션 — <strong>미래 수익 보장 안 함</strong> ·
+            Logic#1(v5): 스나이퍼 · Logic#2(v6): 국면적응 · Logic#3(v7): 멀티팩터 · Logic#4(v8): 눌림목
           </div>
         </div>
 
-        {/* 설정 패널 */}
-        <div className="glass-panel" style={{padding:'1rem 1.2rem'}}>
-          <div style={{fontWeight:700,marginBottom:'0.7rem',fontSize:'0.85rem',color:'var(--accent-mint)'}}>
-            🔧 백테스트 설정
+        {activeTab === 'matrix' && <MatrixView />}
+
+        {activeTab === 'config' && (
+        <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+          {/* 전략 선택 */}
+          <div className="glass-panel" style={{padding:'1rem 1.2rem'}}>
+            <div style={{fontWeight:700,marginBottom:'0.7rem',fontSize:'0.82rem',color:'var(--accent-mint)'}}>
+              🎯 전략 선택
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:'0.5rem'}}>
+              {STRATEGIES.map(s => (
+                <button key={s.id} onClick={() => setForm(p => ({...p, strategy: s.id}))} style={{
+                  padding:'0.7rem 0.9rem', borderRadius:'8px', cursor:'pointer', textAlign:'left',
+                  background: form.strategy === s.id ? `rgba(${s.id==='v5'?'245,158,11':s.id==='v6'?'167,139,250':s.id==='v7'?'52,211,153':'251,146,60'},0.15)` : 'rgba(255,255,255,0.04)',
+                  border:`1px solid ${form.strategy === s.id ? s.color : 'var(--glass-border)'}`,
+                  transition:'all 0.15s',
+                }}>
+                  <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.2rem'}}>
+                    <span style={{fontSize:'0.78rem',fontWeight:800,color:s.color}}>{s.label}</span>
+                    <span style={{fontSize:'0.78rem',fontWeight:700,color:'#fff'}}>{s.name}</span>
+                    {form.strategy === s.id && <span style={{marginLeft:'auto',fontSize:'0.65rem',color:s.color}}>✓ 선택됨</span>}
+                  </div>
+                  <div style={{fontSize:'0.68rem',color:'var(--text-secondary)',lineHeight:1.4}}>{s.desc}</div>
+                </button>
+              ))}
+            </div>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:'0.6rem',marginBottom:'0.8rem'}}>
-            {[
-              { label:'시작일', key:'start_date', type:'date' },
-              { label:'종료일', key:'end_date',   type:'date' },
-              { label:'종목당 투자금(원)', key:'per_stock', type:'number' },
-              { label:'실행명(선택)', key:'name', type:'text', placeholder:'예: 2023년 전략 테스트' },
-            ].map(({ label, key, type, placeholder }) => (
-              <div key={key}>
-                <div style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginBottom:'0.25rem'}}>{label}</div>
-                <input type={type} value={form[key]}
-                  placeholder={placeholder || ''}
-                  onChange={e => setForm(p => ({...p, [key]: e.target.value}))}
-                  style={{...inputS, width:'100%', boxSizing:'border-box'}} />
+
+          {/* 기간 프리셋 */}
+          <div className="glass-panel" style={{padding:'1rem 1.2rem'}}>
+            <div style={{fontWeight:700,marginBottom:'0.7rem',fontSize:'0.82rem',color:'#a78bfa'}}>
+              📅 테스트 기간 선택
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:'0.5rem',marginBottom:'0.75rem'}}>
+              {PERIODS.map(p => {
+                const isActive = form.start_date === p.start && form.end_date === p.end;
+                return (
+                  <button key={p.id} onClick={() => applyPeriod(p)} style={{
+                    padding:'0.65rem 0.9rem', borderRadius:'8px', cursor:'pointer', textAlign:'left',
+                    background: isActive ? `rgba(167,139,250,0.12)` : 'rgba(255,255,255,0.04)',
+                    border:`1px solid ${isActive ? p.color : 'var(--glass-border)'}`,
+                    transition:'all 0.15s',
+                  }}>
+                    <div style={{display:'flex',alignItems:'center',gap:'0.4rem',marginBottom:'0.15rem'}}>
+                      <span style={{fontSize:'0.78rem',fontWeight:800,color:p.color}}>{p.label}</span>
+                      {isActive && <span style={{marginLeft:'auto',fontSize:'0.63rem',color:p.color}}>✓</span>}
+                    </div>
+                    <div style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.55)',marginBottom:'0.1rem'}}>{p.badge}</div>
+                    <div style={{fontSize:'0.65rem',color:'var(--text-secondary)',lineHeight:1.3}}>{p.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+            {/* 커스텀 날짜 입력 */}
+            <div style={{display:'flex',gap:'0.6rem',flexWrap:'wrap',alignItems:'center'}}>
+              <div>
+                <div style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginBottom:'0.2rem'}}>시작일</div>
+                <input type="date" value={form.start_date}
+                  onChange={e => setForm(p => ({...p, start_date: e.target.value}))}
+                  style={{...inputS}} />
               </div>
-            ))}
-            <div>
-              <div style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginBottom:'0.25rem'}}>전략 선택</div>
-              <select value={form.strategy} onChange={e => setForm(p => ({...p, strategy: e.target.value}))}
-                style={{...inputS, width:'100%', boxSizing:'border-box', cursor:'pointer'}}>
-                <option value="v5">AI 콤보 v5 (KOSPI MA120 필터)</option>
-                <option value="v6">Logic #5 — 국면 적응형</option>
-                <option value="v7">Logic #6 — 멀티팩터 (동조+수출+고용)</option>
-                <option value="v8">Logic #7 — 눌림목(Pullback) 전략</option>
-              </select>
+              <div>
+                <div style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginBottom:'0.2rem'}}>종료일</div>
+                <input type="date" value={form.end_date}
+                  onChange={e => setForm(p => ({...p, end_date: e.target.value}))}
+                  style={{...inputS}} />
+              </div>
+              <div>
+                <div style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginBottom:'0.2rem'}}>종목당 투자금(원)</div>
+                <input type="number" value={form.per_stock}
+                  onChange={e => setForm(p => ({...p, per_stock: e.target.value}))}
+                  style={{...inputS, width:'140px'}} />
+              </div>
+              <div>
+                <div style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginBottom:'0.2rem'}}>실행명(선택)</div>
+                <input type="text" value={form.name} placeholder="예: 2023년 전략 테스트"
+                  onChange={e => setForm(p => ({...p, name: e.target.value}))}
+                  style={{...inputS, width:'200px'}} />
+              </div>
             </div>
           </div>
-          {form.strategy === 'v6' && (
-            <div style={{marginBottom:'0.7rem', padding:'0.6rem 0.9rem',
-              background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)',
-              borderRadius:'6px', fontSize:'0.7rem', color:'rgba(167,139,250,0.9)', lineHeight:1.7}}>
-              <strong>Logic #5 — 시장 국면 적응형</strong><br/>
-              KOSPI 위치로 4단계 국면 분류: <strong style={{color:'#34d399'}}>강세(MA60↑)</strong> /
-              <strong style={{color:'#60a5fa'}}> 중립(MA120↑)</strong> /
-              <strong style={{color:'#facc15'}}> 약세(MA200↑)</strong> /
-              <strong style={{color:'#f87171'}}> 대하락(대피)</strong><br/>
-              국면에 따라 매수 기준, 익절·손절 파라미터를 자동 조정합니다.
-            </div>
-          )}
-          {form.strategy === 'v7' && (
-            <div style={{marginBottom:'0.7rem', padding:'0.6rem 0.9rem',
-              background:'rgba(16,185,129,0.07)', border:'1px solid rgba(16,185,129,0.25)',
-              borderRadius:'6px', fontSize:'0.7rem', color:'rgba(52,211,153,0.95)', lineHeight:1.8}}>
-              <strong>Logic #6 — 멀티팩터 통합 전략</strong><br/>
-              <span style={{color:'rgba(255,255,255,0.75)'}}>5가지 팩터 가중 합산 (최소점수 충족 시 매수):</span><br/>
-              🌐 <strong>해외 동조효과 25%</strong> — 미국·일본·대만 섹터 선행 (전일 종가)<br/>
-              📈 <strong>기술적 모멘텀 30%</strong> — MA 정배열 · RSI · 거래량<br/>
-              💰 <strong>가치 품질 20%</strong> — Graham 할인 · PBR/PER<br/>
-              🚢 <strong>HS 수출 모멘텀 15%</strong> — 수출 YoY 증감 (15일 후행 적용)<br/>
-              👥 <strong>고용 증가 10%</strong> — 임직원 YoY 증감 (30일 후행 적용)<br/>
-              <span style={{color:'rgba(255,255,255,0.5)'}}>※ HS/고용 데이터 없는 종목은 neutral(1.5/3)로 처리</span>
-            </div>
-          )}
-          {form.strategy === 'v8' && (
-            <div style={{marginBottom:'0.7rem', padding:'0.6rem 0.9rem',
-              background:'rgba(251,146,60,0.07)', border:'1px solid rgba(251,146,60,0.25)',
-              borderRadius:'6px', fontSize:'0.7rem', color:'rgba(251,191,36,0.95)', lineHeight:1.8}}>
-              <strong>Logic #7 — 눌림목(Pullback) 전략</strong><br/>
-              <span style={{color:'rgba(255,255,255,0.75)'}}>추세 유지 중 단기 조정 구간 매수:</span><br/>
-              📐 <strong>MA 완전 정배열</strong> — MA60 &gt; MA120 &gt; MA200 (장기 상승 추세 확인)<br/>
-              🎯 <strong>눌림목 진입</strong> — MA20 ×0.98 ≤ 현재가 ≤ MA20 ×1.05<br/>
-              📉 <strong>RSI &lt; 50</strong> — 단기 과열 해소 확인<br/>
-              💧 <strong>수급 강도</strong> — (기관+외국인) 5일 합 &gt; 20일 평균거래량 ×5%<br/>
-              🏦 <strong>시장 필터</strong> — KOSPI: MA200 위 / KOSDAQ: MA60 위 · ADR &lt; 100<br/>
-              💰 <strong>청산</strong> — Scale-out +10%(절반익절) · 추적손절 고점-10% · Time Stop 5일
-            </div>
-          )}
-          <button onClick={startBacktest} disabled={running} style={{
-            padding:'0.5rem 1.4rem', borderRadius:'8px', fontWeight:700, cursor: running ? 'not-allowed' : 'pointer',
-            background: running ? 'rgba(100,116,139,0.2)' : 'rgba(245,158,11,0.2)',
-            border: `1px solid ${running ? 'rgba(100,116,139,0.3)' : 'rgba(245,158,11,0.5)'}`,
-            color: running ? 'var(--text-secondary)' : '#f59e0b', fontSize:'0.88rem',
-          }}>
-            {running ? '⏳ 백테스트 실행 중...' : '▶ 백테스트 실행'}
-          </button>
-          {running && (
-            <div style={{marginTop:'0.5rem',fontSize:'0.72rem',color:'rgba(255,255,255,0.45)'}}>
-              전 종목 스캔 중입니다. 수십 초 ~ 수 분 소요될 수 있습니다.
-            </div>
-          )}
+
+          {/* 실행 버튼 */}
+          <div style={{display:'flex',gap:'0.6rem',flexWrap:'wrap',alignItems:'center'}}>
+            <button onClick={startBacktest} disabled={running} style={{
+              padding:'0.55rem 1.6rem', borderRadius:'8px', fontWeight:700,
+              cursor: running ? 'not-allowed' : 'pointer',
+              background: running ? 'rgba(100,116,139,0.2)' : 'rgba(245,158,11,0.2)',
+              border: `1px solid ${running ? 'rgba(100,116,139,0.3)' : 'rgba(245,158,11,0.5)'}`,
+              color: running ? 'var(--text-secondary)' : '#f59e0b', fontSize:'0.88rem',
+            }}>
+              {running ? '⏳ 실행 중...' : '▶ 개별 백테스트 실행'}
+            </button>
+            <button onClick={startRunAll} disabled={running} style={{
+              padding:'0.55rem 1.6rem', borderRadius:'8px', fontWeight:700,
+              cursor: running ? 'not-allowed' : 'pointer',
+              background:'rgba(167,139,250,0.15)',
+              border:'1px solid rgba(167,139,250,0.45)',
+              color:'#a78bfa', fontSize:'0.88rem',
+            }}>
+              ⚡ 전체 실행 (4전략 × 5기간 = 20회)
+            </button>
+            {running && (
+              <span style={{fontSize:'0.72rem',color:'rgba(255,255,255,0.4)'}}>
+                전 종목 스캔 중 — 전략별 수십 초~수 분 소요
+              </span>
+            )}
+          </div>
         </div>
+        )}
 
         {/* 결과 목록 */}
         {list.length > 0 && (
@@ -7536,29 +7696,27 @@ const App = () => {
                 <th style={{textAlign:'right'}}>손익비</th>
                 <th style={{textAlign:'right'}}>샤프</th>
                 <th style={{textAlign:'right'}}>거래수</th>
-                <th style={{textAlign:'right'}}>최대낙폭</th>
+                <th style={{textAlign:'right'}}>MDD</th>
                 <th>상태</th>
                 <th></th>
               </tr></thead>
               <tbody>
-                {list.map(r => {
-                  const rd = (() => { try { return r.trades_json ? JSON.parse(r.trades_json) : null; } catch { return null; } })();
-                  return (
+                {list.map(r => (
                   <tr key={r.run_id} style={{cursor:'pointer'}} onClick={() => loadDetail(r.run_id)}>
-                    <td style={{fontWeight:600}}>{r.name}</td>
-                    <td style={{fontSize:'0.75rem',color:'var(--text-secondary)'}}>{r.start_date} ~ {r.end_date}</td>
+                    <td style={{fontWeight:600,maxWidth:'260px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</td>
+                    <td style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>{r.start_date?.slice(0,7)} ~ {r.end_date?.slice(0,7)}</td>
                     <td style={{textAlign:'right',fontWeight:700,color:clr(r.total_return_pct||0)}}>
                       {r.total_return_pct != null ? (r.total_return_pct>=0?'+':'')+r.total_return_pct+'%' : '-'}
                     </td>
-                    <td style={{textAlign:'right',color:clr(rd?.cagr??r.ann_return_pct??0)}}>
-                      {rd?.cagr != null ? (rd.cagr>=0?'+':'')+rd.cagr+'%' : r.ann_return_pct != null ? (r.ann_return_pct>=0?'+':'')+r.ann_return_pct+'%' : '-'}
+                    <td style={{textAlign:'right',color:clr(r.cagr??r.ann_return_pct??0)}}>
+                      {r.cagr != null ? (r.cagr>=0?'+':'')+r.cagr+'%' : r.ann_return_pct != null ? (r.ann_return_pct>=0?'+':'')+r.ann_return_pct+'%' : '-'}
                     </td>
                     <td style={{textAlign:'right'}}>{r.win_rate != null ? r.win_rate+'%' : '-'}</td>
-                    <td style={{textAlign:'right',color:'var(--accent-purple)'}}>
-                      {rd?.pl_ratio != null ? rd.pl_ratio+'배' : '-'}
+                    <td style={{textAlign:'right',color:'#a78bfa'}}>
+                      {r.pl_ratio != null ? r.pl_ratio+'배' : '-'}
                     </td>
-                    <td style={{textAlign:'right',color:rd?.sharpe>=1?'#22c55e':rd?.sharpe>=0?'#f59e0b':'#f87171'}}>
-                      {rd?.sharpe != null ? rd.sharpe : '-'}
+                    <td style={{textAlign:'right',color:r.sharpe>=1?'#22c55e':r.sharpe>=0?'#f59e0b':'#f87171'}}>
+                      {r.sharpe != null ? r.sharpe : '-'}
                     </td>
                     <td style={{textAlign:'right'}}>{r.total_trades ?? '-'}건</td>
                     <td style={{textAlign:'right',color:'#f87171'}}>
@@ -7567,10 +7725,10 @@ const App = () => {
                     <td>
                       <span style={{padding:'0.1rem 0.4rem',borderRadius:'4px',fontSize:'0.68rem',
                         background: r.status==='done' ? 'rgba(34,197,94,0.15)' :
-                                    r.status==='running' ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
+                                    r.status==='running'||r.status==='queued' ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
                         color:      r.status==='done' ? '#22c55e' :
-                                    r.status==='running' ? '#fbbf24' : '#ef4444'}}>
-                        {r.status==='done' ? '완료' : r.status==='running' ? '실행중' : '오류'}
+                                    r.status==='running'||r.status==='queued' ? '#fbbf24' : '#ef4444'}}>
+                        {r.status==='done' ? '완료' : r.status==='running' ? '실행중' : r.status==='queued' ? '대기' : '오류'}
                       </span>
                     </td>
                     <td onClick={e => { e.stopPropagation(); deleteRun(r.run_id); }}
@@ -7578,8 +7736,7 @@ const App = () => {
                       ✕
                     </td>
                   </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </table>
           </div>

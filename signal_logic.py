@@ -2,9 +2,11 @@
 signal_logic.py — 모든 시그널/스크리너 로직의 단일 진실 원천 (Single Source of Truth)
 
 ■ 구조
-  MARKET_LOGIC    : 시장(KOSPI/KOSDAQ/나스닥 등) 진입 판단 기준
-  STOCK_LOGIC     : 개별 종목 시그널 판단 기준 (종목 분석 탭)
-  SCREENER_REGISTRY : AI 스크리너 4종 (함수 + 설명 페어링)
+  MARKET_LOGIC       : 시장(KOSPI/KOSDAQ/나스닥 등) 진입 판단 기준
+  STOCK_LOGIC        : 개별 종목 시그널 판단 기준 (종목 분석 탭)
+  SCREENER_REGISTRY  : AI 스크리너 4종 (함수 + 설명 페어링)
+  VIRTUAL_*          : 가상매매(AI 자동매매) 예산·포지션 설정  ← 여기서만 수정
+  BACKTEST_PERIODS   : 백테스트 기간 프리셋 5종  ← 여기서만 수정
 
 ■ 수정 규칙
   1. 로직 파라미터를 바꿀 때는 description 도 같이 수정한다.
@@ -13,10 +15,14 @@ signal_logic.py — 모든 시그널/스크리너 로직의 단일 진실 원천
      핵심 임계값(THRESHOLD)은 이 파일의 상수로 정의하고 import해서 사용한다.
   4. /api/screener/meta 엔드포인트가 이 파일을 읽어 프론트엔드로 전송한다.
      → 프론트는 설명을 하드코딩하지 않고 API로 받는다.
+  5. 가상매매·백테스트 조건은 반드시 이 파일에서만 관리한다.
+     main.py / peak_monitor.py / backtest.py 는 여기서 import하여 사용.
 
 ■ 로직 버전
-  Logic-#1 : Minervini 추세 + Graham 가치 (기존)
-  Logic-#2 : 수급 주도 모멘텀 (Supply-Led Momentum) — 기관/외국인 누적 매수 1차 신호
+  Logic-#1 (v5) : AI 콤보 — 눌림목+가치+절대수급 스나이퍼 (Minervini+Graham+RS 교집합)
+  Logic-#2 (v6) : 국면 적응형 — KOSPI 4단계 regime 별 자동전환
+  Logic-#3 (v7) : 멀티팩터 — 해외동조(25%)+기술(30%)+가치(17%)+HS수출(15%)+고용(10%)
+  Logic-#4 (v8) : 눌림목(Pullback) — MA 정배열+눌림목+RSI<50+절대수급
 """
 
 # ══════════════════════════════════════════════════════════════════
@@ -628,3 +634,126 @@ def get_screener_meta(screener_id: str) -> dict:
     if not reg:
         return {}
     return {k: v for k, v in reg.items() if k != "fn"}
+
+
+# ══════════════════════════════════════════════════════════════════
+# ⑦ 가상매매 (AI 자동매매) 예산·포지션 설정
+#    main.py / peak_monitor.py 가 시작 시 이 파일을 읽어 사용한다.
+# ══════════════════════════════════════════════════════════════════
+
+# ── 총 예산 ──────────────────────────────────────────────────────
+VIRTUAL_TOTAL_BUDGET      = 200_000_000   # 총 운용 예산: 2억원
+
+# ── 종목당 투자금 ─────────────────────────────────────────────────
+VIRTUAL_PER_STOCK_BASE    =  10_000_000   # 기본 투자금: 1천만원 (match_count=2)
+VIRTUAL_PER_STOCK_STRONG  =  20_000_000   # 강한 시그널: 2천만원 (match_count=3)
+VIRTUAL_PER_STOCK_MAX     =  30_000_000   # 최대 투자금: 3천만원 (예외적 고점수)
+
+# ── 포지션 한도 ───────────────────────────────────────────────────
+VIRTUAL_MAX_POSITIONS     = 20            # 최대 동시 보유 종목 수 (2억÷1천만=20)
+VIRTUAL_MIN_SCORE_TO_HOLD = 0.30          # 이 점수 미만이면 예산 부족 시 먼저 매도
+
+# ── 강한 시그널 판단 기준 (match_count 기준) ─────────────────────
+VIRTUAL_STRONG_MATCH_CNT  = 3             # 3개 방법론 동시 충족 = 강한 시그널
+VIRTUAL_VERY_STRONG_SCORE = 0.75          # combo_score 정규화값 ≥ 0.75 = 최강
+
+# ══════════════════════════════════════════════════════════════════
+# ⑧ 백테스트 기간 프리셋
+#    BacktestView UI와 /api/backtest/run-all 에서 이 목록을 읽는다.
+#    기간/설명 수정은 이 파일에서만 한다.
+# ══════════════════════════════════════════════════════════════════
+
+BACKTEST_PERIODS = [
+    {
+        "id":         "bear_2022",
+        "label":      "① 하락장",
+        "subtitle":   "대세 하락장 — MDD 방어력 테스트",
+        "badge":      "하락장 · 1년",
+        "start_date": "2022-01-01",
+        "end_date":   "2022-12-31",
+        "desc": (
+            "대세 하락장에서 손절 로직(Stop Loss)과 현금 비중 조절이 "
+            "얼마나 잘 작동하는지(MDD 방어력) 테스트합니다."
+        ),
+    },
+    {
+        "id":         "sideways_2023",
+        "label":      "② 박스피",
+        "subtitle":   "횡보장 — 추적손절·익절 노이즈 필터 테스트",
+        "badge":      "횡보 · 1년",
+        "start_date": "2023-08-01",
+        "end_date":   "2024-07-31",
+        "desc": (
+            "지루한 횡보장에서 추적 손절(Trailing Stop)과 익절(Take Profit)이 "
+            "노이즈에 털리지 않고 수익을 누적할 수 있는지 테스트합니다."
+        ),
+    },
+    {
+        "id":         "bull_2023",
+        "label":      "③ 상승장",
+        "subtitle":   "테마 주도 대세 상승장 — 주도주 포착 테스트",
+        "badge":      "상승 · 7개월",
+        "start_date": "2023-01-01",
+        "end_date":   "2023-07-31",
+        "desc": (
+            "상승장에서 주도주를 잘 포착하여 수익을 극대화(Let profits run)할 수 있는지 "
+            "테스트합니다."
+        ),
+    },
+    {
+        "id":         "volatile_2024",
+        "label":      "④ 고변동성",
+        "subtitle":   "극심한 변동성 — 손익비(R/R) 방어 테스트",
+        "badge":      "변동 · 5개월",
+        "start_date": "2024-08-01",
+        "end_date":   "2024-12-31",
+        "desc": (
+            "극심한 변동성 속에서 손익비(Risk/Reward)가 계좌를 어떻게 지켜주는지 "
+            "테스트합니다."
+        ),
+    },
+    {
+        "id":         "value_2024",
+        "label":      "⑤ 가치주 장세",
+        "subtitle":   "기업 밸류업 — 실적·가치주 주도 장세 테스트",
+        "badge":      "가치 · 1년",
+        "start_date": "2024-01-01",
+        "end_date":   "2024-12-31",
+        "desc": (
+            "기업 밸류업 구간에서 가치투자 항목이 최고 수익을 내는 "
+            "실적·가치주 주도 장세를 테스트합니다."
+        ),
+    },
+]
+
+# ── 백테스트 전략 메타 (BacktestView UI + /run-all 에서 참조) ─────
+BACKTEST_STRATEGIES = [
+    {
+        "id":     "v5",
+        "label":  "Logic #1",
+        "name":   "AI 콤보 v5",
+        "desc":   "눌림목+가치+절대수급 스나이퍼 (MA정배열·RSI<50·Graham·수급강도 교집합)",
+        "color":  "#f59e0b",
+    },
+    {
+        "id":     "v6",
+        "label":  "Logic #2",
+        "name":   "국면 적응형",
+        "desc":   "KOSPI 4단계 regime별 매수기준·익절·손절 자동전환 (강세/중립/약세/대하락)",
+        "color":  "#a78bfa",
+    },
+    {
+        "id":     "v7",
+        "label":  "Logic #3",
+        "name":   "멀티팩터",
+        "desc":   "해외동조(25%)+기술(30%)+가치(17%)+HS수출(15%)+고용(10%) 가중 합산",
+        "color":  "#34d399",
+    },
+    {
+        "id":     "v8",
+        "label":  "Logic #4",
+        "name":   "눌림목(Pullback)",
+        "desc":   "MA60>MA120>MA200 정배열·MA20±2% 눌림목·RSI<50·절대수급 필수",
+        "color":  "#fb923c",
+    },
+]
