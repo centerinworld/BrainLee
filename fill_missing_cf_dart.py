@@ -81,6 +81,11 @@ def _parse_amount(s) -> float | None:
         return None
 
 
+class _RateLimitError(Exception):
+    """DART API 일일 한도 초과."""
+    pass
+
+
 def _collect_dart_cf_for_code(dart, stock_code: str) -> list[dict]:
     """
     단일 종목의 DART 현금흐름 데이터를 수집해 dict 리스트로 반환.
@@ -106,12 +111,17 @@ def _collect_dart_cf_for_code(dart, stock_code: str) -> list[dict]:
             for fs_div in ["CFS", "OFS"]:
                 try:
                     df = dart.finstate_all(stock_code, year, rprt_code, fs_div=fs_div)
+                    # DART 한도 초과 감지
+                    if isinstance(df, dict) and df.get("status") == "020":
+                        raise _RateLimitError("DART API 일일 한도 초과")
                     if df is None or df.empty:
                         continue
                     accs = df["account_nm"].astype(str).str.replace(" ", "")
                     if accs.str.contains("영업활동").any():
                         cf_data = df
                         break
+                except _RateLimitError:
+                    raise  # 상위로 전파
                 except Exception:
                     pass
 
@@ -260,9 +270,12 @@ def fill_missing(db_path: str = DB_PATH, limit: int = 0,
                     saved += 1
             total_saved += saved
             logger.info(f"  → {len(recs)}기간 수집, {saved}건 업데이트")
+        except _RateLimitError:
+            logger.warning("DART 일일 한도 초과 — 내일 다시 실행하세요. 진행률: {i}/{len(target)}")
+            break
         except Exception as e:
             logger.error(f"  → 실패: {e}")
-        time.sleep(0.5)   # DART API rate limit
+        time.sleep(1.0)   # DART API rate limit (1초로 늘림)
 
     conn.close()
     logger.info(f"\n완료: 총 {total_saved}건 업데이트")
