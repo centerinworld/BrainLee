@@ -866,7 +866,7 @@ const App = () => {
       }
     } catch (e) { console.error("Detail load error", e); }
     finally { if (!isStale()) setLoading(false); }
-  }, [selectedStock]);
+  }, [selectedStock, chartDays]);
 
   useEffect(() => { fetchWatchlist(); fetchSystem(); }, []);
 
@@ -881,7 +881,7 @@ const App = () => {
 
   useEffect(() => {
     if (activeTab === "analysis" || activeTab === "insight") fetchStockDetail();
-  }, [selectedStock, activeTab]);
+  }, [selectedStock, activeTab, fetchStockDetail]);
 
   const handleSearch = async (e, overrideCode = null) => {
     if (e) e.preventDefault();
@@ -1827,6 +1827,8 @@ const App = () => {
     const [nasdaqTab,  setNasdaqTab]  = React.useState('90');
     const [sp500Tab,   setSp500Tab]   = React.useState('90');
     const [futuresData, setFuturesData] = React.useState(null);
+    // 원자재 탭 상태 (각 3개 카드: USD/KRW, GOLD, OIL)
+    const [commTabs, setCommTabs] = React.useState({ 'USD/KRW': '90', 'GOLD': '90', 'OIL': '90' });
     React.useEffect(() => {
       const iv = setInterval(() => setLastUpdated(new Date().toLocaleTimeString('ko-KR')), 300000);
       return () => clearInterval(iv);
@@ -2280,7 +2282,8 @@ const App = () => {
           { key:'OIL',     label:'WTI 원유',     unit:'USD/bbl', color:'#f97316', dec:2 },
         ].map(({ key, label, unit, color, dec }) => {
           const d = comm[key] || {};
-          const [commTab, setCommTab] = React.useState('90');
+          const commTab = commTabs[key] || '90';
+          const setCommTab = (val) => setCommTabs(prev => ({ ...prev, [key]: val }));
           const commHistory = d.history || [];
           // 탭별 기간 수익률
           const calcCommReturn = (days) => {
@@ -2353,6 +2356,11 @@ const App = () => {
       return chartData.slice(-chartDays);
     }, [chartData, chartDays]);
     const isMobile = useIsMobile();
+    // 캔들 차트 툴팁 (IIFE 밖으로 이동 — Rules of Hooks)
+    const [tip, setTip] = React.useState(null);
+    // 수급 차트 바 토글 (IIFE 밖으로 이동 — Rules of Hooks)
+    const [showInstBar, setShowInstBar] = React.useState(false);
+    const [showFrnBar,  setShowFrnBar]  = React.useState(false);
     // 종목별 보고서
     const [stockReports, setStockReports] = React.useState([]);
     React.useEffect(() => {
@@ -2736,7 +2744,6 @@ const App = () => {
               const pt=Array.from({length:4},(_,i)=>minP+(maxP-minP)*i/3);
               const fp=v=>v>=100000?(v/10000).toFixed(0)+"만":Math.round(v).toLocaleString("ko-KR");
               const xt=Array.from({length:5},(_,i)=>Math.floor(i*(N-1)/4));
-              const [tip,setTip]=React.useState(null);
               const cw=Math.max(1,xs*0.6);
               return (
                 <div style={{position:"relative"}}>
@@ -2759,8 +2766,6 @@ const App = () => {
 
           {/* 수급 차트 */}
           {(() => {
-            const [showInstBar, setShowInstBar] = React.useState(false);
-            const [showFrnBar,  setShowFrnBar]  = React.useState(false);
             const supLabel = chartDays>=3650?'10년':chartDays>=1095?'3년':chartDays===365?'1년':chartDays+'일';
             const btnStyle = (on, color) => ({
               padding:'0.15rem 0.55rem', borderRadius:'5px', fontSize:'0.68rem', cursor:'pointer', fontWeight:600,
