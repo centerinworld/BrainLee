@@ -4,21 +4,54 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>반도체 Value Stream Lab</title>
-    <link rel="stylesheet" href="./styles.css?v=20260413b" />
+    <link rel="stylesheet" href="./styles.css?v=20260426" />
   </head>
   <body>
     <div class="page">
+
+      <!-- 탭 네비 -->
       <nav class="tabs">
-        <button class="tab active" data-tab="summary">종합</button>
+        <button class="tab active" data-tab="summary">반도체 종합현황</button>
         <button class="tab" data-tab="stocks">전종목</button>
         <button class="tab" data-tab="watch">관심종목</button>
       </nav>
 
+      <!-- ── 종합현황 탭 ── -->
       <section class="panel active" id="panel-summary">
+
+        <!-- 기준일 카드 + 인라인 수정 폼 -->
+        <div class="card">
+          <div class="section-head">
+            <div>
+              <h2>📅 기준일 현황</h2>
+              <p>비교 기준일을 직접 선택하고 저장하세요. 저장 후 [캐시 재계산]을 누르면 전체 반영됩니다.</p>
+            </div>
+          </div>
+
+          <!-- 현재 기준일 미니 카드 -->
+          <div class="meta-grid" id="metaCards"></div>
+
+          <!-- 인라인 기준일 수정 폼 -->
+          <div class="ref-date-edit-row" style="margin-top:12px;">
+            <label>현재(C)</label>
+            <input type="date" id="refCInput" />
+            <label>비교A</label>
+            <input type="date" id="refAInput" />
+            <label>비교B</label>
+            <input type="date" id="refBInput" />
+            <button class="btn-save" id="saveDates">저장</button>
+            <button class="btn-rebuild" id="rebuildCache">캐시 재계산</button>
+            <span class="inline-note" id="rebuildStatus"></span>
+          </div>
+        </div>
+
+        <!-- 섹터별 현황 테이블 -->
         <div class="card">
           <div class="section-head sticky-head">
-            <h2>섹터별 현황</h2>
-            <p>엑셀 구조를 기준으로 저장된 캐시 DB를 즉시 표시합니다. 기준일 변경이나 재계산 시에만 캐시를 갱신합니다.</p>
+            <div>
+              <h2>섹터별 현황</h2>
+              <p>각 섹터의 종목 수, 상승비율, PSR, 벤치마크 대비 성과를 한눈에 확인합니다.</p>
+            </div>
           </div>
           <div class="table-wrap">
             <table id="summaryTable">
@@ -27,7 +60,7 @@
                   <th>No</th>
                   <th>섹터</th>
                   <th>종목수</th>
-                  <th>상승종목수</th>
+                  <th>상승종목</th>
                   <th>상승비율</th>
                   <th>평균 PSR</th>
                   <th>코스피 대비</th>
@@ -42,11 +75,14 @@
         </div>
       </section>
 
+      <!-- ── 전종목 탭 ── -->
       <section class="panel" id="panel-stocks">
         <div class="card">
           <div class="section-head sticky-head">
-            <h2>전종목</h2>
-            <p>기준일 대비 변동률과 최신 분기 실적을 같은 형식으로 바로 확인합니다.</p>
+            <div>
+              <h2>전종목</h2>
+              <p>기준일 대비 주가 변동률과 최신 분기 실적을 확인합니다.</p>
+            </div>
           </div>
           <div class="filters">
             <select id="lv1Filter">
@@ -63,9 +99,9 @@
                   <th>Lv2</th>
                   <th>고객</th>
                   <th>현재가</th>
-                  <th>A대비</th>
-                  <th>B대비</th>
-                  <th>C대비</th>
+                  <th id="colHeadA">A대비</th>
+                  <th id="colHeadB">B대비</th>
+                  <th id="colHeadC">C대비</th>
                   <th>시총</th>
                   <th>PBR</th>
                   <th>PER</th>
@@ -78,10 +114,12 @@
             </table>
           </div>
         </div>
+
+        <!-- 종목 상세 -->
         <div class="card detail-card">
           <div class="section-head">
             <h2>종목 상세</h2>
-            <p>전종목 표에서 기업을 누르면 연간/분기 실적 흐름을 바로 확인할 수 있습니다.</p>
+            <p>위 표에서 기업을 클릭하면 연간/분기 실적 흐름을 확인합니다.</p>
           </div>
           <div id="stockDetailEmpty" class="empty-state">위 전종목 표에서 기업을 선택해 주세요.</div>
           <div id="stockDetail" class="hidden">
@@ -89,31 +127,19 @@
             <div class="metrics-grid" id="detailMetrics"></div>
             <div class="detail-tables">
               <div>
-                <h3>실적Y</h3>
+                <h3 style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px;">연간 실적</h3>
                 <div class="table-wrap slim">
                   <table id="yearlyTable">
-                    <thead>
-                      <tr>
-                        <th>구분</th>
-                        <th>연도</th>
-                        <th>값</th>
-                      </tr>
-                    </thead>
+                    <thead><tr><th>구분</th><th>연도</th><th>값</th></tr></thead>
                     <tbody></tbody>
                   </table>
                 </div>
               </div>
               <div>
-                <h3>실적Q</h3>
+                <h3 style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px;">분기 실적</h3>
                 <div class="table-wrap slim">
                   <table id="quarterlyTable">
-                    <thead>
-                      <tr>
-                        <th>구분</th>
-                        <th>분기</th>
-                        <th>값</th>
-                      </tr>
-                    </thead>
+                    <thead><tr><th>구분</th><th>분기</th><th>값</th></tr></thead>
                     <tbody></tbody>
                   </table>
                 </div>
@@ -123,11 +149,14 @@
         </div>
       </section>
 
+      <!-- ── 관심종목 탭 ── -->
       <section class="panel" id="panel-watch">
         <div class="card">
           <div class="section-head sticky-head">
-            <h2>관심종목</h2>
-            <p>제주반도체, DB하이텍, 위드텍은 기본 등록되어 있고 수정/추가/삭제가 가능합니다.</p>
+            <div>
+              <h2>관심종목</h2>
+              <p>추가/삭제가 가능합니다. 기본 등록: 제주반도체, DB하이텍, 위드텍</p>
+            </div>
           </div>
           <form class="watch-form" id="watchForm">
             <input name="stock_code" placeholder="종목코드 6자리" required />
@@ -135,7 +164,7 @@
             <input name="lv2_override" placeholder="Lv2 override" />
             <input name="customer_override" placeholder="고객 override" />
             <input name="memo" placeholder="메모" />
-            <button type="submit">저장</button>
+            <button type="submit">추가</button>
           </form>
           <div class="table-wrap">
             <table id="watchTable">
@@ -161,22 +190,7 @@
         </div>
       </section>
 
-      <section class="card controls-card bottom-card">
-        <div class="section-head">
-          <h2>현재 기준일 / 비교일 / 캐시</h2>
-          <p>페이지는 저장된 캐시 DB를 바로 읽고, 기준일 변경이나 원본 DB 업데이트 시에만 다시 계산합니다.</p>
-        </div>
-        <div class="meta-grid" id="metaCards"></div>
-        <form class="filters" id="metaForm">
-          <input name="ref_c" id="refCInput" placeholder="현재 기준일 YYYYMMDD" />
-          <input name="ref_a" id="refAInput" placeholder="비교일 A YYYYMMDD" />
-          <input name="ref_b" id="refBInput" placeholder="비교일 B YYYYMMDD" />
-          <button type="submit">기준일 저장</button>
-          <button type="button" class="ghost" id="rebuildCache">캐시 재계산</button>
-        </form>
-        <div id="rebuildStatus" class="inline-note"></div>
-      </section>
-    </div>
-    <script src="./app.js?v=20260413b"></script>
+    </div><!-- /page -->
+    <script src="./app.js?v=20260426"></script>
   </body>
 </html>
