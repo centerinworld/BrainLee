@@ -44,16 +44,19 @@
 ├── models.py            # SQLAlchemy ORM 모델
 ├── kis_client.py        # KIS API 토큰 관리
 │
-├── routes/              # FastAPI 라우터 (main.py 38~56줄에 등록)
+├── routes/              # FastAPI 라우터 (main.py 38~60줄에 등록)
 │   ├── signals.py       → /api/signals/*
 │   ├── trend.py         → /api/trend/*  (가상매매)
 │   ├── portfolio.py     → /api/portfolio/*
 │   ├── buy_candidates.py→ /api/buy-candidates/*
 │   ├── market_indicators.py → /api/market-indicators/*  ★2026-04 신규
+│   ├── tenbagger.py     → /api/tenbagger/*              ★2026-04 신규
 │   ├── reports.py       → /api/reports/*
 │   ├── telegram.py      → /api/telegram/*
 │   ├── backtest.py      → /api/backtest/*
 │   └── ingest.py        → /api/ingest/*
+│
+├── tenbagger_engine.py  # 텐버거 발굴 엔진 (스코어링+OpenAI+텔레그램)
 │
 ├── collectors/          # 외부 데이터 수집기
 │   ├── kis_collector.py # KIS API (주가·수급·실시간)
@@ -95,6 +98,7 @@
 | `telegram_channels` | 9 | channel_id, channel_name | 텔레그램 채널 |
 | `report_files` | 2691 | stock_code, sector, report_date, file_path | 섹터 보고서 |
 | `backtest_runs` | 2 | run_id, status, total_return_pct, trades_json | 백테스트 결과 |
+| `tenbagger_results` | - | run_time, run_type, stock_code, stock_name, total_score, score_detail(JSON), reasons(JSON), ai_analysis, current_price, market_cap, per, pbr, roe, revenue_growth, op_growth, op_margin, inst_net_10d, frn_net_10d, telegram_sent | 텐버거 발굴 결과 |
 | `investor_trading_daily` | 0 | bas_dt, stock_code, indv_net, inst_net, frgn_net | ⚠️ 미수집 |
 | `foreign_holding_daily` | 0 | bas_dt, stock_code, frgn_hold_pct | ⚠️ 미수집 |
 
@@ -218,6 +222,15 @@ DELETE /{code}           # 삭제
 GET    /short-sell/{code}# 대차잔고 조회
 ```
 
+### routes/tenbagger.py → /api/tenbagger ★신규(2026-04)
+```
+GET  /results            # 최신 발굴 회차 결과 (limit=20)
+GET  /history            # 발굴 이력 회차 목록 (limit=30)
+GET  /run-history        # 특정 run_time 상세 (param: run_time)
+POST /run                # 수동 발굴 실행 (백그라운드)
+GET  /status             # 마지막 실행 상태
+```
+
 ### routes/market_indicators.py → /api/market-indicators ★신규(2026-04)
 ```
 GET  /investor-top       # 투자자별 순매수 상위 (params: date, limit=20)
@@ -278,6 +291,9 @@ POST /investor-trends    # 투자자 동향 저장
 | `_job_screener_precompute` | 매 30분 | 시그널 캐시 갱신 |
 | `_job_krx_daily` | 18:00 daily (영업일) | KRX API 전종목 OHLCV + 지수 수집 (KRX 데이터 확정 시간 고려) |
 | `_job_supply_daily` | 17:30 daily (영업일) | KIS 전종목 최근 30일 수급 누락분 보완 |
+| `_job_tenbagger` (morning) | 09:00 daily (영업일) | 텐버거 후보 발굴 + OpenAI 분석 + 텔레그램 |
+| `_job_tenbagger` (noon)    | 12:00 daily (영업일) | 오전 수급 반영 텐버거 발굴 |
+| `_job_tenbagger` (afternoon)| 15:00 daily (영업일) | 장 종료 전 최종 텐버거 발굴 |
 
 ---
 
@@ -321,13 +337,14 @@ def _cache():
 | `TelegramMentions` | telegram | 6708 |
 | `SystemStatus` | system | 6951 |
 | `MarketIndicatorsView` | market_indicators | 6978 |
+| `TenbaggerView` | tenbagger | 7024 |
 
 ### 네비게이션 구조
 ```
 NAV_ITEMS 정의: 7459줄
 렌더 스위치:    7585줄
 
-순서: macro → market_indicators → analysis → screener → trend
+순서: macro → market_indicators → analysis → screener → tenbagger → trend
     → reports → telegram → backtest → hs_trade → hs_trade2
     ── (구분선) ──
     buy_candidates → watchlist → portfolio
@@ -459,4 +476,5 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-16 | 포트폴리오 수급·대차잔고·시그널 전면 개선: ①`_to_억` 버그 수정(amt=0 시 qty*close/1e8, amt≠0 시 amt/100) ②short_data를 buy_candidates/short-sell과 동일 형식(today/avg5/avg5_prev/신호)으로 통일 ③4분면 매매신호 신설(추세점수±4/가치점수 PBR·PER·ROE·ROA): add_buy·hold·hold_value·take_profit·real_sell·cut_loss ④포트폴리오 테이블 하단 AI 판단기준 설명 섹션 추가 |
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
+| 2026-04-26 | `tenbagger_engine.py` 신규 (6축 스코어링+OpenAI분석+텔레그램), `routes/tenbagger.py` 신규 (5개 API), `TenbaggerView` 컴포넌트 추가 (App.jsx 7024줄), NAV에 텐버거헌터 메뉴 추가, scheduler.py에 09:00/12:00/15:00 발굴 잡 추가, `tenbagger_results` DB 테이블 자동 생성 |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

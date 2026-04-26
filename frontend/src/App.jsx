@@ -7021,6 +7021,306 @@ const App = () => {
   };
 
 
+  // ── 텐버거 헌터 뷰 ────────────────────────────────────────
+  const TenbaggerView = () => {
+    const [latest,   setLatest]   = React.useState(null);   // {run_time, results, count}
+    const [history,  setHistory]  = React.useState([]);      // 회차 목록
+    const [selRun,   setSelRun]   = React.useState(null);    // 선택된 회차 run_time
+    const [selData,  setSelData]  = React.useState(null);    // 선택된 회차 상세
+    const [status,   setStatus]   = React.useState(null);
+    const [running,  setRunning]  = React.useState(false);
+    const [expanded, setExpanded] = React.useState({});      // {id: bool} AI 분석 펼침
+
+    const load = async () => {
+      try {
+        const [r1, r2, r3] = await Promise.all([
+          fetch(API('/api/tenbagger/results')),
+          fetch(API('/api/tenbagger/history')),
+          fetch(API('/api/tenbagger/status')),
+        ]);
+        if (r1.ok) setLatest(await r1.json());
+        if (r2.ok) setHistory(await r2.json());
+        if (r3.ok) setStatus(await r3.json());
+      } catch(e) {}
+    };
+
+    React.useEffect(() => { load(); }, []);
+
+    // 상태 폴링 (수동 실행 중일 때)
+    React.useEffect(() => {
+      if (!running) return;
+      const iv = setInterval(async () => {
+        try {
+          const r = await fetch(API('/api/tenbagger/status'));
+          if (r.ok) {
+            const s = await r.json();
+            setStatus(s);
+            if (!s.running) { setRunning(false); load(); clearInterval(iv); }
+          }
+        } catch(e) {}
+      }, 3000);
+      return () => clearInterval(iv);
+    }, [running]);
+
+    const handleRun = async () => {
+      setRunning(true);
+      try {
+        await fetch(API('/api/tenbagger/run'), { method: 'POST' });
+      } catch(e) { setRunning(false); }
+    };
+
+    const loadRunDetail = async (runTime) => {
+      setSelRun(runTime);
+      try {
+        const r = await fetch(API(`/api/tenbagger/run-history?run_time=${encodeURIComponent(runTime)}`));
+        if (r.ok) setSelData(await r.json());
+      } catch(e) {}
+    };
+
+    const displayData = selData || latest;
+    const displayRows = displayData?.results || [];
+
+    const fmtScore = (s) => {
+      if (s >= 80) return { color: '#f59e0b', label: '★★★' };
+      if (s >= 65) return { color: '#2dd4bf', label: '★★☆' };
+      return { color: '#94a3b8', label: '★☆☆' };
+    };
+
+    const ScoreBar = ({ label, val, max, color }) => (
+      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.72rem' }}>
+        <span style={{ width:'70px', color:'var(--text-secondary)', flexShrink:0 }}>{label}</span>
+        <div style={{ flex:1, height:'5px', background:'rgba(255,255,255,0.08)', borderRadius:'3px', overflow:'hidden' }}>
+          <div style={{ width:`${Math.max(0,val/max*100)}%`, height:'100%', background: color || 'var(--accent-mint)', borderRadius:'3px', transition:'width 0.4s' }}/>
+        </div>
+        <span style={{ width:'28px', textAlign:'right', color: color || 'var(--accent-mint)', fontWeight:700 }}>{val?.toFixed(0) ?? '-'}</span>
+      </div>
+    );
+
+    return (
+      <div className="fade-in" style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+
+        {/* 헤더 */}
+        <div className="glass-panel" style={{ padding:'1.2rem', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.8rem' }}>
+          <div className="section-title" style={{ marginBottom:0 }}>
+            <span style={{ fontSize:'1.3rem' }}>💎</span>
+            <h2 style={{ fontSize:'1.1rem' }}>텐버거 종목 발굴</h2>
+            <span style={{ fontSize:'0.8rem', color:'var(--text-secondary)', marginLeft:'0.4rem' }}>
+              10배 성장 가능성 종목 자동 발굴 · 매일 09:00 / 12:00 / 15:00
+            </span>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.8rem' }}>
+            {status && (
+              <span style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>
+                마지막 실행: {status.last_run ? status.last_run.slice(0,16) : '없음'}
+                {status.last_count > 0 && ` (${status.last_count}종목)`}
+              </span>
+            )}
+            <button onClick={handleRun} disabled={running}
+              style={{ padding:'0.4rem 1rem', borderRadius:'8px', background: running ? 'rgba(245,158,11,0.3)' : 'rgba(245,158,11,0.15)',
+                border:'1px solid #f59e0b', color:'#f59e0b', cursor: running ? 'not-allowed' : 'pointer',
+                fontWeight:700, fontSize:'0.83rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+              {running ? <><span style={{ animation:'spin 1s linear infinite', display:'inline-block' }}>⟳</span> 발굴 중...</> : '▶ 즉시 발굴'}
+            </button>
+            <button onClick={load}
+              style={{ padding:'0.4rem 0.7rem', borderRadius:'8px', background:'rgba(255,255,255,0.05)',
+                border:'1px solid var(--glass-border)', color:'var(--text-secondary)', cursor:'pointer', fontSize:'0.83rem' }}>
+              새로고침
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display:'flex', gap:'1rem', flexWrap:'wrap' }}>
+
+          {/* 이력 사이드바 */}
+          <div style={{ width:'220px', flexShrink:0, display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+            <div className="glass-panel" style={{ padding:'0.8rem' }}>
+              <p style={{ fontSize:'0.75rem', color:'var(--text-secondary)', fontWeight:700, marginBottom:'0.5rem' }}>발굴 이력</p>
+              {history.length === 0 ? (
+                <p style={{ fontSize:'0.75rem', color:'var(--text-secondary)', textAlign:'center', padding:'1rem 0' }}>아직 발굴 이력 없음</p>
+              ) : (
+                history.map(h => (
+                  <button key={h.run_time} onClick={() => loadRunDetail(h.run_time)}
+                    style={{ width:'100%', textAlign:'left', padding:'0.45rem 0.6rem', marginBottom:'0.2rem',
+                      borderRadius:'6px', border:'none', cursor:'pointer',
+                      background: selRun === h.run_time ? 'rgba(245,158,11,0.15)' : 'transparent',
+                      borderLeft: selRun === h.run_time ? '2px solid #f59e0b' : '2px solid transparent',
+                    }}>
+                    <div style={{ fontSize:'0.72rem', color:'var(--text-primary)', fontWeight: selRun===h.run_time ? 700 : 400 }}>
+                      {h.run_time.slice(0,16)}
+                    </div>
+                    <div style={{ fontSize:'0.68rem', color:'var(--text-secondary)', marginTop:'0.1rem' }}>
+                      {{'morning':'🌅 오전','noon':'☀️ 정오','afternoon':'🌇 오후','manual':'🔍 수동'}[h.run_type] || h.run_type}
+                      &nbsp;· {h.count}종목 · 최고 {h.max_score?.toFixed(0)}점
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* 메인 결과 */}
+          <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:'0.8rem' }}>
+
+            {/* 헤더 정보 */}
+            {displayData?.run_time && (
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap' }}>
+                <span style={{ fontSize:'0.8rem', color:'var(--text-secondary)' }}>
+                  기준 시각: <b style={{ color:'var(--text-primary)' }}>{displayData.run_time?.slice(0,16)}</b>
+                </span>
+                <span style={{ fontSize:'0.8rem', color:'var(--accent-mint)' }}>
+                  총 {displayData.count}종목 선정
+                </span>
+                {selRun && (
+                  <button onClick={() => { setSelRun(null); setSelData(null); }}
+                    style={{ fontSize:'0.72rem', padding:'0.2rem 0.5rem', borderRadius:'4px',
+                      background:'rgba(255,255,255,0.05)', border:'1px solid var(--glass-border)',
+                      color:'var(--text-secondary)', cursor:'pointer' }}>
+                    최신으로 돌아가기
+                  </button>
+                )}
+              </div>
+            )}
+
+            {displayRows.length === 0 ? (
+              <div className="glass-panel" style={{ padding:'3rem', textAlign:'center', color:'var(--text-secondary)' }}>
+                <div style={{ fontSize:'2.5rem', marginBottom:'0.8rem' }}>💎</div>
+                <p style={{ fontWeight:600 }}>아직 발굴된 종목이 없습니다.</p>
+                <p style={{ fontSize:'0.8rem', marginTop:'0.4rem' }}>
+                  매일 평일 09:00 / 12:00 / 15:00에 자동 발굴됩니다.<br/>
+                  또는 위 [즉시 발굴] 버튼을 눌러 수동으로 실행하세요.
+                </p>
+              </div>
+            ) : (
+              displayRows.map((s, idx) => {
+                const star = fmtScore(s.total_score);
+                const isOpen = expanded[s.id];
+                return (
+                  <div key={s.id || idx} className="glass-panel"
+                    style={{ padding:'1rem', borderLeft:`3px solid ${star.color}` }}>
+
+                    {/* 종목명 헤더 */}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.5rem', marginBottom:'0.7rem' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
+                        <span style={{ fontSize:'0.9rem', fontWeight:700, color: star.color }}>{star.label}</span>
+                        <button onClick={() => { setStockCode(s.stock_code); changeTab('analysis'); }}
+                          style={{ background:'none', border:'none', cursor:'pointer', padding:0,
+                            fontSize:'1rem', fontWeight:700, color:'var(--text-primary)', textDecoration:'underline dotted' }}>
+                          {s.stock_name}
+                        </button>
+                        <span style={{ fontSize:'0.78rem', color:'var(--text-secondary)' }}>({s.stock_code})</span>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
+                        <span style={{ fontSize:'0.85rem', fontWeight:700, color: star.color }}>
+                          {s.total_score?.toFixed(1)}점
+                        </span>
+                        {s.current_price && (
+                          <span style={{ fontSize:'0.82rem', color:'var(--text-primary)' }}>
+                            {s.current_price.toLocaleString('ko-KR')}원
+                          </span>
+                        )}
+                        {s.market_cap && (
+                          <span style={{ fontSize:'0.78rem', color:'var(--text-secondary)' }}>
+                            시총 {s.market_cap.toLocaleString('ko-KR', { maximumFractionDigits:0 })}억
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 주요 지표 */}
+                    <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap', marginBottom:'0.7rem' }}>
+                      {[
+                        { label:'PER',   val: s.per,   fmt: v => `${v.toFixed(1)}배` },
+                        { label:'PBR',   val: s.pbr,   fmt: v => `${v.toFixed(1)}배` },
+                        { label:'ROE',   val: s.roe,   fmt: v => `${v.toFixed(1)}%` },
+                        { label:'매출성장', val: s.revenue_growth, fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(1)}%` },
+                        { label:'영익성장', val: s.op_growth, fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(1)}%` },
+                        { label:'영익률', val: s.op_margin, fmt: v => `${v.toFixed(1)}%` },
+                      ].filter(x => x.val != null).map(x => (
+                        <div key={x.label} style={{ textAlign:'center' }}>
+                          <div style={{ fontSize:'0.68rem', color:'var(--text-secondary)' }}>{x.label}</div>
+                          <div style={{ fontSize:'0.85rem', fontWeight:700, color:'var(--text-primary)' }}>{x.fmt(x.val)}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 점수 바 */}
+                    {s.score_detail && Object.keys(s.score_detail).length > 0 && (
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.3rem 1.2rem', marginBottom:'0.7rem' }}>
+                        <ScoreBar label="매출성장" val={s.score_detail.growth_rev} max={20} color="#2dd4bf" />
+                        <ScoreBar label="영익성장" val={s.score_detail.growth_op}  max={20} color="#2dd4bf" />
+                        <ScoreBar label="수익성"   val={s.score_detail.profit}     max={15} color="#a78bfa" />
+                        <ScoreBar label="추세"     val={s.score_detail.trend}      max={15} color="#60a5fa" />
+                        <ScoreBar label="수급"     val={s.score_detail.supply}     max={15} color="#f59e0b" />
+                        <ScoreBar label="밸류"     val={s.score_detail.value}      max={15} color="#34d399" />
+                      </div>
+                    )}
+
+                    {/* 선정 사유 */}
+                    {s.reasons?.length > 0 && (
+                      <div style={{ marginBottom:'0.6rem' }}>
+                        <p style={{ fontSize:'0.72rem', color:'var(--text-secondary)', fontWeight:700, marginBottom:'0.3rem' }}>📌 선정 사유</p>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:'0.3rem' }}>
+                          {s.reasons.map((r, i) => (
+                            <span key={i} style={{ fontSize:'0.72rem', padding:'0.15rem 0.5rem', borderRadius:'12px',
+                              background:'rgba(255,255,255,0.06)', border:'1px solid var(--glass-border)',
+                              color:'var(--text-primary)' }}>
+                              {r}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI 분석 */}
+                    {s.ai_analysis && (
+                      <div>
+                        <button onClick={() => setExpanded(p => ({ ...p, [s.id]: !isOpen }))}
+                          style={{ fontSize:'0.75rem', background:'none', border:'none', cursor:'pointer',
+                            color:'var(--accent-purple)', padding:0, fontWeight:600 }}>
+                          🤖 AI 분석 {isOpen ? '▲ 접기' : '▼ 보기'}
+                        </button>
+                        {isOpen && (
+                          <div style={{ marginTop:'0.5rem', padding:'0.8rem', borderRadius:'8px',
+                            background:'rgba(167,139,250,0.07)', border:'1px solid rgba(167,139,250,0.2)',
+                            fontSize:'0.82rem', lineHeight:1.7, color:'var(--text-primary)', whiteSpace:'pre-wrap' }}>
+                            {s.ai_analysis}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* 발굴 기준 안내 */}
+        <div className="glass-panel" style={{ padding:'1rem' }}>
+          <p style={{ fontSize:'0.75rem', color:'var(--text-secondary)', fontWeight:700, marginBottom:'0.5rem' }}>💡 발굴 기준 (6축 스코어링, 100점 만점 · 55점 이상 선정)</p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'0.5rem 2rem' }}>
+            {[
+              ['매출 성장 (20점)', '연간 매출 YoY 15%+ 기준'],
+              ['영업이익 성장 (20점)', '연간 영업이익 YoY 20%+ 기준'],
+              ['수익성 (15점)', 'ROE 10%+, 영업이익률 8%+'],
+              ['기술적 추세 (15점)', 'MA 정배열, 52주 고점 근접'],
+              ['수급 모멘텀 (15점)', '최근 10일 기관/외국인 순매수'],
+              ['밸류에이션 (15점)', 'PER ≤ 30배, PBR ≤ 5배'],
+            ].map(([t, d]) => (
+              <div key={t} style={{ fontSize:'0.72rem' }}>
+                <span style={{ color:'var(--accent-mint)', fontWeight:700 }}>{t}</span>
+                <span style={{ color:'var(--text-secondary)', marginLeft:'0.3rem' }}>— {d}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize:'0.7rem', color:'var(--text-secondary)', marginTop:'0.5rem' }}>
+            ※ 시가총액 500억~3조 · 5일 거래대금 3억+ 기본 필터 적용 · 투자 판단 및 손익은 투자자 본인 책임
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   // ── 백테스트 뷰 ───────────────────────────────────────────
   const BacktestView = () => {
     const [list,    setList]    = React.useState([]);
@@ -7925,6 +8225,7 @@ const App = () => {
     { key: 'analysis',         icon: <BarChart3 size={17} />,                                 label: '개별 종목' },
     { key: 'semiconductor_sector', icon: <Cpu size={17} style={{color:'#60a5fa'}} />,         label: '반도체 섹터' },
     { key: 'screener',         icon: <Cpu size={17} style={{color:'#2dd4bf'}} />,              label: 'AI 종목' },
+    { key: 'tenbagger',        icon: <span style={{fontSize:'14px',lineHeight:1}}>💎</span>,   label: '텐버거헌터' },
     { key: 'trend',            icon: <TrendingUp size={17} style={{color:'#a78bfa'}} />,       label: '가상 매매' },
     { key: 'reports',          icon: <Newspaper size={17} style={{color:'#34d399'}} />,        label: '섹터 보고서' },
     { key: 'telegram',  icon: <Send size={17} style={{color:'#38bdf8'}} />,            label: '텔레그램 종목' },
@@ -8095,7 +8396,8 @@ const App = () => {
           {activeTab === 'buy_candidates' && <BuyCandidateView />}
           {activeTab === 'watchlist' && <WatchlistView />}
           {activeTab === 'portfolio' && portfolioAuth && <PortfolioView />}
-          {activeTab === 'screener'  && <Screener />}
+          {activeTab === 'screener'   && <Screener />}
+          {activeTab === 'tenbagger' && <TenbaggerView />}
           {activeTab === 'trend'     && <PeakView />}
           {activeTab === 'reports'   && <SectorReports />}
           {activeTab === 'insight'   && <AIInsight />}

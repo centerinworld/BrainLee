@@ -98,6 +98,9 @@ class CollectionScheduler:
             ("전종목수급수집",  self._loop_supply_daily), # ★ KIS 전종목 30일 수급
             ("네이버밸류에이션", self._loop_naver_fundamentals),  # ★ 네이버 PBR/PER/EPS
             ("현금흐름배치",    self._loop_cashflow_batch),       # ★ DART 현금흐름표 월간
+            ("텐버거오전",      self._loop_tenbagger_morning),    # ★ 09:00 텐버거 발굴
+            ("텐버거정오",      self._loop_tenbagger_noon),       # ★ 12:00 텐버거 발굴
+            ("텐버거오후",      self._loop_tenbagger_afternoon),  # ★ 15:00 텐버거 발굴
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -702,3 +705,39 @@ class CollectionScheduler:
                 logger.error(f"[네이버밸류에이션] 오류: {result.stderr[-200:]}")
         except Exception as e:
             logger.error(f"[네이버밸류에이션] 잡 오류: {e}")
+
+    # ══════════════════════════════════════════════════════════
+    # 텐버거 발굴 스케줄 (09:00 / 12:00 / 15:00 평일)
+    # ══════════════════════════════════════════════════════════
+
+    def _loop_tenbagger_morning(self) -> None:
+        """평일 09:00 — 장 시작 직후 텐버거 후보 발굴."""
+        self._wait_secs(45)
+        while not self._stop_event.is_set():
+            self._wait_until(9, 0, skip_weekend=True)
+            _run_job_safe("텐버거오전", lambda: self._job_tenbagger("morning"))
+
+    def _loop_tenbagger_noon(self) -> None:
+        """평일 12:00 — 오전장 수급 반영 텐버거 발굴."""
+        self._wait_secs(50)
+        while not self._stop_event.is_set():
+            self._wait_until(12, 0, skip_weekend=True)
+            _run_job_safe("텐버거정오", lambda: self._job_tenbagger("noon"))
+
+    def _loop_tenbagger_afternoon(self) -> None:
+        """평일 15:00 — 장 종료 전 최종 텐버거 발굴."""
+        self._wait_secs(55)
+        while not self._stop_event.is_set():
+            self._wait_until(15, 0, skip_weekend=True)
+            _run_job_safe("텐버거오후", lambda: self._job_tenbagger("afternoon"))
+
+    def _job_tenbagger(self, run_type: str) -> None:
+        """텐버거 발굴 실행 — tenbagger_engine.run_discovery 위임."""
+        if datetime.now().weekday() >= 5:
+            return
+        try:
+            from tenbagger_engine import run_discovery
+            results = run_discovery(run_type)
+            logger.info(f"[텐버거{run_type}] {len(results)}종목 선정")
+        except Exception as e:
+            logger.error(f"[텐버거{run_type}] 오류: {e}", exc_info=True)
