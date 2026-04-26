@@ -3162,8 +3162,12 @@ const App = () => {
 
     // combo: 서버 사전계산 우선, 없으면 클라이언트 교집합
     const comboStocks = React.useMemo(() => {
-      // 서버에서 사전계산된 데이터가 있으면 우선 사용
-      if (comboFromServer.length > 0) return comboFromServer;
+      // 서버에서 사전계산된 데이터가 있으면 우선 사용 (3개 중복 → 2개 중복 순 정렬)
+      if (comboFromServer.length > 0) {
+        return [...comboFromServer].sort((a,b) =>
+          (b.match_count||0) - (a.match_count||0) || (b.combined_score||b.trend_score||0) - (a.combined_score||a.trend_score||0)
+        );
+      }
       // 클라이언트 교집합 계산 (fallback)
       // O(1) lookup maps instead of O(n) .find() per code
       const trendMap2 = Object.fromEntries(trendStocks.map(s => [s.stock_code, s]));
@@ -3322,7 +3326,7 @@ const App = () => {
             <h2 style={{fontSize:'1rem'}}>AI 종목 스크리너</h2>
           </div>
           <div style={{display:'flex',gap:'0.4rem',flexWrap:'wrap'}}>
-            {tabBtn('combo', `⭐ AI 적극 검토`, comboStocks.length)}
+            {tabBtn('combo', `⭐ AI 적극추천`, comboStocks.length)}
             {tabBtn('trigger', '🎯 진입트리거 TOP20')}
             {tabBtn('value', '💎 가치매수')}
             {tabBtn('ai',    '📊 재무 스크리너')}
@@ -3548,7 +3552,7 @@ const App = () => {
               </tbody>
             </table>
             <div style={{padding:'0.8rem 1rem',fontSize:'0.68rem',color:'rgba(255,255,255,0.3)'}}>
-              ★AI = Track A(추세) + Track B(가치) 동시 충족 OR 재무스크리너 포함 종목 → AI 적극검토 후보
+              ★AI = Track A(추세) + Track B(가치) 동시 충족 OR 재무스크리너 포함 종목 → AI 적극추천(1) 후보
             </div>
           </div>
 
@@ -4049,11 +4053,10 @@ const App = () => {
         )
       )}
 
-      {/* ══ AI 적극 검토 탭 ══ */}
+      {/* ══ AI 적극추천 탭 ══ */}
       {screenTab === 'combo' && (() => {
-        const filteredCombo = comboFilter === 'triple'
-          ? comboStocks.filter(s => s.match_count >= 3)
-          : comboStocks;
+        // 항상 전체 표시 (3관왕 먼저, 2개 충족 다음 — comboStocks 이미 정렬됨)
+        const filteredCombo = comboStocks;
         const sigColor = { '강력추천':'#ef4444', '추천':'#f59e0b', '관심':'#22c55e' };
         const sigEmoji = { '강력추천':'🔥', '추천':'⭐', '관심':'👀' };
         return (
@@ -4065,14 +4068,14 @@ const App = () => {
             <span style={{fontSize:'0.78rem',color:'rgba(255,255,255,0.55)',fontWeight:600}}>📐 로직 선택:</span>
             <div style={{display:'flex',gap:'0.3rem',background:'rgba(0,0,0,0.2)',borderRadius:'8px',padding:'0.2rem'}}>
               {[
-                { key:'v1', label:'Logic-#1', desc:'Minervini 추세 + Graham 가치 복합 스크리너' },
-                { key:'v2', label:'Logic-#2', desc:'수급 주도 모멘텀 (기관+외국인 동반매수)' },
+                { key:'v1', label:'AI 적극추천(1)', desc:'Minervini 추세 + Graham 가치 + 재무스크리너 교집합 — 백테스트 v5 기준' },
+                { key:'v2', label:'AI 적극추천(2)', desc:'수급 주도 모멘텀 — 기관·외국인 동반순매수 + 추세 + 실적 복합스코어' },
               ].map(opt => (
                 <button key={opt.key} title={opt.desc} onClick={() => {
                     setComboLogic(opt.key);
                     if (opt.key === 'v2' && comboV2Data.length === 0) fetchComboV2();
                   }}
-                  style={{padding:'0.25rem 0.9rem',borderRadius:'6px',fontSize:'0.78rem',cursor:'pointer',
+                  style={{padding:'0.25rem 1rem',borderRadius:'6px',fontSize:'0.78rem',cursor:'pointer',
                     fontWeight: comboLogic===opt.key ? 700 : 400, border:'none',
                     background: comboLogic===opt.key
                       ? (opt.key==='v2' ? 'rgba(99,102,241,0.4)' : 'rgba(239,68,68,0.35)')
@@ -4085,8 +4088,8 @@ const App = () => {
             </div>
             <span style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.35)'}}>
               {comboLogic==='v1'
-                ? 'Minervini 추세 + Graham 가치 + 재무스크리너 교집합'
-                : '수급 주도 모멘텀 — 기관·외국인 동반순매수 + 추세 + 실적'}
+                ? '3관왕(추세+가치+재무) 우선 표시, 2개 충족 종목 순으로 배치'
+                : '수급 주도 모멘텀 — 기관·외국인 동반순매수 × 추세 × 실적 복합스코어'}
             </span>
           </div>
 
@@ -4098,56 +4101,28 @@ const App = () => {
             border:'1px solid rgba(239,68,68,0.3)',borderRadius:'8px',
             display:'flex',alignItems:'center',gap:'0.6rem',flexWrap:'wrap'}}>
             <span style={{fontSize:'0.8rem',color:'#ef4444',fontWeight:700}}>
-              ⭐ Logic-#1 AI 적극 검토 — {filteredCombo.length}종목
+              ⭐ AI 적극추천(1) — 전체 {comboStocks.length}종목
             </span>
-            {/* 필터 선택 버튼 */}
-            <div style={{display:'flex',gap:'0.3rem',background:'rgba(0,0,0,0.25)',
-              borderRadius:'8px',padding:'0.2rem'}}>
-              {[
-                { key:'all',    label:'2개↑ 충족', desc:'추세·가치·재무 중 2개 이상' },
-                { key:'triple', label:'🏆 3개 모두', desc:'추세·가치·재무 모두 충족' },
-              ].map(opt => (
-                <button key={opt.key} onClick={() => setComboFilter(opt.key)} title={opt.desc}
-                  style={{padding:'0.2rem 0.65rem',borderRadius:'6px',fontSize:'0.72rem',
-                    cursor:'pointer',fontWeight: comboFilter===opt.key ? 700 : 400,
-                    border:'none',
-                    background: comboFilter===opt.key
-                      ? (opt.key==='triple' ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.3)')
-                      : 'transparent',
-                    color: comboFilter===opt.key ? '#fff' : 'rgba(255,255,255,0.45)',
-                    transition:'all 0.15s',
-                  }}>
-                  {opt.label}
-                  <span style={{marginLeft:'0.3rem',opacity:0.7,fontSize:'0.65rem'}}>
-                    ({opt.key==='triple'
-                      ? comboStocks.filter(s=>s.match_count>=3).length
-                      : comboStocks.length}개)
-                  </span>
-                </button>
-              ))}
-            </div>
+            <span style={{fontSize:'0.72rem',color:'rgba(255,255,255,0.45)',display:'flex',alignItems:'center',gap:'0.4rem'}}>
+              <span style={{padding:'0.1rem 0.4rem',borderRadius:'4px',background:'rgba(239,68,68,0.2)',color:'#ef4444',fontWeight:700,fontSize:'0.68rem'}}>
+                🏆 3관왕 {comboStocks.filter(s=>s.match_count>=3).length}종목
+              </span>
+              <span style={{padding:'0.1rem 0.4rem',borderRadius:'4px',background:'rgba(245,158,11,0.15)',color:'#f59e0b',fontWeight:700,fontSize:'0.68rem'}}>
+                ⭐ 2개 충족 {comboStocks.filter(s=>s.match_count===2).length}종목
+              </span>
+            </span>
             <span style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.4)'}}>
-              {comboFilter==='triple'
-                ? '추세추종 + 가치매수 + 재무스크리너 3개 전부 충족'
-                : '추세추종 + 가치매수 + 재무스크리너 중 2개 이상 충족'}
+              3관왕(추세+가치+재무) 우선 표시 → 2개 충족 종목 순
             </span>
-            <DlBtn onClick={() => downloadCSV(filteredCombo, 'ai_combo.csv')} />
+            <DlBtn onClick={() => downloadCSV(comboStocks, 'ai_combo.csv')} />
           </div>
 
           {filteredCombo.length === 0 ? (
             <div className="glass-panel" style={{padding:'3rem',textAlign:'center',color:'var(--text-secondary)'}}>
-              <p style={{fontSize:'2rem',marginBottom:'0.5rem'}}>
-                {comboFilter==='triple' ? '🏆' : '⭐'}
-              </p>
-              <p>
-                {comboFilter==='triple'
-                  ? '현재 3개 카테고리를 모두 충족하는 종목이 없습니다.'
-                  : '현재 2개 이상 카테고리를 동시 충족하는 종목이 없습니다.'}
-              </p>
+              <p style={{fontSize:'2rem',marginBottom:'0.5rem'}}>⭐</p>
+              <p>현재 2개 이상 카테고리를 동시 충족하는 종목이 없습니다.</p>
               <p style={{fontSize:'0.78rem',marginTop:'0.4rem',color:'rgba(255,255,255,0.35)'}}>
-                {comboFilter==='triple'
-                  ? '"2개↑ 충족" 으로 전환하면 더 많은 종목을 볼 수 있습니다.'
-                  : '가치매수·재무스크리너·추세 탭을 각각 로드한 후 다시 확인해 주세요.'}
+                가치매수·재무스크리너·추세 탭을 각각 로드한 후 다시 확인해 주세요.
               </p>
             </div>
           ) : (
@@ -4253,19 +4228,21 @@ const App = () => {
             })
           )}
 
-          {/* ── AI 적극 검토 로직 설명 ── */}
+          {/* ── AI 적극추천(1) 로직 설명 ── */}
           <div style={{marginTop:'0.5rem',padding:'1rem 1.2rem',
             background:'rgba(239,68,68,0.03)',border:'1px solid rgba(239,68,68,0.12)',
             borderRadius:'10px',fontSize:'0.72rem',color:'rgba(255,255,255,0.6)',lineHeight:1.9}}>
             <div style={{fontWeight:700,color:'#ef4444',marginBottom:'0.5rem',fontSize:'0.78rem'}}>
-              ⭐ Logic-#1 선정 원리
+              ⭐ AI 적극추천(1) — 선정 원리 (백테스트 v5 기준)
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'0.6rem 1.2rem'}}>
               {[
-                ['교집합 원리','추세추종(주봉선·섹터·정배열), 가치매수(Graham·PBR·PER), 재무스크리너(성장기울기·턴어라운드) 3개 카테고리 중 2개 이상에서 독립적으로 조건을 충족한 종목만 수록.'],
-                ['확률의 곱셈','개별 카테고리 발굴 확률 50%가 2개 독립 조건을 동시 충족하면 25%로 좁혀짐. 이 구간이 가장 높은 확률의 매수 구간.'],
-                ['3관왕 (🏆)','3개 카테고리 모두 충족 = 추세 + 저평가 + 실적 개선. 극히 드문 경우로 최우선 검토 대상. 단, 소형주·유동성 위험은 별도 확인.'],
-                ['동적 업데이트','각 탭(추세·가치·재무) 데이터를 로드하면 자동으로 교집합이 재계산됨. 새로고침 없이 실시간 반영.'],
+                ['매수 조건 [A] 추세 (필수)','Minervini 5필터 전부 충족: ①현재가>MA120>MA200 장기정배열 ②MA20>MA60 단기정배열 ③52주 고점 -20% 이내 ④RSI(14)≥60 ⑤거래량>20일평균×2.0배'],
+                ['매수 조건 [B] 가치·수급 (1개 이상)','▸ 가치: Graham 할인≥25% OR (PBR<0.7 AND 0<PER<10), 영업이익>0 ▸ 수급: 기관 5일 순매수>0 AND 외국인 5일 순매수>0 동반 매수'],
+                ['시장 필터 (v5 강화)','KOSPI 현재가 > KOSPI MA120. 하락장 진입 시 매수 전면 차단. (v3~v4 MA60 → v5 MA120으로 강화)'],
+                ['매도 조건','익절 +15% / 하드손절 -8% / 추적손절(고점 대비) -10% / MA60 붕괴. 최소 보유 5거래일 (단기 노이즈 차단)'],
+                ['3관왕 (🏆)','추세+가치+재무 3개 모두 충족. 극히 드문 고확률 후보. 최우선 검토 대상 (목록 상단 표시).'],
+                ['교집합 원리','독립적인 3개 스크리너 중 2개 이상 동시 충족 → 개별 조건 대비 오류 확률 대폭 감소. 3관왕 우선 → 2개 충족 순 배치.'],
               ].map(([title, desc]) => (
                 <div key={title}>
                   <span style={{color:'rgba(239,68,68,0.8)',fontWeight:600}}>{title}</span>
@@ -4276,14 +4253,14 @@ const App = () => {
           </div>
           </>)}
 
-          {/* ── Logic-#2: 수급 주도 모멘텀 ── */}
+          {/* ── AI 적극추천(2): 수급 주도 모멘텀 ── */}
           {comboLogic === 'v2' && (<>
           <div style={{padding:'0.7rem 1rem',
             background:'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(45,212,191,0.06))',
             border:'1px solid rgba(99,102,241,0.35)',borderRadius:'8px',
             display:'flex',alignItems:'center',gap:'0.6rem',flexWrap:'wrap'}}>
             <span style={{fontSize:'0.8rem',color:'#818cf8',fontWeight:700}}>
-              🔥 Logic-#2 수급 주도 모멘텀 — {comboV2Data.length}종목
+              🔥 AI 적극추천(2) 수급 주도 모멘텀 — {comboV2Data.length}종목
             </span>
             <span style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.4)'}}>
               기관·외국인 동반순매수 × 추세 × 실적 복합 스코어
@@ -4300,7 +4277,7 @@ const App = () => {
             <div className="glass-panel" style={{padding:'3rem',textAlign:'center',color:'var(--text-secondary)'}}>
               <div style={{width:'32px',height:'32px',borderRadius:'50%',border:'3px solid #818cf8',
                 borderTopColor:'transparent',animation:'spin 0.8s linear infinite',margin:'0 auto 1rem'}}/>
-              <p>Logic-#2 계산 중... (최초 실행 시 1~2분 소요)</p>
+              <p>AI 적극추천(2) 계산 중... (최초 실행 시 1~2분 소요)</p>
             </div>
           ) : comboV2Data.length === 0 ? (
             <div className="glass-panel" style={{padding:'2.5rem',textAlign:'center'}}>
@@ -4309,7 +4286,7 @@ const App = () => {
               <button onClick={fetchComboV2} style={{marginTop:'1rem',padding:'0.5rem 1.2rem',
                 borderRadius:'8px',border:'none',background:'#818cf8',color:'#fff',
                 cursor:'pointer',fontWeight:700}}>
-                🔥 Logic-#2 분석 실행
+                🔥 AI 적극추천(2) 분석 실행
               </button>
             </div>
           ) : comboV2Data.map(s => {
@@ -4396,22 +4373,23 @@ const App = () => {
             );
           })}
 
-          {/* Logic-#2 원리 설명 */}
-          {comboV2Data.length > 0 && (
+          {/* AI 적극추천(2) 원리 설명 — 항상 표시 */}
           <div style={{marginTop:'0.5rem',padding:'1rem 1.2rem',
             background:'rgba(99,102,241,0.03)',border:'1px solid rgba(99,102,241,0.12)',
             borderRadius:'10px',fontSize:'0.72rem',color:'rgba(255,255,255,0.6)',lineHeight:1.9}}>
             <div style={{fontWeight:700,color:'#818cf8',marginBottom:'0.5rem',fontSize:'0.78rem'}}>
-              📡 Logic-#2 수급 주도 모멘텀 — 로직 원리
+              📡 AI 적극추천(2) — 선정 원리 (수급 주도 모멘텀, 최대 42점)
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'0.6rem 1.2rem'}}>
               {[
-                ['Track S — 수급 (×3, 최대18점)', '기관+외국인 3일 연속 동반매수(최고등급), 단독 5일, 10일 누적금액 기준으로 수급 강도를 점수화. 가장 높은 가중치.'],
-                ['Track T — 추세 (×2, 최대12점)', '일봉 정배열(MA5>20>60>120>240) 4점 + 주봉 MA40/MA80 기준 주봉 정배열 2점. 단기·중기 동시 추세 확인.'],
-                ['Track Q — 실적 (×2, 최대8점)', '최근 분기 YoY 영업이익 성장이 연속으로 유지될수록 가산. 턴어라운드 및 지속 성장주 포착.'],
-                ['Track R — 상대강도 (×1, 최대4점)', '21일·63일·126일 3구간에서 KOSPI 대비 초과상승 여부 평가. 3구간 모두 우세 시 최고점.'],
-                ['강력추천 조건', '총점 28점 이상 + 수급점수 12점↑ + 추세점수 8점↑. 수급과 추세가 동시에 강한 경우만 선정.'],
-                ['시장 필터', 'KOSPI MA60 하락장 진입 시 모든 점수 ×0.75 패널티. 하락장에서는 높은 점수에도 자동 등급 하향.'],
+                ['Track S — 수급 (×3, 최대18점)', '기관+외국인 3일 연속 동반매수(최고등급), 단독 5일, 10일 누적금액 기준으로 수급 강도 점수화. 가장 높은 가중치(3배).'],
+                ['Track T — 추세 (×2, 최대12점)', '일봉 정배열(MA5>20>60>120>240) 4점 + 주봉 MA40/MA80 정배열 2점. 단기·중기 동시 추세 확인.'],
+                ['Track Q — 실적 (×2, 최대8점)', '최근 분기 YoY 영업이익 성장 연속 유지 여부. 턴어라운드 및 지속 성장주 포착.'],
+                ['Track R — 상대강도 (×1, 최대4점)', '21일·63일·126일 3구간에서 KOSPI 대비 초과상승 여부. 3구간 모두 우세 시 최고점.'],
+                ['강력추천 조건 (🔥)', '총점 ≥28 + 수급점수(S) ≥12 + 추세점수(T) ≥8. 수급과 추세 모두 강한 경우만 선정.'],
+                ['추천 조건 (⭐)', '총점 ≥20 + S≥9 + T≥6. 관심 조건: 총점 ≥13 + S≥6.'],
+                ['시장 필터', 'KOSPI MA60 하락장 진입 시 모든 점수 ×0.75 패널티. 하락장에서 자동 등급 하향.'],
+                ['AI 적극추천(1)과의 차이', '(1)은 재무·가치·추세 교집합 → 실적 우량주 중심. (2)는 수급 주도 → 세력·기관 매집 포착. 단기 모멘텀에 강함.'],
               ].map(([title, desc]) => (
                 <div key={title}>
                   <span style={{color:'rgba(129,140,248,0.9)',fontWeight:600}}>{title}</span>
@@ -4420,7 +4398,6 @@ const App = () => {
               ))}
             </div>
           </div>
-          )}
           </>)}
 
         </div>
