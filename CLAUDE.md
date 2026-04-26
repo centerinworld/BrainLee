@@ -289,10 +289,22 @@ GET    /mentions/monthly # 월별 언급
 ### routes/backtest.py → /api/backtest
 ```
 POST   /run              # 백테스트 실행
-GET    /list             # 결과 목록
+POST   /run-all          # 전체(5전략 × 5기간) 일괄 실행
+GET    /periods          # 기간 프리셋 목록
+GET    /strategies       # 전략 목록 (v5~v9)
+GET    /list             # 결과 목록 (최근 100건)
 GET    /{run_id}         # 결과 상세
 DELETE /{run_id}         # 삭제
 ```
+
+### routes/tenbagger.py → /api/tenbagger ★신규(2026-04-26)
+```
+POST   /analyze/{code}      # 단일 종목 Claude AI 분석
+POST   /scan                # 일괄 스캔 (scope: watchlist|universe|all)
+GET    /candidates          # 최근 스캔 캐시 결과
+GET    /watchlist-quick     # 관심종목 정량 빠른 스캔 (API 미사용)
+```
+분석 엔진: `tenbagger_ai.py` (ANTHROPIC_API_KEY 있으면 claude-sonnet-4-6, 없으면 정량 폴백)
 
 ### routes/ingest.py → /api/ingest
 ```
@@ -362,6 +374,7 @@ def _cache():
 | `MarketIndicatorsView` | market_indicators | 6991 |
 | `MarketRadarView` | market_radar | ~8183 |
 | `EmploymentMonitor` | employment | ~8338 |
+| `TenbaggerView` | tenbagger | ~8772 |
 
 ### 네비게이션 구조
 ```
@@ -369,7 +382,7 @@ NAV_ITEMS 정의: ~8645줄
 렌더 스위치:    ~8760줄
 
 순서: macro → market_indicators → market_radar → analysis → semiconductor_sector
-    → screener → trend → reports → telegram → backtest → hs_trade2 → employment
+    → screener → trend → reports → telegram → backtest → tenbagger → hs_trade2 → employment
     ── (구분선) ──
     buy_candidates → watchlist → portfolio
     ── (구분선) ──
@@ -396,6 +409,7 @@ PUBLIC_DATA_API_KEY=93b5be...         # 공공데이터포털 (주가 OK, 투자
 DART_API_KEY=70dccf...                # DART 공시
 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
 TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_PHONE
+ANTHROPIC_API_KEY=                    # Claude API (텐배거 AI 분석, 미설정 시 정량 폴백)
 ```
 
 ---
@@ -508,4 +522,5 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-25 | 가상매매 예산관리+백테스트 전체실행: signal_logic.py에 VIRTUAL_TOTAL_BUDGET(2억)/PER_STOCK_BASE(1천만)/PER_STOCK_STRONG(2천만)/BACKTEST_PERIODS(5종)/BACKTEST_STRATEGIES(4종) 추가. main.py AI자동매매 2억예산기반(match3→2천만/예산소진시최저점수매도). peak_monitor.py signal_logic import. routes/backtest.py /run-all(4전략×5기간=20회)/periods/strategies API 추가. backtest.py cagr/sharpe/pl_ratio 컬럼 저장. App.jsx BacktestView 전면개편(전략버튼4개/기간프리셋5개/전체실행/매트릭스탭). |
 | 2026-04-25 | backtest.py 전략 공통 시장필터+3단계청산 전면 적용: ①KOSPI(MA120+ADR<100)/KOSDAQ(MA60+ADR<100) 분리 필터 모든 전략 적용 ②3단계청산(TimeStop5일/ScaleOut+10%절반/MA20추적손절) v5~v7 교체 ③v5 눌림목+가치+절대수급 스나이퍼 전환 ④v6/v7 절대수급공식(5일합>vol20×5%) 통일 ⑤_run_portfolio v5/v6/v7 매수 호출에 market/kosdaq/adr 전달 ⑥KOSDAQ·ADR·시장구분 사전계산 v8전용→전 전략 공통 변경 ⑦routes/backtest.py strategy_label v8 추가 |
 | 2026-04-24 | backtest.py Logic #6 구현 (strategy='v7'): `_is_buy_signal_v7()` 5팩터 가중점수(기술30%+해외동조25%+가치20%+HS수출15%+고용10%), `_check_sell_v7()`, `_precompute_overseas/hs/emp_signals()` 사전계산 함수. `collect_overseas_history.py` 신규(해외 32종목+지수 8개 20년치 다운로드). `run_self_backtest.py` 신규(6개 기간 자동 백테스트). `docs/logic6_description.md` 신규(상세 설명 문서). 데이터 공개 후행 처리: HS+15일, 고용+30일, 해외주가 1-day lag. |
+| 2026-04-26 | 텐배거 헌터 Logic #5(v9) 구현: `tenbagger_ai.py`(Claude claude-sonnet-4-6 AI 분석+정량폴백), `backtest.py` `_is_buy_signal_v9/_check_sell_v9`+mktcap_map 추가, `signal_logic.py` BACKTEST_STRATEGIES v9 추가, `routes/tenbagger.py` 신규(analyze/scan/candidates/watchlist-quick), `main.py` 라우터 등록, `App.jsx` TenbaggerView 탭+BacktestView v9 버튼 추가, `docs/tenbagger_logic.md` 신규. `config.py` ANTHROPIC_API_KEY 추가. `BACKTEST_STRATEGIES` 5종(v5~v9)으로 확장. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

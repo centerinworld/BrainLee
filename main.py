@@ -49,6 +49,7 @@ from routes.portfolio          import router as _portfolio_router
 from routes.market_indicators  import router as _market_indicators_router
 from routes.market_radar       import router as _market_radar_router
 from employment_monitor.api    import router as _employment_router
+from routes.tenbagger          import router as _tenbagger_router
 
 app.include_router(_trend_router,              prefix="/api/trend",              tags=["trend"])
 app.include_router(_signals_router,            prefix="/api/signals",            tags=["signals"])
@@ -61,6 +62,7 @@ app.include_router(_portfolio_router,          prefix="/api/portfolio",         
 app.include_router(_market_indicators_router,  prefix="/api/market-indicators",  tags=["market-indicators"])
 app.include_router(_market_radar_router,       prefix="/api/market-radar",       tags=["market-radar"])
 app.include_router(_employment_router,         prefix="/api/employment",         tags=["employment"])
+app.include_router(_tenbagger_router,          prefix="/api/tenbagger",          tags=["tenbagger"])
 
 
 def _send_telegram(msg: str, dedup_key: str = ""):

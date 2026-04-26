@@ -86,6 +86,9 @@ TELEGRAM_PHONE     = _require_env("TELEGRAM_PHONE")
 # ── OpenAI ─────────────────────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+# ── Anthropic (Claude API) ──────────────────────────────────────
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
 # ── 기타 ───────────────────────────────────────────────────────
 STOCKEASY_EMAIL    = os.getenv("STOCKEASY_EMAIL", "")
 STOCKEASY_PASSWORD = os.getenv("STOCKEASY_PASSWORD", "")

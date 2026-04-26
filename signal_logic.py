@@ -756,4 +756,11 @@ BACKTEST_STRATEGIES = [
         "desc":   "MA60>MA120>MA200 정배열·MA20±2% 눌림목·RSI<50·절대수급 필수",
         "color":  "#fb923c",
     },
+    {
+        "id":     "v9",
+        "label":  "Logic #5",
+        "name":   "텐배거 헌터",
+        "desc":   "MA200 상방·52주고가88%·거래량×3·영업흑자 OR 매출YoY+30%·시총1.5조이하 / 수익극대화 청산",
+        "color":  "#ec4899",
+    },
 ]
