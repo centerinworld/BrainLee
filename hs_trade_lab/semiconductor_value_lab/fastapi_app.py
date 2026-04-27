@@ -33,6 +33,20 @@ def load_meta_map(conn: sqlite3.Connection) -> dict[str, str]:
     return {row["key"]: row["value"] for row in conn.execute("SELECT key, value FROM meta")}
 
 
+def load_index_change_pct(conn: sqlite3.Connection, stock_code: str) -> float | None:
+    row = conn.execute(
+        """
+        SELECT change_pct
+          FROM stock_price_daily
+         WHERE stock_code = ?
+         ORDER BY bas_dt DESC
+         LIMIT 1
+        """,
+        (stock_code,),
+    ).fetchone()
+    return float(row["change_pct"]) if row and row["change_pct"] is not None else None
+
+
 def load_latest_stock_rows(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     sql = """
     SELECT su.stock_code,
@@ -64,19 +78,15 @@ def pick_representative_stock(
     latest_rows: dict[str, sqlite3.Row],
     lv1: str,
 ) -> tuple[str, str]:
-    if not lv1:
+    if lv1 == "종합":
+        sql = "SELECT stock_code, stock_name, lv1, main_business FROM stock_cache"
+        args: tuple = ()
+    elif lv1:
+        sql = "SELECT stock_code, stock_name, lv1, main_business FROM stock_cache WHERE lv1 = ?"
+        args = (lv1,)
+    else:
         return "-", "-"
-    rows = [
-        dict(row)
-        for row in conn.execute(
-            """
-            SELECT stock_code, stock_name, lv1, main_business
-              FROM stock_cache
-             WHERE lv1 = ?
-            """,
-            (lv1,),
-        )
-    ]
+    rows = [dict(row) for row in conn.execute(sql, args)]
     if not rows:
         return "-", "-"
 
@@ -205,24 +215,77 @@ def build_summary_rows(conn: sqlite3.Connection) -> list[dict]:
     rc = root_conn()
     try:
         latest_rows = load_latest_stock_rows(rc)
+        kospi_chg = load_index_change_pct(rc, "^KS11")
+        nasdaq_chg = load_index_change_pct(rc, "^IXIC")
     finally:
         rc.close()
+
+    # Load all stocks with their sector (lv1) and PSR for dynamic aggregation
+    all_stocks = [
+        dict(row)
+        for row in conn.execute(
+            "SELECT stock_code, stock_name, lv1, workbook_psr, main_business FROM stock_cache"
+        )
+    ]
+    stocks_by_lv1: dict[str, list[dict]] = {}
+    for s in all_stocks:
+        lv1 = (s.get("lv1") or "").strip()
+        stocks_by_lv1.setdefault(lv1, []).append(s)
+    available_lv1 = set(stocks_by_lv1.keys())
+
     rows: list[dict] = []
     for row in summary_rows:
+        sector_key = resolve_sector_key(row, available_lv1)
         sector_name = row.get("sector_name") or row.get("sample_lv1") or "-"
-        representative_stock = row.get("sample_stock") or "-"
-        representative_industry = row.get("sample_industry") or "-"
 
-        if sector_name == "종합":
-            representative_stock, representative_industry = pick_representative_stock(conn, latest_rows, "종합")
+        # Aggregate stocks for this sector
+        sector_stocks = all_stocks if sector_key == "종합" else stocks_by_lv1.get(sector_key, [])
+
+        # Dynamically compute stock_count, rising_count, rising_ratio
+        stock_count = len(sector_stocks)
+        rising_count = 0
+        for s in sector_stocks:
+            live = latest_rows.get(s["stock_code"])
+            if live and live["change_pct"] is not None and float(live["change_pct"]) > 0:
+                rising_count += 1
+        rising_ratio = round(rising_count / stock_count, 4) if stock_count > 0 else row.get("rising_ratio")
+
+        # Dynamically compute avg_psr from workbook data
+        psrs = [s["workbook_psr"] for s in sector_stocks if s.get("workbook_psr") is not None]
+        avg_psr = round(sum(psrs) / len(psrs), 2) if psrs else row.get("avg_psr")
+
+        # Dynamically compute outperform/underperform vs KOSPI and NASDAQ
+        sector_changes = [
+            float(latest_rows[s["stock_code"]]["change_pct"])
+            for s in sector_stocks
+            if s["stock_code"] in latest_rows and latest_rows[s["stock_code"]]["change_pct"] is not None
+        ]
+        sector_avg_chg = sum(sector_changes) / len(sector_changes) if sector_changes else None
+        if sector_avg_chg is not None and kospi_chg is not None:
+            kospi_vs = "아웃퍼폼" if sector_avg_chg > kospi_chg else "언더퍼폼"
+        else:
+            kospi_vs = row.get("kospi_vs") or ""
+        if sector_avg_chg is not None and nasdaq_chg is not None:
+            nasdaq_vs = "아웃퍼폼" if sector_avg_chg > nasdaq_chg else "언더퍼폼"
+        else:
+            nasdaq_vs = row.get("nasdaq_vs") or ""
+
+        # Pick representative stock by live market cap for all sectors
+        rep_name, rep_industry = pick_representative_stock(conn, latest_rows, sector_key)
 
         rows.append(
             {
                 **row,
                 "sector_name": sector_name,
-                "resolved_sector_key": sector_name if sector_name != "-" else "기타",
-                "sample_stock": representative_stock,
-                "sample_industry": representative_industry,
+                "resolved_sector_key": sector_key if sector_key != "기타" else (sector_name if sector_name != "-" else "기타"),
+                "stock_count": stock_count if stock_count > 0 else row.get("stock_count"),
+                "rising_count": rising_count if stock_count > 0 else row.get("rising_count"),
+                "rising_ratio": rising_ratio,
+                "avg_psr": avg_psr,
+                "kospi_vs": kospi_vs,
+                "nasdaq_vs": nasdaq_vs,
+                "sample_stock": rep_name if rep_name != "-" else (row.get("sample_stock") or "-"),
+                "sample_industry": rep_industry if rep_industry != "-" else (row.get("sample_industry") or "-"),
             }
         )
     return rows
