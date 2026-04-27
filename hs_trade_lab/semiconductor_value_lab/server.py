@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 
-PROJECT_DIR = Path("/Applications/stock_dashboard/hs_trade_lab/semiconductor_value_lab")
+PROJECT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = PROJECT_DIR / "static"
 DB_PATH = PROJECT_DIR / "data" / "semiconductor_value_lab.db"
 REBUILD_SCRIPT = PROJECT_DIR / "scripts" / "rebuild_cache.py"

@@ -847,6 +847,28 @@ async def startup_event():
     _notifier_load()
     _scheduler.start()
 
+    # 시장 레이더 반도체 기업 목록 자동 초기화 (최초 1회)
+    def _init_radar_companies():
+        try:
+            from routes.market_radar import _db as _rdb, _ensure_radar_tables, SEMICONDUCTOR_COMPANIES
+            conn = _rdb()
+            _ensure_radar_tables(conn)
+            cnt = conn.execute("SELECT COUNT(*) AS c FROM radar_semiconductor_override").fetchone()["c"]
+            if cnt == 0:
+                conn.executemany("""
+                    INSERT INTO radar_semiconductor_override
+                        (sort_order, lv1, lv2, company_name, ticker, country_raw, country_flag)
+                    VALUES
+                        (:sort_order, :lv1, :lv2, :company_name, :ticker, :country_raw, :country_flag)
+                """, SEMICONDUCTOR_COMPANIES)
+                conn.commit()
+                logger.info(f"[startup] 반도체 기업 {len(SEMICONDUCTOR_COMPANIES)}개 자동 초기화 완료")
+            conn.close()
+        except Exception as e:
+            logger.warning(f"[startup] 반도체 기업 초기화 실패: {e}")
+
+    _th.Thread(target=_init_radar_companies, daemon=True, name="StartupRadarInit").start()
+
     # 서버 시작 직후 시그널 캐시 즉시 워밍업 (프론트 첫 로딩 시 10초 대기 방지)
     def _warm_cache():
         _tm.sleep(3)  # 서버 완전 기동 대기
@@ -957,7 +979,11 @@ def get_realtime_macro(db: Session = Depends(get_db)):
             _realtime_fetch_macro(db)
         except Exception as e:
             logger.warning(f"[realtime/macro] Yahoo 갱신 실패 (DB값 반환): {e}")
-    result = processor.get_macro_status(db)
+    try:
+        result = processor.get_macro_status(db)
+    except Exception as e:
+        logger.error(f"[realtime/macro] 매크로 상태 조회 실패: {e}")
+        result = {}
     result.setdefault("index",       {})
     result.setdefault("vix",         {"value": 0, "change": 0, "date": "-", "history": []})
     result.setdefault("commodities", {})
@@ -1822,7 +1848,11 @@ def remove_from_watchlist(stock_code: str, db: Session = Depends(get_db)):
 @app.get("/api/dashboard/macro")
 def get_macro_dashboard(db: Session = Depends(get_db)):
     """지수, 환율, 원자재 등 매크로 지표 현황을 반환합니다."""
-    result = processor.get_macro_status(db)
+    try:
+        result = processor.get_macro_status(db)
+    except Exception as e:
+        logger.error(f"[dashboard/macro] 매크로 상태 조회 실패: {e}")
+        result = {}
     result.setdefault("index",       {})
     result.setdefault("vix",         {"value": 0, "change": 0, "date": "-", "history": []})
     result.setdefault("commodities", {})

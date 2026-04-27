@@ -11,11 +11,11 @@ from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
 
-PROJECT_DIR = Path("/Applications/stock_dashboard/hs_trade_lab/semiconductor_value_lab")
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_DIR / "data"
 DB_PATH = DATA_DIR / "semiconductor_value_lab.db"
 WORKBOOK_PATH = Path("/Users/brainlee/Downloads/반도체 업종 Value Stream의 사본.xlsx")
-ROOT_STOCK_DB = Path("/Applications/stock_dashboard/stock.db")
+ROOT_STOCK_DB = PROJECT_DIR.parent.parent / "stock.db"
 EXPORT_DIR = Path("/Users/brainlee/Downloads")
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
