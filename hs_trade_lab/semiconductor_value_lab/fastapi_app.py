@@ -82,8 +82,13 @@ def pick_representative_stock(
 
     def sort_key(row: dict) -> tuple[float, float, str]:
         live = latest_rows.get(row["stock_code"])
-        market_cap = float(live["market_cap"]) if live and live["market_cap"] is not None else 0.0
-        close_price = float(live["close_price"]) if live and live["close_price"] is not None else 0.0
+        if live:
+            raw = live["daily_market_cap"] if live["daily_market_cap"] is not None else live["universe_market_cap"]
+            market_cap = float(raw) if raw is not None else 0.0
+            close_price = float(live["close_price"]) if live["close_price"] is not None else 0.0
+        else:
+            market_cap = 0.0
+            close_price = 0.0
         return (market_cap, close_price, row["stock_name"])
 
     picked = max(rows, key=sort_key)
