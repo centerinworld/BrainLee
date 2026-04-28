@@ -474,25 +474,55 @@ def _realtime_fetch_price(stock_code: str, db) -> float | None:
         return None
 
 
-def _realtime_fetch_macro(db) -> None:
-    """Yahoo Finance로 매크로 지수 최신값 조회 후 DB upsert."""
+def _realtime_fetch_macro(db, us_only: bool = False) -> None:
+    """Yahoo Finance로 매크로 지수 최신값 조회 후 DB upsert.
+    us_only=True: NASDAQ·S&P500·VIX·상품·환율만 갱신 (KOSPI/KOSDAQ 스킵)
+    """
     from datetime import datetime as _dt, date as _date
+    import time as _time
     _now = _dt.now()
-    if _now.weekday() >= 5:
-        return
     _today = _now.date().isoformat()
-    try:
-        _existing = db.query(models.PriceHistory).filter(
-            models.PriceHistory.stock_code == "^KS11",
-            models.PriceHistory.date >= _today,
-        ).first()
-        if _existing and _existing.close and _existing.close > 0:
-            return
-    except Exception:
-        pass
+
+    # 한국 지수(^KS11, ^KQ11, ^KS200)는 평일 장중에만 갱신, KOSPI 기존 데이터 있으면 스킵
+    _KR_SYMBOLS = {"^KS11", "^KQ11", "^KS200"}
+    _US_SYMBOLS = {"^IXIC", "^GSPC", "^VIX", "GC=F", "CL=F", "USDKRW=X"}
+
+    if not us_only:
+        if _now.weekday() >= 5:
+            # 주말은 한국 지수 스킵, 미국 지수는 계속 진행
+            pass
+        else:
+            try:
+                _existing = db.query(models.PriceHistory).filter(
+                    models.PriceHistory.stock_code == "^KS11",
+                    models.PriceHistory.date >= _today,
+                ).first()
+                if _existing and _existing.close and _existing.close > 0:
+                    # KOSPI는 이미 오늘 데이터 있음 → KR 지수 스킵, US는 별도 처리
+                    us_only = True
+            except Exception:
+                pass
+
     import yfinance as yf
     today = _date.today()
+
+    # US 지수: 마지막 갱신이 2시간 이내면 스킵 (중복 Yahoo 호출 방지)
+    if us_only:
+        try:
+            _us_latest = db.query(models.PriceHistory).filter(
+                models.PriceHistory.stock_code == "^IXIC",
+                models.PriceHistory.date >= _today,
+            ).order_by(models.PriceHistory.date.desc()).first()
+            if _us_latest:
+                age_h = (_now - _us_latest.date).total_seconds() / 3600 if hasattr(_us_latest.date, 'hour') else 999
+                if age_h < 2:
+                    return  # 2시간 이내 갱신 완료 → 스킵
+        except Exception:
+            pass
+
     for symbol, name in _MACRO_SYMBOLS.items():
+        if us_only and symbol in _KR_SYMBOLS:
+            continue
         try:
             df = yf.download(symbol, period="5d", interval="1d",
                              progress=False, auto_adjust=True)
@@ -979,11 +1009,17 @@ def get_realtime_macro(db: Session = Depends(get_db)):
     - 장 외: DB 저장된 최신값 바로 반환
     반환: { index:{KOSPI,KOSDAQ}, vix:{...}, commodities:{...} }
     """
+    # 한국 장중: 전체 갱신 / 장 외: US 지수(NASDAQ·S&P500·VIX·상품·환율)만 별도 갱신
     if _is_market_hours():
         try:
             _realtime_fetch_macro(db)
         except Exception as e:
             logger.warning(f"[realtime/macro] Yahoo 갱신 실패 (DB값 반환): {e}")
+    else:
+        try:
+            _realtime_fetch_macro(db, us_only=True)
+        except Exception as e:
+            logger.warning(f"[realtime/macro] US 지수 갱신 실패 (DB값 반환): {e}")
     try:
         result = processor.get_macro_status(db)
     except Exception as e:
