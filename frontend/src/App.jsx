@@ -811,7 +811,7 @@ const MarketRadarView = React.memo(() => {
 
 const App = () => {
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState(() => _lsGet('sd_activeTab', 'macro'));
+  const [activeTab, setActiveTab] = useState('macro');
   const [portfolioAuth, setPortfolioAuth] = useState(false);
   const [selectedStock, setSelectedStock] = useState(() => _lsGet('sd_selectedStock', '005930'));
   const [shortData, setShortData]         = React.useState(null); // 대차잔고
@@ -5370,7 +5370,7 @@ const App = () => {
         {/* 탭 + 버튼 */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div style={{display:'flex',gap:'0.4rem'}}>
-            {[{k:'holdings',l:'보유종목'},{k:'tx',l:'거래내역'},{k:'kakao',l:'카카오 파싱'}].map(({k,l})=>(
+            {[{k:'holdings',l:'보유종목'},{k:'tx',l:'거래내역'}].map(({k,l})=>(
               <button key={k} onClick={()=>setTab(k)} style={{
                 padding:'0.35rem 0.9rem',borderRadius:'6px',fontSize:'0.8rem',cursor:'pointer',fontWeight:600,
                 border:tab===k?'1px solid var(--accent-mint)':'1px solid var(--glass-border)',
@@ -5771,49 +5771,19 @@ const App = () => {
           </section>
         )}
 
-        {/* 카카오 파싱 탭 */}
-        {tab==='kakao' && (
+        {/* 카카오 파싱 탭 — 제거됨 */}
+        {false && (
           <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
             <div className="glass-panel" style={{padding:'1.2rem'}}>
-              <p style={{fontSize:'0.8rem',color:'var(--text-secondary)',marginBottom:'0.5rem'}}>
-                지원형식: [매수] 삼성전자 10주 75,000원 &nbsp;/&nbsp; 에이엘티 매수 50주 @12,000
-              </p>
-              <textarea value={kakaoText} onChange={e=>setKakaoText(e.target.value)}
-                placeholder="카카오톡 메시지를 붙여넣으세요..."
-                style={{width:'100%',minHeight:'100px',padding:'0.75rem',borderRadius:'8px',
-                  background:'rgba(255,255,255,0.05)',border:'1px solid var(--glass-border)',
-                  color:'#fff',fontSize:'0.85rem',resize:'vertical',fontFamily:'inherit'}}/>
-              <button onClick={handleKakaoParse} style={{
-                marginTop:'0.75rem',padding:'0.5rem 1.2rem',borderRadius:'8px',
-                background:'var(--accent-mint)',border:'none',color:'#000',
-                cursor:'pointer',fontWeight:700,fontSize:'0.85rem'}}>파싱하기</button>
+              <textarea value={kakaoText} onChange={e=>setKakaoText(e.target.value)}/>
             </div>
             {parsedTx.length>0 && (
               <section className="glass-panel" style={{overflow:'auto'}}>
-                <div style={{padding:'0.6rem 1rem',borderBottom:'1px solid var(--glass-border)'}}>
-                  <span style={{fontSize:'0.8rem',fontWeight:600,color:'var(--accent-mint)'}}>파싱 결과 ({parsedTx.length}건)</span>
-                </div>
                 <table className="premium-table" style={{width:'100%'}}>
-                  <thead><tr><th>원문</th><th>구분</th><th>종목</th>
-                    <th style={{textAlign:'right'}}>수량</th><th style={{textAlign:'right'}}>단가</th>
-                    <th>상태</th><th></th></tr></thead>
                   <tbody>
                     {parsedTx.map((item,i)=>(
-                      <tr key={i} style={{opacity:item.valid?1:0.5}}>
-                        <td style={{fontSize:'0.75rem',color:'var(--text-secondary)',maxWidth:'140px',overflow:'hidden',textOverflow:'ellipsis'}}>{item.raw}</td>
-                        <td><span style={{padding:'0.15rem 0.5rem',borderRadius:'4px',fontSize:'0.75rem',
-                          background:item.tx_type==='buy'?'rgba(239,68,68,0.15)':'rgba(59,130,246,0.15)',
-                          color:item.tx_type==='buy'?'#ef4444':'#3b82f6'}}>
-                          {item.tx_type==='buy'?'매수':'매도'}</span></td>
-                        <td style={{fontWeight:600}}>{item.stock_name} <span style={{fontSize:'0.7rem',color:'var(--text-secondary)'}}>{item.stock_code||'미인식'}</span></td>
-                        <td style={{textAlign:'right'}}>{item.quantity?.toLocaleString('ko-KR')||'-'}</td>
-                        <td style={{textAlign:'right'}}>{fp(item.price)}</td>
-                        <td><span style={{fontSize:'0.75rem',color:item.valid?'var(--accent-mint)':'var(--accent-red)'}}>
-                          {item.valid?'✓ 확인됨':'✗ 수동입력필요'}</span></td>
-                        <td>{item.valid&&<button onClick={()=>applyParsed(item)} style={{
-                          padding:'0.25rem 0.6rem',borderRadius:'6px',border:'none',
-                          background:'rgba(45,212,191,0.15)',color:'var(--accent-mint)',
-                          cursor:'pointer',fontSize:'0.75rem'}}>적용</button>}</td>
+                      <tr key={i}>
+                        <td>{item.raw}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -8372,7 +8342,7 @@ const App = () => {
   );
 
   // ── 메인 렌더 ────────────────────────────────────────────────
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [sidebarOpen, setSidebarOpen] = React.useState(() => window.innerWidth >= 768);
 
   const NAV_ITEMS = [
     // ── 상단 섹션 ──────────────────────────────────
@@ -8413,8 +8383,6 @@ const App = () => {
         }}>☰</button>
       )}
       <aside
-        onMouseEnter={()=>!isMobile&&setSidebarOpen(true)}
-        onMouseLeave={()=>!isMobile&&setSidebarOpen(false)}
         style={{
           width: sidebarOpen?'210px':(isMobile?'0':'50px'),
           minWidth: sidebarOpen?'210px':(isMobile?'0':'50px'),

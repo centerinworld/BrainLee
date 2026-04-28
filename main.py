@@ -924,10 +924,14 @@ def get_realtime_prices(db: Session = Depends(get_db)):
             models.PriceHistory.close > 0,
         ).order_by(models.PriceHistory.date.desc()).first()
 
+        # 전 거래일 종가: 오늘 이전 날짜 중 최신 레코드
+        from datetime import date as _d
+        _today_str = _d.today().isoformat()
         prev_row = db.query(models.PriceHistory).filter(
             models.PriceHistory.stock_code == h.stock_code,
             models.PriceHistory.close > 0,
-        ).order_by(models.PriceHistory.date.desc()).offset(1).first()
+            models.PriceHistory.date < _today_str,
+        ).order_by(models.PriceHistory.date.desc()).first()
 
         current_price = price_row.close if price_row else h.avg_price
         prev_price    = prev_row.close  if prev_row  else current_price

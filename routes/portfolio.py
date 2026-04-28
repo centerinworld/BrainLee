@@ -252,10 +252,12 @@ def get_portfolio(db: Session = Depends(get_db)):
             models.PriceHistory.close > 0,
         ).order_by(models.PriceHistory.date.desc()).first()
 
+        # 전 거래일 종가: 오늘 날짜보다 이전 날짜의 최신 레코드 (intraday 혼용 방지)
         prev_row = db.query(models.PriceHistory).filter(
             models.PriceHistory.stock_code == m["stock_code"],
             models.PriceHistory.close > 0,
-        ).order_by(models.PriceHistory.date.desc()).offset(1).first()
+            models.PriceHistory.date < today_iso,
+        ).order_by(models.PriceHistory.date.desc()).first()
 
         has_price     = price_row is not None
         current_price = price_row.close if price_row else avg_price
@@ -268,8 +270,9 @@ def get_portfolio(db: Session = Depends(get_db)):
         profit_pct  = round(profit / buy_total * 100, 2) if buy_total else 0.0
 
         prev_snap    = prev_snaps.get(m["stock_code"])
-        prev_value   = getattr(prev_snap, "eval_amount", None) or buy_total
-        daily_profit = round(total_value - prev_value)
+        prev_value   = getattr(prev_snap, "eval_amount", None)
+        # 스냅샷 없으면 당일 손익 0 (총 손익과 혼동 방지)
+        daily_profit = round(total_value - prev_value) if prev_value is not None else 0
 
         # 주가 없는 종목 자동 수집 트리거
         if not has_price and m["stock_code"] and m["stock_code"] not in collecting:
@@ -731,6 +734,16 @@ def update_portfolio(stock_code: str, payload: dict, db: Session = Depends(get_d
         if collecting.get(new_code) != "running":
             threading.Thread(target=bg_ondemand, args=(new_code,), daemon=True).start()
     else:
+        # 수량 변경 시 자동 거래내역 생성
+        qty_diff = new_qty - h.quantity
+        if abs(qty_diff) >= 0.5:
+            auto_tx_type = "buy" if qty_diff > 0 else "sell"
+            db.add(models.PortfolioTx(
+                stock_code=stock_code, stock_name=new_name,
+                tx_type=auto_tx_type, quantity=abs(qty_diff),
+                price=new_price, tx_date=_date_cls.today(),
+                memo="수동편집 자동기록",
+            ))
         h.stock_name = new_name
         h.sector     = new_sector
         h.quantity   = new_qty
