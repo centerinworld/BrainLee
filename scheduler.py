@@ -94,8 +94,10 @@ class CollectionScheduler:
             ("장마감",          self._loop_closing),
             ("스크리너사전계산", self._loop_screener),
             ("공공데이터",      self._loop_public_data),
-            ("KRX일별수집",    self._loop_krx_daily),   # ★ KRX API 전종목 OHLCV
-            ("전종목수급수집",  self._loop_supply_daily), # ★ KIS 전종목 30일 수급
+            ("KRX일별수집",    self._loop_krx_daily),         # ★ KRX API 전종목 OHLCV
+            ("전종목수급17시",  self._loop_supply_daily),      # ★ 17:30 KIS 전종목 수급
+            ("전종목수급21시",  self._loop_supply_evening),    # ★ 21:00 재갱신
+            ("레이더해외가격",  self._loop_radar_price_update), # ★ 1시간마다 해외 yfinance
             ("네이버밸류에이션", self._loop_naver_fundamentals),  # ★ 네이버 PBR/PER/EPS
             ("현금흐름배치",    self._loop_cashflow_batch),       # ★ DART 현금흐름표 월간
             ("텐버거오전",      self._loop_tenbagger_morning),    # ★ 09:00 텐버거 발굴
@@ -543,7 +545,7 @@ class CollectionScheduler:
 
     def _loop_supply_daily(self) -> None:
         """17:30 영업일마다 전종목 KIS 30일 수급 일괄 수집."""
-        logger.info("[전종목수급] 루프 시작")
+        logger.info("[전종목수급17시] 루프 시작")
         while not self._stop_event.is_set():
             self._wait_until(17, 30, skip_weekend=True)
             if self._stop_event.is_set():
@@ -551,10 +553,39 @@ class CollectionScheduler:
             try:
                 self._job_supply_daily()
             except Exception as e:
-                logger.error(f"[전종목수급] 잡 오류: {e}")
+                logger.error(f"[전종목수급17시] 잡 오류: {e}")
             # 다음 날까지 대기 (23시간)
             self._wait_secs(23 * 3600)
-        logger.info("[전종목수급] 루프 종료")
+        logger.info("[전종목수급17시] 루프 종료")
+
+    def _loop_supply_evening(self) -> None:
+        """21:00 영업일마다 전종목 수급 재갱신 (장 마감 후 KIS 데이터 확정 반영)."""
+        logger.info("[전종목수급21시] 루프 시작")
+        self._wait_secs(20)
+        while not self._stop_event.is_set():
+            self._wait_until(21, 0, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            try:
+                self._job_supply_daily()
+            except Exception as e:
+                logger.error(f"[전종목수급21시] 잡 오류: {e}")
+            self._wait_secs(23 * 3600)
+        logger.info("[전종목수급21시] 루프 종료")
+
+    def _loop_radar_price_update(self) -> None:
+        """매 1시간마다 해외 종목 가격을 yfinance로 갱신 (radar_price_cache)."""
+        logger.info("[레이더해외가격] 루프 시작")
+        self._wait_secs(30)  # 서버 기동 여유
+        while not self._stop_event.is_set():
+            try:
+                from routes.market_radar import refresh_foreign_prices_sync
+                updated = refresh_foreign_prices_sync()
+                logger.info(f"[레이더해외가격] {updated}개 종목 갱신 완료")
+            except Exception as e:
+                logger.error(f"[레이더해외가격] 오류: {e}", exc_info=True)
+            self._wait_secs(3600)
+        logger.info("[레이더해외가격] 루프 종료")
 
     def _job_supply_daily(self) -> None:
         """KIS 전종목 최근 30거래일 수급 수집 → price_history 업데이트."""

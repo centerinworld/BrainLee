@@ -172,39 +172,143 @@ def _ensure_radar_tables(conn) -> None:
             pbr         REAL,
             updated_at  TEXT DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS radar_price_cache (
+            ticker      TEXT NOT NULL,
+            rn          INTEGER NOT NULL,
+            close       REAL,
+            trade_date  TEXT,
+            PRIMARY KEY (ticker, rn)
+        );
     """)
     conn.commit()
 
 
+def _is_korean_ticker(ticker: str) -> bool:
+    return bool(re.match(r"^\d{6}$", ticker))
+
+
 def _fetch_price_map(conn, tickers: List[str]) -> Dict[str, Dict]:
+    """Korean tickers → price_history, foreign tickers → radar_price_cache."""
     if not tickers:
         return {}
-    placeholders = ",".join("?" for _ in tickers)
     price_map: Dict[str, Dict] = {}
-    try:
-        rows = conn.execute(f"""
-            WITH ranked AS (
-                SELECT stock_code, close,
-                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
-                FROM price_history
-                WHERE stock_code IN ({placeholders}) AND close > 0
-            )
-            SELECT stock_code,
-                   MAX(CASE WHEN rn=1   THEN close END) AS price,
-                   MAX(CASE WHEN rn=2   THEN close END) AS price_1d,
-                   MAX(CASE WHEN rn=6   THEN close END) AS price_5d,
-                   MAX(CASE WHEN rn=11  THEN close END) AS price_10d,
-                   MAX(CASE WHEN rn=31  THEN close END) AS price_30d,
-                   MAX(CASE WHEN rn=253 THEN close END) AS price_1y
-            FROM ranked
-            GROUP BY stock_code
-        """, tickers).fetchall()
-        for r in rows:
-            d = dict(r)
-            price_map[d["stock_code"]] = d
-    except Exception as e:
-        logger.debug(f"[market-radar] price_map error: {e}")
+
+    korean  = [t for t in tickers if _is_korean_ticker(t)]
+    foreign = [t for t in tickers if not _is_korean_ticker(t)]
+
+    # ── 국내 주식: price_history ──
+    if korean:
+        ph = ",".join("?" for _ in korean)
+        try:
+            rows = conn.execute(f"""
+                WITH ranked AS (
+                    SELECT stock_code, close,
+                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
+                    FROM price_history
+                    WHERE stock_code IN ({ph}) AND close > 0
+                )
+                SELECT stock_code,
+                       MAX(CASE WHEN rn=1   THEN close END) AS price,
+                       MAX(CASE WHEN rn=2   THEN close END) AS price_1d,
+                       MAX(CASE WHEN rn=6   THEN close END) AS price_5d,
+                       MAX(CASE WHEN rn=11  THEN close END) AS price_10d,
+                       MAX(CASE WHEN rn=31  THEN close END) AS price_30d,
+                       MAX(CASE WHEN rn=253 THEN close END) AS price_1y
+                FROM ranked
+                GROUP BY stock_code
+            """, korean).fetchall()
+            for r in rows:
+                d = dict(r)
+                price_map[d["stock_code"]] = d
+        except Exception as e:
+            logger.debug(f"[market-radar] kr price_map error: {e}")
+
+    # ── 해외 주식: radar_price_cache ──
+    if foreign:
+        ph = ",".join("?" for _ in foreign)
+        try:
+            rows = conn.execute(f"""
+                SELECT ticker,
+                       MAX(CASE WHEN rn=1   THEN close END) AS price,
+                       MAX(CASE WHEN rn=2   THEN close END) AS price_1d,
+                       MAX(CASE WHEN rn=6   THEN close END) AS price_5d,
+                       MAX(CASE WHEN rn=11  THEN close END) AS price_10d,
+                       MAX(CASE WHEN rn=31  THEN close END) AS price_30d,
+                       MAX(CASE WHEN rn=253 THEN close END) AS price_1y
+                FROM radar_price_cache
+                WHERE ticker IN ({ph})
+                GROUP BY ticker
+            """, foreign).fetchall()
+            for r in rows:
+                d = dict(r)
+                price_map[d["ticker"]] = d
+        except Exception as e:
+            logger.debug(f"[market-radar] foreign price_map error: {e}")
+
     return price_map
+
+
+def refresh_foreign_prices_sync() -> int:
+    """yfinance로 해외 종목 2년치 일별 가격을 radar_price_cache에 저장. 스케줄러용 동기 함수."""
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.warning("[market-radar] yfinance 없음 — 해외 가격 갱신 불가")
+        return 0
+
+    conn = _db()
+    try:
+        _ensure_radar_tables(conn)
+        rows = conn.execute("""
+            SELECT DISTINCT ticker FROM radar_semiconductor_override WHERE ticker IS NOT NULL AND ticker != ''
+            UNION
+            SELECT DISTINCT ticker FROM radar_sector_override WHERE ticker IS NOT NULL AND ticker != ''
+        """).fetchall()
+        raw_tickers = [row["ticker"] for row in rows]
+        foreign_tickers = list({_norm_ticker(t) for t in raw_tickers
+                                 if _norm_ticker(t) and not _is_korean_ticker(_norm_ticker(t))})
+
+        if not foreign_tickers:
+            return 0
+
+        updated = 0
+        for ticker in foreign_tickers:
+            try:
+                hist = yf.Ticker(ticker).history(period="2y", auto_adjust=True)
+                if hist.empty:
+                    continue
+                closes = hist["Close"].dropna()
+                if len(closes) == 0:
+                    continue
+                # Store as ranked rows (rn=1 = most recent)
+                conn.execute("DELETE FROM radar_price_cache WHERE ticker = ?", (ticker,))
+                rows_to_insert = []
+                for rn, (dt, price) in enumerate(
+                    zip(closes.index[::-1], closes.values[::-1]),
+                    start=1
+                ):
+                    trade_date = dt.strftime("%Y-%m-%d") if hasattr(dt, "strftime") else str(dt)[:10]
+                    rows_to_insert.append((ticker, rn, float(price), trade_date))
+                    if rn >= 300:
+                        break
+                conn.executemany(
+                    "INSERT OR REPLACE INTO radar_price_cache (ticker, rn, close, trade_date) VALUES (?,?,?,?)",
+                    rows_to_insert
+                )
+                updated += 1
+            except Exception as e:
+                logger.debug(f"[market-radar] yfinance {ticker}: {e}")
+
+        conn.commit()
+        logger.info(f"[market-radar] 해외 가격 갱신 완료: {updated}/{len(foreign_tickers)}개")
+        _cache.clear()
+        return updated
+    except Exception as e:
+        logger.error(f"[market-radar] refresh_foreign_prices_sync error: {e}", exc_info=True)
+        return 0
+    finally:
+        conn.close()
 
 
 def _fetch_market_map(conn, tickers: List[str]) -> Dict[str, Dict]:

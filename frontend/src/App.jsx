@@ -628,6 +628,187 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
 });
 
 
+// ── 프론트엔드 시그널 캐시 (컴포넌트 재마운트와 무관하게 유지) ────
+const _signalFrontCache = {};
+
+// ── 시장 레이더 뷰 (App 외부 정의 — 재마운트 방지) ─────────────
+const MarketRadarView = React.memo(() => {
+  const RADAR_SECTORS = [
+    { key: 'semiconductor', name: '반도체/IT',   emoji: '💾' },
+    { key: 'battery',       name: '2차전지',      emoji: '🔋' },
+    { key: 'power_infra',   name: '전력/산업재',  emoji: '⚡' },
+    { key: 'pharma',        name: '제약/바이오',   emoji: '💊' },
+    { key: 'defense',       name: 'K방산/조선',   emoji: '🚀' },
+    { key: 'shipbuilding',  name: '조선/해운',     emoji: '🚢' },
+    { key: 'energy',        name: '에너지/소재',   emoji: '⛽' },
+  ];
+  const [activeSector, setActiveSector] = React.useState('semiconductor');
+  const [data,    setData]    = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error,   setError]   = React.useState('');
+
+  const load = React.useCallback(async (sector) => {
+    setLoading(true); setError('');
+    try {
+      const r = await fetch(API(`/api/market-radar/sector/${sector}/detail`));
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setData(await r.json());
+    } catch(e) { setError('데이터 로드 실패: ' + e.message); }
+    finally { setLoading(false); }
+  }, []);
+
+  React.useEffect(() => { load(activeSector); }, [activeSector, load]);
+
+  const fmtPct = (v) => {
+    if (v == null) return <span style={{color:'var(--text-secondary)'}}>-</span>;
+    const sign = v > 0 ? '+' : '';
+    const color = v > 0 ? '#ef4444' : v < 0 ? '#3b82f6' : 'var(--text-secondary)';
+    return <span style={{color, fontWeight:600}}>{sign}{v.toFixed(1)}%</span>;
+  };
+
+  const fmtPrice = (v) => {
+    if (v == null) return '-';
+    const n = Number(v);
+    return isNaN(n) ? '-' : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  };
+
+  const fmtMktCap = (v) => {
+    if (v == null || v === 0) return '-';
+    const n = Number(v);
+    if (n >= 1e12) return `${(n/1e12).toFixed(2)}T`;
+    if (n >= 1e9)  return `${(n/1e9).toFixed(2)}B`;
+    if (n >= 1e8)  return `${Math.round(n/1e8)}억`;
+    return Math.round(n/1e6) + 'M';
+  };
+
+  const sigDots = (s) => (
+    <span style={{display:'flex', gap:'4px', alignItems:'center', whiteSpace:'nowrap'}}>
+      <span style={{color: s.sig_5d  === 'up' ? '#ef4444' : '#3b82f6', fontSize:'0.8rem'}}>●</span>
+      <span style={{fontSize:'0.68rem', color:'var(--text-secondary)'}}>5일</span>
+      <span style={{color: s.sig_10d === 'up' ? '#ef4444' : '#3b82f6', fontSize:'0.8rem'}}>●</span>
+      <span style={{fontSize:'0.68rem', color:'var(--text-secondary)'}}>10일</span>
+      <span style={{color: s.sig_30d === 'up' ? '#ef4444' : '#3b82f6', fontSize:'0.8rem'}}>●</span>
+      <span style={{fontSize:'0.68rem', color:'var(--text-secondary)'}}>30일</span>
+    </span>
+  );
+
+  const thStyle = { padding:'0.45rem 0.6rem', fontSize:'0.72rem', color:'var(--text-secondary)',
+                    fontWeight:600, whiteSpace:'nowrap', background:'rgba(0,0,0,0.25)',
+                    borderBottom:'1px solid var(--glass-border)' };
+  const tdStyle = { padding:'0.4rem 0.6rem', fontSize:'0.8rem', borderBottom:'1px solid rgba(255,255,255,0.04)' };
+
+  return (
+    <div style={{padding:'0 0.5rem'}}>
+      {/* 헤더 */}
+      <div style={{display:'flex', alignItems:'center', gap:'0.8rem', marginBottom:'1rem', flexWrap:'wrap'}}>
+        <h2 style={{margin:0, fontSize:'1.05rem', fontWeight:700}}>🛰 시장 레이더</h2>
+        <span style={{fontSize:'0.78rem', color:'var(--text-secondary)'}}>
+          글로벌 선행지표 — 해외 대표 기업 시세로 섹터 방향성 포착
+        </span>
+      </div>
+
+      {/* 섹터 탭 */}
+      <div style={{display:'flex', gap:'0.4rem', flexWrap:'wrap', marginBottom:'1.2rem'}}>
+        {RADAR_SECTORS.map(s => (
+          <button key={s.key} onClick={() => setActiveSector(s.key)} style={{
+            padding:'0.35rem 0.8rem', borderRadius:'20px', fontSize:'0.78rem', fontWeight:600,
+            cursor:'pointer', transition:'all 0.15s',
+            border: activeSector === s.key ? '1px solid var(--accent-mint)' : '1px solid var(--glass-border)',
+            background: activeSector === s.key ? 'rgba(45,212,191,0.15)' : 'transparent',
+            color: activeSector === s.key ? 'var(--accent-mint)' : 'var(--text-secondary)',
+          }}>
+            {s.emoji} {s.name}
+          </button>
+        ))}
+      </div>
+
+      {loading && <div style={{color:'var(--text-secondary)', padding:'2rem', textAlign:'center'}}>로딩 중...</div>}
+      {error   && <div style={{color:'#f87171', padding:'1rem'}}>{error}</div>}
+
+      {/* 섹션별 테이블 */}
+      {!loading && data?.sections?.map(section => (
+        <div key={section.name} style={{marginBottom:'1.8rem'}}>
+          <div style={{fontWeight:700, fontSize:'0.88rem', marginBottom:'0.5rem',
+            color:'var(--text-primary)', display:'flex', alignItems:'center', gap:'0.5rem'}}>
+            {section.name}
+            {section.avg_1d != null && (
+              <span style={{fontSize:'0.75rem', fontWeight:600,
+                color: section.avg_1d > 0 ? '#ef4444' : '#3b82f6'}}>
+                평균 {section.avg_1d > 0 ? '+' : ''}{section.avg_1d.toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <div className="glass-panel" style={{overflow:'auto', padding:'0'}}>
+            <table style={{width:'100%', borderCollapse:'collapse'}}>
+              <thead>
+                <tr>
+                  <th style={{...thStyle, minWidth:'120px', textAlign:'left'}}>종목명</th>
+                  <th style={{...thStyle, textAlign:'left'}}>Level2</th>
+                  <th style={{...thStyle}}>Level2 신호(5/10/...)</th>
+                  <th style={{...thStyle, textAlign:'center'}}>국가</th>
+                  <th style={{...thStyle, textAlign:'right'}}>시총</th>
+                  <th style={{...thStyle, textAlign:'right'}}>현재(1일)</th>
+                  <th style={{...thStyle, textAlign:'right'}}>5일</th>
+                  <th style={{...thStyle, textAlign:'right'}}>10일</th>
+                  <th style={{...thStyle, textAlign:'right'}}>30일</th>
+                  <th style={{...thStyle, textAlign:'right'}}>1년</th>
+                  <th style={{...thStyle, textAlign:'right'}}>PBR</th>
+                  <th style={{...thStyle, textAlign:'right'}}>PER</th>
+                </tr>
+              </thead>
+              <tbody>
+                {section.stocks.map(s => (
+                  <tr key={s.symbol} style={{transition:'background 0.1s'}}
+                    onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
+                    onMouseOut={e=>e.currentTarget.style.background='transparent'}>
+                    <td style={{...tdStyle, fontWeight:700}}>{s.name}</td>
+                    <td style={{...tdStyle, fontSize:'0.72rem', color:'var(--text-secondary)'}}>{s.lv2 || '-'}</td>
+                    <td style={{...tdStyle}}>{sigDots(s)}</td>
+                    <td style={{...tdStyle, textAlign:'center', fontSize:'1rem'}}>{s.country_flag || s.country}</td>
+                    <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>{fmtMktCap(s.market_cap)}</td>
+                    <td style={{...tdStyle, textAlign:'right'}}>
+                      <span style={{marginRight:'0.4rem', fontWeight:600}}>{fmtPrice(s.price)}</span>
+                      {fmtPct(s.chg_1d)}
+                    </td>
+                    <td style={{...tdStyle, textAlign:'right'}}>
+                      <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_5d)}</span>
+                      {fmtPct(s.chg_5d)}
+                    </td>
+                    <td style={{...tdStyle, textAlign:'right'}}>
+                      <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_10d)}</span>
+                      {fmtPct(s.chg_10d)}
+                    </td>
+                    <td style={{...tdStyle, textAlign:'right'}}>
+                      <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_30d)}</span>
+                      {fmtPct(s.chg_30d)}
+                    </td>
+                    <td style={{...tdStyle, textAlign:'right'}}>
+                      <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_1y)}</span>
+                      {fmtPct(s.chg_1y)}
+                    </td>
+                    <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>
+                      {s.pbr != null ? s.pbr.toFixed(2) : '-'}
+                    </td>
+                    <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>
+                      {s.per != null ? s.per.toFixed(2) : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+
+      {!loading && !error && data?.sections?.length === 0 && (
+        <div className="glass-panel" style={{padding:'3rem', textAlign:'center', color:'var(--text-secondary)'}}>
+          <p>데이터를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.</p>
+        </div>
+      )}
+    </div>
+  );
+});
+
 const App = () => {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState(() => _lsGet('sd_activeTab', 'macro'));
@@ -1416,19 +1597,17 @@ const App = () => {
 
 
   // ── 시그널 보드 컴포넌트 ────────────────────────────────────
-  // ── 프론트엔드 시그널 캐시 (1시간) ─────────────────────────
-  const _signalFrontCache = React.useRef({});
 
   const SignalBoard = ({ scope, stockCode = '' }) => {
     const [signals,  setSignals]  = React.useState([]);
-    const [loading,  setLoading]  = React.useState(true);
+    const [loading,  setLoading]  = React.useState(false);
     const [expanded, setExpanded] = React.useState(false);
     const [showGuide, setShowGuide] = React.useState(false); // 로직 가이드 토글
 
     React.useEffect(() => {
       if (!stockCode && scope !== 'market') return;
       const cacheKey = scope === 'market' ? 'market' : stockCode;
-      const cached = _signalFrontCache.current[cacheKey];
+      const cached = _signalFrontCache[cacheKey];
       const now = Date.now();
       // 장중 1시간 / 장외 4시간 캐시 — 백엔드와 동일
       const frontTtl = isKRMarketOpen() ? 3600000 : 14400000;
@@ -1445,7 +1624,7 @@ const App = () => {
         .then(r => r.ok ? r.json() : [])
         .then(d => {
           const sigs = Array.isArray(d) ? d : (d?.signals || []);
-          _signalFrontCache.current[cacheKey] = { data: sigs, at: Date.now() };
+          _signalFrontCache[cacheKey] = { data: sigs, at: Date.now() };
           setSignals(sigs);
           setLoading(false);
         })
@@ -6997,216 +7176,6 @@ const App = () => {
     );
   };
 
-
-  // ── 시장 레이더 뷰 ───────────────────────────────────────
-  const MarketRadarView = React.memo(() => {
-    const RADAR_SECTORS = [
-      { key: 'semiconductor', name: '반도체/IT',   emoji: '💾' },
-      { key: 'battery',       name: '2차전지',      emoji: '🔋' },
-      { key: 'power_infra',   name: '전력/산업재',  emoji: '⚡' },
-      { key: 'pharma',        name: '제약/바이오',   emoji: '💊' },
-      { key: 'defense',       name: 'K방산/조선',   emoji: '🚀' },
-      { key: 'shipbuilding',  name: '조선/해운',     emoji: '🚢' },
-      { key: 'energy',        name: '에너지/소재',   emoji: '⛽' },
-    ];
-    const [activeSector, setActiveSector] = React.useState('semiconductor');
-    const [data,    setData]    = React.useState(null);
-    const [loading, setLoading] = React.useState(false);
-    const [error,   setError]   = React.useState('');
-    const [refreshing, setRefreshing] = React.useState(false);
-
-    const load = React.useCallback(async (sector) => {
-      setLoading(true); setError('');
-      try {
-        const r = await fetch(API(`/api/market-radar/sector/${sector}/detail`));
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        setData(await r.json());
-      } catch(e) { setError('데이터 로드 실패: ' + e.message); }
-      finally { setLoading(false); }
-    }, []);
-
-    React.useEffect(() => { load(activeSector); }, [activeSector, load]);
-
-    const initSemiconductor = async () => {
-      try {
-        const r = await fetch(API('/api/market-radar/init-semiconductor'), { method:'POST' });
-        const d = await r.json();
-        alert(d.message);
-        load(activeSector);
-      } catch(e) { alert('초기화 실패: ' + e.message); }
-    };
-
-    const refreshCache = async () => {
-      setRefreshing(true);
-      try {
-        await fetch(API('/api/market-radar/refresh-cache'), { method:'POST' });
-        setTimeout(() => { load(activeSector); setRefreshing(false); }, 3000);
-      } catch(e) { setRefreshing(false); }
-    };
-
-    const fmtPct = (v) => {
-      if (v == null) return <span style={{color:'var(--text-secondary)'}}>-</span>;
-      const sign = v > 0 ? '+' : '';
-      const color = v > 0 ? '#ef4444' : v < 0 ? '#3b82f6' : 'var(--text-secondary)';
-      return <span style={{color, fontWeight:600}}>{sign}{v.toFixed(1)}%</span>;
-    };
-
-    const fmtPrice = (v) => {
-      if (v == null) return '-';
-      const n = Number(v);
-      return isNaN(n) ? '-' : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
-    };
-
-    const fmtMktCap = (v) => {
-      if (v == null || v === 0) return '-';
-      const n = Number(v);
-      if (n >= 1e12) return `${(n/1e12).toFixed(2)}T`;
-      if (n >= 1e9)  return `${(n/1e9).toFixed(2)}B`;
-      if (n >= 1e8)  return `${Math.round(n/1e8)}억`;
-      return Math.round(n/1e6) + 'M';
-    };
-
-    const sigDots = (s) => (
-      <span style={{display:'flex', gap:'4px', alignItems:'center', whiteSpace:'nowrap'}}>
-        <span style={{color: s.sig_5d  === 'up' ? '#ef4444' : '#3b82f6', fontSize:'0.8rem'}}>●</span>
-        <span style={{fontSize:'0.68rem', color:'var(--text-secondary)'}}>5일</span>
-        <span style={{color: s.sig_10d === 'up' ? '#ef4444' : '#3b82f6', fontSize:'0.8rem'}}>●</span>
-        <span style={{fontSize:'0.68rem', color:'var(--text-secondary)'}}>10일</span>
-        <span style={{color: s.sig_30d === 'up' ? '#ef4444' : '#3b82f6', fontSize:'0.8rem'}}>●</span>
-        <span style={{fontSize:'0.68rem', color:'var(--text-secondary)'}}>30일</span>
-      </span>
-    );
-
-    const thStyle = { padding:'0.45rem 0.6rem', fontSize:'0.72rem', color:'var(--text-secondary)',
-                      fontWeight:600, whiteSpace:'nowrap', background:'rgba(0,0,0,0.25)',
-                      borderBottom:'1px solid var(--glass-border)' };
-    const tdStyle = { padding:'0.4rem 0.6rem', fontSize:'0.8rem', borderBottom:'1px solid rgba(255,255,255,0.04)' };
-
-    return (
-      <div style={{padding:'0 0.5rem'}}>
-        {/* 헤더 */}
-        <div style={{display:'flex', alignItems:'center', gap:'0.8rem', marginBottom:'1rem', flexWrap:'wrap'}}>
-          <h2 style={{margin:0, fontSize:'1.05rem', fontWeight:700}}>🛰 시장 레이더</h2>
-          <span style={{fontSize:'0.78rem', color:'var(--text-secondary)'}}>
-            글로벌 선행지표 — 해외 대표 기업 시세로 섹터 방향성 포착
-          </span>
-          <div style={{marginLeft:'auto', display:'flex', gap:'0.5rem'}}>
-            <button onClick={initSemiconductor}
-              style={{padding:'0.3rem 0.7rem', borderRadius:'6px', fontSize:'0.72rem', cursor:'pointer',
-                border:'1px solid var(--glass-border)', background:'transparent', color:'var(--text-secondary)'}}>
-              기업목록 초기화
-            </button>
-            <button onClick={refreshCache} disabled={refreshing}
-              style={{padding:'0.3rem 0.7rem', borderRadius:'6px', fontSize:'0.72rem', cursor:'pointer',
-                border:'1px solid var(--accent-mint)', background:'rgba(45,212,191,0.1)',
-                color:'var(--accent-mint)', opacity: refreshing ? 0.5 : 1}}>
-              {refreshing ? '갱신 중...' : '시총/PBR/PER 갱신'}
-            </button>
-          </div>
-        </div>
-
-        {/* 섹터 탭 */}
-        <div style={{display:'flex', gap:'0.4rem', flexWrap:'wrap', marginBottom:'1.2rem'}}>
-          {RADAR_SECTORS.map(s => (
-            <button key={s.key} onClick={() => setActiveSector(s.key)} style={{
-              padding:'0.35rem 0.8rem', borderRadius:'20px', fontSize:'0.78rem', fontWeight:600,
-              cursor:'pointer', transition:'all 0.15s',
-              border: activeSector === s.key ? '1px solid var(--accent-mint)' : '1px solid var(--glass-border)',
-              background: activeSector === s.key ? 'rgba(45,212,191,0.15)' : 'transparent',
-              color: activeSector === s.key ? 'var(--accent-mint)' : 'var(--text-secondary)',
-            }}>
-              {s.emoji} {s.name}
-            </button>
-          ))}
-        </div>
-
-        {loading && <div style={{color:'var(--text-secondary)', padding:'2rem', textAlign:'center'}}>로딩 중...</div>}
-        {error   && <div style={{color:'#f87171', padding:'1rem'}}>{error}</div>}
-
-        {/* 섹션별 테이블 */}
-        {!loading && data?.sections?.map(section => (
-          <div key={section.name} style={{marginBottom:'1.8rem'}}>
-            <div style={{fontWeight:700, fontSize:'0.88rem', marginBottom:'0.5rem',
-              color:'var(--text-primary)', display:'flex', alignItems:'center', gap:'0.5rem'}}>
-              {section.name}
-              {section.avg_1d != null && (
-                <span style={{fontSize:'0.75rem', fontWeight:600,
-                  color: section.avg_1d > 0 ? '#ef4444' : '#3b82f6'}}>
-                  평균 {section.avg_1d > 0 ? '+' : ''}{section.avg_1d.toFixed(1)}%
-                </span>
-              )}
-            </div>
-            <div className="glass-panel" style={{overflow:'auto', padding:'0'}}>
-              <table style={{width:'100%', borderCollapse:'collapse'}}>
-                <thead>
-                  <tr>
-                    <th style={{...thStyle, minWidth:'120px', textAlign:'left'}}>종목명</th>
-                    <th style={{...thStyle, textAlign:'left'}}>Level2</th>
-                    <th style={{...thStyle}}>Level2 신호(5/10/...)</th>
-                    <th style={{...thStyle, textAlign:'center'}}>국가</th>
-                    <th style={{...thStyle, textAlign:'right'}}>시총</th>
-                    <th style={{...thStyle, textAlign:'right'}}>현재(1일)</th>
-                    <th style={{...thStyle, textAlign:'right'}}>5일</th>
-                    <th style={{...thStyle, textAlign:'right'}}>10일</th>
-                    <th style={{...thStyle, textAlign:'right'}}>30일</th>
-                    <th style={{...thStyle, textAlign:'right'}}>1년</th>
-                    <th style={{...thStyle, textAlign:'right'}}>PBR</th>
-                    <th style={{...thStyle, textAlign:'right'}}>PER</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {section.stocks.map(s => (
-                    <tr key={s.symbol} style={{transition:'background 0.1s'}}
-                      onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
-                      onMouseOut={e=>e.currentTarget.style.background='transparent'}>
-                      <td style={{...tdStyle, fontWeight:700}}>{s.name}</td>
-                      <td style={{...tdStyle, fontSize:'0.72rem', color:'var(--text-secondary)'}}>{s.lv2 || '-'}</td>
-                      <td style={{...tdStyle}}>{sigDots(s)}</td>
-                      <td style={{...tdStyle, textAlign:'center', fontSize:'1rem'}}>{s.country_flag || s.country}</td>
-                      <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>{fmtMktCap(s.market_cap)}</td>
-                      <td style={{...tdStyle, textAlign:'right'}}>
-                        <span style={{marginRight:'0.4rem', fontWeight:600}}>{fmtPrice(s.price)}</span>
-                        {fmtPct(s.chg_1d)}
-                      </td>
-                      <td style={{...tdStyle, textAlign:'right'}}>
-                        <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_5d)}</span>
-                        {fmtPct(s.chg_5d)}
-                      </td>
-                      <td style={{...tdStyle, textAlign:'right'}}>
-                        <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_10d)}</span>
-                        {fmtPct(s.chg_10d)}
-                      </td>
-                      <td style={{...tdStyle, textAlign:'right'}}>
-                        <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_30d)}</span>
-                        {fmtPct(s.chg_30d)}
-                      </td>
-                      <td style={{...tdStyle, textAlign:'right'}}>
-                        <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_1y)}</span>
-                        {fmtPct(s.chg_1y)}
-                      </td>
-                      <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>
-                        {s.pbr != null ? s.pbr.toFixed(2) : '-'}
-                      </td>
-                      <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>
-                        {s.per != null ? s.per.toFixed(2) : '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-
-        {!loading && !error && data?.sections?.length === 0 && (
-          <div className="glass-panel" style={{padding:'3rem', textAlign:'center', color:'var(--text-secondary)'}}>
-            <p>등록된 기업 데이터가 없습니다.</p>
-            <p style={{fontSize:'0.8rem', marginTop:'0.5rem'}}>위의 "기업목록 초기화" 버튼을 눌러 반도체 섹터 기업을 등록하세요.</p>
-          </div>
-        )}
-      </div>
-    );
-  });
 
   // ── 텐버거 헌터 뷰 ────────────────────────────────────────
   const TenbaggerView = () => {
