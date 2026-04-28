@@ -13,6 +13,7 @@ import asyncio
 import logging
 import re
 import sqlite3
+from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 
@@ -21,7 +22,9 @@ from fastapi import APIRouter, BackgroundTasks
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = "stock.db"
+# 절대 경로 — CWD와 무관하게 항상 이 파일 기준으로 stock.db 위치 결정
+_HERE = Path(__file__).resolve().parent.parent
+DB_PATH = str(_HERE / "stock.db")
 
 SECTOR_KEY_MAP: Dict[str, str] = {
     "semiconductor": "반도체",

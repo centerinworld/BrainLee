@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import subprocess
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
 
 PROJECT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = PROJECT_DIR / "static"
@@ -371,7 +374,120 @@ class ReferenceDatesPayload(BaseModel):
     ref_c: str | None = None
 
 
-app = FastAPI(title="Semiconductor Value Lab")
+def _ensure_schema() -> None:
+    """DB 파일이 없거나 테이블이 없을 때만 CREATE TABLE IF NOT EXISTS로 초기화."""
+    try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(DB_PATH)
+        conn.executescript("""
+            PRAGMA journal_mode=WAL;
+
+            CREATE TABLE IF NOT EXISTS meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sector_summary (
+                sector_order            INTEGER PRIMARY KEY,
+                sector_name             TEXT NOT NULL,
+                stock_count             INTEGER,
+                rising_count            INTEGER,
+                rising_ratio            REAL,
+                avg_psr                 REAL,
+                kospi_vs                TEXT,
+                nasdaq_vs               TEXT,
+                sample_stock            TEXT,
+                sample_lv1              TEXT,
+                sample_industry         TEXT,
+                sample_market_cap_okr   REAL,
+                sample_price            REAL
+            );
+
+            CREATE TABLE IF NOT EXISTS stock_cache (
+                stock_code              TEXT PRIMARY KEY,
+                stock_name              TEXT NOT NULL,
+                lv1                     TEXT,
+                lv2                     TEXT,
+                customer                TEXT,
+                main_business           TEXT,
+                ticker                  TEXT,
+                etf_flag                TEXT,
+                workbook_price          REAL,
+                workbook_change_pct     REAL,
+                workbook_market_cap_okr REAL,
+                workbook_psr            REAL,
+                current_price           REAL,
+                current_market_cap      REAL,
+                current_pbr             REAL,
+                current_per             REAL,
+                current_base_date       TEXT,
+                ref_a_price             REAL,
+                ref_b_price             REAL,
+                ref_c_price             REAL,
+                ref_a_change_pct        REAL,
+                ref_b_change_pct        REAL,
+                ref_c_change_pct        REAL,
+                latest_revenue          REAL,
+                latest_operating_profit REAL,
+                latest_net_income       REAL,
+                annual_yoy              REAL,
+                quarter_qoq             REAL,
+                last_quarter_label      TEXT,
+                status_complete         TEXT,
+                note                    TEXT,
+                watch_enabled           INTEGER DEFAULT 0,
+                watch_lv2               TEXT,
+                watch_customer          TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS yearly_cache (
+                stock_code  TEXT NOT NULL,
+                stock_name  TEXT NOT NULL,
+                item_type   TEXT NOT NULL,
+                fiscal_year INTEGER NOT NULL,
+                value       REAL,
+                PRIMARY KEY (stock_code, item_type, fiscal_year)
+            );
+
+            CREATE TABLE IF NOT EXISTS quarterly_cache (
+                stock_code   TEXT NOT NULL,
+                stock_name   TEXT NOT NULL,
+                item_type    TEXT NOT NULL,
+                period_label TEXT NOT NULL,
+                sort_year    INTEGER NOT NULL,
+                sort_quarter INTEGER NOT NULL,
+                value        REAL,
+                PRIMARY KEY (stock_code, item_type, period_label)
+            );
+
+            CREATE TABLE IF NOT EXISTS watchlist (
+                stock_code        TEXT PRIMARY KEY,
+                stock_name        TEXT NOT NULL,
+                lv2_override      TEXT,
+                customer_override TEXT,
+                memo              TEXT DEFAULT ''
+            );
+        """)
+        # 기본 watchlist 시드 (최초 1회)
+        for code, name in (("080220", "제주반도체"), ("000990", "DB하이텍"), ("348350", "위드텍")):
+            conn.execute(
+                "INSERT OR IGNORE INTO watchlist(stock_code, stock_name) VALUES (?,?)",
+                (code, name),
+            )
+        conn.commit()
+        conn.close()
+        logger.info("[semiconductor-lab] DB 스키마 초기화 완료")
+    except Exception as e:
+        logger.warning(f"[semiconductor-lab] DB 스키마 초기화 실패: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _ensure_schema()
+    yield
+
+
+app = FastAPI(title="Semiconductor Value Lab", lifespan=lifespan)
 
 
 STATIC_HEADERS = {
@@ -416,6 +532,9 @@ def summary():
     conn = db_conn()
     try:
         return {"items": build_summary_rows(conn)}
+    except Exception as e:
+        logger.warning(f"[/api/summary] {e}")
+        return {"items": []}
     finally:
         conn.close()
 
@@ -425,6 +544,9 @@ def stocks(lv1: str = "", watch_only: bool = False):
     conn = db_conn()
     try:
         return {"items": build_stock_rows(conn, lv1=lv1, watch_only=watch_only)}
+    except Exception as e:
+        logger.warning(f"[/api/stocks] {e}")
+        return {"items": []}
     finally:
         conn.close()
 
@@ -434,6 +556,9 @@ def watchlist():
     conn = db_conn()
     try:
         return {"items": build_watchlist_rows(conn)}
+    except Exception as e:
+        logger.warning(f"[/api/watchlist] {e}")
+        return {"items": []}
     finally:
         conn.close()
 
@@ -442,11 +567,30 @@ def watchlist():
 def bootstrap():
     conn = db_conn()
     try:
+        try:
+            meta_data = load_meta_map(conn)
+        except Exception:
+            meta_data = {}
+        try:
+            summary_data = {"items": build_summary_rows(conn)}
+        except Exception as e:
+            logger.warning(f"[bootstrap/summary] {e}")
+            summary_data = {"items": []}
+        try:
+            stocks_data = {"items": build_stock_rows(conn)}
+        except Exception as e:
+            logger.warning(f"[bootstrap/stocks] {e}")
+            stocks_data = {"items": []}
+        try:
+            watchlist_data = {"items": build_watchlist_rows(conn)}
+        except Exception as e:
+            logger.warning(f"[bootstrap/watchlist] {e}")
+            watchlist_data = {"items": []}
         return {
-            "meta": load_meta_map(conn),
-            "summary": {"items": build_summary_rows(conn)},
-            "stocks": {"items": build_stock_rows(conn)},
-            "watchlist": {"items": build_watchlist_rows(conn)},
+            "meta": meta_data,
+            "summary": summary_data,
+            "stocks": stocks_data,
+            "watchlist": watchlist_data,
         }
     finally:
         conn.close()
