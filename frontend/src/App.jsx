@@ -4282,8 +4282,8 @@ const App = () => {
             <span style={{fontSize:'0.78rem',color:'rgba(255,255,255,0.55)',fontWeight:600}}>📐 로직 선택:</span>
             <div style={{display:'flex',gap:'0.3rem',background:'rgba(0,0,0,0.2)',borderRadius:'8px',padding:'0.2rem'}}>
               {[
-                { key:'v1', label:'AI 적극추천(1)', desc:'Minervini 추세 + Graham 가치 + 재무스크리너 교집합 — 백테스트 v5 기준' },
-                { key:'v2', label:'AI 적극추천(2)', desc:'수급 주도 모멘텀 — 기관·외국인 동반순매수 + 추세 + 실적 복합스코어' },
+                { key:'v1', label:'Logic v1', desc:'추세·가치·재무 교집합 — Minervini 추세 + Graham 가치 + 재무스크리너 3관왕 (백테스트 v5 기준)' },
+                { key:'v2', label:'Logic v2', desc:'수급 주도 모멘텀 — 기관·외국인 동반순매수 + 추세 + 실적 복합스코어 (최대 42점)' },
               ].map(opt => (
                 <button key={opt.key} title={opt.desc} onClick={() => {
                     setComboLogic(opt.key);
@@ -4302,8 +4302,8 @@ const App = () => {
             </div>
             <span style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.35)'}}>
               {comboLogic==='v1'
-                ? '3관왕(추세+가치+재무) 우선 표시, 2개 충족 종목 순으로 배치'
-                : '수급 주도 모멘텀 — 기관·외국인 동반순매수 × 추세 × 실적 복합스코어'}
+                ? 'v1: 추세·가치·재무 3관왕 우선 → 2개 충족 종목 순 배치'
+                : 'v2: 수급 주도 모멘텀 — 기관·외국인 동반순매수 × 추세 × 실적 복합스코어'}
             </span>
           </div>
 
@@ -4315,7 +4315,7 @@ const App = () => {
             border:'1px solid rgba(239,68,68,0.3)',borderRadius:'8px',
             display:'flex',alignItems:'center',gap:'0.6rem',flexWrap:'wrap'}}>
             <span style={{fontSize:'0.8rem',color:'#ef4444',fontWeight:700}}>
-              ⭐ AI 적극추천(1) — 전체 {comboStocks.length}종목
+              ⭐ Logic v1 — 전체 {comboStocks.length}종목
             </span>
             <span style={{fontSize:'0.72rem',color:'rgba(255,255,255,0.45)',display:'flex',alignItems:'center',gap:'0.4rem'}}>
               <span style={{padding:'0.1rem 0.4rem',borderRadius:'4px',background:'rgba(239,68,68,0.2)',color:'#ef4444',fontWeight:700,fontSize:'0.68rem'}}>
@@ -4447,7 +4447,7 @@ const App = () => {
             background:'rgba(239,68,68,0.03)',border:'1px solid rgba(239,68,68,0.12)',
             borderRadius:'10px',fontSize:'0.72rem',color:'rgba(255,255,255,0.6)',lineHeight:1.9}}>
             <div style={{fontWeight:700,color:'#ef4444',marginBottom:'0.5rem',fontSize:'0.78rem'}}>
-              ⭐ AI 적극추천(1) — 선정 원리 (백테스트 v5 기준)
+              ⭐ Logic v1 — 선정 원리 (추세·가치·재무 교집합, 백테스트 v5 기준)
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'0.6rem 1.2rem'}}>
               {[
@@ -4474,7 +4474,7 @@ const App = () => {
             border:'1px solid rgba(99,102,241,0.35)',borderRadius:'8px',
             display:'flex',alignItems:'center',gap:'0.6rem',flexWrap:'wrap'}}>
             <span style={{fontSize:'0.8rem',color:'#818cf8',fontWeight:700}}>
-              🔥 AI 적극추천(2) 수급 주도 모멘텀 — {comboV2Data.length}종목
+              🔥 Logic v2 — 수급 주도 모멘텀 {comboV2Data.length}종목
             </span>
             <span style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.4)'}}>
               기관·외국인 동반순매수 × 추세 × 실적 복합 스코어
@@ -4491,7 +4491,7 @@ const App = () => {
             <div className="glass-panel" style={{padding:'3rem',textAlign:'center',color:'var(--text-secondary)'}}>
               <div style={{width:'32px',height:'32px',borderRadius:'50%',border:'3px solid #818cf8',
                 borderTopColor:'transparent',animation:'spin 0.8s linear infinite',margin:'0 auto 1rem'}}/>
-              <p>AI 적극추천(2) 계산 중... (최초 실행 시 1~2분 소요)</p>
+              <p>Logic v2 계산 중... (최초 실행 시 1~2분 소요)</p>
             </div>
           ) : comboV2Data.length === 0 ? (
             <div className="glass-panel" style={{padding:'2.5rem',textAlign:'center'}}>
@@ -4500,7 +4500,7 @@ const App = () => {
               <button onClick={fetchComboV2} style={{marginTop:'1rem',padding:'0.5rem 1.2rem',
                 borderRadius:'8px',border:'none',background:'#818cf8',color:'#fff',
                 cursor:'pointer',fontWeight:700}}>
-                🔥 AI 적극추천(2) 분석 실행
+                🔥 Logic v2 분석 실행
               </button>
             </div>
           ) : comboV2Data.map(s => {
@@ -4592,7 +4592,7 @@ const App = () => {
             background:'rgba(99,102,241,0.03)',border:'1px solid rgba(99,102,241,0.12)',
             borderRadius:'10px',fontSize:'0.72rem',color:'rgba(255,255,255,0.6)',lineHeight:1.9}}>
             <div style={{fontWeight:700,color:'#818cf8',marginBottom:'0.5rem',fontSize:'0.78rem'}}>
-              📡 AI 적극추천(2) — 선정 원리 (수급 주도 모멘텀, 최대 42점)
+              📡 Logic v2 — 선정 원리 (수급 주도 모멘텀, 최대 42점)
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'0.6rem 1.2rem'}}>
               {[
@@ -4603,7 +4603,7 @@ const App = () => {
                 ['강력추천 조건 (🔥)', '총점 ≥28 + 수급점수(S) ≥12 + 추세점수(T) ≥8. 수급과 추세 모두 강한 경우만 선정.'],
                 ['추천 조건 (⭐)', '총점 ≥20 + S≥9 + T≥6. 관심 조건: 총점 ≥13 + S≥6.'],
                 ['시장 필터', 'KOSPI MA60 하락장 진입 시 모든 점수 ×0.75 패널티. 하락장에서 자동 등급 하향.'],
-                ['AI 적극추천(1)과의 차이', '(1)은 재무·가치·추세 교집합 → 실적 우량주 중심. (2)는 수급 주도 → 세력·기관 매집 포착. 단기 모멘텀에 강함.'],
+                ['Logic v1과의 차이', 'v1은 재무·가치·추세 교집합 → 실적 우량주 중심. v2는 수급 주도 → 세력·기관 매집 포착. 단기 모멘텀에 강함.'],
               ].map(([title, desc]) => (
                 <div key={title}>
                   <span style={{color:'rgba(129,140,248,0.9)',fontWeight:600}}>{title}</span>
@@ -4708,19 +4708,22 @@ const App = () => {
 
     // 요약 카드 — 현재 전략 기준 집계
     const SummaryCards = () => {
-      const realProfit = curExits.reduce((s,h)=>s+(h.profit||0),0);
-      const wins = curExits.filter(h=>(h.profit||0)>0).length;
-      const winRate = curExits.length > 0 ? Math.round(wins/curExits.length*100) : null;
+      const realProfit  = curExits.reduce((s,h)=>s+(h.profit||0),0);
+      const wins        = curExits.filter(h=>(h.profit||0)>0).length;
+      const winRate     = curExits.length > 0 ? Math.round(wins/curExits.length*100) : null;
+      const totalValue  = curHoldings.reduce((s,h)=>s+(h.total_value||(h.buy_price||0)*(h.quantity||0)),0);
+      const totalProfit = curHoldings.reduce((s,h)=>s+(h.profit||0),0);
+      const costBasis   = totalValue - totalProfit;
+      const roi         = costBasis > 0 ? (totalProfit / costBasis * 100) : null;
       return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
         {[
-          { label: '보유 종목',   val: `${curHoldings.length}개`,      color: 'var(--accent-mint)' },
-          { label: '보유 총액',   val: fp(curHoldings.reduce((s,h)=>s+(h.total_value||(h.buy_price||0)*(h.quantity||0)),0))+'원', color: 'inherit' },
-          { label: '평가 손익',   val: pf(curHoldings.reduce((s,h)=>s+(h.profit||0),0))+'원',
-            color: pc(curHoldings.reduce((s,h)=>s+(h.profit||0),0)) },
-          { label: '누적 실현 손익', val: pf(realProfit)+'원',
-            color: pc(realProfit||0) },
-          { label: '승률',       val: winRate != null ? `${winRate}%` : '-', color: 'var(--accent-purple)' },
+          { label: '투입원금',      val: fp(costBasis)+'원',                            color: 'inherit' },
+          { label: '보유 총액',     val: fp(totalValue)+'원',                           color: 'inherit' },
+          { label: '평가 손익',     val: pf(totalProfit)+'원',                          color: pc(totalProfit) },
+          { label: '수익률',        val: roi != null ? (roi>=0?'+':'')+roi.toFixed(1)+'%' : '-', color: pc(roi||0) },
+          { label: '누적 실현 손익', val: pf(realProfit)+'원',                          color: pc(realProfit||0) },
+          { label: '승률',          val: winRate != null ? `${winRate}%` : '-',         color: 'var(--accent-purple)' },
         ].map(({ label, val, color }) => (
           <div key={label} className="glass-panel" style={{ padding: '0.9rem 1rem' }}>
             <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{label}</p>
