@@ -312,7 +312,7 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 /* ── 셀 스타일 ── */
-.name { font-weight: 700; font-size: 0.84rem; }
+.name { font-weight: 700; font-size: 0.84rem; white-space: nowrap; min-width: 90px; }
 .name span { display: block; color: var(--text-secondary); font-size: 0.68rem; margin-top: 2px; font-weight: 400; }
 .up   { color: var(--up);   font-weight: 700; }
 .down { color: var(--down); font-weight: 700; }

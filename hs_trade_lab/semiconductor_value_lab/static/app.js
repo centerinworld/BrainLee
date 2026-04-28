@@ -1,4 +1,4 @@
-/* ── 반도체 Value Stream Lab — app.js v20260426 ── */
+/* ── 반도체 Value Stream Lab — app.js v20260428 ── */
 
 const state = {
   meta: {},
@@ -68,11 +68,11 @@ const benchmarkIcon = (value) => {
   return `<span class="benchmark neutral-icon" title="${s}">•</span>`;
 };
 
-/* YYYYMMDD → YYYY.MM.DD */
+/* YYYYMMDD → YY.MM.DD (짧은 형식) */
 const formatDateLabel = (value) => {
   const raw = String(value || "");
   if (!/^\d{8}$/.test(raw)) return value || "-";
-  return `${raw.slice(0, 4)}.${raw.slice(4, 6)}.${raw.slice(6, 8)}`;
+  return `${raw.slice(2, 4)}.${raw.slice(4, 6)}.${raw.slice(6, 8)}`;
 };
 
 /* YYYYMMDD → <input type="date"> value (YYYY-MM-DD) */
@@ -220,10 +220,10 @@ function renderStocks() {
         <td style="color:var(--text-secondary);font-size:0.75rem;">${item.lv2 || "-"}</td>
         <td style="color:var(--text-secondary);font-size:0.75rem;">${item.customer || "-"}</td>
         <td style="font-weight:700;">${integer(item.current_price)}</td>
+        <td>${money(item.current_market_cap)}</td>
         <td class="${aClass}">${pct(item.ref_a_change_pct)}</td>
         <td class="${bClass}">${pct(item.ref_b_change_pct)}</td>
         <td class="${cClass}">${pct(item.ref_c_change_pct)}</td>
-        <td>${money(item.current_market_cap)}</td>
         <td>${decimal1(item.current_pbr)}</td>
         <td>${decimal1(item.current_per)}</td>
         <td>${money(item.latest_revenue)}</td>

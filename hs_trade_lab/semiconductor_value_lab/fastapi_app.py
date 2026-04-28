@@ -105,6 +105,28 @@ def pick_representative_stock(
     return picked["stock_name"], picked.get("main_business") or "-"
 
 
+def load_fallback_prices(conn: sqlite3.Connection, codes: list[str]) -> dict[str, dict]:
+    """stock_price_daily에 없는 종목을 price_history에서 보완."""
+    if not codes:
+        return {}
+    ph = ",".join("?" for _ in codes)
+    try:
+        rows = conn.execute(f"""
+            WITH latest AS (
+                SELECT stock_code, MAX(date) AS d
+                  FROM price_history
+                 WHERE stock_code IN ({ph}) AND close > 0
+                 GROUP BY stock_code
+            )
+            SELECT p.stock_code, p.close AS close_price, p.date AS bas_dt
+              FROM price_history p
+              JOIN latest l ON p.stock_code = l.stock_code AND p.date = l.d
+        """, codes).fetchall()
+        return {r["stock_code"]: dict(r) for r in rows}
+    except Exception:
+        return {}
+
+
 def get_price_on_or_before(conn: sqlite3.Connection, stock_code: str, yyyymmdd: str) -> float | None:
     if not stock_code or not yyyymmdd:
         return None
@@ -119,7 +141,15 @@ def get_price_on_or_before(conn: sqlite3.Connection, stock_code: str, yyyymmdd: 
         """,
         (stock_code, yyyymmdd),
     ).fetchone()
-    return float(row["close_price"]) if row else None
+    if row:
+        return float(row["close_price"])
+    # Fallback: price_history (YYYYMMDD → YYYY-MM-DD)
+    iso = f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:8]}" if len(yyyymmdd) == 8 else yyyymmdd
+    row = conn.execute(
+        "SELECT close FROM price_history WHERE stock_code=? AND date<=? AND close>0 ORDER BY date DESC LIMIT 1",
+        (stock_code, iso),
+    ).fetchone()
+    return float(row["close"]) if row else None
 
 
 def pct_change(current: float | None, previous: float | None) -> float | None:
@@ -145,11 +175,14 @@ def enrich_rows_with_live_prices(rows: list[dict], meta_map: dict[str, str]) -> 
     rc = root_conn()
     try:
         latest = load_latest_stock_rows(rc)
+        # Fallback: price_history for stocks missing from stock_price_daily
+        missing = [r.get("stock_code") for r in rows if r.get("stock_code") and r.get("stock_code") not in latest]
+        fallback = load_fallback_prices(rc, missing) if missing else {}
         enriched: list[dict] = []
         for row in rows:
             code = row.get("stock_code", "")
-            live = latest.get(code) if code else None
-            current_price = float(live["close_price"]) if live and live["close_price"] is not None else row.get("current_price")
+            live = (latest.get(code) or fallback.get(code)) if code else None
+            current_price = float(live["close_price"]) if live and live.get("close_price") is not None else row.get("current_price")
             ref_a_price = get_price_on_or_before(rc, code, refs["ref_a"]) if code else None
             ref_b_price = get_price_on_or_before(rc, code, refs["ref_b"]) if code else None
             ref_c_price = get_price_on_or_before(rc, code, refs["ref_c"]) if code else None
