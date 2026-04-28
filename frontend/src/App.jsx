@@ -515,38 +515,47 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                 </ResponsiveContainer>
               </div>
 
-              {/* 일별 순매수 바 차트 */}
-              <div className="glass-panel" style={{padding:'1rem'}}>
-                <h3 style={{margin:'0 0 0.8rem',fontSize:'0.9rem',fontWeight:700}}>
-                  일별 투자자 순매수 (억원)
-                  <span style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginLeft:'0.7rem',fontWeight:400}}>
-                    ▶ 빨강=순매수 / 파랑=순매도
-                  </span>
-                </h3>
-                <ResponsiveContainer width="100%" height={260}>
-                  <ComposedChart data={trendData.data} margin={{top:5,right:10,bottom:5,left:10}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
-                    <YAxis tick={{fontSize:10,fill:'#94a3b8'}} />
-                    <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
-                      formatter={(v,n) => [`${v != null ? v.toLocaleString() : 0}억`, n]}
-                      labelFormatter={l=>`날짜: ${l}`} />
-                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />
-                    <Bar dataKey="inst_amt" name="기관" maxBarSize={16}>
-                      {trendData.data.map((entry, i) => (
-                        <Cell key={i} fill={(entry.inst_amt||0) >= 0 ? '#f87171' : '#60a5fa'} opacity={0.85} />
-                      ))}
-                    </Bar>
-                    <Bar dataKey="frn_amt" name="외국인" maxBarSize={16}>
-                      {trendData.data.map((entry, i) => (
-                        <Cell key={i} fill={(entry.frn_amt||0) >= 0 ? '#fbbf24' : '#6366f1'} opacity={0.85} />
-                      ))}
-                    </Bar>
-                    <Legend wrapperStyle={{fontSize:'0.78rem',color:'var(--text-secondary)'}}
-                      formatter={(v) => <span style={{color: v==='기관'?'#f87171':'#fbbf24'}}>{v}</span>} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
+              {/* 일별 순매수 바 차트 — has_supply 있는 날만 */}
+              {(() => {
+                const barData = trendData.data.filter(r => r.has_supply !== false && (r.inst_amt != null || r.frn_amt != null));
+                return (
+                <div className="glass-panel" style={{padding:'1rem'}}>
+                  <h3 style={{margin:'0 0 0.8rem',fontSize:'0.9rem',fontWeight:700}}>
+                    일별 투자자 순매수 (억원)
+                    <span style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginLeft:'0.7rem',fontWeight:400}}>
+                      ▶ 빨강=순매수 / 파랑=순매도
+                    </span>
+                  </h3>
+                  {barData.length === 0 ? (
+                    <div style={{textAlign:'center',color:'var(--text-secondary)',padding:'2rem',fontSize:'0.82rem'}}>수급 데이터 없음</div>
+                  ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <ComposedChart data={barData} margin={{top:5,right:10,bottom:5,left:10}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
+                      <YAxis tick={{fontSize:10,fill:'#94a3b8'}} />
+                      <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
+                        formatter={(v,n) => [`${v != null ? v.toLocaleString() : 0}억`, n]}
+                        labelFormatter={l=>`날짜: ${l}`} />
+                      <ReferenceLine y={0} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />
+                      <Bar dataKey="inst_amt" name="기관" maxBarSize={16}>
+                        {barData.map((entry, i) => (
+                          <Cell key={i} fill={(entry.inst_amt||0) >= 0 ? '#f87171' : '#60a5fa'} opacity={0.85} />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="frn_amt" name="외국인" maxBarSize={16}>
+                        {barData.map((entry, i) => (
+                          <Cell key={i} fill={(entry.frn_amt||0) >= 0 ? '#fbbf24' : '#6366f1'} opacity={0.85} />
+                        ))}
+                      </Bar>
+                      <Legend wrapperStyle={{fontSize:'0.78rem',color:'var(--text-secondary)'}}
+                        formatter={(v) => <span style={{color: v==='기관'?'#f87171':'#fbbf24'}}>{v}</span>} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                  )}
+                </div>
+                );
+              })()}
 
               {/* 누적 순매수 라인 차트 */}
               <div className="glass-panel" style={{padding:'1rem'}}>
@@ -822,7 +831,7 @@ const App = () => {
   const [finTable, setFinTable] = useState([]);
   const [summStats, setSummStats] = useState(null);
   const [aiReport, setAiReport] = useState(null);
-  const [macroData, setMacroData] = useState(null);
+  const [macroData, setMacroData] = useState(() => { try { const c = localStorage.getItem('sd_macroCache'); return c ? JSON.parse(c) : null; } catch { return null; } });
   const [sysStats, setSysStats] = useState(null);
   const [loading, setLoading]         = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -866,6 +875,7 @@ const App = () => {
       if (res.ok) {
         const data = await res.json();
         setMacroData(data);
+        try { localStorage.setItem('sd_macroCache', JSON.stringify(data)); } catch {}
       }
     } catch (e) { console.error("Macro fetch error", e); }
   }, []);
