@@ -197,14 +197,15 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                 <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}
                   onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.04)'}
                   onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <td style={{padding:'0.35rem 0.5rem'}}>
+                  <td style={{padding:'0.35rem 0.5rem', whiteSpace:'nowrap', maxWidth:'110px', overflow:'hidden'}}>
                     <button onClick={()=>{onChangeStock(r.stock_code);onChangeTab('analysis');}}
-                      style={{background:'none',border:'none',color:'var(--text-primary)',cursor:'pointer',fontWeight:600,fontSize:'0.8rem',padding:0}}>
+                      style={{background:'none',border:'none',color:'var(--text-primary)',cursor:'pointer',fontWeight:600,fontSize:'0.8rem',padding:0,
+                        maxWidth:'80px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>
                       {r.stock_name}
                     </button>
-                    <span style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginLeft:'0.3rem'}}>{r.stock_code}</span>
+                    <span style={{fontSize:'0.68rem',color:'var(--text-secondary)'}}>{r.stock_code}</span>
                   </td>
-                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'rgba(255,255,255,0.55)',fontSize:'0.75rem'}}>
+                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'rgba(255,255,255,0.55)',fontSize:'0.75rem',whiteSpace:'nowrap'}}>
                     {r.close?.toLocaleString()}원
                   </td>
                   {hasTodayPrice && (
@@ -260,22 +261,23 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                 <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}
                   onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.04)'}
                   onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <td style={{padding:'0.35rem 0.5rem'}}>
+                  <td style={{padding:'0.35rem 0.5rem', whiteSpace:'nowrap', maxWidth:'110px', overflow:'hidden'}}>
                     <button onClick={()=>{onChangeStock(r.stock_code);onChangeTab('analysis');}}
-                      style={{background:'none',border:'none',color:'var(--text-primary)',cursor:'pointer',fontWeight:600,fontSize:'0.8rem',padding:0}}>
+                      style={{background:'none',border:'none',color:'var(--text-primary)',cursor:'pointer',fontWeight:600,fontSize:'0.8rem',padding:0,
+                        maxWidth:'80px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>
                       {r.stock_name}
                     </button>
-                    <span style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginLeft:'0.3rem'}}>{r.stock_code}</span>
+                    <span style={{fontSize:'0.68rem',color:'var(--text-secondary)'}}>{r.stock_code}</span>
                   </td>
-                  <td style={{padding:'0.35rem 0.5rem'}}>
+                  <td style={{padding:'0.35rem 0.5rem', whiteSpace:'nowrap'}}>
                     <span style={{fontSize:'0.7rem',padding:'0.1rem 0.4rem',borderRadius:'4px',
                       background: mktShort==='KOSPI'?'rgba(248,113,113,0.15)':'rgba(96,165,250,0.15)',
                       color: mktShort==='KOSPI'?'#f87171':'#60a5fa'}}>
                       {mktShort}
                     </span>
                   </td>
-                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:600}}>{r.close?.toLocaleString()}원</td>
-                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:chgC}}>
+                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:600,whiteSpace:'nowrap'}}>{r.close?.toLocaleString()}원</td>
+                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:chgC,whiteSpace:'nowrap'}}>
                     {r.chg_pct != null ? `${r.chg_pct >= 0 ? '▲' : '▼'}${Math.abs(r.chg_pct).toFixed(2)}%` : '-'}
                   </td>
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:'#fbbf24'}}>{r.turnover_pct?.toFixed(2)}%</td>
@@ -2259,6 +2261,29 @@ const App = () => {
           );
         })}
       </div>
+
+      {/* ══ PARA 1-a: KOSPI200 선물 / KOSDAQ150 선물 (compact) ══ */}
+      {(() => {
+        const kp200 = idx['KOSPI200'] || null;
+        if (!kp200?.value) return null;
+        return (
+          <div className="glass-panel" style={{ padding:'0.75rem 1.2rem', display:'flex', alignItems:'center', gap:'1.5rem', flexWrap:'wrap' }}>
+            <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)', fontWeight:600 }}>📈 파생 지수</span>
+            {[{label:'KOSPI200', d: kp200}].map(({label, d}) => d ? (
+              <div key={label} style={{ display:'flex', alignItems:'baseline', gap:'0.5rem' }}>
+                <span style={{ fontSize:'0.78rem', fontWeight:700, color:'rgba(255,255,255,0.6)' }}>{label}</span>
+                <span style={{ fontSize:'0.95rem', fontWeight:800 }}>{fv(d.value, 2)}</span>
+                {d.change != null && (
+                  <span style={{ fontSize:'0.8rem', fontWeight:700, color:pc(d.change) }}>
+                    {arr(d.change)} {Math.abs(d.change).toFixed(2)}%
+                  </span>
+                )}
+                <span style={{ fontSize:'0.65rem', color:'var(--text-secondary)' }}>{d.date || ''}</span>
+              </div>
+            ) : null)}
+          </div>
+        );
+      })()}
 
       {/* ══ PARA 1-b: 나스닥 / S&P500 ══ */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem' }}>

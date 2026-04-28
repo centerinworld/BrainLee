@@ -443,6 +443,7 @@ def _is_market_hours() -> bool:
 _MACRO_SYMBOLS = {
     "^KS11":    "KOSPI",
     "^KQ11":    "KOSDAQ",
+    "^KS200":   "KOSPI200",   # KOSPI200 지수 (KOSPI200 선물 기초자산)
     "^IXIC":    "NASDAQ",
     "^GSPC":    "S&P500",
     "^VIX":     "VIX",

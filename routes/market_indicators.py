@@ -303,18 +303,24 @@ def get_turnover_top(
         params.append(limit)
         rows = conn.execute(sql, params).fetchall()
 
-        # 전일 종가 & 등락률 추가
+        # 전일 종가 & 등락률 추가 — correlated subquery로 정확한 직전 거래일 종가
         if rows:
             codes = [r["stock_code"] for r in rows]
+            codes_ph = ','.join('?' * len(codes))
             prev_rows = conn.execute(
-                f"""SELECT stock_code, close AS prev_close
-                    FROM price_history
-                    WHERE stock_code IN ({','.join('?'*len(codes))})
-                      AND close > 0
-                      AND substr(date, 1, 10) < ?
-                    GROUP BY stock_code
-                    HAVING date = MAX(date)""",
-                codes + [trade_date],
+                f"""SELECT ph.stock_code, ph.close AS prev_close
+                    FROM price_history ph
+                    WHERE ph.stock_code IN ({codes_ph})
+                      AND ph.close > 0
+                      AND substr(ph.date, 1, 10) < ?
+                      AND ph.date = (
+                          SELECT MAX(ph2.date) FROM price_history ph2
+                          WHERE ph2.stock_code = ph.stock_code
+                            AND ph2.close > 0
+                            AND substr(ph2.date, 1, 10) < ?
+                      )
+                    GROUP BY ph.stock_code""",
+                codes + [trade_date, trade_date],
             ).fetchall()
             prev_map = {r["stock_code"]: r["prev_close"] for r in prev_rows}
         else:
@@ -379,16 +385,19 @@ def get_investor_trend(
             inst_val = round(r[6] or r[3] or 0)  # amt 있으면 우선, 없으면 qty(=억원)
             frn_val  = round(r[7] or r[4] or 0)
             ind_val  = round(r[8] or r[5] or 0)
+            # 수급 데이터 없는 날짜는 has_supply=False 마킹
+            has_supply = (abs(inst_val) > 0 or abs(frn_val) > 0)
             data.append({
-                "date":     str(r[0])[:10],
-                "close":    r[1],
-                "volume":   r[2],
-                "inst_qty": r[3],
-                "frn_qty":  r[4],
-                "ind_qty":  r[5],
-                "inst_amt": inst_val,
-                "frn_amt":  frn_val,
-                "ind_amt":  ind_val,
+                "date":       str(r[0])[:10],
+                "close":      r[1],
+                "volume":     r[2],
+                "inst_qty":   r[3],
+                "frn_qty":    r[4],
+                "ind_qty":    r[5],
+                "inst_amt":   inst_val if has_supply else None,
+                "frn_amt":    frn_val  if has_supply else None,
+                "ind_amt":    ind_val  if has_supply else None,
+                "has_supply": has_supply,
             })
 
         # 누적 데이터 추가

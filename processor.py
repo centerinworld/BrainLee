@@ -434,9 +434,10 @@ def get_macro_status(db: Session) -> dict:
       vix:         { value, change, date, history(30일) }
       commodities: { USD/KRW, GOLD, OIL }     — 가격 + 30일 히스토리
     """
-    # ── KOSPI / KOSDAQ / 나스닥 / S&P500 ─────────────────────
+    # ── KOSPI / KOSDAQ / KOSPI200 / 나스닥 / S&P500 ──────────
     index_result = {}
     for symbol, name in [("^KS11", "KOSPI"), ("^KQ11", "KOSDAQ"),
+                         ("^KS200", "KOSPI200"),
                          ("^IXIC", "NASDAQ"), ("^GSPC", "S&P500")]:
         latest, prev = _query_latest(db, symbol)
         change = _pct_change(latest, prev)
