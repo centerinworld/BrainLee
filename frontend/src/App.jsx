@@ -3215,12 +3215,32 @@ const App = () => {
         })()}
 
         {/* 종목 보고서 */}
-        {stockReports.length > 0 && (
-          <div className="glass-panel" style={{padding:'1.2rem'}}>
-            <h3 style={{fontSize:'0.9rem',fontWeight:700,marginBottom:'0.8rem',
-              color:'var(--accent-mint)',display:'flex',alignItems:'center',gap:'0.5rem'}}>
-              📄 종목 보고서 ({stockReports.length}건)
+        <div className="glass-panel" style={{padding:'1.2rem'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.8rem'}}>
+            <h3 style={{fontSize:'0.9rem',fontWeight:700,
+              color:'var(--accent-mint)',display:'flex',alignItems:'center',gap:'0.5rem',margin:0}}>
+              📄 애널리스트 보고서
+              {stockReports.length > 0 && (
+                <span style={{fontSize:'0.75rem',fontWeight:400,color:'rgba(255,255,255,0.5)'}}>
+                  ({stockReports.length}건)
+                </span>
+              )}
             </h3>
+            <button onClick={()=>setActiveTab('reports')}
+              style={{padding:'0.2rem 0.6rem',borderRadius:'5px',fontSize:'0.7rem',cursor:'pointer',
+                border:'1px solid var(--glass-border)',background:'transparent',
+                color:'var(--text-secondary)'}}>
+              섹터 보고서 전체 →
+            </button>
+          </div>
+          {stockReports.length === 0 ? (
+            <div style={{padding:'1rem 0',textAlign:'center',color:'var(--text-secondary)',fontSize:'0.82rem'}}>
+              <p>이 종목의 수집된 보고서가 없습니다.</p>
+              <p style={{fontSize:'0.72rem',marginTop:'0.3rem',opacity:0.6}}>
+                텔레그램 채널에서 종목명이 포함된 보고서가 수집되면 여기에 표시됩니다.
+              </p>
+            </div>
+          ) : (
             <div style={{display:'flex',flexDirection:'column',gap:'0.35rem'}}>
               {stockReports.map(r => (
                 <div key={r.id} style={{display:'flex',alignItems:'center',
@@ -3233,11 +3253,17 @@ const App = () => {
                       {r.file_name}
                     </p>
                     <p style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginTop:'0.1rem'}}>
-                      {r.posted_date || r.report_date} | {r.channel_id}
+                      {r.report_date || r.posted_date} | {r.channel_id}
                       {r.file_size ? ` | ${(r.file_size/1024).toFixed(0)}KB` : ''}
                     </p>
+                    {r.caption && (
+                      <p style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.35)',marginTop:'0.1rem',
+                        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {r.caption}
+                      </p>
+                    )}
                   </div>
-                  <a href={`/api/reports/download/${r.id}`} download={r.saved_name}
+                  <a href={API(`/api/reports/download/${r.id}`)} download={r.saved_name}
                     style={{marginLeft:'0.75rem',padding:'0.3rem 0.7rem',borderRadius:'5px',
                       background:'rgba(45,212,191,0.15)',border:'1px solid rgba(45,212,191,0.3)',
                       color:'var(--accent-mint)',fontSize:'0.75rem',textDecoration:'none',
@@ -3247,8 +3273,8 @@ const App = () => {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
       </div>
     );
@@ -6920,10 +6946,20 @@ const App = () => {
                   borderRadius:'6px',background:'rgba(255,255,255,0.03)',
                   border:'1px solid rgba(255,255,255,0.06)'}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <p style={{fontSize:'0.82rem',fontWeight:600,
-                      overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                      {r.file_name}
-                    </p>
+                    <div style={{display:'flex',alignItems:'center',gap:'0.4rem',flexWrap:'wrap'}}>
+                      <p style={{fontSize:'0.82rem',fontWeight:600,
+                        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'100%'}}>
+                        {r.file_name}
+                      </p>
+                      {r.stock_code && (
+                        <button onClick={()=>{ changeStock(r.stock_code); setActiveTab('analysis'); }}
+                          style={{flexShrink:0,padding:'0.1rem 0.45rem',borderRadius:'4px',fontSize:'0.68rem',
+                            border:'1px solid rgba(96,165,250,0.4)',background:'rgba(96,165,250,0.12)',
+                            color:'#93c5fd',cursor:'pointer',whiteSpace:'nowrap'}}>
+                          📊 {r.stock_name||r.stock_code}
+                        </button>
+                      )}
+                    </div>
                     <p style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginTop:'0.1rem'}}>
                       {r.report_date} | {r.channel_id}
                       {r.file_size?` | ${(r.file_size/1024).toFixed(0)}KB`:''}
