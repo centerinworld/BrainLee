@@ -7,7 +7,7 @@ import {
   TrendingUp, Search, Cpu, Activity,
   LayoutDashboard, Database, Globe, BarChart3,
   Star, StarOff, Trash2, Plus, Eye, FileText, Target,
-  Newspaper, Send, FlaskConical, Ship, Wallet, Settings, Server
+  Newspaper, Send, FlaskConical, Ship, Wallet, Settings, Server, Users
 } from 'lucide-react';
 
 // ──────────────────────────────────────────────────────────────
@@ -4531,9 +4531,9 @@ const App = () => {
             color: pc(realProfit||0) },
           { label: '승률',       val: winRate != null ? `${winRate}%` : '-', color: 'var(--accent-purple)' },
         ].map(({ label, val, color }) => (
-          <div key={label} className="glass-panel" style={{ padding: '0.9rem 1rem' }}>
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{label}</p>
-            <p style={{ fontSize: '1rem', fontWeight: 700, color }}>{val}</p>
+          <div key={label} className="glass-panel" style={{ padding: '0.9rem 1rem', minWidth: 0 }}>
+            <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.3rem', whiteSpace:'nowrap' }}>{label}</p>
+            <p style={{ fontSize: '0.9rem', fontWeight: 700, color, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{val}</p>
           </div>
         ))}
       </div>
@@ -7888,6 +7888,173 @@ const App = () => {
     );
   };
 
+  // ── 고용 정보 ─────────────────────────────────────────────────
+  const EmploymentView = () => {
+    const [empTab, setEmpTab] = React.useState('company');
+    // company tab state
+    const [empYm, setEmpYm]     = React.useState(null);
+    const [empYears, setEmpYears] = React.useState([]);
+    const [empRows, setEmpRows] = React.useState([]);
+    // nps tab state
+    const [npsYm, setNpsYm]     = React.useState(null);
+    const [npsMonths, setNpsMonths] = React.useState([]);
+    const [npsRows, setNpsRows] = React.useState([]);
+    const [npsOrder, setNpsOrder] = React.useState('net');
+    const [loading, setLoading] = React.useState(false);
+
+    const fetchCompany = React.useCallback(async (ym) => {
+      setLoading(true);
+      try {
+        const url = ym ? `/api/employment/company-list?ym=${encodeURIComponent(ym)}&limit=300` : '/api/employment/company-list?limit=300';
+        const d = await fetch(url).then(r => r.json());
+        setEmpYm(d.ym);
+        setEmpYears(d.years || []);
+        setEmpRows(d.rows || []);
+      } finally { setLoading(false); }
+    }, []);
+
+    const fetchNps = React.useCallback(async (ym, order) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ limit: 100, order: order || npsOrder });
+        if (ym) params.set('ym', ym);
+        const d = await fetch(`/api/employment/nps-monthly?${params}`).then(r => r.json());
+        setNpsYm(d.ym);
+        setNpsMonths(d.months || []);
+        setNpsRows(d.rows || []);
+      } finally { setLoading(false); }
+    }, [npsOrder]);
+
+    useEffect(() => {
+      if (empTab === 'company') fetchCompany(null);
+      else fetchNps(null, 'net');
+    }, [empTab]);
+
+    const fmtYm = (ym) => ym ? `${ym.slice(0,4)}년 ${parseInt(ym.slice(4,6))}월` : '';
+
+    return (
+      <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className="glass-panel" style={{ padding: '1rem 1.4rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {[['company','연도별 고용인원'],['nps','월별 고용변동 (NPS)']].map(([k, lbl]) => (
+              <button key={k} onClick={() => setEmpTab(k)} style={{
+                padding: '0.35rem 0.9rem', borderRadius: '7px', fontSize: '0.82rem', cursor: 'pointer',
+                fontWeight: empTab === k ? 700 : 500,
+                border: `1px solid ${empTab===k ? 'var(--accent-mint)' : 'var(--glass-border)'}`,
+                background: empTab === k ? 'rgba(45,212,191,0.15)' : 'transparent',
+                color: empTab === k ? 'var(--accent-mint)' : 'var(--text-secondary)',
+              }}>{lbl}</button>
+            ))}
+          </div>
+          {empTab === 'company' && empYears.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>기준연도:</span>
+              {empYears.map(y => (
+                <button key={y} onClick={() => fetchCompany(y)} style={{
+                  padding: '0.25rem 0.6rem', borderRadius: '5px', fontSize: '0.78rem', cursor: 'pointer',
+                  border: `1px solid ${empYm===y ? 'var(--accent-mint)' : 'var(--glass-border)'}`,
+                  background: empYm===y ? 'rgba(45,212,191,0.15)' : 'transparent',
+                  color: empYm===y ? 'var(--accent-mint)' : 'var(--text-secondary)',
+                }}>{y}</button>
+              ))}
+            </div>
+          )}
+          {empTab === 'nps' && npsMonths.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>기준월:</span>
+              <select value={npsYm || ''} onChange={e => fetchNps(e.target.value, npsOrder)} style={{
+                background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)',
+                padding: '0.2rem 0.5rem', borderRadius: '5px', fontSize: '0.78rem',
+              }}>
+                {npsMonths.map(m => <option key={m} value={m}>{fmtYm(m)}</option>)}
+              </select>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>정렬:</span>
+              {[['net','순증가'],['acq','신규취득'],['lss','상실']].map(([k, lbl]) => (
+                <button key={k} onClick={() => { setNpsOrder(k); fetchNps(npsYm, k); }} style={{
+                  padding: '0.2rem 0.5rem', borderRadius: '5px', fontSize: '0.75rem', cursor: 'pointer',
+                  border: `1px solid ${npsOrder===k ? '#60a5fa' : 'var(--glass-border)'}`,
+                  background: npsOrder===k ? 'rgba(96,165,250,0.15)' : 'transparent',
+                  color: npsOrder===k ? '#60a5fa' : 'var(--text-secondary)',
+                }}>{lbl}</button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {loading && <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>로딩 중...</div>}
+
+        {!loading && empTab === 'company' && (
+          <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--glass-border)' }}>
+                    {['순위','종목코드','종목명','섹터','고용인원','전년대비(%)'].map(h => (
+                      <th key={h} style={{ padding: '0.65rem 0.8rem', textAlign: h==='고용인원'||h==='전년대비(%)'?'right':'left', color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {empRows.map((r, i) => (
+                    <tr key={r.stock_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                        onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.03)'}
+                        onMouseOut={e => e.currentTarget.style.background='transparent'}
+                        onClick={() => { changeStock(r.stock_code); changeTab('analysis'); }}>
+                      <td style={{ padding: '0.55rem 0.8rem', color: 'var(--text-secondary)' }}>{i+1}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', color: 'var(--text-secondary)' }}>{r.stock_code}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', fontWeight: 600 }}>{r.stock_name}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>{r.sector_label || '-'}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', textAlign: 'right', fontWeight: 600 }}>{r.worker_count != null ? r.worker_count.toLocaleString() : '-'}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', textAlign: 'right', color: r.yoy_change > 0 ? '#34d399' : r.yoy_change < 0 ? '#f87171' : 'inherit' }}>
+                        {r.yoy_change != null ? (r.yoy_change > 0 ? '+' : '') + r.yoy_change.toFixed(1) + '%' : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {!loading && empTab === 'nps' && (
+          <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid var(--glass-border)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              국민연금 사업장 기준 — 신규취득: 해당월 신규 가입자, 상실: 탈퇴자, 순증가: 신규-상실
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--glass-border)' }}>
+                    {['순위','종목코드','종목명','신규취득','상실','순증가'].map(h => (
+                      <th key={h} style={{ padding: '0.65rem 0.8rem', textAlign: ['신규취득','상실','순증가'].includes(h)?'right':'left', color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {npsRows.map((r, i) => (
+                    <tr key={r.stock_code+i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                        onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.03)'}
+                        onMouseOut={e => e.currentTarget.style.background='transparent'}
+                        onClick={() => { changeStock(r.stock_code); changeTab('analysis'); }}>
+                      <td style={{ padding: '0.55rem 0.8rem', color: 'var(--text-secondary)' }}>{i+1}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', color: 'var(--text-secondary)' }}>{r.stock_code}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', fontWeight: 600 }}>{r.stock_name}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', textAlign: 'right', color: '#34d399' }}>{(r.nw_acqzr_cnt||0).toLocaleString()}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', textAlign: 'right', color: '#f87171' }}>{(r.lss_jnngp_cnt||0).toLocaleString()}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', textAlign: 'right', fontWeight: 700, color: (r.net_change||0) > 0 ? '#34d399' : (r.net_change||0) < 0 ? '#f87171' : 'inherit' }}>
+                        {r.net_change > 0 ? '+' : ''}{(r.net_change||0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ── 시스템 상태 ──────────────────────────────────────────────
   const SystemStatus = () => (
     <div className="fade-in glass-panel" style={{ padding: '2rem' }}>
@@ -7920,24 +8087,25 @@ const App = () => {
 
   const NAV_ITEMS = [
     // ── 상단 섹션 ──────────────────────────────────
-    { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '종합현황' },
-    { key: 'market_indicators',icon: <Globe size={17} style={{color:'#fbbf24'}} />,           label: '시장 지표' },
+    { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '주요 지표' },
+    { key: 'market_indicators',icon: <Globe size={17} style={{color:'#fbbf24'}} />,           label: '수급 현황' },
     { key: 'analysis',         icon: <BarChart3 size={17} />,                                 label: '개별 종목' },
-    { key: 'semiconductor_sector', icon: <Cpu size={17} style={{color:'#60a5fa'}} />,         label: '반도체 섹터' },
-    { key: 'screener',         icon: <Cpu size={17} style={{color:'#2dd4bf'}} />,              label: 'AI 종목' },
+    { key: 'semiconductor_sector', icon: <Cpu size={17} style={{color:'#60a5fa'}} />,         label: '섹터 지표' },
+    { key: 'screener',         icon: <Cpu size={17} style={{color:'#2dd4bf'}} />,              label: 'AI 종목 발굴' },
     { key: 'trend',            icon: <TrendingUp size={17} style={{color:'#a78bfa'}} />,       label: '가상 매매' },
     { key: 'reports',          icon: <Newspaper size={17} style={{color:'#34d399'}} />,        label: '섹터 보고서' },
     { key: 'telegram',  icon: <Send size={17} style={{color:'#38bdf8'}} />,            label: '텔레그램 종목' },
-    { key: 'backtest',  icon: <FlaskConical size={17} style={{color:'#f59e0b'}} />,    label: '📊 백테스트' },
-    { key: 'hs_trade2', icon: <Ship size={17} style={{color:'#93c5fd'}} />,            label: '📦 수출입분석' },
+    { key: 'backtest',  icon: <FlaskConical size={17} style={{color:'#f59e0b'}} />,    label: '백테스트' },
+    { key: 'hs_trade2', icon: <Ship size={17} style={{color:'#93c5fd'}} />,            label: '수출입분석' },
+    { key: 'employment',icon: <Users size={17} style={{color:'#86efac'}} />,           label: '고용 정보' },
     null,
     // ── 하단 섹션 ──────────────────────────────────
     { key: 'buy_candidates', icon: <Target size={17} style={{color:'#f59e0b'}} />,    label: '매수후보' },
-    { key: 'watchlist', icon: <Star size={17} style={{color:'#facc15'}} />,            label: '관심종목' },
     { key: 'portfolio', icon: <Wallet size={17} style={{color:'#c084fc'}} />,          label: '계좌현황 🔒' },
     null,
     { key: 'settings',  icon: <Settings size={17} style={{color:'#94a3b8'}} />,        label: '⚙ 설정' },
     { key: 'system',    icon: <Server size={17} style={{color:'#64748b'}} />,          label: '시스템 상태' },
+    { key: 'watchlist', icon: <Star size={17} style={{color:'#facc15'}} />,            label: '관심종목' },
   ];
 
   return (
@@ -8104,6 +8272,7 @@ const App = () => {
           {activeTab === 'settings'  && <SettingsView />}
           {activeTab === 'backtest'  && <BacktestView />}
           {activeTab === 'hs_trade2' && <TradeAnalysis2 />}
+          {activeTab === 'employment' && <EmploymentView />}
         </div>
       </div>
 

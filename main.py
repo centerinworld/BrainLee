@@ -47,6 +47,7 @@ from routes.reports        import router as _reports_router
 from routes.ingest         import router as _ingest_router
 from routes.portfolio          import router as _portfolio_router
 from routes.market_indicators  import router as _market_indicators_router
+from routes.employment         import router as _employment_router
 
 app.include_router(_trend_router,              prefix="/api/trend",              tags=["trend"])
 app.include_router(_signals_router,            prefix="/api/signals",            tags=["signals"])
@@ -57,6 +58,7 @@ app.include_router(_reports_router,            prefix="/api/reports",           
 app.include_router(_ingest_router,             prefix="/api/ingest",             tags=["ingest"])
 app.include_router(_portfolio_router,          prefix="/api/portfolio",          tags=["portfolio"])
 app.include_router(_market_indicators_router,  prefix="/api/market-indicators",  tags=["market-indicators"])
+app.include_router(_employment_router,         prefix="/api/employment",          tags=["employment"])
 
 
 def _send_telegram(msg: str, dedup_key: str = ""):
@@ -709,11 +711,18 @@ def _process_ai_combo_autotrade(combo_stocks: list):
             if name in active:
                 continue
 
-            # 현재가 조회
+            entry_date = _dt.now().strftime("%Y-%m-%d")
+
+            # 매수가: 당일 종가 우선, 없으면 직전 영업일 종가
             price_row = conn.execute(
-                "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
-                (code,)
+                "SELECT close FROM price_history WHERE stock_code=? AND date=? AND close>0",
+                (code, entry_date)
             ).fetchone()
+            if not price_row:
+                price_row = conn.execute(
+                    "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
+                    (code,)
+                ).fetchone()
             if not price_row:
                 continue
             price = price_row[0]
@@ -723,8 +732,6 @@ def _process_ai_combo_autotrade(combo_stocks: list):
             MAX_BUDGET = 10_000_000
             qty = max(1, int(MAX_BUDGET / price))
             amount = price * qty
-
-            entry_date = _dt.now().strftime("%Y-%m-%d")
             sector = s.get('sector', '')
             match_cnt = s.get('match_count', 2)
 

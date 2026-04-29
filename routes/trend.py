@@ -300,3 +300,21 @@ def clear_all_trades():
     conn.execute("DELETE FROM peak_trade")
     conn.commit(); conn.close()
     return {"status": "ok", "message": "매매 내역이 모두 삭제되었습니다."}
+
+
+# ── PATCH /api/trend/holdings/{id}/buy-price ────────────────────
+@router.patch("/holdings/{holding_id}/buy-price")
+def patch_buy_price(holding_id: int, payload: dict):
+    """보유종목 매수가 수정 (관리용)"""
+    new_price = float(payload.get("buy_price", 0))
+    if new_price <= 0:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="buy_price > 0 필요")
+    conn = _db()
+    conn.execute(
+        "UPDATE peak_holding SET buy_price=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (new_price, holding_id)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "ok", "id": holding_id, "buy_price": new_price}
