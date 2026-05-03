@@ -5,11 +5,15 @@ routes/market_radar.py  —  시장 Radar API
   GET  /api/market-radar/sector/{sector}/detail     # 섹터 세부: 서브섹터별 종목 + 다기간 가격
   POST /api/market-radar/init-semiconductor         # 반도체 회사 목록 초기화 (최초 1회)
   POST /api/market-radar/refresh-cache              # yfinance 시총/PBR/PER 캐시 갱신
+  GET  /api/market-radar/export-csv                 # 섹터 종목 CSV 내보내기 (?sector=semiconductor)
+  POST /api/market-radar/import-csv                 # CSV 업로드 → DB 갱신 + 가격캐시 새로고침
 """
 
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import logging
 import re
 import sqlite3
@@ -17,7 +21,8 @@ from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, File, Form, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -672,3 +677,135 @@ async def _do_refresh_cache():
         conn.close()
     # 캐시 무효화
     _cache.clear()
+
+
+# ── GET /api/market-radar/export-csv ─────────────────────────────
+@router.get("/export-csv")
+def export_csv(sector: str = Query("semiconductor")):
+    """섹터 종목 목록을 CSV로 내보내기."""
+    lv0 = SECTOR_KEY_MAP.get(sector, sector)
+    conn = _db()
+    try:
+        _ensure_radar_tables(conn)
+        if lv0 == "반도체":
+            rows = conn.execute("""
+                SELECT sort_order, lv1, lv2, company_name, ticker,
+                       country_raw, country_flag, company_insight, lv2_investment_view
+                FROM radar_semiconductor_override
+                ORDER BY sort_order, id
+            """).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT sort_order, lv1, lv2, company_name, ticker,
+                       country_raw, country_flag, company_insight, lv2_investment_view
+                FROM radar_sector_override
+                WHERE lv0=?
+                ORDER BY sort_order, id
+            """, (lv0,)).fetchall()
+    finally:
+        conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["sort_order", "lv1", "lv2", "company_name", "ticker",
+                     "country_raw", "country_flag", "company_insight", "lv2_investment_view"])
+    for r in rows:
+        d = dict(r)
+        writer.writerow([
+            d.get("sort_order", 0), d.get("lv1", ""), d.get("lv2", ""),
+            d.get("company_name", ""), d.get("ticker", ""),
+            d.get("country_raw", ""), d.get("country_flag", ""),
+            d.get("company_insight", ""), d.get("lv2_investment_view", ""),
+        ])
+
+    output.seek(0)
+    filename = f"{sector}_radar.csv"
+    return StreamingResponse(
+        iter(["﻿" + output.read()]),  # BOM for Excel UTF-8
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── POST /api/market-radar/import-csv ────────────────────────────
+@router.post("/import-csv")
+async def import_csv(
+    file: UploadFile = File(...),
+    sector: str = Form("semiconductor"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    """CSV 파일을 업로드해 DB 갱신. 새 ticker는 가격 캐시도 자동 새로고침."""
+    lv0 = SECTOR_KEY_MAP.get(sector, sector)
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")  # BOM 제거
+    except UnicodeDecodeError:
+        text = content.decode("cp949", errors="replace")
+
+    reader = csv.DictReader(io.StringIO(text))
+    rows_in = list(reader)
+    if not rows_in:
+        return {"inserted": 0, "updated": 0, "detail": "CSV가 비어 있습니다."}
+
+    conn = _db()
+    try:
+        _ensure_radar_tables(conn)
+        if lv0 == "반도체":
+            table = "radar_semiconductor_override"
+            extra_cols = ""
+            extra_vals = ""
+        else:
+            table = "radar_sector_override"
+            extra_cols = ", lv0"
+            extra_vals = f", '{lv0}'"
+
+        inserted = updated = 0
+        for row in rows_in:
+            sort_order   = int(row.get("sort_order") or 0)
+            lv1          = (row.get("lv1") or "").strip()
+            lv2          = (row.get("lv2") or "").strip()
+            company_name = (row.get("company_name") or "").strip()
+            ticker       = (row.get("ticker") or "").strip()
+            country_raw  = (row.get("country_raw") or "").strip()
+            country_flag = (row.get("country_flag") or "").strip()
+            ci           = (row.get("company_insight") or "").strip()
+            lv2iv        = (row.get("lv2_investment_view") or "").strip()
+
+            if not company_name:
+                continue
+
+            # Upsert by company_name + lv1
+            existing = conn.execute(
+                f"SELECT id FROM {table} WHERE company_name=? AND lv1=?",
+                (company_name, lv1),
+            ).fetchone()
+
+            if existing:
+                conn.execute(
+                    f"""UPDATE {table} SET sort_order=?, lv2=?, ticker=?,
+                        country_raw=?, country_flag=?, company_insight=?, lv2_investment_view=?
+                        WHERE id=?""",
+                    (sort_order, lv2, ticker, country_raw, country_flag, ci, lv2iv, existing["id"]),
+                )
+                updated += 1
+            else:
+                conn.execute(
+                    f"""INSERT INTO {table}
+                        (sort_order, lv1, lv2, company_name, ticker,
+                         country_raw, country_flag, company_insight, lv2_investment_view{extra_cols})
+                        VALUES (?,?,?,?,?,?,?,?,?{extra_vals})""",
+                    (sort_order, lv1, lv2, company_name, ticker,
+                     country_raw, country_flag, ci, lv2iv),
+                )
+                inserted += 1
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    # 새 종목이 추가됐으면 백그라운드에서 가격 캐시 갱신
+    if inserted > 0:
+        background_tasks.add_task(refresh_foreign_prices_sync)
+
+    _cache.clear()
+    return {"inserted": inserted, "updated": updated}

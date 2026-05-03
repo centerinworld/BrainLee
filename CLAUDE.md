@@ -293,6 +293,8 @@ GET  /sector/{sector}/detail  # 섹터 세부 (sections, 기간별 주가변동,
 GET  /all                     # 전체 섹터 시그널 요약
 POST /init-semiconductor      # 반도체 기업 목록 DB 초기화 (최초 1회)
 POST /refresh-cache           # yfinance로 해외주식 가격 2년치 + 시총/PBR/PER 갱신 (백그라운드)
+GET  /export-csv              # 섹터 종목 CSV 내보내기 (?sector=semiconductor)
+POST /import-csv              # CSV 업로드 → DB Upsert + 신규 ticker 가격캐시 갱신 (form: file, sector)
 ```
 ### Sector Define API → /api/sector-define ★신규(2026-04)
 ```
@@ -591,3 +593,5 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-05-01 | **[네트워크 차단 이슈 기록]** 이 서버에서 외부 접속 불가 도메인 목록 (DNS 실패): `apis.data.go.kr` (금융위원회 공공데이터포털), `data.krx.co.kr` (KRX 웹, pykrx 공매도/대차 API), `data-dbg.krx.co.kr` (KRX 승인 API, 응답 0건). **접속 가능**: Yahoo Finance (yfinance), KIS API (oauth.koreainvestment.com), Naver Finance (finance.naver.com), DART (opendart.fss.or.kr). **영향**: 대차잔고(short_sell_daily), KRX 지수(^KQ150) 수집 불가. **해결 방향**: macOS 네트워크 설정 또는 /etc/hosts에서 차단 도메인 DNS 우회 설정 필요 (`networksetup -setdnsservers Wi-Fi 8.8.8.8 8.8.4.4`). |
 | 2026-05-01 | **[스케줄러 개선]** `scheduler.py::_job_public_data()` Gap 자동감지 + 백필 로직 추가: `short_sell_daily` 테이블의 `MAX(bas_dt)` 확인 후 오늘까지 누락된 영업일 목록을 생성해 순차 수집. 실패(0건) 시 즉시 중단하여 불필요한 API 호출 방지. DNS 차단 상황에서는 서버 로그에 경고 메시지 출력. |
 | 2026-05-01 | **[근본버그 수정] 공휴일 0% 오버라이트 방지**: backfill_index_history(), _collect_macro_yahoo(), _realtime_fetch_macro()에서 오늘 날짜 copy-to-today 로직 제거. DataCollector._is_kr_trading_day() 추가: 주말·공휴일이면 한국 지수(^KS11,^KQ11,^KS200,^KQ150) DB 저장 차단. ⚠️ _KR_HOLIDAYS set 매년 갱신 필요(data_collector.py line ~340). DB정리: sqlite3 stock.db "DELETE FROM price_history WHERE date>='2026-05-01' AND stock_code IN ('^KS11','^KQ11','^IXIC','^GSPC');" |
+| 2026-05-03 | **[성능 최적화]** signal_engine.py: ①`_build_sector_activation_map()` TTL 캐시(3600초) + 전종목 벌크 IN 쿼리(75→1개) ②`calc_value_candidates()` N+1 루프(~2000쿼리) → 벌크 2쿼리+Python Graham IV ③BB width numpy 벡터화(`sliding_window_view`). App.jsx: MacroDashboard 클록 타이머 제거, PeakView 폴링 시장개장 시에만 실행(`isKRMarketOpen()`), sd_macroCache TTL 4시간(장중 1시간) 적용 |
+| 2026-05-03 | **[섹터 지표 전면 개편]** MarketRadarView(App.jsx 912줄): ①열 순서 변경(국가→종목명→시총→Level2→신호→가격→PBR/PER) ②Level2 그룹 내 KR vs 해외 분리+파란 구분선 ③Level2별 신호 KR/해외 각각 집계 ④섹션 제목행 음영 처리 ⑤종목명 nowrap+ellipsis+hover tooltip(company_insight) ⑥scroll 없는 fixed-width 테이블 ⑦CSV 다운로드/업로드 버튼. routes/market_radar.py: `GET /export-csv`, `POST /import-csv` 신규 |
