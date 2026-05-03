@@ -939,38 +939,29 @@ const MarketRadarView = React.memo(() => {
   React.useEffect(() => { load(activeSector); }, [activeSector, load]);
 
   /* ── 포맷터 ──────────────────────────────────────────────────── */
-  const fmtMktCap = (v) => {
+  /* 시총: 국가별 통화기호 포함 (KR=조원/억원, JP=¥T/B, TW=NT$B, 기타=$T/B) */
+  const fmtMktCap = (v, country) => {
     if (v == null || v === 0) return '-';
     const n = Number(v);
-    if (n >= 1e12) return `${(n/1e12).toFixed(2)}T`;
-    if (n >= 1e9)  return `${(n/1e9).toFixed(1)}B`;
-    if (n >= 1e8)  return `${Math.round(n/1e8)}억`;
-    return Math.round(n/1e6) + 'M';
-  };
-
-  const _sym = (c) => {
-    if (!c) return '';
-    switch (c.toUpperCase()) {
-      case 'KR': return '';
-      case 'US': return '$';
-      case 'JP': return '¥';
-      case 'TW': return 'NT$';
-      case 'CN': return '¥';
-      case 'NL': case 'DE': case 'FR': case 'EU': return '€';
-      default:   return '';
+    if (country === 'KR') {
+      if (n >= 1e12) return `${(n/1e12).toFixed(1)}조원`;
+      if (n >= 1e8)  return `${Math.round(n/1e8)}억원`;
+      return Math.round(n/1e6) + 'M원';
     }
+    const sym = country === 'JP' ? '¥' : country === 'TW' ? 'NT$' : country === 'NL' || country === 'DE' ? '€' : '$';
+    if (n >= 1e12) return `${sym}${(n/1e12).toFixed(2)}T`;
+    if (n >= 1e9)  return `${sym}${(n/1e9).toFixed(1)}B`;
+    if (n >= 1e6)  return `${sym}${(n/1e6).toFixed(0)}M`;
+    return `${sym}${n.toLocaleString('en-US', {maximumFractionDigits:0})}`;
   };
 
+  /* 주가: 통화기호 없이 숫자만 (국가 플래그로 통화 구별) */
   const fmtP = (price, country) => {
     if (price == null) return null;
-    const sym = _sym(country);
     const n = Number(price);
-    if (sym === '')    return n.toLocaleString('ko-KR');
-    if (sym === '$')   return `$${n.toLocaleString('en-US', {maximumFractionDigits:2})}`;
-    if (sym === '¥')   return `¥${n.toLocaleString('ja-JP', {maximumFractionDigits:1})}`;
-    if (sym === 'NT$') return `NT$${n.toLocaleString('zh-TW', {maximumFractionDigits:1})}`;
-    if (sym === '€')   return `€${n.toLocaleString('de-DE', {maximumFractionDigits:2})}`;
-    return `${sym}${n.toLocaleString('en-US', {maximumFractionDigits:2})}`;
+    if (country === 'KR') return n.toLocaleString('ko-KR', {maximumFractionDigits:0});
+    if (country === 'JP') return n.toLocaleString('en-US', {maximumFractionDigits:0});
+    return n.toLocaleString('en-US', {maximumFractionDigits:2});
   };
 
   /* ── CSV 내보내기 ────────────────────────────────────────────── */
@@ -1052,16 +1043,22 @@ const MarketRadarView = React.memo(() => {
     padding:'0.32rem 0.5rem', fontSize:'0.78rem',
     borderBottom:'1px solid rgba(255,255,255,0.04)', verticalAlign:'middle',
   };
+  /* Level2 구분선: 파란 좌측 테두리 */
   const lv2TdSt = {
     ...tdSt, fontSize:'0.7rem', color:'var(--text-secondary)', verticalAlign:'middle',
-    background:'rgba(255,255,255,0.02)',
-    borderLeft:'2px solid rgba(59,130,246,0.2)',
-    borderRight:'1px solid rgba(255,255,255,0.06)',
+    background:'rgba(59,130,246,0.04)',
+    borderLeft:'2px solid rgba(59,130,246,0.35)',
+    borderRight:'1px solid rgba(59,130,246,0.12)',
+    paddingLeft:'0.65rem',
   };
   const sigTdSt = {
     ...tdSt, textAlign:'center', verticalAlign:'middle',
-    background:'rgba(255,255,255,0.015)',
+    background:'rgba(59,130,246,0.03)',
   };
+  /* Level2 그룹 간 구분선 */
+  const LV2_BORDER  = '2px solid rgba(59,130,246,0.55)';
+  /* KR ↔ 해외 구분선 */
+  const KR_OVS_BORDER = '2px solid #3b82f6';
 
   /* 주가 셀: 가격 위 / % 아래 */
   const PCell = ({ price, chg, bold, country }) => (
@@ -1084,17 +1081,22 @@ const MarketRadarView = React.memo(() => {
     <td style={{...tdSt, textAlign:'right', fontSize:'0.72rem'}}>
       {v != null
         ? <span style={{color: isPbr && v<1 ? '#34d399' : 'var(--text-secondary)'}}>{v.toFixed(isPbr?2:1)}</span>
-        : <span style={{color:'var(--text-secondary)'}}>-</span>}
+        : <span style={{color:'rgba(255,255,255,0.18)', fontSize:'0.68rem'}}>-</span>}
     </td>
   );
 
-  /* 개별 종목 행 공통 셀들 (국가 ~ 시총, PriceCell들, PBR/PER) */
-  const StockDataCells = ({ s }) => <>
-    <td style={{...tdSt, textAlign:'center', fontSize:'1.1rem', lineHeight:1}}>{s.country_flag||s.country}</td>
-    <td style={{...tdSt, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'120px'}}
-        title={s.desc||s.name}>{s.name}</td>
-    <td style={{...tdSt, textAlign:'right', fontSize:'0.72rem', color:'var(--text-secondary)'}}>{fmtMktCap(s.market_cap)}</td>
-  </>;
+  /* 개별 종목 앞 3개 셀 (국가, 종목명, 시총) */
+  const StockDataCells = ({ s }) => {
+    const tip = [s.name, s.lv2 ? `[${s.lv2}]` : '', s.desc||''].filter(Boolean).join(' — ');
+    return <>
+      <td style={{...tdSt, textAlign:'center', fontSize:'1.1rem', lineHeight:1}}>{s.country_flag||s.country}</td>
+      <td style={{...tdSt, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}
+          title={tip}>{s.name}</td>
+      <td style={{...tdSt, textAlign:'right', fontSize:'0.72rem', color:'var(--text-secondary)', whiteSpace:'nowrap'}}>
+        {fmtMktCap(s.market_cap, s.country)}
+      </td>
+    </>;
+  };
 
   const PriceCells = ({ s }) => <>
     <PCell price={s.price}     chg={s.chg_1d}  bold={true} country={s.country} />
@@ -1108,13 +1110,14 @@ const MarketRadarView = React.memo(() => {
 
   /* ── 섹션 행 렌더 ─────────────────────────────────────────────── */
   const renderGroups = (groups) => groups.flatMap((g, gi) => {
-    const groupBorder = gi > 0 ? '1px solid rgba(59,130,246,0.22)' : undefined;
+    /* Level2 그룹 경계: 굵은 파란 실선 */
+    const groupBorderTop = gi > 0 ? LV2_BORDER : undefined;
 
     /* lv2 없는 개별 종목 */
     if (g.single) {
       const s = g.single;
       return [(
-        <tr key={s.symbol} style={{borderTop: groupBorder}}
+        <tr key={s.symbol} style={{borderTop: groupBorderTop}}
             onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
             onMouseOut={e=>e.currentTarget.style.background='transparent'}>
           <StockDataCells s={s}/>
@@ -1138,11 +1141,11 @@ const MarketRadarView = React.memo(() => {
       const isFirst = ki === 0;
       rows.push(
         <tr key={s.symbol}
-            style={{borderTop: isFirst ? groupBorder : undefined}}
+            style={{borderTop: isFirst ? groupBorderTop : undefined}}
             onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
             onMouseOut={e=>e.currentTarget.style.background='transparent'}>
           <StockDataCells s={s}/>
-          {/* lv2 셀: 그룹 전체를 아우르는 rowspan (첫 KR 행에만) */}
+          {/* lv2 셀: 그룹 전체 rowspan — 첫 KR 행에만 */}
           {isFirst && (
             <td rowSpan={total} style={{...lv2TdSt, verticalAlign:'middle'}}>{lv2}</td>
           )}
@@ -1155,16 +1158,16 @@ const MarketRadarView = React.memo(() => {
       );
     });
 
-    /* 해외 행 (KR과의 구분선 포함) */
+    /* 해외 행 (KR↔해외 굵은 파란 실선) */
     ovs.forEach((s, oi) => {
       const isFirst = oi === 0;
       rows.push(
         <tr key={s.symbol}
-            style={{borderTop: isFirst && hasKR ? '1px solid rgba(59,130,246,0.45)' : (isFirst && !hasKR ? groupBorder : undefined)}}
+            style={{borderTop: isFirst && hasKR ? KR_OVS_BORDER : (isFirst && !hasKR ? groupBorderTop : undefined)}}
             onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
             onMouseOut={e=>e.currentTarget.style.background='transparent'}>
           <StockDataCells s={s}/>
-          {/* lv2 셀: KR이 없을 때만 (있으면 이미 rowspan으로 처리됨) */}
+          {/* lv2 셀: KR 없을 때만 */}
           {isFirst && !hasKR && (
             <td rowSpan={ovs.length} style={{...lv2TdSt, verticalAlign:'middle'}}>{lv2}</td>
           )}
@@ -1268,22 +1271,28 @@ const MarketRadarView = React.memo(() => {
             <tbody>
               {data.sections.map((section, si) => (
                 <React.Fragment key={section.name}>
-                  {/* 섹션 타이틀 행 (음영 처리) */}
+                  {/* 섹션 타이틀 행 — 파란 음영 */}
                   <tr>
                     <td colSpan={12} style={{
-                      padding:'0.38rem 0.8rem',
-                      background:'rgba(255,255,255,0.055)',
-                      borderTop: si > 0 ? '2px solid rgba(59,130,246,0.35)' : undefined,
-                      borderBottom:'1px solid rgba(255,255,255,0.07)',
-                      fontSize:'0.8rem', fontWeight:700, color:'var(--text-primary)',
+                      padding:'0.42rem 0.8rem 0.35rem',
+                      background:'rgba(59,130,246,0.11)',
+                      borderTop: si > 0 ? '2px solid #3b82f6' : undefined,
+                      borderBottom:'1px solid rgba(59,130,246,0.25)',
                     }}>
-                      {section.name}
-                      {section.avg_1d != null && (
-                        <span style={{marginLeft:'0.6rem', fontSize:'0.7rem', fontWeight:600,
-                          color: section.avg_1d > 0 ? '#ef4444' : '#3b82f6'}}>
-                          평균 {section.avg_1d > 0 ? '+' : ''}{section.avg_1d.toFixed(1)}%
-                        </span>
-                      )}
+                      <div style={{display:'flex', alignItems:'baseline', gap:'0.5rem', flexWrap:'wrap'}}>
+                        <span style={{fontSize:'0.82rem', fontWeight:700, color:'#93c5fd'}}>{section.name}</span>
+                        {section.avg_1d != null && (
+                          <span style={{fontSize:'0.72rem', fontWeight:600,
+                            color: section.avg_1d > 0 ? '#ef4444' : '#3b82f6'}}>
+                            평균 {section.avg_1d > 0 ? '+' : ''}{section.avg_1d.toFixed(1)}%
+                          </span>
+                        )}
+                        {section.desc && (
+                          <span style={{fontSize:'0.7rem', color:'rgba(147,197,253,0.7)', fontWeight:400}}>
+                            — {section.desc}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {renderGroups(buildGroups(section.stocks || []))}

@@ -479,10 +479,15 @@ def _build_sector_detail(sector_key: str) -> Dict:
             avg = round(sum(chgs) / len(chgs), 2) if chgs else None
             if avg is not None:
                 all_chgs.append(avg)
+            # 섹션 설명: DB lv2_investment_view 첫 비어있지 않은 값 우선, 없으면 정적 맵
+            section_desc = next(
+                (s["desc"] for s in stocks if s.get("desc")), None
+            )
             sections.append({
                 "name":    lv1,
                 "signal":  _signal_from_avg(avg),
                 "avg_1d":  avg,
+                "desc":    section_desc,
                 "stocks":  stocks,
             })
 
@@ -643,12 +648,18 @@ async def _do_refresh_cache():
 
         async def fetch_one(t: str):
             try:
-                info = await asyncio.to_thread(lambda: yf.Ticker(t).fast_info)
-                mc  = getattr(info, "market_cap", None)
-                pe  = getattr(info, "pe_ratio", None)
-                pb  = getattr(info, "price_to_book", None)
+                # fast_info: market_cap만 빠르게
+                fi  = await asyncio.to_thread(lambda: yf.Ticker(t).fast_info)
+                mc  = getattr(fi, "market_cap", None)
+                # info dict: PER/PBR는 fast_info에 없어 info로 보완
+                inf = await asyncio.to_thread(lambda: yf.Ticker(t).info)
+                pe  = inf.get("trailingPE") or inf.get("forwardPE")
+                pb  = inf.get("priceToBook")
+                if not mc:
+                    mc = inf.get("marketCap")
                 if mc or pe or pb:
-                    return (t, float(mc) if mc else None, float(pe) if pe else None, float(pb) if pb else None)
+                    return (t, float(mc) if mc else None,
+                            float(pe) if pe else None, float(pb) if pb else None)
             except Exception as e:
                 logger.debug(f"[market-radar] yfinance {t}: {e}")
             return None
