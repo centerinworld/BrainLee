@@ -515,18 +515,20 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
                  AND (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0)
                  AND strftime('%w', date) NOT IN ('0', '6')
                GROUP BY d
-               HAVING cnt >= 1
+               HAVING cnt >= 20
                ORDER BY d DESC LIMIT ?""",
             (limit,),
         ).fetchall()
         # 20건 미만인 날도 fallback으로 포함 (주말은 여전히 제외)
         if not rows:
             rows = conn.execute(
-                """SELECT DISTINCT substr(date,1,10) AS d
+                """SELECT substr(date,1,10) AS d, count(*) AS cnt
                    FROM price_history
                    WHERE stock_code NOT LIKE '%^%'
                      AND (COALESCE(inst_net_buy_amt, 0) != 0 OR COALESCE(frn_net_buy_amt, 0) != 0)
                      AND strftime('%w', date) NOT IN ('0', '6')
+                   GROUP BY d
+                   HAVING cnt >= 1
                    ORDER BY d DESC LIMIT ?""",
                 (limit,),
             ).fetchall()

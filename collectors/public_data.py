@@ -53,10 +53,22 @@ class PublicDataCollector(BaseCollector):
 
     def __init__(self, api_key: str = ""):
         super().__init__(
-            rate_limit_secs = 0.1,   # 공공데이터포털 — 1000 req/day 제한 있음
+            rate_limit_secs = 0.3,   # 공공데이터포털 — 응답 느림 대비 덤 느리게
             name            = "PubData",
         )
         self._api_key = api_key or getattr(config, "PUBLIC_DATA_API_KEY", "")
+
+    async def _ensure_client(self) -> httpx.AsyncClient:  # type: ignore[override]
+        """apis.data.go.kr가 느림 대비 60초 타임아웃 사용."""
+        if self._client is None or self._client.is_closed:
+            import httpx as _httpx
+            self._client = _httpx.AsyncClient(
+                timeout          = _httpx.Timeout(60.0, connect=10.0),
+                limits           = _httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                follow_redirects = True,
+            )
+        return self._client
+
 
     # ── 공통 페이지네이션 요청 ──────────────────────────────────
 
@@ -76,7 +88,11 @@ class PublicDataCollector(BaseCollector):
                 "pageNo":     str(page),
                 **extra_params,
             }
-            data = await self._get(f"{_BASE_URL}/{service_path}", params=params)
+            data = await self._get(
+                f"{_BASE_URL}/{service_path}",
+                params=params,
+                timeout=60,   # apis.data.go.kr 응답 느림 대비
+            )
             if not data:
                 break
 

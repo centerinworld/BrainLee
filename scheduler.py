@@ -376,25 +376,76 @@ class CollectionScheduler:
             logger.error(f"[스크리너] 사전계산 오류: {e}")
 
     def _job_public_data(self) -> None:
-        """공공데이터포털 오늘 날짜 전종목 일별 데이터 수집."""
+        """공공데이터포털 수집 (Gap 자동감지 + 백필).
+        
+        마지막 성공 수집일부터 오늘까지 누락된 영업일을 자동 보완.
+        ⚠️ apis.data.go.kr DNS 차단 시 수집 실패 — 네트워크 수준 해결 필요.
+        """
+        import sqlite3 as _sl
+        from datetime import timedelta as _td
         if not getattr(config, "PUBLIC_DATA_API_KEY", ""):
             logger.debug("[공공데이터] API 키 없음 — 스킵")
             return
 
-        today  = date.today()
-        bas_dt = today.strftime("%Y%m%d")
+        today     = date.today()
+        today_str = today.strftime("%Y%m%d")
+
+        # ── Gap 감지: short_sell_daily 마지막 수집일 확인 ──────────
+        dates_to_collect: list[str] = []
+        try:
+            _conn = _sl.connect("stock.db")
+            _last = _conn.execute("SELECT MAX(bas_dt) FROM short_sell_daily").fetchone()
+            _conn.close()
+            last_date = _last[0] if _last and _last[0] else None
+        except Exception:
+            last_date = None
+
+        if last_date and last_date < today_str:
+            # 마지막 수집일 다음날부터 오늘까지 영업일 목록 생성
+            _cur = date.fromisoformat(
+                f"{last_date[:4]}-{last_date[4:6]}-{last_date[6:8]}"
+            ) + _td(days=1)
+            while _cur <= today:
+                if _cur.weekday() < 5:
+                    dates_to_collect.append(_cur.strftime("%Y%m%d"))
+                _cur += _td(days=1)
+            logger.info(
+                f"[공공데이터] Gap 감지: {last_date}→{today_str}, "
+                f"{len(dates_to_collect)}일치 백필 시작"
+            )
+        else:
+            dates_to_collect = [today_str]
+
+        if not dates_to_collect:
+            logger.info(f"[공공데이터] {today_str} 이미 수집됨 — 스킵")
+            return
 
         loop = asyncio.new_event_loop()
         try:
             from collectors.public_data import PublicDataCollector
-            collector = PublicDataCollector()
-            saved     = loop.run_until_complete(collector.collect_all_for_date(bas_dt))
-            total     = sum(saved.values())
-            logger.info(f"[공공데이터] {bas_dt} 총 {total}건 저장")
+            collector   = PublicDataCollector()
+            total_saved = 0
+            for bas_dt in dates_to_collect:
+                try:
+                    saved = loop.run_until_complete(collector.collect_all_for_date(bas_dt))
+                    cnt   = sum(saved.values())
+                    total_saved += cnt
+                    logger.info(f"[공공데이터] {bas_dt}: {cnt}건 저장")
+                    if cnt == 0:
+                        logger.warning(
+                            f"[공공데이터] {bas_dt}: 0건 — "
+                            "apis.data.go.kr DNS 차단 의심. 서버 네트워크 확인 필요"
+                        )
+                        break   # 연속 실패 시 중단
+                except Exception as _e:
+                    logger.error(f"[공공데이터] {bas_dt} 오류: {_e}")
+                    break
+            logger.info(f"[공공데이터] 완료: {total_saved}건 저장")
         except Exception as e:
             logger.error(f"[공공데이터] {e}")
         finally:
             loop.close()
+
 
     # ──────────────────────────────────────────────────────────
     # KRX 일별 수집 (16:30 — 장 마감 후)
@@ -492,19 +543,20 @@ class CollectionScheduler:
                         (mktcap, code),
                     )
 
-        # ③ KOSPI 지수 (^KS11) + ④ KOSDAQ 지수 (^KQ11)
-        _idx_name_map = {
-            "코스피": "^KS11", "KOSPI": "^KS11",
-            "코스닥": "^KQ11", "KOSDAQ": "^KQ11",
+        # ③ KOSPI 지수 (^KS11) + ④ KOSDAQ 지수 (^KQ11) + ⑤ KOSDAQ150 (^KQ150)
+        # 정확한 이름 매칭만 허용 — 서브인덱스(중형주, 기술성장기업부 등)가 덮어쓰는 버그 방지
+        _idx_exact_map = {
+            "코스피":    "^KS11",
+            "KOSPI":     "^KS11",
+            "코스닥":    "^KQ11",
+            "KOSDAQ":    "^KQ11",
+            "코스피 200": "^KS200",
+            "코스닥 150": "^KQ150",
         }
         for path in ("idx/kospi_dd_trd", "idx/kosdaq_dd_trd"):
             for r in _fetch(path):
                 idx_nm = str(r.get("IDX_NM", "")).strip()
-                code = None
-                for key, val in _idx_name_map.items():
-                    if key in idx_nm and "200" not in idx_nm and "100" not in idx_nm and "소형" not in idx_nm:
-                        code = val
-                        break
+                code = _idx_exact_map.get(idx_nm)
                 if not code:
                     continue
                 close  = _n(r, "CLSPRC_IDX")
@@ -538,6 +590,21 @@ class CollectionScheduler:
         conn.commit()
         conn.close()
         logger.info(f"[KRX일별] {today_str} 종목+{ins} 수정{upd} 지수+{idx_saved}")
+
+        # ── KRX 지수 수집 0건이면 Yahoo Finance로 보완 ───────────────────
+        # KOSDAQ150(^KQ150), NASDAQ(^IXIC), S&P500(^GSPC) 등
+        # KRX API 차단/지연 시 자동으로 Yahoo에서 수집
+        if idx_saved == 0:
+            logger.info("[KRX일별] 지수 0건 → Yahoo Finance fallback 시작")
+            try:
+                from data_collector import DataCollector
+                import config as _cfg
+                collector = DataCollector(dart_api_key=_cfg.DART_API_KEY)
+                collector.backfill_index_history()
+                logger.info("[KRX일별] Yahoo fallback 완료")
+            except Exception as _e:
+                logger.warning(f"[KRX일별] Yahoo fallback 오류: {_e}")
+
 
     # ──────────────────────────────────────────────────────────
     # 전종목 수급 일괄 수집 (17:30 — KRX 수집 후)
@@ -712,7 +779,7 @@ class CollectionScheduler:
         try:
             import subprocess
             result = subprocess.run(
-                ["venv/bin/python3", "collect_dart_cashflow_batch.py", "--missing", "--years", "5"],
+                ["venv/bin/python3", "collect_dart_cashflow_batch.py", "--fill-missing", "--years", "5"],
                 capture_output=True, text=True, timeout=14400,
                 cwd="/Applications/stock_dashboard",
             )

@@ -437,7 +437,7 @@ def get_macro_status(db: Session) -> dict:
     # ── KOSPI / KOSDAQ / KOSPI200 / 나스닥 / S&P500 ──────────
     index_result = {}
     for symbol, name in [("^KS11", "KOSPI"), ("^KQ11", "KOSDAQ"),
-                         ("^KS200", "KOSPI200"),
+                         ("^KS200", "KOSPI200"), ("^KQ150", "KOSDAQ150"),
                          ("^IXIC", "NASDAQ"), ("^GSPC", "S&P500")]:
         latest, prev = _query_latest(db, symbol)
         change = _pct_change(latest, prev)

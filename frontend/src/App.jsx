@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// Sector Follow-up Integration Test
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   AreaChart, Area, ComposedChart, Bar, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
@@ -7,8 +8,12 @@ import {
   TrendingUp, Search, Cpu, Activity,
   LayoutDashboard, Database, Globe, BarChart3,
   Star, StarOff, Trash2, Plus, Eye, FileText, Target,
-  Newspaper, Send, FlaskConical, Ship, Wallet, Settings, Server
+  Newspaper, Send, FlaskConical, Ship, Wallet, Settings, Server, Users
 } from 'lucide-react';
+
+import EmploymentYearlyView from './EmploymentYearlyView';
+import EtfCheckView from './EtfCheckView';
+import NpsTrendView from './NpsTrendView';
 
 // ──────────────────────────────────────────────────────────────
 // [버그 ① 수정] API_BASE를 절대경로(포트 하드코딩)에서 상대경로로 변경.
@@ -112,10 +117,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
     if (v == null || v === 0) return '-';
     const abs = Math.abs(v);
     const sign = v < 0 ? '-' : '+';
-    if (abs >= 100000) return `${sign}${(abs/100000).toFixed(1)}조`;
-    if (abs >= 10000)  return `${sign}${Math.round(abs/1000)}천억`;
-    if (abs >= 1000)   return `${sign}${(abs/1000).toFixed(1)}천억`;
-    if (abs < 1)       return `${sign}${abs.toFixed(1)}억`;
+    if (abs >= 10000) return `${sign}${(abs/10000).toFixed(1)}조`;
+    if (abs < 1)      return `${sign}${abs.toFixed(1)}억`;
     return `${sign}${Math.round(abs)}억`;
   };
 
@@ -642,6 +645,269 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
 // ── 프론트엔드 시그널 캐시 (컴포넌트 재마운트와 무관하게 유지) ────
 const _signalFrontCache = {};
 
+// ── Hot 섹터 팔로우업 뷰 ─────────────────────────────────────────
+const SectorFollowupView = React.memo(() => {
+  const [posts, setPosts] = React.useState([]);
+  const [activePostId, setActivePostId] = React.useState(null);
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [showForm, setShowForm] = React.useState(false);
+  // 입력 폼 상태
+  const [form, setForm] = React.useState({
+    title: '', blog_url: '', post_date: new Date().toISOString().slice(0,10), ai_summary: '',
+    stocksRaw: '', // "섹터명:종목코드,종목코드\n섹터명:종목코드" 형식
+  });
+  const [formMsg, setFormMsg] = React.useState('');
+  const [searchResults, setSearchResults] = React.useState([]);
+  const [searching, setSearching] = React.useState(false);
+
+  const loadPosts = React.useCallback(async () => {
+    try {
+      const r = await fetch('/api/sector-define/posts');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setPosts(d);
+      if (d.length > 0 && !activePostId) setActivePostId(d[0].id);
+    } catch (e) { setError('포스트 목록 로드 실패: ' + e.message); }
+  }, [activePostId]);
+
+  const loadDetail = React.useCallback(async (postId) => {
+    if (!postId) return;
+    setLoading(true); setError('');
+    try {
+      const r = await fetch(`/api/sector-define/post/${postId}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setData(await r.json());
+    } catch (e) { setError('상세 데이터 로드 실패: ' + e.message); }
+    finally { setLoading(false); }
+  }, []);
+
+  React.useEffect(() => { loadPosts(); }, []);
+  React.useEffect(() => { loadDetail(activePostId); }, [activePostId]);
+
+  // 종목 코드 검색
+  const searchStock = React.useCallback(async (q) => {
+    if (!q || q.length < 1) { setSearchResults([]); return; }
+    setSearching(true);
+    try {
+      const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=5`);
+      const d = await r.json();
+      setSearchResults(d.results || d || []);
+    } catch { setSearchResults([]); }
+    finally { setSearching(false); }
+  }, []);
+
+  // 폼 제출 (수동 입력)
+  const submitForm = async () => {
+    if (!form.title) { setFormMsg('제목을 입력하세요'); return; }
+    setFormMsg('저장 중...');
+    // stocksRaw 파싱: "섹터명:종목코드1,종목코드2\n섹터명2:종목코드3"
+    const stocks = [];
+    (form.stocksRaw || '').split('\n').forEach(line => {
+      const [cat, codesStr] = line.split(':');
+      if (!cat || !codesStr) return;
+      codesStr.split(',').forEach(code => {
+        const c = code.trim();
+        if (c) stocks.push({ category: cat.trim(), stock_code: c });
+      });
+    });
+    try {
+      const r = await fetch('/api/sector-define/post', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ...form, stocks }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setFormMsg(`저장 완료 (ID: ${d.id}, 종목 ${stocks.length}개)`);
+      setForm({ title:'', blog_url:'', post_date: new Date().toISOString().slice(0,10), ai_summary:'', stocksRaw:'' });
+      setShowForm(false);
+      await loadPosts();
+    } catch(e) { setFormMsg('저장 실패: ' + e.message); }
+  };
+
+  const fmtPct = (v) => {
+    if (v == null) return <span style={{color:'var(--text-secondary)'}}>-</span>;
+    const sign = v > 0 ? '+' : '';
+    const color = v > 0 ? '#ef4444' : v < 0 ? '#3b82f6' : 'var(--text-secondary)';
+    return <span style={{color, fontWeight:600}}>{sign}{v.toFixed(1)}%</span>;
+  };
+  const fmtPrice = (v) => v == null ? '-' : Number(v).toLocaleString('ko-KR');
+  const fmtMktCap2 = (v) => {
+    if (!v) return '-';
+    const n = Number(v);
+    if (n >= 1e12) return `${(n/1e12).toFixed(1)}조`;
+    if (n >= 1e8)  return `${Math.round(n/1e8).toLocaleString()}억`;
+    return Math.round(n/1e4).toLocaleString() + '만';
+  };
+
+  const thSt = { padding:'0.45rem 0.6rem', fontSize:'0.72rem', color:'var(--text-secondary)', fontWeight:600, whiteSpace:'nowrap', background:'rgba(0,0,0,0.25)', borderBottom:'1px solid var(--glass-border)' };
+  const tdSt = { padding:'0.4rem 0.6rem', fontSize:'0.8rem', borderBottom:'1px solid rgba(255,255,255,0.04)' };
+  const inputSt = { background:'rgba(255,255,255,0.05)', border:'1px solid var(--glass-border)', color:'var(--text-primary)', borderRadius:'6px', padding:'0.4rem 0.6rem', fontSize:'0.82rem', width:'100%' };
+
+  const stocks = data?.stocks || [];
+  const catSpans = {};
+  stocks.forEach((s, i) => {
+    const cat = s.category || '';
+    if (i === 0 || stocks[i-1].category !== cat) {
+      let span = 1;
+      for (let j = i+1; j < stocks.length && stocks[j].category === cat; j++) span++;
+      catSpans[i] = span;
+    }
+  });
+
+  return (
+    <div style={{padding:'0 0.5rem'}}>
+      <div style={{display:'flex', alignItems:'center', gap:'0.8rem', marginBottom:'1rem', flexWrap:'wrap'}}>
+        <h2 style={{margin:0, fontSize:'1.05rem', fontWeight:700}}>🎯 Hot 섹터 팔로우업</h2>
+        <span style={{fontSize:'0.78rem', color:'var(--text-secondary)'}}>핫한 섹터 및 관련 종목 추적</span>
+        <div style={{marginLeft:'auto', display:'flex', gap:'0.4rem'}}>
+          <button onClick={() => setShowForm(v => !v)}
+            style={{padding:'0.25rem 0.7rem', fontSize:'0.75rem', borderRadius:'5px', cursor:'pointer',
+              background: showForm ? 'rgba(45,212,191,0.2)' : 'rgba(255,255,255,0.05)',
+              border:'1px solid var(--accent-mint)', color:'var(--accent-mint)'}}>
+            {showForm ? '✕ 닫기' : '+ 직접 입력'}
+          </button>
+          <button onClick={() => fetch('/api/sector-define/parse', {method:'POST'}).then(()=>loadPosts())}
+            style={{padding:'0.25rem 0.7rem', fontSize:'0.75rem', borderRadius:'5px', cursor:'pointer', background:'rgba(255,255,255,0.05)', border:'1px solid var(--glass-border)', color:'var(--text-secondary)'}}>
+            블로그 자동파싱
+          </button>
+        </div>
+      </div>
+
+      {/* 수동 입력 폼 */}
+      {showForm && (
+        <div className="glass-panel" style={{padding:'1.2rem', marginBottom:'1rem'}}>
+          <div style={{fontWeight:700, fontSize:'0.88rem', marginBottom:'0.8rem', color:'var(--accent-mint)'}}>📝 섹터 분석 직접 입력</div>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.6rem', marginBottom:'0.6rem'}}>
+            <div>
+              <label style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>제목 *</label>
+              <input style={inputSt} value={form.title} onChange={e=>setForm(f=>({...f, title:e.target.value}))} placeholder="예: 2025년 주목할 반도체 섹터" />
+            </div>
+            <div>
+              <label style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>날짜</label>
+              <input style={inputSt} type="date" value={form.post_date} onChange={e=>setForm(f=>({...f, post_date:e.target.value}))} />
+            </div>
+          </div>
+          <div style={{marginBottom:'0.6rem'}}>
+            <label style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>블로그 URL</label>
+            <input style={inputSt} value={form.blog_url} onChange={e=>setForm(f=>({...f, blog_url:e.target.value}))} placeholder="https://blog.naver.com/..." />
+          </div>
+          <div style={{marginBottom:'0.6rem'}}>
+            <label style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>분석 요약</label>
+            <textarea style={{...inputSt, minHeight:'60px', resize:'vertical'}} value={form.ai_summary} onChange={e=>setForm(f=>({...f, ai_summary:e.target.value}))} placeholder="섹터 분석 내용을 간략히 입력하세요" />
+          </div>
+          <div style={{marginBottom:'0.8rem'}}>
+            <label style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>종목 입력 (줄바꿈으로 섹터 구분)</label>
+            <div style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.35)', marginBottom:'0.3rem'}}>형식: <code style={{color:'#34d399'}}>섹터명:종목코드1,종목코드2</code> — 예: <code style={{color:'#34d399'}}>메모리:005930,000660</code></div>
+            <textarea style={{...inputSt, minHeight:'100px', resize:'vertical', fontFamily:'monospace', fontSize:'0.78rem'}}
+              value={form.stocksRaw}
+              onChange={e=>setForm(f=>({...f, stocksRaw:e.target.value}))}
+              placeholder={'메모리:005930,000660\n파운드리/IDM:000990\n설계:080220,389020'} />
+          </div>
+          <div style={{display:'flex', gap:'0.5rem', alignItems:'center'}}>
+            <button onClick={submitForm}
+              style={{padding:'0.4rem 1.2rem', borderRadius:'6px', cursor:'pointer', fontWeight:700, fontSize:'0.82rem', background:'var(--accent-mint)', border:'none', color:'#000'}}>
+              저장
+            </button>
+            {formMsg && <span style={{fontSize:'0.78rem', color: formMsg.includes('완료') ? '#34d399' : '#f87171'}}>{formMsg}</span>}
+          </div>
+        </div>
+      )}
+
+      {posts.length === 0 && !error && !showForm && (
+        <div className="glass-panel" style={{padding:'1.5rem', textAlign:'center', color:'var(--text-secondary)'}}>
+          <p style={{fontWeight:700, color:'var(--text-primary)', marginBottom:'0.5rem'}}>📭 등록된 섹터 분석이 없습니다</p>
+          <p style={{fontSize:'0.82rem', marginBottom:'1rem'}}>"+ 직접 입력"으로 섹터와 종목을 등록하세요.</p>
+          <button onClick={() => setShowForm(true)}
+            style={{padding:'0.4rem 1rem', borderRadius:'6px', cursor:'pointer', fontWeight:600, fontSize:'0.82rem', background:'rgba(45,212,191,0.15)', border:'1px solid var(--accent-mint)', color:'var(--accent-mint)'}}>
+            + 직접 입력 시작
+          </button>
+        </div>
+      )}
+      {posts.length > 0 && (
+        <div style={{display:'flex', gap:'0.4rem', overflowX:'auto', marginBottom:'1.2rem', paddingBottom:'0.5rem', scrollbarWidth:'thin'}}>
+          {posts.map(p => (
+            <div key={p.id} style={{display:'flex', alignItems:'center', gap:'2px'}}>
+              <button onClick={() => setActivePostId(p.id)} style={{
+                padding:'0.35rem 0.8rem', borderRadius:'20px 0 0 20px', fontSize:'0.78rem', fontWeight:600,
+                cursor:'pointer', whiteSpace:'nowrap',
+                border: activePostId === p.id ? '1px solid var(--accent-mint)' : '1px solid var(--glass-border)',
+                borderRight:'none',
+                background: activePostId === p.id ? 'rgba(45,212,191,0.15)' : 'transparent',
+                color: activePostId === p.id ? 'var(--accent-mint)' : 'var(--text-secondary)',
+              }}>{p.post_date?.slice(0,10)} {p.title}</button>
+              <button onClick={async () => {
+                if (!confirm(`"${p.title}" 포스트를 삭제하시겠습니까?`)) return;
+                await fetch(`/api/sector-define/post/${p.id}`, {method:'DELETE'});
+                setActivePostId(null); setData(null); loadPosts();
+              }} style={{
+                padding:'0.35rem 0.5rem', borderRadius:'0 20px 20px 0', fontSize:'0.7rem', fontWeight:600,
+                cursor:'pointer', whiteSpace:'nowrap',
+                border: activePostId === p.id ? '1px solid var(--accent-mint)' : '1px solid var(--glass-border)',
+                borderLeft:'none',
+                background: 'rgba(239,68,68,0.1)', color:'#f87171',
+              }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <div style={{color:'#f87171', padding:'1rem'}}>{error}</div>}
+      {loading && <div style={{color:'var(--text-secondary)', padding:'2rem', textAlign:'center'}}>로딩 중...</div>}
+      {!loading && data && (
+        <div className="fade-in">
+          <div className="glass-panel" style={{marginBottom:'1.5rem', padding:'1rem', borderLeft:'4px solid var(--accent-mint)'}}>
+            <div style={{fontWeight:700, fontSize:'0.9rem', marginBottom:'0.5rem', color:'var(--accent-mint)'}}>🤖 AI 분석 요약</div>
+            <div style={{fontSize:'0.85rem', lineHeight:1.6, whiteSpace:'pre-wrap'}}>{data.ai_summary || '요약 없음'}</div>
+            <div style={{marginTop:'0.8rem', fontSize:'0.75rem', color:'var(--text-secondary)'}}>
+              원문: <a href={data.blog_url} target="_blank" rel="noreferrer" style={{color:'var(--accent-mint)'}}>{data.blog_url}</a>
+            </div>
+          </div>
+          <div className="glass-panel" style={{overflow:'auto', padding:'0'}}>
+            <table style={{width:'100%', borderCollapse:'collapse'}}>
+              <thead>
+                <tr>
+                  <th style={{...thSt, textAlign:'left'}}>섹터</th>
+                  <th style={{...thSt, textAlign:'left'}}>종목명</th>
+                  <th style={{...thSt, textAlign:'right'}}>현재가</th>
+                  <th style={{...thSt, textAlign:'right'}}>시가총액</th>
+                  <th style={{...thSt, textAlign:'right'}}>PBR</th>
+                  <th style={{...thSt, textAlign:'right'}}>PER</th>
+                  <th style={{...thSt, textAlign:'right', background:'rgba(45,212,191,0.05)'}}>기준가</th>
+                  <th style={{...thSt, textAlign:'right', background:'rgba(45,212,191,0.05)'}}>기준대비</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stocks.map((s, i) => {
+                  const rowSpan = catSpans[i];
+                  return (
+                    <tr key={i} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
+                        onMouseOut={e=>e.currentTarget.style.background='transparent'}>
+                      {rowSpan != null && (
+                        <td rowSpan={rowSpan} style={{...tdSt, fontWeight:700, color:'var(--accent-mint)', verticalAlign:'middle', background:'rgba(45,212,191,0.02)', borderRight:'1px solid rgba(255,255,255,0.06)'}}>
+                          {s.category}
+                        </td>
+                      )}
+                      <td style={{...tdSt, fontWeight:600}}>{s.stock_name} {s.stock_code && <span style={{fontSize:'0.7rem', color:'var(--text-secondary)', fontWeight:400}}>({s.stock_code})</span>}</td>
+                      <td style={{...tdSt, textAlign:'right', fontWeight:700}}>{fmtPrice(s.price)}</td>
+                      <td style={{...tdSt, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{fmtMktCap2(s.market_cap)}</td>
+                      <td style={{...tdSt, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{s.pbr?.toFixed(2) || '-'}</td>
+                      <td style={{...tdSt, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{s.per?.toFixed(2) || '-'}</td>
+                      <td style={{...tdSt, textAlign:'right', fontSize:'0.8rem', background:'rgba(255,255,255,0.01)'}}>{fmtPrice(s.ref_price)}</td>
+                      <td style={{...tdSt, textAlign:'right', background:'rgba(255,255,255,0.01)'}}>{fmtPct(s.ref_chg_pct)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 // ── 시장 레이더 뷰 (App 외부 정의 — 재마운트 방지) ─────────────
 const MarketRadarView = React.memo(() => {
   const RADAR_SECTORS = [
@@ -692,6 +958,30 @@ const MarketRadarView = React.memo(() => {
     return Math.round(n/1e6) + 'M';
   };
 
+  const _currencySymbol = (country) => {
+    if (!country) return '';
+    const c = country.toUpperCase();
+    if (c === 'KR') return '';
+    if (c === 'US') return '$';
+    if (c === 'JP') return '¥';
+    if (c === 'TW') return 'NT$';
+    if (c === 'CN') return '¥';
+    if (c === 'EU' || c === 'DE' || c === 'NL' || c === 'FR') return '€';
+    return '';
+  };
+
+  const fmtPriceWithCurrency = (price, country) => {
+    if (price == null) return null;
+    const sym = _currencySymbol(country);
+    const n = Number(price);
+    if (sym === '') return n.toLocaleString('ko-KR');  // KRW: comma, no symbol
+    if (sym === '$')  return `$${n.toLocaleString('en-US', {maximumFractionDigits: 2})}`;
+    if (sym === '¥')  return `¥${n.toLocaleString('ja-JP', {maximumFractionDigits: 1})}`;
+    if (sym === 'NT$') return `NT$${n.toLocaleString('zh-TW', {maximumFractionDigits: 1})}`;
+    if (sym === '€')  return `€${n.toLocaleString('de-DE', {maximumFractionDigits: 2})}`;
+    return `${sym}${n.toLocaleString('en-US', {maximumFractionDigits: 2})}`;
+  };
+
   const sigDots = (s) => (
     <span style={{display:'flex', gap:'4px', alignItems:'center', whiteSpace:'nowrap'}}>
       <span style={{color: s.sig_5d  === 'up' ? '#ef4444' : '#3b82f6', fontSize:'0.8rem'}}>●</span>
@@ -707,6 +997,23 @@ const MarketRadarView = React.memo(() => {
                     fontWeight:600, whiteSpace:'nowrap', background:'rgba(0,0,0,0.25)',
                     borderBottom:'1px solid var(--glass-border)' };
   const tdStyle = { padding:'0.4rem 0.6rem', fontSize:'0.8rem', borderBottom:'1px solid rgba(255,255,255,0.04)' };
+
+  /* 주가(%) 셀 — price를 위에, %를 색상으로 아래에 */
+  const PriceCell = ({price, chg, bold, country}) => (
+    <td style={{...tdStyle, textAlign:'right', verticalAlign:'middle'}}>
+      {price != null ? (
+        <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'1px'}}>
+          <span style={{fontWeight: bold ? 700 : 500, fontSize:'0.8rem'}}>{fmtPriceWithCurrency(price, country)}</span>
+          {chg != null
+            ? <span style={{fontSize:'0.7rem', fontWeight:600,
+                color: chg > 0 ? '#ef4444' : chg < 0 ? '#3b82f6' : 'var(--text-secondary)'}}>
+                {chg > 0 ? '+' : ''}{chg.toFixed(1)}%
+              </span>
+            : <span style={{fontSize:'0.7rem', color:'var(--text-secondary)'}}>-</span>}
+        </div>
+      ) : <span style={{color:'var(--text-secondary)'}}>-</span>}
+    </td>
+  );
 
   return (
     <div style={{padding:'0 0.5rem'}}>
@@ -737,7 +1044,39 @@ const MarketRadarView = React.memo(() => {
       {error   && <div style={{color:'#f87171', padding:'1rem'}}>{error}</div>}
 
       {/* 섹션별 테이블 */}
-      {!loading && data?.sections?.map(section => (
+      {!loading && data?.sections?.map(section => {
+        /* Level2 rowspan 계산 */
+        const stocks = section.stocks || [];
+        const lv2Spans = {};
+        stocks.forEach((s, i) => {
+          const lv2 = s.lv2 || '';
+          if (!lv2) return;
+          // 연속된 같은 lv2 그룹의 첫 행만 rowspan
+          if (i === 0 || stocks[i-1].lv2 !== lv2) {
+            let span = 1;
+            for (let j = i+1; j < stocks.length && stocks[j].lv2 === lv2; j++) span++;
+            lv2Spans[i] = span;
+          }
+        });
+        /* lv2 그룹 내 신호 계산 (5/10/30일 과반수 방향) */
+        const lv2SignalMap = {};
+        let gi = 0;
+        while (gi < stocks.length) {
+          const lv2 = stocks[gi].lv2 || '';
+          const span = lv2Spans[gi] || 1;
+          if (lv2) {
+            const group = stocks.slice(gi, gi + span);
+            const sig = (key) => {
+              const ups = group.filter(s => s[key] === 'up').length;
+              const dns = group.filter(s => s[key] === 'down').length;
+              return ups > dns ? 'up' : dns > ups ? 'down' : 'neutral';
+            };
+            lv2SignalMap[gi] = { sig_5d: sig('sig_5d'), sig_10d: sig('sig_10d'), sig_30d: sig('sig_30d') };
+          }
+          gi += (lv2Spans[gi] || 1);
+        }
+
+        return (
         <div key={section.name} style={{marginBottom:'1.8rem'}}>
           <div style={{fontWeight:700, fontSize:'0.88rem', marginBottom:'0.5rem',
             color:'var(--text-primary)', display:'flex', alignItems:'center', gap:'0.5rem'}}>
@@ -755,7 +1094,7 @@ const MarketRadarView = React.memo(() => {
                 <tr>
                   <th style={{...thStyle, minWidth:'120px', textAlign:'left'}}>종목명</th>
                   <th style={{...thStyle, textAlign:'left'}}>Level2</th>
-                  <th style={{...thStyle}}>Level2 신호(5/10/...)</th>
+                  <th style={{...thStyle, minWidth:'90px'}}>Level2 신호(5/10/30일)</th>
                   <th style={{...thStyle, textAlign:'center'}}>국가</th>
                   <th style={{...thStyle, textAlign:'right'}}>시총</th>
                   <th style={{...thStyle, textAlign:'right'}}>현재(1일)</th>
@@ -768,48 +1107,68 @@ const MarketRadarView = React.memo(() => {
                 </tr>
               </thead>
               <tbody>
-                {section.stocks.map(s => (
+                {stocks.map((s, i) => {
+                  const isFirstInGroup = lv2Spans[i] != null;
+                  const rowSpan = lv2Spans[i];
+                  const grpSig = isFirstInGroup ? lv2SignalMap[i] : null;
+                  const dot = (sig) => (
+                    <span style={{color: sig === 'up' ? '#ef4444' : sig === 'down' ? '#3b82f6' : 'var(--text-secondary)', fontSize:'0.85rem'}}>●</span>
+                  );
+                  return (
                   <tr key={s.symbol} style={{transition:'background 0.1s'}}
                     onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
                     onMouseOut={e=>e.currentTarget.style.background='transparent'}>
                     <td style={{...tdStyle, fontWeight:700}}>{s.name}</td>
-                    <td style={{...tdStyle, fontSize:'0.72rem', color:'var(--text-secondary)'}}>{s.lv2 || '-'}</td>
-                    <td style={{...tdStyle}}>{sigDots(s)}</td>
+                    {/* Level2 — rowspan, 그룹 첫 행만 */}
+                    {isFirstInGroup && (
+                      <td rowSpan={rowSpan} style={{...tdStyle, fontSize:'0.72rem', color:'var(--text-secondary)',
+                        verticalAlign:'middle', background:'rgba(255,255,255,0.02)',
+                        borderRight:'1px solid rgba(255,255,255,0.06)'}}>
+                        {s.lv2 || '-'}
+                      </td>
+                    )}
+                    {!s.lv2 && (
+                      <td style={{...tdStyle, fontSize:'0.72rem', color:'var(--text-secondary)'}}>-</td>
+                    )}
+                    {/* Level2 신호 — rowspan, 그룹 첫 행만 */}
+                    {isFirstInGroup && grpSig && (
+                      <td rowSpan={rowSpan} style={{...tdStyle, textAlign:'center', verticalAlign:'middle',
+                        background:'rgba(255,255,255,0.02)', borderRight:'1px solid rgba(255,255,255,0.06)'}}>
+                        <span style={{display:'flex', gap:'4px', alignItems:'center', justifyContent:'center', flexWrap:'nowrap'}}>
+                          {dot(grpSig.sig_5d)}<span style={{fontSize:'0.65rem', color:'var(--text-secondary)'}}>5일</span>
+                          {dot(grpSig.sig_10d)}<span style={{fontSize:'0.65rem', color:'var(--text-secondary)'}}>10일</span>
+                          {dot(grpSig.sig_30d)}<span style={{fontSize:'0.65rem', color:'var(--text-secondary)'}}>30일</span>
+                        </span>
+                      </td>
+                    )}
+                    {isFirstInGroup && !grpSig && (
+                      <td rowSpan={rowSpan} style={{...tdStyle}}>{sigDots(s)}</td>
+                    )}
+                    {!s.lv2 && (
+                      <td style={{...tdStyle}}>{sigDots(s)}</td>
+                    )}
                     <td style={{...tdStyle, textAlign:'center', fontSize:'1rem'}}>{s.country_flag || s.country}</td>
-                    <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>{fmtMktCap(s.market_cap)}</td>
-                    <td style={{...tdStyle, textAlign:'right'}}>
-                      <span style={{marginRight:'0.4rem', fontWeight:600}}>{fmtPrice(s.price)}</span>
-                      {fmtPct(s.chg_1d)}
+                    <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)', fontSize:'0.75rem'}}>{fmtMktCap(s.market_cap)}</td>
+                    <PriceCell price={s.price}    chg={s.chg_1d}  bold={true} country={s.country} />
+                    <PriceCell price={s.price_5d} chg={s.chg_5d}  country={s.country} />
+                    <PriceCell price={s.price_10d} chg={s.chg_10d} country={s.country} />
+                    <PriceCell price={s.price_30d} chg={s.chg_30d} country={s.country} />
+                    <PriceCell price={s.price_1y}  chg={s.chg_1y}  country={s.country} />
+                    <td style={{...tdStyle, textAlign:'right', fontSize:'0.75rem'}}>
+                      {s.pbr != null ? <span style={{color: s.pbr < 1 ? '#34d399' : 'var(--text-secondary)'}}>{s.pbr.toFixed(2)}</span> : <span style={{color:'var(--text-secondary)'}}>-</span>}
                     </td>
-                    <td style={{...tdStyle, textAlign:'right'}}>
-                      <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_5d)}</span>
-                      {fmtPct(s.chg_5d)}
-                    </td>
-                    <td style={{...tdStyle, textAlign:'right'}}>
-                      <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_10d)}</span>
-                      {fmtPct(s.chg_10d)}
-                    </td>
-                    <td style={{...tdStyle, textAlign:'right'}}>
-                      <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_30d)}</span>
-                      {fmtPct(s.chg_30d)}
-                    </td>
-                    <td style={{...tdStyle, textAlign:'right'}}>
-                      <span style={{marginRight:'0.4rem', color:'var(--text-secondary)'}}>{fmtPrice(s.price_1y)}</span>
-                      {fmtPct(s.chg_1y)}
-                    </td>
-                    <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>
-                      {s.pbr != null ? s.pbr.toFixed(2) : '-'}
-                    </td>
-                    <td style={{...tdStyle, textAlign:'right', color:'var(--text-secondary)'}}>
-                      {s.per != null ? s.per.toFixed(2) : '-'}
+                    <td style={{...tdStyle, textAlign:'right', fontSize:'0.75rem'}}>
+                      {s.per != null ? <span style={{color:'var(--text-secondary)'}}>{s.per.toFixed(2)}</span> : <span style={{color:'var(--text-secondary)'}}>-</span>}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
-      ))}
+        );
+      })}
 
       {!loading && !error && data?.sections?.length === 0 && (
         <div className="glass-panel" style={{padding:'3rem', textAlign:'center', color:'var(--text-secondary)'}}>
@@ -2272,25 +2631,33 @@ const App = () => {
         })}
       </div>
 
-      {/* ══ PARA 1-a: KOSPI200 선물 / KOSDAQ150 선물 (compact) ══ */}
+      {/* ══ PARA 1-a: KOSPI200 / KOSDAQ150 (파생 지수, 2-column) ══ */}
       {(() => {
-        const kp200 = idx['KOSPI200'] || null;
-        if (!kp200?.value) return null;
+        const kp200  = idx['KOSPI200']  || null;
+        const kq150  = idx['KOSDAQ150'] || null;
+        if (!kp200?.value && !kq150?.value) return null;
+        const Cell = ({label, d}) => d?.value ? (
+          <div style={{ display:'flex', alignItems:'baseline', gap:'0.5rem' }}>
+            <span style={{ fontSize:'0.78rem', fontWeight:700, color:'rgba(255,255,255,0.6)' }}>{label}</span>
+            <span style={{ fontSize:'0.95rem', fontWeight:800 }}>{fv(d.value, 2)}</span>
+            {d.change != null && (
+              <span style={{ fontSize:'0.8rem', fontWeight:700, color:pc(d.change) }}>
+                {arr(d.change)} {Math.abs(d.change).toFixed(2)}%
+              </span>
+            )}
+            <span style={{ fontSize:'0.65rem', color:'var(--text-secondary)' }}>{d.date || ''}</span>
+          </div>
+        ) : <span style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>-</span>;
         return (
-          <div className="glass-panel" style={{ padding:'0.75rem 1.2rem', display:'flex', alignItems:'center', gap:'1.5rem', flexWrap:'wrap' }}>
-            <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)', fontWeight:600 }}>📈 파생 지수</span>
-            {[{label:'KOSPI200', d: kp200}].map(({label, d}) => d ? (
-              <div key={label} style={{ display:'flex', alignItems:'baseline', gap:'0.5rem' }}>
-                <span style={{ fontSize:'0.78rem', fontWeight:700, color:'rgba(255,255,255,0.6)' }}>{label}</span>
-                <span style={{ fontSize:'0.95rem', fontWeight:800 }}>{fv(d.value, 2)}</span>
-                {d.change != null && (
-                  <span style={{ fontSize:'0.8rem', fontWeight:700, color:pc(d.change) }}>
-                    {arr(d.change)} {Math.abs(d.change).toFixed(2)}%
-                  </span>
-                )}
-                <span style={{ fontSize:'0.65rem', color:'var(--text-secondary)' }}>{d.date || ''}</span>
-              </div>
-            ) : null)}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem' }}>
+            <div className="glass-panel" style={{ padding:'0.75rem 1.2rem', display:'flex', alignItems:'center', gap:'1rem' }}>
+              <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)', fontWeight:600 }}>📈 KOSPI200</span>
+              <Cell label="" d={kp200} />
+            </div>
+            <div className="glass-panel" style={{ padding:'0.75rem 1.2rem', display:'flex', alignItems:'center', gap:'1rem' }}>
+              <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)', fontWeight:600 }}>📈 KOSDAQ150</span>
+              <Cell label="" d={kq150} />
+            </div>
           </div>
         );
       })()}
@@ -4751,9 +5118,9 @@ const App = () => {
           { label: '누적 실현 손익', val: pf(realProfit)+'원',                          color: pc(realProfit||0) },
           { label: '승률',          val: winRate != null ? `${winRate}%` : '-',         color: 'var(--accent-purple)' },
         ].map(({ label, val, color }) => (
-          <div key={label} className="glass-panel" style={{ padding: '0.9rem 1rem' }}>
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{label}</p>
-            <p style={{ fontSize: '1rem', fontWeight: 700, color }}>{val}</p>
+          <div key={label} className="glass-panel" style={{ padding: '0.9rem 1rem', minWidth: 0 }}>
+            <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.3rem', whiteSpace:'nowrap' }}>{label}</p>
+            <p style={{ fontSize: '0.9rem', fontWeight: 700, color, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{val}</p>
           </div>
         ))}
       </div>
@@ -6166,6 +6533,7 @@ const App = () => {
             <thead>
               <tr>
                 <th>HS 코드</th>
+                <th>구분</th>
                 <th>품목명</th>
                 <th>매핑 상태</th>
                 <th style={{textAlign:'right'}}>수출액</th>
@@ -6178,8 +6546,20 @@ const App = () => {
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={`${type}-${item.hs_code}`}>
+                <tr key={`${type}-${item.flow_type || 'export'}-${item.hs_code}`}>
                   <td style={{fontFamily:'monospace', fontWeight:700}}>{item.hs_code}</td>
+                  <td>
+                    <span style={{
+                      fontSize:'0.68rem',
+                      padding:'0.14rem 0.45rem',
+                      borderRadius:'999px',
+                      background: item.flow_type === 'import' ? 'rgba(96,165,250,0.14)' : 'rgba(248,113,113,0.14)',
+                      color: item.flow_type === 'import' ? '#93c5fd' : '#fca5a5',
+                      border:'1px solid rgba(255,255,255,0.12)'
+                    }}>
+                      {item.flow_type === 'import' ? '수입' : '수출'}
+                    </span>
+                  </td>
                   <td style={{maxWidth:'320px'}}>{item.hs_name}</td>
                   <td>
                     <span style={{
@@ -6382,6 +6762,28 @@ const App = () => {
         <div style={{width:'100%'}}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem'}}>
             <div style={{display:'flex', gap:'1rem', flexWrap:'wrap'}}>
+              <div className="glass-panel" style={{padding:'0.5rem 1rem', minWidth:'220px'}}>
+                <p style={{fontSize:'0.65rem', color:'var(--text-secondary)'}}>선택 기업</p>
+                <p style={{fontSize:'1rem', fontWeight:800, color:'#fff'}}>
+                  {data.stock_name} <span style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>({data.stock_code})</span>
+                </p>
+                <div style={{display:'flex', alignItems:'center', gap:'0.45rem', marginTop:'0.35rem'}}>
+                  <span style={{fontSize:'0.7rem', color:'var(--text-secondary)'}}>HS 기준월</span>
+                  <select
+                    value={companyPeriod || companyHs?.period_ym || data.latest_period || ''}
+                    onChange={(e) => loadCompanyHs(selCompany, selSector?.sector_key, e.target.value)}
+                    style={{
+                      padding:'0.22rem 0.5rem', borderRadius:'6px', fontSize:'0.72rem',
+                      background:'rgba(255,255,255,0.07)', border:'1px solid var(--glass-border)', color:'#fff',
+                      maxWidth:'110px'
+                    }}
+                  >
+                    {(companyHs?.periods || [data.latest_period].filter(Boolean)).map((period) => (
+                      <option key={period} value={period} style={{background:'#1a1a2e'}}>{period}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div className="glass-panel" style={{padding:'0.5rem 1rem', minWidth:'120px'}}>
                 <p style={{fontSize:'0.65rem', color:'var(--text-secondary)'}}>최신 수출액</p>
                 <p style={{fontSize:'1rem', fontWeight:700, color:'#a78bfa'}}>{fmtB(data.export_latest)}</p>
@@ -6408,6 +6810,19 @@ const App = () => {
                   {data.hs_names || monthly[monthly.length-1]?.hs_names || '-'}
                 </p>
               </div>
+              {data.provisional_10day && (
+                <div className="glass-panel" style={{padding:'0.5rem 1rem', minWidth:'190px', borderColor:'rgba(52,211,153,0.28)'}}>
+                  <p style={{fontSize:'0.65rem', color:'#86efac'}}>
+                    {data.provisional_10day.period_ym} {data.provisional_10day.period_day} 잠정
+                  </p>
+                  <p style={{fontSize:'0.92rem', fontWeight:800, color:'#34d399'}}>
+                    {data.provisional_10day.export_category || '섹터'} {fmtB(data.provisional_10day.export_value || 0)}
+                  </p>
+                  <p style={{fontSize:'0.68rem', color:'var(--text-secondary)', marginTop:'0.1rem'}}>
+                    HS/기업별 확정치 전 대분류 프록시
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           {/* 바+라인 차트 */}
@@ -6477,6 +6892,8 @@ const App = () => {
       semiconductors: '#a78bfa', autos: '#60a5fa', batteries: '#34d399',
       biotech: '#f87171', consumer: '#fb923c', shipbuilding: '#38bdf8', energy_materials: '#facc15',
     };
+    const companyExportItems = companyHs?.export_items || (companyHs?.items || []).filter((item) => item.flow_type !== 'import');
+    const companyImportItems = companyHs?.import_items || (companyHs?.items || []).filter((item) => item.flow_type === 'import');
 
     return (
       <div style={{padding:'1.5rem', display:'flex', flexDirection:'column', gap:'1.5rem'}}>
@@ -6749,8 +7166,8 @@ const App = () => {
                 </div>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'0.75rem', flexWrap:'wrap', marginBottom:'1rem'}}>
                   <div style={{display:'flex', gap:'0.45rem', flexWrap:'wrap'}}>
-                    {(companyHs?.items || []).slice(0, 4).map((item) => (
-                      <span key={item.hs_code} style={{
+                    {companyExportItems.slice(0, 4).map((item) => (
+                      <span key={`export-chip-${item.hs_code}`} style={{
                         fontSize:'0.72rem',
                         padding:'0.28rem 0.55rem',
                         borderRadius:'999px',
@@ -6758,7 +7175,19 @@ const App = () => {
                         border:'1px solid var(--glass-border)',
                         color:'#e5e7eb'
                       }}>
-                        {item.hs_name} {item.export_share != null ? `(${item.export_share.toFixed(1)}%)` : ''}
+                        수출 {item.hs_name} {item.export_share != null ? `(${item.export_share.toFixed(1)}%)` : ''}
+                      </span>
+                    ))}
+                    {companyImportItems.slice(0, 3).map((item) => (
+                      <span key={`import-chip-${item.hs_code}`} style={{
+                        fontSize:'0.72rem',
+                        padding:'0.28rem 0.55rem',
+                        borderRadius:'999px',
+                        background:'rgba(96,165,250,0.1)',
+                        border:'1px solid rgba(96,165,250,0.28)',
+                        color:'#bfdbfe'
+                      }}>
+                        수입 {item.hs_name} {item.import_share != null ? `(${item.import_share.toFixed(1)}%)` : ''}
                       </span>
                     ))}
                   </div>
@@ -6859,7 +7288,28 @@ const App = () => {
                   {companyHsLoading ? (
                     <div style={{padding:'1.5rem', textAlign:'center', color:'var(--text-secondary)'}}>HS 비중 데이터를 불러오는 중...</div>
                   ) : (
-                    <BreakdownTable items={companyHs?.items || []} type="company" />
+                    <div style={{display:'flex', flexDirection:'column', gap:'1rem', padding:'1rem'}}>
+                      <div style={{border:'1px solid rgba(248,113,113,0.16)', borderRadius:'10px', overflow:'hidden', background:'rgba(248,113,113,0.03)'}}>
+                        <div style={{padding:'0.7rem 0.9rem', borderBottom:'1px solid rgba(248,113,113,0.16)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:'0.75rem', flexWrap:'wrap'}}>
+                          <div>
+                            <div style={{fontSize:'0.86rem', fontWeight:700, color:'#fecaca'}}>수출 품목</div>
+                            <div style={{fontSize:'0.72rem', color:'var(--text-secondary)', marginTop:'0.12rem'}}>기업명 = 수출 제품명 기준으로 매핑된 HS 코드</div>
+                          </div>
+                          <span style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>{companyExportItems.length}개</span>
+                        </div>
+                        <BreakdownTable items={companyExportItems} type="company-export" />
+                      </div>
+                      <div style={{border:'1px solid rgba(96,165,250,0.2)', borderRadius:'10px', overflow:'hidden', background:'rgba(96,165,250,0.04)'}}>
+                        <div style={{padding:'0.7rem 0.9rem', borderBottom:'1px solid rgba(96,165,250,0.2)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:'0.75rem', flexWrap:'wrap'}}>
+                          <div>
+                            <div style={{fontSize:'0.86rem', fontWeight:700, color:'#bfdbfe'}}>수입 품목</div>
+                            <div style={{fontSize:'0.72rem', color:'var(--text-secondary)', marginTop:'0.12rem'}}>장비·원재료 등 수입 실적으로 별도 확인해야 하는 HS 코드</div>
+                          </div>
+                          <span style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>{companyImportItems.length}개</span>
+                        </div>
+                        <BreakdownTable items={companyImportItems} type="company-import" />
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -8388,58 +8838,342 @@ const App = () => {
     );
   };
 
-  // ── 시스템 상태 ──────────────────────────────────────────────
-  const SystemStatus = () => (
-    <div className="fade-in glass-panel" style={{ padding: '2rem' }}>
-      <div className="section-title"><Database size={20} color="var(--accent-purple)" /><h2>시스템 및 데이터베이스 상태</h2></div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
-        <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>데이터베이스 파일 경로</p>
-          <code style={{ fontSize: '1.1rem', color: 'var(--accent-mint)' }}>{sysStats?.db_path || "로딩 중..."}</code>
+  // ── 고용 정보 ─────────────────────────────────────────────────
+  const EmploymentView = () => {
+    const [empTab, setEmpTab] = React.useState('company');
+    const [empYm, setEmpYm]     = React.useState(null);
+    const [empYears, setEmpYears] = React.useState([]);
+    const [empRows, setEmpRows] = React.useState([]);
+    const [npsYm, setNpsYm]     = React.useState(null);
+    const [npsMonths, setNpsMonths] = React.useState([]);
+    const [npsRows, setNpsRows] = React.useState([]);
+    const [npsUpdatedAt, setNpsUpdatedAt] = React.useState(null);
+    const [npsOrder, setNpsOrder] = React.useState('net');
+    const [empLoading, setEmpLoading] = React.useState(false);
+    
+    const [chartQuery, setChartQuery] = React.useState('');
+    const [chartData, setChartData] = React.useState(null);
+    const [chartLoading, setChartLoading] = React.useState(false);
+
+    const fetchChart = React.useCallback(async (query) => {
+      if (!query) return;
+      setChartLoading(true);
+      try {
+        const d = await fetch(`/api/employment-v2/chart?query=${encodeURIComponent(query)}`).then(r => r.json());
+        setChartData(d.company ? d : { notFound: true });
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setChartLoading(false);
+      }
+    }, []);
+
+    const fetchCompany = React.useCallback(async (ym) => {
+      setEmpLoading(true);
+      try {
+        const url = ym ? `/api/employment/company-list?ym=${encodeURIComponent(ym)}&limit=300` : '/api/employment/company-list?limit=300';
+        const d = await fetch(url).then(r => r.json());
+        setEmpYm(d.ym); setEmpYears(d.years || []); setEmpRows(d.rows || []);
+      } finally { setEmpLoading(false); }
+    }, []);
+
+    const fetchNps = React.useCallback(async (ym, order) => {
+      setEmpLoading(true);
+      try {
+        const params = new URLSearchParams({ limit: 100, order: order || npsOrder });
+        if (ym) params.set('ym', ym);
+        const d = await fetch(`/api/employment/nps-monthly?${params}`).then(r => r.json());
+        setNpsYm(d.ym); setNpsMonths(d.months || []); setNpsRows(d.rows || []); setNpsUpdatedAt(d.updated_at);
+      } finally { setEmpLoading(false); }
+    }, [npsOrder]);
+
+    useEffect(() => {
+      if (empTab === 'company') fetchCompany(null);
+      else fetchNps(null, 'net');
+    }, [empTab]);
+
+    const fmtYm = (ym) => ym ? `${ym.slice(0,4)}년 ${parseInt(ym.slice(4,6))}월` : '';
+
+    return (
+      <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className="glass-panel" style={{ padding: '1rem 1.4rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {[['company','연도별 고용인원'],['nps','월별 고용변동'], ['nps_trend','인원 증가(기업별)']].map(([k, lbl]) => (
+              <button key={k} onClick={() => setEmpTab(k)} style={{
+                padding: '0.35rem 0.9rem', borderRadius: '7px', fontSize: '0.82rem', cursor: 'pointer',
+                fontWeight: empTab === k ? 700 : 500,
+                border: `1px solid ${empTab===k ? 'var(--accent-mint)' : 'var(--glass-border)'}`,
+                background: empTab === k ? 'rgba(45,212,191,0.15)' : 'transparent',
+                color: empTab === k ? 'var(--accent-mint)' : 'var(--text-secondary)',
+              }}>{lbl}</button>
+            ))}
+          </div>
+          {empTab === 'nps' && npsMonths.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>기준월:</span>
+              <select value={npsYm || ''} onChange={e => fetchNps(e.target.value, npsOrder)} style={{
+                background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)',
+                padding: '0.2rem 0.5rem', borderRadius: '5px', fontSize: '0.78rem',
+              }}>
+                {npsMonths.map(m => <option key={m} value={m}>{fmtYm(m)}</option>)}
+              </select>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>정렬:</span>
+              {[['net','순증가'],['acq','신규취득'],['lss','상실']].map(([k, lbl]) => (
+                <button key={k} onClick={() => { setNpsOrder(k); fetchNps(npsYm, k); }} style={{
+                  padding: '0.2rem 0.5rem', borderRadius: '5px', fontSize: '0.75rem', cursor: 'pointer',
+                  border: `1px solid ${npsOrder===k ? '#60a5fa' : 'var(--glass-border)'}`,
+                  background: npsOrder===k ? 'rgba(96,165,250,0.15)' : 'transparent',
+                  color: npsOrder===k ? '#60a5fa' : 'var(--text-secondary)',
+                }}>{lbl}</button>
+              ))}
+            </div>
+          )}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
-          <div className="glass-panel" style={{ padding: '1.5rem' }}>
-            <p style={{ color: 'var(--text-secondary)' }}>수집된 기업 수</p>
-            <h3 style={{ fontSize: '2rem' }}>{sysStats?.stock_count ?? 0} 개</h3>
+        {empLoading && <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>로딩 중...</div>}
+        {!empLoading && empTab === 'company' && (
+          <EmploymentYearlyView />
+        )}
+        {!empLoading && empTab === 'nps' && (
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Chart Section */}
+            <div className="glass-panel" style={{ padding: '1rem 1.4rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem' }}>
+                <span style={{ fontWeight: 600, color: '#fff' }}>기업명 검색 (그래프)</span>
+                <input 
+                  type="text" 
+                  placeholder="기업명 입력..." 
+                  value={chartQuery}
+                  onChange={(e) => setChartQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && fetchChart(chartQuery)}
+                  style={{
+                    padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid var(--glass-border)',
+                    background: 'rgba(0,0,0,0.2)', color: '#fff', fontSize: '0.85rem', width: '200px'
+                  }}
+                />
+                <button onClick={() => fetchChart(chartQuery)} style={{
+                  padding: '0.4rem 0.8rem', borderRadius: '6px', background: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.85rem'
+                }}>검색</button>
+              </div>
+              
+              {chartLoading && <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>차트 불러오는 중...</div>}
+              
+              {!chartLoading && chartData && (
+                <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.1)', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                  {chartData.notFound ? (
+                    <div style={{ textAlign: 'center', color: '#f87171', padding: '1rem' }}>
+                      <strong>검색 결과가 없습니다.</strong><br/>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        해당 기업(에이엘티 등)은 사업보고서 총 고용인원 데이터가 수집되지 않아 차트를 그릴 기준점(과거 내역)이 없습니다.
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <h3 style={{ marginTop: 0, marginBottom: '1rem', color: '#fff', fontSize: '1rem' }}>📉 {chartData.company} - 국민연금 월별 순증가 추이</h3>
+                      <div style={{ width: '100%', height: 300 }}>
+                        <ResponsiveContainer>
+                          <ComposedChart data={chartData.history}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                            <XAxis dataKey="month" stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 12 }} />
+                            <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 12 }} />
+                            <Tooltip 
+                              contentStyle={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px' }}
+                              itemStyle={{ color: '#2dd4bf' }}
+                              formatter={(value, name) => {
+                                if (name === 'net_change') return [value + '명', '순증가'];
+                                if (name === 'new_cnt') return [value + '명', '신규취득'];
+                                if (name === 'lost_cnt') return [value + '명', '상실'];
+                                return [value, name];
+                              }}
+                            />
+                            <Legend />
+                            <Bar dataKey="new_cnt" fill="#3b82f6" opacity={0.3} radius={[4,4,0,0]} name="신규취득" />
+                            <Bar dataKey="lost_cnt" fill="#f87171" opacity={0.3} radius={[4,4,0,0]} name="상실" />
+                            <Line type="monotone" dataKey="net_change" stroke="#34d399" strokeWidth={3} dot={{ r: 4 }} name="순증가" />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '0.6rem 1rem', borderBottom: '1px solid var(--glass-border)', fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>국민연금 사업장 기준 — 신규취득: 해당월 신규 가입자, 상실: 탈퇴자, 순증가: 신규-상실</span>
+                {npsUpdatedAt && <span style={{ color: '#60a5fa', fontWeight: 500 }}>업데이트: {npsUpdatedAt.slice(0, 10)}</span>}
+              </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid var(--glass-border)' }}>
+                    {['순위','종목명','신규취득','상실','순증가'].map(h => (
+                      <th key={h} style={{ padding: '0.65rem 0.8rem', textAlign: ['신규취득','상실','순증가'].includes(h)?'right':'left', color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {npsRows.map((r, i) => (
+                    <tr key={r.stock_code+i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                        onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.03)'}
+                        onMouseOut={e => e.currentTarget.style.background='transparent'}
+                        onClick={() => { changeStock(r.stock_code); changeTab('analysis'); }}>
+                      <td style={{ padding: '0.55rem 0.8rem', color: 'var(--text-secondary)' }}>{i+1}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', fontWeight: 600 }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          {r.market && (
+                            <span style={{
+                              display: 'inline-block', fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '4px', marginRight: '0.5rem',
+                              background: r.market.includes('KOSPI') || r.market.includes('유가증권') ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                              color: r.market.includes('KOSPI') || r.market.includes('유가증권') ? '#93c5fd' : '#6ee7b7',
+                              border: `1px solid ${r.market.includes('KOSPI') || r.market.includes('유가증권') ? 'rgba(59, 130, 246, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                            }}>{r.market}</span>
+                          )}
+                          {r.stock_name}
+                        </div>
+                      </td>
+                      <td style={{ padding: '0.55rem 0.8rem', textAlign: 'right', color: '#34d399' }}>{(r.nw_acqzr_cnt||0).toLocaleString()}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', textAlign: 'right', color: '#f87171' }}>{(r.lss_jnngp_cnt||0).toLocaleString()}</td>
+                      <td style={{ padding: '0.55rem 0.8rem', textAlign: 'right', fontWeight: 700, color: (r.net_change||0) > 0 ? '#34d399' : (r.net_change||0) < 0 ? '#f87171' : 'inherit' }}>
+                        {r.net_change > 0 ? '+' : ''}{(r.net_change||0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="glass-panel" style={{ padding: '1.5rem' }}>
-            <p style={{ color: 'var(--text-secondary)' }}>총 주가 데이터</p>
-            <h3 style={{ fontSize: '2rem' }}>{sysStats?.price_records?.toLocaleString() ?? 0} 건</h3>
-          </div>
-          <div className="glass-panel" style={{ padding: '1.5rem' }}>
-            <p style={{ color: 'var(--text-secondary)' }}>마지막 업데이트</p>
-            <h3 style={{ fontSize: '1rem', marginTop: '0.5rem' }}>{sysStats?.last_update ?? '-'}</h3>
-          </div>
+        </div>
+        )}
+        {!empLoading && empTab === 'nps_trend' && (
+          <NpsTrendView />
+        )}
+      </div>
+    );
+  };
+
+  // ── 시스템 상태 ──────────────────────────────────────────────
+  const SystemStatus = () => {
+    const DATA_SOURCES = [
+      { category: '주가', source: 'KIS API', data: '일별 OHLCV (전 종목)', schedule: '장중 1분마다 (09:00-15:30)', table: 'price_history', status: '수집 중', color: '#34d399' },
+      { category: '주가', source: 'KRX API', data: '전 종목 일별 OHLCV + 지수(코스피/코스닥/200/150)', schedule: '18:00 (영업일)', table: 'price_history', status: '수집 중', color: '#34d399' },
+      { category: '주가', source: 'Yahoo Finance', data: '해외지수(NASDAQ, S&P500, DOW)', schedule: '00:10 (nightly)', table: 'price_history', status: '수집 중', color: '#34d399' },
+      { category: '수급', source: 'KIS API', data: '기관/외국인/개인 순매수(금액·수량)', schedule: '장중 5분마다 + 17:30(보완)', table: 'price_history (inst/frn/ind_net_buy)', status: '수집 중', color: '#34d399' },
+      { category: '수급', source: '네이버금융 스크래핑', data: '3~20년치 기관/외국인 순매수 (백필)', schedule: '1회성 수집(collect_naver_investor.py)', table: 'price_history', status: '완료', color: '#60a5fa' },
+      { category: '기업정보', source: 'KIS API', data: '종목 마스터 (섹터, 시총, PER, PBR, ROE)', schedule: '매월 1일 03:00', table: 'stock_universe', status: '수집 중', color: '#34d399' },
+      { category: '재무제표', source: 'DART API', data: '분기/연간 재무제표 (매출, 영업이익, 당기순이익, EPS)', schedule: '03:30 (공시 확인 후)', table: 'financial_data', status: '수집 중', color: '#34d399' },
+      { category: '재무제표', source: 'DART API', data: '현금흐름표 (전 종목 배치)', schedule: '1회성 배치 수집', table: 'financial_data', status: '완료', color: '#60a5fa' },
+      { category: '밸류에이션', source: '네이버금융 스크래핑', data: 'PER, PBR (개별종목 조회 시)', schedule: '요청 시 실시간 + 캐시', table: 'stock_universe (갱신)', status: '수집 중', color: '#34d399' },
+      { category: '공시', source: 'DART API', data: '전 종목 공시 목록', schedule: '03:30 (daily)', table: '-', status: '수집 중', color: '#34d399' },
+      { category: '대차잔고', source: 'KIS API', data: '대차잔고, 공매도 잔고', schedule: '장중 5분마다', table: 'short_sell_daily', status: '수집 중', color: '#34d399' },
+      { category: '해외 주가', source: 'Yahoo Finance', data: '해외 반도체 섹터 종목 주가', schedule: '30분마다 캐시 갱신', table: 'radar_price_cache', status: '수집 중', color: '#34d399' },
+      { category: '수출입', source: '한국무역협회(KITA) 스크래핑', data: '반도체/2차전지 등 수출입 통계', schedule: 'hs_trade_lab 별도 관리', table: '-', status: '별도 앱', color: '#fbbf24' },
+      { category: 'Stock Easy', source: 'StockEasy 사이트 파싱', data: '전략 종목 (가상매매)', schedule: '수동 파싱', table: 'peak_holding', status: '수동', color: '#fbbf24' },
+      { category: '고용/연금', source: '국민연금공단 API', data: 'NPS 사업장 월별 신규취득/상실', schedule: '1회성 수집 (202602까지)', table: 'nps_workplace_monthly (employment.db)', status: '완료', color: '#60a5fa' },
+      { category: '텔레그램', source: 'Telegram API', data: '채널별 종목 언급 수집', schedule: '수동 수집', table: 'telegram_channels', status: '수동', color: '#fbbf24' },
+      { category: '섹터분석', source: '블로그 파싱 (Sector_define)', data: '핫 섹터 분석 포스트 + 종목', schedule: '수동 파싱', table: 'sector_posts / sector_stocks (stock.db)', status: '수동', color: '#fbbf24' },
+    ];
+
+    const thSt = { padding:'0.55rem 0.7rem', fontSize:'0.72rem', color:'var(--text-secondary)', fontWeight:600, whiteSpace:'nowrap', background:'rgba(0,0,0,0.25)', borderBottom:'1px solid var(--glass-border)', textAlign:'left' };
+    const tdSt = { padding:'0.45rem 0.7rem', fontSize:'0.78rem', borderBottom:'1px solid rgba(255,255,255,0.04)', verticalAlign:'top' };
+
+    return (
+    <div className="fade-in" style={{ display:'flex', flexDirection:'column', gap:'1.5rem' }}>
+      {/* 요약 카드 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+        <div className="glass-panel" style={{ padding: '1.2rem' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize:'0.75rem' }}>수집된 기업 수</p>
+          <h3 style={{ fontSize: '1.8rem', marginTop:'0.3rem' }}>{sysStats?.stock_count ?? '-'} 개</h3>
+        </div>
+        <div className="glass-panel" style={{ padding: '1.2rem' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize:'0.75rem' }}>총 주가 데이터</p>
+          <h3 style={{ fontSize: '1.8rem', marginTop:'0.3rem' }}>{sysStats?.price_records?.toLocaleString() ?? '-'} 건</h3>
+        </div>
+        <div className="glass-panel" style={{ padding: '1.2rem' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize:'0.75rem' }}>마지막 업데이트</p>
+          <h3 style={{ fontSize: '0.95rem', marginTop:'0.5rem', color:'var(--accent-mint)' }}>{sysStats?.last_update ?? '-'}</h3>
         </div>
       </div>
+
+      {/* 데이터 소스 테이블 */}
+      <div className="glass-panel" style={{ padding:0, overflow:'hidden' }}>
+        <div style={{ padding:'0.8rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+          <Database size={16} color="var(--accent-purple)" />
+          <span style={{ fontWeight:700, fontSize:'0.9rem' }}>데이터 수집 현황</span>
+          <span style={{ fontSize:'0.75rem', color:'var(--text-secondary)', marginLeft:'0.5rem' }}>
+            <span style={{color:'#34d399'}}>● 자동수집</span>{'  '}
+            <span style={{color:'#60a5fa'}}>● 완료(배치)</span>{'  '}
+            <span style={{color:'#fbbf24'}}>● 수동/별도</span>
+          </span>
+        </div>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr>
+                <th style={thSt}>카테고리</th>
+                <th style={thSt}>출처</th>
+                <th style={thSt}>수집 데이터</th>
+                <th style={thSt}>주기</th>
+                <th style={thSt}>저장 테이블</th>
+                <th style={{...thSt, textAlign:'center'}}>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DATA_SOURCES.map((row, i) => (
+                <tr key={i} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.02)'}
+                    onMouseOut={e=>e.currentTarget.style.background='transparent'}>
+                  <td style={{...tdSt, fontWeight:700, color:'var(--accent-mint)', whiteSpace:'nowrap'}}>{row.category}</td>
+                  <td style={{...tdSt, whiteSpace:'nowrap', fontWeight:600}}>{row.source}</td>
+                  <td style={{...tdSt, color:'var(--text-secondary)', fontSize:'0.75rem', maxWidth:'300px'}}>{row.data}</td>
+                  <td style={{...tdSt, whiteSpace:'nowrap', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{row.schedule}</td>
+                  <td style={{...tdSt, fontSize:'0.7rem', color:'rgba(255,255,255,0.35)', fontFamily:'monospace'}}>{row.table}</td>
+                  <td style={{...tdSt, textAlign:'center'}}>
+                    <span style={{ color: row.color, fontSize:'0.75rem', fontWeight:600 }}>● {row.status}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* DB 경로 */}
+      <div className="glass-panel" style={{ padding:'1rem' }}>
+        <p style={{ color:'var(--text-secondary)', fontSize:'0.75rem', marginBottom:'0.4rem' }}>메인 DB 경로</p>
+        <code style={{ fontSize:'0.9rem', color:'var(--accent-mint)' }}>{sysStats?.db_path || 'stock.db'}</code>
+      </div>
     </div>
-  );
+    );
+  };
 
   // ── 메인 렌더 ────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = React.useState(() => window.innerWidth >= 768);
 
   const NAV_ITEMS = [
     // ── 상단 섹션 ──────────────────────────────────
-    { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '종합현황' },
-    { key: 'market_indicators',icon: <Globe size={17} style={{color:'#fbbf24'}} />,           label: '시장 지표' },
-    { key: 'market_radar',     icon: <span style={{fontSize:'14px',lineHeight:1}}>🛰</span>,   label: '시장 레이더' },
+    { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '주요 지표' },
+    { key: 'market_indicators',icon: <Globe size={17} style={{color:'#fbbf24'}} />,           label: '수급 현황' },
+    { key: 'market_radar',     icon: <span style={{fontSize:'14px',lineHeight:1}}>🛰</span>,   label: '섹터 지표' },
     { key: 'analysis',         icon: <BarChart3 size={17} />,                                 label: '개별 종목' },
     { key: 'semiconductor_sector', icon: <Cpu size={17} style={{color:'#60a5fa'}} />,         label: '반도체 섹터' },
-    { key: 'screener',         icon: <Cpu size={17} style={{color:'#2dd4bf'}} />,              label: 'AI 종목' },
-    { key: 'tenbagger',        icon: <span style={{fontSize:'14px',lineHeight:1}}>💎</span>,   label: '텐버거헌터' },
+    { key: 'hot_sector',       icon: <span style={{fontSize:'14px',lineHeight:1}}>🎯</span>,   label: 'Hot 섹터' },
+    { key: 'screener',         icon: <Cpu size={17} style={{color:'#2dd4bf'}} />,              label: 'AI 종목 발굴' },
+    { key: 'tenbagger',        icon: <span style={{fontSize:'14px',lineHeight:1}}>💎</span>,   label: '텐버거 헌터' },
     { key: 'trend',            icon: <TrendingUp size={17} style={{color:'#a78bfa'}} />,       label: '가상 매매' },
     { key: 'reports',          icon: <Newspaper size={17} style={{color:'#34d399'}} />,        label: '섹터 보고서' },
     { key: 'telegram',  icon: <Send size={17} style={{color:'#38bdf8'}} />,            label: '텔레그램 종목' },
-    { key: 'backtest',  icon: <FlaskConical size={17} style={{color:'#f59e0b'}} />,    label: '📊 백테스트' },
-    { key: 'hs_trade2', icon: <Ship size={17} style={{color:'#93c5fd'}} />,            label: '📦 수출입분석' },
+    { key: 'backtest',  icon: <FlaskConical size={17} style={{color:'#f59e0b'}} />,    label: '백테스트' },
+    { key: 'hs_trade2', icon: <Ship size={17} style={{color:'#93c5fd'}} />,            label: '수출입분석' },
+    { key: 'employment',icon: <Users size={17} style={{color:'#86efac'}} />,           label: '고용 정보' },
+    { key: 'etf_check', icon: <span style={{fontSize:'14px',lineHeight:1}}>📊</span>, label: 'ETF 모니터링' },
     null,
     // ── 하단 섹션 ──────────────────────────────────
     { key: 'buy_candidates', icon: <Target size={17} style={{color:'#f59e0b'}} />,    label: '매수후보' },
-    { key: 'watchlist', icon: <Star size={17} style={{color:'#facc15'}} />,            label: '관심종목' },
     { key: 'portfolio', icon: <Wallet size={17} style={{color:'#c084fc'}} />,          label: '계좌현황 🔒' },
     null,
     { key: 'settings',  icon: <Settings size={17} style={{color:'#94a3b8'}} />,        label: '⚙ 설정' },
     { key: 'system',    icon: <Server size={17} style={{color:'#64748b'}} />,          label: '시스템 상태' },
+    { key: 'watchlist', icon: <Star size={17} style={{color:'#facc15'}} />,            label: '관심종목' },
   ];
 
   return (
@@ -8606,6 +9340,9 @@ const App = () => {
           {activeTab === 'settings'  && <SettingsView />}
           {activeTab === 'backtest'  && <BacktestView />}
           {activeTab === 'hs_trade2' && <TradeAnalysis2 />}
+          {activeTab === 'employment' && <EmploymentView />}
+          {activeTab === 'etf_check' && <EtfCheckView />}
+          {activeTab === 'hot_sector' && <SectorFollowupView />}
         </div>
       </div>
 

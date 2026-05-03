@@ -62,14 +62,12 @@ def ingest_investor_trends(payload: dict, db: Session = Depends(get_db)):
         updated    = 0
         for t in trends:
             try:
-                ds = datetime.strptime(t["date"], "%Y-%m-%d")
-                de = ds + _td(days=1)
+                date_str = datetime.strptime(t["date"], "%Y-%m-%d").strftime("%Y-%m-%d")
             except ValueError:
                 continue
             row = db.query(models.PriceHistory).filter(
                 models.PriceHistory.stock_code == stock_code,
-                models.PriceHistory.date >= ds,
-                models.PriceHistory.date <  de,
+                models.PriceHistory.date == date_str,
             ).first()
             fields = {
                 "inst_net_buy":     t.get("inst_net_buy", 0),

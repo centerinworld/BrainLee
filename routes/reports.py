@@ -126,17 +126,16 @@ def get_report_sectors():
 @router.get("/sector/{sector:path}")
 def get_sector_reports(sector: str, limit: int = 100):
     """특정 섹터 보고서 목록.
-    - stock_code 없는 보고서(순수 섹터 보고서) 우선
-    - stock_code 있는 보고서(개별종목 보고서)도 포함 (종목코드 표시)
+    개별종목으로 분류된 보고서는 종목 탭에서만 보여주고,
+    섹터 화면에는 stock_code 없는 순수 섹터 보고서만 노출한다.
     """
     conn = _db()
     try:
         rows = conn.execute(f"""
             SELECT {_COLS} FROM report_files
             WHERE sector=?
-            ORDER BY
-                CASE WHEN stock_code IS NULL OR stock_code='' THEN 0 ELSE 1 END,
-                report_date DESC, id DESC
+              AND (stock_code IS NULL OR stock_code='')
+            ORDER BY report_date DESC, id DESC
             LIMIT ?
         """, (sector, limit)).fetchall()
         return [_row_to_dict(r) for r in rows]

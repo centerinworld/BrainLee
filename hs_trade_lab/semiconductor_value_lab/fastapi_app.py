@@ -50,7 +50,7 @@ def load_index_change_pct(conn: sqlite3.Connection, stock_code: str) -> float | 
     return float(row["change_pct"]) if row and row["change_pct"] is not None else None
 
 
-def load_latest_stock_rows(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
+def load_latest_stock_rows(conn: sqlite3.Connection) -> dict[str, dict]:
     sql = """
     SELECT su.stock_code,
            su.stock_name,
@@ -73,7 +73,8 @@ def load_latest_stock_rows(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
         ON sp.stock_code = latest.stock_code
        AND sp.bas_dt = latest.bas_dt
     """
-    return {row["stock_code"]: row for row in conn.execute(sql)}
+    # Convert to dict so .get() works reliably
+    return {row["stock_code"]: dict(row) for row in conn.execute(sql)}
 
 
 def pick_representative_stock(

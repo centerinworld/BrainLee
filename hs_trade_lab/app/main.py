@@ -492,6 +492,58 @@ def _mapping_rank_expr(alias: str = "mapping_status") -> str:
     )
 
 
+PROVISIONAL_10DAY_CATEGORY = {
+    "semiconductors": ("반도체", "반도체"),
+    "autos": ("승용차", "승용차"),
+    "shipbuilding": ("선박", "기계류"),
+    "energy_materials": ("철강제품", "기계류"),
+    "consumer": ("가전제품", "무선통신기기"),
+}
+
+
+def _latest_provisional_10day(conn: sqlite3.Connection, sector_key: str | None) -> dict | None:
+    if not sector_key:
+        return None
+    categories = PROVISIONAL_10DAY_CATEGORY.get(sector_key)
+    if not categories:
+        return None
+    export_category, import_category = categories
+    export_row = conn.execute(
+        """
+        SELECT period_ym, period_day, category_name, amount_thousand_usd
+        FROM customs_best_available_10day_record
+        WHERE dataset_key='export_items_10day'
+          AND category_name=?
+        ORDER BY period_ym DESC, period_day_order DESC
+        LIMIT 1
+        """,
+        (export_category,),
+    ).fetchone()
+    import_row = conn.execute(
+        """
+        SELECT period_ym, period_day, category_name, amount_thousand_usd
+        FROM customs_best_available_10day_record
+        WHERE dataset_key='import_items_10day'
+          AND category_name=?
+        ORDER BY period_ym DESC, period_day_order DESC
+        LIMIT 1
+        """,
+        (import_category,),
+    ).fetchone()
+    if not export_row and not import_row:
+        return None
+    base = export_row or import_row
+    return {
+        "period_ym": base["period_ym"],
+        "period_day": base["period_day"],
+        "export_category": export_row["category_name"] if export_row else "",
+        "export_value": round(float(export_row["amount_thousand_usd"] or 0) * 1000) if export_row else None,
+        "import_category": import_row["category_name"] if import_row else "",
+        "import_value": round(float(import_row["amount_thousand_usd"] or 0) * 1000) if import_row else None,
+        "note": "10일 단위 잠정 대분류 통계라 HS/기업별 확정 월별 데이터와 별도 표시됩니다.",
+    }
+
+
 @app.get("/api/analysis2/sectors")
 def analysis2_sectors(months: int = 24):
     """섹터별 월간 수출/수입 추세 (최근 N개월). 캐시 테이블 기반."""
@@ -507,8 +559,6 @@ def analysis2_sectors(months: int = 24):
         """,
         (f"-{months}",),
     ).fetchall()
-    conn.close()
-
     sectors: dict[str, dict] = {}
     for row in rows:
         sector = sectors.setdefault(
@@ -539,10 +589,12 @@ def analysis2_sectors(months: int = 24):
         import_latest = monthly[-1]["import_val"] if monthly else None
         import_prev1 = monthly[-2]["import_val"] if len(monthly) >= 2 else None
         import_prev12 = monthly[-13]["import_val"] if len(monthly) >= 13 else None
+        provisional = _latest_provisional_10day(conn, sector["sector_key"])
         result.append(
             {
                 **sector,
                 "latest_period": monthly[-1]["period_ym"] if monthly else None,
+                "provisional_10day": provisional,
                 "export_latest": export_latest,
                 "export_mom": _pct(export_latest, export_prev1),
                 "export_yoy": _pct(export_latest, export_prev12),
@@ -554,6 +606,7 @@ def analysis2_sectors(months: int = 24):
                 "yoy": _pct(export_latest, export_prev12),
             }
         )
+    conn.close()
     return result
 
 
@@ -636,8 +689,6 @@ def analysis2_company_trend(stock_code: str, months: int = 24, sector_key: str |
         """,
         [*params, f"-{months}"],
     ).fetchall()
-    conn.close()
-
     monthly = [
         {
             "period_ym": row["period_ym"],
@@ -662,6 +713,9 @@ def analysis2_company_trend(stock_code: str, months: int = 24, sector_key: str |
     import_prev1 = monthly[-2]["import_val"] if len(monthly) >= 2 else None
     import_prev12 = monthly[-13]["import_val"] if len(monthly) >= 13 else None
 
+    provisional = _latest_provisional_10day(conn, sector_key)
+    conn.close()
+
     return {
         "stock_code": stock_code,
         "stock_name": info["stock_name"] if info else stock_code,
@@ -670,6 +724,7 @@ def analysis2_company_trend(stock_code: str, months: int = 24, sector_key: str |
         "mapping_status": info["mapping_status"] if info else "provisional",
         "sector_key": sector_key,
         "latest_period": monthly[-1]["period_ym"] if monthly else None,
+        "provisional_10day": provisional,
         "monthly": monthly,
         "export_latest": export_latest,
         "export_mom": _pct(export_latest, export_prev1),
@@ -768,19 +823,23 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
         return {"stock_code": stock_code, "sector_key": sector_key, "period_ym": None, "items": []}
     rows = conn.execute(
         """
-        SELECT stock_name, sector_label, hs_code, hs_name, mapping_status,
+        SELECT stock_name, sector_label, hs_code, hs_name, sector_name, flow_type, mapping_status,
                export_value, export_weight, import_value, import_weight
         FROM analysis2_company_hs_monthly_cache
         WHERE stock_code = ?
           AND sector_key = ?
           AND period_ym = ?
-        ORDER BY export_value DESC, hs_code
+        ORDER BY CASE flow_type WHEN 'export' THEN 0 ELSE 1 END,
+                 CASE flow_type WHEN 'export' THEN export_value ELSE import_value END DESC,
+                 hs_code
         """,
         (stock_code, sector_key, chosen_period),
     ).fetchall()
     totals = conn.execute(
         """
-        SELECT SUM(export_value) AS export_total, SUM(import_value) AS import_total
+        SELECT
+          SUM(CASE WHEN flow_type = 'export' THEN export_value ELSE 0 END) AS export_total,
+          SUM(CASE WHEN flow_type = 'import' THEN import_value ELSE 0 END) AS import_total
         FROM analysis2_company_hs_monthly_cache
         WHERE stock_code = ?
           AND sector_key = ?
@@ -801,6 +860,26 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
     conn.close()
     export_total = totals["export_total"] or 0
     import_total = totals["import_total"] or 0
+    items = []
+    for row in rows:
+        flow_type = row["flow_type"] or "export"
+        export_share = round(((row["export_value"] or 0) / export_total) * 100, 2) if flow_type == "export" and export_total else None
+        import_share = round(((row["import_value"] or 0) / import_total) * 100, 2) if flow_type == "import" and import_total else None
+        items.append(
+            {
+                "hs_code": row["hs_code"],
+                "hs_name": row["hs_name"],
+                "sector_name": row["sector_name"],
+                "flow_type": flow_type,
+                "mapping_status": row["mapping_status"],
+                "export_val": round(row["export_value"] or 0),
+                "export_kg": round(row["export_weight"] or 0),
+                "import_val": round(row["import_value"] or 0),
+                "import_kg": round(row["import_weight"] or 0),
+                "export_share": export_share,
+                "import_share": import_share,
+            }
+        )
     return {
         "stock_code": stock_code,
         "stock_name": rows[0]["stock_name"] if rows else stock_code,
@@ -808,18 +887,7 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
         "sector_label": rows[0]["sector_label"] if rows else sector_key,
         "period_ym": chosen_period,
         "periods": [row["period_ym"] for row in periods],
-        "items": [
-            {
-                "hs_code": row["hs_code"],
-                "hs_name": row["hs_name"],
-                "mapping_status": row["mapping_status"],
-                "export_val": round(row["export_value"] or 0),
-                "export_kg": round(row["export_weight"] or 0),
-                "import_val": round(row["import_value"] or 0),
-                "import_kg": round(row["import_weight"] or 0),
-                "export_share": round(((row["export_value"] or 0) / export_total) * 100, 2) if export_total else None,
-                "import_share": round(((row["import_value"] or 0) / import_total) * 100, 2) if import_total else None,
-            }
-            for row in rows
-        ],
+        "items": items,
+        "export_items": [item for item in items if item["flow_type"] == "export"],
+        "import_items": [item for item in items if item["flow_type"] == "import"],
     }

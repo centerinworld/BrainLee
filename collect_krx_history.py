@@ -127,23 +127,21 @@ def _save_stocks(conn, rows: list, bas_dd: str, today_str: str) -> tuple:
 # ─────────────────────────────────────────────
 # 지수 데이터 저장 (KOSPI→^KS11, KOSDAQ→^KQ11)
 # ─────────────────────────────────────────────
-INDEX_NAME_MAP = {
-    "코스피":  "^KS11",
-    "KOSPI":  "^KS11",
-    "코스닥":  "^KQ11",
-    "KOSDAQ": "^KQ11",
+# 정확한 이름 매칭만 허용 — 서브인덱스(중형주, 기술성장기업부 등)가 덮어쓰는 버그 방지
+INDEX_EXACT_MAP = {
+    "코스피":     "^KS11",
+    "KOSPI":      "^KS11",
+    "코스닥":     "^KQ11",
+    "KOSDAQ":     "^KQ11",
+    "코스피 200": "^KS200",
+    "코스닥 150": "^KQ150",
 }
 
 def _save_index(conn, rows: list, bas_dd: str) -> int:
     saved = 0
     for r in rows:
         idx_nm = str(r.get("IDX_NM", "")).strip()
-        # 코스피/코스닥 대표 지수만 저장
-        code = None
-        for key, val in INDEX_NAME_MAP.items():
-            if key in idx_nm and ("200" not in idx_nm) and ("100" not in idx_nm) and ("소형" not in idx_nm):
-                code = val
-                break
+        code = INDEX_EXACT_MAP.get(idx_nm)
         if not code:
             continue
 

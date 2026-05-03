@@ -338,21 +338,40 @@ class DataCollector:
     # 매크로 수집
     # ──────────────────────────────────────────────────────────────────────
 
+    # ── 한국 공휴일 (KRX 휴장일) ──────────────────────────────────
+    _KR_HOLIDAYS: set = {
+        date(2026,  1,  1), date(2026,  1, 28), date(2026,  1, 29), date(2026,  1, 30),
+        date(2026,  3,  1), date(2026,  5,  1), date(2026,  5,  5), date(2026,  5,  6),
+        date(2026,  6,  6), date(2026,  8, 17), date(2026,  9, 25), date(2026,  9, 28),
+        date(2026,  9, 29), date(2026, 10,  3), date(2026, 10,  9), date(2026, 12, 25),
+        date(2025,  1,  1), date(2025,  1, 28), date(2025,  1, 29), date(2025,  1, 30),
+        date(2025,  3,  1), date(2025,  5,  1), date(2025,  5,  5), date(2025,  5,  6),
+        date(2025,  6,  6), date(2025,  8, 15), date(2025,  9, 16), date(2025,  9, 17),
+        date(2025,  9, 18), date(2025, 10,  3), date(2025, 10,  9), date(2025, 12, 25),
+    }
+
+    @classmethod
+    def _is_kr_trading_day(cls, d: date | None = None) -> bool:
+        """한국 증시 영업일 여부 (주말·공휴일 False)."""
+        d = d or date.today()
+        return d.weekday() < 5 and d not in cls._KR_HOLIDAYS
+
     def collect_macro_data(self):
-        from datetime import datetime as _dt
-        if _dt.now().weekday() >= 5:
-            return  # 주말 매크로 수집 스킵
         """
         매크로 지표 수집 (KIS 우선, Yahoo Finance fallback).
 
         수집 항목:
           · KOSPI / KOSDAQ : KIS FHPUP02100000 (지수 현재가) + FHKUP03010100 (수급)
           · VIX / GOLD / OIL / USD/KRW : Yahoo Finance
-          · 오늘 날짜 레코드 없으면 최신값을 오늘 날짜로 강제 upsert
+        ⚠️ 주말·공휴일에는 DB 덮어쓰기 안 함 (is_kr_trading_day 체크)
         """
         from datetime import date as _date
         today     = datetime.now().date()
         today_iso = today.isoformat()
+
+        if not self._is_kr_trading_day(today):
+            print(f"  [매크로] {today_iso} — 한국 휴장일. 수집 스킵 (DB 미덮어씀)")
+            return
 
         print("  [매크로] 지표 수집 시작")
         _krx = None  # KRX 수급 보완 (현재 차단 상태 — 항상 None)
@@ -453,6 +472,8 @@ class DataCollector:
             "GC=F":     "GOLD",
             "CL=F":     "OIL",
             "USDKRW=X": "USD/KRW",
+            "^IXIC":    "NASDAQ",   # 나스닥 종합
+            "^GSPC":    "S&P500",   # S&P 500
         }
         for symbol, name in global_symbols.items():
             self._collect_macro_yahoo(symbol, name, today_iso)
@@ -580,7 +601,15 @@ class DataCollector:
         from datetime import date as _date
         today_iso = datetime.now().date().isoformat()
 
-        for symbol, name in [("^KS11","KOSPI"),("^KQ11","KOSDAQ")]:
+        # KOSPI/KOSDAQ (KIS+Yahoo) + KOSDAQ150/NASDAQ/S&P500 (Yahoo 전용)
+        index_targets = [
+            ("^KS11",  "KOSPI"),
+            ("^KQ11",  "KOSDAQ"),
+            ("^KQ150", "KOSDAQ150"),  # KRX API 차단 대비 Yahoo 백업
+            ("^IXIC",  "NASDAQ"),
+            ("^GSPC",  "S&P500"),
+        ]
+        for symbol, name in index_targets:
             try:
                 # DB 레코드 수 확인
                 res = httpx.get(
@@ -592,6 +621,11 @@ class DataCollector:
                 # 365일치 미만이면 3년치 백필
                 period = "3y" if db_count < 365 else "5d"
                 print(f"  [지수히스토리] {name}({symbol}): DB={db_count}건 → period={period}")
+
+                # KOSDAQ150(ˆKQ150)는 Yahoo 미지원 → pykrx (KRX 공식 라이브러리)로 대체
+                if symbol == "^KQ150":
+                    self._backfill_kq150_pykrx(today_iso)
+                    continue
 
                 df = yf.download(symbol, period=period, interval="1d",
                                  progress=False, auto_adjust=True)
@@ -629,10 +663,13 @@ class DataCollector:
                 if not prices:
                     continue
 
-                # 오늘 날짜 없으면 최신값을 오늘 날짜로 추가
-                if not any(p["date"] == today_iso for p in prices):
-                    latest_p = max(prices, key=lambda x: x["date"])
-                    prices.append({**latest_p, "date": today_iso})
+                # ⚠️ 한국 휴장일에는 오늘 날짜 데이터 복사 금지
+                kr_syms = {"^KS11", "^KQ11", "^KS200", "^KQ150"}
+                if symbol in kr_syms and not self._is_kr_trading_day():
+                    prices = [p for p in prices if p["date"] != today_iso]
+
+                if not prices:
+                    continue
 
                 httpx.post(f"{self.base_url}/api/ingest/market-price",
                            json={"stock_code": symbol, "prices": prices}, timeout=30)
@@ -640,6 +677,65 @@ class DataCollector:
 
             except Exception as e:
                 logger.warning(f"[지수히스토리] {symbol} 오류: {e}")
+
+    def _backfill_kq150_pykrx(self, today_iso: str) -> None:
+        """
+        pykrx로 KOSDAQ150 지수 일별 데이터 수집.
+        KRX 코스닥150 지수코드: 2150
+        KOSPI200 수집과 동일한 방식으로 적용.
+        """
+        try:
+            from pykrx import stock as _pykrx
+            from datetime import datetime as _dt, timedelta as _td
+
+            # 90일치 수집 (최신 데이터 채우기)
+            end_dt   = _dt.now()
+            start_dt = end_dt - _td(days=90)
+            fromdate = start_dt.strftime("%Y%m%d")
+            todate   = end_dt.strftime("%Y%m%d")
+
+            # KRX KOSDAQ150 지수 코드 = 2150
+            df = _pykrx.get_index_ohlcv_by_date(fromdate, todate, "2150")
+            if df is None or df.empty:
+                print(f"  [지수히스토리] KOSDAQ150: pykrx 데이터 없음")
+                return
+
+            prices = []
+            for ts, row in df.iterrows():
+                date_iso = ts.strftime("%Y-%m-%d") if hasattr(ts, 'strftime') else str(ts)[:10]
+                close = float(row.get("종가", row.get("Close", 0)) or 0)
+                if close <= 0:
+                    continue
+                prices.append({
+                    "date":         date_iso,
+                    "open":         float(row.get("시가", row.get("Open", close)) or close),
+                    "high":         float(row.get("고가", row.get("High", close)) or close),
+                    "low":          float(row.get("저가", row.get("Low",  close)) or close),
+                    "close":        close,
+                    "volume":       float(row.get("거래량", row.get("Volume", 0)) or 0),
+                    "inst_net_buy": 0.0,
+                    "frn_net_buy":  0.0,
+                })
+
+            if not prices:
+                print(f"  [지수히스토리] KOSDAQ150: 유효 데이터 없음")
+                return
+
+            # ⚠️ 한국 휴장일에는 오늘 날짜 복사 금지
+            if not self._is_kr_trading_day():
+                prices = [p for p in prices if p["date"] != today_iso]
+
+            httpx.post(f"{self.base_url}/api/ingest/market-price",
+                       json={"stock_code": "^KQ150", "prices": prices}, timeout=30)
+            latest = max(p['date'] for p in prices)
+            print(f"  [지수히스토리] KOSDAQ150(pykrx): {len(prices)}건 저장 완료 (최신={latest})")
+
+
+        except ImportError:
+            print(f"  [지수히스토리] KOSDAQ150: pykrx 미설치 (pip install pykrx)")
+        except Exception as e:
+            logger.warning(f"[지수히스토리] KOSDAQ150 pykrx 오류: {e}")
+
 
     def backfill_portfolio_investor(self):
         """
@@ -732,21 +828,18 @@ class DataCollector:
             if not prices:
                 return
 
-            # 오늘 날짜 레코드 없으면 최신값을 오늘 날짜+현재시각으로 추가
-            now_iso = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-            if not any(p["date"] == today_iso for p in prices):
-                latest_p = max(prices, key=lambda x: x["date"])
-                prices.append({**latest_p, "date": now_iso})
-            else:
-                # 오늘 레코드가 있으면 시각을 현재로 갱신
-                for p in prices:
-                    if p["date"] == today_iso:
-                        p["date"] = now_iso
+            # ⚠️ 오늘이 한국 휴장일이면 오늘 날짜 entry 생성 금지
+            # 오늘 실제 Yahoo 데이터가 없으면 최신 날짜 그대로 사용 (복사 금지)
+            kr_symbols = {"^KS11", "^KQ11", "^KS200", "^KQ150"}
+            is_kr      = symbol in kr_symbols
+            if is_kr and not self._is_kr_trading_day():
+                # 한국 휴장일: 오늘 날짜 데이터 제거 (이미 DB에 있어도 갱신 안 함)
+                prices = [p for p in prices if p["date"] != today_iso]
 
             httpx.post(f"{self.base_url}/api/ingest/market-price",
                        json={"stock_code": symbol, "prices": prices}, timeout=10)
             latest = max(prices, key=lambda x: x["date"])
-            print(f"  [Yahoo] {name}({symbol}): {latest['close']:,.2f} ({latest['date'][:16]})")
+            print(f"  [Yahoo] {name}({symbol}): {latest['close']:,.2f} ({latest['date'][:10]})")
         except Exception as e:
             logger.warning(f"  [Yahoo] {symbol} 오류: {e}")
 

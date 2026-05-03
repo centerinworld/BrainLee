@@ -1,0 +1,18 @@
+# Heavy/generated folders (avoid expensive recursive scans)
+.claude/
+reports/
+hs_trade_lab/data/customs_downloads/
+venv/
+venv_backup/
+__pycache__/
+node_modules/
+frontend/node_modules/
+
+# Large/binary artifacts
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.csv
+*.xlsx
+*.pdf

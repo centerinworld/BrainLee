@@ -23,6 +23,7 @@ def connect() -> sqlite3.Connection:
 
 
 def ensure_tables(conn: sqlite3.Connection) -> None:
+    conn.execute("DROP TABLE IF EXISTS analysis2_company_hs_monthly_cache")
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS analysis2_sector_monthly_cache (
@@ -74,12 +75,14 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
             period_ym TEXT NOT NULL,
             hs_code TEXT NOT NULL,
             hs_name TEXT NOT NULL,
+            sector_name TEXT NOT NULL DEFAULT '',
+            flow_type TEXT NOT NULL DEFAULT 'export',
             mapping_status TEXT NOT NULL DEFAULT 'provisional',
             export_value REAL NOT NULL DEFAULT 0,
             export_weight REAL NOT NULL DEFAULT 0,
             import_value REAL NOT NULL DEFAULT 0,
             import_weight REAL NOT NULL DEFAULT 0,
-            PRIMARY KEY (sector_key, stock_code, period_ym, hs_code)
+            PRIMARY KEY (sector_key, stock_code, period_ym, hs_code, flow_type)
         );
 
         CREATE INDEX IF NOT EXISTS ix_analysis2_sector_monthly_period
@@ -179,6 +182,7 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
                 hcm.stock_code,
                 hcm.stock_name,
                 hcm.sector_name,
+                COALESCE(NULLIF(hcm.flow_type, ''), CASE WHEN instr(hcm.sector_name, '수입') > 0 THEN 'import' ELSE 'export' END) AS flow_type,
                 hcm.hs_code,
                 COALESCE(NULLIF(hcm.hs_name, ''), NULLIF(sm.display_name, ''), NULLIF(sm.hs_name, ''), hcm.hs_code) AS hs_name,
                 hcm.mapping_status,
@@ -186,50 +190,26 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
                   WHEN 'exact' THEN 1
                   WHEN 'composite' THEN 2
                   ELSE 3 END AS rank_num,
-                CASE WHEN instr(hcm.sector_name, '수입') > 0 THEN 1 ELSE 0 END AS is_import_label
+                CASE WHEN COALESCE(NULLIF(hcm.flow_type, ''), '') = 'import' OR instr(hcm.sector_name, '수입') > 0 THEN 1 ELSE 0 END AS is_import_label
             FROM hs_code_company_map hcm
             JOIN hs_sector_map sm
               ON sm.hs_code = hcm.hs_code
             JOIN sector_preset sp
               ON sp.sector_key = sm.sector_key
-        ),
-        company_pref AS (
-            SELECT
-                sector_key,
-                stock_code,
-                MAX(CASE WHEN is_import_label = 0 THEN 1 ELSE 0 END) AS has_non_import
-            FROM candidates
-            GROUP BY sector_key, stock_code
-        ),
-        filtered AS (
-            SELECT c.*
-            FROM candidates c
-            JOIN company_pref cp
-              ON cp.sector_key = c.sector_key
-             AND cp.stock_code = c.stock_code
-            WHERE cp.has_non_import = 0
-               OR c.is_import_label = 0
-        ),
-        ranked AS (
-            SELECT sector_key, stock_code, MIN(rank_num) AS best_rank
-            FROM filtered
-            GROUP BY sector_key, stock_code
         )
         SELECT
-            f.sector_key,
-            f.sector_label,
-            f.stock_code,
-            f.stock_name,
-            f.sector_name,
-            f.hs_code,
-            f.hs_name,
-            f.mapping_status,
-            f.rank_num
-        FROM filtered f
-        JOIN ranked r
-          ON r.sector_key = f.sector_key
-         AND r.stock_code = f.stock_code
-         AND r.best_rank = f.rank_num;
+            c.sector_key,
+            c.sector_label,
+            c.stock_code,
+            c.stock_name,
+            c.sector_name,
+            c.flow_type,
+            c.hs_code,
+            c.hs_name,
+            c.mapping_status,
+            c.rank_num
+        FROM candidates c
+        ;
 
         DROP TABLE IF EXISTS tmp_company_match;
         CREATE TEMP TABLE tmp_company_match AS
@@ -246,6 +226,7 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
                 tcm.stock_code,
                 tcm.stock_name,
                 tcm.sector_name,
+                tcm.flow_type,
                 tcm.hs_code,
                 tcm.hs_name,
                 tcm.mapping_status,
@@ -290,7 +271,38 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
 
         INSERT INTO analysis2_company_hs_monthly_cache (
             sector_key, sector_label, stock_code, stock_name, period_ym, hs_code, hs_name,
-            mapping_status, export_value, export_weight, import_value, import_weight
+            sector_name, flow_type, mapping_status, export_value, export_weight, import_value, import_weight
+        )
+        WITH flow_rows AS (
+          SELECT
+            sector_key,
+            sector_label,
+            stock_code,
+            stock_name,
+            period_ym,
+            hs_code,
+            hs_name,
+            GROUP_CONCAT(DISTINCT sector_name) AS sector_names,
+            flow_type,
+            MIN(rank_num) AS best_rank,
+            export_value,
+            export_weight,
+            import_value,
+            import_weight
+          FROM tmp_company_match
+          GROUP BY
+            sector_key,
+            sector_label,
+            stock_code,
+            stock_name,
+            period_ym,
+            hs_code,
+            hs_name,
+            flow_type,
+            export_value,
+            export_weight,
+            import_value,
+            import_weight
         )
         SELECT
             sector_key,
@@ -300,7 +312,9 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
             period_ym,
             hs_code,
             hs_name,
-            CASE MIN(rank_num)
+            GROUP_CONCAT(DISTINCT sector_names) AS sector_names,
+            flow_type,
+            CASE MIN(best_rank)
               WHEN 1 THEN 'exact'
               WHEN 2 THEN 'composite'
               ELSE 'provisional' END AS mapping_status,
@@ -308,8 +322,8 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
             ROUND(SUM(export_weight), 6),
             ROUND(SUM(import_value), 6),
             ROUND(SUM(import_weight), 6)
-        FROM tmp_company_match
-        GROUP BY sector_key, sector_label, stock_code, stock_name, period_ym, hs_code, hs_name;
+        FROM flow_rows
+        GROUP BY sector_key, sector_label, stock_code, stock_name, period_ym, hs_code, hs_name, flow_type;
 
         DROP TABLE IF EXISTS tmp_sector_match;
         DROP TABLE IF EXISTS tmp_company_mapping;

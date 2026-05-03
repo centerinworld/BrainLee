@@ -1,0 +1,108 @@
+{
+  "cookies": [
+    {
+      "name": "connect.sid",
+      "value": "s%3AKpzXjEmbfH7nGrJCwOHj-cMb70ahJ74O.PDecInY2ey1p7Ec7SAQupAWflDivlCYLjSzmgJ6o%2F8Y",
+      "domain": "www.etfcheck.co.kr",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "test_cookie",
+      "value": "CheckForPermission",
+      "domain": ".doubleclick.net",
+      "path": "/",
+      "expires": 1777548566.040735,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_ga",
+      "value": "GA1.1.1438872567.1777547667",
+      "domain": ".etfcheck.co.kr",
+      "path": "/",
+      "expires": 1812107667.134928,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "g_state",
+      "value": "{\"i_l\":0,\"i_ll\":1777547669008,\"i_b\":\"LW79pRiwcba/ZbhQrapQ5iXWvP9s/h/Bxfv9Y7iw5ak\",\"i_e\":{\"enable_itp_optimization\":0},\"i_et\":1777547666634}",
+      "domain": "www.etfcheck.co.kr",
+      "path": "/",
+      "expires": 1793099669,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__Host-GAPS",
+      "value": "1:KQvCIi-p0AhkwRhEadIXDx5zrPpVpA:D_ym1maUjN-dw9HS",
+      "domain": "accounts.google.com",
+      "path": "/",
+      "expires": 1812107669.38441,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "OTZ",
+      "value": "8587395_20_20__20_",
+      "domain": "accounts.google.com",
+      "path": "/",
+      "expires": 1780139670,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "NID",
+      "value": "531=JTpsgZhIlRHF5PZSWgOpPtJZS48qPmSAlMrYONPm3b6DaorS1kKw2Zer813cIF2BAMwI6YGHZe32ORIpDzZVTJMDgloRFCXcKuiNtJ9venJ65cl-6aXzc44NynpVIiIwryYBd4A2FPCXCzEhfFcr6Z8xaBlbckEj9w0odFORUt8M8R5JszVz70TGVt7dlEUp0Ggd8prCaV_U",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1793358870.468118,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_ga_8W6PNHQZTR",
+      "value": "GS2.1.s1777547667$o1$g1$t1777547716$j11$l0$h0",
+      "domain": ".etfcheck.co.kr",
+      "path": "/",
+      "expires": 1812107716.159686,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://www.etfcheck.co.kr",
+      "localStorage": [
+        {
+          "name": "lovedaegari@gmail.com",
+          "value": "RvpbR0zx30fVLeJKcv3tDg=="
+        },
+        {
+          "name": "user",
+          "value": "{\"email\":\"lovedaegari@gmail.com\",\"nickname\":\"멋진군바리\",\"avatar\":\"anony/anony_7.png\",\"login_type\":\"email\",\"access_token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImxvdmVkYWVnYXJpQGdtYWlsLmNvbSIsImlhdCI6MTc3NzU0NzcxNX0.ZCjuBl6Ce7bdxuZcKMw-gZzWxirmt1tgM2zaNBJ1H_s\",\"create_date\":\"2026-04-30 19:28:36\",\"auto_login\":true}"
+        }
+      ]
+    },
+    {
+      "origin": "https://www.google.com",
+      "localStorage": [
+        {
+          "name": "rc::h",
+          "value": "1777547667747"
+        }
+      ]
+    }
+  ]
+}

@@ -31,6 +31,7 @@ class HSCodeCompanyMap(Base):
     stock_code: Mapped[str] = mapped_column(String(20), index=True)
     stock_name: Mapped[str] = mapped_column(String(120), default="")
     sector_name: Mapped[str] = mapped_column(String(120), default="")
+    flow_type: Mapped[str] = mapped_column(String(20), default="export")
     match_type: Mapped[str] = mapped_column(String(20), default="company")
     mapping_status: Mapped[str] = mapped_column(String(20), default="provisional")
     confidence: Mapped[float] = mapped_column(Float, default=0.5)

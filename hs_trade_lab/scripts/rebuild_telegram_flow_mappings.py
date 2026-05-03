@@ -1,0 +1,495 @@
+from __future__ import annotations
+
+import csv
+import json
+import re
+import sqlite3
+from pathlib import Path
+
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+DB_PATH = ROOT_DIR / "data" / "hs_trade_lab.db"
+ROOT_STOCK_DB = ROOT_DIR.parent / "stock.db"
+EXPORT_DIR = ROOT_DIR / "market_radar_exports"
+
+FLOW_RE = re.compile(r"^\s*(수출|수입)\s*\(([^)]*)\)")
+COMPANY_SPLIT_RE = re.compile(r"[\/,·ㆍ]| 및 | 와 | 과 ")
+
+COMPANY_ALIASES = {
+    "Sk하이닉스": "SK하이닉스",
+    "SK하이닉스(나믹스": "SK하이닉스",
+    "삼성전자(나가세": "삼성전자",
+    "OCI": "OCI홀딩스",
+    "HD현대": "HD현대중공업",
+    "JYP Ent": "JYP Ent.",
+    "와이아이케이": "와이씨",
+    "와이씨 (와이아이케이)": "와이씨",
+    "금호석유": "금호석유화학",
+    "코오롱인더스트리": "코오롱인더",
+    "코오롱플라스틱": "코오롱ENP",
+}
+
+BAD_COMPANY_TOKENS = {
+    "",
+    "등",
+    "외",
+    "비상장",
+    "자회사",
+    "월별 수출 데이터",
+    "월별 수입 데이터",
+}
+
+BAD_HS_LABELS = {
+    "",
+    "기타",
+}
+
+HS_ALIASES = {
+    "메모리반도체": [("854232", "전자집적회로: 메모리"), ("8523511000", "SSD")],
+    "디램": [("854232", "전자집적회로: 메모리")],
+    "디램모듈": [("854232", "전자집적회로: 메모리")],
+    "MCP": [("854232", "전자집적회로: 메모리")],
+    "MCP (복합구조칩 집적회로)": [("854232", "전자집적회로: 메모리")],
+    "복합구조칩 집적회로": [("854232", "전자집적회로: 메모리")],
+    "MLCC": [("8532240000", "세라믹 유전체의 것(다층)")],
+    "OLED TV": [("8528725000", "유기발광다이오드(오엘이디) 방식")],
+    "OLED 패널": [("8524911000", "유기발광다이오드 표시 모듈")],
+    "평판디스플레이 텔레비전용": [("8528725000", "유기발광다이오드(오엘이디) 방식")],
+    "평판디스플레이 모니터용": [("8528521000", "평판디스플레이 모니터")],
+    "스크러버": [("8421219020", "반도체 제조용 여과기나 청정기")],
+    "스크러버 액체용•기체용 여과 및 청정기": [("8421219020", "반도체 제조용 여과기나 청정기")],
+    "인터페이스보드 프로브 카드": [("8534009000", "그 밖의 인쇄회로")],
+    "러버 소켓": [("8536909090", "그 밖의 전기회로 접속용 기기")],
+    "실리콘러버소켓": [("8536909090", "그 밖의 전기회로 접속용 기기")],
+    "플러그 소켓(동축케이블·인쇄회로용의 것) 리노소켓": [("8536909090", "그 밖의 전기회로 접속용 기기")],
+    "CMP": [("8464202000", "반도체 웨이퍼 연마기")],
+    "CMP (웨이퍼 표면 연마장치)": [("8464202000", "반도체 웨이퍼 연마기")],
+    "연마제": [("3405901000", "반도체 웨이퍼 연마용 조제품")],
+    "연마제 (CMP공정에 쓰이는 소재)": [("3405901000", "반도체 웨이퍼 연마용 조제품")],
+    "반도체 제조용 장비": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "반도체 웨이퍼용 증착장비": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "반도체 웨이퍼 습식 식각 / 세척 장비": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "급속열처리장비": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "급속열처리장비(Rapid Thermal Processing, RTP)": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "반도체 웨이퍼, 소자의 측정, 검사용 장비": [("9031809070", "반도체 패턴결함 검사장비")],
+    "3차원 검사장비, 모듈": [("9031809091", "반도체 검사장비")],
+}
+
+
+def has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    if not has_column(conn, "telegram_post_cache", "trade_flow_type"):
+        conn.execute("ALTER TABLE telegram_post_cache ADD COLUMN trade_flow_type TEXT NOT NULL DEFAULT ''")
+    if not has_column(conn, "telegram_post_cache", "product_title"):
+        conn.execute("ALTER TABLE telegram_post_cache ADD COLUMN product_title TEXT NOT NULL DEFAULT ''")
+    if not has_column(conn, "hs_code_company_map", "flow_type"):
+        conn.execute("ALTER TABLE hs_code_company_map ADD COLUMN flow_type TEXT NOT NULL DEFAULT 'export'")
+        conn.execute(
+            """
+            UPDATE hs_code_company_map
+            SET flow_type = CASE WHEN sector_name LIKE '%수입%' OR note LIKE '%수입%' THEN 'import' ELSE 'export' END
+            """
+        )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS telegram_company_hs_flow_map (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_message_id TEXT NOT NULL,
+            posted_at TEXT NOT NULL DEFAULT '',
+            post_url TEXT NOT NULL DEFAULT '',
+            flow_type TEXT NOT NULL,
+            flow_scope TEXT NOT NULL DEFAULT '',
+            product_title TEXT NOT NULL DEFAULT '',
+            hs_code TEXT NOT NULL,
+            hs_name TEXT NOT NULL DEFAULT '',
+            stock_code TEXT NOT NULL,
+            stock_name TEXT NOT NULL DEFAULT '',
+            market TEXT NOT NULL DEFAULT '',
+            mapping_status TEXT NOT NULL DEFAULT 'exact',
+            confidence REAL NOT NULL DEFAULT 0.95,
+            source_note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(post_message_id, flow_type, hs_code, stock_code)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_telegram_flow_map_stock ON telegram_company_hs_flow_map(stock_code, flow_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_telegram_flow_map_hs ON telegram_company_hs_flow_map(hs_code, flow_type)")
+
+
+def normalize_company(name: str) -> str:
+    value = re.sub(r"\([^)]*$", "", name).strip(" .()[]")
+    value = re.sub(r"\s*등$", "", value).strip()
+    return COMPANY_ALIASES.get(value, value)
+
+
+def load_stock_lookup() -> dict[str, dict[str, str]]:
+    conn = sqlite3.connect(f"file:{ROOT_STOCK_DB}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    lookup: dict[str, dict[str, str]] = {}
+    listed_markets = {"유가증권", "코스닥", "KOSPI", "KOSDAQ"}
+    for table in ("stock_universe", "stock_meta", "stock_price_daily"):
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT stock_code, stock_name, COALESCE(market, '') AS market
+                FROM {table}
+                WHERE stock_name <> ''
+                """
+            ).fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            market = row["market"] or ""
+            if market not in listed_markets:
+                continue
+            lookup.setdefault(
+                row["stock_name"],
+                {"stock_code": row["stock_code"], "stock_name": row["stock_name"], "market": market},
+            )
+    conn.close()
+    hs_conn = sqlite3.connect(DB_PATH)
+    hs_conn.row_factory = sqlite3.Row
+    try:
+        for row in hs_conn.execute(
+            """
+            SELECT DISTINCT stock_code, stock_name
+            FROM hs_code_company_map
+            WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND stock_name <> ''
+            """
+        ):
+            lookup.setdefault(
+                row["stock_name"],
+                {"stock_code": row["stock_code"], "stock_name": row["stock_name"], "market": "KRX"},
+            )
+    finally:
+        hs_conn.close()
+    return lookup
+
+
+def add_hs(lookup: dict[str, list[dict[str, str]]], label: str, hs_code: str, hs_name: str) -> None:
+    label = re.sub(r"\s+", " ", (label or "").strip())
+    if not label:
+        return
+    entry = {"hs_code": hs_code, "hs_name": hs_name}
+    values = lookup.setdefault(label, [])
+    if entry not in values:
+        values.append(entry)
+
+
+def load_hs_lookup(conn: sqlite3.Connection) -> dict[str, list[dict[str, str]]]:
+    lookup: dict[str, list[dict[str, str]]] = {}
+    for row in conn.execute("SELECT hs_code, hs_name, display_name FROM hs_sector_map"):
+        add_hs(lookup, row["display_name"], row["hs_code"], row["hs_name"])
+        add_hs(lookup, row["hs_name"], row["hs_code"], row["hs_name"])
+        simplified = re.sub(r"\s+(수입|수출)$", "", row["display_name"] or "").strip()
+        add_hs(lookup, simplified, row["hs_code"], row["hs_name"])
+    for row in conn.execute("SELECT hs_code, hs_name, sector_name FROM hs_code_company_map"):
+        add_hs(lookup, row["sector_name"], row["hs_code"], row["hs_name"])
+        simplified = re.sub(r"\s+(수입|수출)$", "", row["sector_name"] or "").strip()
+        add_hs(lookup, simplified, row["hs_code"], row["hs_name"])
+    for label, rows in HS_ALIASES.items():
+        for hs_code, hs_name in rows:
+            add_hs(lookup, label, hs_code, hs_name)
+    return lookup
+
+
+def json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        data = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(data, list):
+        return [str(item).strip() for item in data if str(item).strip()]
+    return []
+
+
+def parse_flow_and_product(raw_text: str, title: str) -> tuple[str, str, str]:
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    if not lines:
+        return "", "", title.strip()
+    match = FLOW_RE.match(lines[0])
+    if match:
+        flow_type = "export" if match.group(1) == "수출" else "import"
+        flow_scope = match.group(2).strip()
+        candidate_lines = lines[1:]
+    elif "수출데이터" in raw_text or "수출 데이터" in raw_text:
+        flow_type = "export"
+        flow_scope = ""
+        candidate_lines = lines
+    elif "수입데이터" in raw_text or "수입 데이터" in raw_text:
+        flow_type = "import"
+        flow_scope = ""
+        candidate_lines = lines
+    else:
+        return "", "", title.strip()
+    product = ""
+    for line in candidate_lines:
+        if "관련종목" in line:
+            break
+        if re.search(r"20\d{2}년", line):
+            break
+        if line.startswith("|"):
+            continue
+        product = line.strip()
+        break
+    scope_match = re.search(r"\((전국[^)]*|글로벌[^)]*|[가-힣]+ [가-힣]+시|[가-힣]+ [가-힣]+군|[가-힣]+ [가-힣]+구|중국[^)]*|미국[^)]*|베트남[^)]*)\)", product)
+    if scope_match and not flow_scope:
+        flow_scope = scope_match.group(1).strip()
+    return flow_type, flow_scope, product or title.strip()
+
+
+def parse_companies(row: sqlite3.Row) -> list[str]:
+    companies = json_list(row["matched_companies_json"]) or json_list(row["companies_json"])
+    if companies:
+        return list(dict.fromkeys(normalize_company(item) for item in companies if normalize_company(item) not in BAD_COMPANY_TOKENS))
+    match = re.search(r"관련종목\s*:\s*(.+?)(?:\n|$)", row["raw_text"] or "")
+    if not match:
+        return []
+    raw = re.split(r"\b20\d{2}년\b|잠정치|확정치", match.group(1), maxsplit=1)[0]
+    values = []
+    for item in COMPANY_SPLIT_RE.split(raw):
+        company = normalize_company(item)
+        if company not in BAD_COMPANY_TOKENS:
+            values.append(company)
+    return list(dict.fromkeys(values))
+
+
+def hs_entries_for_post(row: sqlite3.Row, product: str, hs_lookup: dict[str, list[dict[str, str]]]) -> list[dict[str, str]]:
+    labels = json_list(row["matched_hs_codes_json"])
+    candidates: list[dict[str, str]] = []
+    for label in [*labels, product]:
+        if label in BAD_HS_LABELS:
+            continue
+        candidates.extend(hs_lookup.get(label, []))
+        simplified = re.sub(r"\([^)]*\)", "", label).strip()
+        if simplified != label:
+            candidates.extend(hs_lookup.get(simplified, []))
+        no_scope = re.sub(r"\s*\((전국[^)]*|글로벌[^)]*|중국[^)]*|미국[^)]*|베트남[^)]*|일본[^)]*|대만[^)]*|홍콩[^)]*)\)", "", label).strip()
+        if no_scope != label:
+            candidates.extend(hs_lookup.get(no_scope, []))
+    seen: set[str] = set()
+    unique: list[dict[str, str]] = []
+    for item in candidates:
+        if item["hs_code"] in seen:
+            continue
+        seen.add(item["hs_code"])
+        unique.append(item)
+    return unique
+
+
+def upsert_company_map(
+    conn: sqlite3.Connection,
+    *,
+    flow_type: str,
+    flow_scope: str,
+    product: str,
+    hs: dict[str, str],
+    stock: dict[str, str],
+    row: sqlite3.Row,
+) -> str:
+    sector_name = f"{product} {'수입' if flow_type == 'import' else '수출'}".strip()
+    note = (
+        f"텔레그램 @BeOn_BeClear 검증 메시지 기반 exact 매핑: {row['message_id']} "
+        f"{row['post_url']} / {flow_type}({flow_scope})"
+    )
+    existing = conn.execute(
+        "SELECT id, mapping_status, confidence, flow_type FROM hs_code_company_map WHERE hs_code=? AND stock_code=?",
+        (hs["hs_code"], stock["stock_code"]),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            """
+            UPDATE hs_code_company_map
+            SET hs_name=?,
+                stock_name=?,
+                sector_name=?,
+                flow_type=?,
+                mapping_status='exact',
+                confidence=MAX(COALESCE(confidence, 0), 0.95),
+                note=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (hs["hs_name"], stock["stock_name"], sector_name, flow_type, note, existing["id"]),
+        )
+        return "updated"
+    conn.execute(
+        """
+        INSERT INTO hs_code_company_map (
+            hs_code, hs_name, stock_code, stock_name, sector_name,
+            match_type, mapping_status, confidence, note, flow_type
+        )
+        VALUES (?, ?, ?, ?, ?, 'company', 'exact', 0.95, ?, ?)
+        """,
+        (
+            hs["hs_code"],
+            hs["hs_name"],
+            stock["stock_code"],
+            stock["stock_name"],
+            sector_name,
+            note,
+            flow_type,
+        ),
+    )
+    return "inserted"
+
+
+def rebuild() -> dict[str, object]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    ensure_schema(conn)
+    stock_lookup = load_stock_lookup()
+    hs_lookup = load_hs_lookup(conn)
+    conn.execute("DELETE FROM telegram_company_hs_flow_map")
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM telegram_post_cache
+        WHERE raw_text LIKE '수출%'
+           OR raw_text LIKE '수입%'
+           OR title LIKE '수출%'
+           OR title LIKE '수입%'
+           OR raw_text LIKE '%수출데이터%'
+           OR raw_text LIKE '%수입데이터%'
+           OR raw_text LIKE '%수출 데이터%'
+           OR raw_text LIKE '%수입 데이터%'
+        ORDER BY posted_at DESC
+        """
+    ).fetchall()
+    summary: dict[str, object] = {
+        "flow_posts_scanned": len(rows),
+        "flow_posts_with_hs_and_company": 0,
+        "evidence_rows": 0,
+        "inserted": 0,
+        "updated": 0,
+        "missing_hs": {},
+        "missing_company": {},
+        "flow_counts": {"export": 0, "import": 0},
+    }
+    for row in rows:
+        flow_type, flow_scope, product = parse_flow_and_product(row["raw_text"], row["title"])
+        if not flow_type:
+            continue
+        summary["flow_counts"][flow_type] = int(summary["flow_counts"].get(flow_type, 0)) + 1
+        conn.execute(
+            """
+            UPDATE telegram_post_cache
+            SET trade_flow_type=?, product_title=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (flow_type, product, row["id"]),
+        )
+        hs_entries = hs_entries_for_post(row, product, hs_lookup)
+        companies = parse_companies(row)
+        stocks = []
+        for company in companies:
+            stock = stock_lookup.get(company)
+            if stock:
+                stocks.append(stock)
+            else:
+                missing = summary["missing_company"]
+                missing[company] = missing.get(company, 0) + 1
+        if not hs_entries:
+            missing_hs = summary["missing_hs"]
+            missing_hs[product] = missing_hs.get(product, 0) + 1
+        if not hs_entries or not stocks:
+            continue
+        summary["flow_posts_with_hs_and_company"] = int(summary["flow_posts_with_hs_and_company"]) + 1
+        for hs in hs_entries:
+            for stock in stocks:
+                result = upsert_company_map(
+                    conn,
+                    flow_type=flow_type,
+                    flow_scope=flow_scope,
+                    product=product,
+                    hs=hs,
+                    stock=stock,
+                    row=row,
+                )
+                summary[result] = int(summary[result]) + 1
+                conn.execute(
+                    """
+                    INSERT INTO telegram_company_hs_flow_map (
+                        post_message_id, posted_at, post_url, flow_type, flow_scope, product_title,
+                        hs_code, hs_name, stock_code, stock_name, market, mapping_status, confidence, source_note
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'exact', 0.95, ?)
+                    ON CONFLICT(post_message_id, flow_type, hs_code, stock_code) DO UPDATE SET
+                        posted_at=excluded.posted_at,
+                        post_url=excluded.post_url,
+                        flow_scope=excluded.flow_scope,
+                        product_title=excluded.product_title,
+                        hs_name=excluded.hs_name,
+                        stock_name=excluded.stock_name,
+                        market=excluded.market,
+                        mapping_status='exact',
+                        confidence=0.95,
+                        source_note=excluded.source_note,
+                        updated_at=CURRENT_TIMESTAMP
+                    """,
+                    (
+                        row["message_id"],
+                        row["posted_at"],
+                        row["post_url"],
+                        flow_type,
+                        flow_scope,
+                        product,
+                        hs["hs_code"],
+                        hs["hs_name"],
+                        stock["stock_code"],
+                        stock["stock_name"],
+                        stock["market"],
+                        f"{row['title']} / {row['post_url']}",
+                    ),
+                )
+                summary["evidence_rows"] = int(summary["evidence_rows"]) + 1
+    for key in ("missing_hs", "missing_company"):
+        values = summary[key]
+        summary[key] = dict(sorted(values.items(), key=lambda item: item[1], reverse=True)[:40])
+    conn.commit()
+    export_audit(conn)
+    conn.close()
+    return summary
+
+
+def export_audit(conn: sqlite3.Connection) -> None:
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    path = EXPORT_DIR / "telegram_company_hs_flow_map.csv"
+    rows = conn.execute(
+        """
+        SELECT posted_at, post_message_id, flow_type, flow_scope, product_title,
+               stock_code, stock_name, market, hs_code, hs_name, mapping_status,
+               confidence, post_url, source_note
+        FROM telegram_company_hs_flow_map
+        ORDER BY posted_at DESC, flow_type, product_title, stock_name, hs_code
+        """
+    ).fetchall()
+    headers = [desc[0] for desc in conn.execute(
+        """
+        SELECT posted_at, post_message_id, flow_type, flow_scope, product_title,
+               stock_code, stock_name, market, hs_code, hs_name, mapping_status,
+               confidence, post_url, source_note
+        FROM telegram_company_hs_flow_map
+        LIMIT 0
+        """
+    ).description]
+    with path.open("w", encoding="utf-8-sig", newline="") as fp:
+        writer = csv.writer(fp)
+        writer.writerow(headers)
+        writer.writerows(rows)
+
+
+def main() -> None:
+    print(json.dumps(rebuild(), ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

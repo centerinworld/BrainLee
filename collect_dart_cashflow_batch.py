@@ -8,10 +8,13 @@ cash_flow_data 테이블을 채운다. 이미 있는 행은 건너뜀.
   python3 collect_dart_cashflow_batch.py             # 전종목 (약 2500종목)
   python3 collect_dart_cashflow_batch.py --years 3   # 최근 3년만
   python3 collect_dart_cashflow_batch.py --missing   # cash_flow_data 전혀 없는 종목만
+  python3 collect_dart_cashflow_batch.py --fill-missing  # 최근 N년 중 비어 있는 기간이 있는 종목
   python3 collect_dart_cashflow_batch.py --limit 100 # 상위 N종목만
 """
 import argparse
+import contextlib
 import logging
+import os
 import sqlite3
 import time
 from datetime import date
@@ -44,7 +47,14 @@ def _latest_quarter() -> tuple[int, int]:
     else:        return y, 3
 
 
-def collect_one(dart, conn: sqlite3.Connection, code: str, years: int) -> int:
+def _is_sparse_cashflow_row(row: sqlite3.Row | tuple | None) -> bool:
+    if row is None:
+        return True
+    values = row[0:6]
+    return all(v is None for v in values)
+
+
+def collect_one(dart, conn: sqlite3.Connection, code: str, years: int, refill_sparse: bool = False) -> int:
     """단일 종목 현금흐름표 수집. 반환: 저장 건수."""
     latest_y, latest_q = _latest_quarter()
     qmap = {"11011": 4, "11013": 1, "11012": 2, "11014": 3}
@@ -58,16 +68,21 @@ def collect_one(dart, conn: sqlite3.Connection, code: str, years: int) -> int:
 
             # 이미 있으면 스킵
             exists = conn.execute(
-                "SELECT 1 FROM cash_flow_data WHERE stock_code=? AND year=? AND quarter=? AND is_annual=?",
+                """
+                SELECT operating_cf, investing_cf, financing_cf, capex, cash_end, depreciation
+                FROM cash_flow_data
+                WHERE stock_code=? AND year=? AND quarter=? AND is_annual=?
+                """,
                 (code, year, qnum, is_annual)
             ).fetchone()
-            if exists:
+            if exists and not (refill_sparse and _is_sparse_cashflow_row(exists)):
                 continue
 
             fn_data = None
             for fs in ["CFS", "OFS"]:
                 try:
-                    df = dart.finstate_all(code, year, rcode, fs_div=fs)
+                    with open(os.devnull, "w") as devnull, contextlib.redirect_stdout(devnull):
+                        df = dart.finstate_all(code, year, rcode, fs_div=fs)
                     if df is not None and not df.empty:
                         fn_data = df
                         break
@@ -127,30 +142,79 @@ def collect_one(dart, conn: sqlite3.Connection, code: str, years: int) -> int:
     return saved
 
 
-def run(years: int = 5, missing_only: bool = False, limit: int | None = None):
+def _expected_periods(years: int) -> list[tuple[int, int, int]]:
+    latest_y, latest_q = _latest_quarter()
+    qnums = [4, 1, 2, 3]
+    periods: list[tuple[int, int, int]] = []
+    for year in range(latest_y, latest_y - years, -1):
+        for qnum in qnums:
+            if year > latest_y or (year == latest_y and qnum > latest_q):
+                continue
+            periods.append((year, qnum, 1 if qnum == 4 else 0))
+    return periods
+
+
+def _codes_with_missing_periods(conn: sqlite3.Connection, codes: list[str], years: int) -> list[str]:
+    periods = _expected_periods(years)
+    sparse_codes: list[str] = []
+    for code in codes:
+        existing = set(
+            conn.execute(
+                """
+                SELECT year, quarter, is_annual
+                FROM cash_flow_data
+                WHERE stock_code=?
+                """,
+                (code,),
+            ).fetchall()
+        )
+        if any(period not in existing for period in periods):
+            sparse_codes.append(code)
+    return sparse_codes
+
+
+def _eligible_stock_codes(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute("""
+        WITH market_codes AS (
+            SELECT stock_code
+            FROM stock_meta
+            WHERE UPPER(COALESCE(market, '')) IN ('KOSPI', 'KOSDAQ')
+            UNION
+            SELECT stock_code
+            FROM stock_universe
+            WHERE market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
+              AND COALESCE(stock_type, '보통주') = '보통주'
+        )
+        SELECT DISTINCT f.stock_code
+        FROM financial_data f
+        JOIN market_codes m ON m.stock_code = f.stock_code
+        WHERE LENGTH(f.stock_code)=6 AND f.stock_code GLOB '[0-9]*'
+        ORDER BY f.stock_code
+    """).fetchall()
+    return [r[0] for r in rows]
+
+
+def run(years: int = 5, missing_only: bool = False, fill_missing: bool = False, limit: int | None = None):
     conn = sqlite3.connect(DB_PATH, timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
 
-    # 대상 종목: financial_data에 있는 6자리 국내 종목
-    rows = conn.execute("""
-        SELECT DISTINCT stock_code FROM financial_data
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
-        ORDER BY stock_code
-    """).fetchall()
-    codes = [r[0] for r in rows]
+    # 대상 종목: financial_data가 있고 시장구분이 코스피/코스닥인 6자리 국내 보통주
+    codes = _eligible_stock_codes(conn)
 
     if missing_only:
         have = set(r[0] for r in conn.execute(
             "SELECT DISTINCT stock_code FROM cash_flow_data"
         ).fetchall())
         codes = [c for c in codes if c not in have]
+    elif fill_missing:
+        codes = _codes_with_missing_periods(conn, codes, years)
 
     if limit:
         codes = codes[:limit]
 
     total = len(codes)
-    logger.info(f"대상: {total}종목 | 최근 {years}년 | missing_only={missing_only}")
+    logger.info(f"대상: {total}종목 | 최근 {years}년 | missing_only={missing_only} | fill_missing={fill_missing}")
 
     dart   = _get_dart()
     ok     = 0
@@ -158,7 +222,7 @@ def run(years: int = 5, missing_only: bool = False, limit: int | None = None):
 
     for i, code in enumerate(codes, 1):
         try:
-            n = collect_one(dart, conn, code, years)
+            n = collect_one(dart, conn, code, years, refill_sparse=fill_missing)
             ok += n
             if n:
                 logger.info(f"[{i}/{total}] {code}: {n}건 저장")
@@ -179,6 +243,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--years",   type=int,  default=5,     help="수집 연수 (기본 5년)")
     ap.add_argument("--missing", action="store_true",       help="cash_flow_data 없는 종목만")
+    ap.add_argument("--fill-missing", action="store_true",  help="최근 N년 중 누락 기간이 있는 종목 보강")
     ap.add_argument("--limit",   type=int,  default=None,   help="최대 종목수")
     args = ap.parse_args()
-    run(years=args.years, missing_only=args.missing, limit=args.limit)
+    run(years=args.years, missing_only=args.missing, fill_missing=args.fill_missing, limit=args.limit)

@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import models, schemas, crud, processor, screener, ai_analyzer
 from database import get_db, engine
 import logging
@@ -49,6 +50,14 @@ from routes.portfolio          import router as _portfolio_router
 from routes.market_indicators  import router as _market_indicators_router
 from routes.tenbagger          import router as _tenbagger_router
 from routes.market_radar       import router as _market_radar_router
+from routes.employment         import router as _employment_router
+from routes.sector_define      import router as _sector_define_router
+import sys
+sys.path.append("/Applications/stock_dashboard/ETF_check")
+from routes_etf import router as _etf_router
+
+sys.path.append("/Applications/stock_dashboard/employment_monitor")
+from routes_employment_v2 import router as _emp_v2_router
 
 app.include_router(_trend_router,              prefix="/api/trend",              tags=["trend"])
 app.include_router(_signals_router,            prefix="/api/signals",            tags=["signals"])
@@ -61,6 +70,10 @@ app.include_router(_portfolio_router,          prefix="/api/portfolio",         
 app.include_router(_market_indicators_router,  prefix="/api/market-indicators",  tags=["market-indicators"])
 app.include_router(_tenbagger_router,          prefix="/api/tenbagger",          tags=["tenbagger"])
 app.include_router(_market_radar_router,       prefix="/api/market-radar",       tags=["market-radar"])
+app.include_router(_employment_router,         prefix="/api/employment",          tags=["employment"])
+app.include_router(_sector_define_router,      prefix="/api/sector-define",       tags=["sector-define"])
+app.include_router(_etf_router)
+app.include_router(_emp_v2_router)
 
 
 def _send_telegram(msg: str, dedup_key: str = ""):
@@ -444,6 +457,7 @@ _MACRO_SYMBOLS = {
     "^KS11":    "KOSPI",
     "^KQ11":    "KOSDAQ",
     "^KS200":   "KOSPI200",   # KOSPI200 지수 (KOSPI200 선물 기초자산)
+    "^KQ150":   "KOSDAQ150",  # KOSDAQ150 지수 (KRX 일별 수집, Yahoo 없음)
     "^IXIC":    "NASDAQ",
     "^GSPC":    "S&P500",
     "^VIX":     "VIX",
@@ -484,12 +498,13 @@ def _realtime_fetch_macro(db, us_only: bool = False) -> None:
     _today = _now.date().isoformat()
 
     # 한국 지수(^KS11, ^KQ11, ^KS200)는 평일 장중에만 갱신, KOSPI 기존 데이터 있으면 스킵
-    _KR_SYMBOLS = {"^KS11", "^KQ11", "^KS200"}
+    _KR_SYMBOLS = {"^KS11", "^KQ11", "^KS200", "^KQ150"}
     _US_SYMBOLS = {"^IXIC", "^GSPC", "^VIX", "GC=F", "CL=F", "USDKRW=X"}
 
     if not us_only:
-        if _now.weekday() >= 5:
-            # 주말은 한국 지수 스킵, 미국 지수는 계속 진행
+        from data_collector import DataCollector as _DC
+        if _now.weekday() >= 5 or not _DC._is_kr_trading_day(_now.date()):
+            # 주말 또는 공휴일은 한국 지수 스킵, 미국 지수는 계속 진행
             pass
         else:
             try:
@@ -523,6 +538,8 @@ def _realtime_fetch_macro(db, us_only: bool = False) -> None:
     for symbol, name in _MACRO_SYMBOLS.items():
         if us_only and symbol in _KR_SYMBOLS:
             continue
+        if symbol == "^KQ150":
+            continue  # KOSDAQ150: Yahoo 미지원 → 아래 pykrx로 별도 처리
         try:
             df = yf.download(symbol, period="5d", interval="1d",
                              progress=False, auto_adjust=True)
@@ -555,17 +572,56 @@ def _realtime_fetch_macro(db, us_only: bool = False) -> None:
                     pass
             if not prices:
                 continue
-            if not any(p.date.date() == today for p in prices):
-                lp = max(prices, key=lambda p: p.date)
-                prices.append(schemas.PriceRecord(
-                    date=_dt.combine(today, _dt.min.time()),
-                    open=lp.open, high=lp.high, low=lp.low, close=lp.close,
-                    volume=lp.volume, inst_net_buy=0.0, frn_net_buy=0.0,
-                ))
+            # 한국 휴장일에는 한국 심벌 오늘 entry 생성 금지
+            from data_collector import DataCollector as _DC
+            _is_kr_sym = symbol in {"^KS11", "^KQ11", "^KS200", "^KQ150"}
+            if _is_kr_sym and not _DC._is_kr_trading_day(today):
+                prices = [p for p in prices if p.date.date() != today]
+            elif not any(p.date.date() == today for p in prices):
+                # 미국 심볼 또는 영업일: Yahoo에서 오늘 데이터 없으면 가장 최신값 표시 (copy 안 함)
+                pass  # 실제 Yahoo에 오늘 데이터 없으면 미래 주사 안 함
+            if not prices:
+                continue
             crud.bulk_insert_price_history(db, schemas.PriceIngest(stock_code=symbol, prices=prices))
             logger.info(f"[RT-Macro] {symbol}({name}) {len(prices)}건 저장")
+
         except Exception as e:
             logger.warning(f"[RT-Macro] {symbol}: {e}")
+
+    # KOSDAQ150: pykrx 수집 (Yahoo 미지원)
+    if not us_only:
+        try:
+            from pykrx import stock as _pykrx
+            _end   = today.strftime("%Y%m%d")
+            _start = (today - timedelta(days=10)).strftime("%Y%m%d") if hasattr(today, 'strftime') else _end
+            df_kq = _pykrx.get_index_ohlcv_by_date(_start, _end, "2150")
+            if df_kq is not None and not df_kq.empty:
+                prices_kq = []
+                for ts, row in df_kq.iterrows():
+                    row_date = ts.date() if hasattr(ts, 'date') else _date.fromisoformat(str(ts)[:10])
+                    close = float(row.get("종가", row.get("Close", 0)) or 0)
+                    if close <= 0: continue
+                    prices_kq.append(schemas.PriceRecord(
+                        date=_dt.combine(row_date, _dt.min.time()),
+                        open=float(row.get("시가", close) or close),
+                        high=float(row.get("고가", close) or close),
+                        low=float(row.get("저가", close) or close),
+                        close=close, volume=float(row.get("거래량", 0) or 0),
+                        inst_net_buy=0.0, frn_net_buy=0.0,
+                    ))
+                if prices_kq:
+                    if not any(p.date.date() == today for p in prices_kq):
+                        lp = max(prices_kq, key=lambda p: p.date)
+                        prices_kq.append(schemas.PriceRecord(
+                            date=_dt.combine(today, _dt.min.time()),
+                            open=lp.open, high=lp.high, low=lp.low, close=lp.close,
+                            volume=lp.volume, inst_net_buy=0.0, frn_net_buy=0.0,
+                        ))
+                    crud.bulk_insert_price_history(db, schemas.PriceIngest(stock_code="^KQ150", prices=prices_kq))
+                    logger.info(f"[RT-Macro] ^KQ150(KOSDAQ150/pykrx) {len(prices_kq)}건 저장")
+        except Exception as _e_kq:
+            logger.debug(f"[RT-Macro] KOSDAQ150 pykrx: {_e_kq}")
+
 
 
 def _monthly_bulk_update() -> None:
@@ -744,11 +800,18 @@ def _process_ai_combo_autotrade(combo_stocks: list):
             if name in active:
                 continue
 
-            # 현재가 조회
+            entry_date = _dt.now().strftime("%Y-%m-%d")
+
+            # 매수가: 당일 종가 우선, 없으면 직전 영업일 종가
             price_row = conn.execute(
-                "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
-                (code,)
+                "SELECT close FROM price_history WHERE stock_code=? AND date=? AND close>0",
+                (code, entry_date)
             ).fetchone()
+            if not price_row:
+                price_row = conn.execute(
+                    "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
+                    (code,)
+                ).fetchone()
             if not price_row:
                 continue
             price = price_row[0]
@@ -758,8 +821,6 @@ def _process_ai_combo_autotrade(combo_stocks: list):
             MAX_BUDGET = 10_000_000
             qty = max(1, int(MAX_BUDGET / price))
             amount = price * qty
-
-            entry_date = _dt.now().strftime("%Y-%m-%d")
             sector = s.get('sector', '')
             match_cnt = s.get('match_count', 2)
 
@@ -1210,6 +1271,32 @@ def get_financial_table(stock_code: str, type: str = "annual", db: Session = Dep
 
 _cf_collecting: set = set()   # 현금흐름 백그라운드 수집 중인 종목코드
 
+
+def _is_kospi_kosdaq_stock(db: Session, stock_code: str) -> bool:
+    row = db.execute(
+        text(
+            """
+            WITH market_codes AS (
+                SELECT stock_code
+                FROM stock_meta
+                WHERE UPPER(COALESCE(market, '')) IN ('KOSPI', 'KOSDAQ')
+                UNION
+                SELECT stock_code
+                FROM stock_universe
+                WHERE market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
+                  AND COALESCE(stock_type, '보통주') = '보통주'
+            )
+            SELECT 1
+            FROM market_codes
+            WHERE stock_code=:stock_code
+            LIMIT 1
+            """
+        ),
+        {"stock_code": stock_code},
+    ).fetchone()
+    return row is not None
+
+
 def _bg_collect_cashflow(stock_code: str):
     """현금흐름표 백그라운드 수집 (별도 DB 세션)."""
     if stock_code in _cf_collecting:
@@ -1286,6 +1373,8 @@ def refresh_cashflow(stock_code: str, db: Session = Depends(get_db)):
     """현금흐름표 강제 재수집."""
     if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
         raise HTTPException(status_code=400, detail="국내 종목코드(6자리)만 지원합니다.")
+    if not _is_kospi_kosdaq_stock(db, stock_code):
+        raise HTTPException(status_code=400, detail="현금흐름표 수집은 코스피/코스닥 보통주만 지원합니다.")
     db.query(models.CashFlowData).filter(
         models.CashFlowData.stock_code == stock_code
     ).delete(synchronize_session=False)
@@ -1908,4 +1997,3 @@ def get_db_stats(db: Session = Depends(get_db)):
         "db_path": "Applications/stock_dashboard/stock.db",
         "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
-

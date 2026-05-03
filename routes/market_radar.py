@@ -330,6 +330,28 @@ def _fetch_market_map(conn, tickers: List[str]) -> Dict[str, Dict]:
             market_map[d["ticker"]] = d
     except Exception as e:
         logger.debug(f"[market-radar] market_map error: {e}")
+
+    # 한국 종목(6자리 숫자): stock_universe에서 per/pbr/market_cap 보완
+    kr_tickers = [t for t in tickers if t.isdigit() and len(t) == 6]
+    if kr_tickers:
+        kr_ph = ",".join("?" for _ in kr_tickers)
+        try:
+            kr_rows = conn.execute(f"""
+                SELECT stock_code, market_cap, per, pbr
+                FROM stock_universe
+                WHERE stock_code IN ({kr_ph})
+            """, kr_tickers).fetchall()
+            for r in kr_rows:
+                code = r["stock_code"]
+                existing = market_map.get(code, {})
+                market_map[code] = {
+                    "ticker":     code,
+                    "market_cap": existing.get("market_cap") or r["market_cap"],
+                    "per":        existing.get("per") or r["per"],
+                    "pbr":        existing.get("pbr") or r["pbr"],
+                }
+        except Exception as e:
+            logger.debug(f"[market-radar] kr_market_map error: {e}")
     return market_map
 
 
