@@ -13,9 +13,14 @@ signal_engine.py — 시그널 보드 계산 엔진 (v2 — 퀀트/추세추종 
    - 이평선 정배열 상태에서의 MACD/RSI만 유효 시그널로 인정
 """
 
-import json, sqlite3, logging
+import json, sqlite3, logging, time as _time, math as _math
+import numpy as _np
+from collections import defaultdict as _defaultdict
 from datetime import date, timedelta
 from pathlib import Path
+
+# ── 모듈 레벨 캐시 (섹터 활성화 맵 — 3개 함수에서 중복 호출 방지) ──────
+_sector_activation_cache: dict = {"data": None, "at": 0.0}
 from signal_logic import (
     TREND_MKTCAP_MIN, TREND_TVOL_MIN_KRW, TREND_TVOL_MIN_SUOKU,
     TREND_HIGH52_PCT, TREND_VOL_RATIO_MIN, TREND_RSI_MIN,
@@ -1659,12 +1664,14 @@ def _calc_ma20_slope(conn, stock_code: str):
     return sig, round(slope_pct, 2), detail
 
 
-def _calc_value_turnaround(conn, stock_code: str):
+def _calc_value_turnaround(conn, stock_code: str, pre_d=None):
     """
     Value + Turnaround 종합 판정:
     PBR<1 + PER<10(or<15) + Graham 30% 할인 + MA20 완만 + MACD 다이버전스 + 스마트머니
+
+    pre_d: 이미 계산된 Graham 데이터 dict (bulk 로딩 시 중복 쿼리 방지)
     """
-    d = _get_graham_data(conn, stock_code)
+    d = pre_d if pre_d is not None else _get_graham_data(conn, stock_code)
     if not d:
         return 'gray', None, 'Graham 데이터 없음'
 
@@ -1766,26 +1773,46 @@ def _build_sector_activation_map(conn):
     ─ stock_universe에서 섹터 + 시총 정보 조회
     ─ 각 섹터 상위 5개 종목의 52주 주봉선 위치 확인
     ─ 반환: {sector_large: activation_score}  (0.0 ~ 1.0)
+
+    최적화: 모듈 레벨 캐시(TTL 3600s) + 섹터 리더 전종목 단일 벌크 쿼리
+    (이 함수는 calc_trend/top20/combo_v2 3곳에서 호출되므로 캐시 효과 큼)
     """
+    global _sector_activation_cache
+    if (_sector_activation_cache["data"] is not None
+            and _time.time() - _sector_activation_cache["at"] < 3600):
+        return _sector_activation_cache["data"]
+
     # 섹터별 시총 상위 종목
     sector_top = conn.execute("""
-        SELECT DISTINCT su.stock_code, su.sector_large, su.sector_mid,
+        SELECT DISTINCT su.stock_code, su.sector_large,
                MAX(su.market_cap) as mktcap
         FROM stock_universe su
         WHERE su.sector_large IS NOT NULL
           AND LENGTH(su.stock_code) = 6
           AND su.stock_code GLOB '[0-9]*'
           AND su.market_cap > 0
-        GROUP BY su.stock_code, su.sector_large, su.sector_mid
+        GROUP BY su.stock_code, su.sector_large
         ORDER BY su.sector_large, mktcap DESC
     """).fetchall()
 
     # 섹터별 상위 5개 추출
-    from collections import defaultdict
-    sector_stocks = defaultdict(list)
-    for sc, slarge, smid, mktcap in sector_top:
+    sector_stocks = _defaultdict(list)
+    for sc, slarge, mktcap in sector_top:
         if len(sector_stocks[slarge]) < 5:
             sector_stocks[slarge].append(sc)
+
+    # ★ 벌크 쿼리: 전체 리더 종목의 가격 히스토리를 1번에 조회 (기존 75번 → 1번)
+    all_leaders = [sc for leaders in sector_stocks.values() for sc in leaders]
+    ph_by_code: dict = _defaultdict(list)
+    if all_leaders:
+        placeholders = ','.join('?' * len(all_leaders))
+        for sc, dt, close in conn.execute(f"""
+            SELECT stock_code, date, close FROM price_history
+            WHERE stock_code IN ({placeholders}) AND close > 0
+            ORDER BY stock_code, date DESC
+        """, all_leaders).fetchall():
+            if len(ph_by_code[sc]) < 400:
+                ph_by_code[sc].append((dt, close))
 
     activation = {}
     for sector, leaders in sector_stocks.items():
@@ -1793,11 +1820,7 @@ def _build_sector_activation_map(conn):
         near  = 0
         total = 0
         for sc in leaders:
-            ph = conn.execute("""
-                SELECT date, close FROM price_history
-                WHERE stock_code=? AND close>0
-                ORDER BY date DESC LIMIT 400
-            """, (sc,)).fetchall()
+            ph = ph_by_code.get(sc, [])
             if len(ph) < 50:
                 continue
             weekly = _daily_to_weekly_closes(ph)
@@ -1814,12 +1837,10 @@ def _build_sector_activation_map(conn):
             elif pct >= -5:
                 near += 1
 
-        if total == 0:
-            activation[sector] = 0.0
-        else:
-            # 완전 돌파 = 1.0점, 근접(5% 이내) = 0.5점
-            activation[sector] = (above + near * 0.5) / total
+        activation[sector] = (above + near * 0.5) / total if total > 0 else 0.0
 
+    _sector_activation_cache["data"] = activation
+    _sector_activation_cache["at"]   = _time.time()
     return activation
 
 
@@ -1971,12 +1992,13 @@ def calc_trend_candidates(conn=None) -> list:
                     bb_wid_val = 4 * std20_bb / sma20_bb * 100 if sma20_bb > 0 else 0
                     bb_breakout = curr > bb_up_val
                     if len(closes) >= 40:
-                        widths_bb = []
-                        for i in range(20):
-                            sl = sum(closes[i:i+20]) / 20
-                            stl = (sum((c - sl)**2 for c in closes[i:i+20]) / 20) ** 0.5
-                            widths_bb.append(4 * stl / sl * 100 if sl > 0 else 0)
-                        min_wid_bb = min(widths_bb) if widths_bb else bb_wid_val
+                        # numpy sliding window: shape (20, 20) → mean/std 한번에 계산
+                        _arr = _np.array(closes[:40], dtype=float)
+                        _wins = _np.lib.stride_tricks.sliding_window_view(_arr, 20)[:20]
+                        _smas = _wins.mean(axis=1)
+                        _stds = _wins.std(axis=1)
+                        _wids = _np.where(_smas > 0, 4 * _stds / _smas * 100, 0.0)
+                        min_wid_bb = float(_wids.min()) if len(_wids) > 0 else bb_wid_val
                         is_squeeze_breakout = bb_wid_val <= min_wid_bb * 1.5 and bb_breakout
 
                 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2183,11 +2205,83 @@ def calc_value_candidates(conn=None) -> list:
             mktcap_map[sc] = mc or 0
             market_map[sc] = mkt or ''
 
+        # ★ Graham 데이터 벌크 로드 (기존: 종목당 2 쿼리 × ~1000종목 → 2 쿼리로 통합)
+        # 1) 재무 데이터: stock_code당 최신 분기 행 선택 (최대 5행 로드 후 Python에서 최적 행 선택)
+        _fin_rows_bulk = conn.execute("""
+            SELECT stock_code, eps, bps, roe, total_equity, net_income
+            FROM financial_data
+            WHERE eps IS NOT NULL AND eps > 0
+              AND is_annual = 0
+              AND LENGTH(stock_code) = 6 AND stock_code GLOB '[0-9]*'
+            ORDER BY stock_code, year DESC, quarter DESC
+        """).fetchall()
+
+        # stock_code별로 최적 행 선택 (_get_graham_data 내부 로직 재현)
+        _rows_by_sc: dict = _defaultdict(list)
+        for row in _fin_rows_bulk:
+            sc = row[0]
+            if len(_rows_by_sc[sc]) < 5:
+                _rows_by_sc[sc].append(row[1:])  # (eps, bps, roe, equity, net_inc)
+
+        _graham_fin: dict = {}  # sc → (eps, bps_resolved, roe)
+        for sc, rows in _rows_by_sc.items():
+            chosen = None
+            for eps, bps, roe, equity, net_inc in rows:
+                if not eps or eps <= 0:
+                    continue
+                if bps and bps > 0:
+                    chosen = (eps, bps, roe, equity, net_inc); break
+                if equity and equity > 0 and net_inc and net_inc > 0 and equity >= net_inc / 3:
+                    chosen = (eps, bps, roe, equity, net_inc); break
+            if not chosen and rows:
+                chosen = rows[0]
+            if chosen:
+                eps, bps, roe, equity, net_inc = chosen
+                # BPS 관산 (bps=0 이면 equity/shares로 계산)
+                if (not bps or bps == 0) and equity and equity > 0 and net_inc and net_inc > 0 and eps > 0:
+                    if equity >= net_inc / 3:
+                        shares = net_inc / eps
+                        if shares > 0:
+                            bps = equity / shares
+                _graham_fin[sc] = (eps, bps or 0, roe)
+
+        # 2) 최신 종가 벌크 로드
+        _price_map: dict = {}
+        for sc, close in conn.execute("""
+            SELECT p.stock_code, p.close FROM price_history p
+            INNER JOIN (
+                SELECT stock_code, MAX(date) as mdate
+                FROM price_history
+                WHERE close > 0 AND LENGTH(stock_code) = 6 AND stock_code GLOB '[0-9]*'
+                GROUP BY stock_code
+            ) latest ON p.stock_code = latest.stock_code AND p.date = latest.mdate
+        """).fetchall():
+            _price_map[sc] = close
+
+        # 3) Graham 내재가치 Python 계산 (쿼리 없음)
+        graham_map: dict = {}
+        for sc, (eps, bps, roe) in _graham_fin.items():
+            price = _price_map.get(sc)
+            if not price:
+                continue
+            graham_iv = _math.sqrt(22.5 * eps * bps) if eps > 0 and bps > 0 else None
+            per = round(price / eps, 1) if eps > 0 else None
+            pbr = round(price / bps, 2) if bps > 0 else None
+            discount = round((graham_iv - price) / graham_iv * 100, 1) if graham_iv and graham_iv > 0 else None
+            graham_map[sc] = {
+                'price': price, 'eps': eps, 'bps': bps,
+                'graham_iv': graham_iv, 'per': per, 'pbr': pbr,
+                'discount': discount, 'roe': roe,
+            }
+
+        # 4) 후보 선별 (per-stock 루프: DB 쿼리 없음, Python 연산만)
         candidates = []
-        for stock_code, stock_name in stocks:
+        stock_name_map = {sc: sn for sc, sn in stocks}
+        for stock_code in graham_map:
+            stock_name = stock_name_map.get(stock_code, stock_code)
             try:
-                d = _get_graham_data(conn, stock_code)
-                if not d or not d.get('graham_iv'):
+                d = graham_map[stock_code]
+                if not d.get('graham_iv'):
                     continue
 
                 pbr  = d.get('pbr')
@@ -2203,17 +2297,16 @@ def calc_value_candidates(conn=None) -> list:
                     continue
 
                 # 강화 조건: 심각하게 저평가된 종목만 포함
-                # discount >= 25 OR (pbr < 0.7 AND per < 10)
                 deep_disc  = disc is not None and disc >= 25
                 deep_value = (pbr is not None and pbr < 0.7 and
                               per is not None and 0 < per < 10)
                 if not (deep_disc or deep_value):
                     continue
 
-                # 세부 점수 계산
-                sig, score, detail = _calc_value_turnaround(conn, stock_code)
+                # 세부 점수 계산 (pre_d 전달 → 내부 _get_graham_data 중복 호출 제거)
+                sig, score, detail = _calc_value_turnaround(conn, stock_code, pre_d=d)
 
-                if score < 5:  # 최소 점수 강화
+                if score < 5:
                     continue
 
                 candidates.append({

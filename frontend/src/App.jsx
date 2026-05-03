@@ -1190,7 +1190,18 @@ const App = () => {
   const [finTable, setFinTable] = useState([]);
   const [summStats, setSummStats] = useState(null);
   const [aiReport, setAiReport] = useState(null);
-  const [macroData, setMacroData] = useState(() => { try { const c = localStorage.getItem('sd_macroCache'); return c ? JSON.parse(c) : null; } catch { return null; } });
+  const [macroData, setMacroData] = useState(() => {
+    try {
+      const raw = localStorage.getItem('sd_macroCache');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // TTL: 장중 1시간(3600s), 장외 4시간(14400s). 구버전(ts 없음) 은 무효로 처리
+      if (!parsed.ts) return null;
+      const ttl = anyMarketOpen() ? 3600000 : 14400000;
+      if (Date.now() - parsed.ts > ttl) return null;
+      return parsed.data ?? parsed; // 신형({data,ts}) / 구형(raw object) 모두 지원
+    } catch { return null; }
+  });
   const [sysStats, setSysStats] = useState(null);
   const [loading, setLoading]         = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1234,7 +1245,11 @@ const App = () => {
       if (res.ok) {
         const data = await res.json();
         setMacroData(data);
-        try { localStorage.setItem('sd_macroCache', JSON.stringify(data)); } catch {}
+        const now = new Date().toLocaleTimeString('ko-KR');
+        setLastUpdated(now);
+        try {
+          localStorage.setItem('sd_macroCache', JSON.stringify({ data, ts: Date.now() }));
+        } catch {}
       }
     } catch (e) { console.error("Macro fetch error", e); }
   }, []);
@@ -2372,10 +2387,7 @@ const App = () => {
     const [kosdaqTab,  setKosdaqTab]  = React.useState('90');
     const [nasdaqTab,  setNasdaqTab]  = React.useState('90');
     const [sp500Tab,   setSp500Tab]   = React.useState('90');
-    React.useEffect(() => {
-      const iv = setInterval(() => setLastUpdated(new Date().toLocaleTimeString('ko-KR')), 300000);
-      return () => clearInterval(iv);
-    }, []);
+    // lastUpdated는 fetchMacro 완료 시 업데이트 (불필요한 5분 타이머 제거)
 
     // 구버전({KOSPI:...}) / 신버전({index:{KOSPI:...}}) 정규화
     const norm = (data) => {
@@ -5061,8 +5073,9 @@ const App = () => {
     React.useEffect(() => {
       loadPeak();
       loadAiHoldings();
-      const iv = setInterval(loadPeak, 600000); // 10분 자동 갱신
-      return () => clearInterval(iv);
+      // 장중에만 10분 폴링 (장외·주말엔 데이터 변화 없음)
+      const iv = isKRMarketOpen() ? setInterval(loadPeak, 600000) : null;
+      return () => { if (iv) clearInterval(iv); };
     }, []);
 
     const fp = (v) => v != null ? Math.round(v).toLocaleString('ko-KR') : '-';
