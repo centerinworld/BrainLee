@@ -409,3 +409,69 @@ def set_manual_signal(config_id: int, payload: dict):
     )
     conn.commit(); conn.close()
     return {"status": "ok"}
+
+
+# ── GET /api/signals/v10-earnings-explosion ─────────────────────
+@router.get("/v10-earnings-explosion")
+def get_v10_earnings_explosion():
+    """V10: 이익 폭발 + 매출 급성장 (에이피알·삼양식품 유형)"""
+    cache = _cache()
+    cached = cache.get("v10_earnings", {})
+    ttl = 14400  # 4시간 캐시
+    if cached and (_t.time() - cached.get("at", 0)) < ttl:
+        return cached["data"]
+    try:
+        from signal_engine import calc_earnings_explosion
+        conn = _sl.connect(DB_PATH)
+        conn.row_factory = _sl.Row
+        result = calc_earnings_explosion(conn)
+        conn.close()
+        cache["v10_earnings"] = {"data": result, "at": _t.time()}
+        return result
+    except Exception as e:
+        logger.error(f"[v10] {e}")
+        return []
+
+
+# ── GET /api/signals/v11-turnaround ────────────────────────────
+@router.get("/v11-turnaround")
+def get_v11_turnaround():
+    """V11: 흑자전환 모멘텀 (이수페타시스·엘앤에프 유형)"""
+    cache = _cache()
+    cached = cache.get("v11_turnaround", {})
+    ttl = 14400
+    if cached and (_t.time() - cached.get("at", 0)) < ttl:
+        return cached["data"]
+    try:
+        from signal_engine import calc_turnaround_momentum
+        conn = _sl.connect(DB_PATH)
+        conn.row_factory = _sl.Row
+        result = calc_turnaround_momentum(conn)
+        conn.close()
+        cache["v11_turnaround"] = {"data": result, "at": _t.time()}
+        return result
+    except Exception as e:
+        logger.error(f"[v11] {e}")
+        return []
+
+
+# ── GET /api/signals/v12-sector-megatrend ──────────────────────
+@router.get("/v12-sector-megatrend")
+def get_v12_sector_megatrend():
+    """V12: 섹터 대세 상승 (효성중공업·LS Electric 유형)"""
+    cache = _cache()
+    cached = cache.get("v12_sector", {})
+    ttl = 7200  # 2시간 캐시
+    if cached and (_t.time() - cached.get("at", 0)) < ttl:
+        return cached["data"]
+    try:
+        from signal_engine import calc_sector_megatrend
+        conn = _sl.connect(DB_PATH)
+        conn.row_factory = _sl.Row
+        result = calc_sector_megatrend(conn)
+        conn.close()
+        cache["v12_sector"] = {"data": result, "at": _t.time()}
+        return result
+    except Exception as e:
+        logger.error(f"[v12] {e}")
+        return []

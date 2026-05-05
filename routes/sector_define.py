@@ -1,14 +1,20 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
 import sqlite3
 import os
+import pandas as pd
 from typing import List, Optional, Dict
 from pydantic import BaseModel
 import logging
+from datetime import datetime, timedelta
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import JSONResponse
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = "stock.db"
+logger = logging.getLogger(__name__)
+BASE_DIR = "/Applications/stock_dashboard"
+DB_PATH = os.path.join(BASE_DIR, "stock.db")
+EMP_DB_PATH = os.path.join(BASE_DIR, "employment_monitor/employment.db")
+TRADE_DB_PATH = os.path.join(BASE_DIR, "hs_trade_lab/data/hs_trade_lab.db")
 
 class StockInfo(BaseModel):
     category: str
@@ -201,3 +207,173 @@ def delete_post(post_id: int):
         return {"message": f"포스트 {post_id} 삭제 완료"}
     finally:
         conn.close()
+
+@router.get("/special-filter")
+def get_special_filtered_stocks(
+    opm_threshold: float = 0.03,
+    depr_threshold: float = 0.40,
+    emp_months: int = 3,
+    min_score: int = 2
+):
+    """
+    Hot Sector 내 종목들을 대상으로 특수 필터링 수행
+    - 조건1: 감가상각비/매출액 >= depr_threshold
+    - 조건2: 영업이익률 <= opm_threshold 또는 적자
+    - 조건3: 최근 emp_months 개월간 인원 증가
+    - 조건4: 최근 1개월 수출액 증가
+    """
+    conn_stock = sqlite3.connect(DB_PATH)
+    conn_stock.row_factory = sqlite3.Row
+    
+    try:
+        # 1. 분석 대상 종목 목록 추출 (Hot Sector + Tenbagger 후보군)
+        stocks_rows = conn_stock.execute("""
+            SELECT DISTINCT stock_code, stock_name 
+            FROM (
+                SELECT stock_code, stock_name FROM sector_stocks
+                UNION
+                SELECT stock_code, stock_name FROM tenbagger_results
+            )
+            WHERE stock_code IS NOT NULL
+        """).fetchall()
+        stocks = [dict(r) for r in stocks_rows]
+        codes = [s['stock_code'] for s in stocks]
+        if not codes:
+            return {"stocks": []}
+
+        # 2. 데이터 로드 (최적화 위해 필요한 부분만 추출)
+        # 재무 데이터
+        financials = pd.read_sql_query(f"""
+            SELECT stock_code, year, quarter, revenue, operating_profit, depreciation_amortization
+            FROM financial_data
+            WHERE stock_code IN ({','.join(['?']*len(codes))}) AND is_annual = 0 AND quarter > 0
+            ORDER BY year DESC, quarter DESC
+        """, conn_stock, params=codes)
+
+        cash_flows = pd.read_sql_query(f"""
+            SELECT stock_code, year, quarter, depreciation
+            FROM cash_flow_data
+            WHERE stock_code IN ({','.join(['?']*len(codes))}) AND is_annual = 0 AND quarter > 0
+            ORDER BY year DESC, quarter DESC
+        """, conn_stock, params=codes)
+
+        # 고용 데이터
+        conn_emp = sqlite3.connect(EMP_DB_PATH)
+        emp_data = pd.read_sql_query(f"""
+            SELECT stock_code, ym, worker_count
+            FROM employment_company
+            WHERE stock_code IN ({','.join(['?']*len(codes))})
+            ORDER BY ym DESC
+        """, conn_emp, params=codes)
+        conn_emp.close()
+
+        # 수출 데이터
+        conn_trade = sqlite3.connect(TRADE_DB_PATH)
+        trade_map = pd.read_sql_query(f"""
+            SELECT stock_code, hs_code
+            FROM hs_code_company_map
+            WHERE stock_code IN ({','.join(['?']*len(codes))})
+        """, conn_trade, params=codes)
+        
+        hs_list = trade_map['hs_code'].unique().tolist()
+        trade_series = pd.DataFrame()
+        if hs_list:
+            trade_series = pd.read_sql_query(f"""
+                SELECT hs_code, period_ym, export_value
+                FROM trade_series_cache
+                WHERE hs_code IN ({','.join(['?']*len(hs_list))})
+                ORDER BY period_ym DESC
+            """, conn_trade, params=hs_list)
+        conn_trade.close()
+
+        results = []
+        for stock in stocks:
+            code = stock['stock_code']
+            
+            cond1, cond2, cond3, cond4 = False, False, False, False
+            details = {}
+
+            # 재무/감가상각 (Condition 1 & 2)
+            s_fin = financials[financials['stock_code'] == code]
+            rev = 0
+            if not s_fin.empty:
+                latest_fin = s_fin.iloc[0]
+                rev = latest_fin['revenue'] or 0
+                op = latest_fin['operating_profit'] or 0
+                if rev > 0:
+                    opm = op / rev
+                    if op < 0 or opm <= opm_threshold:
+                        cond2 = True
+                        details['opm'] = round(opm * 100, 2)
+                elif op < 0:
+                    cond2 = True
+
+                depr = latest_fin['depreciation_amortization'] or 0
+                if depr == 0:
+                    s_cf = cash_flows[cash_flows['stock_code'] == code]
+                    if not s_cf.empty:
+                        depr = s_cf.iloc[0]['depreciation'] or 0
+                        if len(s_cf) > 1:
+                            r1, r2 = s_cf.iloc[0], s_cf.iloc[1]
+                            if r1['year'] == r2['year'] and r1['quarter'] > r2['quarter']:
+                                depr = (r1['depreciation'] or 0) - (r2['depreciation'] or 0)
+                
+                if depr > 0 and rev > 0:
+                    depr_ratio = depr / rev
+                    if depr_ratio >= depr_threshold:
+                        cond1 = True
+                        details['depr_ratio'] = round(depr_ratio * 100, 1)
+
+            # 고용 (Condition 3)
+            s_emp = emp_data[emp_data['stock_code'] == code]
+            if not s_emp.empty:
+                latest_w = s_emp.iloc[0]['worker_count'] or 0
+                if len(s_emp) > emp_months:
+                    prev_w = s_emp.iloc[emp_months]['worker_count'] or 0
+                    if latest_w > prev_w:
+                        cond3 = True
+                        details['emp_inc'] = latest_w - prev_w
+
+            # 수출 (Condition 4)
+            s_map = trade_map[trade_map['stock_code'] == code]
+            if not s_map.empty and not trade_series.empty:
+                hs_codes = s_map['hs_code'].unique()
+                s_trade = trade_series[trade_series['hs_code'].isin(hs_codes)]
+                if not s_trade.empty:
+                    periodic = s_trade.groupby('period_ym')['export_value'].sum().sort_index(ascending=False)
+                    if len(periodic) > 1:
+                        if periodic.iloc[0] > periodic.iloc[1]:
+                            cond4 = True
+                            details['export_inc_pct'] = round((periodic.iloc[0] - periodic.iloc[1]) / periodic.iloc[1] * 100, 1) if periodic.iloc[1] > 0 else 100
+
+            score = sum([cond1, cond2, cond3, cond4])
+            if score >= min_score:
+                # 최신 주가 정보 보완
+                price, chg_pct = None, None
+                p_row = conn_stock.execute("SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 2", (code,)).fetchall()
+                if p_row:
+                    price = p_row[0][0]
+                    if len(p_row) > 1:
+                        chg_pct = (price - p_row[1][0]) / p_row[1][0] * 100
+                
+                results.append({
+                    "stock_code": code,
+                    "stock_name": stock['stock_name'],
+                    "score": score,
+                    "cond1": cond1,
+                    "cond2": cond2,
+                    "cond3": cond3,
+                    "cond4": cond4,
+                    "details": details,
+                    "price": price,
+                    "chg_pct": chg_pct
+                })
+
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return {"stocks": results}
+
+    except Exception as e:
+        logger.error(f"Error in special-filter: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn_stock.close()

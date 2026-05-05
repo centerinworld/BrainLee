@@ -212,6 +212,294 @@ def _ensure_new_signals(conn):
 
 
 # ══════════════════════════════════════════════════════════════════
+# ★ 보너스 점수 헬퍼 — DART수주공시 + HS수출추세 + NPS고용증가
+# ══════════════════════════════════════════════════════════════════
+
+_contract_bonus_cache: dict = {}
+_contract_bonus_at: float = 0.0
+_HS_BONUS_CACHE: dict = {}
+_HS_BONUS_AT: float = 0.0
+_NPS_BONUS_CACHE: dict = {}
+_NPS_BONUS_AT: float = 0.0
+_HS_DB_PATH = "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db"
+_EMP_DB_PATH = "/Applications/stock_dashboard/employment_monitor/employment.db"
+
+
+def _load_contract_bonus_map(days: int = 90) -> dict[str, dict]:
+    """
+    최근 N일 DART 수주공시 → stock_code별 보너스 점수 맵 반환.
+    캐시 TTL: 1시간.
+
+    Returns:
+        {stock_code: {"bonus": int, "label": str}}
+        bonus: ★5=+5, ★4=+4, ★3=+3, ★2=+2, ★1=+1 (기존 점수에 가산)
+    """
+    global _contract_bonus_cache, _contract_bonus_at
+    if _time.time() - _contract_bonus_at < 3600 and _contract_bonus_cache:
+        return _contract_bonus_cache
+
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        cutoff = (date.today() - timedelta(days=days)).strftime("%Y%m%d")
+        rows = conn.execute("""
+            SELECT stock_code,
+                   MAX(signal_strength) as max_sig,
+                   MAX(is_overseas)     as overseas,
+                   MAX(contract_ratio_pct) as max_ratio,
+                   MAX(ai_signal)       as top_signal,
+                   COUNT(*)             as cnt
+            FROM dart_contracts
+            WHERE stock_code IS NOT NULL AND stock_code != ''
+              AND disclosed_at >= ?
+              AND signal_strength >= 2
+            GROUP BY stock_code
+        """, (cutoff,)).fetchall()
+        conn.close()
+
+        result = {}
+        for sc, sig, overseas, ratio, ai_sig, cnt in rows:
+            # 보너스 점수 = 시그널 강도 그대로 (+1~+5)
+            # 동일 기간 복수 공시면 최대 +1 추가
+            bonus = (sig or 1) + (1 if cnt >= 2 else 0)
+            bonus = min(bonus, 6)  # 최대 +6점
+
+            label_parts = []
+            if overseas:
+                label_parts.append("해외수주")
+            if ratio and ratio >= 10:
+                label_parts.append(f"매출{ratio:.0f}%")
+            if ai_sig in ("강한매수", "매수"):
+                label_parts.append(f"📋{ai_sig}")
+            if cnt >= 2:
+                label_parts.append(f"{cnt}건공시")
+
+            result[sc] = {
+                "bonus": bonus,
+                "label": " ".join(label_parts) or f"수주★{sig}",
+                "signal_strength": sig or 1,
+                "is_overseas": bool(overseas),
+            }
+
+        _contract_bonus_cache = result
+        _contract_bonus_at = _time.time()
+        return result
+
+    except Exception as e:
+        logging.warning(f"[보너스] DART수주 로드 실패: {e}")
+        return {}
+
+
+def _load_hs_export_bonus_map(months: int = 6) -> dict[str, dict]:
+    """
+    HS 수출통계 → stock_code별 수출 개선 보너스 점수 맵.
+    캐시 TTL: 4시간.
+
+    기준: 최근 3개월 수출 YoY 평균 vs 이전 3개월 → 가속도 계산
+    Returns:
+        {stock_code: {"bonus": int, "label": str, "export_yoy": float}}
+    """
+    global _HS_BONUS_CACHE, _HS_BONUS_AT
+    if _time.time() - _HS_BONUS_AT < 14400 and _HS_BONUS_CACHE:
+        return _HS_BONUS_CACHE
+
+    try:
+        import sqlite3 as _sl
+        hs_conn = _sl.connect(_HS_DB_PATH, timeout=10)
+        # 최근 6개월 수출 데이터 (종목별 월별 합계)
+        cutoff_ym = (date.today() - timedelta(days=months * 31)).strftime("%Y-%m")
+        rows = hs_conn.execute("""
+            SELECT m.stock_code,
+                   t.period_ym,
+                   SUM(t.export_value) as exp_val
+            FROM hs_code_company_map m
+            JOIN trade_series_cache t ON m.hs_code = t.hs_code
+            WHERE t.period_ym >= ?
+              AND t.export_value > 0
+            GROUP BY m.stock_code, t.period_ym
+            ORDER BY m.stock_code, t.period_ym DESC
+        """, (cutoff_ym,)).fetchall()
+        hs_conn.close()
+
+        # stock_code별 월별 수출액 집계
+        from collections import defaultdict as _dd
+        exp_by_code: dict = _dd(dict)
+        for sc, ym, val in rows:
+            exp_by_code[sc][ym] = val
+
+        result = {}
+        for sc, monthly in exp_by_code.items():
+            sorted_months = sorted(monthly.keys(), reverse=True)
+            if len(sorted_months) < 4:
+                continue
+
+            # 최근 3개월 vs 이전 3개월 YoY 비교 (실제 YoY는 12개월 필요, 여기선 가속도)
+            recent_avg = sum(monthly.get(m, 0) for m in sorted_months[:3]) / 3
+            prev_avg   = sum(monthly.get(m, 0) for m in sorted_months[3:6]) / max(len(sorted_months[3:6]), 1)
+
+            if prev_avg <= 0:
+                continue
+
+            growth = (recent_avg - prev_avg) / prev_avg * 100  # % 변화
+
+            if growth >= 50:
+                bonus, label = 4, f"수출+{growth:.0f}% 급증🚢"
+            elif growth >= 20:
+                bonus, label = 3, f"수출+{growth:.0f}% 증가🚢"
+            elif growth >= 10:
+                bonus, label = 2, f"수출+{growth:.0f}%🚢"
+            elif growth >= 0:
+                bonus, label = 1, f"수출+{growth:.0f}%"
+            else:
+                continue  # 수출 감소 종목은 보너스 없음
+
+            result[sc] = {
+                "bonus": bonus,
+                "label": label,
+                "export_growth": round(growth, 1),
+                "recent_avg": round(recent_avg / 1e6, 1),  # 백만달러 단위
+            }
+
+        _HS_BONUS_CACHE = result
+        _HS_BONUS_AT = _time.time()
+        return result
+
+    except Exception as e:
+        logging.warning(f"[보너스] HS수출 로드 실패: {e}")
+        return {}
+
+
+def _load_nps_employment_bonus_map() -> dict[str, dict]:
+    """
+    NPS 고용 데이터(employment_company) → stock_code별 고용 성장 보너스.
+    캐시 TTL: 24시간 (일 1회 갱신).
+
+    비교 전략 (동일 측정 기준끼리만 비교):
+    ① 1순위: 2025-12 vs 2024-12 (사업보고서 기반, 1년 YoY — 커버리지 약 300종목)
+    ② 2순위: 2025-12 vs 2023-12 (사업보고서 기반, 2년 누적 — 커버리지 약 323종목)
+    ※ 2026-05 데이터(NPS API 자회사 포함)는 연결 재무제표 맥락에서 절대값만 참조 가능하나,
+       2023~2025 사업보고서와 비교 금지 (측정 기준 불일치로 거짓 급등 발생)
+
+    Returns:
+        {stock_code: {"bonus": int, "label": str, "growth_pct": float, "latest_cnt": int}}
+    """
+    global _NPS_BONUS_CACHE, _NPS_BONUS_AT
+    if _time.time() - _NPS_BONUS_AT < 86400 and _NPS_BONUS_CACHE:
+        return _NPS_BONUS_CACHE
+
+    try:
+        import sqlite3 as _sl
+        emp_conn = _sl.connect(_EMP_DB_PATH, timeout=10)
+
+        # ① 1순위: 2024-12 vs 2025-12 (1년 YoY, 가장 최신 트렌드)
+        rows_1y = emp_conn.execute("""
+            SELECT a.stock_code,
+                   a.worker_count as latest_cnt, a.ym as latest_ym,
+                   b.worker_count as base_cnt,   b.ym as base_ym
+            FROM employment_company a
+            JOIN employment_company b ON a.stock_code = b.stock_code
+            WHERE a.ym = '2025-12'
+              AND b.ym = '2024-12'
+              AND a.worker_count > 0
+              AND b.worker_count > 50
+        """).fetchall()
+
+        # ② 2순위: 2023-12 vs 2025-12 (2년 누적, 커버리지 확장)
+        rows_2y = emp_conn.execute("""
+            SELECT a.stock_code,
+                   a.worker_count as latest_cnt, a.ym as latest_ym,
+                   b.worker_count as base_cnt,   b.ym as base_ym
+            FROM employment_company a
+            JOIN employment_company b ON a.stock_code = b.stock_code
+            WHERE a.ym = '2025-12'
+              AND b.ym = '2023-12'
+              AND a.worker_count > 0
+              AND b.worker_count > 50
+              AND a.stock_code NOT IN (SELECT DISTINCT a2.stock_code
+                  FROM employment_company a2 JOIN employment_company b2
+                  ON a2.stock_code=b2.stock_code
+                  WHERE a2.ym='2025-12' AND b2.ym='2024-12')
+        """).fetchall()
+        emp_conn.close()
+
+        # 병합 (1순위 우선)
+        all_rows = list(rows_1y) + list(rows_2y)
+
+        # stock_code별 최신 데이터만 사용
+        seen = set()
+        result = {}
+        for sc, latest, latest_ym, base, base_ym in all_rows:
+            if sc in seen:
+                continue
+            seen.add(sc)
+
+            growth = (latest - base) / base * 100  # 2년 누적 성장률
+
+            # 보너스 점수 부여
+            if growth >= 50:
+                bonus, label = 4, f"인력+{growth:.0f}%🧑‍💼급증"
+            elif growth >= 25:
+                bonus, label = 3, f"인력+{growth:.0f}%🧑‍💼증가"
+            elif growth >= 10:
+                bonus, label = 2, f"인력+{growth:.0f}%🧑‍💼"
+            elif growth >= 5:
+                bonus, label = 1, f"인력+{growth:.0f}%"
+            elif growth <= -20:
+                # 대규모 감원은 패널티 (구조조정 or 실적 악화)
+                bonus, label = -2, f"인력{growth:.0f}%⚠️감원"
+            elif growth < 0:
+                bonus, label = -1, f"인력{growth:.0f}%↓"
+            else:
+                continue  # 변화 없음
+
+            result[sc] = {
+                "bonus": bonus,
+                "label": label,
+                "growth_pct": round(growth, 1),
+                "latest_cnt": latest,
+                "base_cnt": base,
+                "period": f"{base_ym}→{latest_ym}",
+            }
+
+        _NPS_BONUS_CACHE = result
+        _NPS_BONUS_AT = _time.time()
+        return result
+
+    except Exception as e:
+        logging.warning(f"[보너스] NPS고용 로드 실패: {e}")
+        return {}
+
+
+_NPS_MONTHLY_BONUS_CACHE: dict = {}
+_NPS_MONTHLY_BONUS_AT: float = 0.0
+
+
+def _load_nps_monthly_bonus_map() -> dict:
+    """
+    NPS 월별 신규취득/상실 데이터 → 보너스 점수 맵 (TTL 24시간).
+    collect_nps_monthly.get_nps_bonus_map() 래퍼.
+
+    Returns:
+        {stock_code: bonus_score}  # 1~3 (없으면 미포함)
+    """
+    global _NPS_MONTHLY_BONUS_CACHE, _NPS_MONTHLY_BONUS_AT
+    if _time.time() - _NPS_MONTHLY_BONUS_AT < 86400 and _NPS_MONTHLY_BONUS_CACHE:
+        return _NPS_MONTHLY_BONUS_CACHE
+    try:
+        import sys as _sys
+        _emp_dir = "/Applications/stock_dashboard/employment_monitor"
+        if _emp_dir not in _sys.path:
+            _sys.path.insert(0, _emp_dir)
+        from collect_nps_monthly import get_nps_bonus_map
+        result = get_nps_bonus_map(months=3)
+        _NPS_MONTHLY_BONUS_CACHE = result
+        _NPS_MONTHLY_BONUS_AT = _time.time()
+        return result
+    except Exception as e:
+        logging.warning(f"[보너스] NPS월별 로드 실패: {e}")
+        return {}
+
+
+# ══════════════════════════════════════════════════════════════════
 # 시그널 계산 메인
 # ══════════════════════════════════════════════════════════════════
 def calc_market_signals(db_conn=None) -> list:
@@ -1894,6 +2182,11 @@ def calc_trend_candidates(conn=None) -> list:
         if len(kospi_rows) >= 63:
             kospi_ret = (kospi_rows[0][0] - kospi_rows[62][0]) / kospi_rows[62][0] * 100
 
+        # ── 보너스 점수 맵 로드 (수주공시 + HS수출 + NPS월별고용)
+        contract_bonus_map  = _load_contract_bonus_map(days=90)
+        hs_bonus_map        = _load_hs_export_bonus_map(months=6)
+        nps_monthly_map     = _load_nps_monthly_bonus_map()  # 최대 +2점
+
         # ── 120일 이상 데이터 보유 종목 (시총 필터 SQL 적용으로 Python 루프 감소) ──
         stock_rows = conn.execute("""
             SELECT p.stock_code, COUNT(*) as cnt
@@ -2118,6 +2411,25 @@ def calc_trend_candidates(conn=None) -> list:
 
                 stock_name = code_name.get(stock_code, stock_code)
 
+                # ── 보너스 점수: DART 수주공시 ────────────────────
+                cb = contract_bonus_map.get(stock_code)
+                if cb:
+                    score += cb["bonus"]
+                    reasons.append(f'📋 수주공시 {cb["label"]}')
+
+                # ── 보너스 점수: HS 수출 개선 ─────────────────────
+                hb = hs_bonus_map.get(stock_code)
+                if hb:
+                    score += hb["bonus"]
+                    reasons.append(f'🚢 {hb["label"]}')
+
+                # ── 보너스 점수: NPS 월별 고용 순증가 (최대 +2) ───
+                nps_b = nps_monthly_map.get(stock_code)
+                if nps_b and nps_b > 0:
+                    b = min(nps_b, 2)
+                    score += b
+                    reasons.append(f'👥 NPS고용순증가(+{b})')
+
                 # 신호 등급
                 if score >= TREND_SCORE_STRONG:
                     sig = 'green';  label = '강력매수'
@@ -2309,21 +2621,46 @@ def calc_value_candidates(conn=None) -> list:
                 if score < 5:
                     continue
 
+                # ── ★ 보너스: 저평가 + 수출성장/수주공시 = 구조적 전환 핵심신호 ──
+                # 저평가 종목에서 HS수출 증가 or DART수주공시 확인 시 가중치 2배
+                value_bonus_labels = []
+                _cb_val = _load_contract_bonus_map(days=90).get(stock_code)
+                _hb_val = _load_hs_export_bonus_map(months=6).get(stock_code)
+                # NPS 고용 보너스: 연간 총인원은 월별 차이 없어 제거
+
+                # 저평가 심화 시 보너스 가중치 2배 (deep value + 성장 = 핵심 전략)
+                is_deep_value = deep_disc or deep_value  # 이미 위에서 계산됨
+                _mul = 2 if is_deep_value else 1
+
+                if _cb_val and _cb_val["bonus"] > 0:
+                    b = _cb_val["bonus"] * _mul
+                    score += b
+                    value_bonus_labels.append(f'📋수주{_cb_val["label"]}(+{b})')
+
+                if _hb_val and _hb_val["bonus"] > 0:
+                    b = _hb_val["bonus"] * _mul
+                    score += b
+                    value_bonus_labels.append(f'🚢{_hb_val["label"]}(+{b})')
+
+                if value_bonus_labels:
+                    detail = detail + " | 보너스: " + ", ".join(value_bonus_labels)
+
                 candidates.append({
-                    'stock_code':  stock_code,
-                    'stock_name':  stock_name,
-                    'signal':      sig,
-                    'score':       score,
-                    'detail':      detail,
-                    'per':         per,
-                    'pbr':         pbr,
-                    'graham_iv':   round(d['graham_iv']) if d.get('graham_iv') else None,
-                    'discount':    disc,
-                    'price':       d.get('price'),
-                    'eps':         d.get('eps'),
-                    'bps':         d.get('bps'),
-                    'mktcap':      mktcap_map.get(stock_code, 0),
-                    'market':      market_map.get(stock_code, ''),
+                    'stock_code':    stock_code,
+                    'stock_name':    stock_name,
+                    'signal':        sig,
+                    'score':         score,
+                    'detail':        detail,
+                    'per':           per,
+                    'pbr':           pbr,
+                    'graham_iv':     round(d['graham_iv']) if d.get('graham_iv') else None,
+                    'discount':      disc,
+                    'price':         d.get('price'),
+                    'eps':           d.get('eps'),
+                    'bps':           d.get('bps'),
+                    'mktcap':        mktcap_map.get(stock_code, 0),
+                    'market':        market_map.get(stock_code, ''),
+                    'value_bonuses': value_bonus_labels,
                 })
             except Exception:
                 pass
@@ -3071,6 +3408,524 @@ def calc_combo_v2(conn=None) -> list:
         # 점수 높은 순, 동점 시 수급 점수 우선
         candidates.sort(key=lambda x: (x['score'], x['track_s'], x['track_t']), reverse=True)
         return candidates[:30]
+
+    finally:
+        if own_conn:
+            conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════
+# V10: 이익 폭발 & 매출 급성장 (에이피알·삼양식품 유형)
+# ══════════════════════════════════════════════════════════════════
+def calc_earnings_explosion(conn=None) -> list:
+    """
+    이익 폭발 + 매출 급성장 종목 발굴 (V10)
+
+    대상: 에이피알·삼양식품 유형
+    - 최근 분기 영업이익 전년동기비(YoY) > 80%
+    - 최근 분기 매출 YoY > 30%
+    - 영업이익률 > 8%
+    - 2개 분기 연속 이익 성장 (이익 가속화)
+    - 주가 > MA60 (추세 확인)
+    - 시총 50억 ~ 20조
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+
+    try:
+        # ── 1. 분기 재무 데이터 피벗 (최근 6개 분기 + 1년 전 동분기) ────
+        rows = conn.execute("""
+            WITH q AS (
+                SELECT stock_code, year, quarter, operating_profit, revenue,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) rn
+                FROM financial_data
+                WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
+                  AND operating_profit IS NOT NULL AND revenue IS NOT NULL
+            ),
+            yago AS (
+                SELECT stock_code, year, quarter, operating_profit as op_ya, revenue as rev_ya
+                FROM financial_data
+                WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
+                  AND operating_profit IS NOT NULL AND revenue IS NOT NULL
+            )
+            SELECT
+                q.stock_code,
+                MAX(CASE WHEN q.rn=1 THEN q.year END)             as yr0,
+                MAX(CASE WHEN q.rn=1 THEN q.quarter END)          as qr0,
+                MAX(CASE WHEN q.rn=1 THEN q.operating_profit END) as op0,
+                MAX(CASE WHEN q.rn=1 THEN q.revenue END)          as rev0,
+                MAX(CASE WHEN q.rn=2 THEN q.operating_profit END) as op1,
+                MAX(CASE WHEN q.rn=2 THEN q.revenue END)          as rev1,
+                MAX(CASE WHEN q.rn=3 THEN q.operating_profit END) as op2,
+                MAX(CASE WHEN q.rn=5 THEN q.operating_profit END) as op_ya,
+                MAX(CASE WHEN q.rn=5 THEN q.revenue END)          as rev_ya
+            FROM q GROUP BY q.stock_code
+            HAVING op0 IS NOT NULL AND rev0 IS NOT NULL
+               AND op_ya IS NOT NULL AND rev_ya IS NOT NULL
+        """).fetchall()
+
+        # ── 2. 종목 마스터 일괄 조회 ────────────────────────────────────
+        su = {r["stock_code"]: r for r in conn.execute(
+            "SELECT stock_code, stock_name, sector_large, market_cap, per, pbr "
+            "FROM stock_universe WHERE market_cap BETWEEN 5e9 AND 2e13"
+        ).fetchall()}
+
+        candidates = []
+
+        for row in rows:
+            sc = row["stock_code"]
+            if sc not in su:
+                continue
+
+            op0  = row["op0"]  or 0.0
+            op1  = row["op1"]  or 0.0
+            op2  = row["op2"]  or 0.0
+            rev0 = row["rev0"] or 0.0
+            op_ya  = row["op_ya"]  or 0.0
+            rev_ya = row["rev_ya"] or 0.0
+
+            if rev0 <= 0 or rev_ya <= 0 or op_ya <= 0 or op0 <= 0:
+                continue
+
+            # ── 핵심 필터 ──────────────────────────────────────────────
+            op_yoy  = (op0 - op_ya) / abs(op_ya) * 100   # 영업이익 YoY%
+            rev_yoy = (rev0 - rev_ya) / abs(rev_ya) * 100 # 매출 YoY%
+            op_margin = op0 / rev0 * 100                   # 영업이익률
+
+            if op_yoy  < 80:  continue  # 영업이익 YoY > 80%
+            if rev_yoy < 30:  continue  # 매출 YoY > 30%
+            if op_margin < 8: continue  # 영업이익률 > 8%
+            if op0 <= op1:    continue  # 이익 가속: 직전분기보다 증가
+            if op1 <= op2:    continue  # 2개 분기 연속 성장
+
+            # ── 주가 추세 확인 (MA60 이상) ─────────────────────────────
+            ph = conn.execute("""
+                SELECT close FROM price_history
+                WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 80
+            """, (sc,)).fetchall()
+            if len(ph) < 60:
+                continue
+            closes = [r[0] for r in ph]
+            cur = closes[0]
+            ma60 = sum(closes[:60]) / 60
+            if cur < ma60 * 0.97:  # MA60 97% 이하면 추세 아님
+                continue
+
+            # ── 수급 (기관+외인 5일 합산) ──────────────────────────────
+            sup = conn.execute("""
+                SELECT SUM(inst_net_buy_amt + frn_net_buy_amt) as net_amt
+                FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 5
+            """, (sc,)).fetchone()
+            supply_5d_억 = round((sup[0] or 0) / 100) if sup else 0
+
+            # ── 52주 대비 위치 ─────────────────────────────────────────
+            if len(closes) >= 252:
+                high52 = max(closes[:252])
+                pct_from_high52 = (cur - high52) / high52 * 100
+            else:
+                pct_from_high52 = 0
+
+            info = su[sc]
+            mktcap_억 = round((info["market_cap"] or 0) / 1e8)
+
+            # ── 스코어 (0~100) ─────────────────────────────────────────
+            score = 0
+            score += min(op_yoy / 5, 30)    # 영업이익 YoY 최대 30점
+            score += min(rev_yoy / 3, 20)   # 매출 YoY 최대 20점
+            score += min(op_margin / 2, 15) # 영업이익률 최대 15점
+            score += min(max(supply_5d_억, 0) / 20, 10)  # 수급 최대 10점
+            if cur > ma60 * 1.05: score += 10  # MA60 위 5% 이상
+            if cur > max(closes[1:21]): score += 15  # 최근 20일 신고가
+
+            # ── 보너스: DART 수주공시 + HS수출 (NPS 연간고용 제거) ──
+            _cb_v10 = _load_contract_bonus_map(days=90).get(sc)
+            _hb_v10 = _load_hs_export_bonus_map(months=6).get(sc)
+            bonus_labels = []
+            if _cb_v10:
+                score += _cb_v10["bonus"] * 2  # V10은 이익폭발 — 수주공시 가중치 2배
+                bonus_labels.append(f'📋{_cb_v10["label"]}')
+            if _hb_v10:
+                score += _hb_v10["bonus"]
+                bonus_labels.append(f'🚢{_hb_v10["label"]}')
+
+            candidates.append({
+                "stock_code":   sc,
+                "stock_name":   info["stock_name"],
+                "sector":       info["sector_large"] or "",
+                "market_cap_억": mktcap_억,
+                "current_price": round(cur),
+                "ma60":         round(ma60),
+                "op_yoy":       round(op_yoy, 1),
+                "rev_yoy":      round(rev_yoy, 1),
+                "op_margin":    round(op_margin, 1),
+                "op_q0_억":     round(op0 / 1e8),
+                "op_q1_억":     round(op1 / 1e8),
+                "rev_q0_억":    round(rev0 / 1e8),
+                "supply_5d_억": supply_5d_억,
+                "high52_pct":   round(pct_from_high52, 1),
+                "per":          round(info["per"], 1) if info["per"] else None,
+                "pbr":          round(info["pbr"], 2) if info["pbr"] else None,
+                "score":        round(score, 1),
+                "strategy":     "v10_earnings_explosion",
+                "bonus_labels": bonus_labels,
+            })
+
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        return candidates[:40]
+
+    finally:
+        if own_conn:
+            conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════
+# V11: 흑자전환 모멘텀 (이수페타시스·엘앤에프 유형)
+# ══════════════════════════════════════════════════════════════════
+def calc_turnaround_momentum(conn=None) -> list:
+    """
+    흑자전환(적자→흑자) + 이익 가속 종목 발굴 (V11)
+
+    대상: 이수페타시스·엘앤에프 유형
+    - 최근 2개 분기 영업이익 > 50억 (유의미한 흑자)
+    - 직전 2개 분기 중 하나 이상 영업이익 < 20억 (과거 적자 or 미미)
+    - 최근 분기 이익이 직전 분기보다 큼 (이익 증가세)
+    - 매출 YoY > 15%
+    - 주가 > MA60
+    - 시총 < 20조 (소·중형주)
+    - 기관 or 외인 최근 20일 누적 순매수 (수급 동반)
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+
+    try:
+        # ── 1. 분기 재무 피벗 ──────────────────────────────────────────
+        rows = conn.execute("""
+            WITH q AS (
+                SELECT stock_code, year, quarter, operating_profit, revenue,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) rn
+                FROM financial_data
+                WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
+                  AND operating_profit IS NOT NULL
+            )
+            SELECT
+                stock_code,
+                MAX(CASE WHEN rn=1 THEN operating_profit END) as op0,
+                MAX(CASE WHEN rn=2 THEN operating_profit END) as op1,
+                MAX(CASE WHEN rn=3 THEN operating_profit END) as op2,
+                MAX(CASE WHEN rn=4 THEN operating_profit END) as op3,
+                MAX(CASE WHEN rn=1 THEN revenue END)          as rev0,
+                MAX(CASE WHEN rn=5 THEN revenue END)          as rev_ya
+            FROM q GROUP BY stock_code
+            HAVING op0 IS NOT NULL AND op1 IS NOT NULL
+               AND op2 IS NOT NULL AND op3 IS NOT NULL
+        """).fetchall()
+
+        su = {r["stock_code"]: r for r in conn.execute(
+            "SELECT stock_code, stock_name, sector_large, market_cap, per, pbr "
+            "FROM stock_universe WHERE market_cap BETWEEN 5e9 AND 2e13"
+        ).fetchall()}
+
+        candidates = []
+
+        for row in rows:
+            sc = row["stock_code"]
+            if sc not in su:
+                continue
+
+            op0 = row["op0"] or 0.0
+            op1 = row["op1"] or 0.0
+            op2 = row["op2"] or 0.0
+            op3 = row["op3"] or 0.0
+            rev0   = row["rev0"]   or 0.0
+            rev_ya = row["rev_ya"] or 0.0
+
+            THRESHOLD_HIGH = 5e9   # 50억: 유의미한 흑자 기준
+            THRESHOLD_LOW  = 2e9   # 20억: 과거 '미미' 기준
+
+            # ── 핵심 필터 ──────────────────────────────────────────────
+            # 현재 2개 분기 모두 50억 이상 흑자
+            if op0 < THRESHOLD_HIGH or op1 < THRESHOLD_HIGH:
+                continue
+            # 과거(Q-2 or Q-3) 중 하나 이상 20억 미만 (적자 또는 극소)
+            if op2 >= THRESHOLD_LOW and op3 >= THRESHOLD_LOW:
+                continue
+            # 이익 증가세
+            if op0 <= op1:
+                continue
+            # 매출 YoY
+            rev_yoy = (rev0 - rev_ya) / abs(rev_ya) * 100 if rev_ya and rev0 else 0
+            if rev_yoy < 15:
+                continue
+
+            # ── 주가 추세 확인 ─────────────────────────────────────────
+            ph = conn.execute("""
+                SELECT close, inst_net_buy_amt, frn_net_buy_amt
+                FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 120
+            """, (sc,)).fetchall()
+            if len(ph) < 60:
+                continue
+
+            closes   = [r[0] for r in ph]
+            inst_amt = [r[1] or 0 for r in ph]
+            frn_amt  = [r[2] or 0 for r in ph]
+
+            cur  = closes[0]
+            ma60 = sum(closes[:60]) / 60
+            if cur < ma60 * 0.95:
+                continue
+
+            # ── 수급 (20일 누적 기관+외인) ─────────────────────────────
+            supply_20d_억 = sum(inst_amt[:20] + frn_amt[:20]) / 100
+
+            # ── 전환 강도 스코어 ────────────────────────────────────────
+            # 적자→흑자 전환의 '낙폭'
+            worst_past = min(op2, op3)
+            reversal_power = (op0 - worst_past) / 1e8  # 억원 단위
+
+            info = su[sc]
+            mktcap_억 = round((info["market_cap"] or 0) / 1e8)
+
+            score = 0
+            score += min(reversal_power / 10, 40)       # 전환 강도 최대 40점
+            score += min(rev_yoy / 3, 20)               # 매출 성장 최대 20점
+            score += min(max(supply_20d_억, 0) / 50, 20) # 수급 최대 20점
+            if cur > max(closes[1:20]): score += 20     # 20일 신고가
+
+            # 이익 가속도: Q0/Q1 ratio
+            accel = op0 / op1 if op1 > 0 else 1
+            score += min((accel - 1) * 20, 20)
+
+            # ── 보너스: DART 수주공시 + HS수출 (NPS 연간고용 제거) ──
+            _cb_v11 = _load_contract_bonus_map(days=90).get(sc)
+            _hb_v11 = _load_hs_export_bonus_map(months=6).get(sc)
+            v11_bonus_labels = []
+            if _cb_v11:
+                score += _cb_v11["bonus"] * 2  # V11 흑자전환 — 수주공시 특히 중요
+                v11_bonus_labels.append(f'📋{_cb_v11["label"]}')
+            if _hb_v11:
+                score += _hb_v11["bonus"] * 2  # V11은 수출 개선이 핵심 드라이버
+                v11_bonus_labels.append(f'🚢{_hb_v11["label"]}')
+
+            candidates.append({
+                "stock_code":     sc,
+                "stock_name":     info["stock_name"],
+                "sector":         info["sector_large"] or "",
+                "market_cap_억":  mktcap_억,
+                "current_price":  round(cur),
+                "ma60":           round(ma60),
+                "op_q0_억":       round(op0 / 1e8),
+                "op_q1_억":       round(op1 / 1e8),
+                "op_q2_억":       round(op2 / 1e8),
+                "op_q3_억":       round(op3 / 1e8),
+                "rev_yoy":        round(rev_yoy, 1),
+                "reversal_power": round(reversal_power),
+                "supply_20d_억":  round(supply_20d_억),
+                "per":            round(info["per"], 1) if info["per"] else None,
+                "pbr":            round(info["pbr"], 2) if info["pbr"] else None,
+                "score":          round(score, 1),
+                "strategy":       "v11_turnaround",
+                "bonus_labels":   v11_bonus_labels,
+            })
+
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        return candidates[:40]
+
+    finally:
+        if own_conn:
+            conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════
+# V12: 섹터 대세 상승 (효성중공업·LS Electric 유형)
+# ══════════════════════════════════════════════════════════════════
+def calc_sector_megatrend(conn=None) -> list:
+    """
+    섹터 대세 상승 종목 발굴 (V12)
+
+    대상: 효성중공업·LS Electric 유형
+    - KOSPI 3개월 대비 섹터 초과수익률 > 15%인 강세 섹터 선별
+    - 해당 섹터 내 RS(상대강도) 우수 종목:
+        * 종목 3개월 수익률 > 섹터 평균
+        * 주가 > MA120
+        * 기관 or 외인 20일 누적 순매수 양호
+        * 52주 고점 대비 -20% 이내 (고점 유지)
+        * 매출 YoY > 10% (실적 뒷받침)
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+
+    try:
+        # ── 1. KOSPI 3개월 수익률 ─────────────────────────────────────
+        kospi_rows = conn.execute("""
+            SELECT close FROM price_history
+            WHERE stock_code='^KS11' AND close>0 ORDER BY date DESC LIMIT 70
+        """).fetchall()
+        if len(kospi_rows) < 63:
+            return []
+        kospi_cur  = kospi_rows[0][0]
+        kospi_3m   = kospi_rows[62][0]
+        kospi_3m_ret = (kospi_cur - kospi_3m) / kospi_3m * 100
+
+        # ── 2. 섹터별 평균 3개월 수익률 ──────────────────────────────
+        # sector_small 우선, 없으면 sector_large 사용 (더 세밀한 섹터 분류)
+        sector_stocks = conn.execute("""
+            SELECT stock_code,
+                   COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,'')) as sector
+            FROM stock_universe
+            WHERE COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,'')) IS NOT NULL
+              AND COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,'')) NOT IN ('nan')
+              AND market_cap > 50000000000
+        """).fetchall()
+
+        # 각 종목 현재가/3개월전가 일괄 조회 (최근 65일 데이터)
+        sc_list = [r[0] for r in sector_stocks]
+        sc_sector = {r[0]: r[1] for r in sector_stocks}
+
+        # 종목별 가격 데이터
+        ph_data = {}
+        for sc in sc_list:
+            ph = conn.execute("""
+                SELECT close, inst_net_buy_amt, frn_net_buy_amt
+                FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 130
+            """, (sc,)).fetchall()
+            if len(ph) >= 63:
+                ph_data[sc] = ph
+
+        # 섹터별 수익률 계산
+        sector_returns = {}
+        stock_3m = {}
+        for sc, ph in ph_data.items():
+            sector = sc_sector.get(sc, "")
+            ret3m = (ph[0][0] - ph[62][0]) / ph[62][0] * 100
+            stock_3m[sc] = ret3m
+            if sector not in sector_returns:
+                sector_returns[sector] = []
+            sector_returns[sector].append(ret3m)
+
+        # ── 3. 강세 섹터 선별 (KOSPI 대비 +15% 이상) ─────────────────
+        hot_sectors = {}
+        for sector, rets in sector_returns.items():
+            if len(rets) < 3:
+                continue
+            avg_ret = sum(rets) / len(rets)
+            alpha   = avg_ret - kospi_3m_ret
+            if alpha > 15:  # 초과수익률 15% 이상
+                hot_sectors[sector] = {"avg_ret": avg_ret, "alpha": alpha, "cnt": len(rets)}
+
+        if not hot_sectors:
+            return []
+
+        # ── 4. 강세 섹터 내 우수 종목 선별 ──────────────────────────
+        su = {r["stock_code"]: r for r in conn.execute(
+            """SELECT stock_code, stock_name,
+                      COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,'')) as sector_large,
+                      market_cap, per, pbr, roe
+               FROM stock_universe WHERE market_cap > 5e10"""
+        ).fetchall()}
+
+        # 최근 분기 매출 YoY
+        fin_data = {}
+        for r in conn.execute("""
+            WITH q AS (
+                SELECT stock_code, revenue,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) rn
+                FROM financial_data WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
+                  AND revenue IS NOT NULL
+            )
+            SELECT stock_code,
+                   MAX(CASE WHEN rn=1 THEN revenue END) as rev0,
+                   MAX(CASE WHEN rn=5 THEN revenue END) as rev_ya
+            FROM q GROUP BY stock_code
+        """).fetchall():
+            if r[1] and r[2] and r[2] > 0:
+                fin_data[r[0]] = (r[1] - r[2]) / abs(r[2]) * 100
+
+        candidates = []
+        for sc, ph in ph_data.items():
+            sector = sc_sector.get(sc, "")
+            if sector not in hot_sectors:
+                continue
+            if sc not in su:
+                continue
+
+            closes = [r[0] for r in ph]
+            cur    = closes[0]
+            ret3m  = stock_3m[sc]
+            sector_avg = hot_sectors[sector]["avg_ret"]
+            sector_alpha = hot_sectors[sector]["alpha"]
+
+            # RS 필터: 종목 3개월 수익률 > 섹터 평균
+            rs_excess = ret3m - sector_avg
+            if rs_excess < 0:
+                continue
+
+            # MA120 이상
+            if len(closes) < 120:
+                continue
+            ma120 = sum(closes[:120]) / 120
+            if cur < ma120 * 0.97:
+                continue
+
+            # 52주 고점 대비 -20% 이내
+            if len(closes) >= 252:
+                high52 = max(closes[:252])
+                pct_from_high52 = (cur - high52) / high52 * 100
+            else:
+                high52 = max(closes)
+                pct_from_high52 = (cur - high52) / high52 * 100
+            if pct_from_high52 < -20:
+                continue
+
+            # 매출 YoY > 10%
+            rev_yoy = fin_data.get(sc)
+            if rev_yoy is not None and rev_yoy < 10:
+                continue
+
+            # 수급 (20일)
+            inst_20 = sum(r[1] or 0 for r in ph[:20])
+            frn_20  = sum(r[2] or 0 for r in ph[:20])
+            supply_20d_억 = (inst_20 + frn_20) / 100
+
+            info = su[sc]
+            mktcap_억 = round((info["market_cap"] or 0) / 1e8)
+
+            score = 0
+            score += min(sector_alpha / 2, 25)      # 섹터 강도 최대 25점
+            score += min(rs_excess / 2, 25)          # RS 초과 최대 25점
+            score += min(ret3m / 5, 20)              # 절대 수익률 최대 20점
+            score += min(max(supply_20d_억, 0) / 50, 15) # 수급 최대 15점
+            if pct_from_high52 > -5: score += 15    # 52주 신고가 근처
+
+            candidates.append({
+                "stock_code":       sc,
+                "stock_name":       info["stock_name"],
+                "sector":           sector,
+                "sector_alpha":     round(sector_alpha, 1),
+                "sector_avg_ret":   round(sector_avg, 1),
+                "market_cap_억":    mktcap_억,
+                "current_price":    round(cur),
+                "ret_3m_pct":       round(ret3m, 1),
+                "rs_excess":        round(rs_excess, 1),
+                "high52_pct":       round(pct_from_high52, 1),
+                "supply_20d_억":    round(supply_20d_억),
+                "rev_yoy":          round(rev_yoy, 1) if rev_yoy is not None else None,
+                "per":              round(info["per"], 1) if info["per"] else None,
+                "pbr":              round(info["pbr"], 2) if info["pbr"] else None,
+                "roe":              round(info["roe"], 1) if info["roe"] else None,
+                "hot_sectors":      list(hot_sectors.keys()),
+                "score":            round(score, 1),
+                "strategy":         "v12_sector_megatrend",
+                "kospi_3m_ret":     round(kospi_3m_ret, 1),
+            })
+
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        return candidates[:40]
 
     finally:
         if own_conn:

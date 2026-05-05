@@ -34,21 +34,37 @@ DB_PATH = str(_HERE / "stock.db")
 SECTOR_KEY_MAP: Dict[str, str] = {
     "semiconductor": "반도체",
     "battery":       "2차전지",
-    "power_infra":   "전력/인프라",
+    "power_infra":   "전력산업",
+    "nuclear":       "원자력",
     "pharma":        "바이오/헬스케어",
-    "defense":       "산업재/방산",
-    "shipbuilding":  "산업재/조선",
+    "defense":       "K-방산",
+    "construction":  "산업재/건설",
+    "shipbuilding":  "조선/해양",
+    "shipping":      "해운",
+    "automotive":    "자동차",
     "energy":        "소재/화학",
+    "steel":         "철강/비철금속",
+    "it_hardware":   "IT/하드웨어",
+    "telecom":       "통신/플랫폼",
+    "finance":       "금융/지주",
 }
 
 SECTOR_META: Dict[str, Dict] = {
-    "semiconductor": {"name": "반도체/IT",   "emoji": "💾"},
-    "battery":       {"name": "2차전지",      "emoji": "🔋"},
-    "power_infra":   {"name": "전력/산업재",  "emoji": "⚡"},
-    "pharma":        {"name": "제약/바이오",   "emoji": "💊"},
-    "defense":       {"name": "K방산/조선",   "emoji": "🚀"},
-    "shipbuilding":  {"name": "조선/해운",     "emoji": "🚢"},
-    "energy":        {"name": "에너지/소재",   "emoji": "⛽"},
+    "semiconductor": {"name": "반도체/IT",    "emoji": "💾"},
+    "battery":       {"name": "2차전지",       "emoji": "🔋"},
+    "power_infra":   {"name": "전력산업",      "emoji": "⚡"},
+    "nuclear":       {"name": "원자력",         "emoji": "☢️"},
+    "pharma":        {"name": "바이오/헬스케어","emoji": "💊"},
+    "defense":       {"name": "K방산",          "emoji": "🚀"},
+    "construction":  {"name": "산업재/건설",    "emoji": "🏗️"},
+    "shipbuilding":  {"name": "조선",           "emoji": "🚢"},
+    "shipping":      {"name": "해운",           "emoji": "🛳️"},
+    "automotive":    {"name": "자동차",         "emoji": "🚗"},
+    "energy":        {"name": "소재/화학",      "emoji": "⛽"},
+    "steel":         {"name": "철강/비철금속",  "emoji": "⚙️"},
+    "it_hardware":   {"name": "IT/하드웨어",    "emoji": "💻"},
+    "telecom":       {"name": "통신/플랫폼",    "emoji": "📡"},
+    "finance":       {"name": "금융/지주",      "emoji": "🏦"},
 }
 
 # 반도체 밸류체인 핵심 기업 목록 (lv1 = 섹션 헤더, lv2 = Level2 컬럼 표시값)
@@ -377,7 +393,73 @@ def _normalize_country(raw: str) -> str:
     return r or "US"
 
 
-def _build_stock_item(d: Dict, price_map: Dict, market_map: Dict) -> Dict:
+_FX_CACHE: Dict[str, Any] = {}   # {rates: {country: rate}, at: float}
+_FX_TTL = 3600  # 1시간 캐시
+
+def _get_fx_rates() -> Dict[str, float]:
+    """price_history에서 최신 환율(→KRW) 조회. 없으면 yfinance로 즉시 조회."""
+    global _FX_CACHE
+    if _FX_CACHE and (time.time() - _FX_CACHE.get("at", 0)) < _FX_TTL:
+        return _FX_CACHE["rates"]
+
+    fx_map = {"US": 1470.0, "JP": 9.8, "TW": 46.0, "NL": 1620.0, "DE": 1620.0, "CN": 205.0, "HK": 190.0}
+    # stock_code, factor (JPY:100엔 단위로 저장됨 → 1엔당 = /100)
+    tickers_info = [
+        ("USDKRW=X", "US",   1.0),
+        ("JPYKRW=X", "JP",   1.0),   # price_history의 JPY/KRW는 이미 1엔당 환율
+        ("TWDKRW=X", "TW",   1.0),
+        ("EURKRW=X", "NL",   1.0),   # NL, DE 모두 EUR
+        ("HKDKRW=X", "HK",   1.0),
+    ]
+    conn = _db()
+    try:
+        for ticker, country, factor in tickers_info:
+            row = conn.execute(
+                "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
+                (ticker,)
+            ).fetchone()
+            if row and row[0]:
+                fx_map[country] = float(row[0]) * factor
+                if country == "NL":
+                    fx_map["DE"] = fx_map["NL"]
+    except Exception as e:
+        logger.debug(f"[market-radar] fx_rates DB error: {e}")
+    finally:
+        conn.close()
+
+    # DB에 JPY/TWD 없으면 yfinance fallback
+    missing = [t for t, c, _ in tickers_info if c not in fx_map or fx_map[c] == {"JP":9.8,"TW":46.0,"NL":1620.0,"DE":1620.0,"CN":205.0,"HK":190.0}.get(c, 0)]
+    if missing:
+        try:
+            import yfinance as yf
+            for ticker, country, factor in tickers_info:
+                if ticker in missing:
+                    info = yf.Ticker(ticker).fast_info
+                    rate = getattr(info, "last_price", None)
+                    if rate:
+                        fx_map[country] = float(rate) * factor
+                        if country == "NL":
+                            fx_map["DE"] = fx_map["NL"]
+        except Exception as e:
+            logger.debug(f"[market-radar] fx_rates yfinance error: {e}")
+
+    _FX_CACHE = {"rates": fx_map, "at": time.time()}
+    return fx_map
+
+
+def _to_krw(market_cap: Optional[float], country: str, fx: Dict[str, float]) -> Optional[float]:
+    """외화 시총 → KRW 변환. KR은 그대로 반환."""
+    if market_cap is None:
+        return None
+    if country == "KR":
+        return market_cap
+    rate = fx.get(country)
+    if not rate:
+        return None
+    return market_cap * rate
+
+
+def _build_stock_item(d: Dict, price_map: Dict, market_map: Dict, fx: Optional[Dict] = None) -> Dict:
     ticker_raw = (d.get("ticker") or "").strip()
     ticker = _norm_ticker(ticker_raw)
     country = _normalize_country(d.get("country_raw") or "")
@@ -419,10 +501,12 @@ def _build_stock_item(d: Dict, price_map: Dict, market_map: Dict) -> Dict:
         "sig_5d":       _signal_dot(chg_5d),
         "sig_10d":      _signal_dot(chg_10d),
         "sig_30d":      _signal_dot(chg_30d),
-        "market_cap":   mm.get("market_cap"),
-        "per":          mm.get("per"),
-        "pbr":          mm.get("pbr"),
-        "desc":         (d.get("company_insight") or d.get("lv2_investment_view") or "").strip() or None,
+        "market_cap":     mm.get("market_cap"),
+        "market_cap_krw": _to_krw(mm.get("market_cap"), country, fx or {}),
+        "per":            mm.get("per"),
+        "pbr":            mm.get("pbr"),
+        "desc":           (d.get("company_insight") or "").strip() or None,
+        "lv2_view":       (d.get("lv2_investment_view") or "").strip() or None,
     }
 
 
@@ -438,7 +522,7 @@ def _build_sector_detail(sector_key: str) -> Dict:
         if lv0 == "반도체":
             rows = conn.execute("""
                 SELECT company_name, ticker, country_raw, country_flag, lv1, lv2,
-                       lv2_investment_view, company_insight
+                       lv2_investment_view, company_insight, lv0_industry_overview
                 FROM radar_semiconductor_override
                 ORDER BY sort_order, id
             """).fetchall()
@@ -446,12 +530,40 @@ def _build_sector_detail(sector_key: str) -> Dict:
         else:
             rows = conn.execute("""
                 SELECT company_name, ticker, country_raw, country_flag, lv1, lv2,
-                       lv2_investment_view, company_insight
+                       lv2_investment_view, company_insight, lv0_industry_overview
                 FROM radar_sector_override
                 WHERE lv0=?
                 ORDER BY sort_order, id
             """, (lv0,)).fetchall()
             rows_raw = [dict(r) for r in rows]
+
+        # 섹터/LV1 인사이트 (sector_insights 테이블)
+        try:
+            # LV0 매핑 역방향: DB lv0 → sector_insights lv0
+            SI_LV0_RMAP = {v: k for k, v in {
+                '반도체': '반도체', '2차전지': '2차전지', '전력산업': '전력/인프라',
+                '자동차': '자동차', '바이오/헬스케어': '바이오', '조선/해양': '조선/해운',
+            }.items()}
+            si_lv0 = SI_LV0_RMAP.get(lv0, lv0)
+            insights_rows = conn.execute("""
+                SELECT lv1, lv2, insight_type, description FROM sector_insights
+                WHERE lv0=? OR lv0=?
+                ORDER BY id
+            """, (lv0, si_lv0)).fetchall()
+            sector_insights_list = [dict(r) for r in insights_rows]
+        except Exception:
+            sector_insights_list = []
+
+        # LV0 overview 추출
+        sector_overview = next(
+            (r.get("lv0_industry_overview") for r in rows_raw if r.get("lv0_industry_overview")),
+            None
+        )
+        if not sector_overview:
+            for ins in sector_insights_list:
+                if "Level 0" in (ins.get("insight_type") or ""):
+                    sector_overview = ins["description"]
+                    break
 
         # Collect tickers for batch price/market fetch
         tickers = [_norm_ticker(d.get("ticker", "")) for d in rows_raw]
@@ -459,17 +571,26 @@ def _build_sector_detail(sector_key: str) -> Dict:
 
         price_map  = _fetch_price_map(conn, tickers)
         market_map = _fetch_market_map(conn, tickers)
+        fx_rates   = _get_fx_rates()
 
         # Group by lv1 (section header)
         sections_order: List[str] = []
         sections_map: Dict[str, List] = {}
         for d in rows_raw:
-            item = _build_stock_item(d, price_map, market_map)
+            item = _build_stock_item(d, price_map, market_map, fx_rates)
             lv1 = item["lv1"]
             if lv1 not in sections_map:
                 sections_map[lv1] = []
                 sections_order.append(lv1)
             sections_map[lv1].append(item)
+
+        # lv1별 insight 매핑
+        lv1_insight_map: Dict[str, str] = {}
+        for ins in sector_insights_list:
+            if "Level 1" in (ins.get("insight_type") or ""):
+                key = ins.get("lv1") or ""
+                if key and key not in lv1_insight_map:
+                    lv1_insight_map[key] = ins["description"]
 
         sections = []
         all_chgs = []
@@ -479,9 +600,9 @@ def _build_sector_detail(sector_key: str) -> Dict:
             avg = round(sum(chgs) / len(chgs), 2) if chgs else None
             if avg is not None:
                 all_chgs.append(avg)
-            # 섹션 설명: DB lv2_investment_view 첫 비어있지 않은 값 우선, 없으면 정적 맵
-            section_desc = next(
-                (s["desc"] for s in stocks if s.get("desc")), None
+            # 섹션 설명: sector_insights lv1 description 우선, 없으면 DB lv2_investment_view
+            section_desc = lv1_insight_map.get(lv1) or next(
+                (s["desc"] for s in stocks if s.get("desc") and len(s["desc"]) > 30), None
             )
             sections.append({
                 "name":    lv1,
@@ -492,13 +613,35 @@ def _build_sector_detail(sector_key: str) -> Dict:
             })
 
         total_avg = round(sum(all_chgs) / len(all_chgs), 2) if all_chgs else None
+
+        # 가격 최신 업데이트 날짜: radar_price_cache MAX(trade_date) 또는 price_history MAX(date)
+        try:
+            all_tickers = [t for t in tickers if t]
+            foreign_t = [t for t in all_tickers if not _is_korean_ticker(t)]
+            korean_t  = [t for t in all_tickers if _is_korean_ticker(t)]
+            dates = []
+            if foreign_t:
+                ph = ",".join("?" for _ in foreign_t)
+                r = conn.execute(f"SELECT MAX(trade_date) FROM radar_price_cache WHERE ticker IN ({ph})", foreign_t).fetchone()
+                if r and r[0]: dates.append(r[0])
+            if korean_t:
+                ph = ",".join("?" for _ in korean_t)
+                r = conn.execute(f"SELECT MAX(date) FROM price_history WHERE stock_code IN ({ph})", korean_t).fetchone()
+                if r and r[0]: dates.append(r[0])
+            updated_date = max(dates) if dates else None
+        except Exception:
+            updated_date = None
+
         return {
-            "sector_key":  sector_key,
-            "sector_name": meta["name"],
-            "emoji":       meta["emoji"],
-            "signal":      _signal_from_avg(total_avg),
-            "avg_1d":      total_avg,
-            "sections":    sections,
+            "sector_key":      sector_key,
+            "sector_name":     meta["name"],
+            "emoji":           meta["emoji"],
+            "signal":          _signal_from_avg(total_avg),
+            "avg_1d":          total_avg,
+            "updated_date":    updated_date,
+            "sector_overview": sector_overview,
+            "sector_insights": sector_insights_list,
+            "sections":        sections,
         }
     finally:
         conn.close()
@@ -820,3 +963,151 @@ async def import_csv(
 
     _cache.clear()
     return {"inserted": inserted, "updated": updated}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 반도체 밸류스트림 — 전종목 테이블 (엑셀 마스터 기반)
+# ═══════════════════════════════════════════════════════════════════
+
+REF_DATES = ["2026-01-02", "2025-08-01", "2025-04-02"]
+
+@router.get("/semiconductor/valuestream")
+def get_semiconductor_valuestream():
+    """반도체 전종목 밸류스트림 테이블.
+    A-F: semiconductor_valuestream 테이블 (기업명·Lv1·Lv2·고객·주요업)
+    G~: stock_universe(시총·PBR·PER), price_history(현재가·TTM매출)
+    기준일 가격 3종 + 현재가 대비 변동률
+    """
+    conn = _db()
+    try:
+        # 1. 마스터 데이터
+        rows = conn.execute("""
+            SELECT sv.sort_order, sv.stock_code, sv.company_name, sv.lv1, sv.lv2,
+                   sv.customers, sv.main_business, sv.ticker_raw, sv.etf_flag
+            FROM semiconductor_valuestream sv
+            ORDER BY sv.sort_order
+        """).fetchall()
+
+        if not rows:
+            return {"rows": [], "ref_dates": REF_DATES}
+
+        codes = [r[1] for r in rows if r[1]]
+        ph    = ",".join("?" * len(codes))
+
+        # 2. 현재가 (최신 close)
+        price_map = {}
+        for r in conn.execute(
+            f"SELECT stock_code, close FROM price_history WHERE stock_code IN ({ph})"
+            " AND close > 0 AND date = (SELECT MAX(date) FROM price_history p2"
+            "  WHERE p2.stock_code = price_history.stock_code AND p2.close > 0)",
+            codes,
+        ):
+            price_map[r[0]] = r[1]
+
+        # 2b. fallback: 최신 close 기준 서브쿼리가 느릴 수 있으니 간단 버전으로 재시도
+        if not price_map:
+            for r in conn.execute(
+                f"SELECT stock_code, close FROM price_history"
+                f" WHERE stock_code IN ({ph}) AND close > 0"
+                f" GROUP BY stock_code HAVING date = MAX(date)",
+                codes,
+            ):
+                price_map[r[0]] = r[1]
+
+        # 3. stock_universe (시총·PBR·PER·섹터)
+        universe_map = {}
+        for r in conn.execute(
+            f"SELECT stock_code, market_cap, pbr, per, sector_small, market FROM stock_universe"
+            f" WHERE stock_code IN ({ph})",
+            codes,
+        ):
+            mktcap_raw = r[1]
+            # stock_universe.market_cap 단위: 원(won) → 억원 변환 (÷1억)
+            mktcap_억 = round(mktcap_raw / 1e8) if mktcap_raw else None
+            universe_map[r[0]] = {"market_cap": mktcap_억, "pbr": r[2], "per": r[3],
+                                  "sector": r[4], "market": r[5]}
+
+        # 4. TTM 매출 (최근 4분기 합산)
+        ttm_map = {}
+        for r in conn.execute(
+            f"""SELECT stock_code, SUM(revenue) as ttm
+                FROM (
+                  SELECT stock_code, revenue,
+                         ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) as rn
+                  FROM financial_data
+                  WHERE stock_code IN ({ph}) AND is_annual = 0 AND revenue IS NOT NULL
+                )
+                WHERE rn <= 4
+                GROUP BY stock_code
+                HAVING COUNT(*) >= 1""",
+            codes,
+        ):
+            # financial_data.revenue 단위: 원(won) → 억원 변환
+            ttm_map[r[0]] = round(r[1] / 1e8) if r[1] else None
+
+        # 5. 기준일 가격 (price_history에서 해당 날짜 또는 직전 영업일)
+        ref_price_map: Dict[str, Dict[str, float]] = {c: {} for c in codes}
+        for ref_date in REF_DATES:
+            # 해당 날짜 포함 이전 5영업일 중 가장 최근 종가
+            for r in conn.execute(
+                f"""SELECT stock_code, close FROM price_history
+                    WHERE stock_code IN ({ph}) AND date <= ? AND close > 0
+                    GROUP BY stock_code HAVING date = MAX(date)""",
+                codes + [ref_date],
+            ):
+                ref_price_map[r[0]][ref_date] = r[1]
+
+        # 6. 조합
+        result = []
+        for row in rows:
+            sort_order, code, cname, lv1, lv2, customers, main_biz, ticker_raw, etf_flag = row
+            uni  = universe_map.get(code, {})
+            cur  = price_map.get(code)
+            mktcap = uni.get("market_cap")  # 억원
+            ttm_rev = ttm_map.get(code)
+
+            ref_prices = {}
+            ref_chgs   = {}
+            for rd in REF_DATES:
+                rp = ref_price_map.get(code, {}).get(rd)
+                ref_prices[rd] = rp
+                if cur and rp and rp > 0:
+                    ref_chgs[rd] = round((cur - rp) / rp * 100, 2)
+                else:
+                    ref_chgs[rd] = None
+
+            psr = None
+            if mktcap and ttm_rev and ttm_rev > 0:
+                psr = round(mktcap / ttm_rev, 2)
+
+            result.append({
+                "sort_order":   sort_order,
+                "stock_code":   code,
+                "company_name": cname,
+                "lv1":          lv1,
+                "lv2":          lv2,
+                "customers":    customers,
+                "main_business": main_biz,
+                "ticker_raw":   ticker_raw,
+                "etf_flag":     etf_flag,
+                "market":       uni.get("market"),
+                "sector":       uni.get("sector"),
+                "price":        cur,
+                "market_cap":   mktcap,
+                "pbr":          uni.get("pbr"),
+                "per":          uni.get("per"),
+                "ttm_revenue":  round(ttm_rev) if ttm_rev else None,
+                "psr":          psr,
+                "ref_prices":   ref_prices,
+                "ref_chgs":     ref_chgs,
+            })
+
+        return {"rows": result, "ref_dates": REF_DATES}
+    finally:
+        conn.close()
+
+
+@router.post("/semiconductor/valuestream/refresh")
+def refresh_semiconductor_valuestream():
+    """semiconductor_valuestream 테이블 기준일 가격 재계산 (별도 저장 없이 API 호출 시 자동 최신화)."""
+    return {"status": "ok", "note": "API 호출 시마다 price_history에서 실시간 계산됩니다."}

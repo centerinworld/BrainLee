@@ -1,198 +1,172 @@
 import React, { useState, useEffect } from 'react';
 
 const EmploymentYearlyView = () => {
-  const [activeTab, setActiveTab] = useState(1);
+  const [sortBy, setSortBy] = useState('count');
   const [rows, setRows] = useState([]);
-  const [date, setDate] = useState('');
+  const [meta, setMeta] = useState({ date: '', data_ym: '', total_workers: 0, total_workplaces: 0 });
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     setLoading(true);
-    const sortParam = activeTab === 2 ? 'increase' : activeTab === 3 ? 'increase_pct' : 'count';
-    // 임시로 독립된 API 엔드포인트 호출 (app.js에서 proxy 연결 필요할 수 있음)
-    fetch(`/api/employment-v2/yearly?limit=200&sort_by=${sortParam}`)
+    fetch(`/api/employment-v2/yearly?limit=500&sort_by=${sortBy}`)
       .then(r => r.json())
       .then(d => {
         setRows(d.rows || []);
-        setDate(d.date || '2026-04-30');
+        setMeta({
+          date: d.date || new Date().toISOString().slice(0, 10),
+          data_ym: d.data_ym || '',
+          total_workers: d.total_workers || 0,
+          total_workplaces: d.total_workplaces || 0,
+          source: d.source || '근로복지공단 고용보험',
+        });
         setLoading(false);
       })
       .catch(e => {
-        console.error("고용 데이터 로드 실패", e);
+        console.error('고용 데이터 로드 실패', e);
         setLoading(false);
       });
-  }, [activeTab]);
+  }, [sortBy]);
 
-  const formatNum = (num) => num != null ? num.toLocaleString() : '-';
-  
-  const renderCell = (count, pct, isBold=false) => {
-    const isPos = pct > 0;
-    const isNeg = pct < 0;
-    const color = isPos ? '#ff4d4f' : isNeg ? '#60a5fa' : 'rgba(255,255,255,0.5)';
-    const symbol = isPos ? '+' : isNeg ? '▽' : '';
-    const val = pct != null ? Math.abs(pct).toFixed(1) : '-';
-    
-    return (
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
-        <span style={{ fontWeight: isBold ? 600 : 500, width: '60px', textAlign: 'right' }}>
-          {formatNum(count)}
-        </span>
-        {pct != null ? (
-          <span style={{ color, fontSize: '0.75rem', fontWeight: 500, width: '45px', textAlign: 'right' }}>
-            {symbol}{val}%
-          </span>
-        ) : (
-          <span style={{ width: '45px' }}></span>
-        )}
-      </div>
-    );
+  const formatNum = (n) => (n != null ? Number(n).toLocaleString() : '-');
+  const formatYm = (ym) => ym ? `${ym.slice(0, 4)}년 ${ym.slice(4, 6)}월` : '';
+
+  const filtered = search
+    ? rows.filter(r => r.stock_name?.includes(search) || r.stock_code?.includes(search))
+    : rows;
+
+  const thS = {
+    padding: '0.6rem 0.8rem', textAlign: 'right', color: '#e2e8f0',
+    borderBottom: '2px solid rgba(59,130,246,0.5)', fontWeight: 600,
+    background: 'rgba(30,58,138,0.4)', whiteSpace: 'nowrap',
+    position: 'sticky', top: 0, zIndex: 5,
   };
-
-  const containerStyle = {
-    padding: '0',
-    background: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: '16px',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
-    color: '#fff',
-    fontFamily: 'inherit',
-    overflow: 'hidden'
+  const tdS = {
+    padding: '0.5rem 0.8rem', borderBottom: '1px solid rgba(255,255,255,0.04)',
+    color: 'rgba(255,255,255,0.85)', verticalAlign: 'middle',
   };
-
-  const tableStyle = {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '0.85rem'
-  };
-
-  const thStyle = {
-    padding: '0.7rem 0.8rem',
-    textAlign: 'center',
-    color: '#e2e8f0',
-    borderBottom: '2px solid rgba(59,130,246,0.5)',
-    fontWeight: 600,
-    background: 'rgba(30, 58, 138, 0.4)',
-    whiteSpace: 'nowrap'
-  };
-
-  const tdStyle = {
-    padding: '0.6rem 0.8rem',
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-    color: 'rgba(255,255,255,0.85)',
-    verticalAlign: 'middle'
-  };
-
-  const badgeStyle = (market) => {
-    const isKospi = market === 'KOSPI' || market === '유가증권';
+  const badgeS = (market) => {
+    const k = market === 'KOSPI' || market === '유가증권';
     return {
-      display: 'inline-block',
-      fontSize: '0.65rem',
-      padding: '0.15rem 0.4rem',
-      borderRadius: '4px',
-      marginRight: '0.5rem',
-      background: isKospi ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-      color: isKospi ? '#93c5fd' : '#6ee7b7',
-      border: `1px solid ${isKospi ? 'rgba(59, 130, 246, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+      display: 'inline-block', fontSize: '0.62rem', padding: '0.1rem 0.35rem',
+      borderRadius: '4px', marginRight: '0.4rem',
+      background: k ? 'rgba(59,130,246,0.18)' : 'rgba(16,185,129,0.18)',
+      color: k ? '#93c5fd' : '#6ee7b7',
+      border: `1px solid ${k ? 'rgba(59,130,246,0.3)' : 'rgba(16,185,129,0.3)'}`,
     };
   };
 
-  const tdStyleNum = {
-    ...tdStyle,
-    fontVariantNumeric: 'tabular-nums',
-    letterSpacing: '0.5px'
-  };
-
-  const tabContainerStyle = {
-    display: 'flex',
-    gap: '0.5rem',
-    padding: '1rem',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
-  };
-
-  const tabStyle = (isActive) => ({
-    padding: '0.4rem 1rem',
-    borderRadius: '8px',
-    fontSize: '0.85rem',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    fontWeight: isActive ? 600 : 400,
-    background: isActive ? 'rgba(45, 212, 191, 0.15)' : 'transparent',
-    color: isActive ? '#2dd4bf' : 'rgba(255, 255, 255, 0.6)',
-    border: isActive ? '1px solid #2dd4bf' : '1px solid transparent'
-  });
-
   return (
-    <div className="fade-in" style={containerStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
-        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>📊 연도별 순증가 (국민연금)</h2>
-        <span style={{ fontSize: '0.8rem', color: '#60a5fa', fontWeight: 500 }}>
-          업데이트: {date}
-        </span>
+    <div className="fade-in" style={{
+      background: 'rgba(255,255,255,0.02)', borderRadius: '16px',
+      border: '1px solid rgba(255,255,255,0.08)', color: '#fff', overflow: 'hidden'
+    }}>
+      {/* 헤더 */}
+      <div style={{ padding: '1rem 1.2rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.8rem' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>
+            🏭 고용보험 가입 인원 현황
+          </h2>
+          <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.45)', marginTop: '0.2rem' }}>
+            {meta.source} · {formatYm(meta.data_ym)} 기준 · 업데이트: {meta.date}
+          </div>
+        </div>
+        {/* 요약 카드 */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          {[
+            { label: '집계 기업', val: `${(rows.length).toLocaleString()}개`, color: '#60a5fa' },
+            { label: '총 피보험자', val: `${(meta.total_workers || 0).toLocaleString()}명`, color: '#34d399' },
+            { label: '총 사업장', val: `${(meta.total_workplaces || 0).toLocaleString()}개`, color: '#a78bfa' },
+          ].map(c => (
+            <div key={c.label} style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.45)' }}>{c.label}</div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 700, color: c.color }}>{c.val}</div>
+            </div>
+          ))}
+        </div>
       </div>
-      <div style={tabContainerStyle}>
-        <div style={tabStyle(activeTab === 1)} onClick={() => setActiveTab(1)}>순증가 많은순</div>
-        <div style={tabStyle(activeTab === 2)} onClick={() => setActiveTab(2)}>전년대비 증가순</div>
+
+      {/* 컨트롤 */}
+      <div style={{ padding: '0.7rem 1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        {[
+          { k: 'count', lbl: '인원수순' },
+          { k: 'workplace', lbl: '사업장수순' },
+        ].map(t => (
+          <button key={t.k} onClick={() => setSortBy(t.k)} style={{
+            padding: '0.3rem 0.8rem', borderRadius: '7px', fontSize: '0.8rem', cursor: 'pointer',
+            fontWeight: sortBy === t.k ? 700 : 400,
+            background: sortBy === t.k ? 'rgba(45,212,191,0.15)' : 'transparent',
+            color: sortBy === t.k ? '#2dd4bf' : 'rgba(255,255,255,0.5)',
+            border: `1px solid ${sortBy === t.k ? '#2dd4bf' : 'transparent'}`,
+          }}>{t.lbl}</button>
+        ))}
+        <input
+          placeholder="종목명 검색..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{
+            marginLeft: 'auto', padding: '0.3rem 0.7rem', borderRadius: '6px',
+            background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
+            color: '#fff', fontSize: '0.8rem', width: '160px'
+          }}
+        />
+        <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)' }}>{filtered.length}개 표시</span>
       </div>
-      
+
       {loading ? (
         <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>데이터 로딩 중...</div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
+          <div style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>📭</div>
+          <div>아직 수집된 데이터가 없습니다.</div>
+          <div style={{ fontSize: '0.75rem', marginTop: '0.3rem', color: 'rgba(255,255,255,0.3)' }}>
+            서버 재시작 후 매일 저녁 20:30 자동 수집됩니다.
+          </div>
+        </div>
       ) : (
-      <div style={{ overflowX: 'auto' }}>
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={{...thStyle, textAlign: 'center', width: '50px'}}>순위</th>
-              <th style={{...thStyle, textAlign: 'left', borderRight: '1px solid rgba(59,130,246,0.3)'}}>종목명</th>
-              <th style={{...thStyle, textAlign: 'left'}}>섹터</th>
-              {activeTab === 2 && (
-                <th style={{...thStyle, textAlign: 'right'}}>전년대비 증가(명)</th>
-              )}
-              <th style={{...thStyle, textAlign: 'right'}}>26년 4월 순증가</th>
-              <th style={{...thStyle, textAlign: 'right'}}>25년 누적 순증가</th>
-              <th style={{...thStyle, textAlign: 'right'}}>24년 누적 순증가</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => {
-              const diff = row.count_26 - row.count_25;
-              const diffColor = diff > 0 ? '#ff4d4f' : diff < 0 ? '#60a5fa' : 'rgba(255,255,255,0.5)';
-              return (
-              <tr 
-                key={row.stock_code} 
-                style={{ cursor: 'pointer', transition: 'background 0.2s' }}
-                onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.04)'}
-                onMouseOut={e => e.currentTarget.style.background='transparent'}
-              >
-                <td style={{...tdStyleNum, textAlign: 'center', color: 'rgba(255,255,255,0.5)'}}>{i + 1}</td>
-                <td style={{...tdStyle, textAlign: 'left', fontWeight: 600, borderRight: '1px solid rgba(59,130,246,0.2)'}}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    {row.market && <span style={badgeStyle(row.market)}>{row.market}</span>}
-                    {row.stock_name}
-                  </div>
-                </td>
-                <td style={{...tdStyle, textAlign: 'left', color: 'rgba(255,255,255,0.6)', fontSize: '0.8rem'}}>
-                  {row.sector || '-'}
-                </td>
-                {activeTab === 2 && (
-                  <td style={{...tdStyleNum, textAlign: 'right', color: diffColor, fontWeight: 600}}>
-                    {diff > 0 ? '+' : ''}{diff}
-                  </td>
-                )}
-                <td style={{...tdStyleNum, textAlign: 'right'}}>
-                  {renderCell(row.count_26, row.yoy_26, true)}
-                </td>
-                <td style={{...tdStyleNum, textAlign: 'right'}}>
-                  {renderCell(row.count_25, row.yoy_25, false)}
-                </td>
-                <td style={{...tdStyleNum, textAlign: 'right'}}>
-                  {renderCell(row.count_24, row.yoy_24, false)}
-                </td>
+        <div style={{ overflowX: 'auto', overflowY: 'clip' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+            <thead>
+              <tr>
+                <th style={{ ...thS, textAlign: 'center', width: '45px' }}>#</th>
+                <th style={{ ...thS, textAlign: 'left' }}>종목명</th>
+                <th style={{ ...thS, textAlign: 'left' }}>섹터</th>
+                <th style={{ ...thS }}>피보험자 (명)</th>
+                <th style={{ ...thS }}>사업장 수</th>
               </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {filtered.map((row, i) => (
+                <tr key={row.stock_code}
+                  style={{ transition: 'background 0.15s' }}
+                  onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                  onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ ...tdS, textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>{i + 1}</td>
+                  <td style={{ ...tdS, fontWeight: 600 }}>
+                    {row.market && <span style={badgeS(row.market)}>{row.market === '유가증권' ? 'KOSPI' : row.market === '코스닥' ? 'KOSDAQ' : row.market}</span>}
+                    {row.stock_name}
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.3)', marginLeft: '0.3rem' }}>{row.stock_code}</span>
+                  </td>
+                  <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)', fontSize: '0.77rem' }}>{row.sector || '-'}</td>
+                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, color: '#34d399' }}>
+                    {formatNum(row.total_workers)}
+                  </td>
+                  <td style={{ ...tdS, textAlign: 'right', color: 'rgba(255,255,255,0.55)' }}>
+                    {formatNum(row.workplace_cnt)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      {/* 출처 안내 */}
+      <div style={{ padding: '0.6rem 1rem', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: '0.68rem', color: 'rgba(255,255,255,0.3)', display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+        <span>📋 출처: 근로복지공단 고용·산재보험 현황정보 (B490001)</span>
+        <span>💡 피보험자 수 = 고용보험 가입 상시근로자 합계 (사업장별 자진신고)</span>
+        <span>🔄 매일 저녁 20:30 변화 감지 시 자동 갱신</span>
+      </div>
     </div>
   );
 };

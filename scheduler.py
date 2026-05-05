@@ -103,12 +103,24 @@ class CollectionScheduler:
             ("텐버거오전",      self._loop_tenbagger_morning),    # ★ 09:00 텐버거 발굴
             ("텐버거정오",      self._loop_tenbagger_noon),       # ★ 12:00 텐버거 발굴
             ("텐버거오후",      self._loop_tenbagger_afternoon),  # ★ 15:00 텐버거 발굴
+            # ("NPS고용업데이트", self._loop_nps_daily),          # ⛔ 비활성: apis.data.go.kr DNS 차단 + 연간 총인원은 월별차이 없어 신호 불필요
+            ("HOT섹터블로그",   self._loop_sector_blog),          # ★ 매일 07:00 블로그 신규 포스트 파싱
+            ("스탁이지분석",    self._loop_stockeasy_analysis),   # ★ 매일 16:30 스탁이지 전략 분석
+            ("스탁이지주간",    self._loop_stockeasy_weekly),     # ★ 매주 일요일 09:00 주간 요약
+            # ("고용보험배치",  self._loop_insurance_monthly),    # ⛔ 비활성: 연간 총인원 수집 — 월별차이 없어 의미 없음 (사용자 요청)
+            ("DART수주공시",   self._loop_dart_contracts),        # ★ 매일 08:00/13:00/17:00 DART 수주공시
+            ("근로복지공단",   self._loop_wlb_monthly),           # ★ 매일 20:30 변화감지 → 수집
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
             t.start()
             self._threads.append(t)
         logger.info(f"[스케줄러] {len(jobs)}개 잡 시작")
+
+        # ★ 서버 재시작 후 당일 누락 데이터 자동 캐치업 (30초 딜레이 후 실행)
+        t_catchup = threading.Thread(target=self._startup_catchup, name="시작캐치업", daemon=True)
+        t_catchup.start()
+        self._threads.append(t_catchup)
 
     def stop(self) -> None:
         """서버 shutdown 시 호출."""
@@ -394,7 +406,7 @@ class CollectionScheduler:
         dates_to_collect: list[str] = []
         try:
             _conn = _sl.connect("stock.db")
-            _last = _conn.execute("SELECT MAX(bas_dt) FROM short_sell_daily").fetchone()
+            _last = _conn.execute("SELECT MAX(bas_dt) FROM short_sell_daily WHERE stock_code != '000000'").fetchone()
             _conn.close()
             last_date = _last[0] if _last and _last[0] else None
         except Exception:
@@ -440,6 +452,16 @@ class CollectionScheduler:
                 except Exception as _e:
                     logger.error(f"[공공데이터] {bas_dt} 오류: {_e}")
                     break
+
+            # 대차종목순위/내외국인/월별 추가 수집 (오늘 날짜만)
+            try:
+                saved_short = loop.run_until_complete(
+                    collector.collect_short_all_for_date(today_str)
+                )
+                logger.info(f"[대차추가수집] {today_str}: {saved_short}")
+            except Exception as _e:
+                logger.error(f"[대차추가수집] {_e}")
+
             logger.info(f"[공공데이터] 완료: {total_saved}건 저장")
         except Exception as e:
             logger.error(f"[공공데이터] {e}")
@@ -592,7 +614,7 @@ class CollectionScheduler:
         logger.info(f"[KRX일별] {today_str} 종목+{ins} 수정{upd} 지수+{idx_saved}")
 
         # ── KRX 지수 수집 0건이면 Yahoo Finance로 보완 ───────────────────
-        # KOSDAQ150(^KQ150), NASDAQ(^IXIC), S&P500(^GSPC) 등
+        # NASDAQ(^IXIC), S&P500(^GSPC) 등
         # KRX API 차단/지연 시 자동으로 Yahoo에서 수집
         if idx_saved == 0:
             logger.info("[KRX일별] 지수 0건 → Yahoo Finance fallback 시작")
@@ -604,6 +626,22 @@ class CollectionScheduler:
                 logger.info("[KRX일별] Yahoo fallback 완료")
             except Exception as _e:
                 logger.warning(f"[KRX일별] Yahoo fallback 오류: {_e}")
+
+        # ── KOSPI200/KOSDAQ150 누락 확인 → 네이버 금융 fallback ─────────
+        # KRX승인 API가 서브지수를 반환하지 않는 경우가 있어 별도 수집
+        try:
+            conn2 = sqlite3.connect("stock.db", timeout=10)
+            missing_sub = conn2.execute(
+                "SELECT COUNT(*) FROM price_history WHERE stock_code IN ('^KS200','^KQ150') AND date=?",
+                (today_str,)
+            ).fetchone()[0]
+            conn2.close()
+            if missing_sub < 2:
+                logger.info(f"[KRX일별] KOSPI200/KOSDAQ150 누락({missing_sub}건) → 네이버 fallback")
+                n = self._collect_derivative_indices()
+                logger.info(f"[KRX일별] 네이버 fallback: {n}건 저장")
+        except Exception as _e2:
+            logger.warning(f"[KRX일별] KOSPI200/KOSDAQ150 fallback 오류: {_e2}")
 
 
     # ──────────────────────────────────────────────────────────
@@ -701,6 +739,9 @@ class CollectionScheduler:
                     if not exists:
                         continue
                     # 기존 수급 데이터가 없는 날짜만 업데이트 (기존 데이터 불변)
+                    # ★ amt 기준으로 스킵 여부 판단 (qty는 장중잡이 먼저 쓸 수 있음)
+                    # 기존: qty 있으면 skip → 장중잡이 쓴 qty행이 amt 없이 남는 버그
+                    # 수정: amt 없으면 항상 업데이트 (qty 포함 전체 갱신)
                     conn.execute("""
                         UPDATE price_history
                         SET inst_net_buy     = ?,
@@ -710,8 +751,8 @@ class CollectionScheduler:
                             frn_net_buy_amt  = ?,
                             ind_net_buy_amt  = ?
                         WHERE stock_code=? AND date=?
-                          AND (inst_net_buy IS NULL OR inst_net_buy = 0)
-                          AND (frn_net_buy  IS NULL OR frn_net_buy  = 0)
+                          AND (inst_net_buy_amt IS NULL OR inst_net_buy_amt = 0)
+                          AND (frn_net_buy_amt  IS NULL OR frn_net_buy_amt  = 0)
                     """, (iq, fq, dq, ia, fa, da, code, d))
                     total_saved += conn.execute("SELECT changes()").fetchone()[0]
 
@@ -727,6 +768,159 @@ class CollectionScheduler:
         conn.commit()
         conn.close()
         logger.info(f"[전종목수급] 완료 — 총 {total_saved:,}건 저장")
+
+    # ══════════════════════════════════════════════════════════
+    # 시작 캐치업 (서버 재시작 시 당일 누락 데이터 즉시 수집)
+    # ══════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _fetch_naver_index(naver_code: str, count: int = 5) -> list[dict]:
+        """네이버 금융 fchart API로 지수 일봉 데이터 수집.
+
+        naver_code: KPI200(KOSPI200), KSQ150(KOSDAQ150), KOSPI, KOSDAQ
+        반환: [{date:'YYYY-MM-DD', open, high, low, close, volume}, ...]
+        """
+        import requests as _rq
+        try:
+            url = f"https://fchart.stock.naver.com/sise.nhn?symbol={naver_code}&timeframe=day&count={count}&requestType=0"
+            r = _rq.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if r.status_code != 200:
+                return []
+            import re
+            items = []
+            for m in re.findall(r'<item data="([^"]+)"', r.text):
+                parts = m.split('|')
+                if len(parts) < 6:
+                    continue
+                raw_dt = parts[0].strip()
+                if len(raw_dt) == 8:
+                    dt_str = f"{raw_dt[:4]}-{raw_dt[4:6]}-{raw_dt[6:8]}"
+                else:
+                    continue
+                try:
+                    close = float(parts[4])
+                    items.append({
+                        "date":   dt_str,
+                        "open":   float(parts[1]),
+                        "high":   float(parts[2]),
+                        "low":    float(parts[3]),
+                        "close":  close,
+                        "volume": float(parts[5]) if len(parts) > 5 else 0.0,
+                    })
+                except (ValueError, IndexError):
+                    continue
+            return items
+        except Exception as _e:
+            logger.debug(f"[네이버지수] {naver_code}: {_e}")
+            return []
+
+    def _collect_derivative_indices(self) -> int:
+        """KOSPI200/KOSDAQ150 — KRX API 실패 시 네이버 금융 fallback.
+
+        반환: 저장 건수
+        """
+        import sqlite3 as _sl
+        INDEX_MAP = {
+            "^KS200": "KPI200",   # KOSPI200
+            "^KQ150": "KSQ150",   # KOSDAQ150
+        }
+        saved = 0
+        conn = _sl.connect("stock.db", timeout=15)
+        conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            for code, naver_code in INDEX_MAP.items():
+                rows = self._fetch_naver_index(naver_code, count=10)
+                for row in rows:
+                    dt_str = row["date"]
+                    # 주말/공휴일 스킵
+                    from datetime import date as _dt_cls
+                    d = _dt_cls.fromisoformat(dt_str)
+                    if d.weekday() >= 5:
+                        continue
+                    if row["close"] <= 0:
+                        continue
+                    cur = conn.execute("""
+                        INSERT OR IGNORE INTO price_history
+                            (stock_code, date, open, high, low, close, volume)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (code, dt_str, row["open"], row["high"], row["low"], row["close"], row["volume"]))
+                    if cur.rowcount > 0:
+                        saved += 1
+                    else:
+                        conn.execute("""
+                            UPDATE price_history SET open=?, high=?, low=?, close=?, volume=?
+                            WHERE stock_code=? AND date=? AND (close IS NULL OR close=0)
+                        """, (row["open"], row["high"], row["low"], row["close"], row["volume"], code, dt_str))
+                        saved += conn.execute("SELECT changes()").fetchone()[0]
+            conn.commit()
+        finally:
+            conn.close()
+        return saved
+
+    def _startup_catchup(self) -> None:
+        """서버 재시작 후 당일 누락된 잡을 감지해 즉시 실행.
+
+        문제: _wait_until()은 다음날 해당 시각을 기다림.
+             서버가 17:30 이후 재시작되면 당일 수급/KRX 수집 기회를 잃음.
+        해결: 시작 30초 후 누락 여부 확인 → 즉시 수집.
+        """
+        import sqlite3 as _sl
+        self._wait_secs(30)  # 서버 완전 기동 대기
+        if self._stop_event.is_set():
+            return
+
+        now = datetime.now()
+        today_str = now.strftime("%Y-%m-%d")
+
+        # 주말이면 스킵
+        if now.weekday() >= 5:
+            logger.info("[캐치업] 주말 — 스킵")
+            return
+
+        logger.info(f"[캐치업] {today_str} 당일 누락 데이터 확인 시작")
+
+        # ① KOSPI200/KOSDAQ150 누락 확인 → 네이버 금융 fallback
+        # 16:00 이후이고 오늘 데이터가 없으면 즉시 수집
+        if now.hour >= 16:
+            try:
+                conn = _sl.connect("stock.db", timeout=15)
+                missing = conn.execute(
+                    "SELECT COUNT(*) FROM price_history WHERE stock_code IN ('^KS200','^KQ150') AND date=?",
+                    (today_str,)
+                ).fetchone()[0]
+                conn.close()
+                if missing < 2:
+                    logger.info(f"[캐치업] {today_str} KOSPI200/KOSDAQ150 {missing}건 누락 → 네이버 fallback")
+                    n = self._collect_derivative_indices()
+                    logger.info(f"[캐치업] KOSPI200/KOSDAQ150 네이버 수집: {n}건 저장")
+                    if n == 0:
+                        # 네이버도 실패하면 KRX 잡 시도
+                        _run_job_safe("캐치업KRX지수", self._job_krx_daily)
+                else:
+                    logger.info(f"[캐치업] KOSPI200/KOSDAQ150 정상 ({missing}건 존재)")
+            except Exception as e:
+                logger.warning(f"[캐치업] KRX 지수 확인 오류: {e}")
+
+        # ② 수급 amount (inst_net_buy_amt) 누락 확인
+        # 17:00 이후이고 오늘 amt 데이터 < 50건이면 즉시 수집
+        if now.hour >= 17:
+            try:
+                conn = _sl.connect("stock.db", timeout=15)
+                amt_cnt = conn.execute(
+                    "SELECT COUNT(*) FROM price_history WHERE date=? "
+                    "AND inst_net_buy_amt IS NOT NULL AND inst_net_buy_amt != 0",
+                    (today_str,)
+                ).fetchone()[0]
+                conn.close()
+                if amt_cnt < 50:
+                    logger.info(f"[캐치업] {today_str} 수급 amt {amt_cnt}건 부족 → 즉시 수집 (~43분 소요)")
+                    _run_job_safe("캐치업수급", self._job_supply_daily)
+                else:
+                    logger.info(f"[캐치업] 수급 amt 정상 ({amt_cnt}건 존재)")
+            except Exception as e:
+                logger.warning(f"[캐치업] 수급 확인 오류: {e}")
+
+        logger.info("[캐치업] 완료")
 
     # ══════════════════════════════════════════════════════════
     # 내부 유틸
@@ -790,11 +984,11 @@ class CollectionScheduler:
             logger.error(f"[현금흐름배치] 잡 오류: {e}")
 
     def _job_naver_fundamentals(self) -> None:
-        """네이버금융 전종목 PBR/PER/EPS 배치 수집."""
+        """네이버금융 전종목 PBR/PER/EPS 배치 수집 → financial_data + stock_universe 동시 갱신."""
         try:
             import subprocess
             result = subprocess.run(
-                ["venv/bin/python3", "collect_naver_fundamentals.py", "--missing"],
+                ["venv/bin/python3", "collect_naver_fundamentals.py"],  # 전종목 매일 갱신
                 capture_output=True, text=True, timeout=7200,
                 cwd="/Applications/stock_dashboard",
             )
@@ -839,3 +1033,274 @@ class CollectionScheduler:
             logger.info(f"[텐버거{run_type}] {len(results)}종목 선정")
         except Exception as e:
             logger.error(f"[텐버거{run_type}] 오류: {e}", exc_info=True)
+
+    # ══════════════════════════════════════════════════════════
+    # NPS 고용 데이터 자동 업데이트 (매일 06:00)
+    # ══════════════════════════════════════════════════════════
+
+    def _loop_nps_daily(self) -> None:
+        """매일 06:00 — 국민연금 고용 데이터 신규 월 확인 및 수집."""
+        self._wait_secs(65)
+        while not self._stop_event.is_set():
+            self._wait_until(6, 0)
+            _run_job_safe("NPS고용업데이트", self._job_nps_daily)
+
+    def _job_nps_daily(self) -> None:
+        """NPS 신규 월 데이터 수집 — update_nps_daily.py 위임."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["venv/bin/python3", "employment_monitor/update_nps_daily.py"],
+                capture_output=True, text=True, timeout=7200,
+                cwd="/Applications/stock_dashboard",
+            )
+            out = (result.stdout or "")[-300:]
+            logger.info(f"[NPS고용] 완료: {out}")
+            if result.returncode != 0:
+                logger.warning(f"[NPS고용] 오류(returncode={result.returncode}): {(result.stderr or '')[-200:]}")
+            # 캐시 무효화
+            try:
+                import sys, importlib
+                emp_mod = sys.modules.get("employment_monitor.routes_employment_v2")
+                if emp_mod:
+                    emp_mod._trend_data_cache = None
+                    emp_mod._trend_data_cache_at = 0
+            except Exception:
+                pass
+        except Exception as e:
+            logger.error(f"[NPS고용] 잡 오류: {e}")
+
+    # ══════════════════════════════════════════════════════════
+    # HOT 섹터 블로그 자동파싱 (매일 07:00)
+    # ══════════════════════════════════════════════════════════
+
+    def _loop_sector_blog(self) -> None:
+        """매일 07:00 — 네이버 블로그 신규 포스트 파싱 + 기존 종목 없는 포스트 재파싱."""
+        self._wait_secs(70)
+        while not self._stop_event.is_set():
+            self._wait_until(7, 0)
+            _run_job_safe("HOT섹터블로그", self._job_sector_blog)
+
+    def _job_sector_blog(self) -> None:
+        """블로그 자동파싱 — Sector_define/blog_parser.run_parser() 위임."""
+        try:
+            import sys as _sys
+            if "/Applications/stock_dashboard" not in _sys.path:
+                _sys.path.insert(0, "/Applications/stock_dashboard")
+            from Sector_define.blog_parser import run_parser
+            run_parser(reprocess_empty=True)
+            logger.info("[HOT섹터] 블로그 파싱 완료")
+        except Exception as e:
+            logger.error(f"[HOT섹터] 블로그 파싱 오류: {e}")
+
+    # ══════════════════════════════════════════════════════════
+    # 스탁이지 전략 분석 (매일 16:30 + 일요일 09:00 주간 요약)
+    # ══════════════════════════════════════════════════════════
+
+    def _loop_stockeasy_analysis(self) -> None:
+        """매일 16:30 장마감 후 — 스탁이지 3전략 분석 + 텔레그램."""
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            self._wait_until(16, 30)
+            _run_job_safe("스탁이지분석", self._job_stockeasy_analysis)
+
+    def _loop_stockeasy_weekly(self) -> None:
+        """매주 일요일 09:00 — 주간 전략 패턴 요약 리포트."""
+        self._wait_secs(95)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            # 다음 일요일 09:00 계산 (weekday: 0=월 ~ 6=일)
+            days_until_sun = (6 - now.weekday()) % 7
+            if days_until_sun == 0 and now.hour < 9:
+                next_run = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            else:
+                if days_until_sun == 0:
+                    days_until_sun = 7
+                next_run = (now + timedelta(days=days_until_sun)).replace(
+                    hour=9, minute=0, second=0, microsecond=0
+                )
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("스탁이지주간", self._job_stockeasy_weekly)
+
+    def _job_stockeasy_analysis(self) -> None:
+        """스탁이지 3전략 현황 분석 — stockeasy_analyzer.run_daily_analysis() 위임."""
+        try:
+            import sys as _sys
+            if "/Applications/stock_dashboard" not in _sys.path:
+                _sys.path.insert(0, "/Applications/stock_dashboard")
+            from stockeasy_analyzer import run_daily_analysis
+            run_daily_analysis()
+            logger.info("[스탁이지] 일별 분석 완료")
+        except Exception as e:
+            logger.error(f"[스탁이지] 분석 오류: {e}")
+
+    def _job_stockeasy_weekly(self) -> None:
+        """주간 전략 패턴 요약 — DB 누적 분석 결과 기반 리포트."""
+        try:
+            import sys as _sys
+            if "/Applications/stock_dashboard" not in _sys.path:
+                _sys.path.insert(0, "/Applications/stock_dashboard")
+            from stockeasy_analyzer import run_weekly_summary
+            run_weekly_summary()
+            logger.info("[스탁이지] 주간 요약 완료")
+        except Exception as e:
+            logger.error(f"[스탁이지] 주간 요약 오류: {e}")
+
+    # ══════════════════════════════════════════════════════════
+    # 고용보험 상시인원 배치 (매월 5일 02:00)
+    # ══════════════════════════════════════════════════════════
+
+    def _loop_insurance_monthly(self) -> None:
+        """매월 5일 02:00 — 고용보험 상시인원 전종목 배치 수집."""
+        self._wait_secs(80)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            if now.day == 5 and now.hour < 2:
+                next_run = now.replace(hour=2, minute=0, second=0, microsecond=0)
+            else:
+                next_month = (now.replace(day=1) + timedelta(days=32)).replace(day=5)
+                next_run   = next_month.replace(hour=2, minute=0, second=0, microsecond=0)
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("고용보험배치", self._job_insurance_monthly)
+
+    def _job_insurance_monthly(self) -> None:
+        """고용보험 상시인원 전종목 수집 — fetch_employment_insurance.py 위임."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["venv/bin/python3", "employment_monitor/fetch_employment_insurance.py", "--delay", "0.4"],
+                capture_output=True, text=True, timeout=14400,
+                cwd="/Applications/stock_dashboard",
+            )
+            out = (result.stdout or "")[-300:]
+            logger.info(f"[고용보험] 완료: {out}")
+            if result.returncode != 0:
+                logger.warning(f"[고용보험] 오류(returncode={result.returncode}): {(result.stderr or '')[-200:]}")
+        except Exception as e:
+            logger.error(f"[고용보험] 잡 오류: {e}")
+
+    # ══════════════════════════════════════════════════════════
+    # DART 수주공시 (매일 08:00 / 13:00 / 17:00)
+    # ══════════════════════════════════════════════════════════
+
+    def _loop_wlb_monthly(self) -> None:
+        """근로복지공단 고용보험 — 매일 20:30 API totalCount 변화 감지, 변화 시 전체 수집 (~14분).
+
+        동작 원리:
+        - 매일 저녁 API totalCount(전국 사업장 수)를 확인
+        - 마지막 수집 시점과 비교해 달라지면 전체 스캔 수행
+        - 같은 달에 여러 번 갱신 가능 (사업장 신규등록·폐업·인원변동 반영)
+        """
+        self._wait_secs(120)
+        _last_total = None   # 마지막 확인한 totalCount
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            # 매일 20:30 실행
+            target = now.replace(hour=20, minute=30, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+            secs = max(0.0, (target - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("근로복지공단변화감지", self._job_wlb_check_and_collect)
+
+    def _job_wlb_check_and_collect(self) -> None:
+        """근로복지공단: totalCount 변화 감지 후 필요 시 전체 수집."""
+        try:
+            import sys as _sys, requests as _req, xml.etree.ElementTree as _ET
+            _wlb_path = os.path.join(os.path.dirname(__file__), 'employment_monitor')
+            if _wlb_path not in _sys.path:
+                _sys.path.insert(0, _wlb_path)
+            from collect_labor_welfare import collect_all, save_to_db, init_db, API_KEY, BASE_URL, PAGE_SIZE
+            import sqlite3 as _sl
+            from datetime import datetime as _dt
+
+            # 1) 현재 totalCount 확인
+            r = _req.get(f'{BASE_URL}/getGySjBoheomBsshItem', params={
+                'serviceKey': API_KEY, 'pageNo': 1, 'numOfRows': 1, 'opaBoheomFg': '1'
+            }, timeout=30)
+            root = _ET.fromstring(r.text)
+            current_total = int(root.findtext('.//totalCount', '0') or '0')
+
+            # 2) DB에서 마지막 수집 시의 total (wlb_meta 테이블)
+            emp_db = os.path.join(_wlb_path, 'employment.db')
+            conn = _sl.connect(emp_db)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS wlb_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT
+                )
+            """)
+            row = conn.execute("SELECT value FROM wlb_meta WHERE key='last_total_count'").fetchone()
+            last_total = int(row[0]) if row else 0
+            conn.close()
+
+            logger.info(f"[근로복지공단] totalCount: 현재={current_total:,}, 이전={last_total:,}")
+
+            if current_total == last_total:
+                logger.info("[근로복지공단] 변화 없음 — 수집 생략")
+                return
+
+            # 3) 변화 감지 → 전체 수집
+            data_ym = _dt.now().strftime('%Y%m')
+            logger.info(f"[근로복지공단] 변화 감지({last_total:,}→{current_total:,}) — 전체 수집 시작 (ym={data_ym})")
+            init_db()
+            aggregated = collect_all(data_ym, test_pages=0)
+            if aggregated:
+                save_to_db(data_ym, aggregated)
+                # totalCount 갱신
+                conn = _sl.connect(emp_db)
+                conn.execute("""
+                    INSERT INTO wlb_meta(key, value, updated_at) VALUES('last_total_count', ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                """, (str(current_total), _dt.now().isoformat()))
+                conn.commit(); conn.close()
+                logger.info(f"[근로복지공단] {len(aggregated)}개 기업 저장 완료 (ym={data_ym}), total={current_total:,}")
+            else:
+                logger.warning("[근로복지공단] 매칭 결과 없음")
+        except Exception as e:
+            logger.error(f"[근로복지공단] 잡 오류: {e}", exc_info=True)
+
+    def _job_wlb_monthly(self) -> None:
+        """근로복지공단 고용보험 전사업장 스캔 → wlb_monthly 테이블 저장 (수동 호출용)."""
+        self._job_wlb_check_and_collect()
+
+    def _loop_dart_contracts(self) -> None:
+        """DART 수주·공급계약 공시 — 하루 3회 (08:00/13:00/17:00) 수집."""
+        self._wait_secs(30)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            targets = [8, 13, 17]  # 수집 시각 (시)
+            next_times = []
+            for h in targets:
+                candidate = now.replace(hour=h, minute=0, second=0, microsecond=0)
+                if candidate > now:
+                    next_times.append(candidate)
+            if next_times:
+                next_run = min(next_times)
+            else:
+                # 오늘 모두 지났으면 내일 08:00
+                next_run = (now + timedelta(days=1)).replace(
+                    hour=8, minute=0, second=0, microsecond=0
+                )
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("DART수주공시", self._job_dart_contracts)
+
+    def _job_dart_contracts(self) -> None:
+        """DART 수주·공급계약 공시 수집 + AI 분석 + 텔레그램 알림."""
+        try:
+            from collectors.dart_contract_collector import collect_dart_contracts
+            results = collect_dart_contracts(days=1, min_signal=2)
+            if results:
+                logger.info(f"[DART수주] {len(results)}건 처리 완료")
+            else:
+                logger.debug("[DART수주] 신규 수주공시 없음")
+        except Exception as e:
+            logger.error(f"[DART수주] 잡 오류: {e}")

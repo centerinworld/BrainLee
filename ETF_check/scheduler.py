@@ -1,13 +1,13 @@
 """
 ETF_check 스케줄러
-매일 새벽 00:10 (장이 열리는 날 기준) 자동 수집 실행
+매일 20:30 (장 마감 후, 장이 열리는 날 기준) 자동 수집 실행
 실행: python scheduler.py (백그라운드 프로세스로 유지)
 """
 import time
 import logging
 import subprocess
 import sys
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 import os
 
 DIR      = os.path.dirname(__file__)
@@ -23,17 +23,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-COLLECT_HOUR   = 0   # 새벽 00시
-COLLECT_MINUTE = 10  # 00:10 실행
+COLLECT_HOUR   = 20  # 저녁 20시
+COLLECT_MINUTE = 30  # 20:30 실행 (장 마감 후 ETF 데이터 업데이트 완료 시각)
+
+# 한국 공휴일 (stock_dashboard와 동일 기준)
+_KR_HOLIDAYS = {
+    "2026-01-01","2026-01-27","2026-01-28","2026-01-29","2026-01-30",
+    "2026-03-01","2026-05-01","2026-05-05","2026-06-06","2026-08-15",
+    "2026-09-24","2026-09-25","2026-09-26","2026-10-03","2026-10-09",
+    "2026-12-25",
+}
 
 
 def is_trading_day(d: date = None) -> bool:
-    """새벽에 실행되므로 '전날'이 평일(월~금)인지 판단합니다."""
+    """오늘이 주식 거래일(평일 + 공휴일 아닌 날)인지 판단합니다."""
     if d is None:
         d = date.today()
-    # 실행 시점이 자정(00:10)이므로, 수집할 데이터는 어제 기준입니다.
-    yesterday = d - timedelta(days=1)
-    return yesterday.weekday() < 5  # 0=월 ... 4=금 (어제가 평일이면 True)
+    if d.weekday() >= 5:    # 토(5) 일(6)
+        return False
+    if d.strftime("%Y-%m-%d") in _KR_HOLIDAYS:
+        return False
+    return True
 
 
 def run_collector():
@@ -55,14 +65,14 @@ def run_collector():
 
 
 def main():
-    logger.info("ETF_check 스케줄러 시작")
+    logger.info("ETF_check 스케줄러 시작 (20:30 저녁 수집 모드)")
     last_run_date = None
 
     while True:
         now = datetime.now()
         today = now.date()
 
-        # 실행 조건: 장이 열리는 날 + 새벽 00:10 + 오늘 아직 실행 안 했으면
+        # 실행 조건: 거래일 + 20:30 + 오늘 아직 실행 안 했으면
         if (
             now.hour == COLLECT_HOUR
             and now.minute == COLLECT_MINUTE
@@ -73,7 +83,6 @@ def main():
             run_collector()
             last_run_date = today
 
-        # 1분 대기
         time.sleep(60)
 
 

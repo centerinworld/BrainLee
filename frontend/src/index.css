@@ -120,3 +120,16 @@ body {
   z-index: 100;
 }
 
+/* ── 전역 sticky 테이블 헤더 ──────────────────────────────────────
+   메인 스크롤 영역(#main-scroll) 안의 모든 thead th 에 자동 적용.
+   개별 컴포넌트의 인라인 style(top 값)이 우선순위가 높으므로,
+   MarketRadarView 처럼 top 값이 다른 경우는 인라인 스타일로 덮어씀. */
+#main-scroll table thead tr th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(11, 15, 26, 0.97);
+  backdrop-filter: blur(12px);
+}
+
+

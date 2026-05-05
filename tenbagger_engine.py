@@ -130,6 +130,7 @@ def _fetch_price_data(conn, stock_code: str) -> dict:
     avg_tvol5 = avg_vol5 * current / 1e8  # 억원
 
     return {
+        "stock_code": stock_code,
         "current_price": current,
         "ma20": ma20,
         "ma60": ma60,
@@ -337,6 +338,31 @@ def _score_stock(price: dict, fin: dict, supply: dict, uni: dict) -> tuple[float
         else:            val_score -= 1
 
     scores["value"] = max(0, min(15, val_score))
+
+    # ── 7. 보너스: 수주공시 + HS수출 (최대 +10점, NPS 연간고용 제거) ──
+    try:
+        import sys as _sys, os as _os
+        _root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        from signal_engine import (_load_contract_bonus_map,
+                                   _load_hs_export_bonus_map)
+        sc = price.get("stock_code", "")
+        if sc:
+            cb = _load_contract_bonus_map(days=90).get(sc)
+            hb = _load_hs_export_bonus_map(months=6).get(sc)
+            bonus_total = 0
+            if cb:
+                b = min(cb["bonus"], 5)
+                bonus_total += b
+                reasons.append(f'📋 수주공시 {cb["label"]} (+{b}점)')
+            if hb:
+                b = min(hb["bonus"], 5)
+                bonus_total += b
+                reasons.append(f'🚢 {hb["label"]} (+{b}점)')
+            scores["growth_bonus"] = max(min(bonus_total, 10), 0)
+    except Exception:
+        scores["growth_bonus"] = 0
 
     total = sum(scores.values())
     return total, scores, reasons

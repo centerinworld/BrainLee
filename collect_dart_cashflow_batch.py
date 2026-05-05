@@ -9,6 +9,7 @@ cash_flow_data 테이블을 채운다. 이미 있는 행은 건너뜀.
   python3 collect_dart_cashflow_batch.py --years 3   # 최근 3년만
   python3 collect_dart_cashflow_batch.py --missing   # cash_flow_data 전혀 없는 종목만
   python3 collect_dart_cashflow_batch.py --fill-missing  # 최근 N년 중 비어 있는 기간이 있는 종목
+  python3 collect_dart_cashflow_batch.py --refill-depr   # depreciation=NULL 행만 재수집
   python3 collect_dart_cashflow_batch.py --limit 100 # 상위 N종목만
 """
 import argparse
@@ -47,6 +48,23 @@ def _latest_quarter() -> tuple[int, int]:
     else:        return y, 3
 
 
+_DEPR_KEYWORDS = [
+    "감가상각비",
+    "유형자산상각비",
+    "유형자산의감가상각비",
+    "유형자산감가상각비",
+    "사용권자산감가상각비",
+    "사용권자산의감가상각비",
+    "사용권자산상각비",
+    "투자부동산의감가상각비",
+    "투자부동산감가상각비",
+    "무형자산상각비",
+    "무형자산의상각비",
+]
+
+_PPE_KEYWORDS = ["유형자산", "유형자산합계", "유형자산순액"]
+
+
 def _is_sparse_cashflow_row(row: sqlite3.Row | tuple | None) -> bool:
     if row is None:
         return True
@@ -54,7 +72,32 @@ def _is_sparse_cashflow_row(row: sqlite3.Row | tuple | None) -> bool:
     return all(v is None for v in values)
 
 
-def collect_one(dart, conn: sqlite3.Connection, code: str, years: int, refill_sparse: bool = False) -> int:
+def _has_null_depreciation(row: sqlite3.Row | tuple | None) -> bool:
+    if row is None:
+        return True
+    # row index 5 = depreciation
+    return row[5] is None
+
+
+def _parse_val(row, col: str) -> float | None:
+    """DataFrame row에서 숫자 추출. 실패 시 None."""
+    v = row.get(col)
+    if v is None or (hasattr(v, '__class__') and pd.isna(v)):
+        return None
+    try:
+        return float(str(v).replace(",", ""))
+    except Exception:
+        return None
+
+
+def collect_one(
+    dart,
+    conn: sqlite3.Connection,
+    code: str,
+    years: int,
+    refill_sparse: bool = False,
+    refill_depr: bool = False,
+) -> int:
     """단일 종목 현금흐름표 수집. 반환: 저장 건수."""
     latest_y, latest_q = _latest_quarter()
     qmap = {"11011": 4, "11013": 1, "11012": 2, "11014": 3}
@@ -66,7 +109,7 @@ def collect_one(dart, conn: sqlite3.Connection, code: str, years: int, refill_sp
                 continue
             is_annual = 1 if rcode == "11011" else 0
 
-            # 이미 있으면 스킵
+            # 스킵 조건
             exists = conn.execute(
                 """
                 SELECT operating_cf, investing_cf, financing_cf, capex, cash_end, depreciation
@@ -75,7 +118,16 @@ def collect_one(dart, conn: sqlite3.Connection, code: str, years: int, refill_sp
                 """,
                 (code, year, qnum, is_annual)
             ).fetchone()
-            if exists and not (refill_sparse and _is_sparse_cashflow_row(exists)):
+
+            skip = False
+            if exists:
+                if refill_depr and _has_null_depreciation(exists):
+                    skip = False   # depreciation 재시도
+                elif refill_sparse and _is_sparse_cashflow_row(exists):
+                    skip = False
+                else:
+                    skip = True
+            if skip:
                 continue
 
             fn_data = None
@@ -93,49 +145,110 @@ def collect_one(dart, conn: sqlite3.Connection, code: str, years: int, refill_sp
             if fn_data is None or fn_data.empty:
                 continue
 
-            m = {k: None for k in ["operating_cf","investing_cf","financing_cf",
-                                    "capex","cash_end","depreciation"]}
+            m = {k: None for k in ["operating_cf", "investing_cf", "financing_cf",
+                                    "capex", "cash_end", "depreciation"]}
+            depr_sum = 0.0
+            depr_found = False
+
+            # PP&E(유형자산) 당기/전기 — BS fallback용
+            ppe_curr: float | None = None
+            ppe_prev: float | None = None
+
             for _, row in fn_data.iterrows():
                 acc = str(row.get("account_nm", "")).replace(" ", "")
-                vc  = "thstrm_amount"
-                if not acc or vc not in row or pd.isna(row[vc]):
-                    continue
-                try:
-                    val = float(str(row[vc]).replace(",", ""))
-                except Exception:
+                sj  = str(row.get("sj_div", "")).strip()  # CF / BS / IS 등
+                if not acc:
                     continue
 
-                if acc in ("영업활동현금흐름", "영업활동으로인한현금흐름"):
-                    m["operating_cf"] = val
-                elif acc in ("투자활동현금흐름", "투자활동으로인한현금흐름"):
-                    m["investing_cf"] = val
-                elif acc in ("재무활동현금흐름", "재무활동으로인한현금흐름"):
-                    m["financing_cf"] = val
-                elif any(k in acc for k in ["유형자산의취득", "유형자산취득"]):
-                    m["capex"] = abs(val)
-                elif any(k in acc for k in ["현금및현금성자산의기말잔액", "기말의현금및현금성자산"]):
-                    m["cash_end"] = val
-                elif any(k in acc for k in ["감가상각비", "유형자산상각비"]):
-                    m["depreciation"] = val
+                # ── CF 항목 ────────────────────────────────────────────────
+                val = _parse_val(row, "thstrm_amount")
+                if val is not None:
+                    if acc in ("영업활동현금흐름", "영업활동으로인한현금흐름"):
+                        m["operating_cf"] = val
+                    elif acc in ("투자활동현금흐름", "투자활동으로인한현금흐름"):
+                        m["investing_cf"] = val
+                    elif acc in ("재무활동현금흐름", "재무활동으로인한현금흐름"):
+                        m["financing_cf"] = val
+                    elif any(k in acc for k in ["유형자산의취득", "유형자산취득"]):
+                        if m["capex"] is None:
+                            m["capex"] = abs(val)
+                    elif any(k in acc for k in ["현금및현금성자산의기말잔액", "기말의현금및현금성자산"]):
+                        m["cash_end"] = val
+                    # 감가상각: 여러 항목 합산 (주요 항목만 — 중간계 항목 제외)
+                    elif any(kw == acc for kw in _DEPR_KEYWORDS):
+                        depr_sum += abs(val)
+                        depr_found = True
+                    # 부분문자열 매칭 (키워드 포함하지만 정확히 일치하지 않는 경우)
+                    elif any(kw in acc for kw in _DEPR_KEYWORDS) and sj == "CF":
+                        # "감가상각비및상각비" 같은 집계 계정 → 아직 depr_found 안됐을 때만
+                        if not depr_found:
+                            depr_sum = max(depr_sum, abs(val))
+                            depr_found = True
+
+                # ── BS 항목 (PP&E fallback용) ──────────────────────────────
+                if sj == "BS" and any(kw in acc for kw in _PPE_KEYWORDS):
+                    # 정확히 "유형자산" 또는 "유형자산합계"인 행을 선호
+                    is_exact = acc in ("유형자산", "유형자산합계", "유형자산순액")
+                    curr_val = _parse_val(row, "thstrm_amount")
+                    prev_val = _parse_val(row, "frmtrm_amount")
+                    if curr_val is not None and (ppe_curr is None or is_exact):
+                        ppe_curr = curr_val
+                    if prev_val is not None and (ppe_prev is None or is_exact):
+                        ppe_prev = prev_val
+
+            if depr_found:
+                m["depreciation"] = depr_sum if depr_sum > 0 else None
+            elif ppe_prev is not None and ppe_curr is not None:
+                # PP&E 변화로 감가상각 추정: D ≈ PPE_prev + CAPEX - PPE_curr
+                capex_val = m["capex"] or 0.0
+                estimated = ppe_prev + capex_val - ppe_curr
+                if estimated > 0:
+                    m["depreciation"] = estimated
+                    logger.debug(f"[{code}] {year}Q{qnum} 감가상각 추정: {estimated:.0f} (PPE법)")
+
+            # refill_depr 모드: depreciation만 업데이트
+            if refill_depr and exists and not _is_sparse_cashflow_row(exists):
+                if m["depreciation"] is not None:
+                    for _attempt in range(5):
+                        try:
+                            conn.execute("""
+                                UPDATE cash_flow_data SET depreciation=?
+                                WHERE stock_code=? AND year=? AND quarter=? AND is_annual=?
+                            """, (m["depreciation"], code, year, qnum, is_annual))
+                            saved += 1
+                            break
+                        except Exception as e:
+                            if "locked" in str(e).lower() and _attempt < 4:
+                                time.sleep(2 ** _attempt)
+                                continue
+                            logger.warning(f"[{code}] {year}Q{qnum} depr 업데이트 실패: {e}")
+                            break
+                continue
 
             if all(v is None for v in m.values()):
                 continue
 
-            try:
-                conn.execute("""
-                    INSERT OR REPLACE INTO cash_flow_data
-                      (stock_code, year, quarter, is_annual,
-                       operating_cf, investing_cf, financing_cf,
-                       capex, cash_end, depreciation)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)
-                """, (
-                    code, year, qnum, is_annual,
-                    m["operating_cf"], m["investing_cf"], m["financing_cf"],
-                    m["capex"], m["cash_end"], m["depreciation"],
-                ))
-                saved += 1
-            except Exception as e:
-                logger.warning(f"[{code}] {year}Q{qnum} 저장 실패: {e}")
+            for _attempt in range(5):
+                try:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO cash_flow_data
+                          (stock_code, year, quarter, is_annual,
+                           operating_cf, investing_cf, financing_cf,
+                           capex, cash_end, depreciation)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, (
+                        code, year, qnum, is_annual,
+                        m["operating_cf"], m["investing_cf"], m["financing_cf"],
+                        m["capex"], m["cash_end"], m["depreciation"],
+                    ))
+                    saved += 1
+                    break
+                except Exception as e:
+                    if "locked" in str(e).lower() and _attempt < 4:
+                        time.sleep(2 ** _attempt)
+                        continue
+                    logger.warning(f"[{code}] {year}Q{qnum} 저장 실패: {e}")
+                    break
 
     if saved:
         conn.commit()
@@ -194,7 +307,34 @@ def _eligible_stock_codes(conn: sqlite3.Connection) -> list[str]:
     return [r[0] for r in rows]
 
 
-def run(years: int = 5, missing_only: bool = False, fill_missing: bool = False, limit: int | None = None):
+def _codes_with_null_depreciation(conn: sqlite3.Connection, codes: list[str], years: int) -> list[str]:
+    """depreciation=NULL인 행이 존재하는 종목 목록."""
+    periods = _expected_periods(years)
+    result = []
+    for code in codes:
+        rows = conn.execute(
+            """
+            SELECT year, quarter, is_annual, depreciation
+            FROM cash_flow_data
+            WHERE stock_code=?
+            """,
+            (code,)
+        ).fetchall()
+        existing_map = {(r[0], r[1], r[2]): r[3] for r in rows}
+        for (y, q, ia) in periods:
+            if (y, q, ia) in existing_map and existing_map[(y, q, ia)] is None:
+                result.append(code)
+                break
+    return result
+
+
+def run(
+    years: int = 5,
+    missing_only: bool = False,
+    fill_missing: bool = False,
+    refill_depr: bool = False,
+    limit: int | None = None,
+):
     conn = sqlite3.connect(DB_PATH, timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -209,12 +349,17 @@ def run(years: int = 5, missing_only: bool = False, fill_missing: bool = False, 
         codes = [c for c in codes if c not in have]
     elif fill_missing:
         codes = _codes_with_missing_periods(conn, codes, years)
+    elif refill_depr:
+        codes = _codes_with_null_depreciation(conn, codes, years)
 
     if limit:
         codes = codes[:limit]
 
     total = len(codes)
-    logger.info(f"대상: {total}종목 | 최근 {years}년 | missing_only={missing_only} | fill_missing={fill_missing}")
+    logger.info(
+        f"대상: {total}종목 | 최근 {years}년 | "
+        f"missing_only={missing_only} fill_missing={fill_missing} refill_depr={refill_depr}"
+    )
 
     dart   = _get_dart()
     ok     = 0
@@ -222,10 +367,14 @@ def run(years: int = 5, missing_only: bool = False, fill_missing: bool = False, 
 
     for i, code in enumerate(codes, 1):
         try:
-            n = collect_one(dart, conn, code, years, refill_sparse=fill_missing)
+            n = collect_one(
+                dart, conn, code, years,
+                refill_sparse=fill_missing,
+                refill_depr=refill_depr,
+            )
             ok += n
             if n:
-                logger.info(f"[{i}/{total}] {code}: {n}건 저장")
+                logger.info(f"[{i}/{total}] {code}: {n}건 저장/수정")
         except Exception as e:
             errors += 1
             logger.warning(f"[{i}/{total}] {code} 오류: {e}")
@@ -241,9 +390,16 @@ def run(years: int = 5, missing_only: bool = False, fill_missing: bool = False, 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--years",   type=int,  default=5,     help="수집 연수 (기본 5년)")
-    ap.add_argument("--missing", action="store_true",       help="cash_flow_data 없는 종목만")
-    ap.add_argument("--fill-missing", action="store_true",  help="최근 N년 중 누락 기간이 있는 종목 보강")
-    ap.add_argument("--limit",   type=int,  default=None,   help="최대 종목수")
+    ap.add_argument("--years",        type=int,  default=5,    help="수집 연수 (기본 5년)")
+    ap.add_argument("--missing",      action="store_true",      help="cash_flow_data 없는 종목만")
+    ap.add_argument("--fill-missing", action="store_true",      help="최근 N년 중 누락 기간이 있는 종목 보강")
+    ap.add_argument("--refill-depr",  action="store_true",      help="depreciation=NULL인 행만 재수집/추정")
+    ap.add_argument("--limit",        type=int,  default=None,  help="최대 종목수")
     args = ap.parse_args()
-    run(years=args.years, missing_only=args.missing, fill_missing=args.fill_missing, limit=args.limit)
+    run(
+        years=args.years,
+        missing_only=args.missing,
+        fill_missing=args.fill_missing,
+        refill_depr=args.refill_depr,
+        limit=args.limit,
+    )

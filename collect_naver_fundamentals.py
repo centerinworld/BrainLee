@@ -66,10 +66,10 @@ def get_target_codes(conn: sqlite3.Connection, missing_only: bool, limit: int | 
     codes = [r[0] for r in rows]
 
     if missing_only:
-        # financial_data에 per/pbr 모두 있는 종목 제외
+        # stock_universe에 per/pbr 모두 있는 종목 제외
         have = set(r[0] for r in conn.execute("""
-            SELECT DISTINCT stock_code FROM financial_data
-            WHERE per IS NOT NULL AND pbr IS NOT NULL AND is_annual = 1
+            SELECT DISTINCT stock_code FROM stock_universe
+            WHERE per IS NOT NULL AND pbr IS NOT NULL
         """).fetchall())
         codes = [c for c in codes if c not in have]
 
@@ -82,30 +82,17 @@ def save(conn: sqlite3.Connection, code: str, data: dict):
     if not data or (data.get("per") is None and data.get("pbr") is None):
         return
 
-    # 최신 연간 레코드 찾기
-    row = conn.execute("""
-        SELECT rowid, year FROM financial_data
-        WHERE stock_code = ? AND is_annual = 1
-        ORDER BY year DESC LIMIT 1
-    """, (code,)).fetchone()
-
-    if row:
-        conn.execute("""
-            UPDATE financial_data SET per=?, pbr=?, eps=COALESCE(?, eps)
-            WHERE rowid=?
-        """, (data.get("per"), data.get("pbr"), data.get("eps"), row[0]))
-    else:
-        # 연간 레코드 없으면 현재 연도로 신규 삽입
-        from datetime import date
-        conn.execute("""
-            INSERT OR IGNORE INTO financial_data
-              (stock_code, year, quarter, is_annual, per, pbr, eps)
-            VALUES (?, ?, 0, 1, ?, ?, ?)
-        """, (code, date.today().year, data.get("per"), data.get("pbr"), data.get("eps")))
+    # stock_universe에 반영 (섹터지표 등 실시간 조회용)
+    # financial_data에는 per/pbr 컬럼이 없으므로 stock_universe만 업데이트
+    conn.execute("""
+        UPDATE stock_universe
+        SET per=?, pbr=?, eps=COALESCE(?, eps), updated_at=datetime('now')
+        WHERE stock_code=?
+    """, (data.get("per"), data.get("pbr"), data.get("eps"), code))
 
 
 def run(missing_only: bool = False, limit: int | None = None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
 

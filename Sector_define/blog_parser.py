@@ -35,6 +35,119 @@ def get_current_price(stock_code):
         logger.error(f"Error fetching price for {stock_code}: {e}")
         return None
 
+_stock_name_cache: list = []
+_stock_name_cache_at: float = 0.0
+
+def _load_stock_names() -> list:
+    """stock_universe에서 종목명 목록 로드 (길이 내림차순 — 부분매칭 방지)."""
+    global _stock_name_cache, _stock_name_cache_at
+    import time
+    if _stock_name_cache and (time.time() - _stock_name_cache_at) < 3600:
+        return _stock_name_cache
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        rows = conn.execute(
+            "SELECT stock_name FROM stock_universe WHERE market IN ('유가증권','KOSPI','코스닥','KOSDAQ')"
+        ).fetchall()
+        conn.close()
+        names = sorted([r[0] for r in rows if r[0]], key=len, reverse=True)
+        _stock_name_cache = names
+        _stock_name_cache_at = time.time()
+        return names
+    except Exception as e:
+        logger.error(f"[blog_parser] stock_names 로드 실패: {e}")
+        return []
+
+
+def parse_blog_post_local(title: str, content: str) -> tuple:
+    """로컬 종목명 매칭으로 블로그 내용 파싱 (OpenAI 불필요).
+
+    처리 방식:
+      - ​ (ZWSP) 로 분리된 단락 처리
+      - ■/□/◆/▶/-로 시작하는 카테고리 헤더 감지
+      - stock_universe 종목명 최장 매칭
+
+    Returns:
+        (result_dict, None) on success  — result_dict: {"summary": str, "data": [...]}
+        (None, error_msg) on failure
+    """
+    import re
+
+    stock_names = _load_stock_names()
+    if not stock_names:
+        return None, "stock_universe 데이터 없음"
+
+    # ZWSP(​)·개행 모두로 단락 분리 후, 각 단락 내 '-카테고리(설명)stocks' 세그먼트 분리
+    raw_paragraphs = re.split(r'[​\n]+', content)
+
+    # 각 단락을 다시 '-카테고리명(...)' 경계로 분리
+    seg_pattern = re.compile(r'(?=-([\w가-힣· ]{2,20})[\(（])')
+    paragraphs: list[str] = []
+    for p in raw_paragraphs:
+        parts = seg_pattern.split(p)
+        if len(parts) > 1:
+            # split 결과: [앞텍스트, cat1, rest1, cat2, rest2, ...]
+            paragraphs.append(parts[0])
+            i = 1
+            while i + 1 < len(parts):
+                paragraphs.append(f"-{parts[i]}({parts[i+1]}")
+                i += 2
+        else:
+            paragraphs.append(p)
+
+    category_stocks: dict = {}   # {category: [stock_name, ...]}
+    current_cat = title          # 기본 카테고리 = 포스트 제목
+
+    strong_header = re.compile(r'^[■□◆▶◇●【\[]+\s*(.+)')
+    dash_header   = re.compile(r'^-([^,\s(][^,(]{1,20})\s*[\(（]([^)）]{0,20})[\)）]')
+
+    for para in paragraphs:
+        stripped = para.strip()
+        if not stripped or len(stripped) < 2:
+            continue
+
+        # 강한 헤더 (■ 등)
+        m = strong_header.match(stripped)
+        if m:
+            cat_text = re.sub(r'[】\]]+.*$', '', m.group(1)).strip()
+            if 2 <= len(cat_text) <= 40:
+                current_cat = cat_text
+            continue
+
+        # 대시 헤더 (-카테고리명(설명)) — 카테고리 이름만 추출
+        m2 = dash_header.match(stripped)
+        if m2:
+            cat_text = m2.group(1).strip()
+            if 2 <= len(cat_text) <= 25:
+                current_cat = cat_text
+            # 같은 단락에 종목명도 있으니 fall-through
+
+        # 종목명 탐지 (longest-match; 이미 찾은 건 공백으로 치환)
+        matched = []
+        remaining = stripped
+        for name in stock_names:
+            if name in remaining:
+                matched.append(name)
+                remaining = remaining.replace(name, " ", 1)
+
+        for m_name in matched:
+            category_stocks.setdefault(current_cat, [])
+            if m_name not in category_stocks[current_cat]:
+                category_stocks[current_cat].append(m_name)
+
+    if not category_stocks:
+        return None, "매칭된 종목 없음"
+
+    data = [{"category": cat, "stocks": stocks}
+            for cat, stocks in category_stocks.items() if stocks]
+    total = sum(len(d["stocks"]) for d in data)
+    result = {
+        "summary": f"{title} — 로컬매칭 {total}개 종목 추출",
+        "data": data,
+    }
+    return result, None
+
+
 def parse_blog_post_with_ai(title, content, image_urls):
     """AI를 사용하여 블로그 내용 파싱"""
     api_key = getattr(config, "OPENAI_API_KEY", "")
@@ -81,29 +194,60 @@ def parse_blog_post_with_ai(title, content, image_urls):
         return None, str(e)
 
 def scrape_blog_list():
-    """블로그 카테고리 목록 스크래핑 (돈의흐름 팔로잉)"""
-    url = "https://blog.naver.com/PostList.naver?blogId=going_tothe_moon&categoryNo=49"
+    """블로그 카테고리 목록 스크래핑 (돈의흐름 팔로잉 — categoryNo=7)"""
+    import re as _re
+    blog_id = "going_tothe_moon"
+    cat_no  = "7"
+    url = f"https://blog.naver.com/PostList.naver?blogId={blog_id}&categoryNo={cat_no}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    
+
     try:
-        res = requests.get(url, headers=headers)
+        res = requests.get(url, headers=headers, timeout=10)
         res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-        
+
+        # logNo 추출 → 포스트 URL 구성
+        log_nos = list(dict.fromkeys(_re.findall(r"logNo=(\d{10,})", res.text)))
+        if not log_nos:
+            logger.warning("[blog_parser] logNo 패턴 미발견 — 페이지 구조 변경 의심")
+            return []
+
         posts = []
-        items = soup.select(".list_title_text a")
-        if not items:
-            items = soup.select(".post_title a")
-            
-        for item in items:
-            title = item.text.strip()
-            link = "https://blog.naver.com" + item["href"]
-            post_id = link.split("logNo=")[1].split("&")[0] if "logNo=" in link else ""
-            posts.append({"title": title, "link": link, "post_id": post_id})
-            
-        return posts
+        for log_no in log_nos[:30]:
+            mobile_url = f"https://m.blog.naver.com/{blog_id}/{log_no}"
+            # 제목은 별도 fetch 없이 포스트 상세에서 가져옴 (여기선 logNo만 수집)
+            posts.append({"title": "", "link": mobile_url, "post_id": log_no})
+
+        # 각 포스트 제목 채우기 (최신 10개만 — 신규 감지용)
+        seen_in_db: set = set()
+        try:
+            _conn = sqlite3.connect(DB_PATH)
+            rows = _conn.execute("SELECT blog_url FROM sector_posts").fetchall()
+            _conn.close()
+            seen_in_db = {r[0] for r in rows}
+        except Exception:
+            pass
+
+        result = []
+        for p in posts:
+            if p["link"] not in seen_in_db:
+                # 신규 포스트 — 제목 fetch
+                text, _, post_date = get_post_detail(p["link"])
+                # 제목은 HTML <title> 또는 첫 줄로 추정
+                import re as _re2
+                title_m = _re2.search(r'<title[^>]*>([^<]+)</title>', text[:500] if len(text) < 500 else "")
+                title = p["post_id"]  # fallback
+                lines = [l.strip() for l in text.split("\n") if l.strip() and len(l.strip()) > 4 and len(l.strip()) < 60]
+                if len(lines) >= 2:
+                    title = lines[1]  # 두 번째 줄이 보통 제목
+                p["title"] = title
+                result.append(p)
+            else:
+                p["title"] = p["post_id"]
+                result.append(p)
+
+        return result
     except Exception as e:
         logger.error(f"Scraping Error: {e}")
         return []
@@ -142,31 +286,74 @@ def get_post_detail(post_link):
         logger.error(f"Detail Fetch Error: {e}")
         return "", [], ""
 
-def run_parser():
-    """메인 파서 실행 로직"""
+def _parse_post(title: str, content: str, image_urls: list) -> tuple:
+    """OpenAI 우선 → 없으면 로컬 매칭으로 폴백."""
+    api_key = getattr(config, "OPENAI_API_KEY", "")
+    if api_key:
+        result, err = parse_blog_post_with_ai(title, content, image_urls)
+        if result:
+            return result, None
+        logger.warning(f"[blog_parser] AI 파싱 실패 ({err}), 로컬 매칭으로 폴백")
+    return parse_blog_post_local(title, content)
+
+
+def run_parser(reprocess_empty: bool = True):
+    """메인 파서 실행 로직.
+    reprocess_empty=True: sector_stocks가 없는 기존 포스트도 재파싱.
+    OpenAI 키 있으면 AI 파싱, 없으면 로컬 종목명 매칭 폴백.
+    """
+
     logger.info("Starting Blog Parser...")
     posts = scrape_blog_list()
-    
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
+
     # 테이블 생성 보장
     cursor.execute("CREATE TABLE IF NOT EXISTS sector_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, blog_url TEXT NOT NULL, post_date TEXT NOT NULL, ai_summary TEXT, telegram_sent INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
     cursor.execute("CREATE TABLE IF NOT EXISTS sector_stocks (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, category TEXT, stock_name TEXT, stock_code TEXT, ref_price REAL, memo TEXT, FOREIGN KEY(post_id) REFERENCES sector_posts(id))")
-    
+
     new_post_count = 0
-    
+
     for p in posts:
         cursor.execute("SELECT id FROM sector_posts WHERE blog_url=?", (p["link"],))
-        if cursor.fetchone():
+        existing = cursor.fetchone()
+        if existing:
+            if not reprocess_empty:
+                continue
+            # 기존 포스트인데 종목이 없으면 재파싱
+            post_db_id = existing[0]
+            cursor.execute("SELECT COUNT(*) FROM sector_stocks WHERE post_id=?", (post_db_id,))
+            stock_count = cursor.fetchone()[0]
+            if stock_count > 0:
+                continue  # 종목 있으면 스킵
+            logger.info(f"Re-parsing (no stocks): {p['title']}")
+            text, images, _ = get_post_detail(p["link"])
+            ai_result, error = _parse_post(p["title"], text, images)
+            if error or not ai_result:
+                logger.error(f"Re-parse failed: {p['title']}: {error}")
+                continue
+            # 요약 업데이트
+            cursor.execute("UPDATE sector_posts SET ai_summary=? WHERE id=?",
+                           (ai_result.get("summary", ""), post_db_id))
+            # 종목 삽입
+            for entry in ai_result.get("data", []):
+                category = entry.get("category")
+                for s_name in entry.get("stocks", []):
+                    code = ticker_mapper.get_code(s_name) if hasattr(ticker_mapper, 'get_code') else None
+                    price = get_current_price(code) if code else None
+                    cursor.execute("INSERT INTO sector_stocks (post_id, category, stock_name, stock_code, ref_price) VALUES (?,?,?,?,?)",
+                                   (post_db_id, category, s_name, code, price))
+            conn.commit()
+            new_post_count += 1
             continue
             
         logger.info(f"Processing new post: {p['title']}")
         text, images, post_date = get_post_detail(p["link"])
-        
-        ai_result, error = parse_blog_post_with_ai(p["title"], text, images)
-        if error:
-            logger.error(f"AI parsing failed for {p['title']}: {error}")
+
+        ai_result, error = _parse_post(p["title"], text, images)
+        if error or not ai_result:
+            logger.error(f"Parsing failed for {p['title']}: {error}")
             continue
             
         cursor.execute(

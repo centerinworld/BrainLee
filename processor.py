@@ -434,7 +434,7 @@ def get_macro_status(db: Session) -> dict:
       vix:         { value, change, date, history(30일) }
       commodities: { USD/KRW, GOLD, OIL }     — 가격 + 30일 히스토리
     """
-    # ── KOSPI / KOSDAQ / KOSPI200 / 나스닥 / S&P500 ──────────
+    # ── KOSPI / KOSDAQ / 나스닥 / S&P500 ─────────────────────
     index_result = {}
     for symbol, name in [("^KS11", "KOSPI"), ("^KQ11", "KOSDAQ"),
                          ("^KS200", "KOSPI200"), ("^KQ150", "KOSDAQ150"),
@@ -444,6 +444,7 @@ def get_macro_status(db: Session) -> dict:
         # 나스닥/S&P500은 수급 없음
         # KOSPI/KOSDAQ: 가장 최근 비-제로 수급 행 사용 (당일 미수집 대비)
         inst = frn = ind = 0
+        inst_5d = frn_5d = ind_5d = 0
         supply_date = None
         if name in ("KOSPI", "KOSDAQ"):
             sup_rows = (
@@ -454,7 +455,7 @@ def get_macro_status(db: Session) -> dict:
                     (models.PriceHistory.frn_net_buy  != 0),
                 )
                 .order_by(models.PriceHistory.date.desc())
-                .limit(1)
+                .limit(5)
                 .all()
             )
             if sup_rows:
@@ -464,6 +465,9 @@ def get_macro_status(db: Session) -> dict:
                 ind  = round(getattr(sr, 'ind_net_buy', 0) or 0)
                 supply_date = (sr.date.strftime("%Y-%m-%d") if hasattr(sr.date,"strftime")
                                else str(sr.date)[:10])
+                inst_5d = round(sum(r.inst_net_buy or 0 for r in sup_rows))
+                frn_5d  = round(sum(r.frn_net_buy  or 0 for r in sup_rows))
+                ind_5d  = round(sum(getattr(r, 'ind_net_buy', 0) or 0 for r in sup_rows))
         # 시각이 00:00이면 날짜만 표시, 아니면 날짜+시각
         def _fmt_date(dt):
             if not dt: return "-"
@@ -480,6 +484,9 @@ def get_macro_status(db: Session) -> dict:
             "inst_net_buy": inst,
             "frn_net_buy":  frn,
             "ind_net_buy":  ind if ind else -(inst + frn),
+            "inst_5d": inst_5d,
+            "frn_5d":  frn_5d,
+            "ind_5d":  ind_5d if ind_5d else -(inst_5d + frn_5d),
             "supply_date":  supply_date,
             # 3가지 기간 히스토리 (탭 전환용)
             "history_90":   _history(db, symbol, 90),

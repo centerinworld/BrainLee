@@ -472,6 +472,10 @@ class DataCollector:
             "GC=F":     "GOLD",
             "CL=F":     "OIL",
             "USDKRW=X": "USD/KRW",
+            "JPYKRW=X": "JPY/KRW",
+            "TWDKRW=X": "TWD/KRW",
+            "EURKRW=X": "EUR/KRW",
+            "HKDKRW=X": "HKD/KRW",
             "^IXIC":    "NASDAQ",   # 나스닥 종합
             "^GSPC":    "S&P500",   # S&P 500
         }

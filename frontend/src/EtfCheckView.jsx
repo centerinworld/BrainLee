@@ -102,8 +102,11 @@ const EtfCheckView = () => {
     color: '#e2e8f0',
     borderBottom: '2px solid rgba(59,130,246,0.5)',
     fontWeight: 600,
-    background: 'rgba(30, 58, 138, 0.4)',
-    whiteSpace: 'nowrap'
+    background: 'rgba(10, 18, 50, 0.98)',
+    whiteSpace: 'nowrap',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
   };
 
   const tdStyle = {
@@ -143,7 +146,7 @@ const EtfCheckView = () => {
             <div style={subTabStyle(subTab1 === 'kospi')} onClick={() => setSubTab1('kospi')}>코스피</div>
             <div style={subTabStyle(subTab1 === 'kosdaq')} onClick={() => setSubTab1('kosdaq')}>코스닥</div>
           </div>
-          <div style={{overflowX: 'auto'}}>
+          <div>
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -179,7 +182,7 @@ const EtfCheckView = () => {
             <div style={subTabStyle(subTab2 === '1d')} onClick={() => setSubTab2('1d')}>1일 전 대비</div>
             <div style={subTabStyle(subTab2 === '5d')} onClick={() => setSubTab2('5d')}>5일 전 대비</div>
           </div>
-          <div style={{overflowX: 'auto'}}>
+          <div>
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -223,7 +226,7 @@ const EtfCheckView = () => {
             <div style={subTabStyle(subTab3 === '1d')} onClick={() => setSubTab3('1d')}>1일 전 대비</div>
             <div style={subTabStyle(subTab3 === '5d')} onClick={() => setSubTab3('5d')}>5일 전 대비</div>
           </div>
-          <div style={{overflowX: 'auto'}}>
+          <div>
             <table style={tableStyle}>
               <thead>
                 <tr>
