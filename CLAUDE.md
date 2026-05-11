@@ -492,6 +492,7 @@ app.include_router(_market_radar_router, prefix="/api/market-radar", tags=["mark
 | 2026-05-11 | peak_monitor 크래시 루프 수정: `serve_foreground.sh`가 peak_monitor PID를 먼저 파일에 써서 자기 자신을 "중복"으로 감지하던 버그 수정. peak_monitor 종료 시 전체 스택 재시작 대신 peak_monitor만 재시작하도록 개선. peak_monitor.py에 self-PID 방어 로직 추가(existing==os.getpid() 무시). |
 | 2026-05-11 | main.py 누락 라우터 6개 등록: market_radar/dart_contracts/tenbagger/sector_define/extra_signals/employment-v2. 섹터 지표·텐버거 헌터·수주공시 알림·고용 정보 등 여러 탭의 API 404 오류 해결. |
 | 2026-05-11 | `_realtime_fetch_macro` KOSPI early-return 버그 수정: KOSPI 데이터 있으면 전체 Yahoo 업데이트 스킵하던 문제 제거 → 나스닥/VIX/원자재 정상 갱신. `data_collector.py`에 ^DJI(다우존스) 수집 추가. |
-| 2026-05-11 | App.jsx NAV_ITEMS 메뉴 재정렬: 수급 현황 다음에 구분선 추가, export_health(🌐 수출경쟁력)·watchlist(관심종목) 메뉴에서 제거(컴포넌트 유지). CLAUDE.md 파일 수정 전 백업 규칙 추가. |
+| 2026-05-11 | App.jsx NAV_ITEMS 메뉴 재정렬: 수급현황 다음 구분선, watchlist 제거, export_health를 hs_trade2 바로 아래 복원. CLAUDE.md 파일 수정 전 필수 백업 규칙 추가. |
+| 2026-05-11 | 추가시그널 6개 카드 버그 전면 수정: ①수출카드 ex.export.mom_pct/shared_stocks 연결 ②섹터트렌드 st.chg_5d/10d/30d 연결(sector_avg_1d→제거) ③수급 fmt억 조단위 변환 추가(33145억→3.3조) ④ETF편입 amt_억 표시 ⑤수급라벨 "외국인↓/기관↑" 동적계산 |
 | 2026-05-11 | 재무검증 완료, 개별종목 UI 복원, 공지/내부자/추가시그널 통합 (processor.py NULL병합, main.py bps/roa, App.jsx 6열 밸류에이션) |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

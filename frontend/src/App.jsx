@@ -4101,9 +4101,17 @@ const App = () => {
             const su = extraSignals.supply || {};
             const er = extraSignals.etf_ratio || {};
             const ei = extraSignals.etf_inclusion || {};
-            const fmt억 = v => v == null ? '-' : (v > 0 ? `+${v}억` : `${v}억`);
-            const fmtNet = v => v == null ? '-' : (v > 0 ? `+${v}명` : `${v}명`);
+            // 억원 → 조/억 포맷 (10,000억 이상이면 조 단위)
+            const fmt억 = v => {
+              if (v == null) return '-';
+              const abs = Math.abs(v), sign = v > 0 ? '+' : '-';
+              if (abs === 0) return '-';
+              if (abs >= 10000) return sign + (abs / 10000).toFixed(1) + '조';
+              return sign + abs.toLocaleString('ko-KR') + '억';
+            };
+            const fmtNet = v => v == null ? '-' : (v > 0 ? `+${v.toLocaleString('ko-KR')}명` : `${v.toLocaleString('ko-KR')}명`);
             const cards = [
+              // ① 고용 트렌드
               {
                 emoji:'👔', title:'고용 트렌드', signal: em.signal,
                 label: em.label || '데이터 없음',
@@ -4113,42 +4121,72 @@ const App = () => {
                   ['6개월 기준', fmtNet(em.net_6m)],
                 ] : null,
               },
+              // ② 수출/계약 — ex.export.mom_pct / ex.export.shared_stocks / ex.contracts
               {
                 emoji:'📦', title:'수출/계약', signal: ex.signal,
                 label: ex.label || '데이터 없음',
-                body: ex.mom_pct != null ? [
-                  [`MoM (${ex.latest_ym||''})`, ex.mom_pct!=null ? (ex.mom_pct>0?'+':'')+ex.mom_pct.toFixed(1)+'%' : '-'],
-                  ex.contracts?.length ? ['≥ 공동', ex.contracts.slice(0,3).join(', ')] : null,
-                  ['공시', ex.dart_count ? `${ex.dart_count}건` : '공시 없음'],
-                ].filter(Boolean) : null,
+                body: (() => {
+                  const xp = ex.export;
+                  if (!xp && !ex.contracts) return null;
+                  const rows = [];
+                  if (xp?.trend_desc) rows.push(['수출 추세', xp.trend_desc]);
+                  if (xp?.mom_pct != null) rows.push([`MoM (${xp.latest_ym||''})`, (xp.mom_pct>0?'+':'')+xp.mom_pct.toFixed(1)+'%']);
+                  if (xp?.shared_stocks?.length) {
+                    const names = xp.shared_stocks.slice(0,2).map(s=>s.name);
+                    const extra = (xp.shared_hs_cnt||0) > xp.shared_stocks.length
+                      ? ` 외 ${(xp.shared_hs_cnt||0)-xp.shared_stocks.length}개사` : '';
+                    rows.push(['△ 공동', names.join(', ') + extra]);
+                  }
+                  rows.push(['계약', ex.contracts ? `${ex.contracts.count}건` : '공시 없음']);
+                  return rows.length ? rows : null;
+                })(),
               },
+              // ③ 섹터 트렌드 — st.chg_5d/10d/30d (signal: st.signal_5d)
               {
-                emoji:'🏭', title:'섹터 트렌드', signal: st.signal,
-                label: st.sector_name || st.label || '데이터 없음',
-                body: st.sector_avg_1d != null ? [
-                  ['섹터 1일', (st.sector_avg_1d>0?'+':'')+st.sector_avg_1d?.toFixed(1)+'%'],
+                emoji:'🏭', title:'섹터 트렌드', signal: st.signal_5d || 'gray',
+                label: st.sector_mid || st.label || '데이터 없음',
+                body: (st.chg_5d != null || st.chg_10d != null || st.chg_30d != null) ? [
+                  ['5일', st.chg_5d  != null ? (st.chg_5d >0?'+':'')+st.chg_5d .toFixed(1)+'%' : '-'],
+                  ['10일', st.chg_10d != null ? (st.chg_10d>0?'+':'')+st.chg_10d.toFixed(1)+'%' : '-'],
+                  ['30일', st.chg_30d != null ? (st.chg_30d>0?'+':'')+st.chg_30d.toFixed(1)+'%' : '-'],
                 ] : null,
               },
+              // ④ 외국인/기관 수급 — 금액은 조/억 단위 변환
               {
-                emoji:'🌊', title:'외국인/기관 수급', signal: su.signal_frn_5d || 'gray',
-                label: su.label || '수급 데이터',
+                emoji:'🌊', title:'외국인/기관 수급',
+                signal: (() => {
+                  const f = su.signal_frn_5d, i = su.signal_inst_5d;
+                  if (!f) return 'gray';
+                  if (f === 'green' && i === 'green') return 'green';
+                  if (f === 'red'   && i === 'red')   return 'red';
+                  return 'yellow';
+                })(),
+                label: (() => {
+                  const f = su.signal_frn_5d, i = su.signal_inst_5d;
+                  if (!f) return '수급 데이터';
+                  const ft = f==='green'?'외국인↑':f==='red'?'외국인↓':'외국인→';
+                  const it = i==='green'?'기관↑'  :i==='red'?'기관↓'  :'기관→';
+                  return `${ft}/${it}`;
+                })(),
                 body: su.frn_amt_5d != null ? [
-                  ['외국인 5일', fmt억(su.frn_amt_5d)],
+                  ['외국인 5일',  fmt억(su.frn_amt_5d)],
                   ['외국인 10일', fmt억(su.frn_amt_10d)],
                   ['외국인 30일', fmt억(su.frn_amt_30d)],
-                  ['기관 5일', fmt억(su.inst_amt_5d)],
-                  ['기관 10일', fmt억(su.inst_amt_10d)],
-                  ['기관 30일', fmt억(su.inst_amt_30d)],
+                  ['기관 5일',   fmt억(su.inst_amt_5d)],
+                  ['기관 10일',  fmt억(su.inst_amt_10d)],
+                  ['기관 30일',  fmt억(su.inst_amt_30d)],
                 ] : null,
               },
+              // ⑤ ETF 편입 — amt_억 표시 추가
               {
                 emoji:'📊', title:'ETF 편입', signal: ei.signal,
                 label: ei.label || '데이터 없음',
                 body: ei.etf_count > 0 ? [
-                  ['ETF 수', `${ei.etf_count}개`],
-                  ['ETF 비중', `${ei.ratio?.toFixed(2)||0}%`],
+                  ['편입규모', ei.amt_억 ? ei.amt_억.toLocaleString('ko-KR')+'억' : '-'],
+                  ['시총대비', `${(ei.ratio||0).toFixed(2)}%`],
                 ] : [['데이터 없음', '']],
               },
+              // ⑥ ETF 비중 추이
               {
                 emoji:'📈', title:'ETF 비중 추이', signal: er.signal,
                 label: er.label || '데이터 없음',
@@ -11643,6 +11681,7 @@ const App = () => {
     { key: 'telegram',         icon: <Send size={17} style={{color:'#38bdf8'}} />,             label: '텔레그램 종목' },
     { key: 'backtest',         icon: <FlaskConical size={17} style={{color:'#f59e0b'}} />,     label: '백테스트' },
     { key: 'hs_trade2',        icon: <Ship size={17} style={{color:'#93c5fd'}} />,             label: '수출입분석' },
+    { key: 'export_health',    icon: <Globe size={17} style={{color:'#34d399'}} />,            label: '🌐 수출경쟁력' },
     { key: 'employment',       icon: <Users size={17} style={{color:'#86efac'}} />,            label: '고용 정보' },
     { key: 'etf_check',        icon: <span style={{fontSize:'14px',lineHeight:1}}>📊</span>,   label: 'ETF 모니터링' },
     null,
