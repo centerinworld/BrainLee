@@ -11625,32 +11625,32 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = React.useState(() => window.innerWidth >= 768);
 
   const NAV_ITEMS = [
-    // ── 상단 섹션 ──────────────────────────────────
+    // ── 상단 섹션 (시황) ───────────────────────────
     { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '주요 지표' },
     { key: 'analysis',         icon: <BarChart3 size={17} />,                                 label: '개별 종목' },
     { key: 'market_radar',     icon: <span style={{fontSize:'14px',lineHeight:1}}>🛰</span>,   label: '섹터 지표' },
     { key: 'semiconductor_sector', icon: <Cpu size={17} style={{color:'#60a5fa'}} />,         label: '반도체 섹터' },
     { key: 'hot_sector',       icon: <span style={{fontSize:'14px',lineHeight:1}}>🎯</span>,   label: 'Hot 섹터' },
     { key: 'market_indicators',icon: <Globe size={17} style={{color:'#fbbf24'}} />,           label: '수급 현황' },
+    null,
+    // ── 중간 섹션 (발굴/매매) ──────────────────────
     { key: 'screener',         icon: <Cpu size={17} style={{color:'#2dd4bf'}} />,              label: 'AI 종목 발굴' },
     { key: 'tenbagger',        icon: <span style={{fontSize:'14px',lineHeight:1}}>💎</span>,   label: '텐버거 헌터' },
     { key: 'dart_contracts',   icon: <span style={{fontSize:'14px',lineHeight:1}}>📋</span>,   label: '수주공시 알림' },
     { key: 'megatrend',        icon: <span style={{fontSize:'14px',lineHeight:1}}>🚀</span>,   label: '대세 종목 발굴' },
     { key: 'trend',            icon: <TrendingUp size={17} style={{color:'#a78bfa'}} />,       label: '가상 매매' },
     { key: 'reports',          icon: <Newspaper size={17} style={{color:'#34d399'}} />,        label: '섹터 보고서' },
-    { key: 'telegram',  icon: <Send size={17} style={{color:'#38bdf8'}} />,            label: '텔레그램 종목' },
-    { key: 'backtest',  icon: <FlaskConical size={17} style={{color:'#f59e0b'}} />,    label: '백테스트' },
-    { key: 'hs_trade2', icon: <Ship size={17} style={{color:'#93c5fd'}} />,            label: '수출입분석' },
-    { key: 'export_health', icon: <Globe size={17} style={{color:'#34d399'}} />,      label: '🌐 수출경쟁력' },
-    { key: 'employment',icon: <Users size={17} style={{color:'#86efac'}} />,           label: '고용 정보' },
-    { key: 'etf_check', icon: <span style={{fontSize:'14px',lineHeight:1}}>📊</span>, label: 'ETF 모니터링' },
+    { key: 'telegram',         icon: <Send size={17} style={{color:'#38bdf8'}} />,             label: '텔레그램 종목' },
+    { key: 'backtest',         icon: <FlaskConical size={17} style={{color:'#f59e0b'}} />,     label: '백테스트' },
+    { key: 'hs_trade2',        icon: <Ship size={17} style={{color:'#93c5fd'}} />,             label: '수출입분석' },
+    { key: 'employment',       icon: <Users size={17} style={{color:'#86efac'}} />,            label: '고용 정보' },
+    { key: 'etf_check',        icon: <span style={{fontSize:'14px',lineHeight:1}}>📊</span>,   label: 'ETF 모니터링' },
     null,
-    // ── 하단 섹션 ──────────────────────────────────
-    { key: 'buy_candidates', icon: <Target size={17} style={{color:'#f59e0b'}} />,    label: '매수후보' },
-    { key: 'watchlist', icon: <Star size={17} style={{color:'#facc15'}} />,            label: '관심종목' },
-    { key: 'portfolio', icon: <Wallet size={17} style={{color:'#c084fc'}} />,          label: '계좌현황 🔒' },
+    // ── 하단 섹션 (포트폴리오) ─────────────────────
+    { key: 'buy_candidates',   icon: <Target size={17} style={{color:'#f59e0b'}} />,           label: '매수후보' },
+    { key: 'portfolio',        icon: <Wallet size={17} style={{color:'#c084fc'}} />,           label: '계좌현황 🔒' },
     null,
-    { key: 'settings',  icon: <Settings size={17} style={{color:'#94a3b8'}} />,        label: '⚙ 설정' },
+    { key: 'settings',         icon: <Settings size={17} style={{color:'#94a3b8'}} />,         label: '⚙ 설정' },
   ];
 
   return (

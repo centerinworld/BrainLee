@@ -10,6 +10,15 @@
 - **이 파일을 먼저 읽는다.** 파일 내용으로 프로젝트 구조를 파악하고, 불필요한 파일 열람을 최소화한다.
 - 작업 전 필요한 정보가 이 파일에 있으면 파일을 새로 열지 않는다.
 
+### ⚠️ 파일 수정 전 필수 백업 규칙 (예외 없음)
+모든 수정 작업 전에 아래 절차를 반드시 수행한다:
+1. **백업 생성**: 수정 대상 파일을 `.bak` 확장자로 복사  
+   예) `cp frontend/src/App.jsx frontend/src/App.jsx.bak`  
+   예) `cp main.py main.py.bak`
+2. **git commit**: 수정 전 현재 상태를 먼저 커밋 (작업 단위 분리)
+3. **복원 방법 확인**: 백업 파일로 언제든 `cp App.jsx.bak App.jsx` 로 복원 가능
+4. **세션 시작 시 이전 백업 확인**: `.bak` 파일이 있으면 삭제하거나 버전 번호 부여 (`App.jsx.bak2` 등)
+
 ### 작업 완료 시 (필수 — 자동으로 수행)
 다음 중 하나라도 해당하면 **이 파일(CLAUDE.md)을 반드시 업데이트**한다:
 - [ ] 새 파일 생성 (routes/, collectors/ 등)
@@ -325,15 +334,23 @@ def _cache():
 
 ### 네비게이션 구조
 ```
-NAV_ITEMS 정의: 7459줄
-렌더 스위치:    7585줄
+NAV_ITEMS 정의: 11627줄
+렌더 스위치:    (activeTab 스위치)
 
-순서: macro → market_indicators → analysis → screener → trend
-    → reports → telegram → backtest → hs_trade → hs_trade2 → export_health
-    ── (구분선) ──
-    buy_candidates → watchlist → portfolio
-    ── (구분선) ──
-    settings → system
+상단 섹션 (시황):
+  macro → analysis → market_radar → semiconductor_sector → hot_sector → market_indicators
+  ── (구분선) ──
+중간 섹션 (발굴/매매):
+  screener → tenbagger → dart_contracts → megatrend → trend → reports
+  → telegram → backtest → hs_trade2 → employment → etf_check
+  ── (구분선) ──
+하단 섹션 (포트폴리오):
+  buy_candidates → portfolio
+  ── (구분선) ──
+  settings
+서버 상태 (사이드바 하단 고정 표시, 별도 탭 없음)
+
+※ export_health·watchlist 메뉴에서 제거 (컴포넌트 코드는 유지)
 ```
 
 ### 전역 상태 (App 최상위)
@@ -475,4 +492,6 @@ app.include_router(_market_radar_router, prefix="/api/market-radar", tags=["mark
 | 2026-05-11 | peak_monitor 크래시 루프 수정: `serve_foreground.sh`가 peak_monitor PID를 먼저 파일에 써서 자기 자신을 "중복"으로 감지하던 버그 수정. peak_monitor 종료 시 전체 스택 재시작 대신 peak_monitor만 재시작하도록 개선. peak_monitor.py에 self-PID 방어 로직 추가(existing==os.getpid() 무시). |
 | 2026-05-11 | main.py 누락 라우터 6개 등록: market_radar/dart_contracts/tenbagger/sector_define/extra_signals/employment-v2. 섹터 지표·텐버거 헌터·수주공시 알림·고용 정보 등 여러 탭의 API 404 오류 해결. |
 | 2026-05-11 | `_realtime_fetch_macro` KOSPI early-return 버그 수정: KOSPI 데이터 있으면 전체 Yahoo 업데이트 스킵하던 문제 제거 → 나스닥/VIX/원자재 정상 갱신. `data_collector.py`에 ^DJI(다우존스) 수집 추가. |
+| 2026-05-11 | App.jsx NAV_ITEMS 메뉴 재정렬: 수급 현황 다음에 구분선 추가, export_health(🌐 수출경쟁력)·watchlist(관심종목) 메뉴에서 제거(컴포넌트 유지). CLAUDE.md 파일 수정 전 백업 규칙 추가. |
+| 2026-05-11 | 재무검증 완료, 개별종목 UI 복원, 공지/내부자/추가시그널 통합 (processor.py NULL병합, main.py bps/roa, App.jsx 6열 밸류에이션) |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
