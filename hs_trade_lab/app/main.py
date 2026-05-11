@@ -583,16 +583,32 @@ def analysis2_sectors(months: int = 24):
     result = []
     for sector in sectors.values():
         monthly = sector["monthly"]
+        provisional = _latest_provisional_10day(conn, sector["sector_key"])
+        # 가집계 월 데이터를 monthly 시리즈에 추가 (확정 최신월보다 최신이면)
+        confirmed_latest_ym = monthly[-1]["period_ym"] if monthly else ""
+        if provisional and provisional.get("period_ym", "") > confirmed_latest_ym:
+            prov_ym = provisional["period_ym"]
+            prov_export = provisional.get("export_value") or 0
+            prov_import = provisional.get("import_value") or 0
+            monthly = monthly + [{
+                "period_ym": prov_ym,
+                "export_val": round(prov_export),
+                "export_kg": 0,
+                "import_val": round(prov_import),
+                "import_kg": 0,
+                "is_provisional": True,
+                "period_day": provisional.get("period_day", ""),
+            }]
         export_latest = monthly[-1]["export_val"] if monthly else None
         export_prev1 = monthly[-2]["export_val"] if len(monthly) >= 2 else None
         export_prev12 = monthly[-13]["export_val"] if len(monthly) >= 13 else None
         import_latest = monthly[-1]["import_val"] if monthly else None
         import_prev1 = monthly[-2]["import_val"] if len(monthly) >= 2 else None
         import_prev12 = monthly[-13]["import_val"] if len(monthly) >= 13 else None
-        provisional = _latest_provisional_10day(conn, sector["sector_key"])
         result.append(
             {
                 **sector,
+                "monthly": monthly,
                 "latest_period": monthly[-1]["period_ym"] if monthly else None,
                 "provisional_10day": provisional,
                 "export_latest": export_latest,
@@ -608,6 +624,167 @@ def analysis2_sectors(months: int = 24):
         )
     conn.close()
     return result
+
+
+@app.get("/api/analysis2/companies")
+def analysis2_all_companies(months: int = 3):
+    """전체 기업 목록 — 섹터 구분 없이 최근 월 기준 합산 수출액 정렬."""
+    conn = _hs_db()
+    rows = conn.execute(
+        """
+        SELECT stock_code, stock_name,
+               GROUP_CONCAT(DISTINCT sector_key) AS sector_keys,
+               GROUP_CONCAT(DISTINCT hs_names) AS hs_names_agg,
+               GROUP_CONCAT(DISTINCT sector_label) AS sector_labels,
+               GROUP_CONCAT(DISTINCT mapping_status) AS statuses,
+               SUM(export_value) AS total_export,
+               MAX(period_ym) AS latest_period
+        FROM analysis2_company_monthly_cache
+        WHERE period_ym >= date('now', ? || ' months')
+        GROUP BY stock_code, stock_name
+        HAVING MAX(export_value) > 0
+        ORDER BY total_export DESC
+        """,
+        (f"-{months}",),
+    ).fetchall()
+    conn.close()
+    return [
+        {
+            "stock_code": r["stock_code"],
+            "stock_name": r["stock_name"],
+            "sector_keys": (r["sector_keys"] or "").split(","),
+            "sector_labels": (r["sector_labels"] or "").split(","),
+            "hs_names": r["hs_names_agg"] or "",
+            "mapping_status": "exact" if "exact" in (r["statuses"] or "") else ("composite" if "composite" in (r["statuses"] or "") else "provisional"),
+            "latest_period": r["latest_period"],
+            "total_export": round(r["total_export"] or 0),
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/analysis2/company/{stock_code}/by-product")
+def analysis2_company_by_product(stock_code: str, months: int = 24):
+    """기업별 품목(HS코드)별 월간 수출 상세 — 기업별 탭용."""
+    conn = _hs_db()
+    # 최근 N개월 HS별 월간 데이터
+    # 국가 단위 통계(전국/글로벌) 제외: 회사 고유 HS 데이터만 표시
+    hs_rows = conn.execute(
+        """
+        SELECT period_ym, hs_code, hs_name, sector_key, sector_label, sector_name, flow_type,
+               mapping_status, export_value, export_weight, import_value, import_weight
+        FROM analysis2_company_hs_monthly_cache
+        WHERE stock_code = ?
+          AND period_ym >= date('now', ? || ' months')
+          AND sector_name NOT LIKE '전국%'
+          AND sector_name NOT IN ('글로벌', '중국', '')
+        ORDER BY period_ym DESC, export_value DESC
+        """,
+        (stock_code, f"-{months}"),
+    ).fetchall()
+    # 기업 기본정보
+    info_row = conn.execute(
+        """
+        SELECT stock_name, GROUP_CONCAT(DISTINCT sector_key) AS sector_keys,
+               GROUP_CONCAT(DISTINCT sector_label) AS sector_labels,
+               GROUP_CONCAT(DISTINCT hs_names) AS hs_names,
+               MAX(mapping_status) AS mapping_status
+        FROM analysis2_company_monthly_cache
+        WHERE stock_code = ?
+        """,
+        (stock_code,),
+    ).fetchone()
+    # Telegram 게시물 관련 정보
+    tg_rows = conn.execute(
+        """
+        SELECT DISTINCT t.post_message_id, t.posted_at, t.post_url, t.product_title,
+               t.flow_type, t.hs_code, t.hs_name, t.flow_scope, t.mapping_status
+        FROM telegram_company_hs_flow_map t
+        WHERE t.stock_code = ?
+        ORDER BY t.posted_at DESC
+        LIMIT 30
+        """,
+        (stock_code,),
+    ).fetchall()
+    # HS코드별 시장점유율: hs_code_company_map에서 가져옴
+    share_rows = conn.execute(
+        """
+        SELECT m.hs_code, m.market_share_pct,
+               (SELECT COUNT(*) FROM hs_code_company_map m2 WHERE m2.hs_code = m.hs_code) AS total_companies
+        FROM hs_code_company_map m
+        WHERE m.stock_code = ?
+        """,
+        (stock_code,),
+    ).fetchall()
+    conn.close()
+    # {hs_code: export_share(0~1 또는 None)}
+    share_map: dict[str, float | None] = {}
+    for sr in share_rows:
+        if sr["market_share_pct"] is not None:
+            share_map[sr["hs_code"]] = sr["market_share_pct"]
+        elif sr["total_companies"] == 1:
+            share_map[sr["hs_code"]] = 1.0  # 단독 매핑 → 100%
+
+    # HS 코드별 집계 (최근 3개월 합산)
+    from collections import defaultdict
+    hs_summary: dict[str, dict] = defaultdict(lambda: {
+        "hs_code": "", "hs_name": "", "sector_name": "", "flow_type": "export",
+        "mapping_status": "provisional", "export_share": None,
+        "export_3m": 0, "export_kg_3m": 0, "import_3m": 0, "monthly": []
+    })
+    for r in hs_rows:
+        key = f"{r['hs_code']}_{r['flow_type']}"
+        s = hs_summary[key]
+        s["hs_code"] = r["hs_code"]
+        s["hs_name"] = r["hs_name"]
+        s["sector_name"] = r["sector_name"] or r["sector_label"]
+        s["flow_type"] = r["flow_type"] or "export"
+        s["mapping_status"] = r["mapping_status"]
+        s["export_share"] = share_map.get(r["hs_code"])
+        s["monthly"].append({
+            "period_ym": r["period_ym"],
+            "export_val": round(r["export_value"] or 0),
+            "export_kg": round(r["export_weight"] or 0),
+            "import_val": round(r["import_value"] or 0),
+            "import_kg": round(r["import_weight"] or 0),
+            "unit_price_kg": round((r["export_value"] or 0) / r["export_weight"]) if r["export_weight"] else None,
+        })
+        s["export_3m"] += r["export_value"] or 0
+        s["export_kg_3m"] += r["export_weight"] or 0
+        s["import_3m"] += r["import_value"] or 0
+
+    items = sorted(hs_summary.values(), key=lambda x: -x["export_3m"])
+    for item in items:
+        item["monthly"].sort(key=lambda x: x["period_ym"])
+        item["export_3m"] = round(item["export_3m"])
+        item["import_3m"] = round(item["import_3m"])
+        item["avg_unit_price_kg"] = round(item["export_3m"] / item["export_kg_3m"]) if item["export_kg_3m"] else None
+        # export_share를 % 단위로 변환 (0~1 → 0~100)
+        if item["export_share"] is not None:
+            item["export_share"] = round(item["export_share"] * 100, 1)
+
+    return {
+        "stock_code": stock_code,
+        "stock_name": info_row["stock_name"] if info_row else stock_code,
+        "sector_keys": (info_row["sector_keys"] or "").split(",") if info_row else [],
+        "sector_labels": (info_row["sector_labels"] or "").split(",") if info_row else [],
+        "hs_names": info_row["hs_names"] if info_row else "",
+        "mapping_status": info_row["mapping_status"] if info_row else "provisional",
+        "items": items,
+        "telegram_products": [
+            {
+                "posted_at": r["posted_at"],
+                "post_url": r["post_url"],
+                "product_title": r["product_title"],
+                "flow_type": r["flow_type"],
+                "hs_code": r["hs_code"],
+                "hs_name": r["hs_name"],
+                "flow_scope": r["flow_scope"],
+                "mapping_status": r["mapping_status"],
+            }
+            for r in tg_rows
+        ],
+    }
 
 
 @app.get("/api/analysis2/sector/{sector_key}/companies")
@@ -714,6 +891,37 @@ def analysis2_company_trend(stock_code: str, months: int = 24, sector_key: str |
     import_prev12 = monthly[-13]["import_val"] if len(monthly) >= 13 else None
 
     provisional = _latest_provisional_10day(conn, sector_key)
+
+    # 가집계 데이터를 monthly에 추가 (섹터 비중으로 추정)
+    confirmed_latest_ym = monthly[-1]["period_ym"] if monthly else ""
+    if provisional and provisional.get("period_ym", "") > confirmed_latest_ym and monthly:
+        prov_ym = provisional["period_ym"]
+        # 기업의 섹터 내 비중: 최근 3개월 기업 수출 / 섹터 수출
+        comp_3m = sum(m["export_val"] for m in monthly[-3:]) if len(monthly) >= 1 else 0
+        sector_rows_3m = conn.execute(
+            """
+            SELECT COALESCE(SUM(export_value), 0) AS total
+            FROM analysis2_sector_monthly_cache
+            WHERE sector_key = ? AND period_ym >= ?
+            """,
+            (sector_key, monthly[-3]["period_ym"] if len(monthly) >= 3 else monthly[-1]["period_ym"]),
+        ).fetchone() if sector_key else None
+        sector_3m = float(sector_rows_3m["total"]) if sector_rows_3m else 0
+        share = (comp_3m / sector_3m) if sector_3m > 0 else 0
+        prov_export = round((provisional.get("export_value") or 0) * share)
+        prov_import = round((provisional.get("import_value") or 0) * share)
+        if prov_export > 0:
+            monthly = monthly + [{
+                "period_ym": prov_ym,
+                "export_val": prov_export,
+                "export_kg": 0,
+                "import_val": prov_import,
+                "import_kg": 0,
+                "hs_names": "",
+                "is_provisional": True,
+                "period_day": provisional.get("period_day", ""),
+            }]
+
     conn.close()
 
     return {
@@ -808,12 +1016,14 @@ def analysis2_sector_hs_breakdown(sector_key: str, period_ym: str | None = None)
 def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: str | None = None):
     """기업의 HS 코드별 수출/수입 비중."""
     conn = _hs_db()
+    _VS = "sector_name NOT LIKE '전국%' AND sector_name NOT IN ('글로벌','중국','')"
     latest_period_row = conn.execute(
-        """
+        f"""
         SELECT MAX(period_ym) AS latest_period
         FROM analysis2_company_hs_monthly_cache
         WHERE stock_code = ?
           AND sector_key = ?
+          AND {_VS}
         """,
         (stock_code, sector_key),
     ).fetchone()
@@ -822,13 +1032,14 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
         conn.close()
         return {"stock_code": stock_code, "sector_key": sector_key, "period_ym": None, "items": []}
     rows = conn.execute(
-        """
+        f"""
         SELECT stock_name, sector_label, hs_code, hs_name, sector_name, flow_type, mapping_status,
                export_value, export_weight, import_value, import_weight
         FROM analysis2_company_hs_monthly_cache
         WHERE stock_code = ?
           AND sector_key = ?
           AND period_ym = ?
+          AND {_VS}
         ORDER BY CASE flow_type WHEN 'export' THEN 0 ELSE 1 END,
                  CASE flow_type WHEN 'export' THEN export_value ELSE import_value END DESC,
                  hs_code
@@ -836,7 +1047,7 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
         (stock_code, sector_key, chosen_period),
     ).fetchall()
     totals = conn.execute(
-        """
+        f"""
         SELECT
           SUM(CASE WHEN flow_type = 'export' THEN export_value ELSE 0 END) AS export_total,
           SUM(CASE WHEN flow_type = 'import' THEN import_value ELSE 0 END) AS import_total
@@ -844,15 +1055,17 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
         WHERE stock_code = ?
           AND sector_key = ?
           AND period_ym = ?
+          AND {_VS}
         """,
         (stock_code, sector_key, chosen_period),
     ).fetchone()
     periods = conn.execute(
-        """
+        f"""
         SELECT DISTINCT period_ym
         FROM analysis2_company_hs_monthly_cache
         WHERE stock_code = ?
           AND sector_key = ?
+          AND {_VS}
         ORDER BY period_ym DESC
         """,
         (stock_code, sector_key),
@@ -890,4 +1103,297 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
         "items": items,
         "export_items": [item for item in items if item["flow_type"] == "export"],
         "import_items": [item for item in items if item["flow_type"] == "import"],
+    }
+
+
+# ── 개별종목용 수출 요약 ──────────────────────────────────────────────
+@app.get("/api/analysis2/stock/{stock_code}/export-summary")
+def analysis2_stock_export_summary(stock_code: str, months: int = 12):
+    """개별종목 페이지용 수출 요약 — 최근 N개월 추세 + 주요 품목."""
+    conn = _hs_db()
+
+    # 월별 수출 추세 (모든 섹터 합산, 중복 제거)
+    monthly_rows = conn.execute(
+        """
+        SELECT period_ym,
+               SUM(export_value) AS export_val,
+               SUM(export_weight) AS export_kg,
+               SUM(import_value) AS import_val
+        FROM analysis2_company_hs_monthly_cache
+        WHERE stock_code = ?
+          AND period_ym >= date('now', ? || ' months')
+          AND flow_type = 'export'
+        GROUP BY period_ym
+        ORDER BY period_ym
+        """,
+        (stock_code, f"-{months}"),
+    ).fetchall()
+
+    # 최근 3개월 주요 품목
+    top_items = conn.execute(
+        """
+        SELECT hs_code, hs_name, flow_type,
+               SUM(export_value) AS export_3m,
+               SUM(export_weight) AS export_kg_3m,
+               MAX(mapping_status) AS mapping_status
+        FROM analysis2_company_hs_monthly_cache
+        WHERE stock_code = ?
+          AND period_ym >= date('now', '-3 months')
+        GROUP BY hs_code, hs_name, flow_type
+        ORDER BY export_3m DESC
+        LIMIT 8
+        """,
+        (stock_code,),
+    ).fetchall()
+
+    # 회사 기본 정보 + 시장 비율 표시
+    market_shares = conn.execute(
+        """
+        SELECT ms.hs_code, ms.hs_name, ms.share_pct, ms.basis, ms.as_of_year,
+               GROUP_CONCAT(ms2.stock_name || ':' || ROUND(ms2.share_pct*100) || '%') AS peers
+        FROM hs_company_market_share ms
+        LEFT JOIN hs_company_market_share ms2
+          ON ms2.hs_code = ms.hs_code AND ms2.stock_code != ms.stock_code
+        WHERE ms.stock_code = ?
+        GROUP BY ms.hs_code, ms.hs_name, ms.share_pct, ms.basis, ms.as_of_year
+        """,
+        (stock_code,),
+    ).fetchall()
+
+    # 전월비/전년동월비 계산
+    monthly = [
+        {"period_ym": r["period_ym"], "export_val": round(r["export_val"] or 0),
+         "export_kg": round(r["export_kg"] or 0), "import_val": round(r["import_val"] or 0)}
+        for r in monthly_rows
+    ]
+    export_latest = monthly[-1]["export_val"] if monthly else None
+    export_prev1 = monthly[-2]["export_val"] if len(monthly) >= 2 else None
+    export_prev12 = monthly[-13]["export_val"] if len(monthly) >= 13 else None
+
+    conn.close()
+    return {
+        "stock_code": stock_code,
+        "monthly": monthly,
+        "export_latest": export_latest,
+        "export_mom": _pct(export_latest, export_prev1),
+        "export_yoy": _pct(export_latest, export_prev12),
+        "top_items": [
+            {
+                "hs_code": r["hs_code"], "hs_name": r["hs_name"],
+                "flow_type": r["flow_type"],
+                "export_3m": round(r["export_3m"] or 0),
+                "export_kg_3m": round(r["export_kg_3m"] or 0),
+                "avg_unit_price_kg": round(r["export_3m"] / r["export_kg_3m"]) if r["export_kg_3m"] else None,
+                "mapping_status": r["mapping_status"],
+            }
+            for r in top_items
+        ],
+        "market_shares": [
+            {
+                "hs_code": r["hs_code"], "hs_name": r["hs_name"],
+                "share_pct": r["share_pct"], "share_pct_label": f"{round(r['share_pct']*100)}%",
+                "basis": r["basis"], "as_of_year": r["as_of_year"],
+                "peers": r["peers"] or "",
+            }
+            for r in market_shares
+        ],
+    }
+
+
+# ── 수출경쟁력 건강 점수 ─────────────────────────────────────────────
+@app.get("/api/analysis2/export-health")
+def analysis2_export_health(months: int = 6):
+    """섹터 및 기업 수출 건강 점수 — 최근 성장률 기반."""
+    import datetime as _dt
+    conn = _hs_db()
+
+    def _score(mom, yoy):
+        pts = 0
+        if mom is not None:
+            pts += 1 if mom > 5 else (-1 if mom < -5 else 0)
+        if yoy is not None:
+            pts += 2 if yoy > 10 else (-2 if yoy < -10 else (1 if yoy > 0 else -1))
+        return "good" if pts >= 2 else ("bad" if pts <= -2 else "neutral")
+
+    # ── 섹터 건강 점수 ──────────────────────────────────────────
+    sector_rows = conn.execute("""
+        WITH numbered AS (
+            SELECT sector_key, sector_label, period_ym,
+                   export_value, import_value,
+                   ROW_NUMBER() OVER (PARTITION BY sector_key ORDER BY period_ym DESC) AS rn
+            FROM analysis2_sector_monthly_cache
+        )
+        SELECT l.sector_key, l.sector_label, l.period_ym,
+               l.export_value, l.import_value,
+               CASE WHEN p1.export_value > 0
+                    THEN ROUND((l.export_value - p1.export_value) / p1.export_value * 100, 1)
+                    END AS export_mom,
+               CASE WHEN p12.export_value > 0
+                    THEN ROUND((l.export_value - p12.export_value) / p12.export_value * 100, 1)
+                    END AS export_yoy,
+               CASE WHEN p1.import_value > 0
+                    THEN ROUND((l.import_value - p1.import_value) / p1.import_value * 100, 1)
+                    END AS import_mom,
+               CASE WHEN p12.import_value > 0
+                    THEN ROUND((l.import_value - p12.import_value) / p12.import_value * 100, 1)
+                    END AS import_yoy
+        FROM numbered l
+        LEFT JOIN numbered p1  ON p1.sector_key  = l.sector_key AND p1.rn  = 2
+        LEFT JOIN numbered p12 ON p12.sector_key = l.sector_key AND p12.rn = 13
+        WHERE l.rn = 1
+        ORDER BY l.export_value DESC
+    """).fetchall()
+
+    # 섹터별 최근 12개월 월별 수출 (미니차트용)
+    sector_monthly_rows = conn.execute("""
+        SELECT sector_key, period_ym, export_value,
+               (period_ym = (SELECT MAX(period_ym) FROM analysis2_sector_monthly_cache
+                             WHERE period_ym LIKE period_ym || '%')) AS is_latest
+        FROM analysis2_sector_monthly_cache
+        WHERE period_ym >= strftime('%Y-%m', date('now', '-12 months'))
+        ORDER BY sector_key, period_ym
+    """).fetchall()
+
+    # 가집계 기간 구하기 (이달 초부터 10일 이내)
+    today = _dt.date.today()
+    current_ym = today.strftime("%Y-%m")
+    prov_boundary = today.replace(day=1) + _dt.timedelta(days=9)
+    is_prov_fn = lambda ym: ym == current_ym and today <= prov_boundary
+
+    sector_monthly: dict[str, list] = {}
+    for r in sector_monthly_rows:
+        sector_monthly.setdefault(r["sector_key"], []).append({
+            "period_ym": r["period_ym"],
+            "value": r["export_value"],
+            "is_provisional": is_prov_fn(r["period_ym"]),
+        })
+
+    # ── 기업 건강 점수 ──────────────────────────────────────────
+    company_rows = conn.execute("""
+        WITH agg AS (
+            SELECT stock_code, MAX(stock_name) AS stock_name, MAX(sector_label) AS sector_label,
+                   period_ym,
+                   SUM(export_value) AS export_val,
+                   SUM(import_value) AS import_val,
+                   ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY period_ym DESC) AS rn
+            FROM analysis2_company_monthly_cache
+            GROUP BY stock_code, period_ym
+        )
+        SELECT l.stock_code, l.stock_name, l.sector_label, l.period_ym,
+               l.export_val, l.import_val,
+               CASE WHEN p1.export_val > 0
+                    THEN ROUND((l.export_val - p1.export_val) / p1.export_val * 100, 1) END AS export_mom,
+               CASE WHEN p12.export_val > 0
+                    THEN ROUND((l.export_val - p12.export_val) / p12.export_val * 100, 1) END AS export_yoy,
+               CASE WHEN p1.import_val > 0
+                    THEN ROUND((l.import_val - p1.import_val) / p1.import_val * 100, 1) END AS import_mom,
+               CASE WHEN p12.import_val > 0
+                    THEN ROUND((l.import_val - p12.import_val) / p12.import_val * 100, 1) END AS import_yoy
+        FROM agg l
+        LEFT JOIN agg p1  ON p1.stock_code  = l.stock_code AND p1.rn  = 2
+        LEFT JOIN agg p12 ON p12.stock_code = l.stock_code AND p12.rn = 13
+        WHERE l.rn = 1
+          AND l.export_val > 1e6
+        ORDER BY export_yoy DESC NULLS LAST
+        LIMIT 100
+    """).fetchall()
+
+    # ── 공유 HS 코드 목록 (2개 이상 기업) ──────────────────────
+    shared_rows = conn.execute("""
+        SELECT hcm.hs_code,
+               COALESCE(NULLIF(sm.display_name,''), NULLIF(sm.hs_name,''), hcm.hs_code) AS hs_name,
+               COUNT(DISTINCT hcm.stock_code) AS company_count
+        FROM hs_code_company_map hcm
+        LEFT JOIN hs_sector_map sm ON sm.hs_code = hcm.hs_code
+        GROUP BY hcm.hs_code
+        HAVING company_count >= 2
+        ORDER BY company_count DESC, hcm.hs_code
+        LIMIT 30
+    """).fetchall()
+
+    conn.close()
+
+    return {
+        "updated_at": today.strftime("%Y-%m-%d"),
+        "sectors": [
+            {
+                "sector_key": r["sector_key"], "sector_label": r["sector_label"],
+                "period_ym": r["period_ym"],
+                "export_latest": round(r["export_value"] or 0),
+                "import_latest": round(r["import_value"] or 0),
+                "export_mom": r["export_mom"], "export_yoy": r["export_yoy"],
+                "import_mom": r["import_mom"], "import_yoy": r["import_yoy"],
+                "export_health": _score(r["export_mom"], r["export_yoy"]),
+                "import_health": _score(r["import_mom"], r["import_yoy"]),
+                "monthly_export": sector_monthly.get(r["sector_key"], []),
+            }
+            for r in sector_rows
+        ],
+        "companies": [
+            {
+                "stock_code": r["stock_code"], "stock_name": r["stock_name"],
+                "sector_label": r["sector_label"],
+                "period_ym": r["period_ym"],
+                "export_latest": round(r["export_val"] or 0),
+                "import_latest": round(r["import_val"] or 0),
+                "export_mom": r["export_mom"], "export_yoy": r["export_yoy"],
+                "import_mom": r["import_mom"], "import_yoy": r["import_yoy"],
+                "export_health": _score(r["export_mom"], r["export_yoy"]),
+                "import_health": _score(r["import_mom"], r["import_yoy"]),
+            }
+            for r in company_rows
+        ],
+        "shared_hs": [
+            {"hs_code": r["hs_code"], "hs_name": r["hs_name"], "company_count": r["company_count"]}
+            for r in shared_rows
+        ],
+    }
+
+
+# ── HS 코드 공유 기업 정보 ───────────────────────────────────────────
+@app.get("/api/analysis2/hs/{hs_code}/companies")
+def analysis2_hs_companies(hs_code: str):
+    """특정 HS 코드를 공유하는 기업 목록 + 시장비율."""
+    conn = _hs_db()
+    rows = conn.execute(
+        """
+        SELECT hcm.stock_code, hcm.stock_name, hcm.mapping_status, hcm.flow_type,
+               hcm.market_share_pct,
+               ms.basis AS share_basis, ms.as_of_year AS share_year
+        FROM hs_code_company_map hcm
+        LEFT JOIN hs_company_market_share ms
+          ON ms.hs_code = hcm.hs_code AND ms.stock_code = hcm.stock_code
+        WHERE hcm.hs_code = ?
+        ORDER BY hcm.market_share_pct DESC NULLS LAST, hcm.stock_name
+        """,
+        (hs_code,),
+    ).fetchall()
+    hs_row = conn.execute(
+        """
+        SELECT COALESCE(NULLIF(sm.display_name,''), NULLIF(sm.hs_name,''), ?) AS hs_name,
+               sp.label AS sector_label
+        FROM hs_sector_map sm
+        LEFT JOIN sector_preset sp ON sp.sector_key = sm.sector_key
+        WHERE sm.hs_code = ?
+        LIMIT 1
+        """,
+        (hs_code, hs_code),
+    ).fetchone()
+    conn.close()
+    return {
+        "hs_info": {
+            "hs_code": hs_code,
+            "hs_name": hs_row["hs_name"] if hs_row else hs_code,
+            "sector_label": hs_row["sector_label"] if hs_row else None,
+        },
+        "companies": [
+            {
+                "stock_code": r["stock_code"], "stock_name": r["stock_name"],
+                "mapping_status": r["mapping_status"], "flow_type": r["flow_type"],
+                "market_share_pct": r["market_share_pct"],
+                "market_share_label": f"{round(r['market_share_pct']*100)}%" if r["market_share_pct"] else None,
+                "share_basis": r["share_basis"], "share_year": r["share_year"],
+            }
+            for r in rows
+        ],
     }

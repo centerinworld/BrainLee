@@ -96,7 +96,13 @@ def get_chart_data(db: Session, stock_code: str, days: int = 30):
     )
     seen = {}
     for p in prices:
-        seen[p.date.strftime("%Y-%m-%d") if hasattr(p.date,"strftime") else str(p.date)[:10]] = p
+        date_str = p.date.strftime("%Y-%m-%d") if hasattr(p.date,"strftime") else str(p.date)[:10]
+        try:
+            if datetime.strptime(date_str, "%Y-%m-%d").weekday() >= 5:
+                continue  # 토/일 제외
+        except Exception:
+            pass
+        seen[date_str] = p
     return [
         {
             "date":              k,
@@ -231,15 +237,19 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
         .order_by(models.FinancialData.year.desc(), models.FinancialData.revenue.desc())
         .limit(10).all()
     )
-    # 같은 연도 중복 레코드 제거 — revenue 내림차순이므로 첫 번째가 가장 완전한 데이터
-    _seen_years: set = set()
-    annual_data = []
+    # 같은 연도 중복 레코드 병합 — revenue 최대 row를 기준으로 하되 NULL 필드는 다른 row에서 보완
+    _year_recs: dict = {}
     for _d in annual_data_raw:
-        if _d.year not in _seen_years:
-            _seen_years.add(_d.year)
-            annual_data.append(_d)
-        if len(annual_data) >= 5:
-            break
+        if _d.year not in _year_recs:
+            _year_recs[_d.year] = _d
+        else:
+            # 이미 있는 record의 NULL 필드를 현재 row로 채움
+            _base = _year_recs[_d.year]
+            for _col in ('total_liabilities', 'capital_stock', 'eps', 'bps', 'dps',
+                         'total_assets', 'total_equity', 'roe', 'operating_profit', 'net_income'):
+                if getattr(_base, _col, None) is None and getattr(_d, _col, None) is not None:
+                    setattr(_base, _col, getattr(_d, _col))
+    annual_data = [_year_recs[y] for y in sorted(_year_recs.keys(), reverse=True)[:5]]
 
     # is_annual=True 레코드가 없으면 분기 데이터로 대체
     if not annual_data:

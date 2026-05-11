@@ -16,31 +16,55 @@ import sqlite3 as _sl
 import logging
 from datetime import date as _date, datetime as _dt
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from database import get_db
+from db_utils import STOCK_DB_PATH, connect_stock_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = "stock.db"
+DB_PATH = str(STOCK_DB_PATH)
 
 
 def _db():
-    return _sl.connect(DB_PATH)
+    return connect_stock_db(timeout=30)
+
+
+def _ensure_peak_holding_reason_columns(conn) -> None:
+    """Store StockEasy click-detail research with the virtual holding row."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(peak_holding)").fetchall()}
+    for name, ddl in (
+        ("entry_reason_text", "ALTER TABLE peak_holding ADD COLUMN entry_reason_text TEXT"),
+        ("entry_reason_json", "ALTER TABLE peak_holding ADD COLUMN entry_reason_json TEXT"),
+        ("entry_reason_updated_at", "ALTER TABLE peak_holding ADD COLUMN entry_reason_updated_at TEXT"),
+    ):
+        if name not in cols:
+            conn.execute(ddl)
 
 
 # ── GET /api/trend/holdings ─────────────────────────────────────
 @router.get("/holdings")
-def get_trend_holdings(db: Session = Depends(get_db)):
+def get_trend_holdings(
+    strategy: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
     conn   = _db()
-    rows   = conn.execute("""
+    _ensure_peak_holding_reason_columns(conn)
+    params = []
+    where = ""
+    if strategy:
+        where = "WHERE strategy=?"
+        params.append(strategy)
+    rows   = conn.execute(f"""
         SELECT id, stock_name, buy_price, current_price,
                quantity, profit_pct, sell_price, sold_at, is_active,
-               hold_days, sector, updated_at, entry_date, sold_price, strategy, stock_code
-        FROM peak_holding ORDER BY entry_date DESC
-    """).fetchall()
+               hold_days, sector, updated_at, entry_date, sold_price, strategy, stock_code,
+               entry_reason_text, entry_reason_json, entry_reason_updated_at
+        FROM peak_holding {where}
+        ORDER BY entry_date DESC
+    """, params).fetchall()
     result = []
 
     for r in rows:
@@ -52,7 +76,7 @@ def get_trend_holdings(db: Session = Depends(get_db)):
 
         # stock_code 없으면 universe에서 조회 후 캐시
         if not stock_code:
-            for tbl in ("stock_universe", "listed_company_info"):
+            for tbl in ("stock_universe", "stock_meta", "listed_company_info"):
                 row = conn.execute(
                     f"SELECT stock_code FROM {tbl} WHERE stock_name=? LIMIT 1", (stock_name,)
                 ).fetchone()
@@ -85,6 +109,9 @@ def get_trend_holdings(db: Session = Depends(get_db)):
             "is_active": is_active, "hold_days": r[9],
             "sector": r[10], "updated_at": r[11],
             "entry_date": r[12], "strategy": r[14],
+            "entry_reason_text": r[16] or "",
+            "entry_reason_json": r[17] or "",
+            "entry_reason_updated_at": r[18] or "",
         })
 
     conn.close()
@@ -101,17 +128,22 @@ def trend_buy(payload: dict):
     entry_date = payload.get("entry_date") or _dt.now().strftime("%Y-%m-%d")
     strategy   = payload.get("strategy", "peak")
     sector     = payload.get("sector", "")
+    entry_reason_text = payload.get("entry_reason_text", "")
+    entry_reason_json = payload.get("entry_reason_json", "")
 
     if not stock_name or not buy_price:
         raise HTTPException(status_code=400, detail="stock_name, buy_price 필수")
 
     conn = _db()
+    _ensure_peak_holding_reason_columns(conn)
     if not stock_code:
-        row = conn.execute(
-            "SELECT stock_code FROM stock_universe WHERE stock_name=? LIMIT 1", (stock_name,)
-        ).fetchone()
-        if row:
-            stock_code = row[0]
+        for tbl in ("stock_universe", "stock_meta", "listed_company_info"):
+            row = conn.execute(
+                f"SELECT stock_code FROM {tbl} WHERE stock_name=? LIMIT 1", (stock_name,)
+            ).fetchone()
+            if row:
+                stock_code = row[0]
+                break
 
     # 중복 방지
     dup = conn.execute(
@@ -120,8 +152,13 @@ def trend_buy(payload: dict):
     ).fetchone()
     if dup:
         conn.execute(
-            "UPDATE peak_holding SET is_active=1, current_price=?, stock_code=COALESCE(stock_code,?), updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (buy_price, stock_code or None, dup[0])
+            "UPDATE peak_holding SET is_active=1, current_price=?, "
+            "stock_code=COALESCE(stock_code,?), "
+            "entry_reason_text=COALESCE(NULLIF(?,''), entry_reason_text), "
+            "entry_reason_json=COALESCE(NULLIF(?,''), entry_reason_json), "
+            "entry_reason_updated_at=CASE WHEN NULLIF(?, '') IS NOT NULL THEN CURRENT_TIMESTAMP ELSE entry_reason_updated_at END, "
+            "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (buy_price, stock_code or None, entry_reason_text, entry_reason_json, entry_reason_text, dup[0])
         )
         conn.commit(); conn.close()
         return {"status": "ok", "stock_name": stock_name}
@@ -133,9 +170,14 @@ def trend_buy(payload: dict):
     if not active:
         conn.execute(
             "INSERT INTO peak_holding (stock_code,stock_name,sector,buy_price,current_price,quantity,"
-            "entry_date,hold_days,profit_pct,is_active,strategy,detected_at,updated_at) "
-            "VALUES (?,?,?,?,?,?,?,0,0.0,1,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
-            (stock_code or None, stock_name, sector, buy_price, buy_price, quantity, entry_date, strategy)
+            "entry_date,hold_days,profit_pct,is_active,strategy,detected_at,updated_at,"
+            "entry_reason_text,entry_reason_json,entry_reason_updated_at) "
+            "VALUES (?,?,?,?,?,?,?,0,0.0,1,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,?,?,"
+            "CASE WHEN NULLIF(?, '') IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END)",
+            (
+                stock_code or None, stock_name, sector, buy_price, buy_price, quantity,
+                entry_date, strategy, entry_reason_text, entry_reason_json, entry_reason_text,
+            )
         )
         conn.execute(
             "INSERT INTO peak_trade (stock_name,tx_type,price,quantity,total_amount,profit,profit_pct,tx_at,strategy) "
@@ -150,21 +192,48 @@ def trend_buy(payload: dict):
 @router.post("/update")
 def trend_update(payload: dict):
     stock_name    = payload.get("stock_name", "")
+    stock_code    = payload.get("stock_code", "")
     strategy      = payload.get("strategy", "peak")
     current_price = float(payload.get("current_price") or 0)
     hold_days     = int(payload.get("hold_days") or 0)
     profit_pct    = float(payload.get("profit_pct") or 0)
+    entry_reason_text = payload.get("entry_reason_text", "")
+    entry_reason_json = payload.get("entry_reason_json", "")
 
     if not stock_name:
         return {"status": "skip"}
 
-    conn = _db()
-    conn.execute(
-        "UPDATE peak_holding SET current_price=?, hold_days=?, profit_pct=?, updated_at=CURRENT_TIMESTAMP "
-        "WHERE stock_name=? AND strategy=? AND is_active=1",
-        (current_price, hold_days, profit_pct, stock_name, strategy)
-    )
-    conn.commit(); conn.close()
+    try:
+        conn = _db()
+        _ensure_peak_holding_reason_columns(conn)
+    except _sl.OperationalError as e:
+        if "database is locked" in str(e).lower():
+            logger.warning("[trend/update] DB locked on open; skipped non-critical update for %s", stock_name)
+            return {"status": "skip", "reason": "db_locked"}
+        raise
+    try:
+        conn.execute(
+            "UPDATE peak_holding SET current_price=?, hold_days=?, profit_pct=?, "
+            "stock_code=COALESCE(NULLIF(stock_code,''), NULLIF(?,''), stock_code), "
+            "entry_reason_text=COALESCE(NULLIF(?,''), entry_reason_text), "
+            "entry_reason_json=COALESCE(NULLIF(?,''), entry_reason_json), "
+            "entry_reason_updated_at=CASE WHEN NULLIF(?, '') IS NOT NULL THEN CURRENT_TIMESTAMP ELSE entry_reason_updated_at END, "
+            "updated_at=CURRENT_TIMESTAMP "
+            "WHERE stock_name=? AND strategy=? AND is_active=1",
+            (
+                current_price, hold_days, profit_pct, stock_code,
+                entry_reason_text, entry_reason_json, entry_reason_text,
+                stock_name, strategy,
+            )
+        )
+        conn.commit()
+    except _sl.OperationalError as e:
+        if "database is locked" in str(e).lower():
+            logger.warning("[trend/update] DB locked; skipped non-critical update for %s", stock_name)
+            return {"status": "skip", "reason": "db_locked"}
+        raise
+    finally:
+        conn.close()
     return {"status": "ok"}
 
 

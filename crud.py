@@ -97,6 +97,13 @@ def upsert_financial_data(db: Session, financial: schemas.FinancialIngest):
 
     if db_financial:
         for key, value in safe_fields.items():
+            existing = getattr(db_financial, key, None)
+            # 새 값이 None이면 기존 값을 유지 (부분 데이터 응답 보호)
+            if value is None:
+                continue
+            # 기존 값이 유효(non-None, non-zero)한데 새 값이 0이면 덮어쓰지 않음
+            if value == 0 and existing not in (None, 0, 0.0):
+                continue
             setattr(db_financial, key, value)
     else:
         insert_data = {k: v for k, v in schema_dict.items() if k in _FINANCIAL_MODEL_COLUMNS}

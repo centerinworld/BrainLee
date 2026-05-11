@@ -175,7 +175,14 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
 
         DROP TABLE IF EXISTS tmp_company_mapping;
         CREATE TEMP TABLE tmp_company_mapping AS
-        WITH candidates AS (
+        -- hs_code 별 매핑 기업 수 계산 (시장비율 미지정 시 균등 분할용)
+        WITH hs_company_counts AS (
+            SELECT hs_code,
+                   COUNT(DISTINCT stock_code) AS company_count
+            FROM hs_code_company_map
+            GROUP BY hs_code
+        ),
+        candidates AS (
             SELECT
                 sm.sector_key,
                 sp.label AS sector_label,
@@ -190,12 +197,20 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
                   WHEN 'exact' THEN 1
                   WHEN 'composite' THEN 2
                   ELSE 3 END AS rank_num,
-                CASE WHEN COALESCE(NULLIF(hcm.flow_type, ''), '') = 'import' OR instr(hcm.sector_name, '수입') > 0 THEN 1 ELSE 0 END AS is_import_label
+                CASE WHEN COALESCE(NULLIF(hcm.flow_type, ''), '') = 'import' OR instr(hcm.sector_name, '수입') > 0 THEN 1 ELSE 0 END AS is_import_label,
+                -- 시장비율: 명시적 비율 있으면 사용, 없으면 기업수로 균등 분할
+                COALESCE(
+                    hcm.market_share_pct,
+                    1.0 / NULLIF(hcc.company_count, 0),
+                    1.0
+                ) AS share_pct
             FROM hs_code_company_map hcm
             JOIN hs_sector_map sm
               ON sm.hs_code = hcm.hs_code
             JOIN sector_preset sp
               ON sp.sector_key = sm.sector_key
+            LEFT JOIN hs_company_counts hcc
+              ON hcc.hs_code = hcm.hs_code
         )
         SELECT
             c.sector_key,
@@ -207,39 +222,74 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
             c.hs_code,
             c.hs_name,
             c.mapping_status,
-            c.rank_num
+            c.rank_num,
+            c.share_pct
         FROM candidates c
         ;
 
         DROP TABLE IF EXISTS tmp_company_match;
         CREATE TEMP TABLE tmp_company_match AS
-        WITH ranked AS (
-            SELECT
-                cmr.row_key,
-                cmr.period_ym,
-                cmr.export_value,
-                cmr.export_weight,
-                cmr.import_value,
-                cmr.import_weight,
-                tcm.sector_key,
-                tcm.sector_label,
-                tcm.stock_code,
-                tcm.stock_name,
-                tcm.sector_name,
-                tcm.flow_type,
-                tcm.hs_code,
-                tcm.hs_name,
-                tcm.mapping_status,
-                tcm.rank_num,
-                ROW_NUMBER() OVER (
-                    PARTITION BY cmr.row_key, tcm.sector_key, tcm.stock_code
-                    ORDER BY LENGTH(tcm.hs_code) DESC, tcm.rank_num ASC, tcm.hs_code
-                ) AS rn
+        -- UNION ALL 방식: OR LIKE 대신 SUBSTR 기반 인덱스 조인 (성능 최적화)
+        WITH base_matches AS (
+            -- 10자리 완전 일치
+            SELECT cmr.row_key, cmr.period_ym,
+                   cmr.export_value, cmr.export_weight, cmr.import_value, cmr.import_weight,
+                   tcm.sector_key, tcm.sector_label, tcm.stock_code, tcm.stock_name,
+                   tcm.sector_name, tcm.flow_type, tcm.hs_code, tcm.hs_name,
+                   tcm.mapping_status, tcm.rank_num, tcm.share_pct
             FROM customs_monthly_record cmr
-            JOIN tmp_company_mapping tcm
-              ON cmr.hs_code = tcm.hs_code
-              OR cmr.hs_code LIKE tcm.hs_code || '%'
-            WHERE length(cmr.period_ym) = 7
+            JOIN tmp_company_mapping tcm ON cmr.hs_code = tcm.hs_code
+            WHERE length(cmr.period_ym) = 7 AND LENGTH(tcm.hs_code) = 10
+
+            UNION ALL
+
+            -- 6자리 접두사 일치 (표현 인덱스 ix_cmr_hs6 사용)
+            SELECT cmr.row_key, cmr.period_ym,
+                   cmr.export_value, cmr.export_weight, cmr.import_value, cmr.import_weight,
+                   tcm.sector_key, tcm.sector_label, tcm.stock_code, tcm.stock_name,
+                   tcm.sector_name, tcm.flow_type, tcm.hs_code, tcm.hs_name,
+                   tcm.mapping_status, tcm.rank_num, tcm.share_pct
+            FROM customs_monthly_record cmr
+            JOIN tmp_company_mapping tcm ON SUBSTR(cmr.hs_code, 1, 6) = tcm.hs_code
+            WHERE length(cmr.period_ym) = 7 AND LENGTH(tcm.hs_code) = 6
+
+            UNION ALL
+
+            -- 4자리 접두사 일치 (표현 인덱스 ix_cmr_hs4 사용)
+            SELECT cmr.row_key, cmr.period_ym,
+                   cmr.export_value, cmr.export_weight, cmr.import_value, cmr.import_weight,
+                   tcm.sector_key, tcm.sector_label, tcm.stock_code, tcm.stock_name,
+                   tcm.sector_name, tcm.flow_type, tcm.hs_code, tcm.hs_name,
+                   tcm.mapping_status, tcm.rank_num, tcm.share_pct
+            FROM customs_monthly_record cmr
+            JOIN tmp_company_mapping tcm ON SUBSTR(cmr.hs_code, 1, 4) = tcm.hs_code
+            WHERE length(cmr.period_ym) = 7 AND LENGTH(tcm.hs_code) = 4
+        ),
+        ranked AS (
+            SELECT
+                row_key,
+                period_ym,
+                -- 시장비율 적용하여 수출/수입/중량 조정
+                export_value * share_pct AS export_value,
+                export_weight * share_pct AS export_weight,
+                import_value * share_pct AS import_value,
+                import_weight * share_pct AS import_weight,
+                sector_key,
+                sector_label,
+                stock_code,
+                stock_name,
+                sector_name,
+                flow_type,
+                hs_code,
+                hs_name,
+                mapping_status,
+                rank_num,
+                share_pct,
+                ROW_NUMBER() OVER (
+                    PARTITION BY row_key, sector_key, stock_code
+                    ORDER BY LENGTH(hs_code) DESC, rank_num ASC, hs_code
+                ) AS rn
+            FROM base_matches
         )
         SELECT *
         FROM ranked

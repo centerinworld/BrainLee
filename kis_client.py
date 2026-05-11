@@ -9,6 +9,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 중앙 rate limiter — KIS 전용 쿼터/간격 관리
+try:
+    from api_rate_limiter import api_limiter as _rl
+    _USE_RL = True
+except ImportError:
+    _USE_RL = False
+
 class KISClient:
     """
     한국투자증권(KIS) API 클라이언트
@@ -90,9 +97,14 @@ class KISClient:
         if not token:
             return []
         with self.lock:
-            elapsed = time.time() - self.last_call_time
-            if elapsed < 1.0:
-                time.sleep(1.0 - elapsed)
+            # 중앙 rate limiter 사용 (jitter + 쿼터 체크 포함)
+            if _USE_RL:
+                if not _rl.wait("KIS"):
+                    return []  # 쿼터 소진
+            else:
+                elapsed = time.time() - self.last_call_time
+                if elapsed < 1.0:
+                    time.sleep(1.0 - elapsed)
             self.last_call_time = time.time()
             url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-investor"
             headers = {
@@ -104,11 +116,21 @@ class KISClient:
             }
             params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code}
             try:
-                res = requests.get(url, headers=headers, params=params)
+                res = requests.get(url, headers=headers, params=params, timeout=15)
+                if res.status_code == 429:
+                    if _USE_RL:
+                        _rl.report_block("KIS", cooldown=60)
+                    return []
                 data = res.json()
                 if data.get("rt_cd") == "0" and data.get("output"):
                     return data["output"]
-                logger.warning(f"KIS 수급 조회 실패 [{stock_code}]: {data.get('msg1','')}")
+                msg = data.get("msg1", "")
+                if "초과" in msg or "limit" in msg.lower():
+                    logger.warning(f"KIS 요청 제한 감지 [{stock_code}]: {msg}")
+                    if _USE_RL:
+                        _rl.report_block("KIS", cooldown=60)
+                else:
+                    logger.warning(f"KIS 수급 조회 실패 [{stock_code}]: {msg}")
             except Exception as e:
                 logger.error(f"KIS 수급 조회 오류 [{stock_code}]: {e}")
             return []
@@ -135,6 +157,8 @@ class KISClient:
         output = self._call_investor_api(stock_code)
         if not output:
             return []
+        from trading_calendar import is_kr_trading_day as _is_kr_td
+        from datetime import date as _date
         result = []
         for row in output:
             stck_bsop_date = row.get("stck_bsop_date", "")
@@ -142,6 +166,12 @@ class KISClient:
                 date_str = f"{stck_bsop_date[:4]}-{stck_bsop_date[4:6]}-{stck_bsop_date[6:]}"
             else:
                 continue
+            # KIS API는 공휴일 행도 반환함 (전일 수량 복사, 금액=0) — 원천 차단
+            try:
+                if not _is_kr_td(_date.fromisoformat(date_str)):
+                    continue
+            except Exception:
+                pass
             def _f(key):
                 try:
                     v = row.get(key, "0") or "0"
@@ -166,12 +196,13 @@ class KISClient:
             return None
 
         with self.lock:
-            elapsed = time.time() - self.last_call_time
-            if elapsed < 1.0:
-                wait_time = 1.0 - elapsed
-                logger.info(f"KIS API 레이트 리밋 대기: {wait_time:.2f}초")
-                time.sleep(wait_time)
-
+            if _USE_RL:
+                if not _rl.wait("KIS"):
+                    return None
+            else:
+                elapsed = time.time() - self.last_call_time
+                if elapsed < 1.0:
+                    time.sleep(1.0 - elapsed)
             self.last_call_time = time.time()
 
             url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-price"

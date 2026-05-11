@@ -16,6 +16,25 @@ DB_PATH = os.path.join(BASE_DIR, "stock.db")
 EMP_DB_PATH = os.path.join(BASE_DIR, "employment_monitor/employment.db")
 TRADE_DB_PATH = os.path.join(BASE_DIR, "hs_trade_lab/data/hs_trade_lab.db")
 
+
+def _json_safe(value):
+    """Convert pandas/numpy scalar values before FastAPI JSON encoding."""
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    return value
+
 class StockInfo(BaseModel):
     category: str
     stock_name: str
@@ -370,7 +389,7 @@ def get_special_filtered_stocks(
                 })
 
         results.sort(key=lambda x: x['score'], reverse=True)
-        return {"stocks": results}
+        return _json_safe({"stocks": results})
 
     except Exception as e:
         logger.error(f"Error in special-filter: {e}")

@@ -2,16 +2,16 @@ import React, { useState, useEffect, useMemo } from 'react';
 
 const PERIODS = [
   { key: 'workers', label: '피보험자 수', diffKey: 'total_workers', unit: '명' },
-  { key: '1m',      label: '1개월 전 대비', diffKey: 'wlb_diff_1m', unit: '명' },
-  { key: '3m',      label: '3개월 전 대비', diffKey: 'wlb_diff_3m', unit: '명' },
-  { key: '6m',      label: '6개월 전 대비', diffKey: 'wlb_diff_6m', unit: '명' },
-  { key: '1y',      label: '1년 전 대비',   diffKey: 'wlb_diff_1y', unit: '명' },
+  { key: '1m',      label: '1개월 전 대비', diffKey: 'display_diff_1m', unit: '명' },
+  { key: '3m',      label: '3개월 전 대비', diffKey: 'display_diff_3m', unit: '명' },
+  { key: '6m',      label: '6개월 전 대비', diffKey: 'display_diff_6m', unit: '명' },
+  { key: '1y',      label: '1년 전 대비',   diffKey: 'display_diff_1y', unit: '명' },
 ];
 
 const NpsTrendView = () => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [meta, setMeta] = useState({ date: '', wlb_data_ym: '', has_nps: false, has_wlb: false });
+  const [meta, setMeta] = useState({ date: '', wlb_data_ym: '', nps_data_ym: '', has_nps: false, has_wlb: false });
   const [activePeriod, setActivePeriod] = useState('workers');
   const [search, setSearch] = useState('');
   const [showNps, setShowNps] = useState(false);
@@ -26,6 +26,7 @@ const NpsTrendView = () => {
         setMeta({
           date: d.date || '',
           wlb_data_ym: d.wlb_data_ym || '',
+          nps_data_ym: d.nps_data_ym || '',
           has_nps: d.has_nps || false,
           has_wlb: d.has_wlb || false,
         });
@@ -87,9 +88,10 @@ const NpsTrendView = () => {
         display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.7rem',
       }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>👥 기업별 고용보험 피보험자 현황</h2>
+          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>기업별 피보험자 및 월별 변동 현황</h2>
           <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginTop: '0.15rem' }}>
             근로복지공단 고용보험 · {fmtYm(meta.wlb_data_ym)} 기준 · 수집: {meta.date}
+            {meta.has_nps && meta.nps_data_ym ? ` · 국민연금 ${fmtYm(meta.nps_data_ym)}` : ''}
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -100,7 +102,7 @@ const NpsTrendView = () => {
               border: showNps ? '1px solid rgba(52,211,153,0.4)' : '1px solid rgba(255,255,255,0.15)',
               color: showNps ? '#34d399' : 'rgba(255,255,255,0.55)',
             }}>
-              {showNps ? '국민연금 숨기기' : '국민연금 변동 보기'}
+              {showNps ? '국민연금 상세 숨기기' : '국민연금 상세 보기'}
             </button>
           )}
           <input
@@ -146,7 +148,7 @@ const NpsTrendView = () => {
             background: 'rgba(245,158,11,0.1)', padding: '0.2rem 0.6rem',
             borderRadius: '4px', border: '1px solid rgba(245,158,11,0.3)', marginLeft: '0.5rem',
           }}>
-            ⚠️ 아직 이 기간의 이전 데이터가 없습니다 (매월 수집 누적 중)
+            아직 이 기간의 비교 데이터가 없습니다 (매월 수집 누적 중)
           </span>
         )}
       </div>
@@ -281,9 +283,9 @@ const NpsTrendView = () => {
         fontSize: '0.67rem', color: 'rgba(255,255,255,0.28)',
         display: 'flex', flexWrap: 'wrap', gap: '1rem',
       }}>
-        <span>📋 출처: 근로복지공단 고용·산재보험 현황정보 (B490001)</span>
-        <span>💡 기간 대비: 매월 데이터 수집 시 자동으로 채워집니다</span>
-        <span>🔄 매일 저녁 20:30 변화 감지 시 자동 갱신</span>
+        <span>현재 인원: 근로복지공단 고용·산재보험 현황정보 (B490001)</span>
+        <span>기간별 변동: WLB 과거 월이 없으면 국민연금 월별 순증감으로 표시합니다</span>
+        <span>매일 저녁 20:30 변화 감지 시 자동 갱신</span>
       </div>
     </div>
   );

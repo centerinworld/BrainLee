@@ -5,6 +5,10 @@ const EtfCheckView = () => {
   const [subTab1, setSubTab1] = useState('kospi'); // 'kospi' | 'kosdaq'
   const [subTab2, setSubTab2] = useState('1d'); // '1d' | '5d'
   const [subTab3, setSubTab3] = useState('1d'); // '1d' | '5d'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchData, setSearchData] = useState({ rows: [], date: null, compare_date: null });
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
   
   const [data, setData] = useState({
     tab1: null,
@@ -118,6 +122,36 @@ const EtfCheckView = () => {
 
   const formatNumber = (num) => num ? num.toLocaleString() : '-';
   const formatRatio = (num) => num ? num.toFixed(2) + '%' : '-';
+  const formatSignedNumber = (num) => {
+    if (num === null || num === undefined) return '-';
+    const sign = num > 0 ? '+' : '';
+    return `${sign}${num.toLocaleString()}`;
+  };
+  const formatPriceCell = (price, pct) => {
+    const priceText = formatNumber(price);
+    if (pct === null || pct === undefined) return priceText;
+    const sign = pct > 0 ? '+' : '';
+    return `${priceText} (${sign}${pct.toFixed(2)}%)`;
+  };
+
+  const handleSearch = async (event) => {
+    event?.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearchLoading(true);
+    setSearchError('');
+    try {
+      const res = await fetch(`/api/etf-check/search?q=${encodeURIComponent(q)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = await res.json();
+      setSearchData(payload);
+    } catch (err) {
+      console.error("ETF 종목 검색 실패", err);
+      setSearchError('검색 데이터를 불러오지 못했습니다.');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
 
   if (data.loading) {
     return <div style={containerStyle}>데이터를 불러오는 중입니다...</div>;
@@ -137,6 +171,7 @@ const EtfCheckView = () => {
         <div style={tabStyle(activeTab === 2)} onClick={() => setActiveTab(2)}>ETF 편입액 증가</div>
         <div style={tabStyle(activeTab === 3)} onClick={() => setActiveTab(3)}>시총대비 증가%</div>
         <div style={tabStyle(activeTab === 4)} onClick={() => setActiveTab(4)}>시총대비 비중%</div>
+        <div style={tabStyle(activeTab === 5)} onClick={() => setActiveTab(5)}>종목 검색</div>
       </div>
 
       {/* 탭 1 */}
@@ -291,6 +326,93 @@ const EtfCheckView = () => {
                     <td style={{...tdStyle, color:'#2dd4bf', fontWeight:600}}>{formatRatio(row.calc_ratio)}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 탭 5 */}
+      {activeTab === 5 && (
+        <div className="fade-in">
+          <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="종목명/코드 검색"
+              style={{
+                width: '220px',
+                padding: '0.55rem 0.7rem',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.16)',
+                background: 'rgba(15,23,42,0.9)',
+                color: '#fff',
+                outline: 'none'
+              }}
+            />
+            <button
+              type="submit"
+              disabled={searchLoading || !searchQuery.trim()}
+              style={{
+                padding: '0.55rem 1rem',
+                borderRadius: '8px',
+                border: '1px solid rgba(45,212,191,0.55)',
+                background: searchLoading ? 'rgba(45,212,191,0.12)' : 'rgba(45,212,191,0.85)',
+                color: searchLoading ? '#94a3b8' : '#071014',
+                fontWeight: 700,
+                cursor: searchLoading ? 'default' : 'pointer'
+              }}
+            >
+              조회
+            </button>
+            <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.45)' }}>
+              기준일: {searchData.date || data.tab1?.date || '-'}
+            </span>
+          </form>
+          {searchError && (
+            <div style={{ marginBottom: '0.8rem', color: '#ff6b6b', fontSize: '0.85rem' }}>{searchError}</div>
+          )}
+          <div style={{overflowX: 'auto'}}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={{...thStyle, textAlign:'left', borderRight: '1px solid rgba(59,130,246,0.3)'}}>종목명</th>
+                  <th style={thStyle}>주가(%)</th>
+                  <th style={thStyle}>시가총액</th>
+                  <th style={thStyle}>편입액</th>
+                  <th style={thStyle}>5일 전대비 차이</th>
+                </tr>
+              </thead>
+              <tbody>
+                {searchLoading ? (
+                  <tr>
+                    <td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
+                      검색 중입니다...
+                    </td>
+                  </tr>
+                ) : (searchData.rows || []).length > 0 ? (
+                  (searchData.rows || []).map((row) => (
+                    <tr key={row.stock_code}>
+                      <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight: '1px solid rgba(59,130,246,0.2)'}}>
+                        <div>{row.stock_name} <span style={{ color:'rgba(255,255,255,0.35)', fontWeight:500 }}>{row.stock_code}</span></div>
+                      </td>
+                      <td style={{...tdStyle, color: row.price_change_pct > 0 ? '#ff4d4f' : row.price_change_pct < 0 ? '#60a5fa' : 'rgba(255,255,255,0.85)'}}>
+                        {formatPriceCell(row.current_price, row.price_change_pct)}
+                      </td>
+                      <td style={tdStyle}>{formatNumber(row.market_cap)}</td>
+                      <td style={{...tdStyle, color:'#2dd4bf', fontWeight:600}}>{formatNumber(row.etf_amount)}</td>
+                      <td style={{...tdStyle, color: row.amount_diff > 0 ? '#ff4d4f' : row.amount_diff < 0 ? '#60a5fa' : 'rgba(255,255,255,0.85)', fontWeight:600}}>
+                        {formatSignedNumber(row.amount_diff)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
+                      검색 결과가 없습니다.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

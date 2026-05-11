@@ -23,6 +23,7 @@ from typing import Literal, List, Optional
 
 from fastapi import APIRouter, Query, Depends
 from database import get_db
+from db_utils import STOCK_DB_PATH, connect_stock_db
 
 # 단순 메모리 캐시 (key: (date_str, limit), value: (timestamp, data))
 _indicator_cache_v5 = {}
@@ -31,7 +32,7 @@ CACHE_TTL = 3600  # 1시간
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = "stock.db"
+DB_PATH = str(STOCK_DB_PATH)
 
 # 한국 증권시장 공휴일 (비영업일) — KRX 기준, 매년 갱신 필요
 _KR_HOLIDAYS = {
@@ -72,7 +73,7 @@ def _is_kr_trading_day(d: str) -> bool:
 
 
 def _db():
-    conn = _sl.connect(DB_PATH)
+    conn = connect_stock_db(timeout=30)
     conn.row_factory = _sl.Row
     return conn
 
@@ -147,7 +148,9 @@ def get_investor_top(
                   FROM stock_universe
               ) su ON ph.stock_code = su.stock_code AND su.rn = 1
               WHERE substr(ph.date, 1, 10) = ?
-                AND (su.stock_type = '보통주' OR su.stock_type IS NULL)
+                AND COALESCE(su.stock_type, '보통주') = '보통주'
+                AND COALESCE(su.stock_name, '') NOT LIKE '%ETF%'
+                AND COALESCE(su.stock_name, '') NOT LIKE '%ETN%'
                 AND (
                     COALESCE(su.stock_name, '') NOT LIKE '%KODEX%' AND
                     COALESCE(su.stock_name, '') NOT LIKE '%TIGER%' AND
@@ -313,17 +316,22 @@ def get_turnover_top(
               ROUND(ph.inst_net_buy_amt / 100.0) AS inst_net_buy_amt,  -- 백만원→억원
               ROUND(ph.frn_net_buy_amt  / 100.0) AS frn_net_buy_amt,
               COALESCE(su.sector_large, '') AS sector,
-              ph.date
+              ph.date,
+              CASE WHEN ph.trade_amount > 0 THEN ROUND(ph.trade_amount / 1e8, 1)
+                   ELSE ROUND(ph.volume * ph.close / 1e8, 1) END AS trade_amount_억,
+              COALESCE(su.sector_type, '') AS sector_type
             FROM price_history ph
             LEFT JOIN (
-                SELECT stock_code, stock_name, market, shares_issued, sector_large, stock_type,
+                SELECT stock_code, stock_name, market, shares_issued, sector_large, stock_type, sector_type,
                        ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY updated_at DESC) as rn
                 FROM stock_universe
             ) su ON ph.stock_code = su.stock_code AND su.rn = 1
             WHERE substr(ph.date, 1, 10) = ?
               AND ph.volume > 0
               AND su.shares_issued > 0
-              AND (su.stock_type = '보통주' OR su.stock_type IS NULL)
+              AND COALESCE(su.stock_type, '보통주') = '보통주'
+              AND COALESCE(su.stock_name, '') NOT LIKE '%ETF%'
+              AND COALESCE(su.stock_name, '') NOT LIKE '%ETN%'
               AND (
                   COALESCE(su.stock_name, '') NOT LIKE '%KODEX%' AND
                   COALESCE(su.stock_name, '') NOT LIKE '%TIGER%' AND

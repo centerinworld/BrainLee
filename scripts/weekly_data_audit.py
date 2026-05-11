@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 
 
 DB_PATH = "/Applications/stock_dashboard/stock.db"
+EMP_DB_PATH = "/Applications/stock_dashboard/employment_monitor/employment.db"
 PROJECT_ROOT = "/Applications/stock_dashboard"
 
 
@@ -48,6 +49,15 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _connect_emp() -> sqlite3.Connection:
+    conn = sqlite3.connect(EMP_DB_PATH, timeout=60)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=60000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
 @dataclass
 class NpsReport:
     api_latest_ym: str
@@ -59,32 +69,210 @@ class NpsReport:
 
 
 def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
-    from employment_monitor import collect_nps_workplace as nps
-
     failures: list[str] = []
     collected: dict[str, dict] = {}
 
-    conn = _connect()
+    # NPS 사업장 월별은 employment_monitor/employment.db 의 nps_monthly(data_ym) 에 저장
+    conn_emp = _connect_emp()
     try:
-        try:
-            api_latest = nps._detect_latest_ym_by_sample()
-        except Exception as e:
-            api_latest = ""
-            failures.append(f"NPS API 최신월 조회 실패: {e}")
-        existing_latest = nps._get_existing_latest_ym(conn)
-        existing_yms = set(nps.get_existing_yms(conn))
+        existing_latest = (
+            conn_emp.execute("SELECT MAX(data_ym) AS ym FROM nps_monthly").fetchone()["ym"] or ""
+        )
+        existing_yms = {
+            str(r["ym"])
+            for r in conn_emp.execute("SELECT DISTINCT data_ym AS ym FROM nps_monthly").fetchall()
+            if str(r["ym"] or "").isdigit() and len(str(r["ym"])) == 6
+        }
     finally:
-        conn.close()
+        conn_emp.close()
+
+    def _load_public_api_key() -> str:
+        # Prefer env var; fallback to reading /Applications/stock_dashboard/.env
+        import os
+
+        key = os.getenv("PUBLIC_DATA_API_KEY", "").strip()
+        if key:
+            return key
+        try:
+            with open("/Applications/stock_dashboard/.env", "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    if k.strip() == "PUBLIC_DATA_API_KEY":
+                        return v.strip().strip("'").strip('"')
+        except Exception:
+            pass
+        return ""
+
+    def _month_add(ym: str, delta_months: int) -> str:
+        base = datetime.strptime(ym, "%Y%m")
+        y = base.year
+        m = base.month + delta_months
+        y += (m - 1) // 12
+        m = (m - 1) % 12 + 1
+        return f"{y:04d}{m:02d}"
+
+    def _iter_months_backwards(ym: str, n: int) -> list[str]:
+        out: list[str] = []
+        cur = ym
+        for _ in range(max(0, n)):
+            out.append(cur)
+            cur = _month_add(cur, -1)
+        return out
+
+    def _api_month_exists(ym: str, api_key: str, test_biz_no_6: str = "124810") -> bool:
+        # 삼성전자(124810) 사업자번호 앞 6자리 샘플로 최신 월 여부 확인
+        from urllib.parse import unquote
+
+        import requests
+
+        url = "http://apis.data.go.kr/B552015/NpsBsnmWorkplaceListInfoService/getNpsBsnmBssInfoList"
+        params = {
+            "serviceKey": unquote(api_key),
+            "bzowr_rgst_no": test_biz_no_6,
+            "data_crt_ym": ym,
+            "pageNo": 1,
+            "numOfRows": 1,
+            "_type": "json",
+        }
+        r = requests.get(url, params=params, timeout=12)
+        if r.status_code != 200:
+            return False
+        data = r.json()
+        items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        if isinstance(items, dict):
+            items = [items]
+        return bool(items)
+
+    def _detect_api_latest_ym(existing_latest_ym: str) -> str:
+        api_key = _load_public_api_key()
+        if not api_key:
+            failures.append("NPS API 키(PUBLIC_DATA_API_KEY) 로드 실패")
+            return ""
+        # existing_latest 기준으로 최대 6개월 앞으로 탐색 (동일월 재갱신 가능성을 고려해 existing_latest도 포함)
+        start = existing_latest_ym or datetime.today().strftime("%Y%m")
+        candidates = [start] + [_month_add(start, i) for i in range(1, 7)]
+        latest = ""
+        for ym in candidates:
+            try:
+                if _api_month_exists(ym, api_key=api_key):
+                    latest = ym
+                else:
+                    # 연속성 가정: 최초로 끊기면 중단
+                    if latest:
+                        break
+            except Exception as e:
+                failures.append(f"NPS API 최신월 조회 실패({ym}): {e}")
+                break
+        return latest
+
+    api_latest = _detect_api_latest_ym(existing_latest)
 
     missing: list[str] = []
     if api_latest:
-        target_window = set(nps._iter_months_backwards(api_latest, nps_months))
+        target_window = set(_iter_months_backwards(api_latest, nps_months))
         missing = sorted(target_window - existing_yms)
+
+    def _collect_month_into_db(ym: str, limit_codes: int) -> dict:
+        api_key = _load_public_api_key()
+        if not api_key:
+            raise RuntimeError("PUBLIC_DATA_API_KEY not found")
+
+        # universe 목록은 stock.db(stock_universe), bizno는 employment.db(stock_bizno_map) 사용
+        conn_stock = _connect()
+        conn_emp2 = _connect_emp()
+        try:
+            rows = conn_emp2.execute(
+                """
+                SELECT m.stock_code, m.biz_no_6 AS biz_no_6
+                FROM stock_bizno_map m
+                WHERE LENGTH(m.stock_code)=6 AND m.stock_code GLOB '[0-9]*'
+                ORDER BY m.stock_code
+                """
+            ).fetchall()
+            # stock_name은 stock.db에서 조회 (표준 표기)
+            name_map = {
+                r["stock_code"]: r["stock_name"]
+                for r in conn_stock.execute(
+                    """
+                    SELECT stock_code, stock_name
+                    FROM stock_universe
+                    WHERE market IN ('유가증권', 'KOSPI', '코스닥', 'KOSDAQ')
+                      AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                      AND (stock_type IS NULL OR stock_type='보통주')
+                    """
+                ).fetchall()
+            }
+            if limit_codes and limit_codes > 0:
+                rows = rows[:limit_codes]
+
+            from urllib.parse import unquote
+
+            import json
+            import time
+
+            import requests
+
+            url = "http://apis.data.go.kr/B552015/NpsBsnmWorkplaceListInfoService/getNpsBsnmBssInfoList"
+            inserted = 0
+            attempted = 0
+            for r in rows:
+                biz_no_6 = (r["biz_no_6"] or "").strip()[:6]
+                if not biz_no_6:
+                    continue
+                attempted += 1
+                params = {
+                    "serviceKey": unquote(api_key),
+                    "bzowr_rgst_no": biz_no_6,
+                    "data_crt_ym": ym,
+                    "pageNo": 1,
+                    "numOfRows": 10,
+                    "_type": "json",
+                }
+                resp = requests.get(url, params=params, timeout=12)
+                if resp.status_code != 200:
+                    time.sleep(0.05)
+                    continue
+                data = resp.json()
+                items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+                if isinstance(items, dict):
+                    items = [items]
+                if not items:
+                    time.sleep(0.05)
+                    continue
+                item = items[0]
+                # nps_monthly: 종목별 월 스냅샷(사업장수/입사/퇴사/증감)
+                stock_code = r["stock_code"]
+                conn_emp2.execute(
+                    """
+                    INSERT OR REPLACE INTO nps_monthly
+                    (stock_code, data_ym, new_hires, terminations, net_change, wkpl_count, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        stock_code,
+                        ym,
+                        int(item.get("nwAcqzrCnt", 0) or 0),
+                        int(item.get("lssJnngpCnt", 0) or 0),
+                        int(item.get("jngpCnt", 0) or 0),
+                        int(item.get("wkplCnt", 0) or 0),
+                    ),
+                )
+                inserted += 1
+                if inserted % 200 == 0:
+                    conn_emp2.commit()
+                time.sleep(0.05)
+            conn_emp2.commit()
+            return {"ym": ym, "attempted": attempted, "inserted": inserted}
+        finally:
+            conn_stock.close()
+            conn_emp2.close()
 
     for ym in missing:
         try:
-            result = nps.collect_month(ym=ym, limit=limit, nps_delay=0.15, dart_delay=0.12)
-            collected[ym] = result
+            collected[ym] = _collect_month_into_db(ym, limit_codes=limit)
         except Exception as e:
             failures.append(f"{ym}: {e}")
 

@@ -3751,6 +3751,38 @@ const App = () => {
       return () => clearInterval(iv);
     }, [selectedStock, fetchDisclosures]);
 
+    // ── 추가 시그널 (고용/수출/섹터/수급/ETF) ───────────────────────
+    const [extraSignals, setExtraSignals] = React.useState(null);
+    React.useEffect(() => {
+      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) { setExtraSignals(null); return; }
+      fetch(API(`/api/extra-signals/extra-signals/${selectedStock}`))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setExtraSignals(d))
+        .catch(() => {});
+    }, [selectedStock]);
+
+    // ── KRX 공지사항 + 대주주/임원 지분변동 ────────────────────────
+    const [notices, setNotices] = React.useState([]);
+    const [majorHolders, setMajorHolders] = React.useState({ current_holders: [], history: [] });
+    const [insiderHist, setInsiderHist] = React.useState([]);
+    React.useEffect(() => {
+      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) {
+        setNotices([]); setMajorHolders({ current_holders: [], history: [] }); setInsiderHist([]); return;
+      }
+      fetch(API(`/api/notices/stock/${selectedStock}`))
+        .then(r => r.ok ? r.json() : [])
+        .then(d => setNotices(Array.isArray(d) ? d : []))
+        .catch(() => {});
+      fetch(API(`/api/insider/major/${selectedStock}?limit=50`))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setMajorHolders(d || { current_holders: [], history: [] }))
+        .catch(() => {});
+      fetch(API(`/api/insider/holdings/${selectedStock}?limit=20`))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setInsiderHist((d && d.items) || []))
+        .catch(() => {});
+    }, [selectedStock]);
+
     const numColor = (v) => (v != null && Number(v) < 0) ? 'var(--accent-red)' : 'inherit';
 
     const tableRows = [
@@ -4011,8 +4043,8 @@ const App = () => {
           {[
             { label:'매출액',   val: formatWon(summStats?.revenue) },
             { label:'영업이익', val: formatWon(summStats?.operating_profit) },
+            { label:'순이익',   val: formatWon(summStats?.net_income) },
             { label:'OPM',     val: summStats?.opm != null ? Number(summStats.opm).toFixed(1)+'%' : '-' },
-            { label:'ROE',     val: summStats?.roe != null ? Number(summStats.roe).toFixed(1)+'%' : '-' },
             { label:'52주 최고가', val: summStats?.high52 != null ? summStats.high52.toLocaleString('ko-KR')+'원' : '-',
               sub: summStats?.high52 && latestClose ? `현재 ${((latestClose/summStats.high52-1)*100).toFixed(1)}%` : '',
               color: summStats?.high52 && latestClose && latestClose >= summStats.high52 * 0.95 ? '#22c55e' : '#ef4444' },
@@ -4028,15 +4060,23 @@ const App = () => {
           ))}
         </div>
 
-        {/* 밸류에이션: PBR / PER / EPS */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'0.75rem' }}>
+        {/* 밸류에이션: PBR / PER / EPS / BPS / ROE / ROA (6칸) */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:'0.75rem' }}>
           {[
             { label:'PBR', val: summStats?.pbr != null ? Number(summStats.pbr).toFixed(2)+'x' : '-',
               sub: summStats?.pbr != null ? (summStats.source||'네이버금융') : (collecting ? '📡 조회 중...' : '자정 업데이트 후 표시'), dim: summStats?.pbr==null, color:'var(--accent-purple)' },
             { label:'PER (TTM)', val: summStats?.per != null ? Number(summStats.per).toFixed(1)+'x' : '-',
-              sub: collecting ? '📡 조회 중...' : (summStats?.per==null ? '자정 업데이트 후 표시' : (summStats.source||'네이버금융')), dim: summStats?.per==null, color:'var(--accent-purple)' },
+              sub: collecting ? '📡 조회 중...' : (summStats?.per==null ? '업데이트 후 표시' : (summStats.source||'네이버금융')), dim: summStats?.per==null, color:'var(--accent-purple)' },
             { label:'EPS (원)', val: summStats?.trailing_eps != null ? fmtNum(summStats.trailing_eps)+'원' : (summStats?.eps != null ? fmtNum(summStats.eps)+'원' : '-'),
               sub: 'TTM 기준', dim: summStats?.trailing_eps==null && summStats?.eps==null, color:'#34d399' },
+            { label:'BPS (원)', val: summStats?.bps != null ? fmtNum(summStats.bps)+'원' : '-',
+              sub: '최신 연간', dim: summStats?.bps==null, color:'#60a5fa' },
+            { label:'ROE', val: summStats?.roe != null ? Number(summStats.roe).toFixed(1)+'%' : '-',
+              sub: '자기자본이익률', dim: summStats?.roe==null,
+              color: summStats?.roe != null ? (summStats.roe >= 15 ? '#22c55e' : summStats.roe >= 8 ? '#fbbf24' : summStats.roe < 0 ? '#ef4444' : 'inherit') : 'inherit' },
+            { label:'ROA', val: summStats?.roa != null ? Number(summStats.roa).toFixed(1)+'%' : '-',
+              sub: '총자산이익률', dim: summStats?.roa==null,
+              color: summStats?.roa != null ? (summStats.roa >= 5 ? '#22c55e' : summStats.roa < 0 ? '#ef4444' : 'inherit') : 'inherit' },
           ].map(({label,val,sub,dim,color}) => (
             <div key={label} className="glass-panel" style={{ padding:'0.9rem 1rem' }}>
               <p style={{ fontSize:'0.75rem', color:'var(--text-secondary)', marginBottom:'0.3rem' }}>{label}</p>
@@ -4050,6 +4090,107 @@ const App = () => {
         <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
           {/* 종목 시그널 보드 */}
           <SignalBoard scope="stock" stockCode={selectedStock} key={selectedStock} />
+
+          {/* 추가 시그널 */}
+          {/^\d{6}$/.test(selectedStock) && extraSignals && (() => {
+            const sigColor = s => s==='green'?'#22c55e':s==='red'?'#ef4444':s==='yellow'?'#fbbf24':'#6b7280';
+            const sigDot   = s => <span style={{width:'8px',height:'8px',borderRadius:'50%',background:sigColor(s),display:'inline-block',flexShrink:0}}/>;
+            const em = extraSignals.employment || {};
+            const ex = extraSignals.exports || {};
+            const st = extraSignals.sector_trend || {};
+            const su = extraSignals.supply || {};
+            const er = extraSignals.etf_ratio || {};
+            const ei = extraSignals.etf_inclusion || {};
+            const fmt억 = v => v == null ? '-' : (v > 0 ? `+${v}억` : `${v}억`);
+            const fmtNet = v => v == null ? '-' : (v > 0 ? `+${v}명` : `${v}명`);
+            const cards = [
+              {
+                emoji:'👔', title:'고용 트렌드', signal: em.signal,
+                label: em.label || '데이터 없음',
+                body: em.net_1m != null ? [
+                  ['1개월 기준', fmtNet(em.net_1m)],
+                  ['3개월 기준', fmtNet(em.net_3m)],
+                  ['6개월 기준', fmtNet(em.net_6m)],
+                ] : null,
+              },
+              {
+                emoji:'📦', title:'수출/계약', signal: ex.signal,
+                label: ex.label || '데이터 없음',
+                body: ex.mom_pct != null ? [
+                  [`MoM (${ex.latest_ym||''})`, ex.mom_pct!=null ? (ex.mom_pct>0?'+':'')+ex.mom_pct.toFixed(1)+'%' : '-'],
+                  ex.contracts?.length ? ['≥ 공동', ex.contracts.slice(0,3).join(', ')] : null,
+                  ['공시', ex.dart_count ? `${ex.dart_count}건` : '공시 없음'],
+                ].filter(Boolean) : null,
+              },
+              {
+                emoji:'🏭', title:'섹터 트렌드', signal: st.signal,
+                label: st.sector_name || st.label || '데이터 없음',
+                body: st.sector_avg_1d != null ? [
+                  ['섹터 1일', (st.sector_avg_1d>0?'+':'')+st.sector_avg_1d?.toFixed(1)+'%'],
+                ] : null,
+              },
+              {
+                emoji:'🌊', title:'외국인/기관 수급', signal: su.signal_frn_5d || 'gray',
+                label: su.label || '수급 데이터',
+                body: su.frn_amt_5d != null ? [
+                  ['외국인 5일', fmt억(su.frn_amt_5d)],
+                  ['외국인 10일', fmt억(su.frn_amt_10d)],
+                  ['외국인 30일', fmt억(su.frn_amt_30d)],
+                  ['기관 5일', fmt억(su.inst_amt_5d)],
+                  ['기관 10일', fmt억(su.inst_amt_10d)],
+                  ['기관 30일', fmt억(su.inst_amt_30d)],
+                ] : null,
+              },
+              {
+                emoji:'📊', title:'ETF 편입', signal: ei.signal,
+                label: ei.label || '데이터 없음',
+                body: ei.etf_count > 0 ? [
+                  ['ETF 수', `${ei.etf_count}개`],
+                  ['ETF 비중', `${ei.ratio?.toFixed(2)||0}%`],
+                ] : [['데이터 없음', '']],
+              },
+              {
+                emoji:'📈', title:'ETF 비중 추이', signal: er.signal,
+                label: er.label || '데이터 없음',
+                body: er.diff_1d != null ? [
+                  ['전일대비', (er.diff_1d>=0?'+':'')+er.diff_1d.toFixed(3)+'%p '+(er.diff_1d>=0?'증가':'감소')],
+                  ['5일전대비', (er.diff_5d>=0?'+':'')+er.diff_5d.toFixed(3)+'%p '+(er.diff_5d>=0?'증가':'감소')],
+                ] : null,
+              },
+            ];
+            return (
+              <section className="glass-panel">
+                <div style={{ padding:'0.5rem 1rem', borderBottom:'1px solid var(--glass-border)',
+                  fontSize:'0.78rem', fontWeight:600, color:'var(--text-secondary)' }}>
+                  ✂ 추가 시그널
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:'0', borderTop:'none' }}>
+                  {cards.map((c, ci) => (
+                    <div key={ci} style={{
+                      padding:'0.6rem 0.75rem',
+                      borderRight: ci < 5 ? '1px solid var(--glass-border)' : 'none',
+                    }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', marginBottom:'0.3rem' }}>
+                        {sigDot(c.signal)}
+                        <span style={{ fontSize:'0.7rem', fontWeight:700, color: sigColor(c.signal) }}>{c.title}</span>
+                      </div>
+                      <p style={{ fontSize:'0.72rem', color:'var(--text-primary)', marginBottom:'0.35rem', lineHeight:1.3 }}>{c.label}</p>
+                      {c.body && (
+                        <div style={{ display:'flex', flexDirection:'column', gap:'0.1rem' }}>
+                          {c.body.map(([k,v], bi) => (
+                            <div key={bi} style={{ display:'flex', justifyContent:'space-between', fontSize:'0.65rem' }}>
+                              <span style={{ color:'var(--text-secondary)' }}>{k}</span>
+                              <span style={{ color: v?.startsWith('+') ? '#22c55e' : v?.startsWith('-') ? '#ef4444' : 'var(--text-primary)', fontWeight:500 }}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })()}
 
           {/* 기간 버튼 */}
           <div style={{ display:'flex', gap:'0.4rem', justifyContent:'flex-end' }}>
@@ -4297,6 +4438,81 @@ const App = () => {
                 </div>
               );
             })()}
+          </section>
+        )}
+
+        {/* ── KRX 공지사항 (종목기본정보 변동) ─────────────────────── */}
+        {/^\d{6}$/.test(selectedStock) && notices.length > 0 && (
+          <section className="glass-panel">
+            <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)',
+              display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <span style={{ fontSize:'0.8rem', fontWeight:600, color:'#60a5fa' }}>
+                🔔 종목 공지사항 (KRX 변동 — 최근 {notices.length}건)
+              </span>
+              <span style={{ fontSize:'0.66rem', color:'var(--text-secondary)' }}>
+                상장주식수·소속부·종목명 변경 자동 추적
+              </span>
+            </div>
+            <div style={{ maxHeight:'200px', overflowY:'auto' }}>
+              {notices.map((n, i) => (
+                <div key={i} style={{ padding:'0.45rem 1rem',
+                  borderBottom: i < notices.length-1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                  display:'flex', gap:'0.75rem', alignItems:'flex-start' }}>
+                  <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)', whiteSpace:'nowrap', flexShrink:0 }}>
+                    {n.change_date || n.date || ''}
+                  </span>
+                  <span style={{ fontSize:'0.78rem' }}>{n.change_type || n.type || ''}</span>
+                  <span style={{ fontSize:'0.78rem', color:'var(--text-secondary)', flex:1 }}>
+                    {n.old_value && n.new_value ? `${n.old_value} → ${n.new_value}` : (n.description || '')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── 대주주 / 임원 지분변동 ────────────────────────────────── */}
+        {/^\d{6}$/.test(selectedStock) && (majorHolders.current_holders.length > 0 || insiderHist.length > 0) && (
+          <section className="glass-panel">
+            <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)' }}>
+              <span style={{ fontSize:'0.8rem', fontWeight:600, color:'#a78bfa' }}>
+                👤 대주주 · 임원 지분변동
+              </span>
+            </div>
+            {majorHolders.current_holders.length > 0 && (
+              <div style={{ padding:'0.5rem 1rem 0.25rem' }}>
+                <p style={{ fontSize:'0.7rem', color:'var(--text-secondary)', marginBottom:'0.35rem' }}>현재 주요주주</p>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem' }}>
+                  {majorHolders.current_holders.slice(0, 8).map((h, i) => (
+                    <span key={i} style={{ fontSize:'0.73rem', padding:'0.15rem 0.5rem',
+                      background:'rgba(167,139,250,0.12)', borderRadius:'4px',
+                      border:'1px solid rgba(167,139,250,0.25)' }}>
+                      {h.holder_name} {h.hold_ratio != null ? `${Number(h.hold_ratio).toFixed(1)}%` : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {insiderHist.length > 0 && (
+              <div style={{ maxHeight:'160px', overflowY:'auto', padding:'0.25rem 0' }}>
+                {insiderHist.map((r, i) => (
+                  <div key={i} style={{ padding:'0.35rem 1rem',
+                    borderTop: i === 0 && majorHolders.current_holders.length > 0
+                      ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                    display:'flex', gap:'0.6rem', fontSize:'0.75rem', alignItems:'center' }}>
+                    <span style={{ color:'var(--text-secondary)', whiteSpace:'nowrap', width:'80px', flexShrink:0 }}>
+                      {r.report_date || r.date || ''}
+                    </span>
+                    <span style={{ fontWeight:600, whiteSpace:'nowrap' }}>{r.holder_name || r.name}</span>
+                    <span style={{ color:'var(--text-secondary)' }}>{r.relation || ''}</span>
+                    <span style={{ marginLeft:'auto', color: (r.change_qty||0) > 0 ? '#ef4444' : '#3b82f6',
+                      whiteSpace:'nowrap' }}>
+                      {(r.change_qty||0) > 0 ? '▲' : '▼'} {Math.abs(r.change_qty||0).toLocaleString()}주
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
@@ -11150,17 +11366,272 @@ const App = () => {
     );
   };
 
+  // ── 수출경쟁력 ──────────────────────────────────────────────
+  const ExportHealthView = () => {
+    const [data, setData]           = React.useState(null);
+    const [loading, setLoading]     = React.useState(true);
+    const [viewTab, setViewTab]     = React.useState('sector');
+    const [selHs, setSelHs]         = React.useState(null);
+    const [hsCompData, setHsCompData] = React.useState(null);
+    const [hsCompLoading, setHsCompLoading] = React.useState(false);
+
+    React.useEffect(() => {
+      fetch('/hs/api/analysis2/export-health')
+        .then(r => r.json())
+        .then(d => { setData(d); setLoading(false); })
+        .catch(() => setLoading(false));
+    }, []);
+
+    const loadHsCompanies = async (hsCode) => {
+      setSelHs(hsCode);
+      setHsCompLoading(true);
+      try {
+        const r = await fetch(`/hs/api/analysis2/hs/${hsCode}/companies`);
+        setHsCompData(await r.json());
+      } finally {
+        setHsCompLoading(false);
+      }
+    };
+
+    const healthIcon  = (s) => s === 'good' ? '🟢' : s === 'bad' ? '🔴' : '🟡';
+    const healthColor = (s) => s === 'good' ? '#34d399' : s === 'bad' ? '#f87171' : '#fbbf24';
+    const fmtPct = (v) => { if (v == null) return '-'; return `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`; };
+
+    if (loading) return <div style={{ padding: '2rem', color: 'var(--text-secondary)', textAlign: 'center' }}>데이터 로딩 중...</div>;
+    if (!data)   return <div style={{ padding: '2rem', color: '#f87171' }}>수출경쟁력 데이터를 불러오지 못했습니다.</div>;
+
+    const sectors   = data.sectors   || [];
+    const companies = data.companies || [];
+    const sharedHs  = data.shared_hs || [];
+    const sortedComp = [...companies].sort((a, b) => (b.export_yoy ?? -999) - (a.export_yoy ?? -999));
+    const gainers = sortedComp.filter(c => c.export_yoy != null).slice(0, 10);
+    const losers  = [...sortedComp].reverse().filter(c => c.export_yoy != null).slice(0, 10);
+
+    return (
+      <div style={{ padding: '1.5rem', maxWidth: 1200, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+          <span style={{ fontSize: '1.5rem' }}>🌐</span>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.3rem', color: 'var(--text-primary)' }}>수출경쟁력 분석</h2>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              관세청 통관 데이터 기반 · 한국 수출입 트렌드 · {data.updated_at || ''}
+            </p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
+          {[['sector','🏭 섹터 건강도'],['company','🏢 기업 순위'],['shared','🔗 공유 HS 코드']].map(([k, lbl]) => (
+            <button key={k} onClick={() => setViewTab(k)} style={{
+              padding: '0.4rem 1rem', borderRadius: 6, border: 'none', cursor: 'pointer',
+              background: viewTab === k ? 'var(--accent-mint)' : 'rgba(255,255,255,0.06)',
+              color: viewTab === k ? '#0f172a' : 'var(--text-secondary)', fontWeight: viewTab === k ? 700 : 400,
+              fontSize: '0.85rem'
+            }}>{lbl}</button>
+          ))}
+        </div>
+
+        {viewTab === 'sector' && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1rem' }}>
+              {sectors.map(s => {
+                const momColor = v => v == null ? '#888' : v >= 5 ? '#34d399' : v >= -5 ? '#fbbf24' : '#f87171';
+                return (
+                  <div key={s.sector_key} className="glass-panel" style={{ padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{s.sector_label}</span>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <span title={`수출 ${s.export_health}`}>{healthIcon(s.export_health)}</span>
+                        <span title={`수입 ${s.import_health}`} style={{ opacity: 0.7, fontSize: '0.8rem' }}>수입{healthIcon(s.import_health)}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.8rem' }}>
+                      {[['수출 전월비', s.export_mom],['수출 전년비', s.export_yoy],['수입 전월비', s.import_mom],['수입 전년비', s.import_yoy]].map(([lbl,v]) => (
+                        <div key={lbl} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: '0.4rem 0.6rem' }}>
+                          <div style={{ color: 'var(--text-secondary)' }}>{lbl}</div>
+                          <div style={{ color: momColor(v), fontWeight: 600 }}>{fmtPct(v)}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {s.monthly_export && s.monthly_export.length > 1 && (() => {
+                      const bars = s.monthly_export.slice(-6);
+                      const mx = Math.max(...bars.map(b => b.value || 0), 1);
+                      const W = 280, H = 36, bw = Math.floor(W / bars.length) - 2;
+                      return (
+                        <svg width={W} height={H} style={{ marginTop: '0.6rem', display: 'block' }}>
+                          {bars.map((b, i) => {
+                            const h = Math.max(2, ((b.value || 0) / mx) * (H - 12));
+                            const isProv = b.is_provisional;
+                            return (
+                              <g key={i}>
+                                <rect x={i*(bw+2)} y={H-12-h} width={bw} height={h}
+                                  fill={isProv ? 'rgba(249,115,22,0.32)' : 'rgba(52,211,153,0.55)'}
+                                  stroke={isProv ? '#f97316' : 'none'} strokeDasharray={isProv ? '3,2' : '0'} rx={2} />
+                                <text x={i*(bw+2)+bw/2} y={H} textAnchor="middle" fontSize={7} fill="#888">
+                                  {(b.period_ym || '').slice(5)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      );
+                    })()}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {viewTab === 'company' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            {[['📈 수출 증가 상위 10', gainers, '#34d399'],['📉 수출 감소 상위 10', losers, '#f87171']].map(([title, list, col]) => (
+              <div key={title} className="glass-panel" style={{ padding: '1rem' }}>
+                <h4 style={{ margin: '0 0 0.75rem', color: col, fontSize: '0.95rem' }}>{title}</h4>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                      {['기업','전년비','섹터'].map(h => (
+                        <th key={h} style={{ padding: '0.3rem 0.4rem', color: 'var(--text-secondary)', textAlign: h === '기업' ? 'left' : 'right', fontWeight: 500 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.map(c => (
+                      <tr key={c.stock_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <td style={{ padding: '0.35rem 0.4rem' }}>
+                          <button onClick={() => { changeStock(c.stock_code); changeTab('analysis'); }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#93c5fd', fontSize: '0.82rem', padding: 0 }}>
+                            {c.stock_name}
+                          </button>
+                        </td>
+                        <td style={{ padding: '0.35rem 0.4rem', textAlign: 'right', color: col, fontWeight: 600 }}>{fmtPct(c.export_yoy)}</td>
+                        <td style={{ padding: '0.35rem 0.4rem', textAlign: 'right', color: 'var(--text-secondary)' }}>{c.sector_label || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            <div className="glass-panel" style={{ padding: '1rem', gridColumn: '1 / -1' }}>
+              <h4 style={{ margin: '0 0 0.75rem', color: 'var(--text-primary)', fontSize: '0.95rem' }}>📊 전체 기업 수출입 현황</h4>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                      {['기업명','섹터','수출 전월비','수출 전년비','수입 전월비','수입 전년비','수출','수입'].map(h => (
+                        <th key={h} style={{ padding: '0.35rem 0.5rem', color: 'var(--text-secondary)', fontWeight: 500, textAlign: h.startsWith('기') || h === '섹터' ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {companies.map(c => {
+                      const mc = v => v == null ? '#888' : v >= 5 ? '#34d399' : v >= -5 ? '#fbbf24' : '#f87171';
+                      return (
+                        <tr key={c.stock_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <td style={{ padding: '0.3rem 0.5rem' }}>
+                            <button onClick={() => { changeStock(c.stock_code); changeTab('analysis'); }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#93c5fd', fontSize: '0.8rem', padding: 0 }}>
+                              {c.stock_name}
+                            </button>
+                          </td>
+                          <td style={{ padding: '0.3rem 0.5rem', color: 'var(--text-secondary)' }}>{c.sector_label || '-'}</td>
+                          <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right', color: mc(c.export_mom) }}>{fmtPct(c.export_mom)}</td>
+                          <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right', color: mc(c.export_yoy) }}>{fmtPct(c.export_yoy)}</td>
+                          <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right', color: mc(c.import_mom) }}>{fmtPct(c.import_mom)}</td>
+                          <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right', color: mc(c.import_yoy) }}>{fmtPct(c.import_yoy)}</td>
+                          <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right' }}>{healthIcon(c.export_health)}</td>
+                          <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right' }}>{healthIcon(c.import_health)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {viewTab === 'shared' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1rem' }}>
+            <div className="glass-panel" style={{ padding: '1rem', height: 'fit-content' }}>
+              <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>다수 기업 공유 HS 코드</h4>
+              {sharedHs.map(h => (
+                <div key={h.hs_code} onClick={() => loadHsCompanies(h.hs_code)}
+                  style={{
+                    padding: '0.5rem 0.6rem', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
+                    background: selHs === h.hs_code ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.04)',
+                    border: selHs === h.hs_code ? '1px solid #34d399' : '1px solid transparent'
+                  }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)' }}>{h.hs_name || h.hs_code}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                    {h.hs_code} · {h.company_count}개 기업
+                  </div>
+                </div>
+              ))}
+              {sharedHs.length === 0 && <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>공유 HS 코드 없음</div>}
+            </div>
+            <div className="glass-panel" style={{ padding: '1rem' }}>
+              {!selHs && <div style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center' }}>왼쪽에서 HS 코드를 선택하세요</div>}
+              {hsCompLoading && <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '2rem' }}>로딩 중...</div>}
+              {selHs && hsCompData && !hsCompLoading && (() => {
+                const comps = hsCompData.companies || [];
+                const hsInfo = hsCompData.hs_info || {};
+                const totalShare = comps.reduce((s, c) => s + (c.market_share_pct || 0), 0);
+                const colors = ['#34d399','#60a5fa','#f59e0b','#f87171','#a78bfa','#fb923c'];
+                return (
+                  <div>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>{hsInfo.hs_name || selHs}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>HS {selHs} · {comps.length}개 기업</div>
+                    </div>
+                    <div style={{ height: 28, borderRadius: 6, overflow: 'hidden', display: 'flex', background: 'rgba(255,255,255,0.06)', marginBottom: '0.5rem' }}>
+                      {comps.map((c, i) => {
+                        const pct = totalShare > 0 ? ((c.market_share_pct || 0) / totalShare) * 100 : (100 / comps.length);
+                        return (
+                          <div key={c.stock_code} title={`${c.stock_name}: ${pct.toFixed(1)}%`}
+                            style={{ width: `${pct}%`, background: colors[i % colors.length], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 700, color: '#0f172a', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                            {pct > 8 ? c.stock_name : ''}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                      {comps.map((c, i) => {
+                        const pct = totalShare > 0 ? ((c.market_share_pct || 0) / totalShare) * 100 : (100 / comps.length);
+                        return (
+                          <div key={c.stock_code} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.78rem' }}>
+                            <div style={{ width: 10, height: 10, borderRadius: 2, background: colors[i % colors.length] }} />
+                            <span style={{ color: 'var(--text-primary)' }}>{c.stock_name}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>{pct.toFixed(1)}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: '1.5rem', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.03)', borderRadius: 8, borderLeft: '3px solid rgba(52,211,153,0.4)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+          <strong style={{ color: 'var(--text-primary)' }}>데이터 방법론</strong> · 관세청 통관 HS 코드 → 텔레그램 검증 매핑 → 기업별 시장비율 분배(삼성/SK하이닉스 메모리 TrendForce 2024 기준, 그 외 균등 분할) ·
+          건강도 기준: 전월비 ≥+5% 또는 전년비 ≥+10% → 🟢, 전월비 ≤-5% 또는 전년비 ≤-10% → 🔴, 그 외 → 🟡
+        </div>
+      </div>
+    );
+  };
+
   // ── 메인 렌더 ────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = React.useState(() => window.innerWidth >= 768);
 
   const NAV_ITEMS = [
     // ── 상단 섹션 ──────────────────────────────────
     { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '주요 지표' },
-    { key: 'market_indicators',icon: <Globe size={17} style={{color:'#fbbf24'}} />,           label: '수급 현황' },
-    { key: 'market_radar',     icon: <span style={{fontSize:'14px',lineHeight:1}}>🛰</span>,   label: '섹터 지표' },
     { key: 'analysis',         icon: <BarChart3 size={17} />,                                 label: '개별 종목' },
+    { key: 'market_radar',     icon: <span style={{fontSize:'14px',lineHeight:1}}>🛰</span>,   label: '섹터 지표' },
     { key: 'semiconductor_sector', icon: <Cpu size={17} style={{color:'#60a5fa'}} />,         label: '반도체 섹터' },
     { key: 'hot_sector',       icon: <span style={{fontSize:'14px',lineHeight:1}}>🎯</span>,   label: 'Hot 섹터' },
+    { key: 'market_indicators',icon: <Globe size={17} style={{color:'#fbbf24'}} />,           label: '수급 현황' },
     { key: 'screener',         icon: <Cpu size={17} style={{color:'#2dd4bf'}} />,              label: 'AI 종목 발굴' },
     { key: 'tenbagger',        icon: <span style={{fontSize:'14px',lineHeight:1}}>💎</span>,   label: '텐버거 헌터' },
     { key: 'dart_contracts',   icon: <span style={{fontSize:'14px',lineHeight:1}}>📋</span>,   label: '수주공시 알림' },
@@ -11170,16 +11641,16 @@ const App = () => {
     { key: 'telegram',  icon: <Send size={17} style={{color:'#38bdf8'}} />,            label: '텔레그램 종목' },
     { key: 'backtest',  icon: <FlaskConical size={17} style={{color:'#f59e0b'}} />,    label: '백테스트' },
     { key: 'hs_trade2', icon: <Ship size={17} style={{color:'#93c5fd'}} />,            label: '수출입분석' },
+    { key: 'export_health', icon: <Globe size={17} style={{color:'#34d399'}} />,      label: '🌐 수출경쟁력' },
     { key: 'employment',icon: <Users size={17} style={{color:'#86efac'}} />,           label: '고용 정보' },
     { key: 'etf_check', icon: <span style={{fontSize:'14px',lineHeight:1}}>📊</span>, label: 'ETF 모니터링' },
     null,
     // ── 하단 섹션 ──────────────────────────────────
     { key: 'buy_candidates', icon: <Target size={17} style={{color:'#f59e0b'}} />,    label: '매수후보' },
+    { key: 'watchlist', icon: <Star size={17} style={{color:'#facc15'}} />,            label: '관심종목' },
     { key: 'portfolio', icon: <Wallet size={17} style={{color:'#c084fc'}} />,          label: '계좌현황 🔒' },
     null,
     { key: 'settings',  icon: <Settings size={17} style={{color:'#94a3b8'}} />,        label: '⚙ 설정' },
-    { key: 'system',    icon: <Server size={17} style={{color:'#64748b'}} />,          label: '시스템 상태' },
-    { key: 'watchlist', icon: <Star size={17} style={{color:'#facc15'}} />,            label: '관심종목' },
   ];
 
   return (
@@ -11304,6 +11775,7 @@ const App = () => {
           {activeTab === 'reports'   && <SectorReports />}
           {activeTab === 'insight'   && <AIInsight />}
           {activeTab === 'system'    && <SystemStatus />}
+          {activeTab === 'export_health' && <ExportHealthView />}
           {activeTab === 'telegram'  && <TelegramMentions />}
           {activeTab === 'settings'  && <SettingsView />}
           {activeTab === 'backtest'  && <BacktestView />}

@@ -65,6 +65,14 @@ def ingest_investor_trends(payload: dict, db: Session = Depends(get_db)):
                 date_str = datetime.strptime(t["date"], "%Y-%m-%d").strftime("%Y-%m-%d")
             except ValueError:
                 continue
+            # 한국 휴장일(공휴일/주말) 수급 데이터는 KIS 오류 — 저장 금지
+            from trading_calendar import is_kr_trading_day as _is_kr_td
+            from datetime import date as _date
+            try:
+                if not _is_kr_td(_date.fromisoformat(date_str)):
+                    continue
+            except Exception:
+                pass
             row = db.query(models.PriceHistory).filter(
                 models.PriceHistory.stock_code == stock_code,
                 models.PriceHistory.date == date_str,

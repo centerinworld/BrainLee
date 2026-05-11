@@ -917,6 +917,128 @@ def _calc_price_indicators(closes: list, vols: list) -> dict:
     }
 
 
+def _calc_stockeasy_technical_indicators(closes: list, highs: list, lows: list) -> dict:
+    """StockEasy 리포트형 기술지표.
+
+    입력은 최신→과거 순서다. 내부 계산은 과거→최신으로 뒤집어 수행한다.
+    """
+    if len(closes) < 60:
+        return {}
+
+    c = list(reversed([float(x or 0) for x in closes]))
+    h = list(reversed([float(x or 0) for x in highs]))
+    l = list(reversed([float(x or 0) for x in lows]))
+    n = len(c)
+
+    def ema(values: list[float], period: int) -> list[float]:
+        if not values:
+            return []
+        alpha = 2 / (period + 1)
+        out = [values[0]]
+        for v in values[1:]:
+            out.append(v * alpha + out[-1] * (1 - alpha))
+        return out
+
+    ema12 = ema(c, 12)
+    ema26 = ema(c, 26)
+    macd_line = [a - b for a, b in zip(ema12, ema26)]
+    macd_signal = ema(macd_line, 9)
+    macd = macd_line[-1]
+    macd_sig = macd_signal[-1] if macd_signal else 0.0
+    macd_hist = macd - macd_sig
+
+    # Stochastic 14,3
+    k_vals = []
+    for i in range(n):
+        if i < 13:
+            k_vals.append(50.0)
+            continue
+        hh = max(h[i - 13:i + 1])
+        ll = min(l[i - 13:i + 1])
+        k_vals.append((c[i] - ll) / (hh - ll) * 100 if hh > ll else 50.0)
+    stoch_k = k_vals[-1]
+    stoch_d = sum(k_vals[-3:]) / min(3, len(k_vals))
+
+    # Wilder ADX / DI(14)
+    trs, plus_dm, minus_dm = [], [], []
+    for i in range(1, n):
+        up = h[i] - h[i - 1]
+        down = l[i - 1] - l[i]
+        plus_dm.append(up if up > down and up > 0 else 0.0)
+        minus_dm.append(down if down > up and down > 0 else 0.0)
+        trs.append(max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])))
+
+    adx = pdi = mdi = 0.0
+    if len(trs) >= 14:
+        period = 14
+        atr = sum(trs[:period])
+        pdm = sum(plus_dm[:period])
+        mdm = sum(minus_dm[:period])
+        dx_vals = []
+        for i in range(period, len(trs)):
+            atr = atr - atr / period + trs[i]
+            pdm = pdm - pdm / period + plus_dm[i]
+            mdm = mdm - mdm / period + minus_dm[i]
+            pdi_i = 100 * pdm / atr if atr else 0.0
+            mdi_i = 100 * mdm / atr if atr else 0.0
+            denom = pdi_i + mdi_i
+            dx_vals.append(100 * abs(pdi_i - mdi_i) / denom if denom else 0.0)
+        if dx_vals:
+            pdi, mdi = pdi_i, mdi_i
+            adx = sum(dx_vals[-14:]) / min(14, len(dx_vals))
+
+    # SuperTrend(10, 3). 리포트의 매수/매도 상태를 근사한다.
+    supertrend = None
+    supertrend_buy = False
+    if n >= 12:
+        period = 10
+        mult = 3.0
+        tr = [0.0]
+        for i in range(1, n):
+            tr.append(max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])))
+        atrs = []
+        atr = sum(tr[1:period + 1]) / period
+        for i in range(n):
+            if i <= period:
+                atrs.append(atr)
+            else:
+                atr = (atr * (period - 1) + tr[i]) / period
+                atrs.append(atr)
+        final_upper = final_lower = 0.0
+        direction = 1
+        st = 0.0
+        for i in range(period, n):
+            hl2 = (h[i] + l[i]) / 2
+            upper = hl2 + mult * atrs[i]
+            lower = hl2 - mult * atrs[i]
+            if i == period:
+                final_upper, final_lower = upper, lower
+                direction = 1 if c[i] >= final_upper else -1 if c[i] <= final_lower else 1
+            else:
+                final_upper = upper if upper < final_upper or c[i - 1] > final_upper else final_upper
+                final_lower = lower if lower > final_lower or c[i - 1] < final_lower else final_lower
+                if direction == -1 and c[i] > final_upper:
+                    direction = 1
+                elif direction == 1 and c[i] < final_lower:
+                    direction = -1
+            st = final_lower if direction == 1 else final_upper
+        supertrend = st
+        supertrend_buy = direction == 1 and c[-1] >= st
+
+    return {
+        "adx": round(adx, 2),
+        "pdi": round(pdi, 2),
+        "mdi": round(mdi, 2),
+        "macd": round(macd, 4),
+        "macd_signal": round(macd_sig, 4),
+        "macd_hist": round(macd_hist, 4),
+        "stoch_k": round(stoch_k, 2),
+        "stoch_d": round(stoch_d, 2),
+        "supertrend": round(supertrend, 2) if supertrend is not None else None,
+        "supertrend_buy": bool(supertrend_buy),
+    }
+
+
 def _calc_ma_trend_price(conn, params):
     """
     VIX/환율: 현재가 > MA(N) = Risk-off(red), 아래 = Risk-on(green)
@@ -1434,7 +1556,7 @@ def _calc_supply_trend(conn, params, stock_code):
     # ratio >= 0.1 이면 주 단위 → qty × close / 1억 으로 억원 계산
     def _to_억(qty, amt, close, is_index):
         if is_index:
-            return amt if amt else qty
+            return (amt or 0) if amt else (qty or 0)
         qty = qty or 0
         amt = amt or 0
         close = close or 0
@@ -2208,7 +2330,8 @@ def calc_trend_candidates(conn=None) -> list:
                 rows = conn.execute("""
                     SELECT date, close, high, low, volume,
                            inst_net_buy_amt, frn_net_buy_amt,
-                           inst_net_buy, frn_net_buy
+                           inst_net_buy, frn_net_buy,
+                           COALESCE(trade_amount, 0) as trade_amount
                     FROM price_history WHERE stock_code=? AND close>0
                     ORDER BY date DESC LIMIT 500
                 """, (stock_code,)).fetchall()
@@ -2225,8 +2348,9 @@ def calc_trend_candidates(conn=None) -> list:
                 frn_a    = [r[6] or 0 for r in rows]
                 inst_q   = [r[7] or 0 for r in rows]
                 frn_q    = [r[8] or 0 for r in rows]
-                # 거래대금 proxy: volume × close (원 단위)
-                tvals    = [vols[i] * closes[i] for i in range(len(rows))]
+                traw     = [r[9] or 0 for r in rows]
+                # 거래대금: KRX trade_amount 실데이터 우선, 없으면 volume×close proxy
+                tvals    = [traw[i] if traw[i] > 0 else vols[i] * closes[i] for i in range(len(rows))]
 
                 ind   = _calc_price_indicators(closes, vols)
                 curr  = ind["curr"]
@@ -2472,6 +2596,383 @@ def calc_trend_candidates(conn=None) -> list:
         candidates.sort(key=lambda x: (x.get('score', 0), x.get('mktcap', 0)), reverse=True)
         return candidates[:20]
 
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def calc_stockeasy_trend_candidates(conn=None) -> list:
+    """
+    StockEasy 추세추종 근사 후보군.
+
+    PDF 리포트에서 실전 신호로 쓰기 좋은 항목만 반영:
+      - 가격 구조: MA20/60/120/200 위치와 MA20/60 기울기
+      - 지지/저항: 20/60/120일 고점 돌파 또는 근접
+      - 거래량: 당일 폭발뿐 아니라 5일 평균 거래량 재증가
+      - 모멘텀: RSI 과열 전 상승권, KOSPI 대비 상대강도
+      - 보조: 주도 섹터, 기관/외국인 5일 수급
+
+    재무/EPS/전망/Q&A는 추세추종 진입 핵심이 아니므로 제외한다.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = sqlite3.connect(DB_PATH)
+
+    try:
+        sector_map = _build_sector_activation_map(conn)
+        _umaps = _load_universe_maps(conn)
+        code_mktcap = _umaps["mktcap"]
+        code_market = _umaps["market"]
+        code_tvol = _umaps["tvol"]
+        code_name = _umaps["name"]
+        code_sector = {sc: (_umaps["sector"][sc], _umaps["sector_mid"][sc])
+                       for sc in _umaps["sector"]}
+
+        kospi_rows = conn.execute("""
+            SELECT close FROM price_history WHERE stock_code='^KS11' AND close>0
+            ORDER BY date DESC LIMIT 130
+        """).fetchall()
+        kospi_ret_3m = 0.0
+        kospi_ret_6m = 0.0
+        if len(kospi_rows) >= 63 and kospi_rows[62][0] > 0:
+            kospi_ret_3m = (kospi_rows[0][0] - kospi_rows[62][0]) / kospi_rows[62][0] * 100
+        if len(kospi_rows) >= 126 and kospi_rows[125][0] > 0:
+            kospi_ret_6m = (kospi_rows[0][0] - kospi_rows[125][0]) / kospi_rows[125][0] * 100
+
+        fin_rows = conn.execute("""
+            WITH q AS (
+                SELECT stock_code, revenue, operating_profit,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) rn
+                FROM financial_data
+                WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
+                  AND revenue IS NOT NULL
+                  AND operating_profit IS NOT NULL
+            )
+            SELECT
+                stock_code,
+                MAX(CASE WHEN rn=1 THEN revenue END)          AS rev0,
+                MAX(CASE WHEN rn=2 THEN revenue END)          AS rev1,
+                MAX(CASE WHEN rn=5 THEN revenue END)          AS rev_ya,
+                MAX(CASE WHEN rn=1 THEN operating_profit END) AS op0,
+                MAX(CASE WHEN rn=2 THEN operating_profit END) AS op1,
+                MAX(CASE WHEN rn=3 THEN operating_profit END) AS op2,
+                MAX(CASE WHEN rn=5 THEN operating_profit END) AS op_ya
+            FROM q
+            GROUP BY stock_code
+        """).fetchall()
+        fin_map = {}
+        for fr in fin_rows:
+            sc, rev0, rev1, rev_ya, op0, op1, op2, op_ya = fr
+            rev_yoy = (rev0 - rev_ya) / abs(rev_ya) * 100 if rev0 and rev_ya else None
+            rev_qoq = (rev0 - rev1) / abs(rev1) * 100 if rev0 and rev1 else None
+            op_yoy = (op0 - op_ya) / abs(op_ya) * 100 if op0 and op_ya and op_ya > 0 else None
+            op_qoq = (op0 - op1) / abs(op1) * 100 if op0 and op1 and op1 > 0 else None
+            op_turnaround = bool(op0 and op0 > 0 and ((op_ya is not None and op_ya <= 0) or (op2 is not None and op2 <= 0)))
+            fin_map[sc] = {
+                "rev_yoy": rev_yoy,
+                "rev_qoq": rev_qoq,
+                "op_yoy": op_yoy,
+                "op_qoq": op_qoq,
+                "op_turnaround": op_turnaround,
+                "op0": op0,
+            }
+
+        stock_rows = conn.execute("""
+            SELECT p.stock_code, COUNT(*) as cnt
+            FROM price_history p
+            INNER JOIN (
+                SELECT stock_code FROM stock_universe
+                WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                  AND (market_cap IS NULL OR market_cap >= ?)
+                GROUP BY stock_code
+            ) su ON p.stock_code = su.stock_code
+            WHERE p.close > 0
+            GROUP BY p.stock_code
+            HAVING cnt >= 160
+        """, (300_000_000_000,)).fetchall()
+
+        candidates = []
+        for stock_code, _ in stock_rows:
+            try:
+                rows = conn.execute("""
+                    SELECT date, close, high, low, volume,
+                           inst_net_buy_amt, frn_net_buy_amt,
+                           inst_net_buy, frn_net_buy,
+                           COALESCE(trade_amount, 0) as trade_amount
+                    FROM price_history WHERE stock_code=? AND close>0
+                    ORDER BY date DESC LIMIT 260
+                """, (stock_code,)).fetchall()
+                if len(rows) < 160:
+                    continue
+
+                dates = [r[0] for r in rows]
+                closes = [float(r[1]) for r in rows]
+                highs = [float(r[2] or r[1]) for r in rows]
+                lows = [float(r[3] or r[1]) for r in rows]
+                vols = [float(r[4] or 0) for r in rows]
+                inst_a = [float(r[5] or 0) for r in rows]
+                frn_a = [float(r[6] or 0) for r in rows]
+                inst_q = [float(r[7] or 0) for r in rows]
+                frn_q = [float(r[8] or 0) for r in rows]
+                traw  = [float(r[9] or 0) for r in rows]
+                tvals = [traw[i] if traw[i] > 0 else vols[i] * closes[i] for i in range(len(rows))]
+
+                ind = _calc_price_indicators(closes, vols)
+                curr = ind["curr"]
+                ma20 = ind["ma20"]; ma60 = ind["ma60"]; ma120 = ind["ma120"]; ma200 = ind["ma200"]
+                rsi = ind["rsi"]; vol_ratio = ind["vol_ratio"]; from_high = ind["from_high"]
+                tech = _calc_stockeasy_technical_indicators(closes, highs, lows)
+                if not (curr and ma20 and ma60 and ma120):
+                    continue
+
+                mktcap = code_mktcap.get(stock_code, 0)
+                avg_tval_5d = sum(tvals[:5]) / 5
+                if avg_tval_5d < 3_000_000_000 and code_tvol.get(stock_code, 0) < 30:
+                    continue
+
+                avg_vol_20 = sum(vols[:20]) / 20 if len(vols) >= 20 else 0
+                avg_vol_5 = sum(vols[:5]) / 5 if len(vols) >= 5 else 0
+                vol_5d_ratio = avg_vol_5 / avg_vol_20 if avg_vol_20 > 0 else 0
+
+                res20 = max(highs[1:21]) if len(highs) >= 21 else max(highs)
+                res60 = max(highs[1:61]) if len(highs) >= 61 else res20
+                res120 = max(highs[1:121]) if len(highs) >= 121 else res60
+                support60 = min(lows[1:61]) if len(lows) >= 61 else min(lows)
+                resistance_gap = (curr - res60) / res60 * 100 if res60 > 0 else 0
+                support_gap = (curr - support60) / support60 * 100 if support60 > 0 else 0
+
+                def slope_ma(k, offset):
+                    if len(closes) < k + offset:
+                        return 0.0
+                    now = sum(closes[:k]) / k
+                    prev = sum(closes[offset:offset + k]) / k
+                    return (now - prev) / prev * 100 if prev > 0 else 0.0
+
+                ma20_slope = slope_ma(20, 10)
+                ma60_slope = slope_ma(60, 20)
+
+                score = 0
+                reasons = []
+
+                # 가격 구조: 스탁이지 보유 종목은 장기선 위에 있되, MA5 엄격 조건은 덜 중요.
+                if curr > ma20:
+                    score += 2; reasons.append('현재가>MA20')
+                if curr > ma60:
+                    score += 3; reasons.append('현재가>MA60')
+                if curr > ma120:
+                    score += 3; reasons.append('현재가>MA120')
+                if ma20 > ma60:
+                    score += 3; reasons.append('MA20>MA60')
+                if ma60 > ma120:
+                    score += 2; reasons.append('MA60>MA120')
+                if ma200 and ma120 > ma200:
+                    score += 1; reasons.append('MA120>MA200')
+                if ma20_slope > 3:
+                    score += 3; reasons.append(f'MA20 상승({ma20_slope:.1f}%)')
+                elif ma20_slope > 0:
+                    score += 1; reasons.append(f'MA20 우상향({ma20_slope:.1f}%)')
+                if ma60_slope > 1:
+                    score += 2; reasons.append(f'MA60 상승({ma60_slope:.1f}%)')
+
+                # 스탁이지 보유군은 소형 단기 급등주보다 업종 대표/대형 주도주 비중이 높다.
+                if mktcap >= 10_000_000_000_000:
+                    score += 5; reasons.append('대형 주도주')
+                elif mktcap >= 1_000_000_000_000:
+                    score += 3; reasons.append('중대형 주도주')
+                elif mktcap >= 300_000_000_000:
+                    score += 1; reasons.append('중형주 이상')
+
+                # 저항선 돌파/근접: 첨부 리포트의 핵심 차트 정보.
+                if curr >= res120:
+                    score += 7; reasons.append('120일 저항 돌파')
+                elif curr >= res120 * 0.97:
+                    score += 5; reasons.append('120일 저항 3% 이내')
+                elif curr >= res60:
+                    score += 5; reasons.append('60일 저항 돌파')
+                elif curr >= res60 * 0.98:
+                    score += 3; reasons.append('60일 저항 2% 이내')
+                elif curr >= res20 * 0.99:
+                    score += 2; reasons.append('20일 고점 근접')
+
+                if from_high >= -3:
+                    score += 6; reasons.append(f'52주 신고가권({from_high:+.1f}%)')
+                elif from_high >= -10:
+                    score += 4; reasons.append(f'52주 고점 근접({from_high:+.1f}%)')
+                elif from_high >= -25:
+                    score += 2; reasons.append(f'52주 고점권({from_high:+.1f}%)')
+                elif from_high >= -40:
+                    score += 1; reasons.append(f'중기 회복권({from_high:+.1f}%)')
+
+                if mktcap >= 10_000_000_000_000 and from_high >= -3 and vol_ratio >= 1.3:
+                    score += 3; reasons.append('대형주 신고가 거래량 동반')
+                elif mktcap >= 1_000_000_000_000 and from_high >= -3 and vol_ratio >= 1.3:
+                    score += 1; reasons.append('중대형 신고가 거래량 동반')
+
+                # 거래량: 당일 폭발만 강제하지 않고 5일 평균 재증가도 인정.
+                if vol_ratio >= 2.0:
+                    score += 4; reasons.append(f'거래량 폭발({vol_ratio:.1f}배)')
+                elif vol_ratio >= 1.3:
+                    score += 3; reasons.append(f'거래량 증가({vol_ratio:.1f}배)')
+                if vol_5d_ratio >= 1.5:
+                    score += 3; reasons.append(f'5일 거래량 증가({vol_5d_ratio:.1f}배)')
+                elif vol_5d_ratio >= 1.15:
+                    score += 1; reasons.append(f'5일 거래량 우상향({vol_5d_ratio:.1f}배)')
+
+                if 55 <= rsi <= 78:
+                    score += 4; reasons.append(f'RSI 상승권({rsi})')
+                elif 50 <= rsi <= 85:
+                    score += 2; reasons.append(f'RSI 모멘텀({rsi})')
+                elif rsi > 85:
+                    score -= 2; reasons.append(f'RSI 과열({rsi})')
+
+                adx = tech.get("adx", 0) or 0
+                pdi = tech.get("pdi", 0) or 0
+                mdi = tech.get("mdi", 0) or 0
+                macd = tech.get("macd", 0) or 0
+                macd_sig = tech.get("macd_signal", 0) or 0
+                macd_hist = tech.get("macd_hist", 0) or 0
+                stoch_k = tech.get("stoch_k", 50) or 50
+                stoch_d = tech.get("stoch_d", 50) or 50
+                if tech.get("supertrend_buy"):
+                    score += 5; reasons.append('SuperTrend 매수 유지')
+                else:
+                    score -= 4; reasons.append('SuperTrend 매수 미확인')
+                if adx >= 45:
+                    score += 5; reasons.append(f'ADX 강한 추세({adx:.1f})')
+                elif adx >= 25:
+                    score += 3; reasons.append(f'ADX 추세({adx:.1f})')
+                elif adx >= 18:
+                    score += 1; reasons.append(f'ADX 회복({adx:.1f})')
+                if pdi > mdi:
+                    score += 3; reasons.append(f'+DI 우위({pdi:.1f}>{mdi:.1f})')
+                elif pdi + 3 < mdi:
+                    score -= 2; reasons.append(f'-DI 우위({mdi:.1f})')
+                if macd > macd_sig and macd_hist > 0:
+                    score += 4; reasons.append('MACD 매수')
+                elif macd > macd_sig:
+                    score += 2; reasons.append('MACD 상향')
+                elif macd_hist < 0:
+                    score -= 1; reasons.append('MACD 둔화')
+                if stoch_k > stoch_d and 45 <= stoch_k <= 90:
+                    score += 3; reasons.append(f'스토캐스틱 상승({stoch_k:.0f}>{stoch_d:.0f})')
+                elif stoch_k >= 80 and stoch_d >= 80 and stoch_k < stoch_d:
+                    score -= 2; reasons.append('스토캐스틱 과열 둔화')
+                elif stoch_k >= 80:
+                    score += 1; reasons.append('스토캐스틱 강세권')
+
+                rs3 = rs6 = 0.0
+                if len(closes) >= 63 and closes[62] > 0:
+                    rs3 = (closes[0] - closes[62]) / closes[62] * 100 - kospi_ret_3m
+                if len(closes) >= 126 and closes[125] > 0:
+                    rs6 = (closes[0] - closes[125]) / closes[125] * 100 - kospi_ret_6m
+                rs_score = max(0.0, min(100.0, 50.0 + rs3))
+                if rs3 > 15:
+                    score += 4; reasons.append(f'3M RS +{rs3:.0f}%p')
+                elif rs3 > 5:
+                    score += 3; reasons.append(f'3M RS +{rs3:.0f}%p')
+                elif rs3 > 0:
+                    score += 1; reasons.append(f'3M RS +{rs3:.0f}%p')
+                if rs6 > 10:
+                    score += 2; reasons.append(f'6M RS +{rs6:.0f}%p')
+                if rs_score >= 90:
+                    score += 4; reasons.append(f'RS 매우 강함({rs_score:.0f})')
+                elif rs_score >= 80:
+                    score += 3; reasons.append(f'RS 강함({rs_score:.0f})')
+                elif rs_score >= 65:
+                    score += 1; reasons.append(f'RS 우위({rs_score:.0f})')
+
+                supply_days = min(5, len(inst_a))
+                inst_sum = sum(inst_a[:supply_days]) or sum(inst_q[:supply_days]) / 100
+                frn_sum = sum(frn_a[:supply_days]) or sum(frn_q[:supply_days]) / 100
+                if inst_sum > 0 and frn_sum > 0:
+                    score += 3; reasons.append('기관+외국인 5일 동반매수')
+                elif inst_sum > 0 or frn_sum > 0:
+                    score += 1; reasons.append('기관/외국인 5일 순매수')
+
+                slarge, smid = code_sector.get(stock_code, (None, None))
+                sector_act = sector_map.get(slarge, 0.0) if slarge else 0.0
+                if sector_act >= 0.6:
+                    score += 3; reasons.append(f'주도섹터({slarge})')
+                elif sector_act >= 0.4:
+                    score += 2; reasons.append(f'섹터 상승({slarge})')
+
+                fin = fin_map.get(stock_code, {})
+                rev_yoy = fin.get("rev_yoy")
+                op_yoy = fin.get("op_yoy")
+                op_qoq = fin.get("op_qoq")
+                if fin.get("op_turnaround"):
+                    score += 4; reasons.append('흑자전환/이익 턴어라운드')
+                elif op_yoy is not None:
+                    if op_yoy >= 50:
+                        score += 3; reasons.append(f'영업이익 YoY +{op_yoy:.0f}%')
+                    elif op_yoy >= 20:
+                        score += 2; reasons.append(f'영업이익 YoY +{op_yoy:.0f}%')
+                if op_qoq is not None and op_qoq >= 20:
+                    score += 1; reasons.append(f'영업이익 QoQ +{op_qoq:.0f}%')
+                if rev_yoy is not None:
+                    if rev_yoy >= 30:
+                        score += 3; reasons.append(f'매출 YoY +{rev_yoy:.0f}%')
+                    elif rev_yoy >= 15:
+                        score += 2; reasons.append(f'매출 YoY +{rev_yoy:.0f}%')
+                    elif rev_yoy >= 5:
+                        score += 1; reasons.append(f'매출 YoY +{rev_yoy:.0f}%')
+
+                # 스탁이지 Peak 편출 사례는 대부분 MA20 하향 이탈 후 모멘텀이 식는다.
+                if curr < ma20 or curr < ma60 or from_high < -50 or score < 28:
+                    continue
+
+                label = '강력매수' if score >= 42 else '매수' if score >= 34 else '관심'
+                candidates.append({
+                    'stock_code': stock_code,
+                    'stock_name': code_name.get(stock_code, stock_code),
+                    'signal': 'green' if score >= 28 else 'yellow',
+                    'label': label,
+                    'score': round(score, 1),
+                    'reasons': reasons[:10],
+                    'price': curr,
+                    'ma20': round(ma20),
+                    'ma60': round(ma60),
+                    'ma120': round(ma120),
+                    'ma200': round(ma200) if ma200 else None,
+                    'ma20_slope': round(ma20_slope, 2),
+                    'ma60_slope': round(ma60_slope, 2),
+                    'resistance_20': round(res20),
+                    'resistance_60': round(res60),
+                    'resistance_120': round(res120),
+                    'resistance_gap': round(resistance_gap, 2),
+                    'support_60': round(support60),
+                    'support_gap': round(support_gap, 2),
+                    'from_high': round(from_high, 1),
+                    'rsi': rsi,
+                    'adx': adx,
+                    'pdi': pdi,
+                    'mdi': mdi,
+                    'macd': round(macd, 2),
+                    'macd_signal': round(macd_sig, 2),
+                    'macd_hist': round(macd_hist, 2),
+                    'stoch_k': round(stoch_k, 1),
+                    'stoch_d': round(stoch_d, 1),
+                    'supertrend': tech.get("supertrend"),
+                    'supertrend_buy': bool(tech.get("supertrend_buy")),
+                    'vol_ratio': round(vol_ratio, 2),
+                    'vol_5d_ratio': round(vol_5d_ratio, 2),
+                    'rs': round(rs3, 1),
+                    'rs_score': round(rs_score, 1),
+                    'rs_6m': round(rs6, 1),
+                    'sector': slarge or '',
+                    'sector_mid': smid or '',
+                    'sector_act': round(sector_act, 2),
+                    'rev_yoy': round(rev_yoy, 1) if rev_yoy is not None else None,
+                    'op_yoy': round(op_yoy, 1) if op_yoy is not None else None,
+                    'op_turnaround': bool(fin.get("op_turnaround")),
+                    'mktcap': mktcap,
+                    'market': code_market.get(stock_code, ''),
+                })
+            except Exception:
+                pass
+
+        candidates.sort(key=lambda x: (x.get('score', 0), x.get('mktcap', 0)), reverse=True)
+        return candidates[:70]
     finally:
         if own_conn:
             conn.close()
@@ -3195,7 +3696,8 @@ def calc_combo_v2(conn=None) -> list:
                 rows = conn.execute("""
                     SELECT date, close, high, low, volume,
                            inst_net_buy_amt, frn_net_buy_amt,
-                           inst_net_buy, frn_net_buy
+                           inst_net_buy, frn_net_buy,
+                           COALESCE(trade_amount, 0) as trade_amount
                     FROM price_history WHERE stock_code=? AND close>0
                     ORDER BY date DESC LIMIT 600
                 """, (stock_code,)).fetchall()
@@ -3212,11 +3714,12 @@ def calc_combo_v2(conn=None) -> list:
                 frn_a   = [r[6] or 0 for r in rows]
                 inst_q  = [r[7] or 0 for r in rows]
                 frn_q   = [r[8] or 0 for r in rows]
+                traw    = [r[9] or 0 for r in rows]
                 curr    = closes[0]
 
-                # ── 거래대금 필터 ───────────────────────────────────
-                tvals = [vols[i] * closes[i] for i in range(min(5, len(rows)))]
-                avg_tval_5d = sum(tvals) / max(len(tvals), 1)
+                # ── 거래대금 필터 (KRX 실데이터 우선, 없으면 proxy) ──
+                tvals5 = [traw[i] if traw[i] > 0 else vols[i] * closes[i] for i in range(min(5, len(rows)))]
+                avg_tval_5d = sum(tvals5) / max(len(tvals5), 1)
                 if avg_tval_5d < V2_TVOL_MIN_KRW and tvol < 100:
                     continue
 

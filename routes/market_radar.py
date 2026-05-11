@@ -29,7 +29,9 @@ router = APIRouter()
 
 # 절대 경로 — CWD와 무관하게 항상 이 파일 기준으로 stock.db 위치 결정
 _HERE = Path(__file__).resolve().parent.parent
-DB_PATH = str(_HERE / "stock.db")
+DB_PATH    = str(_HERE / "stock.db")
+# 해외 종목 가격 DB — 국내 종목은 stock.db, 해외 종목은 us_market.db
+US_DB_PATH = str(_HERE.parent / "us_market_dashboard" / "us_market.db")
 
 SECTOR_KEY_MAP: Dict[str, str] = {
     "semiconductor": "반도체",
@@ -248,11 +250,20 @@ def _fetch_price_map(conn, tickers: List[str]) -> Dict[str, Dict]:
         except Exception as e:
             logger.debug(f"[market-radar] kr price_map error: {e}")
 
-    # ── 해외 주식: radar_price_cache ──
+    # ── 해외 주식: us_market.db의 us_price_history (date-based, ROW_NUMBER CTE) ──
     if foreign:
         ph = ",".join("?" for _ in foreign)
+        us_conn = None
         try:
-            rows = conn.execute(f"""
+            us_conn = sqlite3.connect(US_DB_PATH, timeout=30)
+            us_conn.row_factory = sqlite3.Row
+            rows = us_conn.execute(f"""
+                WITH ranked AS (
+                    SELECT ticker, close,
+                           ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS rn
+                    FROM us_price_history
+                    WHERE ticker IN ({ph}) AND close > 0
+                )
                 SELECT ticker,
                        MAX(CASE WHEN rn=1   THEN close END) AS price,
                        MAX(CASE WHEN rn=2   THEN close END) AS price_1d,
@@ -260,30 +271,36 @@ def _fetch_price_map(conn, tickers: List[str]) -> Dict[str, Dict]:
                        MAX(CASE WHEN rn=11  THEN close END) AS price_10d,
                        MAX(CASE WHEN rn=31  THEN close END) AS price_30d,
                        MAX(CASE WHEN rn=253 THEN close END) AS price_1y
-                FROM radar_price_cache
-                WHERE ticker IN ({ph})
+                FROM ranked
                 GROUP BY ticker
             """, foreign).fetchall()
             for r in rows:
                 d = dict(r)
                 price_map[d["ticker"]] = d
         except Exception as e:
-            logger.debug(f"[market-radar] foreign price_map error: {e}")
+            logger.debug(f"[market-radar] us_db price_map error: {e}")
+        finally:
+            if us_conn:
+                try: us_conn.close()
+                except: pass
 
     return price_map
 
 
 def refresh_foreign_prices_sync() -> int:
-    """yfinance로 해외 종목 2년치 일별 가격을 radar_price_cache에 저장. 스케줄러용 동기 함수."""
+    """yfinance로 해외 종목 2년치 일별 가격을 us_market.db의 us_price_history에 저장.
+    국내 종목은 stock.db, 해외 종목은 us_market.db에 분리 저장. 스케줄러용 동기 함수."""
     try:
         import yfinance as yf
     except ImportError:
         logger.warning("[market-radar] yfinance 없음 — 해외 가격 갱신 불가")
         return 0
 
-    conn = _db()
+    conn    = _db()
+    us_conn = None
     try:
         _ensure_radar_tables(conn)
+        # 해외 종목 목록 조회 (radar_*_override 테이블에서)
         rows = conn.execute("""
             SELECT DISTINCT ticker FROM radar_semiconductor_override WHERE ticker IS NOT NULL AND ticker != ''
             UNION
@@ -296,8 +313,23 @@ def refresh_foreign_prices_sync() -> int:
         if not foreign_tickers:
             return 0
 
+        us_conn = sqlite3.connect(US_DB_PATH, timeout=60)
+
+        try:
+            from api_rate_limiter import api_limiter as _rl
+        except ImportError:
+            _rl = None
+
         updated = 0
         for ticker in foreign_tickers:
+            # Yahoo Finance rate limit — 차단 방지
+            if _rl:
+                if not _rl.wait("YAHOO"):
+                    logger.warning("[market-radar] Yahoo Finance 일일 쿼터 소진 — 루프 중단")
+                    break
+            else:
+                import time as _t; _t.sleep(1.5)
+
             try:
                 hist = yf.Ticker(ticker).history(period="2y", auto_adjust=True)
                 if hist.empty:
@@ -305,27 +337,24 @@ def refresh_foreign_prices_sync() -> int:
                 closes = hist["Close"].dropna()
                 if len(closes) == 0:
                     continue
-                # Store as ranked rows (rn=1 = most recent)
-                conn.execute("DELETE FROM radar_price_cache WHERE ticker = ?", (ticker,))
+                # us_price_history에 날짜 기준으로 저장 (INSERT OR REPLACE)
+                us_conn.execute("DELETE FROM us_price_history WHERE ticker = ?", (ticker,))
                 rows_to_insert = []
-                for rn, (dt, price) in enumerate(
-                    zip(closes.index[::-1], closes.values[::-1]),
-                    start=1
-                ):
+                for dt, price in zip(closes.index, closes.values):
                     trade_date = dt.strftime("%Y-%m-%d") if hasattr(dt, "strftime") else str(dt)[:10]
-                    rows_to_insert.append((ticker, rn, float(price), trade_date))
-                    if rn >= 300:
-                        break
-                conn.executemany(
-                    "INSERT OR REPLACE INTO radar_price_cache (ticker, rn, close, trade_date) VALUES (?,?,?,?)",
+                    rows_to_insert.append((ticker, trade_date, float(price), float(price)))
+                us_conn.executemany(
+                    "INSERT OR REPLACE INTO us_price_history(ticker, date, close, adj_close) VALUES (?,?,?,?)",
                     rows_to_insert
                 )
                 updated += 1
             except Exception as e:
                 logger.debug(f"[market-radar] yfinance {ticker}: {e}")
+                if _rl and "429" in str(e):
+                    _rl.report_block("YAHOO", cooldown=300)
 
-        conn.commit()
-        logger.info(f"[market-radar] 해외 가격 갱신 완료: {updated}/{len(foreign_tickers)}개")
+        us_conn.commit()
+        logger.info(f"[market-radar] 해외 가격 갱신 완료 → us_market.db: {updated}/{len(foreign_tickers)}개")
         _cache.clear()
         return updated
     except Exception as e:
@@ -333,6 +362,9 @@ def refresh_foreign_prices_sync() -> int:
         return 0
     finally:
         conn.close()
+        if us_conn:
+            try: us_conn.close()
+            except: pass
 
 
 def _fetch_market_map(conn, tickers: List[str]) -> Dict[str, Dict]:
@@ -340,6 +372,8 @@ def _fetch_market_map(conn, tickers: List[str]) -> Dict[str, Dict]:
         return {}
     placeholders = ",".join("?" for _ in tickers)
     market_map: Dict[str, Dict] = {}
+
+    # 1) radar_market_cache (모든 종목 – 캐시된 값)
     try:
         rows = conn.execute(f"""
             SELECT ticker, market_cap, per, pbr
@@ -352,7 +386,7 @@ def _fetch_market_map(conn, tickers: List[str]) -> Dict[str, Dict]:
     except Exception as e:
         logger.debug(f"[market-radar] market_map error: {e}")
 
-    # 한국 종목(6자리 숫자): stock_universe에서 per/pbr/market_cap 보완
+    # 2) 한국 종목(6자리 숫자): stock_universe에서 per/pbr/market_cap 보완
     kr_tickers = [t for t in tickers if t.isdigit() and len(t) == 6]
     if kr_tickers:
         kr_ph = ",".join("?" for _ in kr_tickers)
@@ -373,6 +407,37 @@ def _fetch_market_map(conn, tickers: List[str]) -> Dict[str, Dict]:
                 }
         except Exception as e:
             logger.debug(f"[market-radar] kr_market_map error: {e}")
+
+    # 3) 해외 종목: us_universe에서 보완 (market_cap/per/pbr 캐시 누락 시)
+    foreign_tickers = [t for t in tickers if not (t.isdigit() and len(t) == 6)]
+    missing_foreign = [t for t in foreign_tickers if t not in market_map or not market_map[t].get("market_cap")]
+    if missing_foreign:
+        us_conn = None
+        try:
+            us_conn = sqlite3.connect(US_DB_PATH, timeout=30)
+            us_conn.row_factory = sqlite3.Row
+            mf_ph = ",".join("?" for _ in missing_foreign)
+            us_rows = us_conn.execute(f"""
+                SELECT ticker, market_cap, per, pbr
+                FROM us_universe
+                WHERE ticker IN ({mf_ph})
+            """, missing_foreign).fetchall()
+            for r in us_rows:
+                ticker = r["ticker"]
+                existing = market_map.get(ticker, {})
+                market_map[ticker] = {
+                    "ticker":     ticker,
+                    "market_cap": existing.get("market_cap") or r["market_cap"],
+                    "per":        existing.get("per") or r["per"],
+                    "pbr":        existing.get("pbr") or r["pbr"],
+                }
+        except Exception as e:
+            logger.debug(f"[market-radar] us_universe market_map error: {e}")
+        finally:
+            if us_conn:
+                try: us_conn.close()
+                except: pass
+
     return market_map
 
 

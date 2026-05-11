@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from typing import Dict, Any, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/api/etf-check", tags=["etf-check"])
 
@@ -31,8 +31,35 @@ def format_row(r):
     return d
 
 def get_available_dates(conn) -> List[str]:
-    rows = conn.execute("SELECT DISTINCT trade_date FROM etf_inclusion_daily ORDER BY trade_date DESC LIMIT 6").fetchall()
+    rows = conn.execute("""
+        SELECT DISTINCT e.trade_date
+        FROM etf_inclusion_daily e
+        JOIN collection_log l
+          ON l.run_date = e.trade_date
+         AND l.status = 'done'
+        ORDER BY e.trade_date DESC
+        LIMIT 6
+    """).fetchall()
     return [row["trade_date"] for row in rows]
+
+ORDINARY_STOCK_FILTER = """
+    COALESCE(m.stock_type, '보통주') = '보통주'
+    AND m.market IN ('유가증권', '코스닥', 'KOSPI', 'KOSDAQ')
+    AND COALESCE(m.stock_name, '') NOT LIKE '%ETF%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%ETN%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%KODEX%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%TIGER%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%KBSTAR%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%ACE%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%SOL%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%HANARO%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%KOSEF%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%ARIRANG%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%PLUS%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%레버리지%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%인버스%'
+    AND COALESCE(m.stock_name, '') NOT LIKE '%2X%'
+"""
 
 @router.get("/tab1")
 def get_tab1() -> Dict[str, Any]:
@@ -49,7 +76,7 @@ def get_tab1() -> Dict[str, Any]:
             SELECT e.stock_code, m.stock_name, e.etf_amount, m.close as current_price, e.market_cap, e.mktcap_ratio
             FROM etf_inclusion_daily e
             JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
-            WHERE e.trade_date = ? AND m.market = ? AND m.stock_type = '보통주'
+            WHERE e.trade_date = ? AND m.market = ? AND """ + ORDINARY_STOCK_FILTER + """
             ORDER BY e.etf_amount DESC NULLS LAST
             LIMIT 50
         """
@@ -82,7 +109,7 @@ def get_tab2() -> Dict[str, Any]:
                 LEFT JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
                 WHERE t0.trade_date = ? AND t1.trade_date = ?
                   AND t0.etf_amount IS NOT NULL AND t1.etf_amount IS NOT NULL
-                  AND m.stock_type = '보통주'
+                  AND """ + ORDINARY_STOCK_FILTER + """
                 ORDER BY amount_diff DESC
                 LIMIT 50
             """
@@ -121,7 +148,7 @@ def get_tab3() -> Dict[str, Any]:
                 WHERE t0.trade_date = ? AND t1.trade_date = ?
                   AND t0.etf_amount IS NOT NULL AND t1.etf_amount IS NOT NULL
                   AND t0.market_cap IS NOT NULL AND t0.market_cap > 0
-                  AND m.stock_type = '보통주'
+                  AND """ + ORDINARY_STOCK_FILTER + """
                 ORDER BY ratio_increase DESC
                 LIMIT 50
             """
@@ -153,12 +180,89 @@ def get_tab4() -> Dict[str, Any]:
             LEFT JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
             WHERE e.trade_date = ?
               AND e.etf_amount IS NOT NULL AND e.market_cap IS NOT NULL AND e.market_cap > 0
-              AND m.stock_type = '보통주'
+              AND """ + ORDINARY_STOCK_FILTER + """
             ORDER BY calc_ratio DESC
             LIMIT 50
         """
         top = [format_row(r) for r in conn.execute(query, (latest_date,)).fetchall()]
         
         return {"top": top, "date": latest_date}
+    finally:
+        conn.close()
+
+@router.get("/search")
+def search_stock_etf(q: str = Query(..., min_length=1, max_length=30)) -> Dict[str, Any]:
+    """종목 검색: 최신 ETF 편입액, 시총대비 비중, 5수집일 전 대비 편입액 차이."""
+    conn = get_db_connection()
+    try:
+        dates = get_available_dates(conn)
+        if not dates:
+            return {"rows": [], "date": None, "compare_date": None, "query": q.strip()}
+
+        latest_date = dates[0]
+        compare_date = dates[-1] if len(dates) > 1 else None
+        needle = f"%{q.strip()}%"
+
+        query = """
+            SELECT e.stock_code,
+                   m.stock_name,
+                   COALESCE(m.close,
+                            (SELECT ph.close FROM main_db.price_history ph
+                             WHERE ph.stock_code = e.stock_code AND ph.close > 0
+                             ORDER BY ph.date DESC LIMIT 1),
+                            e.current_price) AS current_price,
+                   CASE
+                       WHEN (
+                           SELECT ph.close FROM main_db.price_history ph
+                           WHERE ph.stock_code = e.stock_code AND ph.close > 0
+                           ORDER BY ph.date DESC LIMIT 1 OFFSET 5
+                       ) > 0
+                       THEN ROUND((
+                           (SELECT ph.close FROM main_db.price_history ph
+                            WHERE ph.stock_code = e.stock_code AND ph.close > 0
+                            ORDER BY ph.date DESC LIMIT 1)
+                           -
+                           (SELECT ph.close FROM main_db.price_history ph
+                            WHERE ph.stock_code = e.stock_code AND ph.close > 0
+                            ORDER BY ph.date DESC LIMIT 1 OFFSET 5)
+                       ) * 100.0 / (
+                           SELECT ph.close FROM main_db.price_history ph
+                           WHERE ph.stock_code = e.stock_code AND ph.close > 0
+                           ORDER BY ph.date DESC LIMIT 1 OFFSET 5
+                       ), 2)
+                       ELSE NULL
+                   END AS price_change_pct,
+                   e.market_cap,
+                   e.etf_amount,
+                   CASE
+                       WHEN e.market_cap IS NOT NULL AND e.market_cap > 0
+                       THEN ROUND(e.etf_amount * 100.0 / e.market_cap, 3)
+                       ELSE NULL
+                   END AS mktcap_ratio,
+                   prev.etf_amount AS prev_etf_amount,
+                   CASE
+                       WHEN prev.etf_amount IS NOT NULL THEN e.etf_amount - prev.etf_amount
+                       ELSE NULL
+                   END AS amount_diff
+            FROM etf_inclusion_daily e
+            JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
+            LEFT JOIN etf_inclusion_daily prev
+                   ON prev.stock_code = e.stock_code AND prev.trade_date = ?
+            WHERE e.trade_date = ?
+              AND (m.stock_name LIKE ? OR e.stock_code LIKE ?)
+              AND """ + ORDINARY_STOCK_FILTER + """
+            ORDER BY e.etf_amount DESC NULLS LAST
+            LIMIT 50
+        """
+        rows = [format_row(r) for r in conn.execute(
+            query,
+            (compare_date or latest_date, latest_date, needle, needle),
+        ).fetchall()]
+        return {
+            "rows": rows,
+            "date": latest_date,
+            "compare_date": compare_date,
+            "query": q.strip(),
+        }
     finally:
         conn.close()

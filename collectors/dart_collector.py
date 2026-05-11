@@ -20,6 +20,13 @@ from typing import Optional
 
 import config
 from collectors.base import BaseCollector
+from financial_profiles import get_profile
+
+try:
+    from api_rate_limiter import api_limiter as _rl
+    _USE_RL = True
+except ImportError:
+    _USE_RL = False
 
 logger = logging.getLogger(__name__)
 
@@ -41,26 +48,31 @@ _FINANCIAL_KEYWORDS = [
 
 # 계정과목 → 필드명 매핑
 _ACCOUNT_MAP = [
-    (["매출액", "영업수익"],                                      "revenue"),
+    (["매출액", "영업수익", "매출"],                              "revenue"),
     (["영업이익"],                                                "operating_profit"),
-    (["당기순이익"],                                              "net_income"),      # "주당" 제외
+    (["당기순이익", "당기순손익", "분기순이익", "반기순이익"],     "net_income"),      # "주당" 제외
     (["자산총계"],                                                "total_assets"),
     (["부채총계"],                                                "total_liabilities"),
     (["자본총계"],                                                "total_equity"),
     (["자본금"],                                                  "capital_stock"),
-    (["기본주당순이익", "주당순이익", "기본EPS"],                  "eps"),
-    (["주당순자산", "1주당순자산가액"],                            "bps"),
+    # EPS: DART 공시에 따라 계정명 상이 — "기본주당이익(손실)" 등 추가
+    (["기본주당순이익", "주당순이익", "기본EPS", "기본주당이익"],  "eps"),
+    # BPS: 재무상태표 주석에 주로 표기
+    (["주당순자산", "1주당순자산가액", "주당장부가액"],            "bps"),
     (["주당배당금", "주당현금배당금"],                             "dps"),
     (["현금및현금성자산", "현금성자산"],                           "cash"),
     (["발행주식수", "유통주식수"],                                 "total_shares"),
+    # 감가상각비: CFS 현금흐름표에 개별 항목으로 표시되는 경우만 수집됨
+    # → 대부분 회사는 finstate_all에 미포함 (조정 합계만 표시)
+    # → fix_financial_gaps.py (FnGuide CF 스크래핑)으로 보완
     (["감가상각비"],                                              "depreciation_amortization"),
 ]
 
 _BLANK_FIN = {
-    "revenue": 0.0, "operating_profit": 0.0, "net_income": 0.0,
-    "total_assets": 0.0, "total_liabilities": 0.0, "total_equity": 0.0,
-    "capital_stock": 0.0, "eps": 0.0, "bps": 0.0, "dps": 0.0,
-    "cash": 0.0, "total_shares": 0.0, "depreciation_amortization": 0.0,
+    "revenue": None, "operating_profit": None, "net_income": None,
+    "total_assets": None, "total_liabilities": None, "total_equity": None,
+    "capital_stock": None, "eps": None, "bps": None, "dps": None,
+    "cash": None, "total_shares": None, "depreciation_amortization": None,
 }
 
 _BLANK_CF = {
@@ -78,13 +90,28 @@ _CF_MAP = [
 ]
 
 
-def _parse_fin_df(df) -> dict:
+def _parse_fin_df(df, stock_code: Optional[str] = None) -> dict:
     """DART finstate DataFrame → 재무 dict."""
     import pandas as _pd
     m = dict(_BLANK_FIN)
     if df is None or df.empty:
         return m
+    prof = get_profile(stock_code or "")
+    extra_rev = prof.get("revenue_keywords", [])
+    extra_ni = prof.get("net_income_keywords", [])
+    extra_eps = prof.get("eps_keywords", [])
+    ni_excludes = tuple(prof.get("net_income_exclude_keywords", []))
+
+    account_map = list(_ACCOUNT_MAP)
+    if extra_rev:
+        account_map.append((extra_rev, "revenue"))
+    if extra_ni:
+        account_map.append((extra_ni, "net_income"))
+    if extra_eps:
+        account_map.append((extra_eps, "eps"))
+
     for _, row in df.iterrows():
+        sj  = str(row.get("sj_nm", "")).replace(" ", "")
         acc = str(row.get("account_nm", "")).replace(" ", "")
         val_col = "thstrm_amount"
         if not acc or val_col not in row or _pd.isna(row[val_col]):
@@ -93,11 +120,25 @@ def _parse_fin_df(df) -> dict:
             val = float(str(row[val_col]).replace(",", ""))
         except ValueError:
             continue
-        for keywords, field in _ACCOUNT_MAP:
+        for keywords, field in account_map:
             if field == "net_income" and "주당" in acc:
                 continue
+            if field == "net_income" and any(x in acc for x in ("귀속", "비지배", "지배기업")):
+                continue
+            if field == "net_income" and ni_excludes and any(x in acc for x in ni_excludes):
+                continue
+            # 손익 항목은 포괄손익계산서 행만 허용 (자본변동표 0 덮어쓰기 방지)
+            if field in ("revenue", "operating_profit", "net_income", "eps"):
+                if "손익계산서" not in sj:
+                    continue
+            # 재무상태 항목은 재무상태표 행만 허용
+            if field in ("total_assets", "total_liabilities", "total_equity", "capital_stock", "bps"):
+                if "재무상태표" not in sj:
+                    continue
             if any(kw in acc for kw in keywords):
-                m[field] = val
+                # 0값보다 비영값 우선
+                if val != 0 or m.get(field) in (None, 0, 0.0):
+                    m[field] = val
                 break
     return m
 
@@ -217,6 +258,11 @@ class DARTCollector(BaseCollector):
                 if year > latest_y or (year == latest_y and quarter > latest_q):
                     continue
 
+                # ── Rate limiter: finstate 호출마다 쿼터 차감 ──
+                if _USE_RL and not _rl.wait("DART"):
+                    logger.warning(f"[DART재무] 쿼터 소진 — {stock_code} 수집 중단")
+                    return results
+
                 fn_data = None
                 for fs_div in ["CFS", "OFS"]:
                     try:
@@ -226,8 +272,12 @@ class DARTCollector(BaseCollector):
                             break
                     except Exception:
                         pass
+                    if _USE_RL:
+                        _rl.wait("DART")
 
                 if fn_data is None or fn_data.empty:
+                    if _USE_RL and not _rl.wait("DART"):
+                        return results
                     try:
                         fn_data = dart.finstate(stock_code, year, rprt_code)
                     except Exception:
@@ -236,7 +286,7 @@ class DARTCollector(BaseCollector):
                 if fn_data is None or fn_data.empty:
                     continue
 
-                m = _parse_fin_df(fn_data)
+                m = _parse_fin_df(fn_data, stock_code=stock_code)
                 results.append({
                     "stock_code": stock_code,
                     "year":       year,
@@ -279,6 +329,11 @@ class DARTCollector(BaseCollector):
             for quarter, rprt_code in _RPRT_CODE.items():
                 if year > latest_y or (year == latest_y and quarter > latest_q):
                     continue
+                # ── Rate limiter: CF finstate 호출마다 쿼터 차감 ──
+                if _USE_RL and not _rl.wait("DART"):
+                    logger.warning(f"[DART-CF] 쿼터 소진 — {stock_code} CF 수집 중단")
+                    return results
+
                 cf_data = None
                 for fs_div in ["CFS", "OFS"]:
                     try:
@@ -291,6 +346,8 @@ class DARTCollector(BaseCollector):
                                 break
                     except Exception:
                         pass
+                    if _USE_RL:
+                        _rl.wait("DART")
 
                 if cf_data is None:
                     continue

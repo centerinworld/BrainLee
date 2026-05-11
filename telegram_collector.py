@@ -25,7 +25,7 @@ telegram_collector.py — 텔레그램 채널 보고서 자동 수집
   python3 telegram_collector.py --channel @채널명
 """
 
-import sys, os, asyncio, sqlite3, logging, argparse, re, time
+import sys, os, asyncio, sqlite3, logging, logging.handlers, argparse, re, time
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -36,7 +36,12 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("/Applications/stock_dashboard/telegram_collector.log", encoding="utf-8"),
+        logging.handlers.RotatingFileHandler(
+            "/Applications/stock_dashboard/telegram_collector.log",
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=2,
+            encoding="utf-8",
+        ),
     ],
 )
 logger = logging.getLogger(__name__)

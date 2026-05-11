@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # ── 경로 설정 ────────────────────────────────────────────────────────────────
 _DIR = os.path.dirname(os.path.abspath(__file__))
 EMP_DB   = os.path.join(_DIR, "employment.db")
-STOCK_DB = "/Applications/stock_dashboard/stock.db"
+STOCK_DB = os.environ.get("STOCK_DB", "/Applications/stock_dashboard/stock.db")
 
 # ── NPS API 설정 ─────────────────────────────────────────────────────────────
 API_KEY  = "93b5be4d33f6d76af92ead610f161975e4dca7cd021b60e97d40348ab0d824da"
@@ -190,7 +190,64 @@ def _name_patterns(stock_name: str) -> list:
     return result
 
 
-def _find_latest_seq(stock_name: str) -> tuple | None:
+_NAME_CLEAN_RE = __import__("re").compile(
+    r"주식회사|\(주\)|㈜|（주）|\( 주 \)|\s+",
+    __import__("re").IGNORECASE,
+)
+
+
+def _clean_company_name(name: str) -> str:
+    return _NAME_CLEAN_RE.sub("", name or "").upper()
+
+
+def _is_project_workplace(name: str) -> bool:
+    """건설/공사성 프로젝트 사업장처럼 본사 사업장으로 보기 어려운 NPS 행 제외."""
+    s = name or ""
+    return any(token in s for token in ("/일용", "-(일용", "（일용", "/상용", "-(상용", "（상용"))
+
+
+def _find_latest_seq_fast(stock_name: str, biz_no_6: str = "") -> tuple | None:
+    """
+    적은 호출로 NPS seq를 찾는 1차 매칭.
+    - stock_name 원문/한글 변환명으로 검색
+    - wkplNm을 정규화해 상장사명과 같으면 채택
+    - biz_no_6가 있으면 같이 전달해 동명이인/공사성 사업장을 줄인다.
+    """
+    search_names = [stock_name] + _korean_variants(stock_name)
+    target_names = {_clean_company_name(n) for n in search_names}
+    candidates = []
+
+    for name in search_names:
+        time.sleep(0.12)
+        params = {"wkplNm": name, "numOfRows": "100", "pageNo": "1"}
+        if biz_no_6:
+            params["bzowrRgstNo"] = biz_no_6
+        body = _api_get("getBassInfoSearchV2", params)
+        for it in _get_items(body):
+            wkpl_nm = it.get("wkplNm", "")
+            seq = it.get("seq")
+            if not seq:
+                continue
+            if _is_project_workplace(wkpl_nm):
+                continue
+            cleaned = _clean_company_name(wkpl_nm)
+            if cleaned in target_names:
+                candidates.append((int(seq), wkpl_nm))
+        if candidates:
+            break
+
+    if not candidates:
+        return None
+
+    best_seq, best_nm = max(candidates, key=lambda x: x[0])
+    time.sleep(0.12)
+    d = _api_get("getDetailInfoSearchV2", {"seq": str(best_seq)})
+    di = _get_items(d)
+    jnngp = int(di[0].get("jnngpCnt", 0) or 0) if di else 0
+    return (best_seq, best_nm, jnngp)
+
+
+def _find_latest_seq(stock_name: str, biz_no_6: str = "") -> tuple | None:
     """
     회사명 패턴으로 NPS 검색 → 정확히 일치하는 사업장명 중 최신(최대) seq 반환.
     반환: (seq, wkpl_nm, jnngp_cnt) 또는 None
@@ -200,10 +257,13 @@ def _find_latest_seq(stock_name: str) -> tuple | None:
 
     for pattern in patterns:
         time.sleep(0.25)
-        body = _api_get("getBassInfoSearchV2", {
+        params = {
             "wkplNm": pattern,
             "numOfRows": "100", "pageNo": "1"
-        })
+        }
+        if biz_no_6:
+            params["bzowrRgstNo"] = biz_no_6
+        body = _api_get("getBassInfoSearchV2", params)
         items = _get_items(body)
         if not items:
             continue
@@ -236,17 +296,43 @@ def _find_latest_seq(stock_name: str) -> tuple | None:
 
 
 # ── 1단계: seq 매핑 구축 ─────────────────────────────────────────────────────
-def build_seq_map(limit: int = 300):
+def build_seq_map(
+    limit: int = 300,
+    refresh: bool = False,
+    fast_only: bool = False,
+    offset: int = 0,
+):
     """
     stock_universe 상위 N개 종목에 대해 최신 NPS seq를 찾아 nps_seq_map에 저장.
     매월 실행해야 seq가 갱신됨 (seq = 월별 스냅샷 번호).
     """
     stk_conn = sqlite3.connect(f"file:{STOCK_DB}?mode=ro", uri=True)
-    universe = {r[0]: r[1] for r in stk_conn.execute(
-        "SELECT stock_code, stock_name FROM stock_universe "
-        "ORDER BY market_cap DESC NULLS LAST LIMIT ?", (limit,)
-    ).fetchall()}
+    sql = """
+        SELECT stock_code, stock_name
+        FROM stock_universe
+        WHERE market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
+          AND stock_type = '보통주'
+          AND LENGTH(stock_code) = 6
+        ORDER BY market_cap DESC NULLS LAST, stock_code
+    """
+    params = ()
+    if limit and limit > 0:
+        sql += " LIMIT ?"
+        params = (limit,)
+    if offset and offset > 0:
+        if not (limit and limit > 0):
+            sql += " LIMIT -1"
+        sql += " OFFSET ?"
+        params = params + (offset,)
+    universe = {r[0]: r[1] for r in stk_conn.execute(sql, params).fetchall()}
     stk_conn.close()
+    conn = sqlite3.connect(EMP_DB)
+    biz_map = {
+        r[0]: r[1] for r in conn.execute(
+            "SELECT stock_code, biz_no_6 FROM stock_bizno_map WHERE biz_no_6 IS NOT NULL"
+        ).fetchall()
+    }
+    conn.close()
 
     if not universe:
         logger.error("stock_universe 비어 있음")
@@ -254,14 +340,33 @@ def build_seq_map(limit: int = 300):
 
     current_ym = datetime.now().strftime("%Y%m")
     total = saved = failed = 0
+    conn = sqlite3.connect(EMP_DB)
+    existing = {
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT stock_code FROM nps_seq_map WHERE updated_ym=?",
+            (current_ym,),
+        ).fetchall()
+    }
+    conn.close()
 
     for stock_code, stock_name in universe.items():
         total += 1
-        result = _find_latest_seq(stock_name)
+        if not refresh and stock_code in existing:
+            saved += 1
+            if total % 50 == 0:
+                logger.info(f"seq 매핑 진행: {total}/{len(universe)} 처리, 보유/저장={saved}, 실패={failed}")
+            continue
+
+        biz_no_6 = biz_map.get(stock_code, "")
+        result = _find_latest_seq_fast(stock_name, biz_no_6)
+        if result is None and not fast_only:
+            result = _find_latest_seq(stock_name, biz_no_6)
 
         if result is None:
             logger.debug(f"[{stock_code}] {stock_name}: 매핑 실패")
             failed += 1
+            if total % 50 == 0:
+                logger.info(f"seq 매핑 진행: {total}/{len(universe)} 처리, 보유/저장={saved}, 실패={failed}")
             continue
 
         seq, wkpl_nm, jnngp = result
@@ -276,8 +381,10 @@ def build_seq_map(limit: int = 300):
         saved += 1
 
         logger.info(f"[{stock_code}] {stock_name} → {wkpl_nm} (seq={seq}, 가입자={jnngp:,}명)")
+        if total % 50 == 0:
+            logger.info(f"seq 매핑 진행: {total}/{len(universe)} 처리, 보유/저장={saved}, 실패={failed}")
 
-    logger.info(f"seq 매핑 완료: {total}종목 처리, {saved}개 저장, {failed}개 실패")
+    logger.info(f"seq 매핑 완료: {total}종목 처리, {saved}개 보유/저장, {failed}개 실패")
 
 
 # ── 2단계: 월별 입사/퇴사 수집 ──────────────────────────────────────────────
@@ -287,6 +394,8 @@ def collect_monthly(target_ym: str = None):
     월별로 build_seq_map → collect_monthly 순서로 실행.
     """
     if target_ym is None:
+        target_ym = _detect_latest_data_ym()
+    if not target_ym:
         target_ym = datetime.now().strftime("%Y%m")
 
     conn = sqlite3.connect(EMP_DB)
@@ -312,7 +421,10 @@ def collect_monthly(target_ym: str = None):
             continue
 
         time.sleep(0.2)
-        body = _api_get("getPdAcctoSttusInfoSearchV2", {"seq": str(seq)})
+        body = _api_get("getPdAcctoSttusInfoSearchV2", {
+            "seq": str(seq),
+            "dataCrtYm": target_ym,
+        })
         items = _get_items(body)
 
         if not items:
@@ -383,24 +495,99 @@ def get_nps_bonus_map(months: int = 3) -> dict:
 
 
 # ── 4단계: 과거 데이터 소급 수집 ────────────────────────────────────────────
-def build_historical_data(months_back: int = 36):
+def _detect_latest_data_ym() -> str | None:
+    """NPS 사업장 검색 응답에서 현재 제공 중인 최신 자료생성년월을 확인."""
+    body = _api_get("getBassInfoSearchV2", {
+        "wkplNm": "삼성전자로지텍주식회사",
+        "numOfRows": "1",
+        "pageNo": "1",
+    })
+    items = _get_items(body)
+    if not items:
+        return None
+    ym = str(items[0].get("dataCrtYm", "") or "").strip()
+    return ym if len(ym) == 6 and ym.isdigit() else None
+
+
+def _get_recent_company_snapshots(
+    wkpl_nm: str,
+    months_back: int | None = None,
+    from_ym: str | None = None,
+) -> list[tuple[int, str]]:
+    """
+    사업장명으로 검색 가능한 월별 스냅샷 목록을 최신순 반환.
+    반환: [(seq, data_ym), ...]
+    """
+    snapshots = []
+    seen = set()
+    for page in range(1, 21):
+        time.sleep(0.2)
+        body = _api_get("getBassInfoSearchV2", {
+            "wkplNm": wkpl_nm,
+            "numOfRows": "100",
+            "pageNo": str(page),
+        })
+        items = _get_items(body)
+        if not items:
+            break
+        for it in items:
+            if it.get("wkplNm") != wkpl_nm:
+                continue
+            seq = it.get("seq")
+            data_ym = str(it.get("dataCrtYm", "") or "").strip()
+            if not seq or len(data_ym) != 6 or not data_ym.isdigit():
+                continue
+            key = (int(seq), data_ym)
+            if key in seen:
+                continue
+            seen.add(key)
+            snapshots.append(key)
+
+        total_cnt = int(body.get("totalCount") or 0)
+        if page * 100 >= total_cnt:
+            break
+
+    snapshots.sort(key=lambda x: (x[1], x[0]), reverse=True)
+    if from_ym:
+        snapshots = [snap for snap in snapshots if snap[1] >= from_ym]
+    if months_back and months_back > 0:
+        snapshots = snapshots[:months_back]
+    return snapshots
+
+
+def build_historical_data(months_back: int | None = 36, from_ym: str | None = None):
     """
     이미 수집된 nps_seq_map의 회사들에 대해 과거 데이터를 소급 수집.
-    NPS API는 날짜 파라미터 없음 → seq 순서로 상대 월 추론.
-
-    각 회사의 wkpl_nm으로 API에서 ALL seqs 수집(최대 5페이지 × 100건).
-    최신 seq → 현재월, 다음 seq → 3개월 전, ... 형식으로 날짜 추론.
+    getBassInfoSearchV2의 dataCrtYm/seq를 기준으로 최근 N개월 스냅샷을 찾고,
+    getPdAcctoSttusInfoSearchV2(seq, dataCrtYm)로 월별 취득/상실을 저장한다.
     """
-    if not _HAS_DATEUTIL:
-        logger.error("dateutil 패키지 필요: pip3 install python-dateutil")
-        return
-
-    from dateutil.relativedelta import relativedelta
-
     conn = sqlite3.connect(EMP_DB)
-    seq_rows = conn.execute(
-        "SELECT stock_code, seq, wkpl_nm FROM nps_seq_map ORDER BY stock_code"
-    ).fetchall()
+    try:
+        conn.execute("ATTACH DATABASE ? AS stock_src", (STOCK_DB,))
+        seq_rows = conn.execute(
+            """
+            SELECT m.stock_code, m.wkpl_nm
+            FROM nps_seq_map m
+            JOIN stock_src.stock_universe u ON u.stock_code = m.stock_code
+            WHERE m.wkpl_nm IS NOT NULL
+              AND u.market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
+              AND u.stock_type = '보통주'
+              AND LENGTH(u.stock_code) = 6
+            GROUP BY m.stock_code, m.wkpl_nm
+            ORDER BY m.stock_code
+            """
+        ).fetchall()
+    except sqlite3.Error as e:
+        logger.warning(f"stock_universe 필터 적용 실패, nps_seq_map 전체 사용: {e}")
+        seq_rows = conn.execute(
+            """
+            SELECT stock_code, wkpl_nm
+            FROM nps_seq_map
+            WHERE wkpl_nm IS NOT NULL
+            GROUP BY stock_code, wkpl_nm
+            ORDER BY stock_code
+            """
+        ).fetchall()
     conn.close()
 
     if not seq_rows:
@@ -408,49 +595,20 @@ def build_historical_data(months_back: int = 36):
         return
 
     total_saved = 0
-    max_quarters = months_back // 3 + 1
 
-    for sc, latest_seq, wkpl_nm in seq_rows:
+    for sc, wkpl_nm in seq_rows:
         if not wkpl_nm:
             logger.debug(f"[{sc}] wkpl_nm 없음, 스킵")
             continue
 
-        # 해당 회사의 모든 historical seqs 수집 (최대 5페이지)
-        all_seqs = []
-        for page in range(1, 6):
-            time.sleep(0.3)
-            body = _api_get("getBassInfoSearchV2", {
-                "wkplNm": wkpl_nm,
-                "numOfRows": "100", "pageNo": str(page)
-            })
-            items = _get_items(body)
-            if not items:
-                break
-            for it in items:
-                nm  = it.get("wkplNm", "")
-                seq = it.get("seq")
-                if nm == wkpl_nm and seq:
-                    all_seqs.append(int(seq))
-
-            total_cnt = body.get("totalCount", 0)
-            if page * 100 >= int(total_cnt or 0):
-                break
-
-        if not all_seqs:
-            logger.debug(f"[{sc}] {wkpl_nm}: seqs 없음")
+        snapshots = _get_recent_company_snapshots(wkpl_nm, months_back, from_ym)
+        if not snapshots:
+            logger.debug(f"[{sc}] {wkpl_nm}: 월별 스냅샷 없음")
             continue
 
-        all_seqs = sorted(set(all_seqs), reverse=True)  # 최신 seq 먼저, 중복 제거
-
-        # 최대 max_quarters개 수집
-        collect_seqs = all_seqs[:max_quarters]
         company_saved = 0
 
-        for i, seq in enumerate(collect_seqs):
-            # 날짜 추론: i=0 → 현재월, i=1 → 3개월 전, ...
-            dt = datetime.now() - relativedelta(months=i * 3)
-            data_ym = dt.strftime("%Y%m")
-
+        for seq, data_ym in snapshots:
             # 이미 수집한 데이터 스킵
             conn = sqlite3.connect(EMP_DB)
             already = conn.execute(
@@ -461,7 +619,10 @@ def build_historical_data(months_back: int = 36):
                 continue
 
             time.sleep(0.2)
-            body = _api_get("getPdAcctoSttusInfoSearchV2", {"seq": str(seq)})
+            body = _api_get("getPdAcctoSttusInfoSearchV2", {
+                "seq": str(seq),
+                "dataCrtYm": data_ym,
+            })
             items = _get_items(body)
 
             if not items:
@@ -484,7 +645,7 @@ def build_historical_data(months_back: int = 36):
             total_saved += 1
 
         if company_saved > 0:
-            logger.info(f"[{sc}] {wkpl_nm[:25]}: {company_saved}개 기간 저장 (총 seqs={len(all_seqs)})")
+            logger.info(f"[{sc}] {wkpl_nm[:25]}: {company_saved}개월 저장 (스냅샷={len(snapshots)})")
 
     logger.info(f"과거 데이터 소급 수집 완료: 총 {total_saved}건 저장")
 
@@ -528,7 +689,11 @@ def test_single(stock_code: str):
         di = _get_items(d)
         jnngp = int(di[0].get("jnngpCnt", 0) or 0) if di else 0
 
-        p = _api_get("getPdAcctoSttusInfoSearchV2", {"seq": str(best_seq)})
+        latest_ym = _detect_latest_data_ym()
+        p = _api_get("getPdAcctoSttusInfoSearchV2", {
+            "seq": str(best_seq),
+            "dataCrtYm": latest_ym,
+        })
         pi = _get_items(p)
         nw = int(pi[0].get("nwAcqzrCnt", 0) or 0) if pi else 0
         ls = int(pi[0].get("lssJnngpCnt", 0) or 0) if pi else 0
@@ -548,8 +713,12 @@ if __name__ == "__main__":
     parser.add_argument("--test",       type=str,            help="단일 종목 테스트")
     parser.add_argument("--historical", action="store_true", help="3년치 과거 데이터 소급 수집")
     parser.add_argument("--ym",         type=str,            help="수집 년월 (기본: 현재월)")
-    parser.add_argument("--limit",      type=int, default=300, help="처리 종목 수")
-    parser.add_argument("--months-back", type=int, default=36, help="소급 수집 개월수 (--historical 전용)")
+    parser.add_argument("--limit",      type=int, default=300, help="처리 종목 수 (0=전체 코스피/코스닥)")
+    parser.add_argument("--offset",     type=int, default=0, help="매핑 시작 offset (--build-map 전용)")
+    parser.add_argument("--refresh-map", action="store_true", help="이미 매핑된 종목도 다시 조회")
+    parser.add_argument("--fast-only", action="store_true", help="정규화 빠른 매칭만 수행하고 느린 패턴 fallback 생략")
+    parser.add_argument("--months-back", type=int, default=36, help="소급 수집 개월수 (--historical 전용, 0=제한 없음)")
+    parser.add_argument("--from-ym", type=str, help="소급 수집 시작년월 YYYYMM (--historical 전용)")
     args = parser.parse_args()
 
     init_db()
@@ -557,11 +726,14 @@ if __name__ == "__main__":
     if args.test:
         test_single(args.test)
     elif args.build_map:
-        build_seq_map(limit=args.limit)
+        build_seq_map(limit=args.limit, refresh=args.refresh_map, fast_only=args.fast_only, offset=args.offset)
     elif args.collect:
         collect_monthly(target_ym=args.ym)
     elif args.historical:
-        build_historical_data(months_back=args.months_back)
+        build_historical_data(
+            months_back=None if args.months_back == 0 else args.months_back,
+            from_ym=args.from_ym,
+        )
     else:
-        build_seq_map(limit=args.limit)
+        build_seq_map(limit=args.limit, refresh=args.refresh_map, fast_only=args.fast_only, offset=args.offset)
         collect_monthly(target_ym=args.ym)

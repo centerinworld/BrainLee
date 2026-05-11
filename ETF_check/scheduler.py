@@ -55,11 +55,11 @@ def run_collector():
         result = subprocess.run(
             [python, script],
             capture_output=False,
-            timeout=7200  # 최대 2시간
+            timeout=5400  # 최대 90분
         )
         logger.info(f"수집 완료: return code={result.returncode}")
     except subprocess.TimeoutExpired:
-        logger.error("수집 타임아웃 (2시간 초과)")
+        logger.error("수집 타임아웃 (90분 초과)")
     except Exception as e:
         logger.error(f"수집 오류: {e}")
 
@@ -87,4 +87,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--once" in sys.argv:
+        today = date.today()
+        if is_trading_day(today):
+            logger.info(f"[ONCE] ETF 수집 1회 실행 — {today}")
+            run_collector()
+        else:
+            logger.info(f"[ONCE] 비거래일 스킵 — {today}")
+    else:
+        main()

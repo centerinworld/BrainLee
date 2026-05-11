@@ -187,12 +187,18 @@ class CashFlowData(Base):
     quarter = Column(Integer)   # 0 = 연간(사업보고서), 1~4 = 분기
     is_annual = Column(Boolean, default=False)
 
-    operating_cf   = Column(Float, nullable=True)   # 영업활동현금흐름
-    investing_cf   = Column(Float, nullable=True)   # 투자활동현금흐름
-    financing_cf   = Column(Float, nullable=True)   # 재무활동현금흐름
+    operating_cf   = Column(Float, nullable=True)   # 영업활동현금흐름 (누적값 가능)
+    investing_cf   = Column(Float, nullable=True)   # 투자활동현금흐름 (누적값 가능)
+    financing_cf   = Column(Float, nullable=True)   # 재무활동현금흐름 (누적값 가능)
     capex          = Column(Float, nullable=True)   # 유형자산취득(설비투자)
     cash_end       = Column(Float, nullable=True)   # 기말현금및현금성자산
     depreciation   = Column(Float, nullable=True)   # 감가상각비
+    # 분기 증분값 (_q): convert_cf_cumulative_to_quarterly.py 변환 결과
+    operating_cf_q = Column(Float, nullable=True)   # 영업CF 분기 순값
+    investing_cf_q = Column(Float, nullable=True)   # 투자CF 분기 순값
+    financing_cf_q = Column(Float, nullable=True)   # 재무CF 분기 순값
+    capex_q        = Column(Float, nullable=True)   # CapEx 분기 순값
+    value_type     = Column(String, nullable=True)  # NULL|cumulative→derived|derived_q4
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

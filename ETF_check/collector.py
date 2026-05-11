@@ -34,8 +34,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 요청 간격 (초) — 서버 부하 방지
-REQUEST_DELAY = 1.5
+# 요청 간격 (초) — ETF/ETN 제외 후에도 3천여 종목이라 1.5초면 90분+ 소요된다.
+REQUEST_DELAY = float(os.getenv("ETF_CHECK_REQUEST_DELAY", "0.6"))
 
 
 def _send_telegram(msg: str):
@@ -49,8 +49,8 @@ def _send_telegram(msg: str):
 
 
 def get_stock_list():
-    """stock.db의 stock_universe에서 전체 종목 코드 + 이름 가져오기 (코스피/코스닥만)"""
-    conn = sqlite3.connect(STOCK_DB)
+    """stock.db의 stock_universe에서 코스피/코스닥 보통주 코드 + 이름 가져오기."""
+    conn = sqlite3.connect(f"file:{STOCK_DB}?mode=ro", uri=True, timeout=3)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
         SELECT stock_code, stock_name
@@ -64,6 +64,10 @@ def get_stock_list():
           AND  stock_code NOT LIKE 'ES%'
           AND  length(stock_code) = 6
           AND  stock_code GLOB '[0-9]*'
+          AND  market IN ('KOSPI', 'KOSDAQ', '유가증권', '코스닥')
+          AND  COALESCE(stock_type, '') NOT IN ('ETF', 'ETF/ETN', 'ETN')
+          AND  stock_name NOT LIKE '%ETF%'
+          AND  stock_name NOT LIKE '%ETN%'
         ORDER  BY market_cap DESC NULLS LAST
     """).fetchall()
     conn.close()
@@ -201,6 +205,7 @@ def run_collection(trade_date: str = None, limit: int = None):
 
     success_count = 0
     fail_count    = 0
+    aborted       = False
     buffer        = []
     FLUSH_EVERY   = 50  # 50건마다 DB에 저장
 
@@ -238,6 +243,7 @@ def run_collection(trade_date: str = None, limit: int = None):
                     )
                     _send_telegram(msg)
                     logger.error("수집 중 세션 만료 — 중단")
+                    aborted = True
                     break
 
                 if result and isinstance(result, dict) and result.get("etf_amount") is not None:
@@ -265,11 +271,12 @@ def run_collection(trade_date: str = None, limit: int = None):
 
     # 실행 로그 완료 기록
     conn = sqlite3.connect(DB_PATH)
+    status = "done" if (not aborted and success_count > 0 and success_count + fail_count >= total) else "error"
     conn.execute("""
         UPDATE collection_log
-        SET finished_at=?, success=?, failed=?, status='done'
+        SET finished_at=?, success=?, failed=?, status=?
         WHERE id=?
-    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), success_count, fail_count, log_id))
+    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), success_count, fail_count, status, log_id))
     conn.commit()
     conn.close()
 

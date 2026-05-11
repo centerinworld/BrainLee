@@ -20,8 +20,10 @@ import time
 import threading
 import requests
 import logging
+import logging.handlers
 import json
 import sys
+import atexit
 import os
 import re
 import httpx
@@ -40,13 +42,17 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(
+        logging.handlers.RotatingFileHandler(
             "/Applications/stock_dashboard/peak_monitor.log",
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=3,
             encoding="utf-8",
         ),
     ],
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # ──────────────────────────────────────────────────────────────
 # 설정
@@ -659,5 +665,32 @@ def main() -> None:
         time.sleep(sleep_t)
 
 
+def _acquire_daemon_lock() -> None:
+    """중복 실행 방지. 이미 실행 중이면 즉시 종료."""
+    import atexit
+    pid_path = "/Applications/stock_dashboard/logs/peak_monitor.pid"
+    os.makedirs(os.path.dirname(pid_path), exist_ok=True)
+
+    if os.path.exists(pid_path):
+        try:
+            existing = int(open(pid_path).read().strip())
+            if existing == os.getpid():
+                # serve_foreground.sh가 먼저 PID를 썼을 때 자기 자신을 중복으로 오인하는 방지
+                pass
+            else:
+                os.kill(existing, 0)
+                logger.warning(f"[중복 실행 방지] PID {existing}가 이미 실행 중입니다. 종료합니다.")
+                raise SystemExit(0)
+        except (ProcessLookupError, ValueError):
+            pass
+
+    with open(pid_path, "w") as _f:
+        _f.write(str(os.getpid()))
+
+    atexit.register(lambda: os.unlink(pid_path) if os.path.exists(pid_path) else None)
+    logger.info(f"[시작] PID {os.getpid()} — {pid_path} 잠금 획득")
+
+
 if __name__ == "__main__":
+    _acquire_daemon_lock()
     main()

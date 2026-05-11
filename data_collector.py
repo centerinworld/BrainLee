@@ -27,6 +27,7 @@ data_collector.py — 주식 데이터 수집기 (재설계 버전)
 import OpenDartReader
 import yfinance as yf
 import pandas as pd
+from financial_profiles import get_profile
 import httpx
 import time
 import argparse
@@ -36,6 +37,12 @@ import config
 from kis_client import kis_client
 
 logger = logging.getLogger(__name__)
+
+try:
+    from api_rate_limiter import api_limiter as _rl
+    _USE_RL = True
+except ImportError:
+    _USE_RL = False
 
 
 class DataCollector:
@@ -177,6 +184,8 @@ class DataCollector:
                 today_str = today.strftime("%Y%m%d")
                 for _kind in ["A", "B"]:
                     try:
+                        if _USE_RL and not _rl.wait("DART"):
+                            break  # 쿼터 소진
                         disc = self.dart.list(today_str, today_str, kind=_kind)
                     except Exception:
                         continue  # 결과 없을 때 예외 무시
@@ -218,6 +227,8 @@ class DataCollector:
             week_ago = (today - timedelta(days=7)).strftime("%Y%m%d")
             for kind in ["A", "B"]:
                 try:
+                    if _USE_RL and not _rl.wait("DART"):
+                        break  # 쿼터 소진
                     disc = self.dart.list(week_ago, today_str, kind=kind)
                 except Exception:
                     continue  # OpenDartReader가 결과 없을 때 예외 던지는 경우 무시
@@ -338,23 +349,11 @@ class DataCollector:
     # 매크로 수집
     # ──────────────────────────────────────────────────────────────────────
 
-    # ── 한국 공휴일 (KRX 휴장일) ──────────────────────────────────
-    _KR_HOLIDAYS: set = {
-        date(2026,  1,  1), date(2026,  1, 28), date(2026,  1, 29), date(2026,  1, 30),
-        date(2026,  3,  1), date(2026,  5,  1), date(2026,  5,  5), date(2026,  5,  6),
-        date(2026,  6,  6), date(2026,  8, 17), date(2026,  9, 25), date(2026,  9, 28),
-        date(2026,  9, 29), date(2026, 10,  3), date(2026, 10,  9), date(2026, 12, 25),
-        date(2025,  1,  1), date(2025,  1, 28), date(2025,  1, 29), date(2025,  1, 30),
-        date(2025,  3,  1), date(2025,  5,  1), date(2025,  5,  5), date(2025,  5,  6),
-        date(2025,  6,  6), date(2025,  8, 15), date(2025,  9, 16), date(2025,  9, 17),
-        date(2025,  9, 18), date(2025, 10,  3), date(2025, 10,  9), date(2025, 12, 25),
-    }
-
     @classmethod
     def _is_kr_trading_day(cls, d: date | None = None) -> bool:
-        """한국 증시 영업일 여부 (주말·공휴일 False)."""
-        d = d or date.today()
-        return d.weekday() < 5 and d not in cls._KR_HOLIDAYS
+        """한국 증시 영업일 여부 (주말·공휴일 False). trading_calendar 모듈 위임."""
+        from trading_calendar import is_kr_trading_day as _tc
+        return _tc(d or date.today())
 
     def collect_macro_data(self):
         """
@@ -368,10 +367,7 @@ class DataCollector:
         from datetime import date as _date
         today     = datetime.now().date()
         today_iso = today.isoformat()
-
-        if not self._is_kr_trading_day(today):
-            print(f"  [매크로] {today_iso} — 한국 휴장일. 수집 스킵 (DB 미덮어씀)")
-            return
+        is_kr_open = self._is_kr_trading_day(today)
 
         print("  [매크로] 지표 수집 시작")
         _krx = None  # KRX 수급 보완 (현재 차단 상태 — 항상 None)
@@ -382,6 +378,8 @@ class DataCollector:
             "1001": ("^KQ11", "KOSDAQ"),
         }
         for index_code, (symbol, name) in index_map.items():
+            if not is_kr_open:
+                continue
             try:
                 # ─ KIS 지수 현재가 (키워드 인자 수정: index_code 위치 인수) ─
                 price  = self.kis.get_index_price(index_code)
@@ -465,6 +463,8 @@ class DataCollector:
                             }]}, timeout=10)
                 except Exception:
                     pass
+        else:
+            print(f"  [매크로] {today_iso} — 한국 휴장일. KOSPI/KOSDAQ 수집 스킵")
 
         # ── 글로벌 지표: Yahoo Finance ───────────────────────────
         global_symbols = {
@@ -478,6 +478,7 @@ class DataCollector:
             "HKDKRW=X": "HKD/KRW",
             "^IXIC":    "NASDAQ",   # 나스닥 종합
             "^GSPC":    "S&P500",   # S&P 500
+            "^DJI":     "DJI",      # 다우존스
         }
         for symbol, name in global_symbols.items():
             self._collect_macro_yahoo(symbol, name, today_iso)
@@ -635,6 +636,9 @@ class DataCollector:
                                  progress=False, auto_adjust=True)
                 if df is None or df.empty:
                     print(f"  [지수히스토리] {name}: Yahoo 응답 없음")
+                    # 네이버 fallback (나스닥/S&P500)
+                    if symbol in self._NAVER_WORLD_SYMBOL:
+                        self._collect_macro_naver_world(symbol, name, today_iso)
                     continue
 
                 if hasattr(df.columns, 'get_level_values'):
@@ -777,10 +781,139 @@ class DataCollector:
             logger.warning(f"[수급백필] 전체 오류: {e}")
 
 
+    # ── 네이버 해외지수 심볼 매핑 ───────────────────────────────────
+    _NAVER_WORLD_SYMBOL = {
+        "^IXIC": "NAS",   # NASDAQ Composite
+        "^GSPC": "SPI",   # S&P 500
+        "^DJI":  "DJI",   # Dow Jones
+    }
+
+    def _collect_macro_naver_world(self, symbol: str, name: str, today_iso: str) -> bool:
+        """
+        네이버 증권 해외지수 API로 나스닥/S&P500 등 수집.
+        Yahoo Finance가 차단된 환경에서 fallback으로 사용.
+        반환: 성공 여부(bool)
+        """
+        naver_sym = self._NAVER_WORLD_SYMBOL.get(symbol)
+        if not naver_sym:
+            return False
+
+        import requests as _req
+        from datetime import datetime as _dt, timedelta as _td
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://finance.naver.com/",
+        }
+
+        try:
+            # ── 1. 현재가 (현재 시세) ─────────────────────────────
+            url_now = f"https://finance.naver.com/world/sise.nhn?symbol={naver_sym}"
+            r_now = _req.get(url_now, headers=headers, timeout=10)
+            r_now.encoding = "euc-kr"
+
+            from bs4 import BeautifulSoup as _BS
+            soup = _BS(r_now.text, "html.parser")
+
+            # 현재가 파싱: <span class="num">25,970.1</span>
+            close_val = None
+            change_val = None  # 전일 대비 등락률 (%)
+
+            price_tag = soup.select_one("span.num")
+            if price_tag:
+                try:
+                    close_val = float(price_tag.get_text(strip=True).replace(",", ""))
+                except Exception:
+                    pass
+
+            # 등락률
+            rate_tags = soup.select("span.num2")
+            for tag in rate_tags:
+                txt = tag.get_text(strip=True).replace(",", "").replace("%", "")
+                try:
+                    change_val = float(txt)
+                    break
+                except Exception:
+                    pass
+
+            # ── 2. 히스토리 (일봉 차트 API) ──────────────────────
+            end_dt   = _dt.now()
+            start_dt = end_dt - _td(days=100)
+            start_str = start_dt.strftime("%Y%m%d") + "000000"
+            end_str   = end_dt.strftime("%Y%m%d") + "235959"
+
+            url_chart = (
+                f"https://api.stock.naver.com/chart/world/{naver_sym}/day"
+                f"?startDateTime={start_str}&endDateTime={end_str}"
+            )
+            r_chart = _req.get(url_chart, headers=headers, timeout=15)
+            chart_data = r_chart.json() if r_chart.status_code == 200 else []
+
+            prices = []
+            if isinstance(chart_data, list):
+                for item in chart_data:
+                    try:
+                        # 형식: {"localDate":"20260508","closePrice":25970.39,...}
+                        dt_str = str(item.get("localDate", ""))
+                        if len(dt_str) != 8:
+                            continue
+                        d_iso = f"{dt_str[:4]}-{dt_str[4:6]}-{dt_str[6:8]}"
+                        c = float(item.get("closePrice") or item.get("close") or 0)
+                        o = float(item.get("openPrice")  or item.get("open")  or c)
+                        h = float(item.get("highPrice")  or item.get("high")  or c)
+                        l = float(item.get("lowPrice")   or item.get("low")   or c)
+                        v = float(item.get("accTradeVolume") or item.get("volume") or 0)
+                        if c <= 0:
+                            continue
+                        prices.append({
+                            "date":         d_iso,
+                            "open":         o,
+                            "high":         h,
+                            "low":          l,
+                            "close":        c,
+                            "volume":       v,
+                            "inst_net_buy": 0.0,
+                            "frn_net_buy":  0.0,
+                        })
+                    except Exception as ep:
+                        logger.debug(f"[Naver차트] {naver_sym} 항목 파싱: {ep}")
+
+            # 히스토리가 없으면 현재가 단독으로라도 저장
+            if not prices and close_val and close_val > 0:
+                prices.append({
+                    "date":         today_iso,
+                    "open":         close_val,
+                    "high":         close_val,
+                    "low":          close_val,
+                    "close":        close_val,
+                    "volume":       0.0,
+                    "inst_net_buy": 0.0,
+                    "frn_net_buy":  0.0,
+                })
+
+            if not prices:
+                logger.warning(f"[Naver] {name}({naver_sym}): 데이터 없음")
+                return False
+
+            httpx.post(
+                f"{self.base_url}/api/ingest/market-price",
+                json={"stock_code": symbol, "prices": prices},
+                timeout=15,
+            )
+            latest = max(prices, key=lambda x: x["date"])
+            print(f"  [Naver] {name}({naver_sym}): {latest['close']:,.2f} ({latest['date']}) {len(prices)}건")
+            return True
+
+        except Exception as e:
+            logger.warning(f"[Naver] {name}({naver_sym}) 오류: {e}")
+            return False
+
     def _collect_macro_yahoo(self, symbol: str, name: str, today_iso: str):
         """
         Yahoo Finance로 단일 매크로 심볼 수집 + 오늘 날짜 강제 upsert.
         DB에 30일치 미만이면 60d로 히스토리 백필.
+        Yahoo 실패 시 네이버 해외지수 API로 자동 fallback (나스닥/S&P500).
         """
         try:
             # DB에 해당 심볼 레코드 수 확인 → 부족하면 60d 수집
@@ -797,7 +930,8 @@ class DataCollector:
             df = yf.download(symbol, period=period, interval="1d",
                              progress=False, auto_adjust=True)
             if df is None or df.empty:
-                print(f"  [Yahoo] {name}({symbol}): 데이터 없음")
+                print(f"  [Yahoo] {name}({symbol}): 데이터 없음 → 네이버 fallback 시도")
+                self._collect_macro_naver_world(symbol, name, today_iso)
                 return
 
             if hasattr(df.columns, 'get_level_values'):
@@ -830,6 +964,7 @@ class DataCollector:
                     logger.debug(f"[Yahoo] {symbol} 행 파싱: {e2}")
 
             if not prices:
+                self._collect_macro_naver_world(symbol, name, today_iso)
                 return
 
             # ⚠️ 오늘이 한국 휴장일이면 오늘 날짜 entry 생성 금지
@@ -846,6 +981,10 @@ class DataCollector:
             print(f"  [Yahoo] {name}({symbol}): {latest['close']:,.2f} ({latest['date'][:10]})")
         except Exception as e:
             logger.warning(f"  [Yahoo] {symbol} 오류: {e}")
+            # Yahoo 예외 시에도 네이버 fallback
+            if symbol in self._NAVER_WORLD_SYMBOL:
+                print(f"  [Yahoo→Naver] {name}: Yahoo 예외 → 네이버 fallback")
+                self._collect_macro_naver_world(symbol, name, today_iso)
 
     def collect_fundamentals(self, stock_code: str, latest_only: bool = False):
         """
@@ -870,6 +1009,11 @@ class DataCollector:
                         total_skip += 1
                         continue
 
+                    # ── Rate limiter: finstate 호출마다 쿼터 차감 ──
+                    if _USE_RL and not _rl.wait("DART"):
+                        logger.warning(f"[재무] DART 일일 쿼터 소진 — {stock_code} 재무수집 중단")
+                        return  # 오늘치 쿼터 소진 → 루프 전체 중단
+
                     fn_data = None
                     for fs_div in ["CFS", "OFS"]:
                         try:
@@ -878,7 +1022,11 @@ class DataCollector:
                                 fn_data = df; break
                         except Exception:
                             pass
+                        if _USE_RL:
+                            _rl.wait("DART")  # CFS/OFS 각각 호출 차감
                     if fn_data is None or fn_data.empty:
+                        if _USE_RL and not _rl.wait("DART"):
+                            return
                         try:
                             fn_data = self.dart.finstate(stock_code, target_year, rprt_code)
                         except Exception:
@@ -899,11 +1047,17 @@ class DataCollector:
 
     def _save_financial_data(self, stock_code, year, quarter, is_annual, fn_data):
         """파싱된 재무 데이터 API로 저장."""
+        prof = get_profile(stock_code)
+        extra_rev = prof.get("revenue_keywords", [])
+        extra_ni = prof.get("net_income_keywords", [])
+        ni_excludes = tuple(prof.get("net_income_exclude_keywords", []))
+        extra_eps = prof.get("eps_keywords", [])
+
         m = {
-            "revenue": 0.0, "operating_profit": 0.0, "net_income": 0.0,
-            "total_assets": 0.0, "total_liabilities": 0.0, "total_equity": 0.0,
-            "capital_stock": 0.0, "eps": 0.0, "bps": 0.0, "dps": 0.0,
-            "cash": 0.0, "total_shares": 0.0, "depreciation_amortization": 0.0,
+            "revenue": None, "operating_profit": None, "net_income": None,
+            "total_assets": None, "total_liabilities": None, "total_equity": None,
+            "capital_stock": None, "eps": None, "bps": None, "dps": None,
+            "cash": None, "total_shares": None, "depreciation_amortization": None,
         }
         for _, row in fn_data.iterrows():
             acc = str(row.get("account_nm", "")).replace(" ", "")
@@ -914,19 +1068,33 @@ class DataCollector:
                 val = float(str(row[val_col]).replace(",", ""))
             except ValueError:
                 continue
-            if   "매출액" in acc or "영업수익" in acc:                            m["revenue"] = val
-            elif "영업이익" in acc:                                               m["operating_profit"] = val
-            elif "당기순이익" in acc and "주당" not in acc:                       m["net_income"] = val
-            elif "자산총계" in acc:                                               m["total_assets"] = val
-            elif "부채총계" in acc:                                               m["total_liabilities"] = val
-            elif "자본총계" in acc:                                               m["total_equity"] = val
-            elif "자본금" in acc:                                                 m["capital_stock"] = val
-            elif any(k in acc for k in ["기본주당순이익","주당순이익","기본EPS"]): m["eps"] = val
-            elif any(k in acc for k in ["주당순자산","1주당순자산가액"]):          m["bps"] = val
-            elif any(k in acc for k in ["주당배당금","주당현금배당금"]):           m["dps"] = val
-            elif any(k in acc for k in ["현금및현금성자산","현금성자산"]):         m["cash"] = val
-            elif any(k in acc for k in ["발행주식수","유통주식수"]):               m["total_shares"] = val
-            elif "감가상각비" in acc:                                             m["depreciation_amortization"] = val
+            _ni_kw = ("당기순이익" in acc or "분기순이익" in acc or "반기순이익" in acc or "당기순손익" in acc)
+            if any(k in acc for k in (["매출액", "영업수익", "매출"] + extra_rev)):
+                if val != 0 or m["revenue"] is None: m["revenue"] = val
+            elif "영업이익" in acc:
+                if val != 0 or m["operating_profit"] is None: m["operating_profit"] = val
+            elif (_ni_kw or any(k in acc for k in extra_ni)) and "주당" not in acc and "지배" not in acc and not any(x in acc for x in ni_excludes):
+                if val != 0 or m["net_income"] is None: m["net_income"] = val
+            elif "자산총계" in acc:
+                if val != 0 or m["total_assets"] is None: m["total_assets"] = val
+            elif "부채총계" in acc:
+                if val != 0 or m["total_liabilities"] is None: m["total_liabilities"] = val
+            elif "자본총계" in acc:
+                if val != 0 or m["total_equity"] is None: m["total_equity"] = val
+            elif "자본금" in acc:
+                if val != 0 or m["capital_stock"] is None: m["capital_stock"] = val
+            elif any(k in acc for k in ["기본주당순이익","주당순이익","기본EPS"] + extra_eps):
+                if val != 0 or m["eps"] is None: m["eps"] = val
+            elif any(k in acc for k in ["주당순자산","1주당순자산가액"]):
+                if val != 0 or m["bps"] is None: m["bps"] = val
+            elif any(k in acc for k in ["주당배당금","주당현금배당금"]):
+                if val != 0 or m["dps"] is None: m["dps"] = val
+            elif any(k in acc for k in ["현금및현금성자산","현금성자산"]):
+                if val != 0 or m["cash"] is None: m["cash"] = val
+            elif any(k in acc for k in ["발행주식수","유통주식수"]):
+                if val != 0 or m["total_shares"] is None: m["total_shares"] = val
+            elif "감가상각비" in acc:
+                if val != 0 or m["depreciation_amortization"] is None: m["depreciation_amortization"] = val
         try:
             httpx.post(f"{self.base_url}/api/ingest/fundamentals",
                        json={"stock_code": stock_code, "year": year, "quarter": quarter,
@@ -1082,6 +1250,28 @@ class DataCollector:
 # CLI 진입점
 # ──────────────────────────────────────────────────────────────────────────
 
+def _acquire_daemon_lock() -> None:
+    """데몬 모드 중복 실행 방지. 이미 실행 중인 인스턴스가 있으면 즉시 종료."""
+    import atexit
+    pid_path = "/Applications/stock_dashboard/logs/data_collector.pid"
+    os.makedirs(os.path.dirname(pid_path), exist_ok=True)
+
+    if os.path.exists(pid_path):
+        try:
+            existing = int(open(pid_path).read().strip())
+            os.kill(existing, 0)  # signal 0 = 프로세스 존재 여부만 확인
+            print(f"[중복 실행 방지] PID {existing}가 이미 실행 중입니다. 종료합니다.")
+            raise SystemExit(0)
+        except (ProcessLookupError, ValueError):
+            pass  # stale PID 파일 — 덮어쓰기 진행
+
+    with open(pid_path, "w") as _f:
+        _f.write(str(os.getpid()))
+
+    atexit.register(lambda: os.unlink(pid_path) if os.path.exists(pid_path) else None)
+    print(f"[시작] PID {os.getpid()} — {pid_path} 잠금 획득")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="주식 데이터 수집기")
     parser.add_argument("--stock", nargs="+", metavar="CODE",
@@ -1089,6 +1279,10 @@ if __name__ == "__main__":
     parser.add_argument("--nightly", action="store_true",
                         help="자정 배치를 즉시 실행 (테스트용)")
     args = parser.parse_args()
+
+    # 데몬 모드(상시 수집)만 중복 실행 방지 — --stock/--nightly 단발 모드는 허용
+    if not args.stock and not args.nightly:
+        _acquire_daemon_lock()
 
     collector = DataCollector(dart_api_key=config.DART_API_KEY)
     if not collector.wait_for_server():

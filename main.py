@@ -2,18 +2,23 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 import models, schemas, crud, processor, screener, ai_analyzer
 from database import get_db, engine
 import logging
 from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from hs_trade_lab.app.main import app as hs_trade_lab_app
 from hs_trade_lab.semiconductor_value_lab.fastapi_app import app as semiconductor_value_lab_app
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# 과도한 INFO 로그 억제 (backend.launchd.log 비대 방지)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # 데이터베이스 테이블 생성 (상시 동기화)
 models.Base.metadata.create_all(bind=engine)
@@ -39,26 +44,23 @@ from database import SessionLocal as _SessionLocal
 _scheduler = CollectionScheduler(db_factory=_SessionLocal)
 
 # ── 분리된 라우터 등록 ────────────────────────────────────────
-from routes.trend          import router as _trend_router
-from routes.signals        import router as _signals_router
-from routes.backtest       import router as _backtest_router
-from routes.telegram       import router as _telegram_router
-from routes.buy_candidates import router as _buy_router
-from routes.reports        import router as _reports_router
-from routes.ingest         import router as _ingest_router
+from routes.trend              import router as _trend_router
+from routes.signals            import router as _signals_router
+from routes.backtest           import router as _backtest_router
+from routes.telegram           import router as _telegram_router
+from routes.buy_candidates     import router as _buy_router
+from routes.reports            import router as _reports_router
+from routes.ingest             import router as _ingest_router
 from routes.portfolio          import router as _portfolio_router
 from routes.market_indicators  import router as _market_indicators_router
-from routes.tenbagger          import router as _tenbagger_router
 from routes.market_radar       import router as _market_radar_router
-from routes.employment         import router as _employment_router
-from routes.sector_define      import router as _sector_define_router
 from routes.dart_contracts     import router as _dart_contracts_router
-import sys
-sys.path.append("/Applications/stock_dashboard/ETF_check")
-from routes_etf import router as _etf_router
-
-sys.path.append("/Applications/stock_dashboard/employment_monitor")
-from routes_employment_v2 import router as _emp_v2_router
+from routes.tenbagger          import router as _tenbagger_router
+from routes.sector_define      import router as _sector_define_router
+from routes.extra_signals      import router as _extra_signals_router
+from employment_monitor.routes_employment_v2 import router as _employment_v2_router
+from routes.notices            import router as _notices_router
+from routes.insider            import router as _insider_router
 
 app.include_router(_trend_router,              prefix="/api/trend",              tags=["trend"])
 app.include_router(_signals_router,            prefix="/api/signals",            tags=["signals"])
@@ -69,13 +71,14 @@ app.include_router(_reports_router,            prefix="/api/reports",           
 app.include_router(_ingest_router,             prefix="/api/ingest",             tags=["ingest"])
 app.include_router(_portfolio_router,          prefix="/api/portfolio",          tags=["portfolio"])
 app.include_router(_market_indicators_router,  prefix="/api/market-indicators",  tags=["market-indicators"])
-app.include_router(_tenbagger_router,          prefix="/api/tenbagger",          tags=["tenbagger"])
 app.include_router(_market_radar_router,       prefix="/api/market-radar",       tags=["market-radar"])
-app.include_router(_employment_router,         prefix="/api/employment",          tags=["employment"])
-app.include_router(_sector_define_router,      prefix="/api/sector-define",       tags=["sector-define"])
-app.include_router(_dart_contracts_router,     prefix="/api/dart-contracts",      tags=["dart-contracts"])
-app.include_router(_etf_router)
-app.include_router(_emp_v2_router)
+app.include_router(_dart_contracts_router,     prefix="/api/dart-contracts",     tags=["dart-contracts"])
+app.include_router(_tenbagger_router,          prefix="/api/tenbagger",          tags=["tenbagger"])
+app.include_router(_sector_define_router,      prefix="/api/sector-define",      tags=["sector-define"])
+app.include_router(_extra_signals_router,      prefix="/api/extra-signals",      tags=["extra-signals"])
+app.include_router(_employment_v2_router)  # prefix는 router 내부에 정의됨 (/api/employment-v2)
+app.include_router(_notices_router,        prefix="/api/notices",            tags=["notices"])
+app.include_router(_insider_router,        prefix="/api/insider",            tags=["insider"])
 
 
 def _send_telegram(msg: str, dedup_key: str = ""):
@@ -89,20 +92,6 @@ def _get_cached_valuation(stock_code: str) -> dict:
     entry = _valuation_cache.get(stock_code)
     if entry and (_tm.time() - entry.get("cached_at", 0)) < 86400:
         return entry
-    # in-memory miss → stock_universe DB 확인 (nightly 스크래핑으로 갱신됨)
-    try:
-        import sqlite3 as _sl
-        with _sl.connect("stock.db") as _c:
-            row = _c.execute(
-                "SELECT per, pbr, eps FROM stock_universe WHERE stock_code=?", (stock_code,)
-            ).fetchone()
-        if row and (row[0] is not None or row[1] is not None):
-            v = {"per": row[0], "pbr": row[1], "trailing_eps": row[2],
-                 "forward_per": None, "source": "db", "cached_at": _tm.time()}
-            _valuation_cache[stock_code] = v
-            return v
-    except Exception:
-        pass
     return {}
 
 
@@ -472,8 +461,6 @@ def _is_market_hours() -> bool:
 _MACRO_SYMBOLS = {
     "^KS11":    "KOSPI",
     "^KQ11":    "KOSDAQ",
-    "^KS200":   "KOSPI200",   # KOSPI200 지수 (KOSPI200 선물 기초자산)
-    "^KQ150":   "KOSDAQ150",  # KOSDAQ150 지수 (KRX 일별 수집, Yahoo 없음)
     "^IXIC":    "NASDAQ",
     "^GSPC":    "S&P500",
     "^VIX":     "VIX",
@@ -504,58 +491,18 @@ def _realtime_fetch_price(stock_code: str, db) -> float | None:
         return None
 
 
-def _realtime_fetch_macro(db, us_only: bool = False) -> None:
-    """Yahoo Finance로 매크로 지수 최신값 조회 후 DB upsert.
-    us_only=True: NASDAQ·S&P500·VIX·상품·환율만 갱신 (KOSPI/KOSDAQ 스킵)
-    """
+def _realtime_fetch_macro(db) -> None:
+    """Yahoo Finance로 매크로 지수 최신값 조회 후 DB upsert."""
     from datetime import datetime as _dt, date as _date
-    import time as _time
     _now = _dt.now()
+    if _now.weekday() >= 5:
+        return
     _today = _now.date().isoformat()
-
-    # 한국 지수(^KS11, ^KQ11, ^KS200)는 평일 장중에만 갱신, KOSPI 기존 데이터 있으면 스킵
-    _KR_SYMBOLS = {"^KS11", "^KQ11", "^KS200", "^KQ150"}
-    _US_SYMBOLS = {"^IXIC", "^GSPC", "^VIX", "GC=F", "CL=F", "USDKRW=X"}
-
-    if not us_only:
-        from data_collector import DataCollector as _DC
-        if _now.weekday() >= 5 or not _DC._is_kr_trading_day(_now.date()):
-            # 주말 또는 공휴일은 한국 지수 스킵, 미국 지수는 계속 진행
-            pass
-        else:
-            try:
-                _existing = db.query(models.PriceHistory).filter(
-                    models.PriceHistory.stock_code == "^KS11",
-                    models.PriceHistory.date >= _today,
-                ).first()
-                if _existing and _existing.close and _existing.close > 0:
-                    # KOSPI는 이미 오늘 데이터 있음 → KR 지수 스킵, US는 별도 처리
-                    us_only = True
-            except Exception:
-                pass
-
+    # KOSPI 데이터 여부와 무관하게 미국 지수/VIX/원자재 항상 갱신
+    # (이전에 KOSPI early return으로 나스닥 등 업데이트가 누락되던 버그 수정)
     import yfinance as yf
     today = _date.today()
-
-    # US 지수: 마지막 갱신이 2시간 이내면 스킵 (중복 Yahoo 호출 방지)
-    if us_only:
-        try:
-            _us_latest = db.query(models.PriceHistory).filter(
-                models.PriceHistory.stock_code == "^IXIC",
-                models.PriceHistory.date >= _today,
-            ).order_by(models.PriceHistory.date.desc()).first()
-            if _us_latest:
-                age_h = (_now - _us_latest.date).total_seconds() / 3600 if hasattr(_us_latest.date, 'hour') else 999
-                if age_h < 2:
-                    return  # 2시간 이내 갱신 완료 → 스킵
-        except Exception:
-            pass
-
     for symbol, name in _MACRO_SYMBOLS.items():
-        if us_only and symbol in _KR_SYMBOLS:
-            continue
-        if symbol == "^KQ150":
-            continue  # KOSDAQ150: Yahoo 미지원 → 아래 pykrx로 별도 처리
         try:
             df = yf.download(symbol, period="5d", interval="1d",
                              progress=False, auto_adjust=True)
@@ -588,79 +535,17 @@ def _realtime_fetch_macro(db, us_only: bool = False) -> None:
                     pass
             if not prices:
                 continue
-            # 한국 휴장일에는 한국 심벌 오늘 entry 생성 금지
-            from data_collector import DataCollector as _DC
-            _is_kr_sym = symbol in {"^KS11", "^KQ11", "^KS200", "^KQ150"}
-            if _is_kr_sym and not _DC._is_kr_trading_day(today):
-                prices = [p for p in prices if p.date.date() != today]
-            elif not any(p.date.date() == today for p in prices):
-                # 미국 심볼 또는 영업일: Yahoo에서 오늘 데이터 없으면 가장 최신값 표시 (copy 안 함)
-                pass  # 실제 Yahoo에 오늘 데이터 없으면 미래 주사 안 함
-            if not prices:
-                continue
+            if not any(p.date.date() == today for p in prices):
+                lp = max(prices, key=lambda p: p.date)
+                prices.append(schemas.PriceRecord(
+                    date=_dt.combine(today, _dt.min.time()),
+                    open=lp.open, high=lp.high, low=lp.low, close=lp.close,
+                    volume=lp.volume, inst_net_buy=0.0, frn_net_buy=0.0,
+                ))
             crud.bulk_insert_price_history(db, schemas.PriceIngest(stock_code=symbol, prices=prices))
             logger.info(f"[RT-Macro] {symbol}({name}) {len(prices)}건 저장")
-
         except Exception as e:
             logger.warning(f"[RT-Macro] {symbol}: {e}")
-
-    # KOSPI200(^KS200) / KOSDAQ150(^KQ150): KRX 승인 API로 수집 (Yahoo/pykrx 대체)
-    if not us_only:
-        try:
-            import requests as _krx_req
-            _krx_key = getattr(config, "KRX_API_KEY", "")
-            _krx_base = "https://data-dbg.krx.co.kr/svc/apis"
-            _krx_hdr  = {"AUTH_KEY": _krx_key}
-            _idx_map  = {"코스피 200": "^KS200", "코스닥 150": "^KQ150"}
-            _krx_saved = 0
-            for _path in ("idx/kospi_dd_trd", "idx/kosdaq_dd_trd"):
-                for _days_back in range(0, 5):
-                    _d = today - timedelta(days=_days_back)
-                    if _d.weekday() >= 5:
-                        continue  # 주말 스킵
-                    _bas_dd = _d.strftime("%Y%m%d")
-                    _d_str  = _d.strftime("%Y-%m-%d")
-                    try:
-                        _rr = _krx_req.get(
-                            f"{_krx_base}/{_path}",
-                            params={"basDd": _bas_dd},
-                            headers=_krx_hdr, timeout=8,
-                        )
-                        if _rr.status_code != 200:
-                            continue
-                        for _row in _rr.json().get("OutBlock_1", []):
-                            _nm   = str(_row.get("IDX_NM", "")).strip()
-                            _code = _idx_map.get(_nm)
-                            if not _code:
-                                continue
-                            def _nv(k):
-                                v = _row.get(k, "")
-                                try: return float(str(v).replace(",", "")) if v not in ("", "-", None) else 0.0
-                                except: return 0.0
-                            _cls = _nv("CLSPRC_IDX")
-                            if _cls <= 0:
-                                continue
-                            crud.bulk_insert_price_history(db, schemas.PriceIngest(
-                                stock_code=_code,
-                                prices=[schemas.PriceRecord(
-                                    date=_dt.combine(_d, _dt.min.time()),
-                                    open=_nv("OPNPRC_IDX"), high=_nv("HGPRC_IDX"),
-                                    low=_nv("LWPRC_IDX"),   close=_cls,
-                                    volume=_nv("ACC_TRDVOL"),
-                                    inst_net_buy=0.0, frn_net_buy=0.0,
-                                )],
-                            ))
-                            _krx_saved += 1
-                        if _krx_saved > 0:
-                            break  # 최신 거래일 수집 성공
-                    except Exception as _re:
-                        logger.debug(f"[RT-Macro] KRX {_path} {_bas_dd}: {_re}")
-                        continue
-            if _krx_saved:
-                logger.info(f"[RT-Macro] KOSPI200/KOSDAQ150 KRX API {_krx_saved}건 저장")
-        except Exception as _e_krx:
-            logger.debug(f"[RT-Macro] KOSPI200/KOSDAQ150 KRX 수집 오류: {_e_krx}")
-
 
 
 def _monthly_bulk_update() -> None:
@@ -839,18 +724,11 @@ def _process_ai_combo_autotrade(combo_stocks: list):
             if name in active:
                 continue
 
-            entry_date = _dt.now().strftime("%Y-%m-%d")
-
-            # 매수가: 당일 종가 우선, 없으면 직전 영업일 종가
+            # 현재가 조회
             price_row = conn.execute(
-                "SELECT close FROM price_history WHERE stock_code=? AND date=? AND close>0",
-                (code, entry_date)
+                "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
+                (code,)
             ).fetchone()
-            if not price_row:
-                price_row = conn.execute(
-                    "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
-                    (code,)
-                ).fetchone()
             if not price_row:
                 continue
             price = price_row[0]
@@ -860,6 +738,8 @@ def _process_ai_combo_autotrade(combo_stocks: list):
             MAX_BUDGET = 10_000_000
             qty = max(1, int(MAX_BUDGET / price))
             amount = price * qty
+
+            entry_date = _dt.now().strftime("%Y-%m-%d")
             sector = s.get('sector', '')
             match_cnt = s.get('match_count', 2)
 
@@ -978,28 +858,6 @@ async def startup_event():
     _notifier_load()
     _scheduler.start()
 
-    # 시장 레이더 반도체 기업 목록 자동 초기화 (최초 1회)
-    def _init_radar_companies():
-        try:
-            from routes.market_radar import _db as _rdb, _ensure_radar_tables, SEMICONDUCTOR_COMPANIES
-            conn = _rdb()
-            _ensure_radar_tables(conn)
-            cnt = conn.execute("SELECT COUNT(*) AS c FROM radar_semiconductor_override").fetchone()["c"]
-            if cnt == 0:
-                conn.executemany("""
-                    INSERT INTO radar_semiconductor_override
-                        (sort_order, lv1, lv2, company_name, ticker, country_raw, country_flag)
-                    VALUES
-                        (:sort_order, :lv1, :lv2, :company_name, :ticker, :country_raw, :country_flag)
-                """, SEMICONDUCTOR_COMPANIES)
-                conn.commit()
-                logger.info(f"[startup] 반도체 기업 {len(SEMICONDUCTOR_COMPANIES)}개 자동 초기화 완료")
-            conn.close()
-        except Exception as e:
-            logger.warning(f"[startup] 반도체 기업 초기화 실패: {e}")
-
-    _th.Thread(target=_init_radar_companies, daemon=True, name="StartupRadarInit").start()
-
     # 서버 시작 직후 시그널 캐시 즉시 워밍업 (프론트 첫 로딩 시 10초 대기 방지)
     def _warm_cache():
         _tm.sleep(3)  # 서버 완전 기동 대기
@@ -1035,6 +893,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# Cache-Control 규칙: (prefix, max-age초)
+_CACHE_RULES = [
+    ("/api/dashboard/chart/",          300),
+    ("/api/dashboard/financial-table/", 900),
+    ("/api/dashboard/cashflow/",        900),
+    ("/api/dashboard/market-info/",     600),
+    ("/api/dashboard/disclosures/",     300),
+    ("/api/reports/stock/",            1800),
+    ("/api/market-indicators/index-investor", 300),
+    ("/api/signals/trend-candidates",  1800),
+    ("/api/signals/value-candidates",  1800),
+    ("/api/signals/market",            1800),
+]
+
+class _CacheControlMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        # 정적 자산 (콘텐츠 해시 포함): 1년 영구 캐시
+        if path.startswith("/assets/") and ("." in path.split("/")[-1]):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
+        for prefix, max_age in _CACHE_RULES:
+            if path.startswith(prefix):
+                response.headers["Cache-Control"] = f"public, max-age={max_age}, stale-while-revalidate={max_age*2}"
+                break
+        return response
+
+app.add_middleware(_CacheControlMiddleware)
 
 @app.get("/api/realtime/prices")
 def get_realtime_prices(db: Session = Depends(get_db)):
@@ -1043,30 +932,46 @@ def get_realtime_prices(db: Session = Depends(get_db)):
     프론트엔드 1분 폴링 전용 경량 API.
     반환: { stock_code: { current_price, change_pct, profit, profit_pct, total_value } }
     """
+    from datetime import date as _d
+    import sqlite3 as _sl
+
     holdings = db.query(models.Portfolio).filter(models.Portfolio.quantity > 0).all()
     result = {}
     total_buy_sum   = 0.0
     total_value_sum = 0.0
     total_profit_sum = 0.0
 
+    if not holdings:
+        return {"holdings": {}, "summary": {"total_buy": 0, "total_value": 0, "total_profit": 0, "total_profit_pct": 0.0},
+                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "market_open": _is_market_hours()}
+
+    _today_str = _d.today().isoformat()
+    codes = [h.stock_code for h in holdings]
+    placeholders = ",".join("?" * len(codes))
+
+    # 단일 쿼리로 전 종목 현재가 + 전일가 동시 조회 (N×2 → 1 쿼리)
+    _conn = _sl.connect("stock.db")
+    price_map = {}
+    try:
+        rows = _conn.execute(f"""
+            SELECT stock_code,
+                   MAX(CASE WHEN date <= ? AND close > 0 THEN close END) AS current_close,
+                   MAX(CASE WHEN date <  ? AND close > 0 THEN close END) AS prev_close,
+                   MAX(CASE WHEN date <= ? AND close > 0 THEN date  END) AS price_date
+            FROM price_history
+            WHERE stock_code IN ({placeholders})
+            GROUP BY stock_code
+        """, [_today_str, _today_str, _today_str] + codes).fetchall()
+        for r in rows:
+            price_map[r[0]] = {"current": r[1], "prev": r[2], "date": r[3]}
+    finally:
+        _conn.close()
+
     for h in holdings:
-        price_row = db.query(models.PriceHistory).filter(
-            models.PriceHistory.stock_code == h.stock_code,
-            models.PriceHistory.close > 0,
-        ).order_by(models.PriceHistory.date.desc()).first()
-
-        # 전 거래일 종가: 오늘 이전 날짜 중 최신 레코드
-        from datetime import date as _d
-        _today_str = _d.today().isoformat()
-        prev_row = db.query(models.PriceHistory).filter(
-            models.PriceHistory.stock_code == h.stock_code,
-            models.PriceHistory.close > 0,
-            models.PriceHistory.date < _today_str,
-        ).order_by(models.PriceHistory.date.desc()).first()
-
-        current_price = price_row.close if price_row else h.avg_price
-        prev_price    = prev_row.close  if prev_row  else current_price
-        price_date    = price_row.date.strftime("%Y-%m-%d %H:%M") if price_row else ""
+        pm = price_map.get(h.stock_code, {})
+        current_price = pm.get("current") or h.avg_price
+        prev_price    = pm.get("prev")    or current_price
+        price_date    = (pm.get("date") or "")[:16]  # YYYY-MM-DD HH:MM
 
         change_pct  = round((current_price - prev_price) / prev_price * 100, 2) if prev_price else 0.0
         profit      = round((current_price - h.avg_price) * h.quantity)
@@ -1105,33 +1010,16 @@ def get_realtime_prices(db: Session = Depends(get_db)):
 def get_realtime_macro(db: Session = Depends(get_db)):
     """
     매크로 지표 최신값 반환 (300초 폴링용).
-    - DB 최신값을 즉시 반환 (응답 지연 없음)
-    - yfinance 갱신은 백그라운드 스레드에서 비동기 처리
+    - 장 시간: Yahoo Finance 즉시 갱신 후 DB 최신값 반환
+    - 장 외: DB 저장된 최신값 바로 반환
     반환: { index:{KOSPI,KOSDAQ}, vix:{...}, commodities:{...} }
     """
-    # yfinance 갱신은 백그라운드로 실행 (API 응답 블로킹 방지)
-    def _bg_fetch():
+    if _is_market_hours():
         try:
-            from database import SessionLocal as _SL
-            _db = _SL()
-            try:
-                if _is_market_hours():
-                    _realtime_fetch_macro(_db)
-                else:
-                    _realtime_fetch_macro(_db, us_only=True)
-            finally:
-                _db.close()
+            _realtime_fetch_macro(db)
         except Exception as e:
-            logger.warning(f"[realtime/macro] 백그라운드 Yahoo 갱신 실패: {e}")
-
-    _th.Thread(target=_bg_fetch, daemon=True, name="MacroBgFetch").start()
-
-    # DB 최신값 즉시 반환
-    try:
-        result = processor.get_macro_status(db)
-    except Exception as e:
-        logger.error(f"[realtime/macro] 매크로 상태 조회 실패: {e}")
-        result = {}
+            logger.warning(f"[realtime/macro] Yahoo 갱신 실패 (DB값 반환): {e}")
+    result = processor.get_macro_status(db)
     result.setdefault("index",       {})
     result.setdefault("vix",         {"value": 0, "change": 0, "date": "-", "history": []})
     result.setdefault("commodities", {})
@@ -1317,32 +1205,6 @@ def get_financial_table(stock_code: str, type: str = "annual", db: Session = Dep
 
 _cf_collecting: set = set()   # 현금흐름 백그라운드 수집 중인 종목코드
 
-
-def _is_kospi_kosdaq_stock(db: Session, stock_code: str) -> bool:
-    row = db.execute(
-        text(
-            """
-            WITH market_codes AS (
-                SELECT stock_code
-                FROM stock_meta
-                WHERE UPPER(COALESCE(market, '')) IN ('KOSPI', 'KOSDAQ')
-                UNION
-                SELECT stock_code
-                FROM stock_universe
-                WHERE market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
-                  AND COALESCE(stock_type, '보통주') = '보통주'
-            )
-            SELECT 1
-            FROM market_codes
-            WHERE stock_code=:stock_code
-            LIMIT 1
-            """
-        ),
-        {"stock_code": stock_code},
-    ).fetchone()
-    return row is not None
-
-
 def _bg_collect_cashflow(stock_code: str):
     """현금흐름표 백그라운드 수집 (별도 DB 세션)."""
     if stock_code in _cf_collecting:
@@ -1419,8 +1281,6 @@ def refresh_cashflow(stock_code: str, db: Session = Depends(get_db)):
     """현금흐름표 강제 재수집."""
     if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
         raise HTTPException(status_code=400, detail="국내 종목코드(6자리)만 지원합니다.")
-    if not _is_kospi_kosdaq_stock(db, stock_code):
-        raise HTTPException(status_code=400, detail="현금흐름표 수집은 코스피/코스닥 보통주만 지원합니다.")
     db.query(models.CashFlowData).filter(
         models.CashFlowData.stock_code == stock_code
     ).delete(synchronize_session=False)
@@ -1620,46 +1480,19 @@ _disclosure_cache: dict = {}
 _DISCLOSURE_CACHE_TTL = 300  # 5분
 
 
-def _disclosure_load_db(stock_code: str):
-    """dart_disclosure_cache 테이블에서 캐시 로드."""
-    import sqlite3 as _sl, json as _json
-    try:
-        c = _sl.connect("stock.db", timeout=10)
-        r = c.execute("SELECT payload_json FROM dart_disclosure_cache WHERE stock_code=?", (stock_code,)).fetchone()
-        c.close()
-        return _json.loads(r[0]) if r and r[0] else None
-    except Exception:
-        return None
-
-def _disclosure_save_db(stock_code: str, items: list) -> None:
-    """dart_disclosure_cache 테이블에 저장 (UPSERT)."""
-    import sqlite3 as _sl, json as _json
-    try:
-        c = _sl.connect("stock.db", timeout=10)
-        c.execute(
-            "INSERT OR REPLACE INTO dart_disclosure_cache (stock_code, payload_json, updated_at) VALUES (?,?,datetime('now'))",
-            (stock_code, _json.dumps(items, ensure_ascii=False))
-        )
-        c.commit()
-        c.close()
-    except Exception as _e:
-        logger.warning(f"[공시DB저장] {stock_code}: {_e}")
-
-
 @app.get("/api/dashboard/disclosures/{stock_code}")
 def get_disclosures(stock_code: str):
     """
     DART 최신 공시 목록 반환.
     - 국내 종목 6자리 코드만 지원 (해외 종목은 빈 리스트)
     - 최근 1년 공시, 최대 100건
-    - 우선순위: 인메모리 캐시(5분) → DART API → DB 캐시(쿼터초과 fallback)
-    - DB 저장: 성공 시 dart_disclosure_cache 테이블에 영구 저장
+    - 5분 캐시 적용
     """
     # 국내 종목 코드 검증 (6자리 숫자)
     if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
         return []
 
-    # 1. 인메모리 캐시 (5분 TTL)
+    # 캐시 확인
     cached = _disclosure_cache.get(stock_code)
     if cached and (_tm.time() - cached.get("cached_at", 0)) < _DISCLOSURE_CACHE_TTL:
         return cached["items"]
@@ -1712,20 +1545,12 @@ def get_disclosures(stock_code: str):
                 "dart_url":  dart_url,
             })
 
-        # 인메모리 + DB 모두 저장
         _disclosure_cache[stock_code] = {"items": result, "cached_at": _tm.time()}
-        _disclosure_save_db(stock_code, result)
-        logger.info(f"[공시] {stock_code} 조회 완료: {len(result)}건 (DB 저장)")
+        logger.info(f"[공시] {stock_code} 조회 완료: {len(result)}건")
         return result
 
     except Exception as e:
-        logger.warning(f"[공시] {stock_code} DART API 실패: {e}")
-        # 2. DART API 실패(쿼터초과 포함) → DB 캐시 fallback
-        db_items = _disclosure_load_db(stock_code)
-        if db_items is not None:
-            logger.info(f"[공시] {stock_code} DB 캐시 반환: {len(db_items)}건")
-            _disclosure_cache[stock_code] = {"items": db_items, "cached_at": _tm.time()}
-            return db_items
+        logger.warning(f"[공시] {stock_code} 조회 실패: {e}")
         return []
 
 @app.get("/api/dashboard/fundamentals/{stock_code}")
@@ -1830,12 +1655,18 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
         else 0.0
     )
     roe = getattr(data, "roe", None)
+    bps = getattr(data, "bps", None)
+    roa = None
+    if data.net_income is not None and data.total_assets and data.total_assets != 0:
+        roa = round(data.net_income / data.total_assets * 100, 2)
     return {
         "revenue":           data.revenue,
         "operating_profit":  data.operating_profit,
         "net_income":        data.net_income,
         "opm":               round(opm, 1),
         "roe":               round(roe, 2) if roe is not None else None,
+        "roa":               roa,
+        "bps":               round(bps) if bps is not None else None,
         "pbr":               val.get("pbr"),
         "per":               val.get("per"),
         "forward_per":       val.get("forward_per"),
@@ -2059,11 +1890,7 @@ def remove_from_watchlist(stock_code: str, db: Session = Depends(get_db)):
 @app.get("/api/dashboard/macro")
 def get_macro_dashboard(db: Session = Depends(get_db)):
     """지수, 환율, 원자재 등 매크로 지표 현황을 반환합니다."""
-    try:
-        result = processor.get_macro_status(db)
-    except Exception as e:
-        logger.error(f"[dashboard/macro] 매크로 상태 조회 실패: {e}")
-        result = {}
+    result = processor.get_macro_status(db)
     result.setdefault("index",       {})
     result.setdefault("vix",         {"value": 0, "change": 0, "date": "-", "history": []})
     result.setdefault("commodities", {})
@@ -2071,49 +1898,11 @@ def get_macro_dashboard(db: Session = Depends(get_db)):
 
 @app.get("/api/dashboard/stats")
 def get_db_stats(db: Session = Depends(get_db)):
-    """데이터베이스 적재 현황 통계를 반환합니다. 주요 데이터 최신성 포함."""
-    import sqlite3 as _sl
-
-    def _q(path, sql, default=None):
-        try:
-            c = _sl.connect(path, timeout=5)
-            r = c.execute(sql).fetchone()
-            c.close()
-            return r[0] if r and r[0] else default
-        except Exception:
-            return default
-
-    # 주가 최신 날짜
-    price_latest = _q("stock.db", "SELECT MAX(date) FROM price_history WHERE stock_code='005930'")
-
-    # HS 무역통계 확정/추정
-    hs_db = "hs_trade_lab/data/hs_trade_lab.db"
-    hs_confirmed = _q(hs_db, "SELECT MAX(period_ym) FROM customs_monthly_record WHERE endpoint='itemtrade' AND period_ym NOT LIKE '총계'")
-    hs_estimated = _q(hs_db, "SELECT MAX(period_ym) FROM trade_series_cache")  # trade_series_cache includes provisional
-
-    # 고용보험 (근로복지공단)
-    emp_db = "employment_monitor/employment.db"
-    wlb_latest = _q(emp_db, "SELECT MAX(fetched_at) FROM wlb_monthly")
-    wlb_ym = _q(emp_db, "SELECT MAX(data_ym) FROM wlb_monthly")
-
-    # 미국 주식
-    us_db = "/Applications/us_market_dashboard/us_market.db"
-    us_price_latest = _q(us_db, "SELECT MAX(date) FROM us_price_history")
-    us_stock_count = _q(us_db, "SELECT COUNT(*) FROM us_universe")
-
+    """데이터베이스 적재 현황 통계를 반환합니다."""
     return {
         "stock_count": db.query(models.FinancialData.stock_code).distinct().count(),
         "price_records": db.query(models.PriceHistory).count(),
         "db_path": "Applications/stock_dashboard/stock.db",
         "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        # 데이터 최신성
-        "data_freshness": {
-            "kr_price_latest":     price_latest,           # 한국 주가 최신
-            "hs_confirmed_latest": hs_confirmed,            # HS 무역 확정 최신 기간 (YYYYMM)
-            "hs_estimated_latest": hs_estimated,            # HS 무역 시계열 캐시 최신
-            "wlb_collected_at":    wlb_latest[:10] if wlb_latest else None,  # 근로복지공단 수집일
-            "wlb_data_ym":         wlb_ym,                 # 근로복지공단 기준월
-            "us_price_latest":     us_price_latest,         # 미국 주가 최신
-            "us_stock_count":      us_stock_count,          # 미국 종목수
-        }
     }
+

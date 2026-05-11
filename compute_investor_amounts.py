@@ -24,6 +24,7 @@ BATCH   = 10_000   # 한 번에 처리할 행 수
 
 def run(days: int | None = None):
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=60000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
 
@@ -48,7 +49,6 @@ def run(days: int | None = None):
     print(f"역산 대상: {total:,}행 (batch={BATCH})")
 
     updated = 0
-    offset  = 0
     t0      = time.time()
 
     while True:
@@ -70,16 +70,28 @@ def run(days: int | None = None):
 
         upd_data = []
         for rowid, inst_qty, frn_qty, close in rows:
-            inst_amt = round(inst_qty * close / 1_000_000)
-            frn_amt  = round(frn_qty  * close / 1_000_000)
-            ind_amt  = -round((inst_amt + frn_amt))   # 개인 = -(기관+외국인)
+            # 단위: 백만원. 기존 round(int) 처리로 0이 계속 남아 무한 반복될 수 있어 소수 유지.
+            inst_amt = round(float(inst_qty) * float(close) / 1_000_000, 6)
+            frn_amt = round(float(frn_qty) * float(close) / 1_000_000, 6)
+            ind_amt = -round(inst_amt + frn_amt, 6)  # 개인 = -(기관+외국인)
             upd_data.append((inst_amt, frn_amt, ind_amt, rowid))
 
-        conn.executemany(
-            "UPDATE price_history SET inst_net_buy_amt=?, frn_net_buy_amt=?, ind_net_buy_amt=? WHERE rowid=?",
-            upd_data,
-        )
-        conn.commit()
+        # 다른 프로세스(서버/스케줄러)가 동시에 DB를 쓰는 경우가 있어 lock 재시도
+        for attempt in range(1, 11):
+            try:
+                conn.executemany(
+                    "UPDATE price_history SET inst_net_buy_amt=?, frn_net_buy_amt=?, ind_net_buy_amt=? WHERE rowid=?",
+                    upd_data,
+                )
+                conn.commit()
+                break
+            except sqlite3.OperationalError as e:
+                msg = str(e).lower()
+                if "locked" not in msg:
+                    raise
+                if attempt >= 10:
+                    raise
+                time.sleep(min(6.0, 0.5 * attempt))
         updated += len(rows)
 
         elapsed = time.time() - t0

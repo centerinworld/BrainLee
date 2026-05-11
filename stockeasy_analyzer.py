@@ -21,6 +21,9 @@ import sys
 import re
 import math
 import logging
+import hashlib
+import base64
+import time
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -50,6 +53,29 @@ STRATEGY_LABELS = {
     "momentum": "모멘텀 Easy",
     "value": "벨류 Easy",
 }
+STRATEGY_ANALYSIS_GUIDES = {
+    "peak": (
+        "Peak Easy는 52주 신고가/저항 돌파형 전략이다. "
+        "신고가권, MA 정배열, 거래량 재증가, 상대강도, 주도 섹터, 실적 가속을 중심으로 분석하고 "
+        "저평가 조건을 핵심 조건으로 오해하지 않는다."
+    ),
+    "momentum": (
+        "모멘텀 Easy는 실적·이익 모멘텀 전략이다. "
+        "매출/영업이익 YoY·QoQ 가속, 흑자전환, 이익 폭발, 수급 전환을 중심으로 분석하고 "
+        "단순 52주 신고가 전략으로 해석하지 않는다."
+    ),
+    "value": (
+        "벨류 Easy는 가치/재평가 전략이다. "
+        "PER/PBR/ROE, Graham 할인, 배당/자산가치, 저평가 해소 촉매를 중심으로 분석하고 "
+        "고성장 신고가 전략과 섞지 않는다."
+    ),
+}
+STRATEGY_PORTFOLIO_IDS = {
+    "momentum": 1,
+    "peak": 2,
+    "value": 3,
+}
+STOCKEASY_API_BASE = "https://stockeasy.intellio.kr/stockdata"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -73,6 +99,100 @@ def fetch_strategy_page(strategy: str) -> str | None:
     return None
 
 
+def _base36(n: int) -> str:
+    chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+    if n == 0:
+        return "0"
+    out = ""
+    while n:
+        n, rem = divmod(n, 36)
+        out = chars[rem] + out
+    return out
+
+
+def _stockeasy_app_token() -> str:
+    bucket = int(time.time() // 30)
+    sig = ((0x45D9F3B * bucket) ^ 0xDEADBEEF) & 0xFFFFFFFF
+    return base64.b64encode(f"{bucket}.{_base36(sig)}".encode("utf-8")).decode("ascii")
+
+
+def fetch_strategy_api(strategy: str) -> dict | None:
+    """스탁이지 앱 API에서 보유/편출 및 클릭 상세(research)를 가져온다."""
+    portfolio_id = STRATEGY_PORTFOLIO_IDS.get(strategy)
+    if not portfolio_id:
+        return None
+
+    url = f"{STOCKEASY_API_BASE}/api/v1/portfolio/{portfolio_id}/holdings"
+    try:
+        r = requests.get(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "X-App-Token": _stockeasy_app_token(),
+            },
+            timeout=20,
+        )
+        if not r.ok:
+            logger.warning(f"[스탁이지 API] {strategy} 실패: HTTP {r.status_code}")
+            return None
+        data = r.json()
+        if not data.get("success"):
+            logger.warning(f"[스탁이지 API] {strategy} success=false")
+            return None
+        return _normalize_strategy_api(data)
+    except Exception as e:
+        logger.warning(f"[스탁이지 API] {strategy} 오류: {e}")
+        return None
+
+
+def _normalize_strategy_api(data: dict) -> dict:
+    holdings = []
+    exits = []
+
+    sector_rs = data.get("sector_rs") or {}
+
+    def _sector_score(sector: str) -> int:
+        val = sector_rs.get(sector)
+        try:
+            return int(round(float(val)))
+        except Exception:
+            return 0
+
+    for sector, rows in (data.get("holdings") or {}).items():
+        for row in rows or []:
+            item = dict(row)
+            item["name"] = item.get("stock_name") or item.get("name")
+            item["sector"] = item.get("sector") or sector
+            item["sector_score"] = item.get("sector_score") or _sector_score(item["sector"])
+            item["entry_date"] = item.get("buy_date") or item.get("entry_date")
+            item["hold_days"] = item.get("holding_days", item.get("hold_days", 0))
+            item["profit_pct"] = item.get("return_rate", item.get("profit_pct", 0))
+            holdings.append(item)
+
+    for sector, rows in (data.get("exits") or {}).items():
+        for row in rows or []:
+            item = dict(row)
+            item["name"] = item.get("stock_name") or item.get("name")
+            item["sector"] = item.get("sector") or sector
+            item["sector_score"] = item.get("sector_score") or _sector_score(item["sector"])
+            item["entry_date"] = item.get("buy_date") or item.get("entry_date")
+            item["hold_days"] = item.get("holding_days", item.get("hold_days", 0))
+            item["profit_pct"] = item.get("final_return_rate", item.get("return_rate", item.get("profit_pct", 0)))
+            item["sell_price"] = item.get("current_price", item.get("sell_price"))
+            exits.append(item)
+
+    meta = data.get("metadata") or {}
+    updated = meta.get("target_date") or meta.get("updated_at") or datetime.now().strftime("%m/%d %H:%M")
+    return {
+        "holdings": holdings,
+        "exits": exits,
+        "updated": updated,
+        "metadata": meta,
+    }
+
+
 def _num(txt: str) -> float:
     t = str(txt).strip().replace(",", "").replace("%", "").replace("원", "")
     try:
@@ -92,7 +212,10 @@ def _parse_entry_date(txt: str) -> str:
                 year   = today.year
                 if today.month == 12 and mm <= 3:
                     year += 1
-                return f"{year}-{mm:02d}-{dd:02d}"
+                parsed = date(year, mm, dd)
+                if parsed > today + timedelta(days=7):
+                    parsed = date(year - 1, mm, dd)
+                return parsed.isoformat()
             except Exception:
                 pass
     return t
@@ -197,7 +320,10 @@ def get_stock_data(stock_name: str, entry_date: str) -> dict:
         # 기술지표 (매수 시점)
         "price_entry": None,
         "ma20": None, "ma60": None, "ma120": None, "ma200": None,
-        "rsi14": None, "vol_ratio": None, "high52_pct": None,
+        "ma20_slope": None, "ma60_slope": None,
+        "rsi14": None, "vol_ratio": None, "vol_5d_ratio": None, "high52_pct": None,
+        "resistance_20": None, "resistance_60": None, "resistance_120": None,
+        "resistance_gap": None, "support_60": None, "support_gap": None,
         # 수급 (매수 전 5일)
         "frn_5d": None, "inst_5d": None,
         "frn_5d_amt": None, "inst_5d_amt": None,
@@ -257,6 +383,16 @@ def get_stock_data(stock_name: str, entry_date: str) -> dict:
         result["ma120"] = ma(120)
         result["ma200"] = ma(200)
 
+        def ma_slope(k, offset):
+            if n < k + offset:
+                return None
+            now = sum(prices[-k:]) / k
+            prev = sum(prices[-k-offset:-offset]) / k
+            return round((now - prev) / prev * 100, 2) if prev > 0 else None
+
+        result["ma20_slope"] = ma_slope(20, 10)
+        result["ma60_slope"] = ma_slope(60, 20)
+
         # RSI(14)
         if n >= 15:
             deltas = [prices[i] - prices[i-1] for i in range(n-14, n)]
@@ -270,12 +406,28 @@ def get_stock_data(stock_name: str, entry_date: str) -> dict:
         if n >= 21:
             avg20v = sum(volumes[-21:-1]) / 20
             result["vol_ratio"] = round(volumes[-1] / avg20v, 2) if avg20v > 0 else None
+            avg5v = sum(volumes[-5:]) / 5
+            result["vol_5d_ratio"] = round(avg5v / avg20v, 2) if avg20v > 0 else None
 
         # 52주 고점 대비
         if n >= 2:
             window = prices[max(0, n-252):]
             high52 = max(window)
             result["high52_pct"] = round((curr - high52) / high52 * 100, 1) if high52 > 0 else None
+
+        # 지지/저항선: 편입일 직전 N일 고점/저점 기준
+        if n >= 21:
+            prev_highs = prices[:-1]
+            res20 = max(prev_highs[-20:]) if len(prev_highs) >= 20 else None
+            res60 = max(prev_highs[-60:]) if len(prev_highs) >= 60 else res20
+            res120 = max(prev_highs[-120:]) if len(prev_highs) >= 120 else res60
+            sup60 = min(prev_highs[-60:]) if len(prev_highs) >= 60 else None
+            result["resistance_20"] = round(res20) if res20 else None
+            result["resistance_60"] = round(res60) if res60 else None
+            result["resistance_120"] = round(res120) if res120 else None
+            result["resistance_gap"] = round((curr - res60) / res60 * 100, 2) if res60 else None
+            result["support_60"] = round(sup60) if sup60 else None
+            result["support_gap"] = round((curr - sup60) / sup60 * 100, 2) if sup60 else None
 
         # 수급 5일 (매수 직전)
         result["frn_5d"]     = round(sum(frn_qty[-5:]))
@@ -348,7 +500,8 @@ def analyze_strategy_with_ai(strategy: str, data: dict) -> str:
             f"매수일:{h.get('entry_date','?')} 보유{h.get('hold_days',0)}일 "
             f"수익:{h.get('profit_pct',0):+.1f}%\n"
             f"  기술: MA정배열={'O' if (s.get('ma20') and s.get('ma60') and s.get('ma120') and s.get('price_entry') and s['price_entry']>s['ma120']) else 'X'} "
-            f"RSI={s.get('rsi14','?')} 거래량배율={s.get('vol_ratio','?')} 52주고점={s.get('high52_pct','?')}%\n"
+            f"RSI={s.get('rsi14','?')} 거래량배율={s.get('vol_ratio','?')} 5일거래량={s.get('vol_5d_ratio','?')} "
+            f"52주고점={s.get('high52_pct','?')}% 저항갭={s.get('resistance_gap','?')}%\n"
             f"  수급: 기관5일={s.get('inst_5d_amt','?')}억원 외국인5일={s.get('frn_5d_amt','?')}억원\n"
             f"  밸류: PER={s.get('per','?')} PBR={s.get('pbr','?')} ROE={s.get('roe','?')}% "
             f"매출YoY={s.get('rev_yoy','?')}% 영업이익YoY={s.get('op_yoy','?')}%\n"
@@ -360,6 +513,8 @@ def analyze_strategy_with_ai(strategy: str, data: dict) -> str:
 스탁이지 '{STRATEGY_LABELS[strategy]}' 전략의 현재 보유 종목 데이터입니다.
 ⚠️ 중요: 아래 모든 지표는 각 종목의 【편입일(매수일) 당시】 데이터입니다.
 현재 시점이 아닌 매수 결정 시점의 조건을 분석하므로 전략의 매수 기준을 정확히 역추론할 수 있습니다.
+⚠️ 전략별 구분: {STRATEGY_ANALYSIS_GUIDES.get(strategy, '')}
+다른 스탁이지 전략의 기준을 섞지 말고, 이 전략 하나의 편입 기준만 추론하세요.
 아래 종목들의 매수 시점 기술/수급/밸류 지표를 보고, 이 전략의 매수 기준을 역추론해 주세요.
 
 보유 종목 ({len(holdings)}개):
@@ -415,7 +570,10 @@ def _rule_based_analysis(strategy: str, data: dict) -> str:
 
     avg_rsi       = avg(holdings, "rsi14")
     avg_vol_ratio = avg(holdings, "vol_ratio")
+    avg_vol5_ratio = avg(holdings, "vol_5d_ratio")
     avg_high52    = avg(holdings, "high52_pct")
+    avg_res_gap   = avg(holdings, "resistance_gap")
+    avg_ma20_slope= avg(holdings, "ma20_slope")
     avg_inst_amt  = avg(holdings, "inst_5d_amt")
     avg_frn_amt   = avg(holdings, "frn_5d_amt")
     avg_per       = avg(holdings, "per")
@@ -434,7 +592,10 @@ def _rule_based_analysis(strategy: str, data: dict) -> str:
     lines.append(f"  MA120 이상: {ma_pct}%의 종목")
     if avg_rsi: lines.append(f"  RSI: {avg_rsi}")
     if avg_vol_ratio: lines.append(f"  거래량배율: {avg_vol_ratio}x")
+    if avg_vol5_ratio: lines.append(f"  5일 거래량배율: {avg_vol5_ratio}x")
+    if avg_ma20_slope is not None: lines.append(f"  MA20 기울기: {avg_ma20_slope:+.1f}%")
     if avg_high52: lines.append(f"  52주고점 대비: {avg_high52}%")
+    if avg_res_gap is not None: lines.append(f"  60일 저항선 대비: {avg_res_gap:+.1f}%")
 
     lines.append(f"\n💰 수급 (5일 누적 평균):")
     if avg_inst_amt is not None: lines.append(f"  기관: {avg_inst_amt:+.0f}억원")
@@ -500,13 +661,14 @@ def run_analysis(strategies: list, send_tg: bool = True, verbose: bool = False) 
         label = STRATEGY_LABELS.get(strategy, strategy)
         logger.info(f"[{label}] 분석 시작...")
 
-        # 1. 페이지 스크래핑
-        html = fetch_strategy_page(strategy)
-        if not html:
-            logger.warning(f"[{label}] 페이지 취득 실패")
-            continue
-
-        data = parse_strategy_html(html)
+        # 1. 스탁이지 API 우선 사용: 종목 클릭 상세(research.summary)까지 포함된다.
+        data = fetch_strategy_api(strategy)
+        if not data:
+            html = fetch_strategy_page(strategy)
+            if not html:
+                logger.warning(f"[{label}] 페이지 취득 실패")
+                continue
+            data = parse_strategy_html(html)
         holdings = data.get("holdings", [])
         exits    = data.get("exits", [])
 
@@ -565,6 +727,7 @@ def _send_telegram_reports(reports: list, now_str: str) -> None:
     """전략별 분석 리포트를 텔레그램으로 전송."""
     header = f"🔍 <b>스탁이지 전략 분석 리포트</b>\n📅 {now_str}\n"
     send_telegram(header, key=f"se_header_{date.today().isoformat()}")
+    _send_change_reports(reports, now_str)
 
     for r in reports:
         label   = r["label"]
@@ -593,6 +756,65 @@ def _send_telegram_reports(reports: list, now_str: str) -> None:
             if len(hold_msg) > 3800:
                 hold_msg = hold_msg[:3800] + "\n..."
             send_telegram(hold_msg, key=f"se_holdings_{r['strategy']}_{date.today().isoformat()}")
+
+
+def _load_previous_strategy_snapshot(strategy: str) -> tuple[str, set[str]]:
+    """현재 저장 직전의 최신 스탁이지 스냅샷을 읽는다."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute("""
+            SELECT analyzed_at, holdings_json
+            FROM stockeasy_analysis
+            WHERE strategy=?
+            ORDER BY analyzed_at DESC, id DESC
+            LIMIT 1
+        """, (strategy,)).fetchone()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[스탁이지 변화] 이전 스냅샷 조회 실패({strategy}): {e}")
+        return "", set()
+
+    if not row:
+        return "", set()
+
+    try:
+        holdings = json.loads(row[1] or "[]")
+    except Exception:
+        holdings = []
+
+    return row[0] or "", {h.get("name", "") for h in holdings if h.get("name")}
+
+
+def _send_change_reports(reports: list, now_str: str) -> None:
+    """직전 스냅샷 대비 신규 편입/편출만 별도 알림으로 보낸다."""
+    today = date.today().isoformat()
+    for r in reports:
+        strategy = r["strategy"]
+        label = r["label"]
+        prev_at, prev_names = _load_previous_strategy_snapshot(strategy)
+        if not prev_names:
+            continue
+
+        curr_names = {h.get("name", "") for h in r.get("holdings", []) if h.get("name")}
+        added = sorted(curr_names - prev_names)
+        removed = sorted(prev_names - curr_names)
+        if not added and not removed:
+            continue
+
+        lines = [
+            f"🔔 <b>[{label}] 편입/편출 변화</b>",
+            f"기준: {prev_at[:10] or '이전'} → {now_str[:10]}",
+        ]
+        if added:
+            lines.append("\n🟢 <b>신규 편입</b>")
+            lines.extend(f"  - {name}" for name in added)
+        if removed:
+            lines.append("\n🔴 <b>편출</b>")
+            lines.extend(f"  - {name}" for name in removed)
+
+        digest_src = "|".join([strategy, *added, "=>", *removed])
+        digest = hashlib.sha1(digest_src.encode("utf-8")).hexdigest()[:10]
+        send_telegram("\n".join(lines), key=f"se_changes_{strategy}_{today}_{digest}")
 
 
 def _save_analysis_to_db(reports: list) -> None:
@@ -698,8 +920,15 @@ def run_weekly_summary() -> None:
 # 스케줄러에서 호출 가능한 래퍼
 # ──────────────────────────────────────────────────────────────
 def run_daily_analysis():
-    """매일 장 마감 후 호출 — 3전략 전체 분석."""
+    """매일 장 마감 후 호출 — 3전략 전체 분석 + 로직 일치율 검증."""
     run_analysis(list(STRATEGY_URLS.keys()), send_tg=True)
+    # 분석 직후 우리 로직 vs 스탁이지 비교 → stockeasy_logic_tracker.md append + 텔레그램
+    try:
+        import stockeasy_logic_validator as _slv
+        _slv.run_validation(["peak", "momentum", "value"], send_tg=True)
+        logger.info("[일치율 검증] stockeasy_logic_tracker.md 갱신 완료")
+    except Exception as e:
+        logger.error(f"[일치율 검증] 실패: {e}")
 
 
 if __name__ == "__main__":

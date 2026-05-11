@@ -65,9 +65,16 @@ KIS_INDEX_KOSPI  = os.getenv("KIS_INDEX_KOSPI",  "0001")
 KIS_INDEX_KOSDAQ = os.getenv("KIS_INDEX_KOSDAQ", "1001")
 
 # ── KRX ────────────────────────────────────────────────────────
-KRX_API_KEY  = os.getenv("KRX_API_KEY", "")
-KRX_DATA_URL = os.getenv("KRX_DATA_URL",  "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd")
-KMYDATA_BASE = os.getenv("KMYDATA_BASE",  "https://oap.k-mydata.org")
+KRX_API_KEY     = os.getenv("KRX_API_KEY", "")
+KRX_OPENAPI_KEY = os.getenv("KRX_OPENAPI_KEY", "") or os.getenv("KRX_API_KEY", "")
+KRX_DATA_URL    = os.getenv("KRX_DATA_URL", "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd")
+KRX_DATA_ID     = os.getenv("KRX_DATA_ID", "")
+KRX_DATA_PW     = os.getenv("KRX_DATA_PASS", "") or os.getenv("KRX_DATA_PW", "")
+KMYDATA_BASE    = os.getenv("KMYDATA_BASE",  "https://oap.k-mydata.org")
+
+# ── SEIBro ────────────────────────────────────────────────────
+SEIBRO_ID   = os.getenv("SEIBRO_ID", "")
+SEIBRO_PASS = os.getenv("SEIBRO_PASS", "")
 
 # ── 공공데이터포털 ─────────────────────────────────────────────
 PUBLIC_DATA_API_KEY = os.getenv("PUBLIC_DATA_API_KEY", "")

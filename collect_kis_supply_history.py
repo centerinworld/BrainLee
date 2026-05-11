@@ -30,7 +30,22 @@ def get_universe_codes(conn, limit=None):
     rows = conn.execute("""
         SELECT stock_code FROM stock_universe
         WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
-          AND (stock_type IS NULL OR stock_type = '보통주')
+          AND market IN ('유가증권', '코스닥', 'KOSPI', 'KOSDAQ')
+          AND COALESCE(stock_type, '보통주') = '보통주'
+          AND COALESCE(stock_name, '') NOT LIKE '%ETF%'
+          AND COALESCE(stock_name, '') NOT LIKE '%ETN%'
+          AND COALESCE(stock_name, '') NOT LIKE '%KODEX%'
+          AND COALESCE(stock_name, '') NOT LIKE '%TIGER%'
+          AND COALESCE(stock_name, '') NOT LIKE '%KBSTAR%'
+          AND COALESCE(stock_name, '') NOT LIKE '%ACE%'
+          AND COALESCE(stock_name, '') NOT LIKE '%SOL%'
+          AND COALESCE(stock_name, '') NOT LIKE '%HANARO%'
+          AND COALESCE(stock_name, '') NOT LIKE '%KOSEF%'
+          AND COALESCE(stock_name, '') NOT LIKE '%ARIRANG%'
+          AND COALESCE(stock_name, '') NOT LIKE '%PLUS%'
+          AND COALESCE(stock_name, '') NOT LIKE '%레버리지%'
+          AND COALESCE(stock_name, '') NOT LIKE '%인버스%'
+          AND COALESCE(stock_name, '') NOT LIKE '%2X%'
         ORDER BY market_cap DESC NULLS LAST
     """).fetchall()
     codes = [r[0] for r in rows]

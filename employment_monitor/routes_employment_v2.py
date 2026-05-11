@@ -101,11 +101,29 @@ def get_trend_data():
 
     # 2. NPS 데이터 가져오기 — nps_workplace_monthly (구) 또는 nps_monthly (신) 시도
     nps_df = pd.DataFrame()
-    for _tbl in ("nps_workplace_monthly", "nps_monthly"):
+    nps_queries = [
+        """
+        SELECT ym, stock_code,
+               nw_acqzr_cnt AS new_cnt,
+               lss_jnngp_cnt AS lost_cnt,
+               (nw_acqzr_cnt - lss_jnngp_cnt) AS net_change
+        FROM nps_workplace_monthly
+        ORDER BY ym ASC
+        """,
+        """
+        SELECT data_ym AS ym, stock_code,
+               new_hires AS new_cnt,
+               terminations AS lost_cnt,
+               net_change
+        FROM nps_monthly
+        ORDER BY data_ym ASC
+        """,
+    ]
+    for _sql in nps_queries:
         try:
-            _sql = f"SELECT ym, stock_code, nw_acqzr_cnt as new_cnt, lss_jnngp_cnt as lost_cnt, (nw_acqzr_cnt - lss_jnngp_cnt) as net_change FROM {_tbl} ORDER BY ym ASC"
             nps_df = pd.read_sql(_sql, conn)
             if not nps_df.empty:
+                nps_df["ym"] = nps_df["ym"].astype(str)
                 break
         except Exception:
             pass
@@ -184,7 +202,7 @@ def get_trend_data():
     target_1m = available_months[1] if len(available_months) > 1 else None
     target_3m = available_months[3] if len(available_months) > 3 else None
     target_6m = available_months[6] if len(available_months) > 6 else None
-    target_1y = available_months[12] if len(available_months) > 12 else None
+    target_1y = available_months[11] if len(available_months) > 11 else None
     
     def _safe_int(v):
         try:
@@ -246,6 +264,10 @@ def get_trend_data():
             'diff_3m':  _safe_int(diff_3m),
             'diff_6m':  _safe_int(diff_6m),
             'diff_1y':  _safe_int(diff_1y),
+            'display_diff_1m': _safe_int(_wlb_diff(wlb_1m_ym) if _wlb_diff(wlb_1m_ym) is not None else diff_1m),
+            'display_diff_3m': _safe_int(_wlb_diff(wlb_3m_ym) if _wlb_diff(wlb_3m_ym) is not None else diff_3m),
+            'display_diff_6m': _safe_int(_wlb_diff(wlb_6m_ym) if _wlb_diff(wlb_6m_ym) is not None else diff_6m),
+            'display_diff_1y': _safe_int(_wlb_diff(wlb_1y_ym) if _wlb_diff(wlb_1y_ym) is not None else diff_1y),
             'new_0m':   _safe_int(new_0m),
             'lost_0m':  _safe_int(lost_0m),
             'new_1m':   _safe_int(new_1m),
@@ -275,10 +297,10 @@ def get_nps_trend(sort_by: str = "workers", limit: int = 200):
             item.pop('history', None)
             result.append(item)
     elif sort_by in ('1m', '3m', '6m', '1y'):
-        # WLB 기간 대비 증감 정렬
-        wlb_key = f'wlb_diff_{sort_by}'
-        valid_data = [d for d in data if d.get(wlb_key) is not None]
-        valid_data.sort(key=lambda x: x.get(wlb_key) or 0, reverse=True)
+        # WLB 기간 대비 증감이 있으면 우선 사용하고, 없으면 국민연금 월별 증감으로 fallback
+        sort_key = f'display_diff_{sort_by}'
+        valid_data = [d for d in data if d.get(sort_key) is not None]
+        valid_data.sort(key=lambda x: x.get(sort_key) or 0, reverse=True)
         if not valid_data:
             # diff 데이터 없으면 피보험자수 기준 전체 제공
             valid_data = sorted(
@@ -331,6 +353,16 @@ def get_nps_trend(sort_by: str = "workers", limit: int = 200):
             updated_at = r2[0][:10] if r2 and r2[0] else None
         except Exception:
             updated_at = None
+    nps_data_ym = None
+    try:
+        r3 = conn.execute("SELECT MAX(data_ym) FROM nps_monthly").fetchone()
+        nps_data_ym = r3[0] if r3 and r3[0] else None
+    except Exception:
+        try:
+            r3 = conn.execute("SELECT MAX(ym) FROM nps_workplace_monthly").fetchone()
+            nps_data_ym = r3[0] if r3 and r3[0] else None
+        except Exception:
+            nps_data_ym = None
     conn.close()
     if not updated_at:
         from datetime import date as _date
@@ -340,6 +372,7 @@ def get_nps_trend(sort_by: str = "workers", limit: int = 200):
         "rows": result,
         "date": updated_at,
         "wlb_data_ym": wlb_data_ym,
+        "nps_data_ym": nps_data_ym,
         "has_nps": any(r.get('diff_0m') is not None for r in result),
         "has_wlb": any(r.get('total_workers') is not None for r in result),
     }

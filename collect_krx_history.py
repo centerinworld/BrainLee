@@ -86,40 +86,54 @@ def _save_stocks(conn, rows: list, bas_dd: str, today_str: str) -> tuple:
             except:
                 return 0.0
 
-        close  = _n("TDD_CLSPRC")
-        open_  = _n("TDD_OPNPRC")
-        high   = _n("TDD_HGPRC")
-        low    = _n("TDD_LWPRC")
-        volume = _n("ACC_TRDVOL")
-        mktcap = _n("MKTCAP")
+        close        = _n("TDD_CLSPRC")
+        open_        = _n("TDD_OPNPRC")
+        high         = _n("TDD_HGPRC")
+        low          = _n("TDD_LWPRC")
+        volume       = _n("ACC_TRDVOL")
+        trade_amount = _n("ACC_TRDVAL")   # 거래대금(원) ★신규
+        mktcap       = _n("MKTCAP")
+        list_shrs    = _n("LIST_SHRS")    # 상장주식수 ★신규
+        sect_tp      = str(r.get("SECT_TP_NM", "")).strip()  # 소속부(대/중/소형) ★신규
 
         if close <= 0:
             continue
 
         cur = conn.execute("""
             INSERT OR IGNORE INTO price_history
-                (stock_code, date, open, high, low, close, volume)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (code, bas_dd, open_, high, low, close, volume))
+                (stock_code, date, open, high, low, close, volume, trade_amount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (code, bas_dd, open_, high, low, close, volume, trade_amount))
 
         if cur.rowcount > 0:
             inserted += 1
         else:
-            # 기존 행에 volume 이 없으면 보완
+            # 기존 행 보완 (volume/trade_amount 없는 경우)
             conn.execute("""
                 UPDATE price_history
-                SET open=?, high=?, low=?, close=?, volume=?
+                SET open=?, high=?, low=?, close=?, volume=?, trade_amount=?
                 WHERE stock_code=? AND date=?
                   AND (volume IS NULL OR volume=0)
-            """, (open_, high, low, close, volume, code, bas_dd))
+            """, (open_, high, low, close, volume, trade_amount, code, bas_dd))
             updated += conn.execute("SELECT changes()").fetchone()[0]
 
-        # 시가총액 갱신 (오늘 데이터만)
-        if mktcap > 0 and bas_dd == today_str:
-            conn.execute(
-                "UPDATE stock_universe SET market_cap=? WHERE stock_code=?",
-                (mktcap, code)
-            )
+        # 시가총액 + 상장주식수 + 소속부 갱신 (오늘 데이터만)
+        if bas_dd == today_str:
+            if mktcap > 0:
+                conn.execute(
+                    "UPDATE stock_universe SET market_cap=? WHERE stock_code=?",
+                    (mktcap, code)
+                )
+            if list_shrs > 0:
+                conn.execute(
+                    "UPDATE stock_universe SET shares_issued=? WHERE stock_code=?",
+                    (int(list_shrs), code)
+                )
+            if sect_tp:
+                conn.execute(
+                    "UPDATE stock_universe SET sector_type=? WHERE stock_code=?",
+                    (sect_tp, code)
+                )
 
     return inserted, updated
 
