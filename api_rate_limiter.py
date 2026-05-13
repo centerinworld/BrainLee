@@ -86,8 +86,8 @@ _API_CONFIG: dict[str, dict] = {
     "FNGUIDE": {
         "min_interval": 3.0,    # FnGuide: 공격적 봇 감지, 넉넉하게
         "jitter":       1.5,
-        "daily_limit":  500,
-        "warn_at":      0.7,
+        "daily_limit":  1500,   # 3초간격 × 1500 = 75분, 2000종목 → 2일 완료
+        "warn_at":      0.8,
         "cooldown":     3600,
         "max_retries":  1,
     },

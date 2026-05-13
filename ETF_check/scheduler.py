@@ -1,6 +1,8 @@
 """
 ETF_check 스케줄러
-매일 20:30 (장 마감 후, 장이 열리는 날 기준) 자동 수집 실행
+- 20:30 메인 수집 (장 마감 후)
+- 23:30 실패 종목 재수집
+- 02:00 전일 값 백필 (재수집에도 실패 시)
 실행: python scheduler.py (백그라운드 프로세스로 유지)
 """
 import time
@@ -26,6 +28,12 @@ logger = logging.getLogger(__name__)
 COLLECT_HOUR   = 20  # 저녁 20시
 COLLECT_MINUTE = 30  # 20:30 실행 (장 마감 후 ETF 데이터 업데이트 완료 시각)
 
+RETRY_HOUR     = 23  # 23시
+RETRY_MINUTE   = 30  # 23:30 재수집 (메인 수집 후 3시간)
+
+BACKFILL_HOUR  = 2   # 새벽 2시
+BACKFILL_MINUTE = 0  # 02:00 백필 (재수집 후 2.5시간)
+
 # 한국 공휴일 (stock_dashboard와 동일 기준)
 _KR_HOLIDAYS = {
     "2026-01-01","2026-01-27","2026-01-28","2026-01-29","2026-01-30",
@@ -46,42 +54,74 @@ def is_trading_day(d: date = None) -> bool:
     return True
 
 
-def run_collector():
-    """collector.py 실행"""
+def _run_script(mode: str, trade_date: str = None, timeout: int = 5400):
+    """collector.py를 지정 모드로 실행"""
     python = sys.executable
     script = os.path.join(DIR, "collector.py")
-    logger.info(f"수집 시작: {datetime.now()}")
+    cmd    = [python, script]
+    if mode == "retry":
+        cmd.append("--retry")
+    elif mode == "backfill":
+        cmd.append("--backfill")
+    if trade_date:
+        cmd += ["--date", trade_date]
+
+    logger.info(f"[{mode.upper()}] 실행 시작: {datetime.now()}")
     try:
-        result = subprocess.run(
-            [python, script],
-            capture_output=False,
-            timeout=5400  # 최대 90분
-        )
-        logger.info(f"수집 완료: return code={result.returncode}")
+        result = subprocess.run(cmd, capture_output=False, timeout=timeout)
+        logger.info(f"[{mode.upper()}] 완료: return code={result.returncode}")
     except subprocess.TimeoutExpired:
-        logger.error("수집 타임아웃 (90분 초과)")
+        logger.error(f"[{mode.upper()}] 타임아웃 ({timeout}초 초과)")
     except Exception as e:
-        logger.error(f"수집 오류: {e}")
+        logger.error(f"[{mode.upper()}] 오류: {e}")
 
 
 def main():
-    logger.info("ETF_check 스케줄러 시작 (20:30 저녁 수집 모드)")
-    last_run_date = None
+    logger.info("ETF_check 스케줄러 시작 (20:30 수집 / 23:30 재수집 / 02:00 백필)")
+    last_collect_date  = None
+    last_retry_date    = None
+    last_backfill_date = None
 
     while True:
-        now = datetime.now()
+        now   = datetime.now()
         today = now.date()
 
-        # 실행 조건: 거래일 + 20:30 + 오늘 아직 실행 안 했으면
+        # ── 메인 수집: 20:30 (거래일) ──────────────────────────────
         if (
             now.hour == COLLECT_HOUR
             and now.minute == COLLECT_MINUTE
             and is_trading_day(today)
-            and last_run_date != today
+            and last_collect_date != today
         ):
-            logger.info(f"[SCHEDULER] 수집 트리거 — {today}")
-            run_collector()
-            last_run_date = today
+            logger.info(f"[SCHEDULER] 메인 수집 트리거 — {today}")
+            _run_script("main", timeout=5400)
+            last_collect_date = today
+
+        # ── 재수집: 23:30 (거래일, 당일 메인 수집 완료 후) ─────────
+        elif (
+            now.hour == RETRY_HOUR
+            and now.minute == RETRY_MINUTE
+            and is_trading_day(today)
+            and last_retry_date != today
+            and last_collect_date == today  # 당일 메인 수집이 완료된 경우만
+        ):
+            logger.info(f"[SCHEDULER] 재수집 트리거 — {today}")
+            _run_script("retry", trade_date=today.strftime("%Y-%m-%d"), timeout=3600)
+            last_retry_date = today
+
+        # ── 백필: 02:00 (전날 수집된 경우 다음날 새벽 실행) ────────
+        elif (
+            now.hour == BACKFILL_HOUR
+            and now.minute == BACKFILL_MINUTE
+            and last_backfill_date != today
+        ):
+            # 전날이 거래일이었는지 확인
+            from datetime import timedelta
+            yesterday = today - timedelta(days=1)
+            if is_trading_day(yesterday):
+                logger.info(f"[SCHEDULER] 백필 트리거 — 기준일: {yesterday}")
+                _run_script("backfill", trade_date=yesterday.strftime("%Y-%m-%d"), timeout=1800)
+                last_backfill_date = today
 
         time.sleep(60)
 
@@ -91,8 +131,17 @@ if __name__ == "__main__":
         today = date.today()
         if is_trading_day(today):
             logger.info(f"[ONCE] ETF 수집 1회 실행 — {today}")
-            run_collector()
+            _run_script("main")
         else:
             logger.info(f"[ONCE] 비거래일 스킵 — {today}")
+    elif "--retry" in sys.argv:
+        today = date.today()
+        logger.info(f"[ONCE] ETF 재수집 1회 실행 — {today}")
+        _run_script("retry", trade_date=today.strftime("%Y-%m-%d"))
+    elif "--backfill" in sys.argv:
+        from datetime import timedelta
+        yesterday = date.today() - timedelta(days=1)
+        logger.info(f"[ONCE] ETF 백필 1회 실행 — {yesterday}")
+        _run_script("backfill", trade_date=yesterday.strftime("%Y-%m-%d"))
     else:
         main()

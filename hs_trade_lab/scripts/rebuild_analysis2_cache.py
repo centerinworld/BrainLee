@@ -182,7 +182,59 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
             FROM hs_code_company_map
             GROUP BY hs_code
         ),
+        -- telegram 매핑: hs_sector_map에 정확히 일치하는 hs_code (10자리)
+        tg_exact AS (
+            SELECT sm.sector_key, sp.label AS sector_label,
+                   t.stock_code, t.stock_name,
+                   t.flow_type,
+                   t.hs_code,
+                   COALESCE(NULLIF(t.hs_name,''), NULLIF(sm.display_name,''), sm.hs_name, t.hs_code) AS hs_name,
+                   COALESCE(NULLIF(t.flow_scope,''), '') AS sector_name
+            FROM telegram_company_hs_flow_map t
+            JOIN hs_sector_map sm ON sm.hs_code = t.hs_code
+            JOIN sector_preset sp ON sp.sector_key = sm.sector_key
+            WHERE t.stock_code != '' AND LENGTH(t.hs_code) = 10
+        ),
+        -- telegram 매핑: 6자리 접두사 일치
+        tg_6 AS (
+            SELECT sm.sector_key, sp.label AS sector_label,
+                   t.stock_code, t.stock_name,
+                   t.flow_type,
+                   t.hs_code,
+                   COALESCE(NULLIF(t.hs_name,''), NULLIF(sm.display_name,''), sm.hs_name, t.hs_code) AS hs_name,
+                   COALESCE(NULLIF(t.flow_scope,''), '') AS sector_name
+            FROM telegram_company_hs_flow_map t
+            JOIN hs_sector_map sm ON sm.hs_code = t.hs_code
+            JOIN sector_preset sp ON sp.sector_key = sm.sector_key
+            WHERE t.stock_code != '' AND LENGTH(t.hs_code) = 6
+        ),
+        -- telegram 매핑: 4자리 접두사 일치
+        tg_4 AS (
+            SELECT sm.sector_key, sp.label AS sector_label,
+                   t.stock_code, t.stock_name,
+                   t.flow_type,
+                   t.hs_code,
+                   COALESCE(NULLIF(t.hs_name,''), NULLIF(sm.display_name,''), sm.hs_name, t.hs_code) AS hs_name,
+                   COALESCE(NULLIF(t.flow_scope,''), '') AS sector_name
+            FROM telegram_company_hs_flow_map t
+            JOIN hs_sector_map sm ON sm.hs_code = t.hs_code
+            JOIN sector_preset sp ON sp.sector_key = sm.sector_key
+            WHERE t.stock_code != '' AND LENGTH(t.hs_code) = 4
+        ),
+        tg_all AS (
+            SELECT * FROM tg_exact
+            UNION ALL
+            SELECT * FROM tg_6
+            UNION ALL
+            SELECT * FROM tg_4
+        ),
+        tg_company_counts AS (
+            SELECT hs_code, sector_key, COUNT(DISTINCT stock_code) AS company_count
+            FROM tg_all
+            GROUP BY hs_code, sector_key
+        ),
         candidates AS (
+            -- 1) 기존 hs_code_company_map 매핑 (우선순위 높음)
             SELECT
                 sm.sector_key,
                 sp.label AS sector_label,
@@ -198,7 +250,6 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
                   WHEN 'composite' THEN 2
                   ELSE 3 END AS rank_num,
                 CASE WHEN COALESCE(NULLIF(hcm.flow_type, ''), '') = 'import' OR instr(hcm.sector_name, '수입') > 0 THEN 1 ELSE 0 END AS is_import_label,
-                -- 시장비율: 명시적 비율 있으면 사용, 없으면 기업수로 균등 분할
                 COALESCE(
                     hcm.market_share_pct,
                     1.0 / NULLIF(hcc.company_count, 0),
@@ -211,6 +262,29 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
               ON sp.sector_key = sm.sector_key
             LEFT JOIN hs_company_counts hcc
               ON hcc.hs_code = hcm.hs_code
+
+            UNION ALL
+
+            -- 2) telegram 매핑 (hs_code_company_map에 없는 기업만 추가)
+            SELECT
+                ta.sector_key,
+                ta.sector_label,
+                ta.stock_code,
+                ta.stock_name,
+                ta.sector_name,
+                ta.flow_type,
+                ta.hs_code,
+                ta.hs_name,
+                'provisional' AS mapping_status,
+                3 AS rank_num,
+                CASE WHEN ta.flow_type = 'import' THEN 1 ELSE 0 END AS is_import_label,
+                1.0 / NULLIF(tc.company_count, 0) AS share_pct
+            FROM tg_all ta
+            LEFT JOIN tg_company_counts tc
+                ON tc.hs_code = ta.hs_code AND tc.sector_key = ta.sector_key
+            WHERE NOT EXISTS (
+                SELECT 1 FROM hs_code_company_map hcm WHERE hcm.stock_code = ta.stock_code
+            )
         )
         SELECT
             c.sector_key,

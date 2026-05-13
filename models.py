@@ -30,6 +30,8 @@ class FinancialData(Base):
     # roe 컬럼: 기존 DB에 없으면 init_db.py 또는 migrate_db.py로 추가해야 함
     # (add_column_if_not_exists는 migrate_db.py 참조)
     roe = Column(Float, nullable=True)
+    report_type = Column(String, nullable=True)   # 'CFS' 연결 / 'OFS' 별도
+    data_source = Column(String, nullable=True)   # 'fnguide' / 'dart' / None(미상)
 
     is_annual = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

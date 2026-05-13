@@ -128,10 +128,11 @@ const EtfCheckView = () => {
       </div>
 
       <div style={mainTabContainerStyle}>
-        <div style={tabStyle(activeTab === 1)} onClick={() => setActiveTab(1)}>ETF 편입금액 탑</div>
-        <div style={tabStyle(activeTab === 2)} onClick={() => setActiveTab(2)}>편입금액 증가 탑</div>
-        <div style={tabStyle(activeTab === 3)} onClick={() => setActiveTab(3)}>시총대비 증가 탑</div>
-        <div style={tabStyle(activeTab === 4)} onClick={() => setActiveTab(4)}>시총대비 비중 탑</div>
+        <div style={tabStyle(activeTab === 1)} onClick={() => setActiveTab(1)}>ETF 편입액 기준</div>
+        <div style={tabStyle(activeTab === 2)} onClick={() => setActiveTab(2)}>ETF 편입액 증가</div>
+        <div style={tabStyle(activeTab === 3)} onClick={() => setActiveTab(3)}>시총대비 증가%</div>
+        <div style={tabStyle(activeTab === 4)} onClick={() => setActiveTab(4)}>시총대비 비중%</div>
+        <div style={tabStyle(activeTab === 5)} onClick={() => setActiveTab(5)}>종목 검색</div>
       </div>
 
       {/* 탭 1 */}
@@ -172,80 +173,110 @@ const EtfCheckView = () => {
       )}
 
       {/* 탭 2 */}
-      {activeTab === 2 && (
-        <div className="fade-in">
-          <div style={subTabContainerStyle}>
-            <div style={subTabStyle(subTab2 === '1d')} onClick={() => setSubTab2('1d')}>1일 전 대비</div>
-            <div style={subTabStyle(subTab2 === '5d')} onClick={() => setSubTab2('5d')}>5일 전 대비</div>
-          </div>
-          <div style={{overflowX: 'auto'}}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={{...thStyle, textAlign:'left'}}>종목명</th>
-                  <th style={thStyle}>과거 편입금액(억)</th>
-                  <th style={thStyle}>현재 편입금액(억)</th>
-                  <th style={thStyle}>증가액(억)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.tab2?.[subTab2] || []).map((row, i) => (
-                  <tr key={row.stock_code}>
-                    <td style={{...tdStyle, textAlign:'left'}}>
-                      <div>{row.stock_name}</div>
-                      <div style={{fontSize:'0.7rem', color:'rgba(255,255,255,0.4)'}}>{row.stock_code}</div>
-                    </td>
-                    <td style={tdStyle}>{formatNumber(row.prev_amount)}</td>
-                    <td style={tdStyle}>{formatNumber(row.current_amount)}</td>
-                    <td style={{...tdStyle, color: row.amount_diff > 0 ? '#ff4d4f' : '#2dd4bf', fontWeight:600}}>
-                      {row.amount_diff > 0 ? '+' : ''}{formatNumber(row.amount_diff)}
-                    </td>
+      {activeTab === 2 && (() => {
+        const d2 = data.tab2?.dates || {};
+        const prevDate2 = subTab2 === '1d' ? d2['1d'] : d2['5d'];
+        const curDate2  = d2.latest;
+        return (
+          <div className="fade-in">
+            <div style={{ display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap', marginBottom:'0.5rem' }}>
+              <div style={subTabContainerStyle}>
+                <div style={subTabStyle(subTab2 === '1d')} onClick={() => setSubTab2('1d')}>1일 전 대비</div>
+                <div style={subTabStyle(subTab2 === '5d')} onClick={() => setSubTab2('5d')}>5일 전 대비</div>
+              </div>
+              {prevDate2 && curDate2 && (
+                <span style={{ fontSize:'0.78rem', color:'rgba(255,255,255,0.45)', marginLeft:'0.5rem' }}>
+                  <span style={{ color:'rgba(255,255,255,0.3)' }}>{prevDate2}</span>
+                  <span style={{ margin:'0 0.4rem', color:'rgba(255,255,255,0.2)' }}>→</span>
+                  <span style={{ color:'#2dd4bf', fontWeight:600 }}>{curDate2}</span>
+                  <span style={{ marginLeft:'0.4rem', color:'rgba(255,255,255,0.3)' }}>기준</span>
+                </span>
+              )}
+            </div>
+            <div style={{overflowX: 'auto'}}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={{...thStyle, textAlign:'left'}}>종목명</th>
+                    <th style={thStyle}>과거 편입금액(억)<br/><span style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.35)',fontWeight:400}}>{prevDate2||'-'}</span></th>
+                    <th style={thStyle}>현재 편입금액(억)<br/><span style={{fontSize:'0.68rem',color:'#2dd4bf',fontWeight:400}}>{curDate2||'-'}</span></th>
+                    <th style={thStyle}>증가액(억)</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(data.tab2?.[subTab2] || []).map((row) => (
+                    <tr key={row.stock_code}>
+                      <td style={{...tdStyle, textAlign:'left'}}>
+                        <div>{row.stock_name}</div>
+                        <div style={{fontSize:'0.7rem', color:'rgba(255,255,255,0.4)'}}>{row.stock_code}</div>
+                      </td>
+                      <td style={tdStyle}>{formatNumber(row.prev_amount)}</td>
+                      <td style={tdStyle}>{formatNumber(row.current_amount)}</td>
+                      <td style={{...tdStyle, color: row.amount_diff > 0 ? '#ff4d4f' : '#2dd4bf', fontWeight:600}}>
+                        {row.amount_diff > 0 ? '+' : ''}{formatNumber(row.amount_diff)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 탭 3 */}
-      {activeTab === 3 && (
-        <div className="fade-in">
-          <div style={subTabContainerStyle}>
-            <div style={subTabStyle(subTab3 === '1d')} onClick={() => setSubTab3('1d')}>1일 전 대비</div>
-            <div style={subTabStyle(subTab3 === '5d')} onClick={() => setSubTab3('5d')}>5일 전 대비</div>
-          </div>
-          <div style={{overflowX: 'auto'}}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={{...thStyle, textAlign:'left'}}>종목명</th>
-                  <th style={thStyle}>시가총액(억)</th>
-                  <th style={thStyle}>편입금액 증가액(억)</th>
-                  <th style={thStyle}>시총대비 증가율</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.tab3?.[subTab3] || []).map((row, i) => (
-                  <tr key={row.stock_code}>
-                    <td style={{...tdStyle, textAlign:'left'}}>
-                      <div>{row.stock_name}</div>
-                      <div style={{fontSize:'0.7rem', color:'rgba(255,255,255,0.4)'}}>{row.stock_code}</div>
-                    </td>
-                    <td style={tdStyle}>{formatNumber(row.market_cap)}</td>
-                    <td style={tdStyle}>
-                      {row.amount_diff > 0 ? '+' : ''}{formatNumber(row.amount_diff)}
-                    </td>
-                    <td style={{...tdStyle, color: row.ratio_increase > 0 ? '#ff4d4f' : '#2dd4bf', fontWeight:600}}>
-                      {row.ratio_increase > 0 ? '+' : ''}{formatRatio(row.ratio_increase)}
-                    </td>
+      {activeTab === 3 && (() => {
+        const d3 = data.tab3?.dates || {};
+        const prevDate3 = subTab3 === '1d' ? d3['1d'] : d3['5d'];
+        const curDate3  = d3.latest;
+        return (
+          <div className="fade-in">
+            <div style={{ display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap', marginBottom:'0.5rem' }}>
+              <div style={subTabContainerStyle}>
+                <div style={subTabStyle(subTab3 === '1d')} onClick={() => setSubTab3('1d')}>1일 전 대비</div>
+                <div style={subTabStyle(subTab3 === '5d')} onClick={() => setSubTab3('5d')}>5일 전 대비</div>
+              </div>
+              {prevDate3 && curDate3 && (
+                <span style={{ fontSize:'0.78rem', color:'rgba(255,255,255,0.45)', marginLeft:'0.5rem' }}>
+                  <span style={{ color:'rgba(255,255,255,0.3)' }}>{prevDate3}</span>
+                  <span style={{ margin:'0 0.4rem', color:'rgba(255,255,255,0.2)' }}>→</span>
+                  <span style={{ color:'#2dd4bf', fontWeight:600 }}>{curDate3}</span>
+                  <span style={{ marginLeft:'0.4rem', color:'rgba(255,255,255,0.3)' }}>기준</span>
+                </span>
+              )}
+            </div>
+            <div style={{overflowX: 'auto'}}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={{...thStyle, textAlign:'left'}}>종목명</th>
+                    <th style={thStyle}>시가총액(억)</th>
+                    <th style={thStyle}>편입금액 증가액(억)<br/><span style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.35)',fontWeight:400}}>{prevDate3||'-'} → {curDate3||'-'}</span></th>
+                    <th style={thStyle}>시총대비 증가율</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(data.tab3?.[subTab3] || []).map((row) => (
+                    <tr key={row.stock_code}>
+                      <td style={{...tdStyle, textAlign:'left'}}>
+                        <div>{row.stock_name}</div>
+                        <div style={{fontSize:'0.7rem', color:'rgba(255,255,255,0.4)'}}>{row.stock_code}</div>
+                      </td>
+                      <td style={tdStyle}>{formatNumber(row.market_cap)}</td>
+                      <td style={tdStyle}>
+                        {row.amount_diff > 0 ? '+' : ''}{formatNumber(row.amount_diff)}
+                      </td>
+                      <td style={{...tdStyle, color: row.ratio_increase > 0 ? '#ff4d4f' : '#2dd4bf', fontWeight:600}}>
+                        {row.ratio_increase > 0 ? '+' : ''}{formatRatio(row.ratio_increase)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 탭 4 */}
       {activeTab === 4 && (

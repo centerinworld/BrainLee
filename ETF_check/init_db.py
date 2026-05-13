@@ -23,10 +23,18 @@ def init_db():
         market_cap  REAL,                      -- 시가총액 (억원)
         mktcap_ratio REAL,                     -- 시총대비 %
         etf_count   INTEGER,                   -- ETF 검색 수
+        is_backfilled INTEGER DEFAULT 0,       -- 1=전일 백필 값 (수집 실패 시)
         collected_at TEXT DEFAULT (datetime('now','localtime')),
         UNIQUE(trade_date, stock_code)         -- 날짜+종목 중복 방지
     )
     """)
+
+    # is_backfilled 컬럼 마이그레이션 (기존 DB에 컬럼 없을 경우)
+    try:
+        cur.execute("ALTER TABLE etf_inclusion_daily ADD COLUMN is_backfilled INTEGER DEFAULT 0")
+        print("[MIGRATE] is_backfilled 컬럼 추가됨")
+    except sqlite3.OperationalError:
+        pass  # 이미 존재
 
     # 수집 실행 로그 테이블
     cur.execute("""
@@ -39,6 +47,20 @@ def init_db():
         success      INTEGER DEFAULT 0,        -- 성공 수
         failed       INTEGER DEFAULT 0,        -- 실패 수
         status       TEXT DEFAULT 'running'    -- running / done / error
+    )
+    """)
+
+    # 수집 실패 종목 추적 테이블
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS collection_failures (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_date  TEXT NOT NULL,             -- 수집일자
+        stock_code  TEXT NOT NULL,             -- 실패 종목코드
+        run_type    TEXT DEFAULT 'main',       -- 'main' / 'retry' (마지막 시도 유형)
+        resolved    INTEGER DEFAULT 0,         -- 0=미해결, 1=재수집성공, 2=백필처리
+        created_at  TEXT DEFAULT (datetime('now','localtime')),
+        updated_at  TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(trade_date, stock_code)
     )
     """)
 

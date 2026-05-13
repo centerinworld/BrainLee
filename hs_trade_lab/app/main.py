@@ -599,12 +599,14 @@ def analysis2_sectors(months: int = 24):
                 "is_provisional": True,
                 "period_day": provisional.get("period_day", ""),
             }]
-        export_latest = monthly[-1]["export_val"] if monthly else None
-        export_prev1 = monthly[-2]["export_val"] if len(monthly) >= 2 else None
-        export_prev12 = monthly[-13]["export_val"] if len(monthly) >= 13 else None
-        import_latest = monthly[-1]["import_val"] if monthly else None
-        import_prev1 = monthly[-2]["import_val"] if len(monthly) >= 2 else None
-        import_prev12 = monthly[-13]["import_val"] if len(monthly) >= 13 else None
+        # MoM/YoY는 확정치만 비교 (잠정 10일치 vs 1달 확정치 비교 방지)
+        cm = [m for m in monthly if not m.get('is_provisional')]
+        export_latest = cm[-1]["export_val"] if cm else None
+        export_prev1 = cm[-2]["export_val"] if len(cm) >= 2 else None
+        export_prev12 = cm[-13]["export_val"] if len(cm) >= 13 else None
+        import_latest = cm[-1]["import_val"] if cm else None
+        import_prev1 = cm[-2]["import_val"] if len(cm) >= 2 else None
+        import_prev12 = cm[-13]["import_val"] if len(cm) >= 13 else None
         result.append(
             {
                 **sector,
@@ -694,6 +696,38 @@ def analysis2_company_by_product(stock_code: str, months: int = 24):
         """,
         (stock_code,),
     ).fetchone()
+
+    # HS 매핑이 없는 기업: 기업의 수출 비중 상위 섹터 HS 구성으로 대체
+    is_sector_fallback = False
+    if not hs_rows:
+        # 기업의 섹터별 실제 수출 비중 (최근 3개월) - 비중 높은 섹터 우선
+        comp_sector_rows = conn.execute(
+            """
+            SELECT sector_key, SUM(export_value) AS total_export
+            FROM analysis2_company_monthly_cache
+            WHERE stock_code = ? AND period_ym >= date('now', '-3 months')
+            GROUP BY sector_key
+            ORDER BY total_export DESC
+            LIMIT 3
+            """,
+            (stock_code,),
+        ).fetchall()
+        top_sectors = [r["sector_key"] for r in comp_sector_rows if r["sector_key"]]
+        if top_sectors:
+            placeholders = ",".join("?" * len(top_sectors))
+            hs_rows = conn.execute(
+                f"""
+                SELECT period_ym, hs_code, hs_name, sector_key AS sector_name,
+                       mapping_status, export_value, export_weight, import_value, import_weight
+                FROM analysis2_sector_hs_monthly_cache
+                WHERE sector_key IN ({placeholders})
+                  AND period_ym >= date('now', '-3 months')
+                ORDER BY period_ym DESC, export_value DESC
+                """,
+                top_sectors,
+            ).fetchall()
+            is_sector_fallback = True
+
     # Telegram 게시물 관련 정보
     tg_rows = conn.execute(
         """
@@ -733,14 +767,23 @@ def analysis2_company_by_product(stock_code: str, months: int = 24):
         "export_3m": 0, "export_kg_3m": 0, "import_3m": 0, "monthly": []
     })
     for r in hs_rows:
-        key = f"{r['hs_code']}_{r['flow_type']}"
+        flow_type = "export"
+        try:
+            flow_type = r["flow_type"] or "export"
+        except Exception:
+            pass
+        key = f"{r['hs_code']}_{flow_type}"
         s = hs_summary[key]
         s["hs_code"] = r["hs_code"]
         s["hs_name"] = r["hs_name"]
-        s["sector_name"] = r["sector_name"] or r["sector_label"]
-        s["flow_type"] = r["flow_type"] or "export"
+        try:
+            s["sector_name"] = r["sector_name"] or r.get("sector_label", "")
+        except Exception:
+            s["sector_name"] = r["sector_name"] if r["sector_name"] else ""
+        s["flow_type"] = flow_type
         s["mapping_status"] = r["mapping_status"]
-        s["export_share"] = share_map.get(r["hs_code"])
+        if not is_sector_fallback:
+            s["export_share"] = share_map.get(r["hs_code"])
         s["monthly"].append({
             "period_ym": r["period_ym"],
             "export_val": round(r["export_value"] or 0),
@@ -753,7 +796,7 @@ def analysis2_company_by_product(stock_code: str, months: int = 24):
         s["export_kg_3m"] += r["export_weight"] or 0
         s["import_3m"] += r["import_value"] or 0
 
-    items = sorted(hs_summary.values(), key=lambda x: -x["export_3m"])
+    items = sorted(hs_summary.values(), key=lambda x: -x["export_3m"])[:30]
     for item in items:
         item["monthly"].sort(key=lambda x: x["period_ym"])
         item["export_3m"] = round(item["export_3m"])
@@ -770,6 +813,7 @@ def analysis2_company_by_product(stock_code: str, months: int = 24):
         "sector_labels": (info_row["sector_labels"] or "").split(",") if info_row else [],
         "hs_names": info_row["hs_names"] if info_row else "",
         "mapping_status": info_row["mapping_status"] if info_row else "provisional",
+        "is_sector_fallback": is_sector_fallback,
         "items": items,
         "telegram_products": [
             {
@@ -855,42 +899,90 @@ def analysis2_company_trend(stock_code: str, months: int = 24, sector_key: str |
         """,
         params,
     ).fetchone()
-    rows = conn.execute(
-        f"""
-        SELECT period_ym, export_value, export_weight, import_value, import_weight, hs_names
-        FROM analysis2_company_monthly_cache
-        WHERE stock_code = ?
-          {sector_where}
-          AND period_ym >= date('now', ? || ' months')
-        ORDER BY period_ym
-        """,
-        [*params, f"-{months}"],
-    ).fetchall()
-    monthly = [
-        {
-            "period_ym": row["period_ym"],
-            "export_val": round(row["export_value"] or 0),
-            "export_kg": round(row["export_weight"] or 0),
-            "import_val": round(row["import_value"] or 0),
-            "import_kg": round(row["import_weight"] or 0),
-            "hs_names": row["hs_names"],
-        }
-        for row in rows
-    ]
+
+    # sector_key 없을 때 모든 섹터를 월별 합산 (GROUP BY) — 중복 행 방지
+    if sector_key:
+        rows = conn.execute(
+            """
+            SELECT period_ym, export_value, export_weight, import_value, import_weight, hs_names
+            FROM analysis2_company_monthly_cache
+            WHERE stock_code = ?
+              AND sector_key = ?
+              AND period_ym >= date('now', ? || ' months')
+            ORDER BY period_ym
+            """,
+            [stock_code, sector_key, f"-{months}"],
+        ).fetchall()
+        monthly = [
+            {
+                "period_ym": row["period_ym"],
+                "export_val": round(row["export_value"] or 0),
+                "export_kg": round(row["export_weight"] or 0),
+                "import_val": round(row["import_value"] or 0),
+                "import_kg": round(row["import_weight"] or 0),
+                "hs_names": row["hs_names"],
+            }
+            for row in rows
+        ]
+    else:
+        # 전체 섹터 합산: period_ym 기준 GROUP BY
+        rows = conn.execute(
+            """
+            SELECT period_ym,
+                   SUM(export_value)  AS export_value,
+                   SUM(export_weight) AS export_weight,
+                   SUM(import_value)  AS import_value,
+                   SUM(import_weight) AS import_weight
+            FROM analysis2_company_monthly_cache
+            WHERE stock_code = ?
+              AND period_ym >= date('now', ? || ' months')
+            GROUP BY period_ym
+            ORDER BY period_ym
+            """,
+            [stock_code, f"-{months}"],
+        ).fetchall()
+        monthly = [
+            {
+                "period_ym": row["period_ym"],
+                "export_val": round(row["export_value"] or 0),
+                "export_kg": round(row["export_weight"] or 0),
+                "import_val": round(row["import_value"] or 0),
+                "import_kg": round(row["import_weight"] or 0),
+                "hs_names": "",
+            }
+            for row in rows
+        ]
 
     def _pct(current: float | None, previous: float | None) -> float | None:
         if not current or not previous:
             return None
         return round(((current - previous) / previous) * 100, 2)
 
-    export_latest = monthly[-1]["export_val"] if monthly else None
-    export_prev1 = monthly[-2]["export_val"] if len(monthly) >= 2 else None
-    export_prev12 = monthly[-13]["export_val"] if len(monthly) >= 13 else None
-    import_latest = monthly[-1]["import_val"] if monthly else None
-    import_prev1 = monthly[-2]["import_val"] if len(monthly) >= 2 else None
-    import_prev12 = monthly[-13]["import_val"] if len(monthly) >= 13 else None
+    # MoM/YoY는 확정치만 비교 (잠정 10일치 vs 1달 확정치 비교 방지)
+    cm = [m for m in monthly if not m.get('is_provisional')]
+    export_latest = cm[-1]["export_val"] if cm else None
+    export_prev1 = cm[-2]["export_val"] if len(cm) >= 2 else None
+    export_prev12 = cm[-13]["export_val"] if len(cm) >= 13 else None
+    import_latest = cm[-1]["import_val"] if cm else None
+    import_prev1 = cm[-2]["import_val"] if len(cm) >= 2 else None
+    import_prev12 = cm[-13]["import_val"] if len(cm) >= 13 else None
 
-    provisional = _latest_provisional_10day(conn, sector_key)
+    # sector_key 없을 때 가집계용으로 수출 비중 가장 큰 섹터 자동 선택
+    prov_sector = sector_key
+    if not prov_sector:
+        top_sector_row = conn.execute(
+            """
+            SELECT sector_key FROM analysis2_company_monthly_cache
+            WHERE stock_code = ? AND period_ym >= date('now', '-3 months')
+            GROUP BY sector_key
+            ORDER BY SUM(export_value) DESC LIMIT 1
+            """,
+            (stock_code,),
+        ).fetchone()
+        if top_sector_row:
+            prov_sector = top_sector_row["sector_key"]
+
+    provisional = _latest_provisional_10day(conn, prov_sector)
 
     # 가집계 데이터를 monthly에 추가 (섹터 비중으로 추정)
     confirmed_latest_ym = monthly[-1]["period_ym"] if monthly else ""
@@ -1028,9 +1120,59 @@ def analysis2_company_hs_breakdown(stock_code: str, sector_key: str, period_ym: 
         (stock_code, sector_key),
     ).fetchone()
     chosen_period = period_ym or (latest_period_row["latest_period"] if latest_period_row else None)
+
+    # 기업별 HS 데이터 없으면 섹터 HS 데이터로 대체
+    if not chosen_period:
+        fallback_period_row = conn.execute(
+            "SELECT MAX(period_ym) AS latest_period FROM analysis2_sector_hs_monthly_cache WHERE sector_key = ?",
+            (sector_key,),
+        ).fetchone()
+        chosen_period = period_ym or (fallback_period_row["latest_period"] if fallback_period_row else None)
+        if not chosen_period:
+            conn.close()
+            return {"stock_code": stock_code, "sector_key": sector_key, "period_ym": None, "items": [], "export_items": [], "import_items": []}
+        fallback_rows = conn.execute(
+            """
+            SELECT sector_label, hs_code, hs_name, mapping_status,
+                   export_value, export_weight, import_value, import_weight,
+                   'export' AS flow_type, '' AS sector_name
+            FROM analysis2_sector_hs_monthly_cache
+            WHERE sector_key = ? AND period_ym = ?
+            ORDER BY export_value DESC
+            LIMIT 30
+            """,
+            (sector_key, chosen_period),
+        ).fetchall()
+        export_total = sum(r["export_value"] or 0 for r in fallback_rows)
+        import_total = sum(r["import_value"] or 0 for r in fallback_rows)
+        items = [
+            {
+                "hs_code": r["hs_code"], "hs_name": r["hs_name"], "sector_name": "섹터 추정",
+                "flow_type": "export", "mapping_status": r["mapping_status"],
+                "export_val": round(r["export_value"] or 0), "export_kg": round(r["export_weight"] or 0),
+                "import_val": round(r["import_value"] or 0), "import_kg": round(r["import_weight"] or 0),
+                "export_share": round(((r["export_value"] or 0) / export_total) * 100, 2) if export_total else None,
+                "import_share": round(((r["import_value"] or 0) / import_total) * 100, 2) if import_total else None,
+            }
+            for r in fallback_rows
+        ]
+        periods_rows = conn.execute(
+            "SELECT DISTINCT period_ym FROM analysis2_sector_hs_monthly_cache WHERE sector_key = ? ORDER BY period_ym DESC",
+            (sector_key,),
+        ).fetchall()
+        conn.close()
+        return {
+            "stock_code": stock_code, "stock_name": stock_code,
+            "sector_key": sector_key, "sector_label": sector_key,
+            "period_ym": chosen_period,
+            "periods": [r["period_ym"] for r in periods_rows],
+            "is_sector_fallback": True,
+            "items": items, "export_items": items, "import_items": [],
+        }
+
     if not chosen_period:
         conn.close()
-        return {"stock_code": stock_code, "sector_key": sector_key, "period_ym": None, "items": []}
+        return {"stock_code": stock_code, "sector_key": sector_key, "period_ym": None, "items": [], "export_items": [], "import_items": []}
     rows = conn.execute(
         f"""
         SELECT stock_name, sector_label, hs_code, hs_name, sector_name, flow_type, mapping_status,

@@ -42,24 +42,21 @@ def get_available_dates(conn) -> List[str]:
     """).fetchall()
     return [row["trade_date"] for row in rows]
 
-ORDINARY_STOCK_FILTER = """
-    COALESCE(m.stock_type, '보통주') = '보통주'
-    AND m.market IN ('유가증권', '코스닥', 'KOSPI', 'KOSDAQ')
-    AND COALESCE(m.stock_name, '') NOT LIKE '%ETF%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%ETN%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%KODEX%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%TIGER%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%KBSTAR%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%ACE%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%SOL%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%HANARO%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%KOSEF%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%ARIRANG%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%PLUS%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%레버리지%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%인버스%'
-    AND COALESCE(m.stock_name, '') NOT LIKE '%2X%'
-"""
+# stock_universe.market / secugrp_nm 분포:
+#   market='KOSPI'    + secugrp_nm='주권' → 코스피 실제 보통주·우선주 (삼성전자 등)
+#   market='유가증권'  + secugrp_nm=NULL  → 코스피 거래소 상장 ETF/ETN 전용
+#   market='KOSDAQ'   + secugrp_nm='주권' → 코스닥 실제 보통주
+#   market='코스닥'   + secugrp_nm=NULL  → 코스닥 거래소 상장 ETF/ETN 전용
+#
+# secugrp_nm='주권' 필터만으로 ETF/ETN 전체 배제 가능 (이름 패턴 불필요)
+STOCK_FILTER  = "m.secugrp_nm = '주권'"
+KOSPI_MARKET  = f"m.market IN ('KOSPI', '유가증권') AND {STOCK_FILTER}"
+KOSDAQ_MARKET = f"m.market IN ('KOSDAQ', '코스닥') AND {STOCK_FILTER}"
+ALL_MARKET    = STOCK_FILTER
+
+# 하위호환: 기존 코드가 ORDINARY_STOCK_FILTER·ETF_NAME_FILTER를 참조하는 경우 대비
+ETF_NAME_FILTER      = "1=1"
+ORDINARY_STOCK_FILTER = STOCK_FILTER
 
 @router.get("/tab1")
 def get_tab1() -> Dict[str, Any]:
@@ -69,21 +66,36 @@ def get_tab1() -> Dict[str, Any]:
         dates = get_available_dates(conn)
         if not dates:
             return {"kospi": [], "kosdaq": [], "date": None}
-        
+
         latest_date = dates[0]
-        
-        query = """
-            SELECT e.stock_code, m.stock_name, e.etf_amount, m.close as current_price, e.market_cap, e.mktcap_ratio
-            FROM etf_inclusion_daily e
-            JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
-            WHERE e.trade_date = ? AND m.market = ? AND """ + ORDINARY_STOCK_FILTER + """
-            ORDER BY e.etf_amount DESC NULLS LAST
-            LIMIT 50
-        """
-        kospi = [format_row(r) for r in conn.execute(query, (latest_date, '유가증권')).fetchall()]
-        kosdaq = [format_row(r) for r in conn.execute(query, (latest_date, '코스닥')).fetchall()]
-        
-        return {"kospi": kospi, "kosdaq": kosdaq, "date": latest_date}
+
+        def fetch_market(market_filter: str):
+            query = f"""
+                SELECT e.stock_code, m.stock_name, e.etf_amount,
+                       m.close as current_price, e.market_cap, e.mktcap_ratio,
+                       (SELECT ROUND((ph1.close - ph2.close) * 100.0 / ph2.close, 2)
+                        FROM (SELECT close FROM main_db.price_history
+                              WHERE stock_code = e.stock_code AND close > 0
+                              ORDER BY date DESC LIMIT 1) AS ph1,
+                             (SELECT close FROM main_db.price_history
+                              WHERE stock_code = e.stock_code AND close > 0
+                              ORDER BY date DESC LIMIT 1 OFFSET 1) AS ph2
+                        WHERE ph2.close > 0
+                       ) AS price_change_pct
+                FROM etf_inclusion_daily e
+                JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
+                WHERE e.trade_date = ?
+                  AND {market_filter}
+                ORDER BY e.etf_amount DESC NULLS LAST
+                LIMIT 50
+            """
+            return [format_row(r) for r in conn.execute(query, (latest_date,)).fetchall()]
+
+        return {
+            "kospi":  fetch_market(KOSPI_MARKET),
+            "kosdaq": fetch_market(KOSDAQ_MARKET),
+            "date": latest_date,
+        }
     finally:
         conn.close()
 
@@ -100,25 +112,31 @@ def get_tab2() -> Dict[str, Any]:
         date_1d = dates[1]
         date_5d = dates[-1] if len(dates) == 6 else dates[-1] # fallback to oldest available if less than 6
         
-        def get_increase(prev_date):
-            query = """
-                SELECT t0.stock_code, m.stock_name, t0.etf_amount as current_amount, 
-                       t1.etf_amount as prev_amount, (t0.etf_amount - t1.etf_amount) as amount_diff
+        def get_change(prev_date, asc: bool = False):
+            order = "ASC" if asc else "DESC"
+            query = f"""
+                SELECT t0.stock_code, m.stock_name, t0.etf_amount as current_amount,
+                       t1.etf_amount as prev_amount,
+                       (t0.etf_amount - t1.etf_amount) as amount_diff,
+                       t0.market_cap
                 FROM etf_inclusion_daily t0
                 JOIN etf_inclusion_daily t1 ON t0.stock_code = t1.stock_code
-                LEFT JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
+                JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
                 WHERE t0.trade_date = ? AND t1.trade_date = ?
                   AND t0.etf_amount IS NOT NULL AND t1.etf_amount IS NOT NULL
-                  AND """ + ORDINARY_STOCK_FILTER + """
-                ORDER BY amount_diff DESC
+                  AND t0.etf_amount > 0 AND t1.etf_amount > 0
+                  AND {ALL_MARKET}
+                ORDER BY amount_diff {order}
                 LIMIT 50
             """
             return [format_row(r) for r in conn.execute(query, (latest_date, prev_date)).fetchall()]
 
         return {
-            "1d": get_increase(date_1d),
-            "5d": get_increase(date_5d),
-            "dates": {"latest": latest_date, "1d": date_1d, "5d": date_5d}
+            "1d":     get_change(date_1d),
+            "5d":     get_change(date_5d),
+            "1d_dec": get_change(date_1d, asc=True),
+            "5d_dec": get_change(date_5d, asc=True),
+            "dates": {"latest": latest_date, "1d": date_1d, "5d": date_5d},
         }
     finally:
         conn.close()
@@ -136,28 +154,33 @@ def get_tab3() -> Dict[str, Any]:
         date_1d = dates[1]
         date_5d = dates[-1] if len(dates) == 6 else dates[-1]
         
-        # 시총대비 편입금액 증가 = (현재편입금액 - 과거편입금액) / 현재시가총액 * 100
-        def get_ratio_increase(prev_date):
-            query = """
-                SELECT t0.stock_code, m.stock_name, t0.etf_amount as current_amount, t1.etf_amount as prev_amount,
+        # 시총대비 편입금액 증감 = (현재편입금액 - 과거편입금액) / 현재시가총액 * 100
+        def get_ratio_change(prev_date, asc: bool = False):
+            order = "ASC" if asc else "DESC"
+            query = f"""
+                SELECT t0.stock_code, m.stock_name, t0.etf_amount as current_amount,
+                       t1.etf_amount as prev_amount,
                        (t0.etf_amount - t1.etf_amount) as amount_diff, t0.market_cap,
                        ((t0.etf_amount - t1.etf_amount) / t0.market_cap * 100) as ratio_increase
                 FROM etf_inclusion_daily t0
                 JOIN etf_inclusion_daily t1 ON t0.stock_code = t1.stock_code
-                LEFT JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
+                JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
                 WHERE t0.trade_date = ? AND t1.trade_date = ?
                   AND t0.etf_amount IS NOT NULL AND t1.etf_amount IS NOT NULL
+                  AND t0.etf_amount > 0 AND t1.etf_amount > 0
                   AND t0.market_cap IS NOT NULL AND t0.market_cap > 0
-                  AND """ + ORDINARY_STOCK_FILTER + """
-                ORDER BY ratio_increase DESC
+                  AND {ALL_MARKET}
+                ORDER BY ratio_increase {order}
                 LIMIT 50
             """
             return [format_row(r) for r in conn.execute(query, (latest_date, prev_date)).fetchall()]
 
         return {
-            "1d": get_ratio_increase(date_1d),
-            "5d": get_ratio_increase(date_5d),
-            "dates": {"latest": latest_date, "1d": date_1d, "5d": date_5d}
+            "1d":     get_ratio_change(date_1d),
+            "5d":     get_ratio_change(date_5d),
+            "1d_dec": get_ratio_change(date_1d, asc=True),
+            "5d_dec": get_ratio_change(date_5d, asc=True),
+            "dates": {"latest": latest_date, "1d": date_1d, "5d": date_5d},
         }
     finally:
         conn.close()
@@ -174,8 +197,17 @@ def get_tab4() -> Dict[str, Any]:
         latest_date = dates[0]
         
         query = """
-            SELECT e.stock_code, m.stock_name, e.etf_amount, m.close as current_price, e.market_cap, 
-                   (e.etf_amount / e.market_cap * 100) as calc_ratio
+            SELECT e.stock_code, m.stock_name, e.etf_amount, m.close as current_price, e.market_cap,
+                   (e.etf_amount / e.market_cap * 100) as calc_ratio,
+                   (SELECT ROUND((ph1.close - ph2.close) * 100.0 / ph2.close, 2)
+                    FROM (SELECT close FROM main_db.price_history
+                          WHERE stock_code = e.stock_code AND close > 0
+                          ORDER BY date DESC LIMIT 1) AS ph1,
+                         (SELECT close FROM main_db.price_history
+                          WHERE stock_code = e.stock_code AND close > 0
+                          ORDER BY date DESC LIMIT 1 OFFSET 1) AS ph2
+                    WHERE ph2.close > 0
+                   ) AS price_change_pct
             FROM etf_inclusion_daily e
             LEFT JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
             WHERE e.trade_date = ?

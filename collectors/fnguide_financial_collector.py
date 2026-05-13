@@ -625,8 +625,8 @@ def upsert_financial(
             INSERT INTO financial_data
                 (stock_code, year, quarter, is_annual, report_type,
                  revenue, operating_profit, net_income, eps, bps,
-                 total_assets, total_equity, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                 total_assets, total_equity, data_source, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'fnguide',datetime('now'))
         """, (
             stock_code, year, quarter, is_annual, report_type,
             data.get("revenue"), data.get("operating_profit"), data.get("net_income"),
@@ -647,10 +647,14 @@ def upsert_financial(
             updates[f] = ext_val
 
     if updates:
+        updates["data_source"] = "fnguide"
         sets = ", ".join(f"{k}=?" for k in updates)
         vals = list(updates.values()) + [existing["id"]]
         conn.execute(f"UPDATE financial_data SET {sets} WHERE id=?", vals)
         return "overridden" if override else "fill_only"
+
+    # 값 변경 없어도 data_source는 fnguide로 마킹
+    conn.execute("UPDATE financial_data SET data_source='fnguide' WHERE id=?", (existing["id"],))
     return "skipped"
 
 
@@ -680,8 +684,9 @@ def upsert_cashflow(
             conn.execute("""
                 INSERT INTO cash_flow_data
                     (stock_code, year, quarter, is_annual, report_type,
-                     operating_cf, investing_cf, financing_cf, capex, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
+                     operating_cf, investing_cf, financing_cf, capex,
+                     data_source, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,'fnguide',datetime('now'))
             """, (
                 stock_code, year, quarter, is_annual, report_type,
                 data.get("operating_cf"), data.get("investing_cf"),
@@ -702,10 +707,14 @@ def upsert_cashflow(
             updates[f] = ext_val
 
     if updates:
+        updates["data_source"] = "fnguide"
         sets = ", ".join(f"{k}=?" for k in updates)
         vals = list(updates.values()) + [existing["id"]]
         conn.execute(f"UPDATE cash_flow_data SET {sets} WHERE id=?", vals)
         return "overridden" if override else "fill_only"
+
+    # 값 변경 없어도 data_source는 fnguide로 마킹
+    conn.execute("UPDATE cash_flow_data SET data_source='fnguide' WHERE id=?", (existing["id"],))
     return "skipped"
 
 

@@ -96,12 +96,21 @@ def upsert_financial_data(db: Session, financial: schemas.FinancialIngest):
     }
 
     if db_financial:
+        # FnGuide 레코드 보호: data_source='fnguide'인 레코드는 NULL/0 컬럼만 채움
+        # (DART 재수집이 FnGuide 데이터를 덮어쓰는 것을 방지)
+        is_fnguide = getattr(db_financial, 'data_source', None) == 'fnguide'
+
         for key, value in safe_fields.items():
+            if key == 'data_source':
+                continue  # data_source는 fnguide_financial_collector가 직접 관리
             existing = getattr(db_financial, key, None)
-            # 새 값이 None이면 기존 값을 유지 (부분 데이터 응답 보호)
+            # 새 값이 None이면 기존 값을 유지
             if value is None:
                 continue
-            # 기존 값이 유효(non-None, non-zero)한데 새 값이 0이면 덮어쓰지 않음
+            # FnGuide 보호: 기존에 유효한 값이 있으면 덮어쓰지 않음
+            if is_fnguide and existing not in (None, 0, 0.0):
+                continue
+            # 기존 값이 유효한데 새 값이 0이면 덮어쓰지 않음
             if value == 0 and existing not in (None, 0, 0.0):
                 continue
             setattr(db_financial, key, value)
