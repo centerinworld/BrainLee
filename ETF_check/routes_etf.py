@@ -1,5 +1,7 @@
 import os
+import re
 import sqlite3
+import time
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Query
 
@@ -72,7 +74,10 @@ def get_tab1() -> Dict[str, Any]:
         def fetch_market(market_filter: str):
             query = f"""
                 SELECT e.stock_code, m.stock_name, e.etf_amount,
-                       m.close as current_price, e.market_cap, e.mktcap_ratio,
+                       (SELECT ph.close FROM main_db.price_history ph
+                        WHERE ph.stock_code = e.stock_code AND ph.close > 0
+                        ORDER BY ph.date DESC LIMIT 1) AS current_price,
+                       e.market_cap, e.mktcap_ratio,
                        (SELECT ROUND((ph1.close - ph2.close) * 100.0 / ph2.close, 2)
                         FROM (SELECT close FROM main_db.price_history
                               WHERE stock_code = e.stock_code AND close > 0
@@ -197,7 +202,11 @@ def get_tab4() -> Dict[str, Any]:
         latest_date = dates[0]
         
         query = """
-            SELECT e.stock_code, m.stock_name, e.etf_amount, m.close as current_price, e.market_cap,
+            SELECT e.stock_code, m.stock_name, e.etf_amount,
+                   (SELECT ph.close FROM main_db.price_history ph
+                    WHERE ph.stock_code = e.stock_code AND ph.close > 0
+                    ORDER BY ph.date DESC LIMIT 1) AS current_price,
+                   e.market_cap,
                    (e.etf_amount / e.market_cap * 100) as calc_ratio,
                    (SELECT ROUND((ph1.close - ph2.close) * 100.0 / ph2.close, 2)
                     FROM (SELECT close FROM main_db.price_history
@@ -238,11 +247,12 @@ def search_stock_etf(q: str = Query(..., min_length=1, max_length=30)) -> Dict[s
         query = """
             SELECT e.stock_code,
                    m.stock_name,
-                   COALESCE(m.close,
-                            (SELECT ph.close FROM main_db.price_history ph
-                             WHERE ph.stock_code = e.stock_code AND ph.close > 0
-                             ORDER BY ph.date DESC LIMIT 1),
-                            e.current_price) AS current_price,
+                   COALESCE(
+                       (SELECT ph.close FROM main_db.price_history ph
+                        WHERE ph.stock_code = e.stock_code AND ph.close > 0
+                        ORDER BY ph.date DESC LIMIT 1),
+                       m.close,
+                       e.current_price) AS current_price,
                    CASE
                        WHEN (
                            SELECT ph.close FROM main_db.price_history ph
@@ -298,3 +308,132 @@ def search_stock_etf(q: str = Query(..., min_length=1, max_length=30)) -> Dict[s
         }
     finally:
         conn.close()
+
+
+def _fetch_etf_top_from_web(stock_code: str) -> Dict:
+    """
+    etfcheck.co.kr 모바일 페이지에서 비중 TOP / 편입금액 TOP ETF를 파싱.
+    페이지 구조:
+      '비중 TOP'    → 다음 줄: ETF명, '|', 비중%
+      '투자금액 TOP' → 다음 줄: 'ETF명 | 금액억'
+    """
+    state_path = os.path.join(DIR, "session_state.json")
+    if not os.path.exists(state_path):
+        raise FileNotFoundError("session_state.json 없음 — 먼저 로그인 필요")
+
+    from playwright.sync_api import sync_playwright
+
+    url = f"https://www.etfcheck.co.kr/mobile/searchPdf/{stock_code}"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        ctx = browser.new_context(
+            viewport={"width": 1280, "height": 900},
+            storage_state=state_path,
+        )
+        page = ctx.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=25000)
+            time.sleep(1.5)
+
+            if "signin" in page.url:
+                raise PermissionError("세션 만료 — 재로그인 필요")
+
+            result = page.evaluate("""
+            () => {
+                const lines = document.body.innerText.split('\\n').map(l=>l.trim()).filter(l=>l);
+                const out = { top_ratio: null, top_amount: null, etf_count: null };
+
+                for (let i = 0; i < lines.length; i++) {
+                    const l = lines[i];
+
+                    // ETF 검색수: 다음 줄 '218 종목'
+                    if (l === 'ETF 검색수' && i+1 < lines.length) {
+                        const m = lines[i+1].match(/(\\d+)/);
+                        if (m) out.etf_count = parseInt(m[1]);
+                    }
+
+                    // 비중 TOP: 다음줄 ETF명, '|', 비중%
+                    if (l === '비중 TOP' && i+1 < lines.length) {
+                        const name = lines[i+1];
+                        let ratio = null;
+                        for (let j=i+2; j<=i+4 && j<lines.length; j++) {
+                            if (/^[\\d.]+%$/.test(lines[j])) { ratio = lines[j]; break; }
+                        }
+                        out.top_ratio = { name: name, ratio: ratio, label: '비중 1위' };
+                    }
+
+                    // 투자금액 TOP: 다음줄 'ETF명 | 금액억'
+                    if (l === '투자금액 TOP' && i+1 < lines.length) {
+                        const raw = lines[i+1];
+                        // 형식: 'KODEX 200 | 85,394억' 또는 'KODEX 200'
+                        const parts = raw.split(' | ');
+                        const name   = parts[0].trim();
+                        const amount = parts[1] ? parts[1].trim() : null;
+                        out.top_amount = { name: name, amount: amount, label: '편입금액 1위' };
+                    }
+                }
+                return out;
+            }
+            """)
+            return result
+        finally:
+            browser.close()
+
+
+@router.get("/etf-list/{stock_code}")
+def get_etf_list(stock_code: str) -> Dict[str, Any]:
+    """
+    특정 종목을 편입한 ETF TOP 정보 on-demand 조회.
+    etfcheck.co.kr 모바일 페이지에서 비중 1위 / 편입금액 1위 ETF를 파싱 (약 3~5초 소요).
+    전체 목록은 DB에 etf_count로 기록 (종목명은 미저장).
+    """
+    if not re.match(r"^\d{6}$", stock_code):
+        raise HTTPException(status_code=400, detail="종목코드는 6자리 숫자여야 합니다")
+
+    # DB에서 etf_count, etf_amount 먼저 확인
+    conn = get_db_connection()
+    try:
+        dates = get_available_dates(conn)
+        db_info = None
+        if dates:
+            row = conn.execute("""
+                SELECT e.etf_count, e.etf_amount, m.stock_name
+                FROM etf_inclusion_daily e
+                JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
+                WHERE e.stock_code = ? AND e.trade_date = ?
+            """, (stock_code, dates[0])).fetchone()
+            if row:
+                db_info = dict(row)
+    finally:
+        conn.close()
+
+    try:
+        parsed = _fetch_etf_top_from_web(stock_code)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"수집 오류: {e}")
+
+    # etf_count는 페이지 파싱값을 우선, fallback은 DB값
+    etf_count = parsed.get("etf_count") or (db_info.get("etf_count") if db_info else None)
+
+    # TOP 2를 etf_list 형식으로 정리
+    etf_list = []
+    if parsed.get("top_ratio"):
+        t = parsed["top_ratio"]
+        etf_list.append({"label": "비중 1위", "name": t["name"], "value": t.get("ratio"), "type": "ratio"})
+    if parsed.get("top_amount"):
+        t = parsed["top_amount"]
+        etf_list.append({"label": "편입금액 1위", "name": t["name"], "value": t.get("amount"), "type": "amount"})
+
+    return {
+        "stock_code": stock_code,
+        "stock_name": db_info.get("stock_name") if db_info else None,
+        "etf_count": etf_count,
+        "etf_amount_total": db_info.get("etf_amount") if db_info else None,
+        "etf_list": etf_list,
+        "note": f"총 {etf_count or '?'}개 ETF 편입 (비중·금액 1위만 표시, 전체 목록은 etfcheck.co.kr 참조)",
+    }
