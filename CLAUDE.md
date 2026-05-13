@@ -23,6 +23,17 @@
 
 **업데이트 위치**: 해당 섹션을 직접 수정 + 섹션 11(변경 이력)에 날짜와 함께 한 줄 기록.
 
+### ⚠️ 프론트엔드 컴포넌트 이중 파일 규칙 (반드시 준수)
+일부 컴포넌트는 개발용과 실서빙용이 **별도 파일**로 존재한다. 반드시 **양쪽 모두** 수정해야 한다.
+
+| 컴포넌트 | 개발 경로 (수정 원본) | 실서빙 경로 (App.jsx import) |
+|---------|---------------------|---------------------------|
+| EtfCheckView | `ETF_check/EtfCheckView.jsx` | `frontend/src/EtfCheckView.jsx` ← **이쪽이 실제 서빙** |
+
+- **규칙**: ETF_check 관련 JSX 수정 시 반드시 `frontend/src/EtfCheckView.jsx`도 동일하게 수정
+- **빌드**: 수정 후 `cd frontend && npm run build` 실행
+- **확인**: `grep "import EtfCheckView" frontend/src/App.jsx` → 항상 `./EtfCheckView` 임포트
+
 ### 토큰 절약 규칙
 - 파일 전체를 읽기 전에 이 문서에서 줄 번호를 확인하고 해당 범위만 읽는다.
 - DB 스키마 확인 → 섹션 2 참조 (init_db.py 열지 않음)
@@ -567,4 +578,5 @@ git checkout claude/reverent-sammet-362bd4 -- frontend/src/App.jsx
 | 2026-05-13 | **ETF Check 재수집 보강**: `ETF_check/init_db.py` collection_failures 테이블 + is_backfilled 컬럼 추가. `ETF_check/collector.py` run_retry()/backfill_from_previous_day()/check_consecutive_failures() 추가. `ETF_check/scheduler.py` 23:30 재수집 + 02:00 백필 스케줄 추가. 5일 연속 실패 시 Telegram 알림. |
 | 2026-05-13 | **ETF Check UI 전면 개선**: Tab1/4 구분선+시가총액 열 이동+금일 등락률 추가. Tab2 탭명 '증감' 변경+▲▼ 토글+시총대비 증가액 비중 컬럼. Tab3 동일 적용. `ETF_check/routes_etf.py` price_change_pct 서브쿼리 추가, AND t1.etf_amount>0 필터(0값 허위증가 방지). |
 | 2026-05-13 | **재무제표 FnGuide 우선 소스 전환**: `models.py` FinancialData에 data_source/report_type 컬럼 추가. `crud.py` upsert_financial_data에 FnGuide 보호 로직(data_source='fnguide'이면 NULL/0만 채움, 덮어쓰기 금지). `collectors/fnguide_financial_collector.py` upsert 시 data_source='fnguide' 기록. `check_financial_integrity.py` Step3 DART 재수집 시 fnguide 종목 제외. `api_rate_limiter.py` FNGUIDE daily_limit 500→1500(8일→2일). `migrate_datasource.py` 신규(컬럼 추가+기존 637종목 fnguide 마킹). `verification/` 디렉토리 신규(before/after snapshot + HTML 검증 리포트). FnGuide 2,008종목 배치 수집 파이프라인 자동 실행 중(logs/fnguide_pipeline.log). |
+| 2026-05-13 | **ETF Check 현재가 수정 + 종목검색 ETF TOP 조회**: Tab1/Tab4/검색탭 현재가 `stock_universe.close`→`price_history` 최신 close 서브쿼리로 교체. `GET /api/etf-check/etf-list/{code}` 신규(Playwright 실시간 파싱: 비중 1위·금액 1위 ETF 표시, 약 3~5초). `frontend/src/EtfCheckView.jsx` 검색 탭에 'ETF 보기' 버튼+TOP패널 추가. **이중 파일 버그 수정**: ETF_check/EtfCheckView.jsx≠frontend/src/EtfCheckView.jsx 동기화 누락으로 발생 → 규칙 추가(섹션 1). |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
