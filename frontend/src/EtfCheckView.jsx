@@ -11,6 +11,9 @@ const EtfCheckView = () => {
   const [searchData, setSearchData] = useState({ rows: [], date: null, compare_date: null });
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
+  const [etfListData, setEtfListData] = useState(null);
+  const [etfListLoading, setEtfListLoading] = useState(false);
+  const [etfListCode, setEtfListCode] = useState(null);
 
   const [data, setData] = useState({
     tab1: null, tab2: null, tab3: null, tab4: null, loading: true,
@@ -118,6 +121,7 @@ const EtfCheckView = () => {
     const q = searchQuery.trim();
     if (!q) return;
     setSearchLoading(true); setSearchError('');
+    setEtfListData(null); setEtfListCode(null);
     try {
       const res = await fetch(`/api/etf-check/search?q=${encodeURIComponent(q)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -126,6 +130,19 @@ const EtfCheckView = () => {
       console.error("ETF 종목 검색 실패", err);
       setSearchError('검색 데이터를 불러오지 못했습니다.');
     } finally { setSearchLoading(false); }
+  };
+
+  const handleFetchEtfList = async (stockCode) => {
+    if (etfListCode === stockCode && etfListData) return;
+    setEtfListCode(stockCode);
+    setEtfListLoading(true);
+    setEtfListData(null);
+    try {
+      const res = await fetch(`/api/etf-check/etf-list/${stockCode}`);
+      setEtfListData(await res.json());
+    } catch (e) {
+      setEtfListData({ error: '조회 실패', etf_list: [] });
+    } finally { setEtfListLoading(false); }
   };
 
   if (data.loading) return <div style={containerStyle}>데이터를 불러오는 중입니다...</div>;
@@ -389,14 +406,16 @@ const EtfCheckView = () => {
                   <th style={thStyle}>시가총액</th>
                   <th style={thStyle}>편입액</th>
                   <th style={thStyle}>5일 전대비 차이</th>
+                  <th style={{...thStyle, textAlign:'center'}}>편입 ETF</th>
                 </tr>
               </thead>
               <tbody>
                 {searchLoading ? (
-                  <tr><td colSpan="5" style={{ padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)' }}>검색 중입니다...</td></tr>
+                  <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)' }}>검색 중입니다...</td></tr>
                 ) : (searchData.rows || []).length > 0 ? (
                   (searchData.rows || []).map((row) => (
-                    <tr key={row.stock_code}>
+                    <tr key={row.stock_code}
+                      style={{ background: etfListCode === row.stock_code ? 'rgba(45,212,191,0.05)' : 'transparent' }}>
                       <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(59,130,246,0.2)'}}>
                         {row.stock_name} <span style={{ color:'rgba(255,255,255,0.35)', fontWeight:500 }}>{row.stock_code}</span>
                       </td>
@@ -408,14 +427,89 @@ const EtfCheckView = () => {
                       <td style={{...tdStyle, color: row.amount_diff > 0 ? '#ff4d4f' : row.amount_diff < 0 ? '#60a5fa' : 'rgba(255,255,255,0.85)', fontWeight:600}}>
                         {formatSignedNumber(row.amount_diff)}
                       </td>
+                      <td style={{...tdStyle, textAlign:'center'}}>
+                        <button
+                          onClick={() => handleFetchEtfList(row.stock_code)}
+                          disabled={etfListLoading && etfListCode === row.stock_code}
+                          style={{
+                            padding:'0.25rem 0.65rem', borderRadius:'12px', border:'none',
+                            background: etfListCode === row.stock_code ? '#2dd4bf' : 'rgba(45,212,191,0.18)',
+                            color: etfListCode === row.stock_code ? '#071014' : '#2dd4bf',
+                            fontSize:'0.78rem', cursor:'pointer', fontWeight:600, whiteSpace:'nowrap'
+                          }}
+                        >
+                          {etfListLoading && etfListCode === row.stock_code ? '조회 중...' : 'ETF 보기'}
+                        </button>
+                      </td>
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan="5" style={{ padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)' }}>검색 결과가 없습니다.</td></tr>
+                  <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)' }}>검색 결과가 없습니다.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* ETF TOP 패널 */}
+          {etfListData && (
+            <div style={{
+              marginTop:'1rem', background:'rgba(45,212,191,0.06)', borderRadius:'10px',
+              border:'1px solid rgba(45,212,191,0.2)', padding:'1rem'
+            }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.8rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap' }}>
+                  <span style={{ fontWeight:700, color:'#2dd4bf', fontSize:'1rem' }}>
+                    {etfListData.stock_name || etfListCode}
+                  </span>
+                  <span style={{ fontSize:'0.78rem', color:'rgba(255,255,255,0.35)' }}>{etfListCode}</span>
+                  {etfListData.etf_count != null && (
+                    <span style={{
+                      padding:'0.15rem 0.5rem', borderRadius:'10px',
+                      background:'rgba(45,212,191,0.2)', color:'#2dd4bf', fontSize:'0.78rem', fontWeight:600
+                    }}>
+                      총 {etfListData.etf_count}개 ETF 편입
+                    </span>
+                  )}
+                  {etfListData.etf_amount_total != null && (
+                    <span style={{ fontSize:'0.78rem', color:'rgba(255,255,255,0.45)' }}>
+                      합계 {formatNumber(etfListData.etf_amount_total)}억원
+                    </span>
+                  )}
+                </div>
+                <button onClick={() => { setEtfListData(null); setEtfListCode(null); }}
+                  style={{ background:'none', border:'none', color:'rgba(255,255,255,0.35)', cursor:'pointer', fontSize:'1.1rem' }}>✕</button>
+              </div>
+
+              {etfListData.error ? (
+                <div style={{ color:'#ff6b6b', fontSize:'0.85rem' }}>{etfListData.error}</div>
+              ) : etfListData.etf_list?.length > 0 ? (
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'0.6rem' }}>
+                  {etfListData.etf_list.map((etf, i) => (
+                    <div key={i} style={{
+                      padding:'0.5rem 0.9rem', borderRadius:'10px',
+                      background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)'
+                    }}>
+                      <div style={{ fontSize:'0.7rem', color:'rgba(255,255,255,0.4)', marginBottom:'0.15rem' }}>{etf.label}</div>
+                      <div style={{ color:'#fff', fontWeight:600, fontSize:'0.88rem' }}>{etf.name}</div>
+                      {etf.value && (
+                        <div style={{ color:'#2dd4bf', fontSize:'0.78rem', marginTop:'0.1rem' }}>
+                          {etf.type === 'ratio' ? '비중 ' : '편입금액 '}{etf.value}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ color:'rgba(255,255,255,0.4)', fontSize:'0.85rem' }}>
+                  TOP ETF 정보를 가져오지 못했습니다.
+                  {etfListData.etf_count && ` (DB 기준 ${etfListData.etf_count}개 편입 중)`}
+                </div>
+              )}
+              <div style={{ marginTop:'0.6rem', fontSize:'0.72rem', color:'rgba(255,255,255,0.22)' }}>
+                {etfListData.note}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
