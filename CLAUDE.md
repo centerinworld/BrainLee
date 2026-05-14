@@ -16,6 +16,8 @@
 - **이 파일을 먼저 읽는다.** 파일 내용으로 프로젝트 구조를 파악하고, 불필요한 파일 열람을 최소화한다.
 - 작업 전 필요한 정보가 이 파일에 있으면 파일을 새로 열지 않는다.
 - **StockEasy 추세추종 로직(peak/momentum/value) 수정 전에는 반드시 `docs/stockeasy_adaptive_loop.md`를 먼저 읽고 반영한다.**
+  - 이 파일이 **유일한 단일 기준 문서(Single Source of Truth)** 이다.
+  - `docs/stockeasy_reverse_engineering_goal.md`는 폐지되었으며, 로직 근거를 다른 MD로 분산 기록하지 않는다.
   - 사용자가 `stockeast_adaptive`로 표현해도 동일 문서(`stockeasy_adaptive_loop.md`)를 의미한다.
 
 ### 작업 완료 시 (필수 — 자동으로 수행)
@@ -476,3 +478,7 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-05-13 | 사용자 보유주식 스크린샷(3장) 기준 `portfolio` 전면 업데이트: 37종목 수량/평단 반영, 사진에 없는 종목 삭제. StockEasy 로직 문서 연동 규칙 추가: 로직 수정 전 `docs/stockeasy_adaptive_loop.md`(=사용자 표현 `stockeast_adaptive`) 필수 참조를 세션 시작 규칙에 명시. |
 | 2026-05-14 | StockEasy 리포트 본문 기반 재튜닝 추가: `stockeasy_logic_validator.py`가 `stockeasy_analysis.holdings_json.research.summary.content_list` 전량 분석 후 핵심 키워드/섹터를 추출하여 `min_score/max_candidates` 외 `min_mktcap_억/preferred_sectors`까지 자동 조정하도록 확장. 2026-05-14 최신 반영 후 결과: Peak P24.3/R85.0/F1 37.8 유지, Momentum 후보 44→17로 축소(잡음 억제), Value 후보 40에서 교집합 1건(SGC에너지) 확보. `stockeasy_analyzer.py` 저장부 DB lock 재시도(지수 백오프) 추가로 동시 배치 충돌 내성 강화. |
 | 2026-05-14 | 사용자 목표 고정(리포트 설명보다 3전략 역추론 우선) 반영: `docs/stockeasy_reverse_engineering_goal.md` 신규 작성. 모멘텀/밸류 0% 탈출을 위해 `stockeasy_logic_validator.py`의 후보 생성을 함수 레벨로 재구성(모멘텀=Trend+Earnings 합성, 밸류=Trend+Value 재평가 합성). 실행 결과(2026-05-14 21:35): Momentum P10.9/R87.5/F1 19.4, Value P6.0/R30.0/F1 10.0, Peak P25.7/R90.0/F1 40.0. 텔레그램 보고 완료. |
+| 2026-05-14 | 사용자 원칙 반영: 추세추종 3전략은 섹터 제한/우대 없이 전 섹터 오픈. `stockeasy_logic_validator.py`에서 `preferred_sectors` 점수부스트(+5) 및 자동섹터동기화 로직 제거, 전략 파라미터는 `min_score/max_candidates/min_mktcap_억`만 유지하도록 정리. `config/stockeasy_logic_params.json`의 `preferred_sectors` 삭제. 문서 `docs/stockeasy_adaptive_loop.md`, `docs/stockeasy_reverse_engineering_goal.md`에 섹터 비제한 고정 원칙 명시. |
+| 2026-05-14 | StockEasy 역추론 문서 단일화: `docs/stockeasy_adaptive_loop.md`를 통합 단일 문서로 확장(목표/제약/원칙/편출처리 포함), `docs/stockeasy_reverse_engineering_goal.md` 삭제. CLAUDE 필수 규칙에 “로직 수정 전 단일 문서 선확인” 및 “근거 분산 기록 금지”를 강제 문구로 추가. |
+| 2026-05-14 | 고용정보 페이지 버그 수정: ①routes/extra_signals.py WLB fallback에서 데이터 간격 2개월 초과 시 net_1m/3m을 12개월 변화로 오표시 → _ym_month_gap 체크 추가, 연간데이터는 net_1y만 반환. ②App.jsx 고용트렌드 카드: net_1m없고 net_1y있을 때 "1년" 행 표시. ③애널리스트 보고서 기본 7건 + 전체보기 접기 버튼. ④컨센서스 기간탭/차트기간탭/수급바차트토글/miTab에 onMouseDown=preventDefault 추가(스크롤 점프 방지). NPS API getBassInfoSearchV2 404 확인(신규 NPS seq 매핑 불가) — KAI 등 20개사 NPS 미매핑 이슈 보고. |
+| 2026-05-14 | 포트폴리오 버그 2종 수정: ①routes/portfolio.py stock_name=NULL인 5개 종목(134380/009900/012330/196170/060540) → stock_universe 조회로 종목명 자동 보완. ②daily_profit 스냅샷 기반(total_value-prev_snap.eval_amount) → 가격 기반((current_price-prev_price)×qty)으로 교체 → 전일대비 +1,090만원 오표시 → -1,832만원 정상화. 프론트엔드 재빌드 완료. |

@@ -220,14 +220,26 @@ def get_portfolio(db: Session = Depends(get_db)):
         ).all()
     } if last_snap_date else {}
 
+    # stock_universe에서 종목명 보완용 맵 (NULL stock_name 대비)
+    _name_map: dict = {}
+    try:
+        _conn = _sl.connect("stock.db")
+        for _r in _conn.execute("SELECT stock_code, stock_name FROM stock_universe").fetchall():
+            _name_map[_r[0]] = _r[1]
+        _conn.close()
+    except Exception:
+        pass
+
     # 종목코드별 합산
     merged: dict = {}
     for h in holdings:
         code = h.stock_code or h.stock_name
         if code not in merged:
+            # stock_name이 None이면 stock_universe에서 보완
+            resolved_name = h.stock_name or _name_map.get(h.stock_code) or h.stock_code
             merged[code] = {
                 "stock_code": h.stock_code,
-                "stock_name": h.stock_name,
+                "stock_name": resolved_name,
                 "sector":     h.sector or "기타",
                 "total_qty":  0.0,
                 "total_cost": 0.0,
@@ -268,10 +280,9 @@ def get_portfolio(db: Session = Depends(get_db)):
         profit      = total_value - buy_total
         profit_pct  = round(profit / buy_total * 100, 2) if buy_total else 0.0
 
-        prev_snap    = prev_snaps.get(m["stock_code"])
-        prev_value   = getattr(prev_snap, "eval_amount", None)
-        # 스냅샷 없으면 당일 손익 0 (총 손익과 혼동 방지)
-        daily_profit = round(total_value - prev_value) if prev_value is not None else 0
+        # 전일대비 손익: (현재가 - 전일종가) × 보유수량
+        # 스냅샷이 아닌 가격 기반으로 계산 → 당일 신규 편입 종목도 정확히 반영
+        daily_profit = round((current_price - prev_price) * total_qty)
 
         # 주가 없는 종목 자동 수집 트리거
         if not has_price and m["stock_code"] and m["stock_code"] not in collecting:
