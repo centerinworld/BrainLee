@@ -177,7 +177,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   };
 
   const miTabBtn = (key, label) => (
-    <button key={key} onClick={() => setMiTab(key)} style={{
+    <button key={key} onMouseDown={e => e.preventDefault()} onClick={() => setMiTab(key)} style={{
       padding: '0.4rem 1rem', borderRadius: '6px', border: 'none',
       cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
       background: miTab === key ? 'var(--accent-mint)' : 'var(--glass-bg)',
@@ -603,7 +603,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   <h3 style={{margin:0,fontSize:'0.9rem',fontWeight:700}}>누적 순매수 추이 (기관/외국인)</h3>
                   <div style={{display:'flex',gap:'0.3rem'}}>
                     {[[20,'1개월'],[60,'3개월'],[90,'6개월'],[250,'1년']].map(([d,l])=>(
-                      <button key={d} onClick={()=>setCumDays(d)} style={{
+                      <button key={d} onMouseDown={e=>e.preventDefault()} onClick={()=>setCumDays(d)} style={{
                         padding:'0.2rem 0.55rem',borderRadius:'5px',border:'none',cursor:'pointer',fontSize:'0.72rem',
                         background:cumDays===d?'var(--accent-mint)':'rgba(255,255,255,0.07)',
                         color:cumDays===d?'#000':'var(--text-secondary)',fontWeight:cumDays===d?700:400,
@@ -2276,6 +2276,18 @@ const App = () => {
     const q = overrideCode || searchQuery.trim();
     if (!q) return;
     setShowSearchDrop(false); setSearchResults([]);
+    // 드롭다운 클릭: 즉시 네비게이션 후 백그라운드 fetch
+    if (overrideCode) {
+      changeStock(overrideCode);
+      changeTab("analysis");
+      setSearchQuery("");
+      fetch(API(`/api/commands/analyze/${encodeURIComponent(overrideCode)}`), { method: 'POST' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.stock_name) setSelectedStockName(d.stock_name); fetchWatchlist(); })
+        .catch(() => {});
+      return;
+    }
+    // Enter 키: API 응답 대기 후 이동 (종목코드 모를 때)
     setLoading(true);
     try {
       const res = await fetch(API(`/api/commands/analyze/${encodeURIComponent(q)}`), { method: 'POST' });
@@ -3718,9 +3730,11 @@ const App = () => {
     const isMobile = useIsMobile();
     // 종목별 보고서
     const [stockReports, setStockReports] = React.useState([]);
+    const [reportsExpanded, setReportsExpanded] = React.useState(false);
     React.useEffect(() => {
       if (!selectedStock) return;
       setStockReports([]);
+      setReportsExpanded(false);
       fetch(API(`/api/reports/stock/${selectedStock}`))
         .then(r => r.ok ? r.json() : [])
         .then(d => setStockReports(d || []))
@@ -4124,11 +4138,19 @@ const App = () => {
               {
                 icon:'👥', title:'고용 트렌드', signal: em.signal, isGrey: !em.signal || em.signal === 'gray',
                 label: em.label || '데이터 없음',
-                body: em.net_1m != null ? [
-                  ['1개월', fmtNet(em.net_1m)],
-                  ['3개월', fmtNet(em.net_3m)],
-                  ['6개월', fmtNet(em.net_6m)],
-                ] : null,
+                body: (() => {
+                  if (em.net_1m != null) return [
+                    ['1개월', fmtNet(em.net_1m)],
+                    ['3개월', fmtNet(em.net_3m)],
+                    ['6개월', fmtNet(em.net_6m)],
+                  ];
+                  if (em.net_1y != null) return [
+                    ['1년', fmtNet(em.net_1y)],
+                    ['3개월', '-'],
+                    ['6개월', '-'],
+                  ];
+                  return null;
+                })(),
               },
               {
                 icon:'🚢', title:'수출/계약', signal: ex.signal, isGrey: !ex.signal || ex.signal === 'gray',
@@ -4252,7 +4274,7 @@ const App = () => {
           {/* 기간 버튼 */}
           <div style={{ display:'flex', gap:'0.4rem', justifyContent:'flex-end' }}>
             {[{label:'30일',days:30},{label:'180일',days:180},{label:'1년',days:365},{label:'3년',days:1095},{label:'10년',days:3650}].map(({label,days}) => (
-              <button key={days} onClick={() => handleChartDaysChange(days)} style={{
+              <button key={days} onMouseDown={e => e.preventDefault()} onClick={() => handleChartDaysChange(days)} style={{
                 padding:'0.3rem 0.75rem', borderRadius:'6px', fontSize:'0.78rem', cursor:'pointer', fontWeight:600,
                 border: chartDays===days ? '1px solid var(--accent-mint)' : '1px solid var(--glass-border)',
                 background: chartDays===days ? 'rgba(45,212,191,0.15)' : 'transparent',
@@ -4338,10 +4360,10 @@ const App = () => {
               <span style={{ fontSize:'0.68rem', color:'#dc2626' }}>— 외국인누적</span>
               {/* 바차트 토글 버튼 */}
               <div style={{ marginLeft:'auto', display:'flex', gap:'0.3rem' }}>
-                <button style={btnStyle(showInstBar,'#fca5a5')} onClick={()=>setShowInstBar(v=>!v)}>
+                <button style={btnStyle(showInstBar,'#fca5a5')} onMouseDown={e=>e.preventDefault()} onClick={()=>setShowInstBar(v=>!v)}>
                   기관 일별 {showInstBar?'숨기기':'표시'}
                 </button>
-                <button style={btnStyle(showFrnBar,'#dc2626')} onClick={()=>setShowFrnBar(v=>!v)}>
+                <button style={btnStyle(showFrnBar,'#dc2626')} onMouseDown={e=>e.preventDefault()} onClick={()=>setShowFrnBar(v=>!v)}>
                   외국인 일별 {showFrnBar?'숨기기':'표시'}
                 </button>
               </div>
@@ -4689,7 +4711,7 @@ const App = () => {
                 <div style={{ display:'flex', background:'rgba(255,255,255,0.05)', borderRadius:'6px', padding:'2px', gap:'1px', marginLeft:'auto' }}>
                   <span style={{ fontSize:'0.68rem', color:'var(--text-secondary)', padding:'0.2rem 0.4rem', alignSelf:'center' }}>{records.length}건</span>
                   {[6,12,24].map(m => (
-                    <button key={m} onClick={() => setConsensusMonths(m)}
+                    <button key={m} onMouseDown={e => e.preventDefault()} onClick={() => setConsensusMonths(m)}
                       style={{ padding:'0.2rem 0.55rem', borderRadius:'4px', fontSize:'0.7rem', fontWeight:600,
                         border:'none', cursor:'pointer', transition:'all 0.15s',
                         background: consensusMonths === m ? 'rgba(251,191,36,0.25)' : 'transparent',
@@ -4873,40 +4895,56 @@ const App = () => {
                 텔레그램 채널에서 종목명이 포함된 보고서가 수집되면 여기에 표시됩니다.
               </p>
             </div>
-          ) : (
-            <div style={{display:'flex',flexDirection:'column',gap:'0.35rem'}}>
-              {stockReports.map(r => (
-                <div key={r.id} style={{display:'flex',alignItems:'center',
-                  justifyContent:'space-between',padding:'0.5rem 0.75rem',
-                  borderRadius:'6px',background:'rgba(255,255,255,0.04)',
-                  border:'1px solid var(--glass-border)'}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <p style={{fontSize:'0.82rem',fontWeight:600,
-                      overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                      {r.file_name}
-                    </p>
-                    <p style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginTop:'0.1rem'}}>
-                      {r.report_date || r.posted_date} | {r.channel_id}
-                      {r.file_size ? ` | ${(r.file_size/1024).toFixed(0)}KB` : ''}
-                    </p>
-                    {r.caption && (
-                      <p style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.35)',marginTop:'0.1rem',
-                        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                        {r.caption}
-                      </p>
-                    )}
-                  </div>
-                  <a href={API(`/api/reports/download/${r.id}`)} download={r.saved_name}
-                    style={{marginLeft:'0.75rem',padding:'0.3rem 0.7rem',borderRadius:'5px',
-                      background:'rgba(45,212,191,0.15)',border:'1px solid rgba(45,212,191,0.3)',
-                      color:'var(--accent-mint)',fontSize:'0.75rem',textDecoration:'none',
-                      whiteSpace:'nowrap',flexShrink:0}}>
-                    ⬇ 다운로드
-                  </a>
+          ) : (() => {
+            const REPORT_LIMIT = 7;
+            const displayedReports = reportsExpanded ? stockReports : stockReports.slice(0, REPORT_LIMIT);
+            return (
+              <>
+                <div style={{display:'flex',flexDirection:'column',gap:'0.35rem'}}>
+                  {displayedReports.map(r => (
+                    <div key={r.id} style={{display:'flex',alignItems:'center',
+                      justifyContent:'space-between',padding:'0.5rem 0.75rem',
+                      borderRadius:'6px',background:'rgba(255,255,255,0.04)',
+                      border:'1px solid var(--glass-border)'}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <p style={{fontSize:'0.82rem',fontWeight:600,
+                          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                          {r.file_name}
+                        </p>
+                        <p style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginTop:'0.1rem'}}>
+                          {r.report_date || r.posted_date} | {r.channel_id}
+                          {r.file_size ? ` | ${(r.file_size/1024).toFixed(0)}KB` : ''}
+                        </p>
+                        {r.caption && (
+                          <p style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.35)',marginTop:'0.1rem',
+                            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                            {r.caption}
+                          </p>
+                        )}
+                      </div>
+                      <a href={API(`/api/reports/download/${r.id}`)} download={r.saved_name}
+                        style={{marginLeft:'0.75rem',padding:'0.3rem 0.7rem',borderRadius:'5px',
+                          background:'rgba(45,212,191,0.15)',border:'1px solid rgba(45,212,191,0.3)',
+                          color:'var(--accent-mint)',fontSize:'0.75rem',textDecoration:'none',
+                          whiteSpace:'nowrap',flexShrink:0}}>
+                        ⬇ 다운로드
+                      </a>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
+                {stockReports.length > REPORT_LIMIT && (
+                  <div style={{textAlign:'center',paddingTop:'0.6rem',borderTop:'1px solid var(--glass-border)',marginTop:'0.35rem'}}>
+                    <button onClick={() => setReportsExpanded(p => !p)}
+                      style={{fontSize:'0.75rem',padding:'0.3rem 1.2rem',borderRadius:'6px',cursor:'pointer',
+                        background:'rgba(255,255,255,0.05)',border:'1px solid var(--glass-border)',
+                        color:'var(--text-secondary)',fontWeight:600}}>
+                      {reportsExpanded ? '▲ 접기' : `▼ 전체 보기 (${stockReports.length}건)`}
+                    </button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
       </div>

@@ -109,11 +109,10 @@ def sync_kis_executions(db) -> int:
 
             if tx == "sell":
                 if holding and holding.quantity > 0:
-                    cur_total  = holding.avg_price * holding.quantity
                     remain_qty = holding.quantity - qty
                     if remain_qty > 0:
-                        holding.avg_price = round(max((cur_total - price * qty) / remain_qty, 0), 2)
-                        holding.quantity  = remain_qty
+                        # avg_price는 변경하지 않음 (매도 시 잔여 주식의 평균 매입가는 그대로)
+                        holding.quantity = remain_qty
                     else:
                         holding.quantity  = 0.0
                         holding.avg_price = 0.0
@@ -974,4 +973,78 @@ async def import_portfolio_excel(file: UploadFile = File(...), db: Session = Dep
         "skipped_count": len(results["skipped"]),
         "success": results["success"],
         "failed":  results["failed"],
+    }
+
+
+@router.post("/recalculate-avg")
+def recalculate_avg_price(db: Session = Depends(get_db)):
+    """
+    portfolio_tx 이력으로 모든 보유종목의 avg_price 재계산.
+    - 매수: 가중평균 (avg = (prev_avg * prev_qty + price * qty) / new_qty)
+    - 매도: avg_price 변경 없이 수량만 차감
+    - 결과: {stock_code: {old_avg, new_avg, quantity, fixed}}
+    """
+    from collections import defaultdict
+
+    # 전체 거래 이력 (시간순)
+    txs = db.query(models.PortfolioTx).order_by(
+        models.PortfolioTx.tx_date.asc(),
+        models.PortfolioTx.id.asc() if hasattr(models.PortfolioTx, 'id') else models.PortfolioTx.tx_date.asc()
+    ).all()
+
+    # 종목별로 재계산
+    state: dict = defaultdict(lambda: {"avg": 0.0, "qty": 0.0})
+    for tx in txs:
+        code = tx.stock_code
+        s = state[code]
+        qty   = float(tx.quantity or 0)
+        price = float(tx.price or 0)
+
+        if tx.tx_type == "buy" and qty > 0 and price > 0:
+            new_qty = s["qty"] + qty
+            s["avg"] = (s["avg"] * s["qty"] + price * qty) / new_qty if new_qty else price
+            s["qty"] = new_qty
+        elif tx.tx_type == "sell" and qty > 0:
+            # avg_price 변경 없음
+            s["qty"] = max(0.0, s["qty"] - qty)
+            if s["qty"] == 0:
+                s["avg"] = 0.0
+
+    # 현재 보유 종목에 반영
+    holdings = db.query(models.Portfolio).filter(models.Portfolio.quantity > 0).all()
+    result = []
+    for h in holdings:
+        s = state.get(h.stock_code)
+        if not s:
+            continue
+        new_avg = round(s["avg"], 2)
+        old_avg = h.avg_price
+        if abs(new_avg - old_avg) > 1:  # 1원 이상 차이 시 업데이트
+            h.avg_price = new_avg
+            result.append({
+                "stock_code": h.stock_code,
+                "stock_name": h.stock_name,
+                "old_avg": old_avg,
+                "new_avg": new_avg,
+                "quantity": h.quantity,
+                "fixed": True,
+            })
+        else:
+            result.append({
+                "stock_code": h.stock_code,
+                "stock_name": h.stock_name,
+                "old_avg": old_avg,
+                "new_avg": new_avg,
+                "quantity": h.quantity,
+                "fixed": False,
+            })
+
+    db.commit()
+    fixed = [r for r in result if r["fixed"]]
+    logger.info(f"[재계산] {len(fixed)}/{len(result)}종목 avg_price 수정")
+    return {
+        "status": "ok",
+        "total": len(result),
+        "fixed": len(fixed),
+        "details": result,
     }

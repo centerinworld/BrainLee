@@ -15,11 +15,13 @@ const NpsTrendView = () => {
   const [activePeriod, setActivePeriod] = useState('workers');
   const [search, setSearch] = useState('');
   const [showNps, setShowNps] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   // activePeriod가 바뀌면 해당 정렬로 API 재요청
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/employment-v2/trend?sort_by=${activePeriod}&limit=500`)
+    setShowAll(false);
+    fetch(`/api/employment-v2/trend?sort_by=${activePeriod}&limit=9999`)
       .then(r => r.json())
       .then(d => {
         setRows(d.rows || []);
@@ -52,6 +54,7 @@ const NpsTrendView = () => {
     if (!search) return rows;
     return rows.filter(r => r.stock_name?.includes(search) || r.stock_code?.includes(search));
   }, [rows, search]);
+  const visible = showAll ? filtered : filtered.slice(0, 15);
 
   const activePrd = PERIODS.find(p => p.key === activePeriod) || PERIODS[0];
   const hasDiffData = rows.some(r => r[activePrd.diffKey] != null);
@@ -108,14 +111,14 @@ const NpsTrendView = () => {
           <input
             placeholder="종목명 검색..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setShowAll(false); }}
             style={{
               padding: '0.28rem 0.65rem', borderRadius: '6px',
               background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
               color: '#fff', fontSize: '0.78rem', width: '145px',
             }}
           />
-          <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)' }}>{filtered.length}개</span>
+          <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)' }}>{visible.length}/{filtered.length}개</span>
         </div>
       </div>
 
@@ -200,7 +203,7 @@ const NpsTrendView = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row, i) => {
+              {visible.map((row, i) => {
                 const active_diff = row[activePrd.diffKey];
                 return (
                   <tr key={row.stock_code}
@@ -274,6 +277,13 @@ const NpsTrendView = () => {
               })}
             </tbody>
           </table>
+          {!showAll && filtered.length > 15 && (
+            <div style={{ padding: '0.8rem', textAlign: 'center', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <button onClick={() => setShowAll(true)} style={{ padding: '0.35rem 1.2rem', borderRadius: '7px', fontSize: '0.8rem', cursor: 'pointer', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.15)' }}>
+                전체 보기 ({filtered.length - 15}개 더)
+              </button>
+            </div>
+          )}
         </div>
       )}
 

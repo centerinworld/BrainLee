@@ -58,7 +58,7 @@ def migrate():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    # ── 1. financial_data.roe 컬럼 추가 ──────────────────────
+    # ── 1. financial_data 컬럼 추가 ──────────────────────────
     if table_exists(cur, "financial_data"):
         if not column_exists(cur, "financial_data", "roe"):
             cur.execute("ALTER TABLE financial_data ADD COLUMN roe FLOAT")
@@ -66,6 +66,12 @@ def migrate():
             print("[완료] financial_data.roe 컬럼 추가")
         else:
             print("[스킵] financial_data.roe 이미 존재")
+        if not column_exists(cur, "financial_data", "data_source"):
+            cur.execute("ALTER TABLE financial_data ADD COLUMN data_source TEXT")
+            conn.commit()
+            print("[완료] financial_data.data_source 컬럼 추가")
+        else:
+            print("[스킵] financial_data.data_source 이미 존재")
 
         # ── 2. 오염 데이터 정리 ───────────────────────────────
         # year=1, quarter=0 같은 비정상 데이터가 e3q8 에러를 유발함

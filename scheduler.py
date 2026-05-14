@@ -171,6 +171,7 @@ class CollectionScheduler:
             ("KRX종목기본정보", self._loop_krx_base_info),               # ★ 매일 18:35 KRX 종목기본정보 + 변동 감지
             ("FnGuide재무월간", self._loop_fnguide_financial_monthly),  # ★ 매월 3일 05:00 연결/별도 재무제표 전종목
             ("수출입가집계",   self._loop_trade_provisional),          # ★ 매주 월요일 06:00 수출입 10일 가집계 수집
+            ("공시DB배치",     self._loop_disclosure_db_batch),        # ★ 매주 일요일 02:00 DART 전종목 공시 DB 저장
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -1602,13 +1603,16 @@ class CollectionScheduler:
                 _run_job_safe("스탁이지주간", self._job_stockeasy_weekly)
 
     def _job_stockeasy_analysis(self) -> None:
-        """스탁이지 3전략 현황 분석 — stockeasy_analyzer.run_daily_analysis() 위임."""
+        """스탁이지 3전략 현황 분석 + 로직 적응 검증(조정 전/후 텔레그램)."""
         try:
             import sys as _sys
             if "/Applications/stock_dashboard" not in _sys.path:
                 _sys.path.insert(0, "/Applications/stock_dashboard")
             from stockeasy_analyzer import run_daily_analysis
+            from stockeasy_logic_validator import run_validation
             run_daily_analysis()
+            # 분석 직후, 당일 편입/이탈 변화 기반으로 로직 임계값을 미세 조정하고 보고
+            run_validation(["peak", "momentum", "value"], send_tg=True)
             logger.info("[스탁이지] 일별 분석 완료")
         except Exception as e:
             logger.error(f"[스탁이지] 분석 오류: {e}")
@@ -2115,3 +2119,36 @@ class CollectionScheduler:
                 logger.error(f"[수출입가집계] 캐시 재빌드 오류: {r2.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[수출입가집계] 예외: {e}")
+
+    def _loop_disclosure_db_batch(self) -> None:
+        """매주 일요일 02:00 — DART 전종목 공시 10년치 DB 저장."""
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            # 다음 일요일 02:00 계산
+            days_until_sunday = (6 - now.weekday()) % 7
+            if days_until_sunday == 0 and now.hour >= 2:
+                days_until_sunday = 7
+            next_run = (now + timedelta(days=days_until_sunday)).replace(
+                hour=2, minute=0, second=0, microsecond=0
+            )
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("공시DB배치", self._job_disclosure_db_batch)
+
+    def _job_disclosure_db_batch(self) -> None:
+        """DART API로 전종목 공시 일괄 수집 → dart_disclosures 테이블 저장."""
+        import subprocess, sys
+        script = str(Path(__file__).resolve().parent / "collect_dart_disclosures.py")
+        try:
+            r = subprocess.run(
+                [sys.executable, script, "--skip-days", "7", "--years", "10"],
+                capture_output=True, text=True, timeout=7 * 3600,  # 최대 7시간
+                cwd=str(Path(__file__).resolve().parent),
+            )
+            logger.info(f"[공시DB배치] 완료: {r.stdout[-300:]}")
+            if r.returncode != 0:
+                logger.error(f"[공시DB배치] 오류: {r.stderr[-300:]}")
+        except Exception as e:
+            logger.error(f"[공시DB배치] 예외: {e}")

@@ -6,9 +6,17 @@
 
 > **이 섹션은 Claude가 반드시 따라야 할 행동 규칙입니다. 예외 없이 적용됩니다.**
 
+### ⛔ App.jsx 절대 규칙 (위반 시 기능 소실 위험)
+- **App.jsx는 반드시 `/Applications/stock_dashboard/frontend/src/App.jsx` (메인 경로)만 읽고 수정한다.**
+- 워크트리 경로(`/Applications/stock_dashboard/.claude/worktrees/*/frontend/src/App.jsx`)는 **절대 편집하지 않는다.** 항상 구버전이므로 메인에 복사되면 신기능이 소실된다.
+- 프론트엔드 빌드는 반드시 `cd /Applications/stock_dashboard/frontend && npx vite build`로 실행한다.
+- 작업 전 `wc -l /Applications/stock_dashboard/frontend/src/App.jsx`로 줄수를 확인한다. **10,000줄 미만이면 이미 덮어써진 것**이므로 즉시 `git checkout HEAD -- frontend/src/App.jsx`로 복원한다.
+
 ### 세션 시작 시
 - **이 파일을 먼저 읽는다.** 파일 내용으로 프로젝트 구조를 파악하고, 불필요한 파일 열람을 최소화한다.
 - 작업 전 필요한 정보가 이 파일에 있으면 파일을 새로 열지 않는다.
+- **StockEasy 추세추종 로직(peak/momentum/value) 수정 전에는 반드시 `docs/stockeasy_adaptive_loop.md`를 먼저 읽고 반영한다.**
+  - 사용자가 `stockeast_adaptive`로 표현해도 동일 문서(`stockeasy_adaptive_loop.md`)를 의미한다.
 
 ### 작업 완료 시 (필수 — 자동으로 수행)
 다음 중 하나라도 해당하면 **이 파일(CLAUDE.md)을 반드시 업데이트**한다:
@@ -22,17 +30,6 @@
 - [ ] 기존 동작 방식 변경 (단위, 포맷, 로직)
 
 **업데이트 위치**: 해당 섹션을 직접 수정 + 섹션 11(변경 이력)에 날짜와 함께 한 줄 기록.
-
-### ⚠️ 프론트엔드 컴포넌트 이중 파일 규칙 (반드시 준수)
-일부 컴포넌트는 개발용과 실서빙용이 **별도 파일**로 존재한다. 반드시 **양쪽 모두** 수정해야 한다.
-
-| 컴포넌트 | 개발 경로 (수정 원본) | 실서빙 경로 (App.jsx import) |
-|---------|---------------------|---------------------------|
-| EtfCheckView | `ETF_check/EtfCheckView.jsx` | `frontend/src/EtfCheckView.jsx` ← **이쪽이 실제 서빙** |
-
-- **규칙**: ETF_check 관련 JSX 수정 시 반드시 `frontend/src/EtfCheckView.jsx`도 동일하게 수정
-- **빌드**: 수정 후 `cd frontend && npm run build` 실행
-- **확인**: `grep "import EtfCheckView" frontend/src/App.jsx` → 항상 `./EtfCheckView` 임포트
 
 ### 토큰 절약 규칙
 - 파일 전체를 읽기 전에 이 문서에서 줄 번호를 확인하고 해당 범위만 읽는다.
@@ -91,7 +88,7 @@
 |--------|------|-----------|------|
 | `price_history` | 516만 | stock_code, date, open/high/low/close, volume, inst_net_buy, frn_net_buy, ind_net_buy, **inst_net_buy_amt**, **frn_net_buy_amt**, **ind_net_buy_amt** | 일별 OHLCV + 투자자수급 |
 | `stock_universe` | 6693 | stock_code, stock_name, market, sector_large, shares_issued, market_cap, per, pbr, roe, roa | 전 종목 마스터 |
-| `financial_data` | 10.2만 | stock_code, year, quarter, revenue, operating_profit, net_income, total_assets, total_equity, eps, bps, is_annual, **report_type**, **data_source** | 재무제표 (data_source='fnguide'/'dart'/NULL) |
+| `financial_data` | 9.2만 | stock_code, year, quarter, revenue, operating_profit, net_income, total_assets, total_equity, eps, bps, is_annual | 재무제표 |
 | `peak_holding` | 31 | stock_code, stock_name, buy_price, current_price, quantity, entry_date, is_active, strategy, profit_pct | 가상매매 보유 |
 | `peak_trade` | 31 | stock_name, tx_type(buy/sell), price, quantity, profit, strategy | 가상매매 거래내역 |
 | `portfolio` | 29 | stock_code, quantity, avg_price, bought_at | 실제 포트폴리오 |
@@ -324,7 +321,6 @@ def _cache():
 | `PeakView` | trend | 3592 |
 | `PortfolioView` | portfolio | 4056 |
 | `TradeAnalysis2` | hs_trade2 | 4869 |
-| `ExportHealthView` | export_health | ~8327 |
 | `SectorReports` | reports | 5748 |
 | `SignalSettings` | (settings 내부) | 5851 |
 | `AIInsight` | insight | 6031 |
@@ -340,7 +336,7 @@ NAV_ITEMS 정의: 7459줄
 렌더 스위치:    7585줄
 
 순서: macro → market_indicators → analysis → screener → trend
-    → reports → telegram → backtest → hs_trade → hs_trade2 → export_health
+    → reports → telegram → backtest → hs_trade → hs_trade2
     ── (구분선) ──
     buy_candidates → watchlist → portfolio
     ── (구분선) ──
@@ -433,106 +429,10 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 재무제표 단위 오류 | ✅ 완전수정 | op_profit 597건·net_income 20건·equity 5건 억원→원 변환, Q4 254건 재계산, CFS/OFS 혼용 36건 재수집, 지주사 Q4 NULL 10건 처리, 수집오류 삭제 2건 |
 | financial_data 백업 | ℹ️ 보관 | `financial_data_backup_20260412` 테이블로 수정 전 원본 보관 |
 | 재무제표 Q4 대규모 손실 | ℹ️ 정상 | 잔존 14건(삼성SDI2016/현대건설2024/대한항공 등)은 실제 이벤트 손실로 수학적 정확값 |
-| 시그널 보드 중복 표시 | ✅ 수정됨 | 서버 캐시에 각 시그널 2개씩 들어와 "데이터 부족" 표시 → App.jsx 프론트 dedup 추가 (name 기준, gray < 실값 우선) |
-| supply_flow 시그널 오로직 | ✅ 수정됨 | signal_engine.py L1600: both_pos/both_neg 논리만으로 외국인 대규모 매도에도 yellow → net±20,000억 임계값 추가(green/red) |
-| 대차 데이터 수집 지연 | ✅ 수정됨 | short_rank_daily/short_foreign_trade 2026-05-07 이후 gap → 2026-05-08 수동 백필 완료. short_foreign_balance는 API 자체 지연(최대 1주) 정상 |
-| 수출입분석 기업별 탭 | ✅ 수정됨 | hs_trade_lab /trend GROUP BY 버그(28→4행), /by-product HS 매핑 없는 기업은 sector fallback, /trend provisional 자동 sector 감지 |
-| ETF 수집 0값 허위 증가 | ✅ 수정됨 | 2026-05-11 503종목 수집 실패 → etf_amount=0 저장 → 다음날 허위 급증. routes_etf.py `AND t1.etf_amount>0` 필터로 해결 |
-| ETF 재수집 미구현 | ✅ 구현됨 | run_retry(23:30)/backfill_from_prev(02:00)/5일연속실패알림 추가. collection_failures 테이블+is_backfilled 컬럼 신규 |
-| 재무 DART 덮어쓰기 | ✅ 수정됨 | crud.py: data_source='fnguide' 레코드는 NULL/0만 채움. FnGuide 637종목 마킹 완료, 2,008종목 수집 중(logs/fnguide_pipeline.log) |
-| FnGuide 일일 한도 부족 | ✅ 수정됨 | api_rate_limiter.py FNGUIDE daily_limit 500→1500 (8일→2일로 단축) |
 
 ---
 
-## 10. 롤백 가이드 (문제 발생 시)
-
-### 재무 데이터 롤백 (2026-05-13 작업 기준)
-
-**data_source 컬럼 제거 (마이그레이션 되돌리기)**
-```bash
-# ① data_source 컬럼은 SQLite에서 DROP COLUMN 불가 → 기존 백업 테이블 사용
-sqlite3 stock.db "DROP TABLE IF EXISTS financial_data_backup_20260513"
-sqlite3 stock.db "CREATE TABLE financial_data_backup_20260513 AS SELECT * FROM financial_data"
-# ② 원복이 필요하면: 백업 테이블에서 복원
-sqlite3 stock.db "DELETE FROM financial_data; INSERT INTO financial_data SELECT * FROM financial_data_backup_20260412"
-```
-
-**FnGuide 마이그레이션 되돌리기**
-```bash
-# data_source 마킹만 제거 (컬럼은 유지)
-sqlite3 stock.db "UPDATE financial_data SET data_source=NULL WHERE data_source='fnguide'"
-sqlite3 stock.db "UPDATE cash_flow_data SET data_source=NULL WHERE data_source='fnguide'"
-```
-
-**crud.py 보호 로직 되돌리기 (DART 덮어쓰기 허용으로 복귀)**
-```bash
-git checkout HEAD~1 -- crud.py
-# 또는 git log --oneline crud.py 에서 이전 커밋 해시 확인 후:
-git checkout <hash> -- crud.py
-```
-
-**FnGuide 수집 중단**
-```bash
-kill $(pgrep -f "fnguide_financial_collector")
-kill $(pgrep -f "wait_and_migrate")
-```
-
-### ETF Check 롤백 (2026-05-13 작업 기준)
-
-**collection_failures 테이블 제거**
-```bash
-sqlite3 /Applications/stock_dashboard/ETF_check/etf_check.db "DROP TABLE IF EXISTS collection_failures"
-```
-
-**collector.py/scheduler.py 이전 버전 복원**
-```bash
-git checkout <이전커밋해시> -- ETF_check/collector.py ETF_check/scheduler.py
-```
-
-**검증 파일 위치**: `verification/` 폴더
-- `before_migration.json` — 마이그레이션 전 DB 상태
-- `after_fnguide_resume_*.json` — FnGuide 수집 후 DB 상태
-- `financial_verification_report_*.html` — OpenAI 검토용 HTML 리포트
-
----
-
-## 10b. App.jsx 복원 가이드 (파일이 망가졌을 때)
-
-App.jsx는 ~8000줄 단일 파일로, 세션 컨텍스트 압축·부분 편집·미완성 write 등으로 손상될 수 있다.
-
-### 빠른 복원 방법
-
-```bash
-# 1. 현재 worktree 확인
-git branch  # 예: claude/competent-blackburn-ad312f
-
-# 2. 최근 정상 커밋의 App.jsx 복원
-git log --oneline -5 frontend/src/App.jsx
-git checkout <commit-hash> -- frontend/src/App.jsx
-
-# 3. 또는 main branch에서 복원
-git checkout claude/reverent-sammet-362bd4 -- frontend/src/App.jsx
-```
-
-### 복원 후 재적용해야 할 주요 변경사항 체크리스트
-
-변경이력(섹션 11) 참조. 커밋 이후 미반영 사항:
-1. **시그널 보드 dedup** (routes/signals.py GET 응답 후 `_signalFrontCache`에 name 기준 중복 제거)
-   - 위치: App.jsx에서 `/api/signals/` fetch `.then` 블록
-   - gray 우선순위 낮게: `if (!prev || (prev.signal === 'gray' && s.signal !== 'gray')) acc[s.name] = s`
-
-2. ~~**수출입분석 기업별 탭** (완료됨 2026-05-11)~~
-
-3. **기간 탭 3년/10년** (StockAnalysis 차트 fetchDays 최대 3650일)
-
-### 손상 방지 원칙
-- App.jsx를 **전체 Write**하지 말고 항상 **Edit(부분 교체)** 사용
-- 줄번호가 중요 → 섹션 6의 줄번호를 수시로 업데이트
-- 대규모 변경 전 `git add frontend/src/App.jsx && git stash`로 백업
-
----
-
-## 11. 자주 수정하는 작업별 파일 가이드 (구 섹션 10)
+## 10. 자주 수정하는 작업별 파일 가이드
 
 | 작업 | 파일 | 참고 위치 |
 |------|------|-----------|
@@ -549,7 +449,7 @@ git checkout claude/reverent-sammet-362bd4 -- frontend/src/App.jsx
 
 ---
 
-## 12. 변경 이력 (작업 완료 시 여기에 기록)
+## 11. 변경 이력 (작업 완료 시 여기에 기록)
 
 | 날짜 | 변경 내용 |
 |------|-----------|
@@ -567,16 +467,12 @@ git checkout claude/reverent-sammet-362bd4 -- frontend/src/App.jsx
 | 2026-04-16 | 포트폴리오 수급·대차잔고·시그널 전면 개선: ①`_to_억` 버그 수정(amt=0 시 qty*close/1e8, amt≠0 시 amt/100) ②short_data를 buy_candidates/short-sell과 동일 형식(today/avg5/avg5_prev/신호)으로 통일 ③4분면 매매신호 신설(추세점수±4/가치점수 PBR·PER·ROE·ROA): add_buy·hold·hold_value·take_profit·real_sell·cut_loss ④포트폴리오 테이블 하단 AI 판단기준 설명 섹션 추가 |
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
-| 2026-05-10 | 수급 UI 버그 3종 수정: processor.py `get_chart_data` 주말(토/일) 행 제외, App.jsx `tradingDays` 필터+last trading day 기준, 금액→수량 표시 순서 교체 |
-| 2026-05-10 | hs_code_company_map 오류 매핑 175건 삭제 (Telegram 메시지 12062 대덕전자 건이 타 기업에 잘못 적용). hs_trade_lab/app/main.py: 가집계(잠정) 월 섹터 API 응답에 포함(`is_provisional:True`), `/api/analysis2/companies` 전체 기업 목록 엔드포인트 신규, `/api/analysis2/company/{code}/by-product` 기업별 품목+텔레그램 엔드포인트 신규. scheduler.py 매주 월요일 06:00 가집계 수집 잡 추가 |
-| 2026-05-10 | App.jsx TradeAnalysis2: ①`섹터별`/`기업별` 메인 탭 추가 ②SectorChart 가집계 바 주황색 점선 테두리+`잠정` 라벨 표시 ③SparkBar 가집계 바 점선 처리 ④섹터표 최신 수출액 옆 `잠정` 배지 ⑤`기업별` 탭: 검색 가능 기업 목록+선택 기업 HS품목별 수출(kg단가 포함)+텔레그램 게시물 패널 |
-| 2026-05-11 | 텔레그램 최신 251개 메시지 수집(5/11까지), trade_cards/flow_mappings/analysis2 캐시 재빌드. 서버 재시작으로 `analysis2/companies` + `company/{code}/by-product` 엔드포인트 활성화. `rebuild_analysis2_cache.py` OR LIKE 조인 → UNION ALL + SUBSTR 인덱스 최적화 (14분→1분). `customs_monthly_record`에 hs_code/hs6/hs4 인덱스 추가. `models.py` CashFlowData에 `_q` 컬럼 4개 + `value_type` 추가. `main.py` cashflow API 분기 조회 시 `operating_cf_q` 우선 사용. |
-| 2026-05-11 | `ExportHealthView` 컴포넌트 신규 (🌐 수출경쟁력 탭). 섹터 건강도(🟢🟡🔴) + 6개월 미니바차트, 기업 수출증가/감소 랭킹, 공유 HS 코드 점유율 시각화(가로 바). hs_trade_lab `export-health` API 확장(export_health/import_health/import_mom·yoy/sector_label/monthly_export/shared_hs). `hs/{hs_code}/companies` 응답 구조 변경({hs_info, companies}). `rebuild_from_telegram.py` + `rebuild_analysis2_cache.py`: share_pct 분배 로직, 9개 sector_map 추가, SSD 점유율(Samsung 63%/Hynix 37%). |
-| 2026-05-11 | **수출입분석 기업별 탭 복원**: hs_trade_lab /trend GROUP BY 버그 수정(sector_key 없을 때 28행→4행), /by-product HS 매핑 없는 기업 sector fallback(analysis2_sector_hs_monthly_cache), /trend provisional 월 자동 sector 감지. App.jsx TradeAnalysis2 기업별탭: loadByProduct `/trend` 동시 로드, `📈 월별 수출입 추세` 차트 추가, `섹터 추정` 배지. |
-| 2026-05-11 | **시그널 보드 중복 수정**: 서버 캐시 35개(17×2) → App.jsx name 기준 dedup (gray < 실값 우선) → 18개 정상. supply_flow 로직 fix: signal_engine.py L1600 both_pos/both_neg → net±20,000억 임계값 추가. 대차 수급 2026-05-08 수동 백필(short_rank_daily 2689건, short_sell_daily 2583건). CLAUDE.md 섹션 10 App.jsx 복원 가이드 추가. |
-| 2026-05-12 | 수출입분석(TradeAnalysis2) UI 개선: ①MoM/YoY 음수 버그 수정(확정치만 비교) ②제목 중복 제거 ③HS구성 탭 삭제 ④섹터 탭 기업 상세 월별 테이블 삭제 ⑤기업 탭 섹터 선택 탭 추가 ⑥rebuild_analysis2_cache.py rank_num 보정 |
-| 2026-05-13 | **ETF Check 재수집 보강**: `ETF_check/init_db.py` collection_failures 테이블 + is_backfilled 컬럼 추가. `ETF_check/collector.py` run_retry()/backfill_from_previous_day()/check_consecutive_failures() 추가. `ETF_check/scheduler.py` 23:30 재수집 + 02:00 백필 스케줄 추가. 5일 연속 실패 시 Telegram 알림. |
-| 2026-05-13 | **ETF Check UI 전면 개선**: Tab1/4 구분선+시가총액 열 이동+금일 등락률 추가. Tab2 탭명 '증감' 변경+▲▼ 토글+시총대비 증가액 비중 컬럼. Tab3 동일 적용. `ETF_check/routes_etf.py` price_change_pct 서브쿼리 추가, AND t1.etf_amount>0 필터(0값 허위증가 방지). |
-| 2026-05-13 | **재무제표 FnGuide 우선 소스 전환**: `models.py` FinancialData에 data_source/report_type 컬럼 추가. `crud.py` upsert_financial_data에 FnGuide 보호 로직(data_source='fnguide'이면 NULL/0만 채움, 덮어쓰기 금지). `collectors/fnguide_financial_collector.py` upsert 시 data_source='fnguide' 기록. `check_financial_integrity.py` Step3 DART 재수집 시 fnguide 종목 제외. `api_rate_limiter.py` FNGUIDE daily_limit 500→1500(8일→2일). `migrate_datasource.py` 신규(컬럼 추가+기존 637종목 fnguide 마킹). `verification/` 디렉토리 신규(before/after snapshot + HTML 검증 리포트). FnGuide 2,008종목 배치 수집 파이프라인 자동 실행 중(logs/fnguide_pipeline.log). |
-| 2026-05-13 | **ETF Check 현재가 수정 + 종목검색 ETF TOP 조회**: Tab1/Tab4/검색탭 현재가 `stock_universe.close`→`price_history` 최신 close 서브쿼리로 교체. `GET /api/etf-check/etf-list/{code}` 신규(Playwright 실시간 파싱: 비중 1위·금액 1위 ETF 표시, 약 3~5초). `frontend/src/EtfCheckView.jsx` 검색 탭에 'ETF 보기' 버튼+TOP패널 추가. **이중 파일 버그 수정**: ETF_check/EtfCheckView.jsx≠frontend/src/EtfCheckView.jsx 동기화 누락으로 발생 → 규칙 추가(섹션 1). |
-| 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
+| 2026-05-12 | 수출입분석(TradeAnalysis2) UI 개선: ①MoM/YoY 음수 버그 수정(확정치만 비교, main.py analysis2_sectors·company_trend 양쪽) ②제목 중복/"분석 II" 제거(h1 삭제, TAB_TITLES "수출입 분석") ③섹터 탭 "HS 구성" TabButton 삭제 ④섹터 탭 기업 상세 월별 추세 테이블 삭제 ⑤기업 탭 섹터 선택 탭 추가(allCompSector 상태) ⑥rebuild_analysis2_cache.py telegram 매핑 rank_num=3→1, mapping_status='exact' 적용 → 전체 247개 기업 exact로 전환 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
+| 2026-05-13 | 버그 3종 수정: ①signal_engine.py calc_stock_signals/calc_market_signals: DB 락으로 INSERT OR REPLACE 실패 시 results에 중복 append되는 버그 수정(INSERT를 별도 try-except로 분리) → 35개→18개 정상화. ②routes/extra_signals.py _get_sector_trend_signal: stock_universe market 컬럼이 'KOSPI'/'KOSDAQ' 사용 중인데 '유가증권'/'코스닥'만 필터 → 4개값 모두 포함. ③App.jsx handleSearch: 드롭다운 클릭 시 API 응답 대기 없이 즉시 changeStock+changeTab 후 백그라운드 fetch |
+| 2026-05-13 | 수출입분석 HS 매핑 대규모 보완: ①telegram_trade_card A케이스(hs_prefixes_json 없던 580건) → 19개 base product 수동 HS 코드 매핑 + customs_monthly_record 최신값 채우기 완료 (fill_hs_prefixes.py 신규). ②hs_sector_map에 과산화수소(2847002000)/측정장비(9031499000)/블랭크마스크유리(7006002000) 3개 추가. ③rebuild_analysis2_cache.py 재실행 → 반도체 섹터 30.4B$/2026-04 반영. 전체 825건 telegram_trade_card 모두 hs_prefixes_json+confirmed_* 채워짐 |
+| 2026-05-13 | models.py FinancialData.data_source 컬럼이 stock.db에 없어 HTTP 500 발생 → ALTER TABLE financial_data ADD COLUMN data_source TEXT 직접 적용 + migrate_db.py에 자동감지 마이그레이션 추가. 근본원인: ORM 모델에 컬럼 추가 시 migrate_db.py에도 반드시 동시 추가 필요 |
+| 2026-05-13 | FnGuide 정합성/보강 체계 점검 및 보완: ① `scripts/validate_financial_multi_source.py` DB 동시쓰기 충돌(`sqlite3.OperationalError: database is locked`) 재현 확인 ② `_conn()`에 `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=120000` 추가 ③ UPDATE 구간에 `_execute_with_retry()`(지수 백오프 재시도) 적용해 장시간 배치 중단 방지 ④ `run_fnguide_resume.sh`/`verification/migration_datasource_20260513_223019.json`/`logs/fnguide_pipeline.log` 재점검: 22:30 이후 마이그레이션 후 FnGuide 재수집 재개 확인 ⑤ 실측 지표: `data_source='fnguide'` 레코드가 `financial_data 6006→8030`, `cash_flow_data 5909→7933`, 종목수 `638→765`로 증가 확인 ⑥ 불일치 누적 파일 `config/financial_profiles_pending.json` 갱신 확인(34종목/243 reason) — 향후 파이썬 수집 시 프로파일 보정 근거로 활용 가능 |
+| 2026-05-13 | StockEasy 적응형 운영으로 전환: `stockeasy_logic_validator.py`에 ①전일 대비 편입/이탈/당일편출 계산 ②전략별 파라미터 파일(`config/stockeasy_logic_params.json`) 기반 후보 필터 ③자동 미세조정(조정 전/후+사유) ④튜닝 이력(`config/stockeasy_logic_tuning_history.json`) 누적 ⑤텔레그램에 조정값·차이 보고 추가. `scheduler.py` `_job_stockeasy_analysis`에 `run_validation()` 연동해 매일 분석 직후 자동 조정/보고 수행. 오늘 추론 결과: Peak 신규편입 `두산테스나`, 이탈/당일편출 `가온전선`; 모멘텀/벨류는 편입·이탈 없음. |
+| 2026-05-13 | 사용자 보유주식 스크린샷(3장) 기준 `portfolio` 전면 업데이트: 37종목 수량/평단 반영, 사진에 없는 종목 삭제. StockEasy 로직 문서 연동 규칙 추가: 로직 수정 전 `docs/stockeasy_adaptive_loop.md`(=사용자 표현 `stockeast_adaptive`) 필수 참조를 세션 시작 규칙에 명시. |
+| 2026-05-14 | StockEasy 리포트 본문 기반 재튜닝 추가: `stockeasy_logic_validator.py`가 `stockeasy_analysis.holdings_json.research.summary.content_list` 전량 분석 후 핵심 키워드/섹터를 추출하여 `min_score/max_candidates` 외 `min_mktcap_억/preferred_sectors`까지 자동 조정하도록 확장. 2026-05-14 최신 반영 후 결과: Peak P24.3/R85.0/F1 37.8 유지, Momentum 후보 44→17로 축소(잡음 억제), Value 후보 40에서 교집합 1건(SGC에너지) 확보. `stockeasy_analyzer.py` 저장부 DB lock 재시도(지수 백오프) 추가로 동시 배치 충돌 내성 강화. |
+| 2026-05-14 | 사용자 목표 고정(리포트 설명보다 3전략 역추론 우선) 반영: `docs/stockeasy_reverse_engineering_goal.md` 신규 작성. 모멘텀/밸류 0% 탈출을 위해 `stockeasy_logic_validator.py`의 후보 생성을 함수 레벨로 재구성(모멘텀=Trend+Earnings 합성, 밸류=Trend+Value 재평가 합성). 실행 결과(2026-05-14 21:35): Momentum P10.9/R87.5/F1 19.4, Value P6.0/R30.0/F1 10.0, Peak P25.7/R90.0/F1 40.0. 텔레그램 보고 완료. |

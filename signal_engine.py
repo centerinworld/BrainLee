@@ -517,11 +517,14 @@ def calc_market_signals(db_conn=None) -> list:
             sig, val, detail = _calc_signal(conn, name, logic_type, params, '')
             results.append({"id":cfg_id,"name":name,"label":label,
                             "description":desc,"signal":sig,"value":val,"detail":detail})
-            conn.execute("""
-                INSERT OR REPLACE INTO signal_result
-                (config_id,stock_code,signal,value,description,calc_date)
-                VALUES (?,?,?,?,?,?)
-            """, (cfg_id,'',sig,val,detail,today))
+            try:
+                conn.execute("""
+                    INSERT OR REPLACE INTO signal_result
+                    (config_id,stock_code,signal,value,description,calc_date)
+                    VALUES (?,?,?,?,?,?)
+                """, (cfg_id,'',sig,val,detail,today))
+            except Exception:
+                pass
         except Exception as e:
             logger.debug(f"[시그널] {name}: {e}")
             results.append({"id":cfg_id,"name":name,"label":label,
@@ -550,11 +553,14 @@ def calc_stock_signals(stock_code: str, db_conn=None) -> list:
             sig, val, detail = _calc_signal(conn, name, logic_type, params, stock_code)
             results.append({"id":cfg_id,"name":name,"label":label,
                             "description":desc,"signal":sig,"value":val,"detail":detail})
-            conn.execute("""
-                INSERT OR REPLACE INTO signal_result
-                (config_id,stock_code,signal,value,description,calc_date)
-                VALUES (?,?,?,?,?,?)
-            """, (cfg_id,stock_code,sig,val,detail,today))
+            try:
+                conn.execute("""
+                    INSERT OR REPLACE INTO signal_result
+                    (config_id,stock_code,signal,value,description,calc_date)
+                    VALUES (?,?,?,?,?,?)
+                """, (cfg_id,stock_code,sig,val,detail,today))
+            except Exception:
+                pass
         except Exception as e:
             logger.debug(f"[시그널] {name}/{stock_code}: {e}")
             results.append({"id":cfg_id,"name":name,"label":label,
@@ -1597,10 +1603,11 @@ def _calc_supply_trend(conn, params, stock_code):
         sig = 'green' if val > 0 else 'red' if val < 0 else 'yellow'
         return sig, val, f"기관 {days}일 누적: {_fmt_amt(inst_sum)}"
     else:
+        net = inst_sum + frn_sum
         both_pos = inst_sum > 0 and frn_sum > 0
         both_neg = inst_sum < 0 and frn_sum < 0
-        sig = 'green' if both_pos else 'red' if both_neg else 'yellow'
-        return sig, inst_sum+frn_sum, f"기관 {_fmt_amt(inst_sum)} / 외국인 {_fmt_amt(frn_sum)} ({days}일)"
+        sig = 'green' if (both_pos or net > 20000) else 'red' if (both_neg or net < -20000) else 'yellow'
+        return sig, net, f"기관 {_fmt_amt(inst_sum)} / 외국인 {_fmt_amt(frn_sum)} ({days}일)"
 
 
 def _calc_threshold(conn, name, params, stock_code):

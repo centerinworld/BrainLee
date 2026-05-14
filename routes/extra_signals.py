@@ -38,7 +38,7 @@ def _sig(val):
 
 
 def _employment_grade(net_3m: int | float | None) -> tuple[str, str]:
-    """고용 시그널 공통 판정 (NPS/WLB 동일 기준)."""
+    """고용 시그널 공통 판정 (NPS/WLB 3개월 합산 기준)."""
     if net_3m is None:
         return "gray", "데이터 없음"
     if net_3m >= 1000:
@@ -50,6 +50,28 @@ def _employment_grade(net_3m: int | float | None) -> tuple[str, str]:
     if net_3m >= -300:
         return "yellow", "고용 소폭 감소"
     return "red", "고용 감소"
+
+
+def _employment_grade_annual(net_1y: int | float | None) -> tuple[str, str]:
+    """고용 시그널 판정 — 연간 데이터만 있을 때 적용."""
+    if net_1y is None:
+        return "gray", "데이터 없음"
+    if net_1y >= 3000:
+        return "green", "고용 빠르게 증가"
+    if net_1y >= 1000:
+        return "green", "고용 증가"
+    if net_1y >= 0:
+        return "yellow", "고용 소폭 증가"
+    if net_1y >= -1000:
+        return "yellow", "고용 소폭 감소"
+    return "red", "고용 감소"
+
+
+def _ym_month_gap(ym_a: str, ym_b: str) -> int:
+    """두 YYYYMM 문자열 사이의 월 차이 (양수)."""
+    ya, ma = int(ym_a[:4]), int(ym_a[4:6])
+    yb, mb = int(ym_b[:4]), int(ym_b[4:6])
+    return abs((ya * 12 + ma) - (yb * 12 + mb))
 
 
 # ──────────────────────────────────────────────
@@ -73,46 +95,59 @@ def _get_employment_signal(code: str) -> dict:
             if len(wrows) < 2:
                 return {"signal": "gray", "label": "데이터 없음", "detail": None}
 
-            # WLB fallback도 NPS와 동일하게 월간 순증(전월 대비)을 계산해 동일 임계치 적용
-            wdesc = [dict(r) for r in wrows]  # latest -> old
-            wasc = list(reversed(wdesc))       # old -> latest
-            monthly_net = []
-            for i in range(1, len(wasc)):
-                prev_workers = wasc[i - 1]["total_workers"] or 0
-                curr_workers = wasc[i]["total_workers"] or 0
-                monthly_net.append(curr_workers - prev_workers)
+            wdesc = [dict(r) for r in wrows]  # latest → old
+            wasc = list(reversed(wdesc))       # old → latest
 
-            if not monthly_net:
-                return {"signal": "gray", "label": "데이터 없음", "detail": None}
-
-            net_1m = monthly_net[-1]
-            net_3m = sum(monthly_net[-3:])
-            net_6m = sum(monthly_net[-6:]) if len(monthly_net) >= 6 else None
-            signal, label = _employment_grade(net_3m)
-            prev_3m = sum(monthly_net[-6:-3]) if len(monthly_net) >= 6 else None
+            # 인접 데이터 간 월 간격 확인 — 간격이 2개월 초과이면 연간 비교로만 처리
+            gaps = [
+                _ym_month_gap(wasc[i - 1]["data_ym"], wasc[i]["data_ym"])
+                for i in range(1, len(wasc))
+            ]
+            monthly_data_valid = all(g <= 2 for g in gaps)
 
             latest = wdesc[0]
             oldest = wdesc[-1]
             diff = (latest["total_workers"] or 0) - (oldest["total_workers"] or 0)
+            total_gap = _ym_month_gap(oldest["data_ym"], latest["data_ym"])
             pct = diff / max(oldest["total_workers"] or 1, 1) * 100
 
-            return {
-                "signal": signal,
-                "label": label,
-                "source": "wlb",
-                "net_1m": net_1m,
-                "net_3m": net_3m,
-                "net_6m": net_6m,
-                "detail": {
-                    "history": [dict(r) for r in wasc],
-                    "diff": diff,
-                    "pct": pct,
-                    "net_1m": net_1m,
-                    "net_3m": net_3m,
-                    "net_6m": net_6m,
-                    "prev_3m": prev_3m,
-                },
-            }
+            if monthly_data_valid:
+                # 연속 월별 데이터: 1/3/6개월 순증 계산
+                monthly_net = [
+                    (wasc[i]["total_workers"] or 0) - (wasc[i - 1]["total_workers"] or 0)
+                    for i in range(1, len(wasc))
+                ]
+                net_1m = monthly_net[-1]
+                net_3m = sum(monthly_net[-3:])
+                net_6m = sum(monthly_net[-6:]) if len(monthly_net) >= 6 else None
+                net_1y = sum(monthly_net[-12:]) if len(monthly_net) >= 12 else None
+                signal, label = _employment_grade(net_3m)
+                prev_3m = sum(monthly_net[-6:-3]) if len(monthly_net) >= 6 else None
+                return {
+                    "signal": signal, "label": label, "source": "wlb",
+                    "net_1m": net_1m, "net_3m": net_3m,
+                    "net_6m": net_6m, "net_1y": net_1y,
+                    "detail": {
+                        "history": [dict(r) for r in wasc],
+                        "diff": diff, "pct": pct,
+                        "net_1m": net_1m, "net_3m": net_3m,
+                        "net_6m": net_6m, "prev_3m": prev_3m,
+                    },
+                }
+            else:
+                # 데이터 간격이 넓음(연간 스냅샷) — 연간 변화만 유효
+                signal, label = _employment_grade_annual(diff if total_gap <= 15 else None)
+                return {
+                    "signal": signal, "label": label, "source": "wlb_annual",
+                    "net_1m": None, "net_3m": None, "net_6m": None,
+                    "net_1y": diff if total_gap <= 15 else None,
+                    "detail": {
+                        "history": [dict(r) for r in wasc],
+                        "diff": diff, "pct": pct,
+                        "net_1m": None, "net_3m": None,
+                        "net_6m": None, "prev_3m": None,
+                    },
+                }
 
         data = [dict(r) for r in reversed(rows)]
         net_1m = sum((r["net_change"] or 0) for r in data[-1:])
@@ -351,7 +386,7 @@ def _get_sector_trend_signal(code: str) -> dict:
         if sector_mid:
             codes_rows = conn.execute(
                 "SELECT stock_code FROM stock_universe "
-                "WHERE sector_mid=? AND market IN ('유가증권','코스닥') LIMIT 150",
+                "WHERE sector_mid=? AND market IN ('유가증권','코스닥','KOSPI','KOSDAQ') LIMIT 150",
                 (sector_mid,),
             ).fetchall()
             sector_codes = [r["stock_code"] for r in codes_rows]

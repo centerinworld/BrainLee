@@ -6,10 +6,12 @@ const EmploymentYearlyView = () => {
   const [meta, setMeta] = useState({ date: '', data_ym: '', total_workers: 0, total_workplaces: 0 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/employment-v2/yearly?limit=500&sort_by=${sortBy}`)
+    setShowAll(false);
+    fetch(`/api/employment-v2/yearly?sort_by=${sortBy}`)
       .then(r => r.json())
       .then(d => {
         setRows(d.rows || []);
@@ -34,6 +36,7 @@ const EmploymentYearlyView = () => {
   const filtered = search
     ? rows.filter(r => r.stock_name?.includes(search) || r.stock_code?.includes(search))
     : rows;
+  const visible = showAll ? filtered : filtered.slice(0, 15);
 
   const thS = {
     padding: '0.6rem 0.8rem', textAlign: 'right', color: '#e2e8f0',
@@ -103,14 +106,14 @@ const EmploymentYearlyView = () => {
         <input
           placeholder="종목명 검색..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => { setSearch(e.target.value); setShowAll(false); }}
           style={{
             marginLeft: 'auto', padding: '0.3rem 0.7rem', borderRadius: '6px',
             background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
             color: '#fff', fontSize: '0.8rem', width: '160px'
           }}
         />
-        <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)' }}>{filtered.length}개 표시</span>
+        <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)' }}>{visible.length}/{filtered.length}개</span>
       </div>
 
       {loading ? (
@@ -136,7 +139,7 @@ const EmploymentYearlyView = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row, i) => (
+              {visible.map((row, i) => (
                 <tr key={row.stock_code}
                   style={{ transition: 'background 0.15s' }}
                   onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
@@ -148,7 +151,7 @@ const EmploymentYearlyView = () => {
                     <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.3)', marginLeft: '0.3rem' }}>{row.stock_code}</span>
                   </td>
                   <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)', fontSize: '0.77rem' }}>{row.sector || '-'}</td>
-                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, color: '#34d399' }}>
+                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, color: row.total_workers ? '#34d399' : 'rgba(255,255,255,0.25)' }}>
                     {formatNum(row.total_workers)}
                   </td>
                   <td style={{ ...tdS, textAlign: 'right', color: 'rgba(255,255,255,0.55)' }}>
@@ -158,6 +161,13 @@ const EmploymentYearlyView = () => {
               ))}
             </tbody>
           </table>
+          {!showAll && filtered.length > 15 && (
+            <div style={{ padding: '0.8rem', textAlign: 'center', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <button onClick={() => setShowAll(true)} style={{ padding: '0.35rem 1.2rem', borderRadius: '7px', fontSize: '0.8rem', cursor: 'pointer', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.15)' }}>
+                전체 보기 ({filtered.length - 15}개 더)
+              </button>
+            </div>
+          )}
         </div>
       )}
 

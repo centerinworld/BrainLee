@@ -61,6 +61,10 @@ from routes.extra_signals      import router as _extra_signals_router
 from employment_monitor.routes_employment_v2 import router as _employment_v2_router
 from routes.notices            import router as _notices_router
 from routes.insider            import router as _insider_router
+from routes.consensus          import router as _consensus_router
+import sys as _sys
+_sys.path.insert(0, "/Applications/stock_dashboard/ETF_check")
+from routes_etf                import router as _etf_check_router
 
 app.include_router(_trend_router,              prefix="/api/trend",              tags=["trend"])
 app.include_router(_signals_router,            prefix="/api/signals",            tags=["signals"])
@@ -79,6 +83,8 @@ app.include_router(_extra_signals_router,      prefix="/api/extra-signals",     
 app.include_router(_employment_v2_router)  # prefix는 router 내부에 정의됨 (/api/employment-v2)
 app.include_router(_notices_router,        prefix="/api/notices",            tags=["notices"])
 app.include_router(_insider_router,        prefix="/api/insider",            tags=["insider"])
+app.include_router(_consensus_router,      prefix="/api/consensus",          tags=["consensus"])
+app.include_router(_etf_check_router)  # prefix: /api/etf-check (router 내부 정의)
 
 
 def _send_telegram(msg: str, dedup_key: str = ""):
@@ -949,19 +955,24 @@ def get_realtime_prices(db: Session = Depends(get_db)):
     codes = [h.stock_code for h in holdings]
     placeholders = ",".join("?" * len(codes))
 
-    # 단일 쿼리로 전 종목 현재가 + 전일가 동시 조회 (N×2 → 1 쿼리)
+    # 단일 쿼리로 전 종목 최신 종가 + 전일가 동시 조회 (윈도우 함수 사용)
+    # MAX(close) 버그 수정: 전역 최고가가 아닌 최신 날짜의 close를 가져와야 함
     _conn = _sl.connect("stock.db")
     price_map = {}
     try:
         rows = _conn.execute(f"""
-            SELECT stock_code,
-                   MAX(CASE WHEN date <= ? AND close > 0 THEN close END) AS current_close,
-                   MAX(CASE WHEN date <  ? AND close > 0 THEN close END) AS prev_close,
-                   MAX(CASE WHEN date <= ? AND close > 0 THEN date  END) AS price_date
-            FROM price_history
-            WHERE stock_code IN ({placeholders})
-            GROUP BY stock_code
-        """, [_today_str, _today_str, _today_str] + codes).fetchall()
+            SELECT stock_code, current_close, prev_close, price_date
+            FROM (
+                SELECT stock_code,
+                       close AS current_close,
+                       LAG(close) OVER (PARTITION BY stock_code ORDER BY date) AS prev_close,
+                       date AS price_date,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
+                FROM price_history
+                WHERE stock_code IN ({placeholders}) AND date <= ? AND close > 0
+            ) t
+            WHERE rn = 1
+        """, codes + [_today_str]).fetchall()
         for r in rows:
             price_map[r[0]] = {"current": r[1], "prev": r[2], "date": r[3]}
     finally:
@@ -1239,7 +1250,7 @@ def get_cashflow_table(stock_code: str, type: str = "annual", db: Session = Depe
             models.CashFlowData.is_annual  == is_annual,
         )
         .order_by(models.CashFlowData.year.desc(), models.CashFlowData.quarter.desc())
-        .limit(8 if not is_annual else 5)
+        .limit(16 if not is_annual else 12)  # 중복 행 대비 여유있게 조회
         .all()
     )
 
@@ -1252,28 +1263,117 @@ def get_cashflow_table(stock_code: str, type: str = "annual", db: Session = Depe
         try: return round(float(v) / 1e8, 0)
         except: return None
 
-    result = []
-    for r in reversed(rows):
-        if is_annual:
-            period = f"{r.year}년"
-        elif r.quarter and r.quarter > 0:
-            period = f"{str(r.year)[2:]}년{r.quarter}Q"
-        else:
-            period = f"{r.year}Q?"
-        fcf = None
-        if r.operating_cf is not None and r.capex is not None:
-            fcf = r.operating_cf - r.capex
-        result.append({
-            "period":       period,
-            "operating_cf": _uk(r.operating_cf),
-            "investing_cf": _uk(r.investing_cf),
-            "financing_cf": _uk(r.financing_cf),
-            "capex":        _uk(r.capex),
-            "free_cf":      _uk(fcf),
-            "cash_end":     _uk(r.cash_end),
-            "depreciation": _uk(r.depreciation),
-        })
-    return result
+    _CF_MERGE_COLS = ('operating_cf', 'investing_cf', 'financing_cf',
+                      'capex', 'cash_end', 'depreciation')
+
+    if is_annual:
+        # year당 Q4(값 풍부) vs Q0(합계만) 두 행이 공존 → year 기준 병합
+        # Q4 우선, NULL 필드는 다른 행에서 보완
+        year_map: dict = {}
+        for r in rows:
+            y = r.year
+            if y not in year_map:
+                year_map[y] = {c: getattr(r, c) for c in _CF_MERGE_COLS}
+                year_map[y]['_quarter'] = r.quarter or 0
+            else:
+                existing = year_map[y]
+                # quarter 높은 쪽(Q4) 우선, 낮은 쪽의 non-NULL 필드로 보완
+                if (r.quarter or 0) > existing['_quarter']:
+                    for c in _CF_MERGE_COLS:
+                        if getattr(r, c) is not None:
+                            existing[c] = getattr(r, c)
+                    existing['_quarter'] = r.quarter or 0
+                else:
+                    for c in _CF_MERGE_COLS:
+                        if existing[c] is None and getattr(r, c) is not None:
+                            existing[c] = getattr(r, c)
+
+        # 최신 5년, 오름차순으로 반환
+        merged_years = sorted(year_map.keys(), reverse=True)[:5]
+        result = []
+        for y in reversed(merged_years):
+            d = year_map[y]
+            op, cap = d.get('operating_cf'), d.get('capex')
+            fcf = (op - cap) if (op is not None and cap is not None) else None
+            result.append({
+                "period":       f"{y}년",
+                "operating_cf": _uk(op),
+                "investing_cf": _uk(d.get('investing_cf')),
+                "financing_cf": _uk(d.get('financing_cf')),
+                "capex":        _uk(cap),
+                "free_cf":      _uk(fcf),
+                "cash_end":     _uk(d.get('cash_end')),
+                "depreciation": _uk(d.get('depreciation')),
+            })
+        return result
+    else:
+        # 분기 연간 데이터 병합: Q4는 DART에 별도 제출 없음 → Annual 데이터로 채움
+        q_rows = [r for r in rows if r.quarter and r.quarter > 0][:8]
+        q_years = {r.year for r in q_rows if r.quarter == 4}
+        annual_map: dict = {}
+        if q_years:
+            ann = (
+                db.query(models.CashFlowData)
+                .filter(
+                    models.CashFlowData.stock_code == stock_code,
+                    models.CashFlowData.is_annual  == True,
+                    models.CashFlowData.year.in_(list(q_years)),
+                    models.CashFlowData.quarter    == 4,  # Q4=연간 전체 합계
+                )
+                .all()
+            )
+            for a in ann:
+                annual_map[a.year] = a
+
+        # DART 분기/반기보고서는 누적(YTD) 값을 보고하므로 개별 분기 값으로 변환
+        # Q1: 3개월(이미 개별), Q2: H1 누적→Q2=H1-Q1, Q3: 9M 누적→Q3=9M-H1, Q4: Annual→Q4=Annual-9M
+        FLOW_COLS = ('operating_cf', 'investing_cf', 'financing_cf', 'capex', 'depreciation')
+
+        # 1단계: 연도별 누적값 저장 (변환 전 원본)
+        from collections import defaultdict
+        year_cumul: dict = defaultdict(dict)  # {year: {quarter: src_dict}}
+        for r in q_rows:
+            src: dict = {c: getattr(r, c) for c in _CF_MERGE_COLS}
+            if r.quarter == 4:
+                ann_r = annual_map.get(r.year)
+                if ann_r:
+                    for col in _CF_MERGE_COLS:
+                        if src[col] is None and getattr(ann_r, col) is not None:
+                            src[col] = getattr(ann_r, col)
+            year_cumul[r.year][r.quarter] = src
+
+        # 2단계: 누적→개별 분기 변환 (cash_end는 잔액이므로 변환 안 함)
+        year_incr: dict = {}
+        for year, qd in year_cumul.items():
+            incr: dict = {}
+            for q in sorted(qd.keys()):
+                curr = dict(qd[q])  # 원본 누적값 복사
+                prev_q = q - 1
+                if q > 1 and prev_q in qd:
+                    prev = qd[prev_q]
+                    for col in FLOW_COLS:
+                        cv, pv = curr.get(col), prev.get(col)
+                        if cv is not None and pv is not None:
+                            curr[col] = cv - pv
+                incr[q] = curr
+            year_incr[year] = incr
+
+        result = []
+        for r in reversed(q_rows):
+            src = year_incr[r.year][r.quarter]
+            op, cap = src.get('operating_cf'), src.get('capex')
+            fcf = (op - cap) if (op is not None and cap is not None) else None
+            result.append({
+                "period":       f"{str(r.year)[2:]}년{r.quarter}Q",
+                "operating_cf": _uk(op),
+                "investing_cf": _uk(src.get('investing_cf')),
+                "financing_cf": _uk(src.get('financing_cf')),
+                "capex":        _uk(cap),
+                "free_cf":      _uk(fcf),
+                "cash_end":     _uk(src.get('cash_end')),
+                "depreciation": _uk(src.get('depreciation')),
+            })
+        return result
 
 
 @app.post("/api/commands/refresh-cashflow/{stock_code}")
@@ -1497,6 +1597,104 @@ def get_disclosures(stock_code: str):
     if cached and (_tm.time() - cached.get("cached_at", 0)) < _DISCLOSURE_CACHE_TTL:
         return cached["items"]
 
+    import sqlite3 as _sl3
+    _DISC_DB = "stock.db"
+
+    _DISC_DDL = """CREATE TABLE IF NOT EXISTS dart_disclosures (
+        stock_code TEXT, rcept_no TEXT, rcept_dt TEXT,
+        report_nm TEXT, flr_nm TEXT, corp_name TEXT,
+        dart_url TEXT, fetched_at TEXT,
+        PRIMARY KEY (stock_code, rcept_no))"""
+
+    def _disc_from_db(code: str):
+        """SQLite dart_disclosures 테이블에서 조회"""
+        try:
+            with _sl3.connect(_DISC_DB, timeout=10) as c:
+                c.row_factory = _sl3.Row
+                c.execute(_DISC_DDL)
+                rows = c.execute(
+                    "SELECT * FROM dart_disclosures WHERE stock_code=? ORDER BY rcept_dt DESC LIMIT 100",
+                    (code,)).fetchall()
+                return [dict(r) for r in rows]  # convert while connection is open
+        except Exception:
+            return []
+
+    def _disc_save_db(code: str, items: list):
+        """공시 목록을 SQLite에 저장 (UPSERT)"""
+        try:
+            from datetime import datetime as _dt
+            now = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+            with _sl3.connect(_DISC_DB, timeout=10) as c:
+                c.execute(_DISC_DDL)
+                c.execute("DELETE FROM dart_disclosures WHERE stock_code=?", (code,))
+                c.executemany(
+                    "INSERT OR REPLACE INTO dart_disclosures VALUES (?,?,?,?,?,?,?,?)",
+                    [(code, i["rcept_no"], i["rcept_dt"], i["report_nm"],
+                      i["flr_nm"], i["corp_name"], i["dart_url"], now) for i in items]
+                )
+        except Exception as _e:
+            logger.warning(f"[공시DB] 저장 실패: {_e}")
+
+    def _disc_scrape_web(code: str) -> list:
+        """DART API 할당량 초과 시 웹사이트 직접 스크래핑 fallback."""
+        try:
+            import glob, pandas as _pd, requests as _req
+            from bs4 import BeautifulSoup as _BS
+            # 1. 로컬 pickle에서 corp_code 조회 (API 호출 없음)
+            pkl_files = sorted(glob.glob("docs_cache/opendartreader_corp_codes_*.pkl"), reverse=True)
+            if not pkl_files: return []
+            corp_df = _pd.read_pickle(pkl_files[0])
+            row = corp_df[corp_df["stock_code"] == code]
+            if row.empty: return []
+            corp_code = row.iloc[0]["corp_code"]
+
+            # 2. DART 사이트 스크래핑 (API key 불필요)
+            hdrs = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": "https://dart.fss.or.kr",
+            }
+            from datetime import timedelta as _td
+            _end = datetime.now()
+            _start = _end - _td(days=365)
+            resp = _req.post(
+                "https://dart.fss.or.kr/dsab007/detailSearch.ax",
+                data={"textCrpCik": corp_code,
+                      "startDate": _start.strftime("%Y%m%d"),
+                      "endDate":   _end.strftime("%Y%m%d"),
+                      "pageNo": 1, "pageCount": 100, "maxResults": 100},
+                headers=hdrs, timeout=12,
+            )
+            soup = _BS(resp.text, "html.parser")
+            items = []
+            for tr in soup.select("table.tbList tbody tr"):
+                cols = tr.select("td")
+                if len(cols) < 5: continue
+                a_tag   = cols[2].select_one("a")
+                href    = a_tag["href"] if a_tag and a_tag.get("href") else ""
+                rcept_no = ""
+                if "rcpNo=" in href:
+                    rcept_no = href.split("rcpNo=")[-1].split("&")[0]
+                items.append({
+                    "rcept_no":  rcept_no,
+                    "rcept_dt":  cols[4].get_text(strip=True).replace(".", "-"),
+                    "report_nm": cols[2].get_text(strip=True),
+                    "flr_nm":    cols[3].get_text(strip=True) if len(cols) > 3 else "",
+                    "corp_name": cols[1].get_text(strip=True).lstrip("유코"),
+                    "dart_url":  f"https://dart.fss.or.kr{href}" if href else "",
+                })
+            return items
+        except Exception as _we:
+            logger.warning(f"[공시] 웹스크래핑 fallback 실패: {_we}")
+            return []
+
+    # ── DB 우선 전략: DB에 데이터 있으면 즉시 반환, API는 DB가 비어있을 때만 ──
+    db_items = _disc_from_db(stock_code)
+    if db_items:
+        _disclosure_cache[stock_code] = {"items": db_items, "cached_at": _tm.time()}
+        return db_items
+
+    # DB 비어있음 → API / 웹 스크래핑으로 초기 수집 후 DB 저장
     try:
         import config as _cfg
         import OpenDartReader
@@ -1514,7 +1712,13 @@ def get_disclosures(stock_code: str):
         df = dart.list(stock_code, start=start_str, end=end_str, final=False)
 
         if df is None or df.empty:
-            _disclosure_cache[stock_code] = {"items": [], "cached_at": _tm.time()}
+            # DART API 결과 없음(할당량 초과 등) → 웹 스크래핑 시도
+            web_items = _disc_scrape_web(stock_code)
+            if web_items:
+                _disc_save_db(stock_code, web_items)
+                _disclosure_cache[stock_code] = {"items": web_items, "cached_at": _tm.time()}
+                logger.info(f"[공시] {stock_code} 웹스크래핑 완료: {len(web_items)}건")
+                return web_items
             return []
 
         # 최신순 정렬 후 최대 100건
@@ -1526,14 +1730,12 @@ def get_disclosures(stock_code: str):
             rcept_no  = str(row.get("rcept_no",  ""))
             rcept_dt  = str(row.get("rcept_dt",  ""))
             report_nm = str(row.get("report_nm", ""))
-            flr_nm    = str(row.get("flr_nm",    ""))  # 공시 제출인명
+            flr_nm    = str(row.get("flr_nm",    ""))
             corp_name = str(row.get("corp_name", ""))
 
-            # 날짜 포맷: 20250101 → 2025.01.01
             if len(rcept_dt) == 8:
                 rcept_dt = f"{rcept_dt[:4]}.{rcept_dt[4:6]}.{rcept_dt[6:]}"
 
-            # DART 원문 링크
             dart_url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcept_no}" if rcept_no else ""
 
             result.append({
@@ -1545,12 +1747,20 @@ def get_disclosures(stock_code: str):
                 "dart_url":  dart_url,
             })
 
+        # DB에 영구 저장 + 메모리 캐시 갱신
+        _disc_save_db(stock_code, result)
         _disclosure_cache[stock_code] = {"items": result, "cached_at": _tm.time()}
         logger.info(f"[공시] {stock_code} 조회 완료: {len(result)}건")
         return result
 
     except Exception as e:
-        logger.warning(f"[공시] {stock_code} 조회 실패: {e}")
+        logger.warning(f"[공시] {stock_code} DART API 실패({e})")
+        # 웹 스크래핑 fallback
+        web_items = _disc_scrape_web(stock_code)
+        if web_items:
+            _disc_save_db(stock_code, web_items)
+            _disclosure_cache[stock_code] = {"items": web_items, "cached_at": _tm.time()}
+            return web_items
         return []
 
 @app.get("/api/dashboard/fundamentals/{stock_code}")

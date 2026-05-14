@@ -12,8 +12,8 @@ EMP_DB = os.path.join(DIR, "employment.db")
 STOCK_DB = "/Applications/stock_dashboard/stock.db"
 
 @router.get("/yearly")
-def get_yearly_employment(limit: int = 200, sort_by: str = "count"):
-    """고용보험 현황 (근로복지공단 wlb_monthly 기반) — 실제 고용인원 랭킹.
+def get_yearly_employment(limit: int = 9999, sort_by: str = "count"):
+    """고용보험 현황 — stock_universe 전체 KOSPI/KOSDAQ 기업 + WLB 데이터 LEFT JOIN.
 
     sort_by: count(인원수순) | workplace(사업장수순) | name(가나다)
     """
@@ -22,52 +22,38 @@ def get_yearly_employment(limit: int = 200, sort_by: str = "count"):
     try:
         conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
 
-        # 최신 data_ym 확인
         ym_row = conn.execute("SELECT MAX(data_ym) FROM wlb_monthly").fetchone()
         latest_ym = ym_row[0] if ym_row and ym_row[0] else None
 
-        if latest_ym:
-            order_col = "total_workers" if sort_by in ("count", "increase") else "workplace_cnt" if sort_by == "workplace" else "w.stock_name"
-            query = f"""
-                SELECT
-                    w.stock_code, w.stock_name,
-                    w.total_workers, w.workplace_cnt,
-                    w.data_ym,
-                    u.market,
-                    u.sector_small as sector
-                FROM wlb_monthly w
-                LEFT JOIN stock_db.stock_universe u ON w.stock_code = u.stock_code
-                WHERE w.data_ym = ?
-                ORDER BY {order_col} DESC
-                LIMIT ?
-            """
-            rows = conn.execute(query, (latest_ym, limit)).fetchall()
+        order_col = ("w.total_workers" if sort_by in ("count", "increase")
+                     else "w.workplace_cnt" if sort_by == "workplace"
+                     else "u.stock_name")
 
-            # 최신 수집일자
-            meta_row = conn.execute("SELECT MAX(fetched_at) FROM wlb_monthly WHERE data_ym=?", (latest_ym,)).fetchone()
-            updated_at = meta_row[0][:10] if meta_row and meta_row[0] else latest_ym[:4]+'-'+latest_ym[4:6]+'-01'
+        # stock_universe 전체 보통주 기준 LEFT JOIN → 데이터 없는 종목도 포함
+        rows = conn.execute(f"""
+            SELECT
+                u.stock_code, u.stock_name,
+                w.total_workers, w.workplace_cnt,
+                w.data_ym,
+                u.market,
+                u.sector_small AS sector
+            FROM stock_db.stock_universe u
+            LEFT JOIN wlb_monthly w
+                ON u.stock_code = w.stock_code AND w.data_ym = ?
+            WHERE u.secugrp_nm = '주권'
+            ORDER BY {order_col} DESC NULLS LAST
+        """, (latest_ym,)).fetchall()
 
-            result = []
-            for r in rows:
-                d = dict(r)
-                d['count_26'] = d.get('total_workers')  # 호환성 필드명
-                d['count_25'] = None
-                d['count_24'] = None
-                d['yoy_26'] = None
-                d['yoy_25'] = None
-                d['yoy_24'] = None
-                result.append(d)
+        meta_row = (conn.execute("SELECT MAX(fetched_at) FROM wlb_monthly WHERE data_ym=?", (latest_ym,)).fetchone()
+                    if latest_ym else None)
+        updated_at = (meta_row[0][:10] if meta_row and meta_row[0]
+                      else (latest_ym[:4] + '-' + latest_ym[4:6] + '-01' if latest_ym else None))
 
-            # 총계
-            total_row = conn.execute("SELECT SUM(total_workers), SUM(workplace_cnt) FROM wlb_monthly WHERE data_ym=?", (latest_ym,)).fetchone()
-        else:
-            # WLB 데이터 없음: 빈 결과
-            result = []
-            updated_at = None
-            total_row = (0, 0)
-            latest_ym = None
+        result = [dict(r) for r in rows]
 
-        # 날짜 fallback
+        total_row = (conn.execute("SELECT SUM(total_workers), SUM(workplace_cnt) FROM wlb_monthly WHERE data_ym=?", (latest_ym,)).fetchone()
+                     if latest_ym else (0, 0))
+
         if not updated_at:
             from datetime import date as _date
             updated_at = _date.today().isoformat()
@@ -76,8 +62,8 @@ def get_yearly_employment(limit: int = 200, sort_by: str = "count"):
             "rows": result,
             "date": updated_at,
             "data_ym": latest_ym,
-            "total_workers": total_row[0] or 0,
-            "total_workplaces": total_row[1] or 0,
+            "total_workers": (total_row[0] or 0) if total_row else 0,
+            "total_workplaces": (total_row[1] or 0) if total_row else 0,
             "source": "근로복지공단 고용보험",
         }
     finally:
@@ -96,8 +82,8 @@ def get_trend_data():
     conn = sqlite3.connect(EMP_DB)
     conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS main_db")
 
-    # 1. KOSPI/KOSDAQ 종목 가져오기
-    markets = pd.read_sql("SELECT stock_code, stock_name, market, sector_small as sector FROM main_db.stock_universe WHERE market IN ('유가증권', 'KOSPI', '코스닥', 'KOSDAQ')", conn)
+    # 1. KOSPI/KOSDAQ 보통주만 (secugrp_nm='주권' → ETF/ETN 완전 배제)
+    markets = pd.read_sql("SELECT stock_code, stock_name, market, sector_small as sector FROM main_db.stock_universe WHERE secugrp_nm = '주권'", conn)
 
     # 2. NPS 데이터 가져오기 — nps_workplace_monthly (구) 또는 nps_monthly (신) 시도
     nps_df = pd.DataFrame()
@@ -457,86 +443,67 @@ def get_nps_chart(query: str = Query(..., description="Stock code or name")):
 
 @router.get("/annual-trend")
 def get_annual_trend(q: str = Query(..., description="종목명 또는 종목코드 (부분 일치)")):
-    """기업별 연간 고용인원 추이 (employment_company, 사업보고서 기준).
-
-    2023-12 / 2024-12 / 2025-12 데이터 포함.
-    2026-05(NPS API 기반)는 소스가 달라 별도 표시.
-    """
+    """기업별 연간 고용인원 추이 — stock_universe에서 검색 후 employment_company JOIN."""
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
     try:
-        # 정확한 코드 일치 우선
-        rows = conn.execute("""
-            SELECT ym, stock_code, stock_name, worker_count
-            FROM employment_company
-            WHERE (stock_code = ? OR stock_name LIKE ?)
-              AND worker_count IS NOT NULL
-              AND ym != '2026-05'
-            ORDER BY stock_code, ym ASC
+        conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
+
+        # 1. stock_universe에서 전체 보통주 검색 (데이터 없는 종목도 포함)
+        companies = conn.execute("""
+            SELECT stock_code, stock_name FROM stock_db.stock_universe
+            WHERE secugrp_nm = '주권'
+              AND (stock_code = ? OR stock_name LIKE ?)
+            LIMIT 10
         """, (q, f'%{q}%')).fetchall()
 
-        if not rows:
+        if not companies:
             return {"results": [], "notFound": True}
 
-        # 종목별로 그룹화
-        companies: dict = {}
-        for r in rows:
-            code = r['stock_code']
-            if code not in companies:
-                companies[code] = {'stock_code': code, 'stock_name': r['stock_name'], 'history': []}
-            companies[code]['history'].append({
-                'ym': r['ym'],
-                'worker_count': r['worker_count'],
-            })
+        results = []
+        for c in companies:
+            code, name = c['stock_code'], c['stock_name']
+            emp_rows = conn.execute("""
+                SELECT ym, worker_count FROM employment_company
+                WHERE stock_code = ? AND worker_count IS NOT NULL AND ym != '2026-05'
+                ORDER BY ym ASC
+            """, (code,)).fetchall()
+            history = [{'ym': r['ym'], 'worker_count': r['worker_count']} for r in emp_rows]
+            results.append({'stock_code': code, 'stock_name': name, 'history': history})
 
-        # 최대 10개 결과
-        results = list(companies.values())[:10]
         return {"results": results, "notFound": False}
     finally:
         conn.close()
 
 
 @router.get("/annual-top")
-def get_annual_top(limit: int = 200, sort_by: str = "latest"):
-    """고용인원 연간 스냅샷 랭킹 (employment_company 사업보고서 기준).
+def get_annual_top(limit: int = 9999, sort_by: str = "latest"):
+    """고용인원 연간 스냅샷 랭킹 — stock_universe 전체 보통주 LEFT JOIN.
 
     sort_by: latest(최신인원순) | growth(증감순) | name(이름순)
     """
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
-    stock_conn = sqlite3.connect(f'file:{STOCK_DB}?mode=ro', uri=True)
-    stock_conn.row_factory = sqlite3.Row
     try:
-        # 2025-12과 2024-12 데이터 join하여 증감 계산
+        conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
+
         rows = conn.execute("""
             SELECT
-                a.stock_code, a.stock_name,
-                a.worker_count  AS cnt_2025,
-                b.worker_count  AS cnt_2024,
-                c.worker_count  AS cnt_2023,
+                u.stock_code, u.stock_name, u.market, u.sector_small AS sector,
+                a.worker_count AS cnt_2025,
+                b.worker_count AS cnt_2024,
+                c.worker_count AS cnt_2023,
                 (a.worker_count - COALESCE(b.worker_count, a.worker_count)) AS diff_1y,
                 (a.worker_count - COALESCE(c.worker_count, a.worker_count)) AS diff_2y
-            FROM employment_company a
-            LEFT JOIN employment_company b
-                ON a.stock_code = b.stock_code AND b.ym = '2024-12'
-            LEFT JOIN employment_company c
-                ON a.stock_code = c.stock_code AND c.ym = '2023-12'
-            WHERE a.ym = '2025-12' AND a.worker_count IS NOT NULL
-            ORDER BY a.worker_count DESC
-            LIMIT ?
-        """, (limit,)).fetchall()
+            FROM stock_db.stock_universe u
+            LEFT JOIN employment_company a ON u.stock_code = a.stock_code AND a.ym = '2025-12'
+            LEFT JOIN employment_company b ON u.stock_code = b.stock_code AND b.ym = '2024-12'
+            LEFT JOIN employment_company c ON u.stock_code = c.stock_code AND c.ym = '2023-12'
+            WHERE u.secugrp_nm = '주권'
+            ORDER BY a.worker_count DESC NULLS LAST
+        """).fetchall()
 
-        universe = {r['stock_code']: dict(r) for r in stock_conn.execute(
-            "SELECT stock_code, market, sector_small as sector FROM stock_universe"
-        ).fetchall()}
-
-        result = []
-        for r in rows:
-            d = dict(r)
-            meta = universe.get(d['stock_code'], {})
-            d['market'] = meta.get('market')
-            d['sector'] = meta.get('sector')
-            result.append(d)
+        result = [dict(r) for r in rows]
 
         if sort_by == 'growth':
             result.sort(key=lambda x: x.get('diff_1y') or 0, reverse=True)
@@ -546,4 +513,3 @@ def get_annual_top(limit: int = 200, sort_by: str = "latest"):
         return {"rows": result, "count": len(result), "base_ym": "2025-12", "compare_ym": "2024-12"}
     finally:
         conn.close()
-        stock_conn.close()
