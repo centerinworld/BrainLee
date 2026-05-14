@@ -87,6 +87,57 @@ def _get_employment_signal(code: str) -> dict:
         ).fetchall()
 
         if not rows:
+            # ── employment_company (bizr_no 직접조회, 정확도 우선) ─────────
+            ec_rows = conn.execute(
+                "SELECT ym, worker_count FROM employment_company "
+                "WHERE stock_code=? AND worker_count>0 ORDER BY ym DESC LIMIT 13",
+                (code,),
+            ).fetchall()
+
+            if len(ec_rows) >= 2:
+                # YYYY-MM → YYYYMM 변환 후 wlb_monthly와 동일한 로직 적용
+                ec_data = [{"data_ym": r[0].replace("-", ""), "total_workers": r[1]} for r in ec_rows]
+                ec_asc  = list(reversed(ec_data))
+
+                gaps = [_ym_month_gap(ec_asc[i-1]["data_ym"], ec_asc[i]["data_ym"]) for i in range(1, len(ec_asc))]
+                monthly_valid = all(g <= 2 for g in gaps)
+
+                latest = ec_data[0]; oldest = ec_data[-1]
+                diff = (latest["total_workers"] or 0) - (oldest["total_workers"] or 0)
+                total_gap = _ym_month_gap(oldest["data_ym"], latest["data_ym"])
+                pct = diff / max(oldest["total_workers"] or 1, 1) * 100
+
+                if monthly_valid:
+                    monthly_net = [(ec_asc[i]["total_workers"] or 0) - (ec_asc[i-1]["total_workers"] or 0) for i in range(1, len(ec_asc))]
+                    net_1m = monthly_net[-1]; net_3m = sum(monthly_net[-3:])
+                    net_6m = sum(monthly_net[-6:]) if len(monthly_net) >= 6 else None
+                    net_1y = sum(monthly_net[-12:]) if len(monthly_net) >= 12 else None
+                    signal, label = _employment_grade(net_3m)
+                    prev_3m = sum(monthly_net[-6:-3]) if len(monthly_net) >= 6 else None
+                    return {
+                        "signal": signal, "label": label, "source": "ec",
+                        "net_1m": net_1m, "net_3m": net_3m, "net_6m": net_6m, "net_1y": net_1y,
+                        "detail": {"history": ec_asc, "diff": diff, "pct": pct,
+                                   "net_1m": net_1m, "net_3m": net_3m, "net_6m": net_6m, "prev_3m": prev_3m},
+                    }
+                else:
+                    # 가장 최신 2개 레코드로 비교 (전체 기간 대신 직전 스냅샷과 비교)
+                    prev_rec = ec_asc[-2]  # 두 번째 최신 = 직전 데이터
+                    latest_rec = ec_asc[-1]
+                    adj_diff = (latest_rec["total_workers"] or 0) - (prev_rec["total_workers"] or 0)
+                    adj_gap  = _ym_month_gap(prev_rec["data_ym"], latest_rec["data_ym"])
+                    # 24개월 이내 비교면 유효
+                    net_1y_val = adj_diff if adj_gap <= 24 else None
+                    signal, label = _employment_grade_annual(net_1y_val)
+                    return {
+                        "signal": signal, "label": label, "source": "ec_annual",
+                        "net_1m": None, "net_3m": None, "net_6m": None,
+                        "net_1y": net_1y_val,
+                        "detail": {"history": ec_asc, "diff": diff, "pct": pct,
+                                   "net_1m": None, "net_3m": None, "net_6m": None, "prev_3m": None},
+                    }
+
+            # ── wlb_monthly (사업장명 매칭, 보조 fallback) ──────────────────
             wrows = conn.execute(
                 "SELECT data_ym, total_workers FROM wlb_monthly "
                 "WHERE stock_code=? ORDER BY data_ym DESC LIMIT 13",
