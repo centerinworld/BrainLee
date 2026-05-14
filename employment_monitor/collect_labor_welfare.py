@@ -76,6 +76,50 @@ def load_stock_universe():
     logger.info(f"Stock universe loaded: {len(result)} companies")
     return result, {v[0]: v[1] for v in result.values()}  # clean→(code,name), code→name
 
+
+# ─── 사업자번호 맵 로드 ────────────────────────────────────
+def load_bizno_map() -> dict:
+    """
+    사업자등록번호(10자리) → stock_code 매핑.
+    우선순위:
+      1) employment_company.bizr_no (fetch_employment_insurance.py가 수집한 10자리)
+      2) stock_bizno_map.biz_no_6 (6자리 앞자리 → 10자리 확인용 보조)
+
+    ※ 사용자 제안: 사업자번호 10자리가 곧 고용/산재보험 사업장의 사업자등록번호.
+       전체 스캔 아이템의 saeopjaDrno(10자리)와 직접 비교하면 이름 매칭보다 정확.
+    """
+    emp_conn = sqlite3.connect(EMP_DB)
+
+    # 1) employment_company 테이블의 bizr_no (10자리, 가장 정확)
+    bizno_map: dict = {}  # bizr_no(10자리) → (stock_code, stock_name)
+    try:
+        rows = emp_conn.execute(
+            "SELECT DISTINCT bizr_no, stock_code, stock_name "
+            "FROM employment_company WHERE bizr_no IS NOT NULL AND LENGTH(bizr_no)=10"
+        ).fetchall()
+        for bizr, code, name in rows:
+            bizno_map[bizr] = (code, name)
+        logger.info(f"bizno_map from employment_company: {len(bizno_map)}개")
+    except Exception as e:
+        logger.warning(f"employment_company bizr_no 로드 실패: {e}")
+
+    # 2) stock_bizno_map 테이블의 biz_no_6 (6자리 앞자리, 보조)
+    # → 정확도가 낮아 bizno_map에 없는 종목만 추가 (이름 매칭 병행 확인용)
+    prefix_map: dict = {}  # biz_no_6(6자리) → (stock_code, stock_name)
+    try:
+        rows = emp_conn.execute(
+            "SELECT biz_no_6, stock_code, stock_name FROM stock_bizno_map "
+            "WHERE biz_no_6 IS NOT NULL AND LENGTH(biz_no_6)=6"
+        ).fetchall()
+        for prefix, code, name in rows:
+            prefix_map[prefix] = (code, name)
+        logger.info(f"prefix_map from stock_bizno_map: {len(prefix_map)}개")
+    except Exception as e:
+        logger.warning(f"stock_bizno_map 로드 실패: {e}")
+
+    emp_conn.close()
+    return bizno_map, prefix_map
+
 # ─── 단일 페이지 요청 ──────────────────────────────────────
 def _fetch_page(page: int) -> list[dict]:
     for attempt in range(RETRY):
@@ -115,8 +159,11 @@ def collect_all(data_ym: str, test_pages: int = 0) -> dict:
     scan_pages = min(total_pages, test_pages) if test_pages > 0 else total_pages
     logger.info(f"Total workplaces: {total_cnt:,}  Pages to scan: {scan_pages:,}")
 
-    # Load stock universe
+    # Load stock universe (이름 매칭 fallback용)
     universe, code_to_name = load_stock_universe()
+
+    # Load bizno maps (사업자번호 기반 정확 매칭 우선)
+    bizno_map, prefix_map = load_bizno_map()
 
     # Aggregate: stock_code → {total, count}
     aggregated = {}  # code → {'name': str, 'total': int, 'workplaces': int}
@@ -126,31 +173,56 @@ def collect_all(data_ym: str, test_pages: int = 0) -> dict:
         local = {}
         for item in items:
             wk_name = item.get('saeopjangNm', '') or ''
-            cnt = int(item.get('sangsiInwonCnt', '0') or '0')
+            cnt      = int(item.get('sangsiInwonCnt', '0') or '0')
+            saeopja_drno = (item.get('saeopjaDrno') or '').strip()
             if cnt == 0 or not wk_name:
                 continue
-            wk_clean = _clean(wk_name)
-            # Longest-prefix match against stock names
-            # - 4자 이상: prefix 매칭 허용 (삼성전자 → 삼성전자구미사업장 OK)
-            # - 3자 이하: 완전 일치만 (GS, LG, 동양 등 오매칭 방지)
+
             matched_code = None
-            matched_len = 0
-            for clean_nm, (code, stock_name) in universe.items():
-                if not clean_nm:
-                    continue
-                nm_len = len(clean_nm)
-                if nm_len >= 4:
-                    if wk_clean.startswith(clean_nm) and nm_len > matched_len:
-                        matched_code = (code, stock_name)
-                        matched_len = nm_len
-                else:
-                    if wk_clean == clean_nm and nm_len > matched_len:
-                        matched_code = (code, stock_name)
-                        matched_len = nm_len
+            match_method = ''
+
+            # ── 매칭 우선순위 1: 사업자번호 10자리 직접 매칭 (가장 정확) ──
+            if saeopja_drno and len(saeopja_drno) == 10:
+                if saeopja_drno in bizno_map:
+                    matched_code = bizno_map[saeopja_drno]
+                    match_method = 'bizno10'
+
+            # ── 매칭 우선순위 2: 이름 + 사업자번호 앞 6자리 교차 확인 ──
+            # 10자리 맵에 없지만 6자리 prefix가 알려진 회사 → 이름 매칭 후 prefix로 검증
+            if matched_code is None and saeopja_drno and len(saeopja_drno) == 10:
+                prefix6 = saeopja_drno[:6]
+                if prefix6 in prefix_map:
+                    # prefix가 알려진 회사 → 이름도 같으면 확정, 다르면 스킵
+                    prefix_code, prefix_name = prefix_map[prefix6]
+                    wk_clean = _clean(wk_name)
+                    clean_prefix_nm = _clean(prefix_name)
+                    if len(clean_prefix_nm) >= 4 and wk_clean.startswith(clean_prefix_nm):
+                        matched_code = (prefix_code, prefix_name)
+                        match_method = 'bizno6+name'
+
+            # ── 매칭 우선순위 3: 이름 기반 매칭 (fallback) ──
+            if matched_code is None:
+                wk_clean = _clean(wk_name)
+                matched_len = 0
+                for clean_nm, (code, stock_name) in universe.items():
+                    if not clean_nm:
+                        continue
+                    nm_len = len(clean_nm)
+                    if nm_len >= 4:
+                        if wk_clean.startswith(clean_nm) and nm_len > matched_len:
+                            matched_code = (code, stock_name)
+                            matched_len = nm_len
+                    else:
+                        if wk_clean == clean_nm and nm_len > matched_len:
+                            matched_code = (code, stock_name)
+                            matched_len = nm_len
+                if matched_code:
+                    match_method = 'name'
+
             if matched_code:
                 code, stock_name = matched_code
                 if code not in local:
-                    local[code] = {'name': stock_name, 'total': 0, 'workplaces': 0}
+                    local[code] = {'name': stock_name, 'total': 0, 'workplaces': 0, 'method': match_method}
                 local[code]['total'] += cnt
                 local[code]['workplaces'] += 1
         return local

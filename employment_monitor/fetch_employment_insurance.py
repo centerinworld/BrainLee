@@ -108,7 +108,15 @@ def get_bizr_no_from_dart(corp_code: str) -> str | None:
 
 def fetch_sangsi_inwon(bizr_no: str) -> dict | None:
     """
-    고용보험 API로 상시인원 합산 조회 (모든 사업장 합산).
+    고용보험(opaBoheomFg=1) 상시인원 합산 조회.
+
+    ※ opaBoheomFg 필터 이유:
+      opaBoheomFg=1 → 고용보험 가입 사업장
+      opaBoheomFg=2 → 산재보험 가입 사업장
+      동일 사업장이 두 보험에 모두 등록되면 응답에 2번 포함 → 이중 집계 발생.
+      고용보험(1)만 필터링하면 정확한 실제 고용인원 산출 가능.
+      (예: KAI 전체조회=10,635명 → 고용보험만=5,353명 ≈ 실제 5,300명)
+
     반환: {'sangsiInwonCnt': 총합계, 'saeopjaNm': 대표명칭} or None
     """
     all_items = []
@@ -118,6 +126,7 @@ def fetch_sangsi_inwon(bizr_no: str) -> dict | None:
             r = requests.get(EMP_INS_URL, params={
                 'serviceKey': EMP_API_KEY,
                 'v_saeopjaDrno': bizr_no,
+                'opaBoheomFg': '1',    # 고용보험만 (산재보험 이중집계 방지)
                 'pageNo': page,
                 'numOfRows': 100,
                 '_type': 'json',
@@ -140,7 +149,7 @@ def fetch_sangsi_inwon(bizr_no: str) -> dict | None:
     if not all_items:
         return None
 
-    # 모든 사업장 상시인원 합산
+    # 고용보험 사업장 상시인원 합산
     total_sangsi = sum(int(it.get('sangsiInwonCnt') or 0) for it in all_items)
     # 대표 사업장명 (가장 상시인원 많은 곳)
     main_item = max(all_items, key=lambda x: int(x.get('sangsiInwonCnt') or 0))
@@ -174,7 +183,7 @@ def get_target_companies(conn: sqlite3.Connection, stock_db_conn: sqlite3.Connec
     return [(r[0], r[1]) for r in rows]
 
 
-def run(limit: int = 0, single_code: str = '', dry_run: bool = False, delay: float = 0.3):
+def run(limit: int = 0, single_code: str = '', dry_run: bool = False, delay: float = 0.3, force: bool = False):
     if dry_run:
         print("🔌 API 연결 테스트 중...")
         ok = test_api()
@@ -231,12 +240,12 @@ def run(limit: int = 0, single_code: str = '', dry_run: bool = False, delay: flo
                 bizr_miss += 1
                 continue
 
-        # 이미 이번 달 수집했으면 스킵
+        # 이미 이번 달 수집했으면 스킵 (--force 또는 단일종목 재수집 시 덮어쓰기)
         existing = emp_conn.execute(
             "SELECT id FROM employment_company WHERE stock_code=? AND ym=?",
             (code, ym)
         ).fetchone()
-        if existing:
+        if existing and not force and not single_code:
             skipped += 1
             continue
 
@@ -282,8 +291,9 @@ def run(limit: int = 0, single_code: str = '', dry_run: bool = False, delay: flo
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--limit',    type=int,  default=0,     help='수집 기업 수 제한')
-    ap.add_argument('--code',     default='',               help='단일 종목 코드')
+    ap.add_argument('--code',     default='',               help='단일 종목 코드 (자동 강제 재수집)')
     ap.add_argument('--dry-run',  action='store_true',      help='API 연결 테스트만')
     ap.add_argument('--delay',    type=float, default=0.3,  help='요청 간 딜레이(초)')
+    ap.add_argument('--force',    action='store_true',      help='이미 수집된 데이터도 덮어쓰기')
     args = ap.parse_args()
-    run(limit=args.limit, single_code=args.code, dry_run=args.dry_run, delay=args.delay)
+    run(limit=args.limit, single_code=args.code, dry_run=args.dry_run, delay=args.delay, force=args.force)
