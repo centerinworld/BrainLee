@@ -38,11 +38,15 @@ if [ $READY -eq 0 ]; then
     echo "[경고] 백엔드 30초 내 응답 없음. 계속 진행합니다..."
 fi
 
-# ── 4. 데이터 수집기 실행 (선택) ─────────────────────────
-echo "데이터 수집기 시작..."
-nohup "$PROJECT_ROOT/venv/bin/python" data_collector.py > "$COLLECTOR_LOG" 2>&1 &
-COL_PID=$!
-echo "  - collector pid: $COL_PID"
+# ── 4. 데이터 수집기 실행 (중복 기동 방지) ──────────────
+echo "데이터 수집기 확인 중..."
+if pgrep -f "data_collector.py" > /dev/null 2>&1; then
+    echo "  - 수집기 이미 실행 중 — 건너뜀 (중복 방지)"
+else
+    nohup "$PROJECT_ROOT/venv/bin/python" data_collector.py > "$COLLECTOR_LOG" 2>&1 &
+    COL_PID=$!
+    echo "  - collector pid: $COL_PID"
+fi
 
 # ── 5. 프론트엔드 실행 ──────────────────────────────────
 echo "프론트엔드 시작..."

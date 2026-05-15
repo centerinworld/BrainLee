@@ -194,6 +194,14 @@ def _load_stock_name_candidates(conn) -> list[tuple[str, str, str]]:
     return out
 
 
+# 매칭에 사용할 최소 정규화 종목명 길이 (짧은 이름은 오탐 위험)
+_MIN_NORM_NAME_LEN = 3
+# 매칭 신뢰도 최소 임계치: 미달 시 미매핑 처리
+_MIN_MATCH_SCORE = 30.0
+
+_KOR_ALNUM_PAT = re.compile(r"[0-9A-Za-z가-힣]")
+
+
 def _resolve_stock_from_text(text: str, candidates: list[tuple[str, str, str]]) -> tuple[str, str]:
     norm = _normalize_kor_alnum(text)
     if not norm:
@@ -201,18 +209,27 @@ def _resolve_stock_from_text(text: str, candidates: list[tuple[str, str, str]]) 
     best_score = -1e9
     best = ("", "")
     for code, name, norm_name in candidates:
-        if not norm_name:
+        if not norm_name or len(norm_name) < _MIN_NORM_NAME_LEN:
             continue
         pos = norm.find(norm_name)
         if pos < 0:
             continue
-        score = (200 - min(pos, 200)) + (len(norm_name) * 1.5)
+        # 접두/접미 경계 검사: 매칭 직후 문자가 한글/영숫자면 더 긴 이름의 일부일 수 있음
+        end = pos + len(norm_name)
+        if end < len(norm) and _KOR_ALNUM_PAT.match(norm[end]):
+            # 더 긴 이름의 접두사로 매칭된 경우 크게 감점
+            score = (200 - min(pos, 200)) + (len(norm_name) * 1.5) - 80
+        else:
+            score = (200 - min(pos, 200)) + (len(norm_name) * 1.5)
         # 리포트 파일명 후반 작성자(OO증권) 오탐 방지
         if name.endswith("증권") and pos > 24:
             score -= 120
         if score > best_score:
             best_score = score
             best = (code, name)
+    # 신뢰도 임계치 미달 시 매핑 거부
+    if best_score < _MIN_MATCH_SCORE:
+        return "", ""
     return best
 
 # ══════════════════════════════════════════════════════════════════
