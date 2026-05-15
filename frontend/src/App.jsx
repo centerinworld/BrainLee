@@ -14,6 +14,7 @@ import {
 import EmploymentYearlyView from './EmploymentYearlyView';
 import EtfCheckView from './EtfCheckView';
 import NpsTrendView from './NpsTrendView';
+import StockAnalysisRsView from './views/StockAnalysisRsView';
 
 // ──────────────────────────────────────────────────────────────
 // [버그 ① 수정] API_BASE를 절대경로(포트 하드코딩)에서 상대경로로 변경.
@@ -4139,17 +4140,17 @@ const App = () => {
                 icon:'👥', title:'고용 트렌드', signal: em.signal, isGrey: !em.signal || em.signal === 'gray',
                 label: em.label || '데이터 없음',
                 body: (() => {
-                  if (em.net_1m != null) return [
-                    ['1개월', fmtNet(em.net_1m)],
-                    ['3개월', fmtNet(em.net_3m)],
-                    ['6개월', fmtNet(em.net_6m)],
-                  ];
-                  if (em.net_1y != null) return [
-                    ['1년', fmtNet(em.net_1y)],
-                    ['3개월', '-'],
-                    ['6개월', '-'],
-                  ];
-                  return null;
+                  const rows = [];
+                  if (em.current_workers != null)
+                    rows.push(['현재 인원', em.current_workers.toLocaleString('ko-KR') + '명']);
+                  if (em.net_1m != null) {
+                    rows.push(['1개월', fmtNet(em.net_1m)]);
+                    rows.push(['3개월', fmtNet(em.net_3m)]);
+                    rows.push(['6개월', fmtNet(em.net_6m)]);
+                  } else if (em.net_1y != null) {
+                    rows.push(['1년', fmtNet(em.net_1y)]);
+                  }
+                  return rows.length ? rows : null;
                 })(),
               },
               {
@@ -4172,7 +4173,7 @@ const App = () => {
               },
               {
                 icon:'🏭', title:'섹터 트렌드', signal: st.signal_5d || 'gray', isGrey: !st.signal_5d,
-                label: st.sector_mid || st.label || '데이터 없음',
+                label: st.label || st.sector_key || '데이터 없음',
                 body: (st.chg_5d != null || st.chg_10d != null || st.chg_30d != null) ? [
                   ['5일', st.chg_5d  != null ? (st.chg_5d >0?'+':'')+st.chg_5d .toFixed(1)+'%' : '-'],
                   ['10일', st.chg_10d != null ? (st.chg_10d>0?'+':'')+st.chg_10d.toFixed(1)+'%' : '-'],
@@ -12570,6 +12571,7 @@ const App = () => {
     // ── 상단 섹션 (시황) ───────────────────────────
     { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '주요 지표' },
     { key: 'analysis',         icon: <BarChart3 size={17} />,                                 label: '개별 종목' },
+    { key: 'stock_rs',         icon: <BarChart3 size={17} style={{color:'#a78bfa'}} />,        label: '종합 RS' },
     { key: 'market_radar',     icon: <span style={{fontSize:'14px',lineHeight:1}}>🛰</span>,   label: '섹터 지표' },
     { key: 'semiconductor_sector', icon: <Cpu size={17} style={{color:'#60a5fa'}} />,         label: '반도체 섹터' },
     { key: 'hot_sector',       icon: <span style={{fontSize:'14px',lineHeight:1}}>🎯</span>,   label: 'Hot 섹터' },
@@ -12702,6 +12704,7 @@ const App = () => {
           <div style={{display: activeTab === 'market_indicators' ? 'block' : 'none'}}><MarketIndicatorsView onChangeStock={changeStock} onChangeTab={changeTab} /></div>
           {activeTab === 'market_radar'       && <MarketRadarView />}
           {activeTab === 'analysis'          && <StockAnalysis />}
+          {activeTab === 'stock_rs'          && <StockAnalysisRsView />}
           {activeTab === 'semiconductor_sector' && (
             <div className="glass-panel fade-in" style={{padding:'0.6rem 0.8rem', height:'calc(100vh - 110px)', overflowY:'auto'}}>
               <SemiconductorView />

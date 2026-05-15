@@ -6,19 +6,9 @@
 
 > **이 섹션은 Claude가 반드시 따라야 할 행동 규칙입니다. 예외 없이 적용됩니다.**
 
-### ⛔ App.jsx 절대 규칙 (위반 시 기능 소실 위험)
-- **App.jsx는 반드시 `/Applications/stock_dashboard/frontend/src/App.jsx` (메인 경로)만 읽고 수정한다.**
-- 워크트리 경로(`/Applications/stock_dashboard/.claude/worktrees/*/frontend/src/App.jsx`)는 **절대 편집하지 않는다.** 항상 구버전이므로 메인에 복사되면 신기능이 소실된다.
-- 프론트엔드 빌드는 반드시 `cd /Applications/stock_dashboard/frontend && npx vite build`로 실행한다.
-- 작업 전 `wc -l /Applications/stock_dashboard/frontend/src/App.jsx`로 줄수를 확인한다. **10,000줄 미만이면 이미 덮어써진 것**이므로 즉시 `git checkout HEAD -- frontend/src/App.jsx`로 복원한다.
-
 ### 세션 시작 시
 - **이 파일을 먼저 읽는다.** 파일 내용으로 프로젝트 구조를 파악하고, 불필요한 파일 열람을 최소화한다.
 - 작업 전 필요한 정보가 이 파일에 있으면 파일을 새로 열지 않는다.
-- **StockEasy 추세추종 로직(peak/momentum/value) 수정 전에는 반드시 `docs/stockeasy_adaptive_loop.md`를 먼저 읽고 반영한다.**
-  - 이 파일이 **유일한 단일 기준 문서(Single Source of Truth)** 이다.
-  - `docs/stockeasy_reverse_engineering_goal.md`는 폐지되었으며, 로직 근거를 다른 MD로 분산 기록하지 않는다.
-  - 사용자가 `stockeast_adaptive`로 표현해도 동일 문서(`stockeasy_adaptive_loop.md`)를 의미한다.
 
 ### 작업 완료 시 (필수 — 자동으로 수행)
 다음 중 하나라도 해당하면 **이 파일(CLAUDE.md)을 반드시 업데이트**한다:
@@ -273,6 +263,25 @@ POST /sectors            # 섹터 저장
 POST /investor-trends    # 투자자 동향 저장
 ```
 
+### routes/extra_signals.py → /api/extra-signals ★신규(2026-05)
+```
+GET  /extra-signals/{code}  # 추가 시그널 (고용/수출/섹터트렌드/수급/ETF편입/ETF비중)
+```
+응답 구조: `{employment, exports, sector_trend, supply, etf_ratio, etf_inclusion}`
+- sector_trend: sector_large 기준 분류 (sector_mid 아님)
+- etf_inclusion/etf_ratio: etf_count=0 & etf_amount=0 인 날(수집실패)은 건너뜀
+
+### ETF_check/routes_etf.py → /api/etf-check ★신규(2026-05)
+```
+GET  /tab1              # ETF 편입액 기준 (KOSPI/KOSDAQ 상위)
+GET  /tab2              # ETF 편입액 증감 (1일/5일 전 대비)
+GET  /tab3              # 시총대비 증감%
+GET  /tab4              # 시총대비 비중%
+GET  /search            # 종목명/코드 검색 (유효 날짜만 사용)
+GET  /etf-list/{code}   # 종목 편입 ETF 목록 (etfcheck.co.kr 스크래핑)
+```
+- etf_amount=0인 날(수집실패)은 get_available_dates에서 자동 제외
+
 ---
 
 ## 4. 스케줄러 (scheduler.py)
@@ -406,6 +415,31 @@ from routes.market_indicators import router as _market_indicators_router
 app.include_router(_market_indicators_router, prefix="/api/market-indicators", tags=["market-indicators"])
 ```
 
+### ETF 수집실패일 필터 패턴 (etf_inclusion_daily 조회 시 항상 적용)
+```python
+# etf_count=0 AND etf_amount=0 → 수집 실패일. 반드시 유효 데이터만 사용
+valid_rows = [r for r in rows if (r["etf_count"] or 0) > 0 or (r["etf_amount"] or 0) > 0]
+# get_available_dates에서도:
+WHERE e.etf_amount > 0   -- 수집실패일 제외 필수
+```
+
+### 섹터 분류 기준 (sector_large만 신뢰)
+```python
+# sector_mid는 분류 오류 多 (e.g. 한국항공우주 → '상업서비스') — 사용 금지
+# 섹터 분류·그룹핑은 반드시 sector_large 기준으로
+sector = conn.execute("SELECT sector_large FROM stock_universe WHERE stock_code=?", (code,)).fetchone()["sector_large"]
+```
+
+### HS코드 공동 매핑 시 섹터 교집합 필터 (재발방지)
+```python
+# HS코드 단독 매칭은 이종업종 혼입 위험. 반드시 sector_large 교집합 필터 적용
+# 예: extra_signals.py _get_hs_export_info() 참조
+same_sector_codes = {r["stock_code"] for r in mc.execute(
+    f"SELECT stock_code FROM stock_universe WHERE stock_code IN ({placeholders}) AND sector_large=?",
+    all_codes + [own_sector]
+).fetchall()}
+```
+
 ---
 
 ## 9. 알려진 이슈 & 제한사항
@@ -431,6 +465,9 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 재무제표 단위 오류 | ✅ 완전수정 | op_profit 597건·net_income 20건·equity 5건 억원→원 변환, Q4 254건 재계산, CFS/OFS 혼용 36건 재수집, 지주사 Q4 NULL 10건 처리, 수집오류 삭제 2건 |
 | financial_data 백업 | ℹ️ 보관 | `financial_data_backup_20260412` 테이블로 수정 전 원본 보관 |
 | 재무제표 Q4 대규모 손실 | ℹ️ 정상 | 잔존 14건(삼성SDI2016/현대건설2024/대한항공 등)은 실제 이벤트 손실로 수학적 정확값 |
+| ETF 수집실패일 오표시 | ✅ 수정됨 | `etf_inclusion_daily`에서 etf_count=0 && etf_amount=0인 날은 수집 실패일로 간주 → extra_signals.py + routes_etf.py `get_available_dates`에서 자동 건너뜀. **재발방지**: ETF 관련 쿼리 시 반드시 `WHERE etf_amount > 0` 또는 valid_rows 필터 적용 |
+| 섹터 트렌드 오분류 | ✅ 수정됨 | `sector_mid`(e.g. "상업서비스")가 업종과 맞지 않는 종목 多 → `sector_large` 기준으로 전체 변경. **재발방지**: 섹터 분류는 반드시 `sector_large` 기준으로. `sector_mid`는 신뢰도 낮음 |
+| 수출공동 표시 이종업종 혼입 | ✅ 수정됨 | HS코드가 넓어 전혀 다른 업종(HD건설기계 등)이 공동 표시 → 동일 sector_large 종목만 필터링. **재발방지**: HS코드 기반 공동 매핑 시 반드시 sector_large 교집합 필터 필수 |
 
 ---
 
@@ -469,17 +506,5 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-16 | 포트폴리오 수급·대차잔고·시그널 전면 개선: ①`_to_억` 버그 수정(amt=0 시 qty*close/1e8, amt≠0 시 amt/100) ②short_data를 buy_candidates/short-sell과 동일 형식(today/avg5/avg5_prev/신호)으로 통일 ③4분면 매매신호 신설(추세점수±4/가치점수 PBR·PER·ROE·ROA): add_buy·hold·hold_value·take_profit·real_sell·cut_loss ④포트폴리오 테이블 하단 AI 판단기준 설명 섹션 추가 |
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
-| 2026-05-12 | 수출입분석(TradeAnalysis2) UI 개선: ①MoM/YoY 음수 버그 수정(확정치만 비교, main.py analysis2_sectors·company_trend 양쪽) ②제목 중복/"분석 II" 제거(h1 삭제, TAB_TITLES "수출입 분석") ③섹터 탭 "HS 구성" TabButton 삭제 ④섹터 탭 기업 상세 월별 추세 테이블 삭제 ⑤기업 탭 섹터 선택 탭 추가(allCompSector 상태) ⑥rebuild_analysis2_cache.py telegram 매핑 rank_num=3→1, mapping_status='exact' 적용 → 전체 247개 기업 exact로 전환 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
-| 2026-05-13 | 버그 3종 수정: ①signal_engine.py calc_stock_signals/calc_market_signals: DB 락으로 INSERT OR REPLACE 실패 시 results에 중복 append되는 버그 수정(INSERT를 별도 try-except로 분리) → 35개→18개 정상화. ②routes/extra_signals.py _get_sector_trend_signal: stock_universe market 컬럼이 'KOSPI'/'KOSDAQ' 사용 중인데 '유가증권'/'코스닥'만 필터 → 4개값 모두 포함. ③App.jsx handleSearch: 드롭다운 클릭 시 API 응답 대기 없이 즉시 changeStock+changeTab 후 백그라운드 fetch |
-| 2026-05-13 | 수출입분석 HS 매핑 대규모 보완: ①telegram_trade_card A케이스(hs_prefixes_json 없던 580건) → 19개 base product 수동 HS 코드 매핑 + customs_monthly_record 최신값 채우기 완료 (fill_hs_prefixes.py 신규). ②hs_sector_map에 과산화수소(2847002000)/측정장비(9031499000)/블랭크마스크유리(7006002000) 3개 추가. ③rebuild_analysis2_cache.py 재실행 → 반도체 섹터 30.4B$/2026-04 반영. 전체 825건 telegram_trade_card 모두 hs_prefixes_json+confirmed_* 채워짐 |
-| 2026-05-13 | models.py FinancialData.data_source 컬럼이 stock.db에 없어 HTTP 500 발생 → ALTER TABLE financial_data ADD COLUMN data_source TEXT 직접 적용 + migrate_db.py에 자동감지 마이그레이션 추가. 근본원인: ORM 모델에 컬럼 추가 시 migrate_db.py에도 반드시 동시 추가 필요 |
-| 2026-05-13 | FnGuide 정합성/보강 체계 점검 및 보완: ① `scripts/validate_financial_multi_source.py` DB 동시쓰기 충돌(`sqlite3.OperationalError: database is locked`) 재현 확인 ② `_conn()`에 `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=120000` 추가 ③ UPDATE 구간에 `_execute_with_retry()`(지수 백오프 재시도) 적용해 장시간 배치 중단 방지 ④ `run_fnguide_resume.sh`/`verification/migration_datasource_20260513_223019.json`/`logs/fnguide_pipeline.log` 재점검: 22:30 이후 마이그레이션 후 FnGuide 재수집 재개 확인 ⑤ 실측 지표: `data_source='fnguide'` 레코드가 `financial_data 6006→8030`, `cash_flow_data 5909→7933`, 종목수 `638→765`로 증가 확인 ⑥ 불일치 누적 파일 `config/financial_profiles_pending.json` 갱신 확인(34종목/243 reason) — 향후 파이썬 수집 시 프로파일 보정 근거로 활용 가능 |
-| 2026-05-13 | StockEasy 적응형 운영으로 전환: `stockeasy_logic_validator.py`에 ①전일 대비 편입/이탈/당일편출 계산 ②전략별 파라미터 파일(`config/stockeasy_logic_params.json`) 기반 후보 필터 ③자동 미세조정(조정 전/후+사유) ④튜닝 이력(`config/stockeasy_logic_tuning_history.json`) 누적 ⑤텔레그램에 조정값·차이 보고 추가. `scheduler.py` `_job_stockeasy_analysis`에 `run_validation()` 연동해 매일 분석 직후 자동 조정/보고 수행. 오늘 추론 결과: Peak 신규편입 `두산테스나`, 이탈/당일편출 `가온전선`; 모멘텀/벨류는 편입·이탈 없음. |
-| 2026-05-13 | 사용자 보유주식 스크린샷(3장) 기준 `portfolio` 전면 업데이트: 37종목 수량/평단 반영, 사진에 없는 종목 삭제. StockEasy 로직 문서 연동 규칙 추가: 로직 수정 전 `docs/stockeasy_adaptive_loop.md`(=사용자 표현 `stockeast_adaptive`) 필수 참조를 세션 시작 규칙에 명시. |
-| 2026-05-14 | StockEasy 리포트 본문 기반 재튜닝 추가: `stockeasy_logic_validator.py`가 `stockeasy_analysis.holdings_json.research.summary.content_list` 전량 분석 후 핵심 키워드/섹터를 추출하여 `min_score/max_candidates` 외 `min_mktcap_억/preferred_sectors`까지 자동 조정하도록 확장. 2026-05-14 최신 반영 후 결과: Peak P24.3/R85.0/F1 37.8 유지, Momentum 후보 44→17로 축소(잡음 억제), Value 후보 40에서 교집합 1건(SGC에너지) 확보. `stockeasy_analyzer.py` 저장부 DB lock 재시도(지수 백오프) 추가로 동시 배치 충돌 내성 강화. |
-| 2026-05-14 | 사용자 목표 고정(리포트 설명보다 3전략 역추론 우선) 반영: `docs/stockeasy_reverse_engineering_goal.md` 신규 작성. 모멘텀/밸류 0% 탈출을 위해 `stockeasy_logic_validator.py`의 후보 생성을 함수 레벨로 재구성(모멘텀=Trend+Earnings 합성, 밸류=Trend+Value 재평가 합성). 실행 결과(2026-05-14 21:35): Momentum P10.9/R87.5/F1 19.4, Value P6.0/R30.0/F1 10.0, Peak P25.7/R90.0/F1 40.0. 텔레그램 보고 완료. |
-| 2026-05-14 | 사용자 원칙 반영: 추세추종 3전략은 섹터 제한/우대 없이 전 섹터 오픈. `stockeasy_logic_validator.py`에서 `preferred_sectors` 점수부스트(+5) 및 자동섹터동기화 로직 제거, 전략 파라미터는 `min_score/max_candidates/min_mktcap_억`만 유지하도록 정리. `config/stockeasy_logic_params.json`의 `preferred_sectors` 삭제. 문서 `docs/stockeasy_adaptive_loop.md`, `docs/stockeasy_reverse_engineering_goal.md`에 섹터 비제한 고정 원칙 명시. |
-| 2026-05-14 | StockEasy 역추론 문서 단일화: `docs/stockeasy_adaptive_loop.md`를 통합 단일 문서로 확장(목표/제약/원칙/편출처리 포함), `docs/stockeasy_reverse_engineering_goal.md` 삭제. CLAUDE 필수 규칙에 “로직 수정 전 단일 문서 선확인” 및 “근거 분산 기록 금지”를 강제 문구로 추가. |
-| 2026-05-14 | Peak Easy 편입/편출 학습 반영: 오늘 편입 `제주반도체` 리포트(온디바이스 AI·LPDDR·실적모멘텀)와 편출 `에스비비테크`(-8.07%) 케이스를 대조해 `signal_engine.py::calc_stockeasy_trend_candidates`에 소형주 단기 과열 추격 제외 필터 추가(`mktcap<5,000억` & `resistance_gap>=30%` & `RSI/거래량/스토캐스틱 과열`). 검증 결과 제주반도체는 유지, 에스비비테크는 제외, Peak 비교지표는 P25.7/R90.0/F1 40.0 유지. |
-| 2026-05-14 | 고용정보 페이지 버그 수정: ①routes/extra_signals.py WLB fallback에서 데이터 간격 2개월 초과 시 net_1m/3m을 12개월 변화로 오표시 → _ym_month_gap 체크 추가, 연간데이터는 net_1y만 반환. ②App.jsx 고용트렌드 카드: net_1m없고 net_1y있을 때 "1년" 행 표시. ③애널리스트 보고서 기본 7건 + 전체보기 접기 버튼. ④컨센서스 기간탭/차트기간탭/수급바차트토글/miTab에 onMouseDown=preventDefault 추가(스크롤 점프 방지). NPS API getBassInfoSearchV2 404 확인(신규 NPS seq 매핑 불가) — KAI 등 20개사 NPS 미매핑 이슈 보고. |
-| 2026-05-14 | 포트폴리오 버그 2종 수정: ①routes/portfolio.py stock_name=NULL인 5개 종목(134380/009900/012330/196170/060540) → stock_universe 조회로 종목명 자동 보완. ②daily_profit 스냅샷 기반(total_value-prev_snap.eval_amount) → 가격 기반((current_price-prev_price)×qty)으로 교체 → 전일대비 +1,090만원 오표시 → -1,832만원 정상화. 프론트엔드 재빌드 완료. |
+| 2026-05-15 | `routes/extra_signals.py` + `ETF_check/routes_etf.py` 워크트리에 추가 및 main.py 등록. ETF 수집실패일(etf_count=0 && etf_amount=0) 건너뜀 로직 추가(extra_signals + routes_etf get_available_dates). 섹터 트렌드 sector_mid→sector_large 기준으로 전체 변경. 수출/계약 공동 표시 동일 sector_large 종목만 필터링. 고용 트렌드 카드에 current_workers(현재 근무인원) 필드 추가(백엔드+프론트). |
+| 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

@@ -117,6 +117,7 @@ def _get_employment_signal(code: str) -> dict:
                     return {
                         "signal": signal, "label": label, "source": "ec",
                         "net_1m": net_1m, "net_3m": net_3m, "net_6m": net_6m, "net_1y": net_1y,
+                        "current_workers": latest["total_workers"],
                         "detail": {"history": ec_asc, "diff": diff, "pct": pct,
                                    "net_1m": net_1m, "net_3m": net_3m, "net_6m": net_6m, "prev_3m": prev_3m},
                     }
@@ -133,6 +134,7 @@ def _get_employment_signal(code: str) -> dict:
                         "signal": signal, "label": label, "source": "ec_annual",
                         "net_1m": None, "net_3m": None, "net_6m": None,
                         "net_1y": net_1y_val,
+                        "current_workers": latest["total_workers"],
                         "detail": {"history": ec_asc, "diff": diff, "pct": pct,
                                    "net_1m": None, "net_3m": None, "net_6m": None, "prev_3m": None},
                     }
@@ -178,6 +180,7 @@ def _get_employment_signal(code: str) -> dict:
                     "signal": signal, "label": label, "source": "wlb",
                     "net_1m": net_1m, "net_3m": net_3m,
                     "net_6m": net_6m, "net_1y": net_1y,
+                    "current_workers": latest["total_workers"],
                     "detail": {
                         "history": [dict(r) for r in wasc],
                         "diff": diff, "pct": pct,
@@ -192,6 +195,7 @@ def _get_employment_signal(code: str) -> dict:
                     "signal": signal, "label": label, "source": "wlb_annual",
                     "net_1m": None, "net_3m": None, "net_6m": None,
                     "net_1y": diff if total_gap <= 15 else None,
+                    "current_workers": latest["total_workers"],
                     "detail": {
                         "history": [dict(r) for r in wasc],
                         "diff": diff, "pct": pct,
@@ -212,6 +216,7 @@ def _get_employment_signal(code: str) -> dict:
         return {
             "signal": signal, "label": label, "source": "nps",
             "net_1m": net_1m, "net_3m": net_3m, "net_6m": net_6m,
+            "current_workers": None,  # NPS는 총 인원수 데이터 없음
             "detail": {
                 "history":    data,
                 "net_1m":     net_1m,
@@ -222,7 +227,7 @@ def _get_employment_signal(code: str) -> dict:
         }
     except Exception:
         return {"signal": "gray", "label": "데이터 없음", "detail": None,
-                "net_1m": None, "net_3m": None, "net_6m": None}
+                "net_1m": None, "net_3m": None, "net_6m": None, "current_workers": None}
     finally:
         try: conn.close()
         except: pass
@@ -296,29 +301,48 @@ def _get_hs_export_info(code: str) -> dict | None:
         if not rows:
             c.close(); return None
 
-        # 공동 매핑 종목: 동일 HS 코드(수출)를 함께 사용하는 다른 종목
+        # 공동 매핑 종목: 동일 HS 코드(수출)를 함께 사용하는 다른 종목 (최대 20개 후보)
         shared_rows = c.execute(
             """SELECT DISTINCT m2.stock_code, m2.stock_name
                FROM hs_code_company_map m1
                JOIN hs_code_company_map m2 ON m1.hs_code = m2.hs_code
                WHERE m1.stock_code=? AND m2.stock_code!=?
                  AND m1.flow_type='export' AND m2.flow_type='export'
-               ORDER BY m2.stock_name LIMIT 10""",
+               ORDER BY m2.stock_name LIMIT 20""",
             (code, code),
         ).fetchall()
-        shared = [{"code": r["stock_code"], "name": r["stock_name"]} for r in shared_rows]
-
-        # 공유 HS 코드 수
-        shared_hs_cnt = c.execute(
-            """SELECT COUNT(DISTINCT m1.hs_code)
-               FROM hs_code_company_map m1
-               JOIN hs_code_company_map m2 ON m1.hs_code = m2.hs_code
-               WHERE m1.stock_code=? AND m2.stock_code!=?
-                 AND m1.flow_type='export'""",
-            (code, code),
-        ).fetchone()[0]
+        all_shared_codes = [r["stock_code"] for r in shared_rows]
+        all_shared = {r["stock_code"]: r["stock_name"] for r in shared_rows}
 
         c.close()
+
+        # sector_large 조회 (조회 종목 기준) 후 동일 섹터 종목만 공동 표시
+        try:
+            mc = _main_conn()
+            own_sector = mc.execute(
+                "SELECT sector_large FROM stock_universe WHERE stock_code=?", (code,)
+            ).fetchone()
+            own_sector = own_sector["sector_large"] if own_sector else None
+
+            if own_sector and all_shared_codes:
+                placeholders = ",".join("?" * len(all_shared_codes))
+                same_sector = mc.execute(
+                    f"SELECT stock_code FROM stock_universe "
+                    f"WHERE stock_code IN ({placeholders}) AND sector_large=?",
+                    all_shared_codes + [own_sector],
+                ).fetchall()
+                same_sector_codes = {r["stock_code"] for r in same_sector}
+                shared = [{"code": sc, "name": all_shared[sc]}
+                          for sc in all_shared_codes if sc in same_sector_codes][:10]
+            else:
+                shared = [{"code": sc, "name": all_shared[sc]} for sc in all_shared_codes][:10]
+            shared_hs_cnt = len(shared)
+        except Exception:
+            shared = [{"code": sc, "name": all_shared[sc]} for sc in all_shared_codes][:10]
+            shared_hs_cnt = len(shared)
+        finally:
+            try: mc.close()
+            except: pass
 
         monthly = list(reversed([dict(r) for r in rows]))  # oldest→newest
         vals = [r["export_val"] or 0 for r in monthly]
@@ -431,14 +455,15 @@ def _get_sector_trend_signal(code: str) -> dict:
                 (sid_sector, mkt),
             ).fetchall()
 
-        # ── 2. 섹터 내 종목 평균 수익률 (sector_mid 기반) ────────
+        # ── 2. 섹터 내 종목 평균 수익률 (sector_large 기반) ──────
+        # sector_mid 대신 sector_large 기준으로 전체 종목 일관 분류
         avg_returns = {"5d": None, "10d": None, "30d": None}
         sector_stock_cnt = 0
-        if sector_mid:
+        if sector_key:
             codes_rows = conn.execute(
                 "SELECT stock_code FROM stock_universe "
-                "WHERE sector_mid=? AND market IN ('유가증권','코스닥','KOSPI','KOSDAQ') LIMIT 150",
-                (sector_mid,),
+                "WHERE sector_large=? AND market IN ('유가증권','코스닥','KOSPI','KOSDAQ') LIMIT 300",
+                (sector_key,),
             ).fetchall()
             sector_codes = [r["stock_code"] for r in codes_rows]
             sector_stock_cnt = len(sector_codes)
@@ -501,7 +526,7 @@ def _get_sector_trend_signal(code: str) -> dict:
             "signal_5d":  sig_chg(c5),
             "signal_10d": sig_chg(c10),
             "signal_30d": sig_chg(c30),
-            "label":      sector_mid or sector_key,
+            "label":      sid_sector or sector_key,
             "sector_key": sector_key,
             "sector_mid": sector_mid,
             "latest_date": latest_date,
@@ -599,19 +624,24 @@ def _get_etf_ratio_signal(code: str) -> dict:
         conn = _etf_conn()
         rows = conn.execute(
             "SELECT trade_date, etf_amount, market_cap, mktcap_ratio, etf_count "
-            "FROM etf_inclusion_daily WHERE stock_code=? ORDER BY trade_date DESC LIMIT 10",
+            "FROM etf_inclusion_daily WHERE stock_code=? ORDER BY trade_date DESC LIMIT 15",
             (code,),
         ).fetchall()
 
         if not rows:
             return {"signal": "gray", "label": "데이터 없음", "detail": None}
 
-        latest = dict(rows[0])
-        history = [dict(r) for r in reversed(rows)]
+        # etf_count=0 AND etf_amount=0 인 날은 수집 실패로 간주하고 건너뜀
+        valid_rows = [r for r in rows if (r["etf_count"] or 0) > 0 or (r["etf_amount"] or 0) > 0]
+        if not valid_rows:
+            return {"signal": "gray", "label": "데이터 없음", "detail": None}
+
+        latest = dict(valid_rows[0])
+        history = [dict(r) for r in reversed(valid_rows)]
 
         ratio_now  = latest["mktcap_ratio"] or 0
-        ratio_prev = (dict(rows[1])["mktcap_ratio"] or 0) if len(rows) >= 2 else ratio_now
-        ratio_5d   = (dict(rows[min(4, len(rows)-1)])["mktcap_ratio"] or 0)
+        ratio_prev = (dict(valid_rows[1])["mktcap_ratio"] or 0) if len(valid_rows) >= 2 else ratio_now
+        ratio_5d   = (dict(valid_rows[min(4, len(valid_rows)-1)])["mktcap_ratio"] or 0)
 
         diff_1d = round(ratio_now - ratio_prev, 3)
         diff_5d = round(ratio_now - ratio_5d,   3)
@@ -649,17 +679,22 @@ def _get_etf_ratio_signal(code: str) -> dict:
 def _get_etf_inclusion_signal(code: str) -> dict:
     try:
         conn = _etf_conn()
-        row = conn.execute(
+        # etf_count=0 AND etf_amount=0 인 날(수집 실패)을 제외하고 가장 최근 유효 데이터 사용
+        rows = conn.execute(
             "SELECT trade_date, etf_count, etf_amount, mktcap_ratio "
-            "FROM etf_inclusion_daily WHERE stock_code=? ORDER BY trade_date DESC LIMIT 1",
+            "FROM etf_inclusion_daily WHERE stock_code=? ORDER BY trade_date DESC LIMIT 10",
             (code,),
-        ).fetchone()
+        ).fetchall()
 
-        if not row:
+        if not rows:
             return {"signal": "gray", "label": "데이터 없음",
                     "etf_count": 0, "detail": None}
 
-        row = dict(row)
+        valid = next(
+            (r for r in rows if (r["etf_count"] or 0) > 0 or (r["etf_amount"] or 0) > 0),
+            None,
+        )
+        row = dict(valid if valid else rows[0])
         etf_count = row["etf_count"] or 0
         ratio     = row["mktcap_ratio"] or 0
         # etf_amount은 억원 단위로 저장됨 (원 단위 아님)

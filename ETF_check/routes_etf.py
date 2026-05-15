@@ -33,12 +33,14 @@ def format_row(r):
     return d
 
 def get_available_dates(conn) -> List[str]:
+    # etf_amount > 0 인 종목이 실제로 존재하는 날만 유효 날짜로 사용 (수집 실패일 제외)
     rows = conn.execute("""
         SELECT DISTINCT e.trade_date
         FROM etf_inclusion_daily e
         JOIN collection_log l
           ON l.run_date = e.trade_date
          AND l.status = 'done'
+        WHERE e.etf_amount > 0
         ORDER BY e.trade_date DESC
         LIMIT 6
     """).fetchall()
