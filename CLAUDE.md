@@ -6,6 +6,21 @@
 
 > **이 섹션은 Claude가 반드시 따라야 할 행동 규칙입니다. 예외 없이 적용됩니다.**
 
+### 서버 재시작 (필수 — 코드 수정 후 반드시 이 방법으로만)
+
+> **직접 uvicorn kill 절대 금지.** launchd `KeepAlive:true` 때문에 kill 후 launchd가 자동 재시작 → 이어서 수동으로 uvicorn 시작하면 두 프로세스가 공존함.
+
+```bash
+# ✅ 올바른 재시작 (launchd를 통해 — 새 코드 반영)
+launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
+
+# ✅ 완전 정지 후 시작
+/Applications/stock_dashboard/stop.sh
+/Applications/stock_dashboard/start.sh
+
+# ❌ 금지: kill <pid> 후 nohup uvicorn ... &  → 서버 2개 생김
+```
+
 ### 세션 시작 시
 - **이 파일을 먼저 읽는다.** 파일 내용으로 프로젝트 구조를 파악하고, 불필요한 파일 열람을 최소화한다.
 - 작업 전 필요한 정보가 이 파일에 있으면 파일을 새로 열지 않는다.
@@ -22,6 +37,17 @@
 - [ ] 기존 동작 방식 변경 (단위, 포맷, 로직)
 
 **업데이트 위치**: 해당 섹션을 직접 수정 + 섹션 11(변경 이력)에 날짜와 함께 한 줄 기록.
+
+### Codex/Claude 병렬 작업 시 충돌 방지 규칙
+
+> **Codex와 Claude가 동시에 이 프로젝트를 수정함. 충돌 방지 필수.**
+
+- 작업 시작 전 `git pull --rebase` 로 최신 코드 동기화
+- **같은 파일을 동시에 편집하지 않는다** — 작업 파일을 CLAUDE.md 상단에 미리 명시
+- 코드 수정 후: 반드시 `launchctl kickstart -k` 로 서버 재시작 (위 규칙 참조)
+- Python 코드 수정 = 서버 재시작 없이는 변경 미반영 (uvicorn은 모듈 캐시)
+- **routes/*.py, ETF_check/routes_etf.py 수정 시**: 서버 재시작 필수
+- DB 스키마 변경 시: 다른 AI가 같은 테이블을 수정 중인지 반드시 확인
 
 ### 토큰 절약 규칙
 - 파일 전체를 읽기 전에 이 문서에서 줄 번호를 확인하고 해당 범위만 읽는다.
@@ -298,6 +324,13 @@ GET  /etf-list/{code}   # 종목 편입 ETF 목록 (etfcheck.co.kr 스크래핑)
 | `_job_krx_daily` | 18:00 daily (영업일) | KRX API 전종목 OHLCV + 지수 수집 (KRX 데이터 확정 시간 고려) |
 | `_job_supply_daily` | 17:30 daily (영업일) | KIS 전종목 최근 30일 수급 누락분 보완 |
 
+### ETF 수집 스케줄 (crontab — ETF_check/scheduler.py)
+| 시간 | 실행 모드 | 설명 |
+|------|-----------|------|
+| 20:30 평일 | `--once` | 메인 수집 (장 마감 후) |
+| 23:30 평일 | `--retry` | 실패 종목 재수집 |
+| 02:30 화~토 | `--backfill` | 전날 최종 백필 (재수집 실패 시 보완) |
+
 ---
 
 ## 5. 공유 캐시 (_signal_cache, main.py)
@@ -516,4 +549,5 @@ same_sector_codes = {r["stock_code"] for r in mc.execute(
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
 | 2026-05-15 | `routes/extra_signals.py` + `ETF_check/routes_etf.py` 워크트리에 추가 및 main.py 등록. ETF 수집실패일(etf_count=0 && etf_amount=0) 건너뜀 로직 추가(extra_signals + routes_etf get_available_dates). 섹터 트렌드 sector_mid→sector_large 기준으로 전체 변경. 수출/계약 공동 표시 동일 sector_large 종목만 필터링. 고용 트렌드 카드에 current_workers(현재 근무인원) 필드 추가(백엔드+프론트). |
 | 2026-05-15 | App.jsx 분리: MarketIndicatorsView/SemiconductorView/SectorFollowupView/MarketRadarView → `frontend/src/views/` 별도 파일. 공유 유틸 → `frontend/src/utils.js`. App.jsx 12,752줄→10,830줄(-1,922줄). CLAUDE.md 섹션6 줄번호 업데이트. |
+| 2026-05-16 | ETF Check `/search` 수집실패일 폴백 수정: `WHERE e.trade_date = ?` → 종목별 최근 유효일 서브쿼리. 서버 재시작 방법 CLAUDE.md 명시(launchctl kickstart). Codex 병렬작업 충돌방지 규칙 추가. crontab ETF 23:30 재수집+02:30 백필 추가. cash_flow_data 이상값 6건 NULL 처리. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
