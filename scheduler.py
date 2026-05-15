@@ -174,6 +174,7 @@ class CollectionScheduler:
             ("수출입가집계",   self._loop_trade_provisional),          # ★ 매주 월요일 06:00 수출입 10일 가집계 수집
             ("공시DB배치",     self._loop_disclosure_db_batch),        # ★ 매주 일요일 02:00 DART 전종목 공시 DB 저장
             ("KRX투자자수급",  self._loop_krx_investor_playwright),    # ★ 매일 18:10 KRX 전종목 기관/외국인 순매수(Playwright)
+            ("RS사전계산",    self._loop_rs_precompute),               # ★ 매일 18:30 RS/52주 캐시 사전계산
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -2213,3 +2214,21 @@ class CollectionScheduler:
                 logger.error(f"[KRX투자자수급] 오류: {r.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[KRX투자자수급] 예외: {e}")
+
+    # ── RS/52주 사전계산 캐시 워밍 (매일 18:30 영업일) ──
+    def _loop_rs_precompute(self) -> None:
+        """KRX 데이터 확정 후 RS·52주 캐시를 선반영. API 첫 요청 대기 시간(7초) 제거."""
+        logger.info("[RS사전계산] 루프 시작")
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            self._wait_until(18, 30, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            try:
+                import requests as _req
+                resp = _req.post("http://localhost:8000/api/stock-analysis-rs/precompute", timeout=300)
+                logger.info(f"[RS사전계산] 완료: {resp.text[:200]}")
+            except Exception as e:
+                logger.error(f"[RS사전계산] 오류: {e}")
+            self._wait_secs(23 * 3600)
+        logger.info("[RS사전계산] 루프 종료")

@@ -311,6 +311,18 @@ GET  /etf-list/{code}   # 종목 편입 ETF 목록 (etfcheck.co.kr 스크래핑)
 ```
 - etf_amount=0인 날(수집실패)은 get_available_dates에서 자동 제외
 
+### routes/stock_analysis_rs.py → /api/stock-analysis-rs ★성능개선(2026-05)
+```
+GET  /dashboard-data    # 요약만 반환: benchmarks, sector_rs, metadata (rs_list 없음)
+GET  /dashboard-rows    # RS 행 서버 페이지네이션: ?page=&page_size=&sort=&q=&sector=&cap_min=&market=&sector_mode=
+GET  /high52-data       # 52주 메타데이터만 반환
+GET  /high52-rows       # 52주 행 서버 페이지네이션: ?page=&page_size=&sort=&q=&sector=&high_filter=
+POST /precompute        # 캐시 강제 재계산 (스케줄러 18:30 호출)
+```
+- 초기 전송량: 2.3MB → 수십KB (rs_list/high52_list 제거)
+- 캐시: scratch/stock_analysis_rs_cache.json (장중 10분, 장외 24시간 TTL)
+- 동시 요청 시 double-check locking (compute는 락 밖에서 수행)
+
 ---
 
 ## 4. 스케줄러 (scheduler.py)
@@ -580,4 +592,5 @@ python3 scripts/fnguide_integrity_sync.py --dry-run  # 변경 없이 리포트�
 | 2026-05-16 | 종합 RS/52주 신고가 데이터 미노출 긴급 수정: `main.py`에 `routes.stock_analysis_rs` import + `app.include_router(..., prefix='/api/stock-analysis-rs')` 누락 등록(HTTP 404 원인). `frontend/src/views/StockAnalysisRsView.jsx`는 `Promise.allSettled`로 변경해 한 API 실패 시 전체 빈 화면 방지, 52주 신고가 탭에 필터(전체/근접/신고가달성)·정렬(점수/근접/거래량배수) 추가. 재기동은 규칙대로 `launchctl kickstart -k`만 사용. |
 | 2026-05-16 | 종합 RS 성능/동작 보강: `routes/stock_analysis_rs.py`를 캐시 기반으로 재구성. 장중(평일 09:00~15:35) 10분 TTL, 장외 1일 TTL로 `/scratch/stock_analysis_rs_cache.json` 반환. price_history는 종목별 최근 260거래일 window 조회로 축소. 응답에 `benchmarks.kospi/kosdaq` RS 추가. `frontend/src/views/StockAnalysisRsView.jsx`는 섹터명 정규화로 탭 필터 정확화, 상단 강도바에 KOSPI/KOSDAQ RS 위치 표시, 섹터 탭 선택 시 해당 섹터 종목만 노출하도록 보강. |
 | 2026-05-16 | PER/PBR Naver 스크래핑 완전 제거 → `price×EPS/BPS` 직접 계산(main.py). stock_universe fallback 유지. EPS 계산 보완(`processor.py _calc_eps`). `stock_collection_config` 테이블 신규. `scripts/fnguide_integrity_sync.py` 신규: unit_error 52건+cfs_ofs 29건 FnGuide 기준 수정, holding_company 175건 OFS config 등록, financial_anomalies 81건 resolved. large_discrepancy 640건은 --all 옵션으로 별도 실행. |
+| 2026-05-16 | Codex 분석 기반 성능·정합 개선: ①`routes/stock_analysis_rs.py` double-check locking(compute를 락 밖으로), `/dashboard-data` 요약만 반환, `/dashboard-rows`·`/high52-rows` 서버 페이지네이션 신규, `/precompute` POST 추가. 초기 전송량 2.3MB→수십KB. ②`processor.py` 조회 API 내 Q4 DB 쓰기 제거(read-only 보장, 락 경합 방지). ③`stockeasy_logic_validator.py` `_load_params` shallow merge→deep merge(기본 필드 유실 방지), `min_mktcap_억` 점진 decay 로직 추가(대형주 신호 없을 때 500억씩 하향). ④`stockeasy_analyzer.py` 프롬프트 다이어트: 종목당 6줄→1줄 핵심 8개 필드, 2000자→800자, max_tokens 1500→800. ⑤`scheduler.py` `_loop_rs_precompute` 추가(18:30 영업일, /precompute POST 호출). ⑥`StockAnalysisRsView.jsx` 서버 사이드 페이지네이션+지연 로딩(52주탭 최초 진입 시만 로드), AbortController+300ms 디바운스. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

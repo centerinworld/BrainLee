@@ -70,7 +70,13 @@ def _load_params() -> dict:
         with open(PARAMS_PATH, "r", encoding="utf-8") as f:
             d = json.load(f)
         out = json.loads(json.dumps(DEFAULT_PARAMS))
-        out.update(d if isinstance(d, dict) else {})
+        if isinstance(d, dict):
+            for strategy, params in d.items():
+                if strategy in out and isinstance(params, dict):
+                    # deep merge: 저장된 키만 덮어쓰고 DEFAULT 키는 보존
+                    out[strategy].update(params)
+                elif isinstance(params, dict):
+                    out[strategy] = params
         return out
     except Exception:
         return json.loads(json.dumps(DEFAULT_PARAMS))
@@ -452,9 +458,18 @@ def _infer_and_apply_adjustment(r: dict, all_params: dict) -> dict:
 
     # 리포트에서 대형주 키워드(AI/HBM/서버/데이터센터)가 강하면 최소 시총 필터 강화
     largecap_kw = {"AI", "HBM", "서버", "데이터센터", "반도체"}
-    if s in ("momentum", "value") and any(k in largecap_kw for k in rep_kw):
+    has_largecap_signal = s in ("momentum", "value") and any(k in largecap_kw for k in rep_kw)
+    if has_largecap_signal:
         p["min_mktcap_억"] = max(float(p.get("min_mktcap_억", 0) or 0), 5000.0)
         reasons.append("리포트 대형주/AI 키워드 반영 → 최소 시총 5,000억 적용")
+    elif s in ("momentum", "value"):
+        # 대형주 신호 없으면 min_mktcap_억 점진 하향(단방향 누적 드리프트 방지)
+        current_mktcap = float(p.get("min_mktcap_억", 0) or 0)
+        if current_mktcap > 0:
+            p["min_mktcap_억"] = max(0.0, current_mktcap - 500.0)
+            reasons.append(
+                f"대형주 키워드 없음 → min_mktcap 점진 하향 ({current_mktcap:.0f}→{p['min_mktcap_억']:.0f}억)"
+            )
 
     all_params[s] = p
     changed = (before != p)

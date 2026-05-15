@@ -491,43 +491,34 @@ def analyze_strategy_with_ai(strategy: str, data: dict) -> str:
     if not holdings:
         return f"{STRATEGY_LABELS[strategy]}: 보유 종목 없음"
 
-    # 프롬프트 구성
+    # 프롬프트 구성 — 핵심 8개 필드만, 숫자 반올림(토큰 절감)
+    def _r(v, d="-"):
+        try:
+            return f"{round(float(v), 1)}" if v not in (None, "?", "") else d
+        except Exception:
+            return str(v) if v not in (None, "") else d
+
     stock_summary = []
-    for h in holdings[:15]:  # 최대 15종목
+    for h in holdings[:12]:  # 최대 12종목
         s = h.get("stock_data", {})
+        ma_ok = "O" if (s.get("ma20") and s.get("ma120") and s.get("price_entry") and s["price_entry"] > s["ma120"]) else "X"
         line = (
-            f"- {h['name']} ({h.get('sector','?')} {h.get('sector_score',0)}점) "
-            f"매수일:{h.get('entry_date','?')} 보유{h.get('hold_days',0)}일 "
-            f"수익:{h.get('profit_pct',0):+.1f}%\n"
-            f"  기술: MA정배열={'O' if (s.get('ma20') and s.get('ma60') and s.get('ma120') and s.get('price_entry') and s['price_entry']>s['ma120']) else 'X'} "
-            f"RSI={s.get('rsi14','?')} 거래량배율={s.get('vol_ratio','?')} 5일거래량={s.get('vol_5d_ratio','?')} "
-            f"52주고점={s.get('high52_pct','?')}% 저항갭={s.get('resistance_gap','?')}%\n"
-            f"  수급: 기관5일={s.get('inst_5d_amt','?')}억원 외국인5일={s.get('frn_5d_amt','?')}억원\n"
-            f"  밸류: PER={s.get('per','?')} PBR={s.get('pbr','?')} ROE={s.get('roe','?')}% "
-            f"매출YoY={s.get('rev_yoy','?')}% 영업이익YoY={s.get('op_yoy','?')}%\n"
-            f"  시총={s.get('mktcap_억','?')}억원"
+            f"- {h['name']} 섹터:{h.get('sector','?')} 보유{h.get('hold_days',0)}일 수익:{h.get('profit_pct',0):+.1f}%"
+            f" | MA:{ma_ok} RSI:{_r(s.get('rsi14'))} 거래량배율:{_r(s.get('vol_ratio'))}"
+            f" | 기관5일:{_r(s.get('inst_5d_amt'))}억 외국인:{_r(s.get('frn_5d_amt'))}억"
+            f" | PER:{_r(s.get('per'))} ROE:{_r(s.get('roe'))}% 매출YoY:{_r(s.get('rev_yoy'))}%"
+            f" 시총:{_r(s.get('mktcap_억'))}억"
         )
         stock_summary.append(line)
 
-    prompt = f"""당신은 한국 주식 투자 전략 분석가입니다.
-스탁이지 '{STRATEGY_LABELS[strategy]}' 전략의 현재 보유 종목 데이터입니다.
-⚠️ 중요: 아래 모든 지표는 각 종목의 【편입일(매수일) 당시】 데이터입니다.
-현재 시점이 아닌 매수 결정 시점의 조건을 분석하므로 전략의 매수 기준을 정확히 역추론할 수 있습니다.
-⚠️ 전략별 구분: {STRATEGY_ANALYSIS_GUIDES.get(strategy, '')}
-다른 스탁이지 전략의 기준을 섞지 말고, 이 전략 하나의 편입 기준만 추론하세요.
-아래 종목들의 매수 시점 기술/수급/밸류 지표를 보고, 이 전략의 매수 기준을 역추론해 주세요.
+    prompt = f"""한국 주식 전략 분석가. 스탁이지 '{STRATEGY_LABELS[strategy]}' 전략.
+모든 지표는 편입일 당시. {STRATEGY_ANALYSIS_GUIDES.get(strategy, '')}
 
-보유 종목 ({len(holdings)}개):
+보유 {len(holdings)}종목:
 {chr(10).join(stock_summary)}
 
-분석 요청:
-1. 기술적 패턴: 이 전략이 중시하는 이평선·RSI·거래량 조건은?
-2. 수급 패턴: 기관/외국인 수급이 중요한 역할을 하는가?
-3. 밸류 패턴: PER/PBR/ROE 등 가치 기준이 있는가?
-4. 섹터 패턴: 특정 섹터에 집중하는가?
-5. 추정 전략: 3줄로 요약
-
-응답은 한국어로, 2000자 이내로 간결하게."""
+①기술(이평선/RSI/거래량) ②수급(기관/외국인) ③밸류(PER/ROE) ④섹터 ⑤전략요약(3줄)
+한국어로 800자 이내."""
 
     try:
         import openai
@@ -535,7 +526,7 @@ def analyze_strategy_with_ai(strategy: str, data: dict) -> str:
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1500,
+            max_tokens=800,
             temperature=0.3,
         )
         return resp.choices[0].message.content

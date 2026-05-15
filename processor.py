@@ -235,43 +235,8 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
             ann_a, ann_l, ann_e = _sanitize_balance_sheet(
                 annual_rec.total_assets, annual_rec.total_liabilities, annual_rec.total_equity)
 
-            # ── Q4 계산값을 DB에 저장 (재발 방지: 다음 조회부터는 저장값 사용) ──
-            # UNIQUE INDEX (stock_code, year, quarter, is_annual) 기준으로 중복 방지
-            try:
-                existing_q4 = (
-                    db.query(models.FinancialData)
-                    .filter(
-                        models.FinancialData.stock_code == stock_code,
-                        models.FinancialData.year       == year,
-                        models.FinancialData.quarter    == 4,
-                        models.FinancialData.is_annual.is_(False),
-                    )
-                    .first()
-                )
-                if existing_q4 is None:
-                    q4_row = models.FinancialData(
-                        stock_code       = stock_code,
-                        year             = year,
-                        quarter          = 4,
-                        is_annual        = False,
-                        report_type      = annual_rec.report_type or 'CFS',
-                        data_source      = 'calculated_q4',
-                        revenue          = round(q4_rev * _M) if q4_rev is not None else None,
-                        operating_profit = round(q4_opf * _M) if q4_opf is not None else None,
-                        net_income       = round(q4_ni  * _M) if q4_ni  is not None else None,
-                        total_assets     = annual_rec.total_assets,
-                        total_liabilities= annual_rec.total_liabilities,
-                        total_equity     = annual_rec.total_equity,
-                        capital_stock    = annual_rec.capital_stock,
-                        eps              = annual_rec.eps,
-                        bps              = annual_rec.bps,
-                        dps              = annual_rec.dps,
-                    )
-                    db.add(q4_row)
-                    db.commit()
-            except Exception:
-                db.rollback()
-            # ────────────────────────────────────────────────────────────────
+            # Q4는 표시 전용 계산값. 조회 API에서 DB 쓰기 금지(락 경합 방지).
+            # Q4 영속화가 필요하면 scripts/batch_compute_q4.py 별도 실행.
 
             result.append({
                 "period":      f"{year}.12",

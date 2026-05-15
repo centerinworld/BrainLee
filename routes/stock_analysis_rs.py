@@ -6,8 +6,9 @@ import sqlite3
 import threading
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 router = APIRouter()
 
@@ -15,7 +16,10 @@ DB_PATH = "/Applications/stock_dashboard/stock.db"
 CACHE_PATH = "/Applications/stock_dashboard/scratch/stock_analysis_rs_cache.json"
 KST = timezone(timedelta(hours=9))
 
-_cache_lock = threading.Lock()
+# Separate locks: one for file I/O only (never held during compute), one for computing status
+_cache_file_lock = threading.Lock()
+_compute_events: dict[str, threading.Event] = {}
+_compute_events_lock = threading.Lock()
 
 
 def _conn() -> sqlite3.Connection:
@@ -64,6 +68,18 @@ def _save_cache(payload: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
     os.replace(tmp, CACHE_PATH)
+
+
+def _check_cache_entry(entry: dict | None, now: datetime, ttl: float) -> dict | None:
+    if not entry:
+        return None
+    try:
+        ts = datetime.fromisoformat(entry.get("generated_at"))
+        if (now - ts).total_seconds() <= ttl and entry.get("payload"):
+            return entry["payload"]
+    except Exception:
+        pass
+    return None
 
 
 def _fetch_sector_maps(conn: sqlite3.Connection) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
@@ -365,21 +381,31 @@ def _compute_52w_high_dashboard() -> dict:
 
 
 def _cached_or_compute(key: str, compute_fn, open_ttl_sec: int = 600, closed_ttl_sec: int = 86400) -> dict:
+    """
+    Double-check locking: 캐시 미스 시 락 밖에서 compute 수행.
+    동시 요청이 와도 락 안에서 직렬화되지 않음.
+    두 스레드가 동시에 compute할 수 있으나, 마지막 write가 이기는 방식으로 허용.
+    """
     now = datetime.now(KST)
     is_open = _is_kr_market_open(now)
     ttl = open_ttl_sec if is_open else closed_ttl_sec
-    with _cache_lock:
-        cache = _load_cache()
-        entry = cache.get(key)
-        if entry:
-            try:
-                ts = datetime.fromisoformat(entry.get("generated_at"))
-                if (now - ts).total_seconds() <= ttl and entry.get("payload"):
-                    return entry["payload"]
-            except Exception:
-                pass
 
-        payload = compute_fn()
+    # 1단계: 락 없이 캐시 조회 (빠른 경로)
+    cache = _load_cache()
+    hit = _check_cache_entry(cache.get(key), now, ttl)
+    if hit is not None:
+        return hit
+
+    # 2단계: 캐시 미스 → 락 밖에서 compute (고비용 연산을 락 안에 넣지 않음)
+    payload = compute_fn()
+
+    # 3단계: 파일 쓰기만 락으로 보호 (double-check)
+    with _cache_file_lock:
+        cache = _load_cache()
+        existing = _check_cache_entry(cache.get(key), now, ttl)
+        if existing is not None:
+            # 다른 스레드가 이미 저장했으면 그 결과 반환
+            return existing
         cache[key] = {
             "generated_at": now.isoformat(timespec="seconds"),
             "ttl_sec": ttl,
@@ -387,20 +413,211 @@ def _cached_or_compute(key: str, compute_fn, open_ttl_sec: int = 600, closed_ttl
             "payload": payload,
         }
         _save_cache(cache)
-        return payload
+    return payload
+
+
+def _get_cached_list(key: str, data_field: str) -> list:
+    """JSON 캐시에서 특정 key의 list를 꺼냄. 없으면 빈 리스트."""
+    cache = _load_cache()
+    entry = cache.get(key)
+    if not entry:
+        return []
+    payload = entry.get("payload") or {}
+    return (payload.get("data") or {}).get(data_field) or []
+
+
+def _apply_rs_filters(rows: list, q: str, sector: str, cap_min: float, market: str, sector_mode: str) -> list:
+    q = q.strip().lower()
+    filtered = []
+    for r in rows:
+        if (r.get("market_cap") or 0) < cap_min:
+            continue
+        if market != "ALL" and r.get("market") != market:
+            continue
+        if sector != "전체":
+            if sector_mode == "major":
+                names = [str(s).strip() for s in (r.get("major_names") or [])]
+            else:
+                names = [str(s).strip() for s in (r.get("mid_names") or [])]
+            if sector not in names:
+                continue
+        if q:
+            if q not in str(r.get("stock_name") or "").lower() and q not in str(r.get("stock_code") or ""):
+                continue
+        filtered.append(r)
+    return filtered
+
+
+# ── API 엔드포인트 ──────────────────────────────────────────────────────
 
 
 @router.get("/dashboard-data")
 def get_rs_dashboard_data():
+    """
+    요약 정보만 반환: benchmarks, sector_rs, metadata.
+    전체 행은 /dashboard-rows 에서 페이지네이션으로 조회.
+    """
     try:
-        return _cached_or_compute("dashboard_data", _compute_rs_dashboard, 600, 86400)
+        payload = _cached_or_compute("dashboard_data", _compute_rs_dashboard, 600, 86400)
+        if not payload.get("success"):
+            return payload
+        data = payload.get("data") or {}
+        rs_list = data.get("rs_list") or []
+        return {
+            "success": True,
+            "data": {
+                "sector_rs": data.get("sector_rs") or [],
+                "sector_rs_mid": data.get("sector_rs_mid") or [],
+                "benchmarks": data.get("benchmarks") or {},
+                "metadata": {**(data.get("metadata") or {}), "total_count": len(rs_list)},
+            },
+        }
     except Exception as e:
-        return {"success": False, "reason": str(e), "data": {"rs_list": [], "sector_rs": [], "sector_rs_mid": [], "benchmarks": {}}}
+        return {"success": False, "reason": str(e), "data": {"sector_rs": [], "benchmarks": {}, "metadata": {}}}
+
+
+@router.get("/dashboard-rows")
+def get_rs_dashboard_rows(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+    sort: str = Query("rs"),
+    q: str = Query(""),
+    sector: str = Query("전체"),
+    cap_min: float = Query(0),
+    market: str = Query("ALL"),
+    sector_mode: str = Query("major"),
+):
+    """서버 측 필터/정렬/페이지네이션. 캐시된 데이터에서 슬라이스만 반환."""
+    try:
+        rows = _get_cached_list("dashboard_data", "rs_list")
+        if not rows:
+            # 캐시 없으면 트리거
+            payload = _cached_or_compute("dashboard_data", _compute_rs_dashboard, 600, 86400)
+            rows = (payload.get("data") or {}).get("rs_list") or []
+
+        filtered = _apply_rs_filters(rows, q, sector, cap_min, market, sector_mode)
+
+        valid_sorts = {"rs", "rs_1m", "rs_3m", "rs_6m", "mmt", "market_cap", "change_rate"}
+        sort_key = sort if sort in valid_sorts else "rs"
+        filtered.sort(key=lambda x: (x.get(sort_key) or 0), reverse=True)
+
+        total = len(filtered)
+        start = (page - 1) * page_size
+        return {
+            "success": True,
+            "data": {
+                "rows": filtered[start:start + page_size],
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": max(1, (total + page_size - 1) // page_size),
+            },
+        }
+    except Exception as e:
+        return {"success": False, "reason": str(e), "data": {"rows": [], "total": 0, "page": 1, "total_pages": 1}}
 
 
 @router.get("/high52-data")
 def get_52w_high_data():
+    """
+    요약 정보만 반환: metadata.
+    전체 행은 /high52-rows 에서 페이지네이션으로 조회.
+    """
     try:
-        return _cached_or_compute("high52_data", _compute_52w_high_dashboard, 600, 86400)
+        payload = _cached_or_compute("high52_data", _compute_52w_high_dashboard, 600, 86400)
+        if not payload.get("success"):
+            return payload
+        data = payload.get("data") or {}
+        return {
+            "success": True,
+            "data": {
+                "metadata": data.get("metadata") or {},
+            },
+        }
     except Exception as e:
-        return {"success": False, "reason": str(e), "data": {"high52_list": [], "metadata": {}}}
+        return {"success": False, "reason": str(e), "data": {"metadata": {}}}
+
+
+@router.get("/high52-rows")
+def get_high52_rows(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+    sort: str = Query("score"),
+    q: str = Query(""),
+    sector: str = Query("전체"),
+    cap_min: float = Query(0),
+    market: str = Query("ALL"),
+    sector_mode: str = Query("major"),
+    high_filter: str = Query("all"),  # all | new | near
+):
+    """서버 측 필터/정렬/페이지네이션. 캐시된 52주 데이터에서 슬라이스만 반환."""
+    try:
+        rows = _get_cached_list("high52_data", "high52_list")
+        if not rows:
+            payload = _cached_or_compute("high52_data", _compute_52w_high_dashboard, 600, 86400)
+            rows = (payload.get("data") or {}).get("high52_list") or []
+
+        # 필터
+        q_low = q.strip().lower()
+        filtered = []
+        for r in rows:
+            if (r.get("market_cap") or 0) < cap_min:
+                continue
+            if market != "ALL" and r.get("market") != market:
+                continue
+            if high_filter == "new" and not r.get("is_new_high"):
+                continue
+            if high_filter == "near" and not (r.get("is_near_high") or r.get("is_new_high")):
+                continue
+            if sector != "전체":
+                names = [str(s).strip() for s in (
+                    (r.get("major_names") or []) if sector_mode == "major" else (r.get("mid_names") or [])
+                )]
+                if sector not in names:
+                    continue
+            if q_low:
+                if q_low not in str(r.get("stock_name") or "").lower() and q_low not in str(r.get("stock_code") or ""):
+                    continue
+            filtered.append(r)
+
+        # 정렬
+        if sort == "gap":
+            filtered.sort(key=lambda x: (x.get("high_gap_pct") or -999), reverse=True)
+        elif sort == "vol":
+            filtered.sort(key=lambda x: (x.get("vol_ratio") or 0), reverse=True)
+        else:
+            filtered.sort(
+                key=lambda x: (x.get("is_new_high", False), x.get("is_near_high", False), x.get("breakout_score") or 0),
+                reverse=True,
+            )
+
+        total = len(filtered)
+        start = (page - 1) * page_size
+        return {
+            "success": True,
+            "data": {
+                "rows": filtered[start:start + page_size],
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": max(1, (total + page_size - 1) // page_size),
+            },
+        }
+    except Exception as e:
+        return {"success": False, "reason": str(e), "data": {"rows": [], "total": 0, "page": 1, "total_pages": 1}}
+
+
+@router.post("/precompute")
+def trigger_precompute():
+    """스케줄러/수동 트리거용: 캐시를 강제 재계산."""
+    try:
+        # 기존 캐시 만료 처리: 강제로 재계산하도록 캐시 비움
+        with _cache_file_lock:
+            _save_cache({})
+        rs = _cached_or_compute("dashboard_data", _compute_rs_dashboard, 600, 86400)
+        h52 = _cached_or_compute("high52_data", _compute_52w_high_dashboard, 600, 86400)
+        rs_count = len((rs.get("data") or {}).get("rs_list") or [])
+        h52_count = len((h52.get("data") or {}).get("high52_list") or [])
+        return {"success": True, "rs_count": rs_count, "high52_count": h52_count}
+    except Exception as e:
+        return {"success": False, "reason": str(e)}
