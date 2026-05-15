@@ -319,32 +319,40 @@ def _cache():
 
 ## 6. 프론트엔드 컴포넌트 (App.jsx)
 
-모든 컴포넌트가 `frontend/src/App.jsx` 단일 파일 (~7949줄).
+**App.jsx = 10,830줄 (분리 완료)**. 4개 최상위 컴포넌트는 별도 파일로 추출됨.
 
-### 컴포넌트 → 탭 키 → 시작 줄번호
+### 별도 파일로 분리된 컴포넌트 (views/)
+| 파일 | 탭 키 |
+|------|-------|
+| `frontend/src/views/MarketIndicatorsView.jsx` | market_indicators |
+| `frontend/src/views/SemiconductorView.jsx` | semiconductor (MarketRadar 내부) |
+| `frontend/src/views/SectorFollowupView.jsx` | sector_followup (MarketRadar 내부) |
+| `frontend/src/views/MarketRadarView.jsx` | market_radar |
+| `frontend/src/utils.js` | API, isKRMarketOpen, isUSMarketOpen 등 공유 유틸 |
+
+### App.jsx 내 컴포넌트 → 탭 키 → 시작 줄번호
 | 컴포넌트 | 탭 키 | 줄번호 |
 |---------|-------|--------|
-| `BuyCandidateView` | buy_candidates | 392 |
-| `WatchlistView` | watchlist | 732 |
-| `MacroDashboard` | macro | 1228 |
-| `StockAnalysis` | analysis | 1678 |
-| `Screener` | screener | 2432 |
-| `PeakView` | trend | 3592 |
-| `PortfolioView` | portfolio | 4056 |
-| `TradeAnalysis2` | hs_trade2 | 4869 |
-| `SectorReports` | reports | 5748 |
-| `SignalSettings` | (settings 내부) | 5851 |
-| `AIInsight` | insight | 6031 |
-| `BacktestView` | backtest | 6084 |
-| `SettingsView` | settings | 6413 |
-| `TelegramMentions` | telegram | 6708 |
-| `SystemStatus` | system | 6951 |
-| `MarketIndicatorsView` | market_indicators | 6978 |
+| `BuyCandidateView` | buy_candidates | 462 |
+| `WatchlistView` | watchlist | 802 |
+| `MacroDashboard` | macro | 1296 |
+| `StockAnalysis` | analysis | 1804 |
+| `Screener` | screener | 3034 |
+| `PeakView` | trend | 4402 |
+| `PortfolioView` | portfolio | 4870 |
+| `TradeAnalysis2` | hs_trade2 | 5771 |
+| `SectorReports` | reports | 7121 |
+| `SignalSettings` | (settings 내부) | 7234 |
+| `AIInsight` | insight | 7414 |
+| `BacktestView` | backtest | 8647 |
+| `SettingsView` | settings | 9446 |
+| `TelegramMentions` | telegram | 9741 |
+| `SystemStatus` | system | 10266 |
 
 ### 네비게이션 구조
 ```
-NAV_ITEMS 정의: 7459줄
-렌더 스위치:    7585줄
+NAV_ITEMS 정의: ~10480줄
+렌더 스위치:    ~10600줄
 
 순서: macro → market_indicators → analysis → screener → trend
     → reports → telegram → backtest → hs_trade → hs_trade2
@@ -507,4 +515,5 @@ same_sector_codes = {r["stock_code"] for r in mc.execute(
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
 | 2026-05-15 | `routes/extra_signals.py` + `ETF_check/routes_etf.py` 워크트리에 추가 및 main.py 등록. ETF 수집실패일(etf_count=0 && etf_amount=0) 건너뜀 로직 추가(extra_signals + routes_etf get_available_dates). 섹터 트렌드 sector_mid→sector_large 기준으로 전체 변경. 수출/계약 공동 표시 동일 sector_large 종목만 필터링. 고용 트렌드 카드에 current_workers(현재 근무인원) 필드 추가(백엔드+프론트). |
+| 2026-05-15 | App.jsx 분리: MarketIndicatorsView/SemiconductorView/SectorFollowupView/MarketRadarView → `frontend/src/views/` 별도 파일. 공유 유틸 → `frontend/src/utils.js`. App.jsx 12,752줄→10,830줄(-1,922줄). CLAUDE.md 섹션6 줄번호 업데이트. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
