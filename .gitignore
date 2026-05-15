@@ -38,5 +38,26 @@ docs_cache/
 
 # Build
 .vite/
+frontend/.vite-cache-new/
 StockAnalysis.app/
 reports/
+
+# Claude Code worktrees (자동 생성, 커밋 불필요)
+.claude/worktrees/
+.fuse_hidden*
+
+# API/Runtime state
+.api_quota_state.json
+*.bak
+*.bak2
+*.bak3
+
+# Scratch / temp
+scratch/
+logs/
+verification/
+config/
+
+# hs_trade_lab 관세청 다운로드 캐시 (대용량 바이너리)
+hs_trade_lab/data/customs_downloads/
+hs_trade_lab/data/daily_refresh_summary.json
