@@ -165,6 +165,11 @@ def collect_all(data_ym: str, test_pages: int = 0) -> dict:
     # Load bizno maps (사업자번호 기반 정확 매칭 우선)
     bizno_map, prefix_map = load_bizno_map()
 
+    # bizr_no가 알려진 종목 코드 세트 — 이름 fallback 매칭에서 제외 대상
+    # 이름매칭으로 자회사 사업장까지 집계되는 이중집계 버그 방지 (2026-05-15 수정)
+    _known_bizno_codes = {code for code, _name in bizno_map.values()}
+    logger.info(f'bizr_no 알려진 종목: {len(_known_bizno_codes)}개 → 이름매칭 fallback 제외')
+
     # Aggregate: stock_code → {total, count}
     aggregated = {}  # code → {'name': str, 'total': int, 'workplaces': int}
 
@@ -201,11 +206,18 @@ def collect_all(data_ym: str, test_pages: int = 0) -> dict:
                         match_method = 'bizno6+name'
 
             # ── 매칭 우선순위 3: 이름 기반 매칭 (fallback) ──
-            if matched_code is None:
+            # ⛔ 주의: bizr_no가 알려진 회사는 이름매칭 제외 (자회사 이중집계 방지)
+            # 예: 삼성물산(028260)의 bizr_no로 이미 일부 사업장 집계 중인데,
+            #      "삼성물산건설부문" 등 다른 bizr_no를 가진 자회사까지 이름매칭으로 추가 집계되면
+            #      실제 인원의 수십배가 집계되는 버그 발생
+            if matched_code is None and saeopja_drno not in bizno_map:
                 wk_clean = _clean(wk_name)
                 matched_len = 0
                 for clean_nm, (code, stock_name) in universe.items():
                     if not clean_nm:
+                        continue
+                    # bizr_no가 알려진 회사는 이름 fallback에서 제외
+                    if code in _known_bizno_codes:
                         continue
                     nm_len = len(clean_nm)
                     if nm_len >= 4:

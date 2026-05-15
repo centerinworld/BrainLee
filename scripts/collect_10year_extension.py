@@ -242,8 +242,8 @@ def fetch_dart(stock_code: str, report_type: str, year: int) -> Optional[dict]:
 
     try:
         import OpenDartReader as _ODR  # type: ignore
-        from config import settings
-        dart = _ODR.OpenDartReader(settings.DART_API_KEY)
+        import config as _cfg
+        dart = _ODR.OpenDartReader(_cfg.DART_API_KEY)
     except Exception as e:
         logger.error(f"OpenDartReader 초기화 실패: {e}")
         return None

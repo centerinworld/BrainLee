@@ -819,41 +819,52 @@ def _send_change_reports(reports: list, now_str: str) -> None:
 
 def _save_analysis_to_db(reports: list) -> None:
     """분석 결과를 DB에 저장 (stockeasy_analysis 테이블)."""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS stockeasy_analysis (
-                id          INTEGER PRIMARY KEY,
-                strategy    TEXT NOT NULL,
-                analyzed_at TEXT NOT NULL,
-                holdings_cnt INTEGER,
-                exits_cnt    INTEGER,
-                analysis_text TEXT,
-                holdings_json TEXT,
-                exits_json    TEXT,
-                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        for r in reports:
-            # holdings에서 stock_data 제거 (DB 용량 절약)
-            h_slim = [{k: v for k, v in h.items() if k != "stock_data"} for h in r.get("holdings", [])]
+    for attempt in range(6):
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_PATH, timeout=60)
+            conn.execute("PRAGMA busy_timeout=120000")
             conn.execute("""
-                INSERT INTO stockeasy_analysis
-                    (strategy, analyzed_at, holdings_cnt, exits_cnt, analysis_text, holdings_json, exits_json)
-                VALUES (?,?,?,?,?,?,?)
-            """, (
-                r["strategy"], now,
-                r["holdings_count"], r["exits_count"],
-                r["analysis"],
-                json.dumps(h_slim, ensure_ascii=False),
-                json.dumps(r.get("exits", []), ensure_ascii=False),
-            ))
-        conn.commit()
-        conn.close()
-        logger.info(f"[DB] 분석 결과 저장 완료 ({len(reports)}건)")
-    except Exception as e:
-        logger.error(f"[DB] 저장 실패: {e}")
+                CREATE TABLE IF NOT EXISTS stockeasy_analysis (
+                    id          INTEGER PRIMARY KEY,
+                    strategy    TEXT NOT NULL,
+                    analyzed_at TEXT NOT NULL,
+                    holdings_cnt INTEGER,
+                    exits_cnt    INTEGER,
+                    analysis_text TEXT,
+                    holdings_json TEXT,
+                    exits_json    TEXT,
+                    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for r in reports:
+                # holdings에서 stock_data 제거 (DB 용량 절약)
+                h_slim = [{k: v for k, v in h.items() if k != "stock_data"} for h in r.get("holdings", [])]
+                conn.execute("""
+                    INSERT INTO stockeasy_analysis
+                        (strategy, analyzed_at, holdings_cnt, exits_cnt, analysis_text, holdings_json, exits_json)
+                    VALUES (?,?,?,?,?,?,?)
+                """, (
+                    r["strategy"], now,
+                    r["holdings_count"], r["exits_count"],
+                    r["analysis"],
+                    json.dumps(h_slim, ensure_ascii=False),
+                    json.dumps(r.get("exits", []), ensure_ascii=False),
+                ))
+            conn.commit()
+            logger.info(f"[DB] 분석 결과 저장 완료 ({len(reports)}건)")
+            return
+        except Exception as e:
+            if "locked" in str(e).lower() and attempt < 5:
+                logger.warning(f"[DB] 저장 락 충돌 재시도 {attempt+1}/6")
+                time.sleep(0.7 * (2 ** attempt))
+                continue
+            logger.error(f"[DB] 저장 실패: {e}")
+            return
+        finally:
+            if conn:
+                conn.close()
 
 
 # ──────────────────────────────────────────────────────────────

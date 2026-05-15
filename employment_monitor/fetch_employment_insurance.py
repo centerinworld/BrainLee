@@ -171,12 +171,17 @@ def test_api() -> bool:
 # ─── 메인 수집 루프 ───────────────────────────────────────────────────────────
 
 def get_target_companies(conn: sqlite3.Connection, stock_db_conn: sqlite3.Connection):
-    """수집 대상 기업 목록: NPS 상장 기업 + stock_universe 기준."""
+    """수집 대상 기업 목록: 코스피/코스닥 보통주만 (ETF/ETN/리츠/스팩 제외).
+
+    kind_stkcert_nm='보통주' 필터로 ETF·ETN·리츠·스팩·우선주 등을 원천 제외.
+    (stock_type 컬럼은 ETF들이 NULL로 저장돼 신뢰도 낮음 — kind_stkcert_nm 사용)
+    """
     rows = stock_db_conn.execute("""
         SELECT DISTINCT stock_code, stock_name
         FROM stock_universe
         WHERE market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
-          AND COALESCE(stock_type, '보통주') = '보통주'
+          AND kind_stkcert_nm = '보통주'
+          AND COALESCE(secugrp_nm, '주권') NOT IN ('외국주권', '주식예탁증권')
           AND LENGTH(stock_code) = 6
         ORDER BY stock_code
     """).fetchall()

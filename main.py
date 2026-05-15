@@ -48,6 +48,7 @@ from routes.ingest         import router as _ingest_router
 from routes.portfolio          import router as _portfolio_router
 from routes.market_indicators  import router as _market_indicators_router
 from routes.extra_signals      import router as _extra_signals_router
+from routes.stock_analysis_rs  import router as _stock_analysis_rs_router
 import sys as _sys
 _sys.path.insert(0, "/Applications/stock_dashboard/ETF_check")
 from routes_etf                import router as _etf_check_router
@@ -62,6 +63,7 @@ app.include_router(_ingest_router,             prefix="/api/ingest",            
 app.include_router(_portfolio_router,          prefix="/api/portfolio",          tags=["portfolio"])
 app.include_router(_market_indicators_router,  prefix="/api/market-indicators",  tags=["market-indicators"])
 app.include_router(_extra_signals_router,      prefix="/api/extra-signals",      tags=["extra-signals"])
+app.include_router(_stock_analysis_rs_router,  prefix="/api/stock-analysis-rs",  tags=["stock-analysis-rs"])
 app.include_router(_etf_check_router)  # prefix: /api/etf-check (router 내부 정의)
 
 
@@ -1506,9 +1508,9 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
 
     # ── 재무 DB 확인 → 없으면 동기 수집 ─────────────────────────
     data = db.query(models.FinancialData).filter(
-        models.FinancialData.stock_code == stock_code
-    ).order_by(models.FinancialData.year.desc(),
-               models.FinancialData.quarter.desc()).first()
+        models.FinancialData.stock_code == stock_code,
+        models.FinancialData.is_annual.is_(True),
+    ).order_by(models.FinancialData.year.desc()).first()
 
     # 재무 데이터 없으면 그대로 진행 (월간 배치 또는 수동 refresh로만 수집)
 
@@ -1534,23 +1536,63 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
                 _th.Thread(target=_bg_ondemand, args=(stock_code,), daemon=True).start()
                 is_col = True
 
-    # ── PBR/PER 캐시 우선, 없으면 백그라운드 스크래핑 (즉시 응답 우선) ─
+    # ── PBR/PER: DB에서 직접 계산 (Naver 스크래핑 불필요) ─────────────
+    # 우선순위: ①현재가×EPS/BPS 직접계산 → ②stock_universe 월간배치값 → ③캐시(구Naver)
     val = _get_cached_valuation(stock_code)
     if not val and is_kr:
-        # 동기 스크래핑 제거 → 백그라운드에서 수집 후 다음 요청부터 캐시 히트
-        def _bg_scrape(code):
-            try:
-                v = _scrape_naver(code)
-                if v.get("per") is not None or v.get("pbr") is not None:
-                    v["cached_at"] = _tm.time()
-                    _valuation_cache[code] = v
-                    logger.info(f"[PER/PBR] {code} 네이버 스크래핑 완료 (백그라운드)")
-            finally:
-                _valuation_cache.pop(f"_scraping_{code}", None)
-        if not _valuation_cache.get(f"_scraping_{stock_code}"):
-            _valuation_cache[f"_scraping_{stock_code}"] = True
-            _th.Thread(target=_bg_scrape, args=(stock_code,), daemon=True).start()
-        val = {}  # 이번 응답엔 null, 다음 요청부터 캐시 히트
+        import sqlite3 as _sl3
+        try:
+            _conn_v = _sl3.connect("stock.db")
+            _conn_v.row_factory = _sl3.Row
+            # 현재주가
+            _pr = _conn_v.execute(
+                "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
+                (stock_code,)
+            ).fetchone()
+            _cur_price = _pr["close"] if _pr else None
+            # 최근 연간 EPS/BPS (FnGuide 수집분 우선, 그 다음 DART)
+            _fin = _conn_v.execute(
+                """SELECT eps, bps FROM financial_data
+                   WHERE stock_code=? AND is_annual=1 AND year >= 2020
+                   ORDER BY year DESC, (CASE WHEN data_source='fnguide' THEN 0 ELSE 1 END) ASC
+                   LIMIT 1""",
+                (stock_code,)
+            ).fetchone()
+            # stock_universe fallback (월간배치 계산값)
+            _su = _conn_v.execute(
+                "SELECT per, pbr, eps FROM stock_universe WHERE stock_code=?",
+                (stock_code,)
+            ).fetchone()
+            _conn_v.close()
+
+            per = pbr = trailing_eps = None
+            src = None
+
+            if _cur_price and _fin:
+                _eps = _fin["eps"] if _fin["eps"] and _fin["eps"] != 0 else None
+                _bps = _fin["bps"] if _fin["bps"] and _fin["bps"] != 0 else None
+                if _eps and _eps > 0:
+                    per = round(_cur_price / _eps, 1)
+                if _bps and _bps > 0:
+                    pbr = round(_cur_price / _bps, 2)
+                trailing_eps = _eps
+                if per or pbr:
+                    src = "DB(price×EPS/BPS)"
+
+            # fallback: stock_universe 월간배치값
+            if (per is None or pbr is None) and _su:
+                if per is None and _su["per"]:
+                    per = _su["per"]
+                if pbr is None and _su["pbr"]:
+                    pbr = _su["pbr"]
+                if trailing_eps is None and _su["eps"]:
+                    trailing_eps = _su["eps"]
+                src = src or "DB(stock_universe)"
+
+            val = {"per": per, "pbr": pbr, "trailing_eps": trailing_eps,
+                   "forward_per": None, "source": src}
+        except Exception:
+            val = {}
 
     # ── 52주 최고/최저가 (price_history 최근 252 거래일) ─────────────
     high52 = low52 = None
@@ -1839,4 +1881,3 @@ def get_db_stats(db: Session = Depends(get_db)):
         "db_path": "Applications/stock_dashboard/stock.db",
         "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
-

@@ -253,7 +253,8 @@ def _days(txt: str) -> int:
 def _parse_entry_date(txt: str) -> str:
     """
     'MM/DD' → 'YYYY-MM-DD' (연도를 현재 연도에서 동적으로 결정).
-    12월에 파싱된 01/03는 내년으로 처리.
+    - 12월에 1~3월 날짜가 나오면 내년으로 처리 (신규 편입 예정)
+    - 파싱된 날짜가 오늘보다 미래(7일 초과)면 작년으로 처리 (과거 편입일)
     """
     t = str(txt).strip()
     if "/" in t:
@@ -263,9 +264,13 @@ def _parse_entry_date(txt: str) -> str:
                 mm, dd = int(parts[0]), int(parts[1])
                 today  = date.today()
                 year   = today.year
-                # 12월에 1~3월 날짜가 나오면 내년으로 처리
+                # 12월에 1~3월 날짜 → 내년 편입 예정
                 if today.month == 12 and mm <= 3:
                     year += 1
+                candidate = date(year, mm, dd)
+                # 파싱 결과가 오늘보다 7일 이상 미래 → 작년 날짜
+                if (candidate - today).days > 7:
+                    year -= 1
                 return f"{year}-{mm:02d}-{dd:02d}"
             except Exception:
                 pass
@@ -433,6 +438,7 @@ def run_once(session: StockeasySession, strategy: str) -> None:
     db_all         = api_get(f"/api/trend/holdings?strategy={strategy}") or []
     db_active      = [h for h in db_all if h.get("is_active")]
     db_active_names = {h["stock_name"] for h in db_active}
+    db_all_names    = {h["stock_name"] for h in db_all}  # 활성+비활성 전체
     site_hold_names = {h["name"] for h in site_holdings}
 
     logger.info(
@@ -479,11 +485,21 @@ def run_once(session: StockeasySession, strategy: str) -> None:
             new_why = f"어제편입+{hold_days}일(장마감후편입)"
 
         if not is_new:
-            logger.debug(
-                f"[스킵] {name} hold={hold_days}일 entry={entry_date} "
-                f"(오늘={today_str}) — 신규 아님"
-            )
-            continue
+            # 복구 편입: DB에 한 번도 없었던 종목은 hold_days 무관하게 동기화
+            # (봇 다운·세션 만료 등으로 편입 감지 윈도우를 놓친 경우)
+            if name not in db_all_names:
+                is_new  = True
+                new_why = f"복구편입(DB누락+{hold_days}일보유)"
+                logger.warning(
+                    f"[복구편입] {strategy_name} / {name} — DB에 이력 없음 "
+                    f"hold={hold_days}일 entry={entry_date} → 강제 편입"
+                )
+            else:
+                logger.debug(
+                    f"[스킵] {name} hold={hold_days}일 entry={entry_date} "
+                    f"(오늘={today_str}) — 신규 아님"
+                )
+                continue
 
         logger.info(f"[신규감지] ★ {strategy_name} / {name} — {new_why}")
 

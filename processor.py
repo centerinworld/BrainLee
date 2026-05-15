@@ -122,7 +122,34 @@ def get_chart_data(db: Session, stock_code: str, days: int = 30):
     ]
 
 
+def _calc_eps(eps, net_income, shares_issued):
+    """EPS가 0.0이거나 None인데 net_income이 실제값이면 계산으로 보완."""
+    if eps is not None and eps != 0.0:
+        return eps
+    if net_income is not None and net_income != 0 and shares_issued and shares_issued > 0:
+        return round(net_income / shares_issued, 2)
+    return eps
+
+
 def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual"):
+    # 주식수 + stock_collection_config 로드
+    import sqlite3 as _sl3
+    _shares_issued = None
+    _preferred_report_type = None
+    try:
+        _conn = _sl3.connect("stock.db")
+        _su = _conn.execute(
+            "SELECT shares_issued FROM stock_universe WHERE stock_code=?", (stock_code,)
+        ).fetchone()
+        _shares_issued = _su[0] if _su and _su[0] else None
+        _cfg = _conn.execute(
+            "SELECT config_value FROM stock_collection_config WHERE stock_code=? AND config_key='preferred_report_type'",
+            (stock_code,)
+        ).fetchone()
+        _preferred_report_type = _cfg[0] if _cfg else None
+        _conn.close()
+    except Exception:
+        pass
     if data_type == "quarter":
         data = (
             db.query(models.FinancialData)
@@ -154,7 +181,8 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
                 "liabilities": _to_uk(q_liab),
                 "equity":      _to_uk(q_equity),
                 "capital":     _to_uk(d.capital_stock),
-                "eps":         d.eps, "bps": d.bps, "dps": d.dps,
+                "eps":         _calc_eps(d.eps, d.net_income, _shares_issued),
+                "bps": d.bps, "dps": d.dps,
             })
         result.reverse()
 
@@ -197,6 +225,8 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
             ni_a   = _to_uk(annual_rec.net_income)
             rev123 = _saf('revenue');  opf123 = _saf('op_profit');  ni123 = _saf('net_income')
 
+            # 억원 단위로 계산 후 원 단위로 역산 (DB 저장용)
+            _M = 1e8  # 억원 → 원
             q4_rev = (rev_a - rev123) if (rev_a is not None and rev123 is not None) else rev_a
             q4_opf = (opf_a - opf123) if (opf_a is not None and opf123 is not None) else opf_a
             q4_ni  = (ni_a  - ni123)  if (ni_a  is not None and ni123  is not None) else ni_a
@@ -204,6 +234,44 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
             opm = (q4_opf / q4_rev * 100) if (q4_rev and q4_rev != 0 and q4_opf is not None) else 0.0
             ann_a, ann_l, ann_e = _sanitize_balance_sheet(
                 annual_rec.total_assets, annual_rec.total_liabilities, annual_rec.total_equity)
+
+            # ── Q4 계산값을 DB에 저장 (재발 방지: 다음 조회부터는 저장값 사용) ──
+            # UNIQUE INDEX (stock_code, year, quarter, is_annual) 기준으로 중복 방지
+            try:
+                existing_q4 = (
+                    db.query(models.FinancialData)
+                    .filter(
+                        models.FinancialData.stock_code == stock_code,
+                        models.FinancialData.year       == year,
+                        models.FinancialData.quarter    == 4,
+                        models.FinancialData.is_annual.is_(False),
+                    )
+                    .first()
+                )
+                if existing_q4 is None:
+                    q4_row = models.FinancialData(
+                        stock_code       = stock_code,
+                        year             = year,
+                        quarter          = 4,
+                        is_annual        = False,
+                        report_type      = annual_rec.report_type or 'CFS',
+                        data_source      = 'calculated_q4',
+                        revenue          = round(q4_rev * _M) if q4_rev is not None else None,
+                        operating_profit = round(q4_opf * _M) if q4_opf is not None else None,
+                        net_income       = round(q4_ni  * _M) if q4_ni  is not None else None,
+                        total_assets     = annual_rec.total_assets,
+                        total_liabilities= annual_rec.total_liabilities,
+                        total_equity     = annual_rec.total_equity,
+                        capital_stock    = annual_rec.capital_stock,
+                        eps              = annual_rec.eps,
+                        bps              = annual_rec.bps,
+                        dps              = annual_rec.dps,
+                    )
+                    db.add(q4_row)
+                    db.commit()
+            except Exception:
+                db.rollback()
+            # ────────────────────────────────────────────────────────────────
 
             result.append({
                 "period":      f"{year}.12",
@@ -215,7 +283,7 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
                 "liabilities": _to_uk(ann_l),
                 "equity":      _to_uk(ann_e),
                 "capital":     _to_uk(annual_rec.capital_stock),
-                "eps":         annual_rec.eps,
+                "eps":         _calc_eps(annual_rec.eps, annual_rec.net_income, _shares_issued),
                 "bps":         annual_rec.bps,
                 "dps":         annual_rec.dps,
             })
@@ -237,13 +305,19 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
         .order_by(models.FinancialData.year.desc(), models.FinancialData.revenue.desc())
         .limit(10).all()
     )
-    # 같은 연도 중복 레코드 병합 — revenue 최대 row를 기준으로 하되 NULL 필드는 다른 row에서 보완
+    # preferred_report_type(지주사=OFS 등)이 설정된 경우 해당 타입 우선 선택
+    if _preferred_report_type:
+        annual_data_raw = sorted(
+            annual_data_raw,
+            key=lambda x: (-x.year, 0 if x.report_type == _preferred_report_type else 1, -(x.revenue or 0))
+        )
+    # 같은 연도 첫 번째 레코드 선택 (revenue desc 또는 preferred_report_type 우선)
     _year_recs: dict = {}
     for _d in annual_data_raw:
         if _d.year not in _year_recs:
             _year_recs[_d.year] = _d
         else:
-            # 이미 있는 record의 NULL 필드를 현재 row로 채움
+            # NULL 필드는 다른 row에서 보완 (preferred 타입 row는 이미 우선 선택됨)
             _base = _year_recs[_d.year]
             for _col in ('total_liabilities', 'capital_stock', 'eps', 'bps', 'dps',
                          'total_assets', 'total_equity', 'roe', 'operating_profit', 'net_income'):
@@ -281,7 +355,8 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
                 "liabilities": _to_uk(fb_liab),
                 "equity":      _to_uk(fb_equity),
                 "capital":     _to_uk(d.capital_stock),
-                "eps":         d.eps, "bps": d.bps, "dps": d.dps,
+                "eps":         _calc_eps(d.eps, d.net_income, _shares_issued),
+                "bps": d.bps, "dps": d.dps,
             })
         result.reverse()
         for r in result:
@@ -302,8 +377,9 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
             models.FinancialData.is_annual.is_(False),
             models.FinancialData.revenue > 0,
         ).order_by(models.FinancialData.revenue.desc()).first()
-        if max_q_rev and d.revenue < max_q_rev.revenue * 1.8:
-            # 연간값이 가장 큰 분기의 1.8배 미만 → 잘못 저장된 것으로 판단
+        if max_q_rev and d.revenue <= max_q_rev.revenue * 1.05:
+            # 연간값이 분기 최대값과 거의 같으면(5% 이내)만 오류로 판단
+            # 1.8배 기준은 삼천리·한국전력 등 계절성 기업을 오판함
             years_to_fix.add(d.year)
 
     # 보정이 필요한 연도의 분기 데이터를 한 번에 로드
@@ -364,7 +440,8 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
             "liabilities": _to_uk(liab),
             "equity":      _to_uk(equity),
             "capital":     _to_uk(cap),
-            "eps":         eps, "bps": bps, "dps": dps,
+            "eps":         _calc_eps(eps, use_ni, _shares_issued),
+            "bps": bps, "dps": dps,
         })
     result.reverse()
     for r in result:

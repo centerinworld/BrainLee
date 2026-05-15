@@ -2924,8 +2924,21 @@ def calc_stockeasy_trend_candidates(conn=None) -> list:
                     elif rev_yoy >= 5:
                         score += 1; reasons.append(f'매출 YoY +{rev_yoy:.0f}%')
 
+                # 단기 과열 추격 방지:
+                # 소형주가 단기간에 저항 대비 과도하게 이격된 상태(+30% 이상)에서
+                # RSI/거래량이 과열이면 편입 후 빠른 되돌림 리스크가 커서 제외한다.
+                overheat_chase = (
+                    mktcap < 500_000_000_000
+                    and resistance_gap >= 30
+                    and (
+                        rsi >= 82
+                        or vol_ratio >= 4.5
+                        or (stoch_k >= 90 and stoch_d >= 85)
+                    )
+                )
+
                 # 스탁이지 Peak 편출 사례는 대부분 MA20 하향 이탈 후 모멘텀이 식는다.
-                if curr < ma20 or curr < ma60 or from_high < -50 or score < 28:
+                if overheat_chase or curr < ma20 or curr < ma60 or from_high < -50 or score < 28:
                     continue
 
                 label = '강력매수' if score >= 42 else '매수' if score >= 34 else '관심'

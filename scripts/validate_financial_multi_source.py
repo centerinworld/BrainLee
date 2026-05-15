@@ -30,6 +30,7 @@ import json
 import logging
 import re
 import sqlite3
+import time
 import sys
 from io import StringIO
 from pathlib import Path
@@ -62,7 +63,21 @@ FNGUIDE_HEADERS = {
 def _conn() -> sqlite3.Connection:
     c = sqlite3.connect(DB_PATH, timeout=30)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA busy_timeout=120000")
     return c
+
+
+def _execute_with_retry(conn: sqlite3.Connection, sql: str, params: tuple | list, retries: int = 6) -> None:
+    """동시 배치 실행 중 sqlite lock이 발생할 수 있어 지수 백오프로 재시도."""
+    for i in range(retries):
+        try:
+            conn.execute(sql, params)
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() or i == retries - 1:
+                raise
+            time.sleep(0.5 * (2 ** i))
 
 
 def _flatten(c) -> str:
@@ -379,7 +394,7 @@ def run(
             if updates and backfill:
                 sets = ", ".join(f"{k}=?" for k in updates)
                 vals = list(updates.values()) + [r["id"]]
-                conn.execute(f"UPDATE financial_data SET {sets} WHERE id=?", vals)
+                _execute_with_retry(conn, f"UPDATE financial_data SET {sets} WHERE id=?", vals)
 
     if backfill:
         conn.commit()

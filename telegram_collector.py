@@ -154,6 +154,67 @@ def classify_sector(text: str) -> str:
         return max(scores, key=scores.get)
     return ""
 
+
+def _normalize_kor_alnum(text: str) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", (text or "")).upper()
+
+
+def _load_stock_name_candidates(conn) -> list[tuple[str, str, str]]:
+    rows = conn.execute(
+        """
+        WITH names AS (
+            SELECT stock_code, stock_name, market
+            FROM stock_universe
+            WHERE stock_code IS NOT NULL AND stock_name IS NOT NULL
+              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
+              AND COALESCE(stock_type, '보통주')='보통주'
+            UNION
+            SELECT stock_code, stock_name, market
+            FROM stock_meta
+            WHERE stock_code IS NOT NULL AND stock_name IS NOT NULL
+              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND UPPER(COALESCE(market, '')) IN ('KOSPI', 'KOSDAQ')
+        )
+        SELECT stock_code, stock_name, MAX(market)
+        FROM names
+        GROUP BY stock_code, stock_name
+        """
+    ).fetchall()
+    out = []
+    for code, name, _market in rows:
+        code = str(code).zfill(6)
+        name = str(name or "").strip()
+        norm = _normalize_kor_alnum(name)
+        if len(norm) < 2:
+            continue
+        out.append((code, name, norm))
+    # 긴 이름을 우선 매칭 (예: 신세계인터내셔날 > 신세계)
+    out.sort(key=lambda x: len(x[2]), reverse=True)
+    return out
+
+
+def _resolve_stock_from_text(text: str, candidates: list[tuple[str, str, str]]) -> tuple[str, str]:
+    norm = _normalize_kor_alnum(text)
+    if not norm:
+        return "", ""
+    best_score = -1e9
+    best = ("", "")
+    for code, name, norm_name in candidates:
+        if not norm_name:
+            continue
+        pos = norm.find(norm_name)
+        if pos < 0:
+            continue
+        score = (200 - min(pos, 200)) + (len(norm_name) * 1.5)
+        # 리포트 파일명 후반 작성자(OO증권) 오탐 방지
+        if name.endswith("증권") and pos > 24:
+            score -= 120
+        if score > best_score:
+            best_score = score
+            best = (code, name)
+    return best
+
 # ══════════════════════════════════════════════════════════════════
 # 종목코드 추출
 # ══════════════════════════════════════════════════════════════════
@@ -277,6 +338,7 @@ async def collect_channel(client, conn, channel_id: str, limit: int = 500,
     from telethon.tl.types import DocumentAttributeFilename
     saved = 0
     skipped = 0
+    stock_candidates = _load_stock_name_candidates(conn)
 
     # 날짜 기준 수집 - Telethon offset_date는 해당날짜 이전 메시지 반환
     # since_days는 min_date로 사용해서 직접 필터링
@@ -333,11 +395,17 @@ async def collect_channel(client, conn, channel_id: str, limit: int = 500,
             file_path = REPORT_DIR / saved_name
 
             # 종목코드 + 섹터 추출
-            code, name = extract_stock_code(orig_name + " " + caption)
+            full_text = f"{orig_name} {caption}"
+            code, name = extract_stock_code(full_text)
+            # 6자리 코드가 없더라도 파일명/캡션에서 종목명을 찾아 종목 리포트로 우선 매핑
+            if not code:
+                mapped_code, mapped_name = _resolve_stock_from_text(full_text, stock_candidates)
+                if mapped_code:
+                    code, name = mapped_code, mapped_name
             # 종목코드가 없으면 섹터 보고서로 분류
             sector = ""
             if not code:
-                sector = classify_sector(orig_name + " " + caption)
+                sector = classify_sector(full_text)
 
             # 파일 다운로드
             if not file_path.exists():

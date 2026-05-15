@@ -29,6 +29,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timedelta, date
+from pathlib import Path
 from typing import Callable
 
 import config
@@ -172,6 +173,7 @@ class CollectionScheduler:
             ("FnGuide재무월간", self._loop_fnguide_financial_monthly),  # ★ 매월 3일 05:00 연결/별도 재무제표 전종목
             ("수출입가집계",   self._loop_trade_provisional),          # ★ 매주 월요일 06:00 수출입 10일 가집계 수집
             ("공시DB배치",     self._loop_disclosure_db_batch),        # ★ 매주 일요일 02:00 DART 전종목 공시 DB 저장
+            ("KRX투자자수급",  self._loop_krx_investor_playwright),    # ★ 매일 18:10 KRX 전종목 기관/외국인 순매수(Playwright)
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -1975,18 +1977,22 @@ class CollectionScheduler:
             try:
                 import sqlite3 as _sl
                 _c = _sl.connect(str(Path(__file__).resolve().parent / "stock.db"))
-                unvalidated = _c.execute("""
+                row = _c.execute("""
                     SELECT COUNT(DISTINCT su.stock_code)
                     FROM stock_universe su
-                    LEFT JOIN financial_source_snapshot fss
-                      ON fss.stock_code=su.stock_code AND fss.data_source='fnguide'
+                    LEFT JOIN (
+                        SELECT stock_code, MAX(fetched_at) AS last_fetched
+                        FROM financial_source_snapshot
+                        WHERE data_source='fnguide'
+                        GROUP BY stock_code
+                    ) fss ON fss.stock_code = su.stock_code
                     WHERE su.market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
                       AND su.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
-                    GROUP BY 1 HAVING MAX(fss.fetched_at) IS NULL
-                      OR MAX(fss.fetched_at) < datetime('now','-7 days')
+                      AND (fss.last_fetched IS NULL
+                           OR fss.last_fetched < datetime('now','-7 days'))
                 """).fetchone()
                 _c.close()
-                backlog = (unvalidated[0] if unvalidated else 0)
+                backlog = (row[0] if row else 0)
             except Exception:
                 backlog = 9999  # 알 수 없으면 백로그 모드 유지
 
@@ -2049,6 +2055,23 @@ class CollectionScheduler:
                 logger.error(f"[FnGuide재무] CFS 오류: {result.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[FnGuide재무] CFS 예외: {e}")
+
+        # FnGuide 수집 후 financial_data 자동 동기화 (스냅샷 → DB)
+        logger.info("[FnGuide재무] 동기화 실행 (fnguide_integrity_sync.py --all)")
+        try:
+            sync_script = str(Path(__file__).resolve().parent / "scripts" / "fnguide_integrity_sync.py")
+            sync_result = subprocess.run(
+                [sys.executable, sync_script, "--all"],
+                capture_output=True, text=True, timeout=1800,
+                cwd=str(Path(__file__).resolve().parent),
+            )
+            if sync_result.returncode == 0:
+                last = sync_result.stdout.strip().split("\n")[-1]
+                logger.info(f"[FnGuide재무] 동기화 완료: {last}")
+            else:
+                logger.error(f"[FnGuide재무] 동기화 오류: {sync_result.stderr[-200:]}")
+        except Exception as e:
+            logger.error(f"[FnGuide재무] 동기화 예외: {e}")
 
         # OFS(별도재무제표): 분기 15일에만 추가 실행
         if datetime.now().day == 15:
@@ -2152,3 +2175,41 @@ class CollectionScheduler:
                 logger.error(f"[공시DB배치] 오류: {r.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[공시DB배치] 예외: {e}")
+
+    # ── KRX 전종목 투자자 수급 — Playwright 브라우저 (매일 18:10 영업일) ──
+    def _loop_krx_investor_playwright(self) -> None:
+        """매일 18:10 영업일 — KRX 전종목 기관/외국인/개인 순매수 금액 수집.
+
+        requests 방식은 KRX CSV 다운로드 보안에 막혀 실패.
+        Playwright(실 브라우저)로 세션 유지 → OTP 발급 → CSV 저장.
+        저장: price_history.inst_net_buy_amt / frn_net_buy_amt / ind_net_buy_amt (백만원)
+        """
+        logger.info("[KRX투자자수급] Playwright 루프 시작")
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            self._wait_until(18, 10, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            try:
+                _run_job_safe("KRX투자자수급", self._job_krx_investor_playwright)
+            except Exception as e:
+                logger.error(f"[KRX투자자수급] 잡 오류: {e}")
+            self._wait_secs(23 * 3600)
+        logger.info("[KRX투자자수급] Playwright 루프 종료")
+
+    def _job_krx_investor_playwright(self) -> None:
+        """KRX Playwright 수급 수집 실행."""
+        import subprocess, sys
+        script = str(Path(__file__).resolve().parent / "scripts" / "collect_krx_investor_playwright.py")
+        today = date.today().strftime("%Y%m%d")
+        try:
+            r = subprocess.run(
+                [sys.executable, script, "--date", today],
+                capture_output=True, text=True, timeout=600,
+                cwd=str(Path(__file__).resolve().parent),
+            )
+            logger.info(f"[KRX투자자수급] {today} 완료: {r.stdout[-200:]}")
+            if r.returncode != 0:
+                logger.error(f"[KRX투자자수급] 오류: {r.stderr[-300:]}")
+        except Exception as e:
+            logger.error(f"[KRX투자자수급] 예외: {e}")

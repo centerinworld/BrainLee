@@ -14,6 +14,9 @@ EXPORT_DIR = ROOT_DIR / "market_radar_exports"
 
 FLOW_RE = re.compile(r"^\s*(수출|수입)\s*\(([^)]*)\)")
 COMPANY_SPLIT_RE = re.compile(r"[\/,·ㆍ]| 및 | 와 | 과 ")
+# Filters domain-specific labels that should not match general posts
+GENERIC_SHIP_ENGINE_RE = re.compile(r"선박추진용|디젤.세미디젤|압축점화식")
+GENERIC_AIRCRAFT_RE = re.compile(r"비행기의 부분품|헬리콥터의 부분품")
 
 COMPANY_ALIASES = {
     "Sk하이닉스": "SK하이닉스",
@@ -42,20 +45,31 @@ BAD_COMPANY_TOKENS = {
 BAD_HS_LABELS = {
     "",
     "기타",
+    "수입",
+    "수출",
+    "수입 수입",
+    "수출 수출",
+    "수입데이터",
+    "수출데이터",
 }
 
 HS_ALIASES = {
+    # 메모리 반도체
     "메모리반도체": [("854232", "전자집적회로: 메모리"), ("8523511000", "SSD")],
+    "메모리 반도체": [("854232", "전자집적회로: 메모리"), ("8523511000", "SSD")],
     "디램": [("854232", "전자집적회로: 메모리")],
     "디램모듈": [("854232", "전자집적회로: 메모리")],
     "MCP": [("854232", "전자집적회로: 메모리")],
     "MCP (복합구조칩 집적회로)": [("854232", "전자집적회로: 메모리")],
     "복합구조칩 집적회로": [("854232", "전자집적회로: 메모리")],
+    # 디스플레이
     "MLCC": [("8532240000", "세라믹 유전체의 것(다층)")],
     "OLED TV": [("8528725000", "유기발광다이오드(오엘이디) 방식")],
     "OLED 패널": [("8524911000", "유기발광다이오드 표시 모듈")],
     "평판디스플레이 텔레비전용": [("8528725000", "유기발광다이오드(오엘이디) 방식")],
     "평판디스플레이 모니터용": [("8528521000", "평판디스플레이 모니터")],
+    "평판디스플레이 모듈": [("8524911000", "유기발광다이오드 표시 모듈"), ("8524912000", "액정표시 모듈")],
+    # 반도체 제조 장비
     "스크러버": [("8421219020", "반도체 제조용 여과기나 청정기")],
     "스크러버 액체용•기체용 여과 및 청정기": [("8421219020", "반도체 제조용 여과기나 청정기")],
     "인터페이스보드 프로브 카드": [("8534009000", "그 밖의 인쇄회로")],
@@ -67,12 +81,54 @@ HS_ALIASES = {
     "연마제": [("3405901000", "반도체 웨이퍼 연마용 조제품")],
     "연마제 (CMP공정에 쓰이는 소재)": [("3405901000", "반도체 웨이퍼 연마용 조제품")],
     "반도체 제조용 장비": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "반도체 전공정 장비": [("848620", "반도체 웨이퍼 제조용 기기")],
     "반도체 웨이퍼용 증착장비": [("848620", "반도체 웨이퍼 제조용 기기")],
     "반도체 웨이퍼 습식 식각 / 세척 장비": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "건식식각장비": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "고압 수소 열처리 장비": [("848620", "반도체 웨이퍼 제조용 기기")],
     "급속열처리장비": [("848620", "반도체 웨이퍼 제조용 기기")],
     "급속열처리장비(Rapid Thermal Processing, RTP)": [("848620", "반도체 웨이퍼 제조용 기기")],
     "반도체 웨이퍼, 소자의 측정, 검사용 장비": [("9031809070", "반도체 패턴결함 검사장비")],
     "3차원 검사장비, 모듈": [("9031809091", "반도체 검사장비")],
+    "핸들러": [("9031809091", "반도체 검사장비")],
+    # 트랙터
+    "소형 트랙터": [("8701912000", "농업용 트랙터(18kW이하)"), ("8701101000", "차축이 하나인 트랙터")],
+    "중대형 트랙터": [("8701922000", "농업용 트랙터(18kW~37kW)"), ("8701932000", "농업용 트랙터(37kW~75kW)")],
+    "농업용 트랙터": [("8701912000", "농업용 트랙터(18kW이하)"), ("8701922000", "농업용 트랙터(18kW~37kW)")],
+    # 진단·의료기기
+    "면역진단기기": [("9027509000", "기타 물리·화학 분석기기"), ("3822191000", "면역물품")],
+    "면역진단카트리지": [("3822191000", "면역물품")],
+    # 변압기
+    "초고압 변압기": [("8504231000", "초고압 변압기(10,000~100,000kVA)"), ("8504239000", "초고압 변압기(100,000kVA초과)")],
+    # 광섬유 케이블
+    "광섬유 케이블": [("9001100000", "광섬유ㆍ광섬유 다발과 광섬유 케이블")],
+    "광섬유 광케이블": [("9001100000", "광섬유ㆍ광섬유 다발과 광섬유 케이블")],
+    # 소재·화학
+    "실리콘카바이드": [("2849201000", "탄화규소")],
+    "탄화규소": [("2849201000", "탄화규소")],
+    "SiC": [("2849201000", "탄화규소")],
+    "NCM": [("2825902050", "니켈 코발트 망간 수산화물")],
+    "과산화수소": [("2847000000", "과산화수소")],
+    "솔더볼": [("8311900000", "기타 납땜·용접·용착 재료")],
+    # 전기·전력
+    "EV Relay": [("8536410000", "릴레이(1,000V이하)")],
+    "EV 릴레이": [("8536410000", "릴레이(1,000V이하)")],
+    "EV Relay 1,000V 이하": [("8536410000", "릴레이(1,000V이하)")],
+    "EV Relay 1,000V 초과": [("8536491000", "릴레이(1,000V초과)")],
+    "AFCI PCB ASSEMBLY": [("8534009000", "그 밖의 인쇄회로")],
+    # 레이저 장비
+    "레이저마커": [("8456119000", "기타 레이저 가공기")],
+    "기타 레이저마커": [("8456119000", "기타 레이저 가공기")],
+    "레이저 그루빙": [("8456119000", "기타 레이저 가공기")],
+    "레이저 스텔스다이싱 장비": [("8456119000", "기타 레이저 가공기")],
+    # 이송·물류 장비
+    "FPD 및 반도체 이송장치": [("8428909000", "기타 리프트·컨베이어")],
+    # 탈철기 (자기분리기)
+    "탈철기": [("8505200000", "전자석")],
+    "전자석탈철기": [("8505200000", "전자석")],
+    # 필러 (의료·미용)
+    "필러": [("3001900000", "인체 의료용 조직·세포 등")],
+    "리쥬란": [("3001900000", "인체 의료용 조직·세포 등")],
 }
 
 
@@ -183,15 +239,17 @@ def add_hs(lookup: dict[str, list[dict[str, str]]], label: str, hs_code: str, hs
 
 
 def load_hs_lookup(conn: sqlite3.Connection) -> dict[str, list[dict[str, str]]]:
+    """Build product-label → HS-code lookup from hs_sector_map and HS_ALIASES only.
+
+    hs_code_company_map is intentionally excluded: its sector_names are derived from
+    past rebuild outputs, creating a circular dependency that causes exponential bloat
+    across successive runs.
+    """
     lookup: dict[str, list[dict[str, str]]] = {}
     for row in conn.execute("SELECT hs_code, hs_name, display_name FROM hs_sector_map"):
         add_hs(lookup, row["display_name"], row["hs_code"], row["hs_name"])
         add_hs(lookup, row["hs_name"], row["hs_code"], row["hs_name"])
         simplified = re.sub(r"\s+(수입|수출)$", "", row["display_name"] or "").strip()
-        add_hs(lookup, simplified, row["hs_code"], row["hs_name"])
-    for row in conn.execute("SELECT hs_code, hs_name, sector_name FROM hs_code_company_map"):
-        add_hs(lookup, row["sector_name"], row["hs_code"], row["hs_name"])
-        simplified = re.sub(r"\s+(수입|수출)$", "", row["sector_name"] or "").strip()
         add_hs(lookup, simplified, row["hs_code"], row["hs_name"])
     for label, rows in HS_ALIASES.items():
         for hs_code, hs_name in rows:
@@ -262,16 +320,40 @@ def parse_companies(row: sqlite3.Row) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+MAX_HS_LABELS_PER_POST = 12  # summary posts have 30-80 labels; cap to avoid noise
+
+
+def _label_allowed(label: str, title: str) -> bool:
+    """Filter domain-specific labels that don't belong in general product posts."""
+    if GENERIC_SHIP_ENGINE_RE.search(label):
+        return any(tok in title for tok in ["선박", "엔진", "HD현대", "STX", "조선", "현대중공업"])
+    if GENERIC_AIRCRAFT_RE.search(label):
+        return any(tok in title for tok in ["비행기", "헬리콥터", "항공", "한화에어로", "KAI", "아스트"])
+    return True
+
+
 def hs_entries_for_post(row: sqlite3.Row, product: str, hs_lookup: dict[str, list[dict[str, str]]]) -> list[dict[str, str]]:
     labels = json_list(row["matched_hs_codes_json"])
+    # Skip summary/compilation posts with an explosion of labels
+    if len(labels) > MAX_HS_LABELS_PER_POST:
+        labels = []
+    title = row["title"] or ""
     candidates: list[dict[str, str]] = []
     for label in [*labels, product]:
         if label in BAD_HS_LABELS:
             continue
+        if not _label_allowed(label, title):
+            continue
         candidates.extend(hs_lookup.get(label, []))
-        simplified = re.sub(r"\([^)]*\)", "", label).strip()
+        # Remove all parenthetical content and normalize whitespace
+        simplified = re.sub(r"\s+", " ", re.sub(r"\([^)]*\)", "", label)).strip()
         if simplified != label:
             candidates.extend(hs_lookup.get(simplified, []))
+        # Strip 수출/수입 suffix (common in matched_hs_codes_json labels)
+        no_flow = re.sub(r"\s+(수입|수출)$", "", simplified).strip()
+        if no_flow != simplified:
+            candidates.extend(hs_lookup.get(no_flow, []))
+        # Remove only geographic scope parentheses
         no_scope = re.sub(r"\s*\((전국[^)]*|글로벌[^)]*|중국[^)]*|미국[^)]*|베트남[^)]*|일본[^)]*|대만[^)]*|홍콩[^)]*)\)", "", label).strip()
         if no_scope != label:
             candidates.extend(hs_lookup.get(no_scope, []))

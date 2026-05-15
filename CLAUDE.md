@@ -123,6 +123,9 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 | `backtest_runs` | 2 | run_id, status, total_return_pct, trades_json | 백테스트 결과 |
 | `investor_trading_daily` | 0 | bas_dt, stock_code, indv_net, inst_net, frgn_net | ⚠️ 미수집 |
 | `foreign_holding_daily` | 0 | bas_dt, stock_code, frgn_hold_pct | ⚠️ 미수집 |
+| `financial_source_snapshot` | ~25만 | stock_code, year, is_annual, report_type, data_source('fnguide'), revenue, op_profit, net_income, verification_status | FnGuide 원본 스냅샷 (마스터) |
+| `financial_anomalies` | 3181 | stock_code, anomaly_type, severity, is_resolved | 재무 이상 분류 (unit_error/cfs_ofs/large_discrepancy 등) |
+| `stock_collection_config` | 248 | stock_code, config_key, config_value | 종목별 수집 특성 (report_type/unit_verified 등) |
 
 ### 중요 단위 규칙
 ```
@@ -321,8 +324,9 @@ GET  /etf-list/{code}   # 종목 편입 ETF 목록 (etfcheck.co.kr 스크래핑)
 | `_job_intraday_investor` | 매 5분 (장중) | KIS 수급 수집 → price_history |
 | `_job_closing` | 15:40 daily | 종가 확정 + portfolio_snapshot |
 | `_job_screener_precompute` | 매 30분 | 시그널 캐시 갱신 |
-| `_job_krx_daily` | 18:00 daily (영업일) | KRX API 전종목 OHLCV + 지수 수집 (KRX 데이터 확정 시간 고려) |
+| `_job_krx_daily` | 18:00 daily (영업일) | KRX 승인API 전종목 OHLCV + 지수 수집 (data-dbg.krx.co.kr) |
 | `_job_supply_daily` | 17:30 daily (영업일) | KIS 전종목 최근 30일 수급 누락분 보완 |
+| `_job_krx_investor_playwright` | 18:10 daily (영업일) | KRX 전종목 기관/외국인 순매수 금액 수집 (Playwright, data.krx.co.kr 로그인) |
 
 ### ETF 수집 스케줄 (crontab — ETF_check/scheduler.py)
 | 시간 | 실행 모드 | 설명 |
@@ -481,13 +485,35 @@ same_sector_codes = {r["stock_code"] for r in mc.execute(
 ).fetchall()}
 ```
 
+### stock_collection_config 패턴 (종목별 수집 특성 등록)
+```python
+# 수집기에서 이 테이블을 먼저 읽어 종목별 특성 반영
+import sqlite3
+conn = sqlite3.connect("stock.db")
+cfg = {r["config_key"]: r["config_value"] for r in conn.execute(
+    "SELECT config_key, config_value FROM stock_collection_config WHERE stock_code=?", (code,)
+)}
+# 키:
+#   preferred_report_type → "CFS" | "OFS"  (교정된 연결/별도 구분)
+#   unit_verified         → "true"  (단위오류 수정 완료 종목)
+report_type = cfg.get("preferred_report_type", "CFS")
+```
+
+### FnGuide 무결성 동기화 (수동 실행)
+```bash
+python3 scripts/fnguide_integrity_sync.py            # critical 수정 (unit_error+cfs_ofs)
+python3 scripts/fnguide_integrity_sync.py --all      # large_discrepancy 640건 포함 전체
+python3 scripts/fnguide_integrity_sync.py --dry-run  # 변경 없이 리포트만
+```
+
 ---
 
 ## 9. 알려진 이슈 & 제한사항
 
 | 항목 | 상태 | 내용 |
 |------|------|------|
-| KRX 데이터포털 | ❌ 차단 | POST→LOGOUT, 자동화 IP 차단 |
+| KRX 승인API (data-dbg.krx.co.kr) | ✅ 정상 | OHLCV·지수 정상 수집. PER/PBR은 제공 안 함 → DB 직접 계산 |
+| KRX 웹API (data.krx.co.kr) | ✅ Playwright로 정상 | requests 방식 CSV 다운로드 실패(보안강화). Playwright(실 브라우저) → 로그인+OTP+CSV 모두 성공. 매일 18:10 스케줄링됨 |
 | K-mydata | ❌ 인증실패 | KRX_API_KEY가 K-mydata용 아님 |
 | pykrx | ❌ Empty | KRX 서버 차단으로 빈 DataFrame |
 | 공공데이터포털 투자자API | ❌ 404 | getStocInvtTrdnInfo 서비스 폐지 |
@@ -501,7 +527,7 @@ same_sector_codes = {r["stock_code"] for r in mc.execute(
 | 모멘텀 야간 알림 | ✅ 수정됨 | 22:00~08:00 억제 로직 추가 |
 | price_history close=0 | ✅ 수정됨 | routes/ingest.py /investor-trends에서 가격 없는 날짜에 close=0 행 생성 버그 → else:continue로 수정. 매 KRX일별 잡에서 자동 정리 추가 |
 | 가상매매 현재가 | ✅ 수정됨 | Yahoo Finance 제거, price_history 사용 |
-| 개별종목 PBR/PER 지연 | ✅ 개선 | 5초 후 재시도 로직 추가 (App.jsx) |
+| 개별종목 PBR/PER 지연 | ✅ 완전수정 | stock_universe DB 즉시 반환(0ms) + 백그라운드 Naver 갱신. 5초 재시도 로직 제거 불필요 |
 | 시그널 계산 10초 지연 | ✅ 개선 | 서버 시작 시 warm-up + stale-while-revalidate |
 | 재무제표 단위 오류 | ✅ 완전수정 | op_profit 597건·net_income 20건·equity 5건 억원→원 변환, Q4 254건 재계산, CFS/OFS 혼용 36건 재수집, 지주사 Q4 NULL 10건 처리, 수집오류 삭제 2건 |
 | financial_data 백업 | ℹ️ 보관 | `financial_data_backup_20260412` 테이블로 수정 전 원본 보관 |
@@ -550,4 +576,8 @@ same_sector_codes = {r["stock_code"] for r in mc.execute(
 | 2026-05-15 | `routes/extra_signals.py` + `ETF_check/routes_etf.py` 워크트리에 추가 및 main.py 등록. ETF 수집실패일(etf_count=0 && etf_amount=0) 건너뜀 로직 추가(extra_signals + routes_etf get_available_dates). 섹터 트렌드 sector_mid→sector_large 기준으로 전체 변경. 수출/계약 공동 표시 동일 sector_large 종목만 필터링. 고용 트렌드 카드에 current_workers(현재 근무인원) 필드 추가(백엔드+프론트). |
 | 2026-05-15 | App.jsx 분리: MarketIndicatorsView/SemiconductorView/SectorFollowupView/MarketRadarView → `frontend/src/views/` 별도 파일. 공유 유틸 → `frontend/src/utils.js`. App.jsx 12,752줄→10,830줄(-1,922줄). CLAUDE.md 섹션6 줄번호 업데이트. |
 | 2026-05-16 | ETF Check `/search` 수집실패일 폴백 수정: `WHERE e.trade_date = ?` → 종목별 최근 유효일 서브쿼리. 서버 재시작 방법 CLAUDE.md 명시(launchctl kickstart). Codex 병렬작업 충돌방지 규칙 추가. crontab ETF 23:30 재수집+02:30 백필 추가. cash_flow_data 이상값 6건 NULL 처리. |
+| 2026-05-16 | PBR/PER 즉시 반환: `get_stock_fundamentals(main.py)` 캐시 미스 시 Naver 스크래핑 대기(2~3초) 제거 → `stock_universe.per/pbr` 즉시 반환 + 백그라운드 Naver 갱신 유지. EPS 계산 보완: `processor.py` `_calc_eps()` 신규 - eps=0.0이거나 None인데 net_income이 실제값이면 `net_income/shares_issued`로 자동 계산. |
+| 2026-05-16 | 종합 RS/52주 신고가 데이터 미노출 긴급 수정: `main.py`에 `routes.stock_analysis_rs` import + `app.include_router(..., prefix='/api/stock-analysis-rs')` 누락 등록(HTTP 404 원인). `frontend/src/views/StockAnalysisRsView.jsx`는 `Promise.allSettled`로 변경해 한 API 실패 시 전체 빈 화면 방지, 52주 신고가 탭에 필터(전체/근접/신고가달성)·정렬(점수/근접/거래량배수) 추가. 재기동은 규칙대로 `launchctl kickstart -k`만 사용. |
+| 2026-05-16 | 종합 RS 성능/동작 보강: `routes/stock_analysis_rs.py`를 캐시 기반으로 재구성. 장중(평일 09:00~15:35) 10분 TTL, 장외 1일 TTL로 `/scratch/stock_analysis_rs_cache.json` 반환. price_history는 종목별 최근 260거래일 window 조회로 축소. 응답에 `benchmarks.kospi/kosdaq` RS 추가. `frontend/src/views/StockAnalysisRsView.jsx`는 섹터명 정규화로 탭 필터 정확화, 상단 강도바에 KOSPI/KOSDAQ RS 위치 표시, 섹터 탭 선택 시 해당 섹터 종목만 노출하도록 보강. |
+| 2026-05-16 | PER/PBR Naver 스크래핑 완전 제거 → `price×EPS/BPS` 직접 계산(main.py). stock_universe fallback 유지. EPS 계산 보완(`processor.py _calc_eps`). `stock_collection_config` 테이블 신규. `scripts/fnguide_integrity_sync.py` 신규: unit_error 52건+cfs_ofs 29건 FnGuide 기준 수정, holding_company 175건 OFS config 등록, financial_anomalies 81건 resolved. large_discrepancy 640건은 --all 옵션으로 별도 실행. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

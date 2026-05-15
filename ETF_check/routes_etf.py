@@ -246,9 +246,14 @@ def search_stock_etf(q: str = Query(..., min_length=1, max_length=30)) -> Dict[s
         compare_date = dates[-1] if len(dates) > 1 else None
         needle = f"%{q.strip()}%"
 
-        # 종목별로 latest_date 이하 가장 최근 유효일(etf_amount>0)을 사용
-        # 수집 실패일(etf_amount=0)인 종목도 이전 유효 데이터를 표시
+        # CTE로 종목별 최근 유효일(etf_amount>0)을 먼저 구해 JOIN — 코어 서브쿼리 전체 스캔 방지
         query = """
+            WITH best_dates AS (
+                SELECT stock_code, MAX(trade_date) AS best_date
+                FROM etf_inclusion_daily
+                WHERE etf_amount > 0 AND trade_date <= ?
+                GROUP BY stock_code
+            )
             SELECT e.stock_code,
                    m.stock_name,
                    COALESCE(
@@ -291,16 +296,11 @@ def search_stock_etf(q: str = Query(..., min_length=1, max_length=30)) -> Dict[s
                        ELSE NULL
                    END AS amount_diff
             FROM etf_inclusion_daily e
+            JOIN best_dates bd ON e.stock_code = bd.stock_code AND e.trade_date = bd.best_date
             JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
             LEFT JOIN etf_inclusion_daily prev
                    ON prev.stock_code = e.stock_code AND prev.trade_date = ?
-            WHERE e.trade_date = (
-                SELECT MAX(e2.trade_date) FROM etf_inclusion_daily e2
-                WHERE e2.stock_code = e.stock_code
-                  AND e2.etf_amount > 0
-                  AND e2.trade_date <= ?
-            )
-              AND (m.stock_name LIKE ? OR e.stock_code LIKE ?)
+            WHERE (m.stock_name LIKE ? OR e.stock_code LIKE ?)
               AND """ + ORDINARY_STOCK_FILTER + """
             ORDER BY e.etf_amount DESC NULLS LAST
             LIMIT 50
