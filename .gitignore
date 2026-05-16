@@ -61,3 +61,14 @@ config/
 # hs_trade_lab 관세청 다운로드 캐시 (대용량 바이너리)
 hs_trade_lab/data/customs_downloads/
 hs_trade_lab/data/daily_refresh_summary.json
+
+# 압축/바이너리 (git status 오염 방지)
+*.gz
+*.zip
+*.tar
+*.tar.gz
+*.pkl
+*.pickle
+
+# 아카이브 (로컬 보관용, 커밋 불필요)
+archives/
