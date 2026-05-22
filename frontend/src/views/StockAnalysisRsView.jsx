@@ -56,9 +56,9 @@ export default function StockAnalysisRsView() {
 
   // 디바운스된 검색어
   const debouncedQuery = useDebouncedValue(query, 300);
+  const REFRESH_MS = 30 * 60 * 1000;
 
-  // ── 1. 마운트 시 요약 데이터만 로드 ──────────────────────────
-  useEffect(() => {
+  const fetchSummary = useCallback(() => {
     const ctrl = new AbortController();
     setSummaryLoading(true);
     setSummaryError('');
@@ -70,8 +70,15 @@ export default function StockAnalysisRsView() {
       })
       .catch((e) => { if (e.name !== 'AbortError') setSummaryError(String(e?.message || e)); })
       .finally(() => setSummaryLoading(false));
-    return () => ctrl.abort();
+    return ctrl;
   }, []);
+
+  // ── 1. 마운트 시 요약 데이터 로드 + 30분 주기 갱신 ─────────────────
+  useEffect(() => {
+    const ctrl = fetchSummary();
+    const t = setInterval(() => fetchSummary(), REFRESH_MS);
+    return () => { ctrl.abort(); clearInterval(t); };
+  }, [fetchSummary]);
 
   // ── 2. RS 행: 필터/페이지 변경 시 서버에서 가져오기 ──────────
   const fetchRsRows = useCallback(() => {
@@ -104,6 +111,12 @@ export default function StockAnalysisRsView() {
     if (activeTab !== 'rs') return;
     return fetchRsRows();
   }, [fetchRsRows, activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'rs') return;
+    const t = setInterval(() => fetchRsRows(), REFRESH_MS);
+    return () => clearInterval(t);
+  }, [activeTab, fetchRsRows]);
 
   // 필터 변경 시 1페이지로 리셋
   useEffect(() => { setPage(1); }, [debouncedQuery, sectorFilter, sectorMode, capMin, period]);
@@ -153,6 +166,12 @@ export default function StockAnalysisRsView() {
     return fetchHigh52Rows(high52Page);
   }, [high52Page]);
 
+  useEffect(() => {
+    if (activeTab !== 'high52') return;
+    const t = setInterval(() => fetchHigh52Rows(high52Page), REFRESH_MS);
+    return () => clearInterval(t);
+  }, [activeTab, high52Page, fetchHigh52Rows]);
+
   useEffect(() => { setHigh52Page(1); }, [debouncedQuery, sectorFilter, sectorMode, capMin, highOnly, highSort]);
 
   // ── 섹터 점수 계산 (클라이언트 측, 요약 데이터 기반) ──────────
@@ -196,12 +215,12 @@ export default function StockAnalysisRsView() {
               ))}
               {!!benchmarks?.kospi && (
                 <div style={{ position: 'absolute', left: `${clamp(benchmarks.kospi.rs || 50, 0, 100)}%`, top: 2, transform: 'translateX(-50%)', background: '#334155', color: '#cbd5e1', borderRadius: 6, padding: '2px 7px', fontSize: 11, border: '1px solid #64748b' }}>
-                  KOSPI {Math.round(benchmarks.kospi.rs || 0)}
+                  KOSPI {Math.round(benchmarks.kospi.rs || 0)} | {fmtPrice(benchmarks.kospi.current_price)} ({fmtPct(Number(benchmarks.kospi.change_rate))})
                 </div>
               )}
               {!!benchmarks?.kosdaq && (
                 <div style={{ position: 'absolute', left: `${clamp(benchmarks.kosdaq.rs || 50, 0, 100)}%`, top: 56, transform: 'translateX(-50%)', background: '#1e293b', color: '#93c5fd', borderRadius: 6, padding: '2px 7px', fontSize: 11, border: '1px solid #475569' }}>
-                  KOSDAQ {Math.round(benchmarks.kosdaq.rs || 0)}
+                  KOSDAQ {Math.round(benchmarks.kosdaq.rs || 0)} | {fmtPrice(benchmarks.kosdaq.current_price)} ({fmtPct(Number(benchmarks.kosdaq.change_rate))})
                 </div>
               )}
               <div style={{ position: 'absolute', top: 64, left: 0, fontSize: 12, color: '#9ca3af' }}>약함 {weakSector?.score ?? 0}</div>
@@ -269,7 +288,8 @@ export default function StockAnalysisRsView() {
                   {sectorFilter === '전체' && !!benchmarks?.kospi && (
                     <tr style={{ borderTop: '1px solid #1f2937', background: 'rgba(148,163,184,0.08)' }}>
                       <td style={{ padding: '9px 12px' }}>지수</td><td style={{ padding: '9px 12px', fontWeight: 700 }}>코스피</td>
-                      <td style={{ padding: '9px 12px', textAlign: 'right' }}>-</td><td style={{ padding: '9px 12px', textAlign: 'right' }}>-</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right' }}>{fmtPrice(benchmarks.kospi.current_price)}</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right', color: Number(benchmarks.kospi.change_rate || 0) >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>{fmtPct(Number(benchmarks.kospi.change_rate || 0))}</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 800 }}>{Math.round(benchmarks.kospi.rs || 0)}</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right' }}>{Number(benchmarks.kospi.rs_1m || 0).toFixed(2)}</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right' }}>{Number(benchmarks.kospi.rs_3m || 0).toFixed(2)}</td>
@@ -280,7 +300,8 @@ export default function StockAnalysisRsView() {
                   {sectorFilter === '전체' && !!benchmarks?.kosdaq && (
                     <tr style={{ borderTop: '1px solid #1f2937', background: 'rgba(96,165,250,0.08)' }}>
                       <td style={{ padding: '9px 12px' }}>지수</td><td style={{ padding: '9px 12px', fontWeight: 700 }}>코스닥</td>
-                      <td style={{ padding: '9px 12px', textAlign: 'right' }}>-</td><td style={{ padding: '9px 12px', textAlign: 'right' }}>-</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right' }}>{fmtPrice(benchmarks.kosdaq.current_price)}</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'right', color: Number(benchmarks.kosdaq.change_rate || 0) >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>{fmtPct(Number(benchmarks.kosdaq.change_rate || 0))}</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 800 }}>{Math.round(benchmarks.kosdaq.rs || 0)}</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right' }}>{Number(benchmarks.kosdaq.rs_1m || 0).toFixed(2)}</td>
                       <td style={{ padding: '9px 12px', textAlign: 'right' }}>{Number(benchmarks.kosdaq.rs_3m || 0).toFixed(2)}</td>

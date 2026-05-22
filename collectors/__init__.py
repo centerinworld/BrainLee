@@ -16,9 +16,10 @@ from .krx_collector    import KRXCollector
 from .yahoo_collector  import YahooCollector
 from .dart_collector   import DARTCollector
 from .public_data      import PublicDataCollector
+from .kiwoom_collector import KiwoomCollector
 
 __all__ = [
     "BaseCollector", "RateLimiter", "CircuitBreaker",
     "KISCollector", "KRXCollector", "YahooCollector",
-    "DARTCollector", "PublicDataCollector",
+    "DARTCollector", "PublicDataCollector", "KiwoomCollector",
 ]

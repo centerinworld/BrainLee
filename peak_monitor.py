@@ -86,6 +86,10 @@ STRATEGY_NAMES = {
 LOGIN_URL    = "https://stockeasy.intellio.kr/api/auth/login"
 SESSION_FILE = "/Applications/stock_dashboard/stockeasy_session.json"
 
+# 편출 오탐 방지: 1회 누락으로 즉시 편출 확정하지 않음
+_EXIT_MISS_COUNTS: dict[tuple[str, str], int] = {}
+EXIT_MISS_CONFIRM_COUNT = 2
+
 
 # ──────────────────────────────────────────────────────────────
 # 폴링 주기 계산
@@ -440,6 +444,7 @@ def run_once(session: StockeasySession, strategy: str) -> None:
     db_active_names = {h["stock_name"] for h in db_active}
     db_all_names    = {h["stock_name"] for h in db_all}  # 활성+비활성 전체
     site_hold_names = {h["name"] for h in site_holdings}
+    site_exit_names = {e["name"] for e in site_exits}
 
     logger.info(
         f"[{strategy_name}] 사이트 보유={len(site_holdings)} 이탈={len(site_exits)}"
@@ -453,6 +458,7 @@ def run_once(session: StockeasySession, strategy: str) -> None:
         entry_date = h.get("entry_date", "")
 
         if name in db_active_names:
+            _EXIT_MISS_COUNTS[(strategy, name)] = 0
             # 현재가·수익률 업데이트만
             price = h.get("current_price") or h.get("buy_price") or 0
             api_post("/api/trend/update", {
@@ -548,7 +554,19 @@ def run_once(session: StockeasySession, strategy: str) -> None:
         if db_h.get("strategy", "peak") != strategy:
             continue
         if name in site_hold_names:
+            _EXIT_MISS_COUNTS[(strategy, name)] = 0
             continue  # 아직 보유중
+
+        # 사이트 이탈 테이블에 명시되었으면 즉시 확정, 아니면 연속 누락 N회 확인 후 확정
+        miss_key = (strategy, name)
+        _EXIT_MISS_COUNTS[miss_key] = int(_EXIT_MISS_COUNTS.get(miss_key, 0)) + 1
+        miss_cnt = _EXIT_MISS_COUNTS[miss_key]
+        if name not in site_exit_names and miss_cnt < EXIT_MISS_CONFIRM_COUNT:
+            logger.warning(
+                f"[편출보류] {strategy_name} / {name} "
+                f"(site_exits 미포함, 연속누락 {miss_cnt}/{EXIT_MISS_CONFIRM_COUNT})"
+            )
+            continue
 
         # 이탈 처리
         site_exit = next((e for e in site_exits if e["name"] == name), None)
@@ -576,6 +594,7 @@ def run_once(session: StockeasySession, strategy: str) -> None:
         })
 
         if result and result.get("status") == "ok":
+            _EXIT_MISS_COUNTS[miss_key] = 0
             emoji = "🔴" if profit < 0 else ("🟡" if profit == 0 else "🟢")
             msg = (
                 f"{emoji} <b>[{strategy_name}] 이탈 종목</b>\n"

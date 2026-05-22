@@ -80,13 +80,33 @@ def _ym_month_gap(ym_a: str, ym_b: str) -> int:
 def _get_employment_signal(code: str) -> dict:
     try:
         conn = _emp_conn()
+
+        # current_workers 우선 확보: employment_company(bizr_no 기반) → wlb_monthly 최신값
+        def _get_current_workers():
+            ec = conn.execute(
+                "SELECT worker_count FROM employment_company "
+                "WHERE stock_code=? AND worker_count>0 ORDER BY ym DESC LIMIT 1",
+                (code,),
+            ).fetchone()
+            if ec:
+                return ec[0]
+            wlb = conn.execute(
+                "SELECT total_workers FROM wlb_monthly "
+                "WHERE stock_code=? AND total_workers>0 ORDER BY data_ym DESC LIMIT 1",
+                (code,),
+            ).fetchone()
+            return wlb[0] if wlb else None
+
         rows = conn.execute(
             "SELECT data_ym, new_hires, terminations, net_change "
             "FROM nps_monthly WHERE stock_code=? ORDER BY data_ym DESC LIMIT 13",
             (code,),
         ).fetchall()
 
-        if not rows:
+        # NPS가 전부 0이면 신뢰하지 않고 WLB/EC 경로로 전환
+        nps_all_zero = rows and all((r[3] or 0) == 0 for r in rows)
+
+        if not rows or nps_all_zero:
             # ── employment_company (bizr_no 직접조회, 정확도 우선) ─────────
             ec_rows = conn.execute(
                 "SELECT ym, worker_count FROM employment_company "
@@ -150,6 +170,24 @@ def _get_employment_signal(code: str) -> dict:
 
             wdesc = [dict(r) for r in wrows]  # latest → old
             wasc = list(reversed(wdesc))       # old → latest
+
+            # 이상값 필터링: 인접 행 간 변동이 기준값의 50% 초과이면 사업장 매칭 오류로 제거
+            def _is_wlb_outlier(prev_w, curr_w):
+                if prev_w is None or curr_w is None or prev_w == 0:
+                    return False
+                return abs(curr_w - prev_w) / prev_w > 0.5
+
+            filtered_asc = [wasc[0]]
+            for i in range(1, len(wasc)):
+                pw = filtered_asc[-1]["total_workers"]
+                cw = wasc[i]["total_workers"]
+                if not _is_wlb_outlier(pw, cw):
+                    filtered_asc.append(wasc[i])
+            wasc = filtered_asc
+            wdesc = list(reversed(wasc))
+
+            if len(wdesc) < 2:
+                return {"signal": "gray", "label": "데이터 없음", "detail": None}
 
             # 인접 데이터 간 월 간격 확인 — 간격이 2개월 초과이면 연간 비교로만 처리
             gaps = [
@@ -216,7 +254,7 @@ def _get_employment_signal(code: str) -> dict:
         return {
             "signal": signal, "label": label, "source": "nps",
             "net_1m": net_1m, "net_3m": net_3m, "net_6m": net_6m,
-            "current_workers": None,  # NPS는 총 인원수 데이터 없음
+            "current_workers": _get_current_workers(),  # EC/WLB에서 실제 인원수 보완
             "detail": {
                 "history":    data,
                 "net_1m":     net_1m,

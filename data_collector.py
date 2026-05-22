@@ -108,9 +108,16 @@ class DataCollector:
             pass
         return False
 
-    def _financial_exists(self, stock_code: str, year: int, quarter: int) -> bool:
-        """해당 분기 재무 데이터가 DB에 있는지 확인."""
-        key = (stock_code, year, quarter)
+    def _financial_exists(
+        self,
+        stock_code: str,
+        year: int,
+        quarter: int,
+        is_annual: bool | None = None,
+        data_source: str | None = "dart",
+    ) -> bool:
+        """해당 분기 재무 데이터 존재 여부 확인 (기본: DART 행 기준)."""
+        key = (stock_code, year, quarter, is_annual, data_source)
         if key in self._fn_collected:
             return True
         try:
@@ -118,11 +125,16 @@ class DataCollector:
             from database import SessionLocal
             from models import FinancialData
             db = SessionLocal()
-            exists = db.query(FinancialData).filter(
+            q = db.query(FinancialData).filter(
                 FinancialData.stock_code == stock_code,
                 FinancialData.year == year,
                 FinancialData.quarter == quarter,
-            ).first() is not None
+            )
+            if is_annual is not None:
+                q = q.filter(FinancialData.is_annual == bool(is_annual))
+            if data_source:
+                q = q.filter(FinancialData.data_source == data_source)
+            exists = q.first() is not None
             db.close()
             if exists:
                 self._fn_collected.add(key)
@@ -469,9 +481,16 @@ class DataCollector:
         # ── 글로벌 지표: Yahoo Finance ───────────────────────────
         global_symbols = {
             "^VIX":     "VIX",
+            "2YY=F":    "US2Y",
+            "^UST2Y":   "US2Y_ALT",
+            "^TNX":     "US10Y",
+            "10Y=F":    "US10Y_ALT",
+            "^TYX":     "US30Y",
+            "30Y=F":    "US30Y_ALT",
             "GC=F":     "GOLD",
             "CL=F":     "OIL",
             "USDKRW=X": "USD/KRW",
+            "DX-Y.NYB": "DXY",
             "JPYKRW=X": "JPY/KRW",
             "TWDKRW=X": "TWD/KRW",
             "EURKRW=X": "EUR/KRW",
@@ -879,18 +898,11 @@ class DataCollector:
                     except Exception as ep:
                         logger.debug(f"[Naver차트] {naver_sym} 항목 파싱: {ep}")
 
-            # 히스토리가 없으면 현재가 단독으로라도 저장
-            if not prices and close_val and close_val > 0:
-                prices.append({
-                    "date":         today_iso,
-                    "open":         close_val,
-                    "high":         close_val,
-                    "low":          close_val,
-                    "close":        close_val,
-                    "volume":       0.0,
-                    "inst_net_buy": 0.0,
-                    "frn_net_buy":  0.0,
-                })
+            # 데이터 무결성: 차트 히스토리 없이 현재가 단독 저장 금지
+            # (네이버 world 페이지 파싱 값이 지수 본값이 아닐 때 오염 가능)
+            if not prices:
+                logger.warning(f"[Naver] {name}({naver_sym}): 차트 히스토리 없음 — 단독 현재가 저장 생략")
+                return False
 
             if not prices:
                 logger.warning(f"[Naver] {name}({naver_sym}): 데이터 없음")
@@ -908,6 +920,68 @@ class DataCollector:
         except Exception as e:
             logger.warning(f"[Naver] {name}({naver_sym}) 오류: {e}")
             return False
+
+    def _macro_prev_close(self, symbol: str) -> float | None:
+        """최근 저장값(직전 종가) 조회."""
+        try:
+            res = httpx.get(
+                f"{self.base_url}/api/dashboard/chart/{symbol}",
+                params={"days": 7},
+                timeout=5,
+            )
+            if res.status_code != 200:
+                return None
+            arr = res.json()
+            if not isinstance(arr, list) or not arr:
+                return None
+            # 최신값이 오늘일 수도 있어 직전값 우선 탐색
+            vals = [x for x in arr if isinstance(x, dict) and x.get("close")]
+            if not vals:
+                return None
+            return float(vals[-1]["close"])
+        except Exception:
+            return None
+
+    def _macro_spike_threshold(self, symbol: str) -> float:
+        """심볼별 급변 허용치(절대 %)."""
+        if symbol in ("^IXIC", "^GSPC", "^KS11", "^KQ11", "^KS200", "^KQ150"):
+            return 12.0
+        if symbol in ("^TNX", "^TYX", "2YY=F", "10Y=F", "30Y=F", "^UST2Y"):
+            return 6.0
+        if symbol == "^VIX":
+            return 25.0
+        return 15.0
+
+    def _fetch_naver_world_latest(self, symbol: str) -> float | None:
+        """네이버 해외지수 차트의 최신 종가 1건 조회(검증용)."""
+        naver_sym = self._NAVER_WORLD_SYMBOL.get(symbol)
+        if not naver_sym:
+            return None
+        try:
+            import requests as _req
+            from datetime import datetime as _dt, timedelta as _td
+            end_dt = _dt.now()
+            start_dt = end_dt - _td(days=20)
+            url_chart = (
+                f"https://api.stock.naver.com/chart/world/{naver_sym}/day"
+                f"?startDateTime={start_dt.strftime('%Y%m%d')}000000"
+                f"&endDateTime={end_dt.strftime('%Y%m%d')}235959"
+            )
+            headers = {
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://finance.naver.com/",
+            }
+            r = _req.get(url_chart, headers=headers, timeout=10)
+            if r.status_code != 200:
+                return None
+            arr = r.json()
+            if not isinstance(arr, list) or not arr:
+                return None
+            last = arr[-1]
+            c = float(last.get("closePrice") or last.get("close") or 0)
+            return c if c > 0 else None
+        except Exception:
+            return None
 
     def _collect_macro_yahoo(self, symbol: str, name: str, today_iso: str):
         """
@@ -927,45 +1001,89 @@ class DataCollector:
                 db_count = 0
             period = "60d" if db_count < 20 else "5d"
 
-            df = yf.download(symbol, period=period, interval="1d",
-                             progress=False, auto_adjust=True)
-            if df is None or df.empty:
+            def _download(_period: str):
+                _df = yf.download(symbol, period=_period, interval="1d",
+                                  progress=False, auto_adjust=True)
+                if _df is None or _df.empty:
+                    return []
+                if hasattr(_df.columns, 'get_level_values'):
+                    try:
+                        _df.columns = _df.columns.get_level_values(0)
+                    except Exception:
+                        pass
+
+                def gv(col, r):
+                    v = r.get(col, 0) if hasattr(r, 'get') else getattr(r, col, 0)
+                    if isinstance(v, pd.Series):
+                        v = v.iloc[0]
+                    try:
+                        return float(v) if v is not None else 0.0
+                    except:
+                        return 0.0
+
+                _prices = []
+                for ts, row in _df.iterrows():
+                    try:
+                        row_date = ts.date() if hasattr(ts, 'date') else date.fromisoformat(str(ts)[:10])
+                        _prices.append({
+                            "date":         row_date.isoformat(),
+                            "open":         gv("Open",   row),
+                            "high":         gv("High",   row),
+                            "low":          gv("Low",    row),
+                            "close":        gv("Close",  row),
+                            "volume":       gv("Volume", row),
+                            "inst_net_buy": 0.0,
+                            "frn_net_buy":  0.0,
+                        })
+                    except Exception as e2:
+                        logger.debug(f"[Yahoo] {symbol} 행 파싱: {e2}")
+                return _prices
+
+            prices = _download(period)
+            if not prices:
                 print(f"  [Yahoo] {name}({symbol}): 데이터 없음 → 네이버 fallback 시도")
                 self._collect_macro_naver_world(symbol, name, today_iso)
                 return
 
-            if hasattr(df.columns, 'get_level_values'):
-                try:
-                    df.columns = df.columns.get_level_values(0)
-                except Exception:
-                    pass
+            latest = max(prices, key=lambda x: x["date"])
+            latest_close = float(latest.get("close") or 0.0)
+            prev_close = self._macro_prev_close(symbol)
+            th = self._macro_spike_threshold(symbol)
 
-            def gv(col, r):
-                v = r.get(col, 0) if hasattr(r, 'get') else getattr(r, col, 0)
-                if isinstance(v, pd.Series): v = v.iloc[0]
-                try: return float(v) if v is not None else 0.0
-                except: return 0.0
-
-            prices = []
-            for ts, row in df.iterrows():
-                try:
-                    row_date = ts.date() if hasattr(ts, 'date') else date.fromisoformat(str(ts)[:10])
-                    prices.append({
-                        "date":         row_date.isoformat(),
-                        "open":         gv("Open",   row),
-                        "high":         gv("High",   row),
-                        "low":          gv("Low",    row),
-                        "close":        gv("Close",  row),
-                        "volume":       gv("Volume", row),
-                        "inst_net_buy": 0.0,
-                        "frn_net_buy":  0.0,
-                    })
-                except Exception as e2:
-                    logger.debug(f"[Yahoo] {symbol} 행 파싱: {e2}")
-
-            if not prices:
-                self._collect_macro_naver_world(symbol, name, today_iso)
-                return
+            # 1) 직전값 대비 급변 → Yahoo 재파싱 1회
+            if prev_close and latest_close > 0:
+                diff_pct = abs((latest_close - prev_close) / prev_close * 100.0)
+                if diff_pct >= th:
+                    logger.warning(
+                        f"[MacroGuard] {symbol}: 급변 감지 {diff_pct:.2f}% (prev={prev_close:.4f}, new={latest_close:.4f}) -> 재파싱"
+                    )
+                    prices_retry = _download("10d")
+                    if prices_retry:
+                        latest_retry = max(prices_retry, key=lambda x: x["date"])
+                        retry_close = float(latest_retry.get("close") or 0.0)
+                        retry_diff_pct = abs((retry_close - prev_close) / prev_close * 100.0) if prev_close else 0.0
+                        if retry_close > 0 and retry_diff_pct < diff_pct:
+                            prices = prices_retry
+                            latest = latest_retry
+                            latest_close = retry_close
+                            diff_pct = retry_diff_pct
+                    # 재파싱 후에도 급변이면(특히 해외지수) 2차 소스 교차검증
+                    if diff_pct >= th and symbol in self._NAVER_WORLD_SYMBOL:
+                        naver_close = self._fetch_naver_world_latest(symbol)
+                        if naver_close and naver_close > 0:
+                            cross_gap = abs((latest_close - naver_close) / naver_close * 100.0)
+                            if cross_gap >= 2.5:
+                                logger.warning(
+                                    f"[MacroGuard] {symbol}: Yahoo↔Naver 괴리 {cross_gap:.2f}% -> Naver 데이터로 대체"
+                                )
+                                self._collect_macro_naver_world(symbol, name, today_iso)
+                                return
+                    # 여전히 이상치면 저장 스킵
+                    if diff_pct >= th:
+                        logger.error(
+                            f"[MacroGuard] {symbol}: 급변 재검증 실패(diff={diff_pct:.2f}%, th={th}%) 저장 스킵"
+                        )
+                        return
 
             # ⚠️ 오늘이 한국 휴장일이면 오늘 날짜 entry 생성 금지
             # 오늘 실제 Yahoo 데이터가 없으면 최신 날짜 그대로 사용 (복사 금지)
@@ -1005,7 +1123,14 @@ class DataCollector:
                 for rprt_code, quarter_num in quarter_map.items():
                     if target_year > latest_y or (target_year == latest_y and quarter_num > latest_q):
                         continue
-                    if self._financial_exists(stock_code, target_year, quarter_num):
+                    is_annual_flag = (rprt_code == "11011")
+                    if self._financial_exists(
+                        stock_code,
+                        target_year,
+                        quarter_num,
+                        is_annual=is_annual_flag,
+                        data_source="dart",
+                    ):
                         total_skip += 1
                         continue
 
@@ -1034,8 +1159,7 @@ class DataCollector:
                     if fn_data is None or fn_data.empty:
                         continue
 
-                    self._save_financial_data(stock_code, target_year, quarter_num,
-                                              rprt_code == "11011", fn_data)
+                    self._save_financial_data(stock_code, target_year, quarter_num, is_annual_flag, fn_data)
                     total_new += 1
 
                 if latest_only and total_new >= 2:

@@ -69,6 +69,11 @@ _DB_WRITE_JOBS = {
     "캐치업KRX지수",
     "KRX종목기본정보",
     "FnGuide재무월간",   # ★ 월간 연결/별도 재무제표 + 스냅샷
+    "스탁이지30분동기화",
+    "시장시그널브리핑",
+    "V14장중10분",
+    "키움연결체크",
+    "키움실시간스냅샷",
 }
 
 # 장중 시간 (KST)
@@ -99,23 +104,25 @@ def _seconds_until(hour: int, minute: int, skip_weekend: bool = True) -> float:
     return max(0.0, (target - datetime.now()).total_seconds())
 
 
-def _run_job_safe(name: str, fn: Callable) -> None:
+def _run_job_safe(name: str, fn: Callable) -> bool:
     """예외 격리 래퍼 — 한 잡이 실패해도 스케줄러 전체에 영향 없음."""
     try:
         if name in _DB_WRITE_JOBS:
             with stock_db_write_lock(name, timeout=3) as acquired:
                 if not acquired:
                     logger.warning(f"[스케줄러] {name} 스킵 — 다른 DB writer 실행 중")
-                    return
+                    return False
                 logger.info(f"[스케줄러] {name} 시작")
                 fn()
                 logger.info(f"[스케줄러] {name} 완료")
-            return
+            return True
         logger.info(f"[스케줄러] {name} 시작")
         fn()
         logger.info(f"[스케줄러] {name} 완료")
+        return True
     except Exception as e:
         logger.error(f"[스케줄러] {name} 오류: {e}", exc_info=True)
+        return False
 
 
 class CollectionScheduler:
@@ -128,6 +135,7 @@ class CollectionScheduler:
         self._db_factory = db_factory
         self._threads: list[threading.Thread] = []
         self._stop_event = threading.Event()
+        self._kiwoom_rt_cursor = 0
 
     # ══════════════════════════════════════════════════════════
     # Public API
@@ -156,12 +164,17 @@ class CollectionScheduler:
             ("텐버거오후",      self._loop_tenbagger_afternoon),  # ★ 15:00 텐버거 발굴
             # ("NPS고용업데이트", self._loop_nps_daily),          # ⛔ 비활성: apis.data.go.kr DNS 차단 + 연간 총인원은 월별차이 없어 신호 불필요
             ("미국지수수집",    self._loop_us_indices),           # ★ 매일 06:30 나스닥/S&P500 수집
+            ("시장시그널브리핑", self._loop_market_signal_briefing), # ★ 매일 07:00 시장 5단계 국면 + AI 브리핑
             ("HOT섹터블로그",   self._loop_sector_blog),          # ★ 매일 07:00 블로그 신규 포스트 파싱
             ("AI주도섹터",      self._loop_ai_leading_sector),    # ★ 매일 07:20 미국 증시 기반 주도 섹터 판독
             ("섹터오전텔레그램", self._loop_sector_morning_tg),    # ★ 매일 08:30 섹터 AI 리포트 텔레그램
             ("섹터점심텔레그램", self._loop_sector_lunch_tg),      # ★ 매일 12:30 오전장 섹터 분석 텔레그램
             ("스탁이지분석",    self._loop_stockeasy_analysis),   # ★ 매일 16:30 스탁이지 전략 분석
             ("스탁이지주간",    self._loop_stockeasy_weekly),     # ★ 매주 일요일 09:00 주간 요약
+            ("스탁이지30분동기화", self._loop_stockeasy_30m_sync),  # ★ 매 30분 모멘텀 동기화 + 실주문(옵션)
+            ("V14장중10분",   self._loop_v14_10m),                  # ★ 장중 10분 V14 추천/가상매매
+            ("키움연결체크",   self._loop_kiwoom_health),            # ★ 키움 REST 연결 상태 점검(장중 10분)
+            ("키움실시간스냅샷", self._loop_kiwoom_realtime),         # ★ 장중 1분 키움 실시간 스냅샷 수집
             # ("고용보험배치",  self._loop_insurance_monthly),    # ⛔ 비활성: 연간 총인원 수집 — 월별차이 없어 의미 없음 (사용자 요청)
             ("DART수주공시",   self._loop_dart_contracts),        # ★ 매일 08:00/13:00/17:00 DART 수주공시
             ("근로복지공단",   self._loop_wlb_monthly),           # ★ 매일 20:30 변화감지 → 수집
@@ -175,6 +188,8 @@ class CollectionScheduler:
             ("공시DB배치",     self._loop_disclosure_db_batch),        # ★ 매주 일요일 02:00 DART 전종목 공시 DB 저장
             ("KRX투자자수급",  self._loop_krx_investor_playwright),    # ★ 매일 18:10 KRX 전종목 기관/외국인 순매수(Playwright)
             ("RS사전계산",    self._loop_rs_precompute),               # ★ 매일 18:30 RS/52주 캐시 사전계산
+            ("CF3중검증",     self._loop_cf_triple_validate),          # ★ 매일 05:30 신규 CF 3중 검증 (DART·FnGuide·Seibro)
+            ("주간4중검증",   self._loop_weekly_revalidation),         # ★ 매주 일요일 03:00 전종목 4중 검증 Phase A+B+C+E+F
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -266,7 +281,7 @@ class CollectionScheduler:
         logger.info("[미국지수수집] 루프 종료")
 
     def _job_collect_us_indices(self) -> None:
-        """나스닥(^IXIC)·S&P500(^GSPC)·VIX(^VIX) 최신 데이터 수집.
+        """나스닥·S&P500·VIX + 미 국채 2Y/10Y/30Y 최신 데이터 수집.
         Yahoo Finance 우선, 실패 시 네이버 증권 fallback.
         """
         from data_collector import DataCollector
@@ -276,6 +291,13 @@ class CollectionScheduler:
             "^IXIC": "NASDAQ",
             "^GSPC": "S&P500",
             "^VIX":  "VIX",
+            "2YY=F": "US2Y",
+            "^UST2Y": "US2Y_ALT",
+            "^TNX": "US10Y",
+            "10Y=F": "US10Y_ALT",
+            "^TYX": "US30Y",
+            "30Y=F": "US30Y_ALT",
+            "DX-Y.NYB": "DXY",
         }
         for symbol, name in us_symbols.items():
             try:
@@ -1389,6 +1411,27 @@ class CollectionScheduler:
                 pass
         return list(codes)
 
+    @staticmethod
+    def _get_all_market_codes(conn) -> list[str]:
+        """코스피/코스닥 전종목 코드 반환 (상장폐지/특수코드 제외)."""
+        try:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT stock_code
+                FROM stock_universe
+                WHERE LENGTH(stock_code)=6
+                  AND stock_code GLOB '[0-9]*'
+                  AND UPPER(COALESCE(market,'')) IN ('KOSPI','KOSDAQ')
+                ORDER BY stock_code
+                """
+            ).fetchall()
+            codes = [r[0] for r in rows if r and r[0]]
+            if codes:
+                return codes
+        except Exception:
+            pass
+        return CollectionScheduler._get_active_codes(conn)
+
     def _job_cashflow_batch(self) -> None:
         """DART 전종목 현금흐름표 배치 수집 (missing_only=True)."""
         try:
@@ -1501,6 +1544,59 @@ class CollectionScheduler:
         while not self._stop_event.is_set():
             self._wait_until(7, 0)
             _run_job_safe("HOT섹터블로그", self._job_sector_blog)
+
+    def _loop_market_signal_briefing(self) -> None:
+        """매일 07:00 — 5단계 시장 국면 점수 계산 + OpenAI 아침 브리핑 저장."""
+        self._wait_secs(68)
+        # 캐치업: 서버가 07:00 이후 재시작된 경우 오늘 브리핑 누락 방지
+        try:
+            self._maybe_catchup_market_signal_briefing()
+        except Exception as e:
+            logger.warning(f"[시장시그널브리핑] 캐치업 점검 실패: {e}")
+        while not self._stop_event.is_set():
+            self._wait_until(7, 0)
+            _run_job_safe("시장시그널브리핑", self._job_market_signal_briefing)
+
+    def _maybe_catchup_market_signal_briefing(self) -> None:
+        """당일(영업일) 07:00 경과 + 브리핑 미생성이면 즉시 1회 생성."""
+        now = datetime.now()
+        if now.hour < 7:
+            return
+        if not is_kr_trading_day(now.date()):
+            return
+        try:
+            conn = connect_stock_db(timeout=10)
+            today = now.date().isoformat()
+            row = conn.execute(
+                "SELECT COUNT(*) FROM market_signal_briefing WHERE briefing_date=?",
+                (today,),
+            ).fetchone()
+            conn.close()
+            cnt = int(row[0] or 0) if row else 0
+            if cnt >= 2:  # KOSPI, KOSDAQ 2건
+                return
+            logger.info(f"[시장시그널브리핑] 캐치업 실행 (today={today}, rows={cnt})")
+            ok = _run_job_safe("시장시그널브리핑", self._job_market_signal_briefing)
+            if not ok:
+                # startup 시 DB writer 경합으로 스킵되면 2분 후 1회 재시도
+                def _retry_once():
+                    self._wait_secs(120)
+                    if not self._stop_event.is_set():
+                        _run_job_safe("시장시그널브리핑", self._job_market_signal_briefing)
+                t = threading.Thread(target=_retry_once, name="시장시그널브리핑재시도", daemon=True)
+                t.start()
+                self._threads.append(t)
+        except Exception as e:
+            logger.warning(f"[시장시그널브리핑] 캐치업 조회 실패: {e}")
+
+    def _job_market_signal_briefing(self) -> None:
+        """시장 국면 브리핑 생성 — signal_engine.generate_market_ai_briefings 위임."""
+        try:
+            from signal_engine import generate_market_ai_briefings
+            res = generate_market_ai_briefings()
+            logger.info(f"[시장시그널브리핑] 완료: {res}")
+        except Exception as e:
+            logger.error(f"[시장시그널브리핑] 오류: {e}", exc_info=True)
 
     def _job_sector_blog(self) -> None:
         """블로그 자동파싱 — Sector_define/blog_parser.run_parser() 위임."""
@@ -1632,6 +1728,186 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[스탁이지] 주간 요약 오류: {e}")
 
+    def _loop_stockeasy_30m_sync(self) -> None:
+        """매 30분 — StockEasy 모멘텀 변동을 로컬/텔레그램/실주문(옵션) 반영."""
+        self._wait_secs(100)
+        while not self._stop_event.is_set():
+            _run_job_safe("스탁이지30분동기화", self._job_stockeasy_30m_sync)
+            self._wait_secs(1800)
+
+    def _job_stockeasy_30m_sync(self) -> None:
+        try:
+            import sys as _sys
+            if "/Applications/stock_dashboard" not in _sys.path:
+                _sys.path.insert(0, "/Applications/stock_dashboard")
+            from stockeasy_autotrade import run_stockeasy_all_strategies_sync
+            result = run_stockeasy_all_strategies_sync()
+            logger.info(f"[스탁이지30분동기화] {result}")
+        except Exception as e:
+            logger.error(f"[스탁이지30분동기화] 오류: {e}", exc_info=True)
+
+    def _loop_v14_10m(self) -> None:
+        """평일 장중 10분마다 V18.1 가상매매 실행.
+
+        실행 시점: 평일 09:00 ~ 15:30, 10분 간격
+          - 매도: 10분마다 실시간 체크 → 장중 악재(공시, 급락) 즉시 대응
+            * v_anchor: 하드스탑 -10% OR KOSPI < MA60 3일 연속 (개별 MA 조건 없음)
+            * combo:    하드스탑 -10% OR 추세이탈(MA20/MA60)
+          - 매수: 미보유 종목만, 쿨다운(v_anchor 5일 / combo 3일) 체크
+
+        ※ 스캘핑 방지 원칙
+           - 보유 중인 종목은 절대 추가 매수하지 않음
+           - v_anchor 매도 조건에 개별 MA를 적용하지 않음 (매수 즉시 매도 방지)
+           - 매도 후 쿨다운 기간 내 재매수 금지
+        """
+        self._wait_secs(110)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            is_weekday = now.weekday() < 5
+            hm = now.hour * 60 + now.minute
+            in_session = (9 * 60) <= hm <= (15 * 60 + 30)
+
+            if is_weekday and in_session:
+                _run_job_safe("V18장중10분", self._job_v14_10m)
+                self._wait_secs(600)   # 10분 대기
+            else:
+                self._wait_secs(60)    # 장외: 1분마다 시간 체크
+
+    def _job_v14_10m(self) -> None:
+        try:
+            import sys as _sys
+            if "/Applications/stock_dashboard" not in _sys.path:
+                _sys.path.insert(0, "/Applications/stock_dashboard")
+            from routes.trend import execute_v18_now
+            result = execute_v18_now()
+            logger.info(f"[V18가상매매] {result}")
+        except Exception as e:
+            logger.error(f"[V18가상매매] 오류: {e}", exc_info=True)
+
+    def _loop_kiwoom_health(self) -> None:
+        """평일 장중 10분마다 키움 REST 인증 상태 점검."""
+        self._wait_secs(120)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            is_weekday = now.weekday() < 5
+            hm = now.hour * 60 + now.minute
+            in_session = (9 * 60) <= hm <= (15 * 60 + 30)
+            if is_weekday and in_session:
+                _run_job_safe("키움연결체크", self._job_kiwoom_health)
+                self._wait_secs(600)
+            else:
+                self._wait_secs(120)
+
+    def _job_kiwoom_health(self) -> None:
+        try:
+            import sys as _sys
+            if "/Applications/stock_dashboard" not in _sys.path:
+                _sys.path.insert(0, "/Applications/stock_dashboard")
+            from collectors.kiwoom_collector import KiwoomCollector
+            kc = KiwoomCollector()
+            st = kc.health_check()
+            if st.get("ok"):
+                logger.info("[키움연결체크] OK")
+            else:
+                logger.warning(f"[키움연결체크] 대기/오류: {st}")
+        except Exception as e:
+            logger.error(f"[키움연결체크] 오류: {e}", exc_info=True)
+
+    def _loop_kiwoom_realtime(self) -> None:
+        """평일 장중 1분마다 키움 실시간 스냅샷 수집 (옵션)."""
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            try:
+                if not getattr(config, "KIWOOM_RT_ENABLED", False):
+                    self._wait_secs(180)
+                    continue
+                now = datetime.now()
+                is_weekday = now.weekday() < 5
+                hm = now.hour * 60 + now.minute
+                in_session = (9 * 60) <= hm <= (15 * 60 + 30)
+                if is_weekday and in_session:
+                    _run_job_safe("키움실시간스냅샷", self._job_kiwoom_realtime)
+                    self._wait_secs(60)
+                else:
+                    self._wait_secs(120)
+            except Exception as e:
+                logger.warning(f"[키움실시간스냅샷] 루프 오류: {e}")
+                self._wait_secs(120)
+
+    def _job_kiwoom_realtime(self) -> None:
+        """키움 실시간 스냅샷 수집.
+        - ALL 모드: 코스피/코스닥 전종목을 배치 순환 수집
+        - ACTIVE 모드: 관심/보유 종목 수집
+        """
+        try:
+            import sys as _sys
+            if "/Applications/stock_dashboard" not in _sys.path:
+                _sys.path.insert(0, "/Applications/stock_dashboard")
+
+            from collectors.kiwoom_collector import KiwoomCollector
+
+            conn = connect_stock_db(timeout=5)
+            try:
+                mode = str(getattr(config, "KIWOOM_RT_UNIVERSE", "ALL")).upper()
+                if mode == "ACTIVE":
+                    universe = self._get_active_codes(conn)
+                else:
+                    universe = self._get_all_market_codes(conn)
+            finally:
+                conn.close()
+
+            if not universe:
+                logger.info("[키움실시간스냅샷] 대상 종목 없음")
+                return
+
+            batch_size = max(20, int(getattr(config, "KIWOOM_RT_BATCH_SIZE", 120)))
+            batches_per_cycle = max(1, int(getattr(config, "KIWOOM_RT_BATCHES_PER_CYCLE", 6)))
+            types = [x.strip() for x in str(getattr(config, "KIWOOM_RT_TYPES", "0A,0B,0C")).split(",") if x.strip()]
+            dur = int(getattr(config, "KIWOOM_RT_SNAPSHOT_SEC", 12))
+
+            kc = KiwoomCollector()
+            total = len(universe)
+            ws_saved = 0
+            chunks_done = 0
+            covered = 0
+
+            for _ in range(batches_per_cycle):
+                start = self._kiwoom_rt_cursor
+                end = min(start + batch_size, total)
+                batch = universe[start:end]
+                if not batch:
+                    self._kiwoom_rt_cursor = 0
+                    start = 0
+                    end = min(batch_size, total)
+                    batch = universe[start:end]
+                if not batch:
+                    break
+
+                ws_result = kc.collect_realtime_snapshot(stock_codes=batch, types=types, duration_sec=dur)
+                ws_saved += int(ws_result.get("saved") or 0)
+                chunks_done += 1
+                covered += len(batch)
+                self._kiwoom_rt_cursor = end if end < total else 0
+
+            flow_ok = 0
+            flow_try = 0
+            if getattr(config, "KIWOOM_FLOW_ENABLED", False):
+                flow_n = max(1, int(getattr(config, "KIWOOM_FLOW_TOP_N", 10)))
+                start = self._kiwoom_rt_cursor
+                flow_batch = universe[start:start + flow_n] or universe[:flow_n]
+                for code in flow_batch:
+                    flow_try += 1
+                    r = kc.fetch_foreign_flow(code)
+                    if r.get("ok"):
+                        flow_ok += 1
+
+            logger.info(
+                f"[키움실시간스냅샷] universe={total} covered={covered} chunks={chunks_done} "
+                f"ws_saved={ws_saved} cursor={self._kiwoom_rt_cursor} flow_ok={flow_ok}/{flow_try}"
+            )
+        except Exception as e:
+            logger.error(f"[키움실시간스냅샷] 오류: {e}", exc_info=True)
+
     # ══════════════════════════════════════════════════════════
     # 고용보험 상시인원 배치 (매월 5일 02:00)
     # ══════════════════════════════════════════════════════════
@@ -1747,6 +2023,10 @@ class CollectionScheduler:
             import sqlite3 as _sl
             from datetime import datetime as _dt
 
+            now_dt = _dt.now()
+            data_ym = now_dt.strftime('%Y%m')
+            is_month_end = (now_dt + timedelta(days=1)).month != now_dt.month
+
             # 1) 현재 totalCount 확인
             r = _req.get(f'{BASE_URL}/getGySjBoheomBsshItem', params={
                 'serviceKey': API_KEY, 'pageNo': 1, 'numOfRows': 1, 'opaBoheomFg': '1'
@@ -1766,17 +2046,22 @@ class CollectionScheduler:
             """)
             row = conn.execute("SELECT value FROM wlb_meta WHERE key='last_total_count'").fetchone()
             last_total = int(row[0]) if row else 0
+            snap_row = conn.execute("SELECT value FROM wlb_meta WHERE key='last_month_end_snapshot_ym'").fetchone()
+            last_month_end_snapshot_ym = snap_row[0] if snap_row else None
             conn.close()
 
             logger.info(f"[근로복지공단] totalCount: 현재={current_total:,}, 이전={last_total:,}")
 
-            if current_total == last_total:
+            force_month_end_snapshot = is_month_end and (last_month_end_snapshot_ym != data_ym)
+            if current_total == last_total and not force_month_end_snapshot:
                 logger.info("[근로복지공단] 변화 없음 — 수집 생략")
                 return
 
             # 3) 변화 감지 → 전체 수집
-            data_ym = _dt.now().strftime('%Y%m')
-            logger.info(f"[근로복지공단] 변화 감지({last_total:,}→{current_total:,}) — 전체 수집 시작 (ym={data_ym})")
+            if force_month_end_snapshot:
+                logger.info(f"[근로복지공단] 월말 강제 스냅샷 실행 (ym={data_ym})")
+            else:
+                logger.info(f"[근로복지공단] 변화 감지({last_total:,}→{current_total:,}) — 전체 수집 시작 (ym={data_ym})")
             init_db()
             aggregated = collect_all(data_ym, test_pages=0)
             if aggregated:
@@ -1787,6 +2072,11 @@ class CollectionScheduler:
                     INSERT INTO wlb_meta(key, value, updated_at) VALUES('last_total_count', ?, ?)
                     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
                 """, (str(current_total), _dt.now().isoformat()))
+                if force_month_end_snapshot:
+                    conn.execute("""
+                        INSERT INTO wlb_meta(key, value, updated_at) VALUES('last_month_end_snapshot_ym', ?, ?)
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                    """, (data_ym, _dt.now().isoformat()))
                 conn.commit(); conn.close()
                 logger.info(f"[근로복지공단] {len(aggregated)}개 기업 저장 완료 (ym={data_ym}), total={current_total:,}")
             else:
@@ -2232,3 +2522,61 @@ class CollectionScheduler:
                 logger.error(f"[RS사전계산] 오류: {e}")
             self._wait_secs(23 * 3600)
         logger.info("[RS사전계산] 루프 종료")
+
+    # ── CF 3중 검증 (매일 05:30 — DART 03:30 수집 + FnGuide 수집 이후) ──
+    def _loop_weekly_revalidation(self) -> None:
+        """매주 일요일 03:00 전종목 4중 검증 (Phase C+E+F, DB 전용)."""
+        logger.info("[주간4중검증] 루프 시작")
+        self._wait_secs(120)
+        while not self._stop_event.is_set():
+            # 일요일(weekday=6) 03:00까지 대기
+            import datetime as _dt
+            now = _dt.datetime.now()
+            days_to_sunday = (6 - now.weekday()) % 7 or 7
+            next_sunday = now.replace(hour=3, minute=0, second=0, microsecond=0) + _dt.timedelta(days=days_to_sunday)
+            wait_secs = max(0, (next_sunday - now).total_seconds())
+            self._stop_event.wait(timeout=wait_secs)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("주간4중검증", self._job_weekly_revalidation)
+        logger.info("[주간4중검증] 루프 종료")
+
+    def _job_weekly_revalidation(self) -> None:
+        """전종목 4중 검증 실행 (약 2~3시간 소요)."""
+        try:
+            import subprocess
+            import sys
+            result = subprocess.run(
+                [sys.executable, "scratch/weekly_revalidation.py", "--phase", "C,E,F"],
+                capture_output=True, text=True, timeout=10800  # 3시간 타임아웃
+            )
+            logger.info(f"[주간4중검증] 완료: returncode={result.returncode}")
+            if result.returncode != 0:
+                logger.error(f"[주간4중검증] stderr: {result.stderr[-500:]}")
+        except Exception as e:
+            logger.error(f"[주간4중검증] 오류: {e}", exc_info=True)
+
+    def _loop_cf_triple_validate(self) -> None:
+        """신규 수집된 현금흐름(최근 7일) 대상 DART·FnGuide·Seibro 3중 자동 검증."""
+        logger.info("[CF3중검증] 루프 시작")
+        self._wait_secs(90)  # 서버 초기화 이후 실행
+        while not self._stop_event.is_set():
+            self._wait_until(5, 30)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("CF3중검증", self._job_cf_triple_validate)
+        logger.info("[CF3중검증] 루프 종료")
+
+    def _job_cf_triple_validate(self) -> None:
+        """최근 7일 내 신규 DART CF 데이터 3중 검증 실행."""
+        try:
+            from collectors.cf_triple_validator import validate_recent
+            stats = validate_recent(days=7)
+            logger.info(
+                f"[CF3중검증] 완료 — "
+                f"CONFIRMED:{stats.get('confirmed',0)} "
+                f"AMBIGUOUS:{stats.get('ambiguous',0)} "
+                f"SKIP:{stats.get('skipped',0)}"
+            )
+        except Exception as e:
+            logger.error(f"[CF3중검증] 오류: {e}", exc_info=True)

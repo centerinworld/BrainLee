@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
 const PERIODS = [
-  { key: 'workers', label: '피보험자 수', diffKey: 'total_workers', unit: '명' },
-  { key: '1m',      label: '1개월 전 대비', diffKey: 'display_diff_1m', unit: '명' },
-  { key: '3m',      label: '3개월 전 대비', diffKey: 'display_diff_3m', unit: '명' },
-  { key: '6m',      label: '6개월 전 대비', diffKey: 'display_diff_6m', unit: '명' },
-  { key: '1y',      label: '1년 전 대비',   diffKey: 'display_diff_1y', unit: '명' },
+  { key: 'workers', label: '피보험자 수',        diffKey: 'total_workers',   unit: '명' },
+  { key: '1m',      label: '1개월 순증감(국연)', diffKey: 'display_diff_1m', unit: '명' },
+  { key: '3m',      label: '3개월 순증감(국연)', diffKey: 'display_diff_3m', unit: '명' },
+  { key: '6m',      label: '6개월 순증감(국연)', diffKey: 'display_diff_6m', unit: '명' },
+  { key: '1y',      label: '12개월 순증감(국연)',diffKey: 'display_diff_1y', unit: '명' },
 ];
 
 const NpsTrendView = () => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [meta, setMeta] = useState({ date: '', wlb_data_ym: '', nps_data_ym: '', has_nps: false, has_wlb: false });
+  const [meta, setMeta] = useState({ date: '', wlb_data_ym: '', nps_data_ym: '', nps_ref_ym: '', has_nps: false, has_wlb: false });
   const [activePeriod, setActivePeriod] = useState('workers');
   const [search, setSearch] = useState('');
   const [showNps, setShowNps] = useState(false);
@@ -26,9 +26,10 @@ const NpsTrendView = () => {
       .then(d => {
         setRows(d.rows || []);
         setMeta({
-          date: d.date || '',
+          date:        d.date || '',
           wlb_data_ym: d.wlb_data_ym || '',
           nps_data_ym: d.nps_data_ym || '',
+          nps_ref_ym:  d.nps_ref_ym  || '',
           has_nps: d.has_nps || false,
           has_wlb: d.has_wlb || false,
         });
@@ -48,6 +49,12 @@ const NpsTrendView = () => {
     if (v > 0) return '#f87171';
     if (v < 0) return '#60a5fa';
     return 'rgba(255,255,255,0.5)';
+  };
+  const pctColor = (v) => {
+    if (v == null) return 'rgba(255,255,255,0.35)';
+    if (Math.abs(v) >= 10) return '#f87171';
+    if (Math.abs(v) >= 5) return '#f59e0b';
+    return 'rgba(255,255,255,0.78)';
   };
 
   const filtered = useMemo(() => {
@@ -91,10 +98,9 @@ const NpsTrendView = () => {
         display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.7rem',
       }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>기업별 피보험자 및 월별 변동 현황</h2>
+          <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>기업별 국민연금 피보험자 현황</h2>
           <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginTop: '0.15rem' }}>
-            근로복지공단 고용보험 · {fmtYm(meta.wlb_data_ym)} 기준 · 수집: {meta.date}
-            {meta.has_nps && meta.nps_data_ym ? ` · 국민연금 ${fmtYm(meta.nps_data_ym)}` : ''}
+            현재 인원: 고용보험 피보험자({fmtYm(meta.wlb_data_ym)}) · 추정 인원: 사업보고서(12월) + 국민연금 증감({fmtYm(meta.nps_ref_ym || meta.nps_data_ym)} 기준)
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -120,6 +126,10 @@ const NpsTrendView = () => {
           />
           <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)' }}>{visible.length}/{filtered.length}개</span>
         </div>
+      </div>
+
+      <div style={{ padding: '0.55rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: '0.72rem', color: '#fbbf24', background: 'rgba(251,191,36,0.08)' }}>
+        안내: 피보험자 수는 특수고용직/사업장 집계를 포함할 수 있어 사업보고서 인원보다 크게 보일 수 있습니다.
       </div>
 
       {/* 기간 선택 탭 */}
@@ -151,7 +161,7 @@ const NpsTrendView = () => {
             background: 'rgba(245,158,11,0.1)', padding: '0.2rem 0.6rem',
             borderRadius: '4px', border: '1px solid rgba(245,158,11,0.3)', marginLeft: '0.5rem',
           }}>
-            아직 이 기간의 비교 데이터가 없습니다 (매월 수집 누적 중)
+            국민연금 수집 데이터가 없습니다
           </span>
         )}
       </div>
@@ -176,6 +186,12 @@ const NpsTrendView = () => {
                 <th style={{ ...thS, color: activePeriod === 'workers' ? '#2dd4bf' : '#e2e8f0',
                   background: activePeriod === 'workers' ? 'rgba(45,212,191,0.12)' : 'rgba(30,58,138,0.4)' }}>
                   피보험자 (명)
+                </th>
+                <th style={{ ...thS, color: '#c4b5fd', background: 'rgba(167,139,250,0.10)' }}>
+                  추정 인원 (명)
+                </th>
+                <th style={{ ...thS, color: '#fbbf24', background: 'rgba(251,191,36,0.08)' }}>
+                  WLB-추정 (%)
                 </th>
                 <th style={{ ...thS }}>사업장 수</th>
                 {/* 기간별 대비 컬럼 — 피보험자수 정렬이 아닐 때만 강조 */}
@@ -221,6 +237,9 @@ const NpsTrendView = () => {
                       <span style={{ fontSize: '0.67rem', color: 'rgba(255,255,255,0.28)', marginLeft: '0.3rem' }}>
                         {row.stock_code}
                       </span>
+                      <span style={{ fontSize: '0.68rem', color: '#c4b5fd', marginLeft: '0.45rem' }}>
+                        (보고서 {fmtNum(row.base_report_workers)}명)
+                      </span>
                     </td>
                     <td style={{ ...tdS, color: 'rgba(255,255,255,0.45)', fontSize: '0.74rem' }}>
                       {row.sector || '-'}
@@ -232,6 +251,12 @@ const NpsTrendView = () => {
                       background: activePeriod === 'workers' ? 'rgba(52,211,153,0.03)' : 'transparent',
                     }}>
                       {fmtNum(row.total_workers)}
+                    </td>
+                    <td style={{ ...tdS, textAlign: 'right', color: '#c4b5fd', fontWeight: 600 }}>
+                      {fmtNum(row.estimated_workers)}
+                    </td>
+                    <td style={{ ...tdS, textAlign: 'right', color: pctColor(row.wlb_vs_est_pct), fontWeight: 600 }}>
+                      {row.wlb_vs_est_pct == null ? '-' : `${row.wlb_vs_est_pct > 0 ? '+' : ''}${row.wlb_vs_est_pct}%`}
                     </td>
                     {/* 사업장 수 */}
                     <td style={{ ...tdS, textAlign: 'right', color: 'rgba(255,255,255,0.45)' }}>
@@ -293,8 +318,8 @@ const NpsTrendView = () => {
         fontSize: '0.67rem', color: 'rgba(255,255,255,0.28)',
         display: 'flex', flexWrap: 'wrap', gap: '1rem',
       }}>
-        <span>현재 인원: 근로복지공단 고용·산재보험 현황정보 (B490001)</span>
-        <span>기간별 변동: WLB 과거 월이 없으면 국민연금 월별 순증감으로 표시합니다</span>
+        <span>현재 인원: 근로복지공단 고용보험 피보험자 (최신 스냅샷)</span>
+        <span>기간별 증감: 국민연금 월별 순증감(신규취득 − 상실) 누적합</span>
         <span>매일 저녁 20:30 변화 감지 시 자동 갱신</span>
       </div>
     </div>

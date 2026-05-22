@@ -30,6 +30,7 @@ router = APIRouter()
 # 절대 경로 — CWD와 무관하게 항상 이 파일 기준으로 stock.db 위치 결정
 _HERE = Path(__file__).resolve().parent.parent
 DB_PATH    = str(_HERE / "stock.db")
+ETF_DB_PATH = str(_HERE / "ETF_check" / "etf_check.db")
 # 해외 종목 가격 DB — 국내 종목은 stock.db, 해외 종목은 us_market.db
 US_DB_PATH = str(_HERE.parent / "us_market_dashboard" / "us_market.db")
 
@@ -1034,15 +1035,32 @@ async def import_csv(
 # 반도체 밸류스트림 — 전종목 테이블 (엑셀 마스터 기반)
 # ═══════════════════════════════════════════════════════════════════
 
-REF_DATES = ["2026-01-02", "2025-08-01", "2025-04-02"]
+DEFAULT_REF_DATES = ["2026-01-02", "2025-08-01", "2025-04-02"]
+
+
+def _normalize_ref_date(v: Optional[str], fallback: str) -> str:
+    s = (v or "").strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        return s
+    return fallback
 
 @router.get("/semiconductor/valuestream")
-def get_semiconductor_valuestream():
+def get_semiconductor_valuestream(
+    ref1: Optional[str] = Query(None, description="기준일1 YYYY-MM-DD"),
+    ref2: Optional[str] = Query(None, description="기준일2 YYYY-MM-DD"),
+    ref3: Optional[str] = Query(None, description="기준일3 YYYY-MM-DD"),
+):
     """반도체 전종목 밸류스트림 테이블.
     A-F: semiconductor_valuestream 테이블 (기업명·Lv1·Lv2·고객·주요업)
     G~: stock_universe(시총·PBR·PER), price_history(현재가·TTM매출)
     기준일 가격 3종 + 현재가 대비 변동률
     """
+    ref_dates = [
+        _normalize_ref_date(ref1, DEFAULT_REF_DATES[0]),
+        _normalize_ref_date(ref2, DEFAULT_REF_DATES[1]),
+        _normalize_ref_date(ref3, DEFAULT_REF_DATES[2]),
+    ]
+
     conn = _db()
     try:
         # 1. 마스터 데이터
@@ -1054,7 +1072,7 @@ def get_semiconductor_valuestream():
         """).fetchall()
 
         if not rows:
-            return {"rows": [], "ref_dates": REF_DATES}
+            return {"rows": [], "ref_dates": ref_dates}
 
         codes = [r[1] for r in rows if r[1]]
         ph    = ",".join("?" * len(codes))
@@ -1112,7 +1130,7 @@ def get_semiconductor_valuestream():
 
         # 5. 기준일 가격 (price_history에서 해당 날짜 또는 직전 영업일)
         ref_price_map: Dict[str, Dict[str, float]] = {c: {} for c in codes}
-        for ref_date in REF_DATES:
+        for ref_date in ref_dates:
             # 해당 날짜 포함 이전 5영업일 중 가장 최근 종가
             for r in conn.execute(
                 f"""SELECT stock_code, close FROM price_history
@@ -1121,6 +1139,54 @@ def get_semiconductor_valuestream():
                 codes + [ref_date],
             ):
                 ref_price_map[r[0]][ref_date] = r[1]
+
+        # 5b. 전일 대비 당일 변동률
+        day_change_map: Dict[str, Optional[float]] = {}
+        for r in conn.execute(
+            f"""WITH ranked AS (
+                    SELECT stock_code, close,
+                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
+                    FROM price_history
+                    WHERE stock_code IN ({ph}) AND close > 0
+                )
+                SELECT stock_code,
+                       MAX(CASE WHEN rn=1 THEN close END) AS cur_close,
+                       MAX(CASE WHEN rn=2 THEN close END) AS prev_close
+                FROM ranked
+                GROUP BY stock_code""",
+            codes,
+        ):
+            cur_close = r["cur_close"]
+            prev_close = r["prev_close"]
+            if cur_close and prev_close and float(prev_close) != 0:
+                day_change_map[r["stock_code"]] = round((float(cur_close) - float(prev_close)) / float(prev_close) * 100.0, 2)
+            else:
+                day_change_map[r["stock_code"]] = None
+
+        # 5c. ETF 편입금액(억) 최신값
+        etf_amount_map: Dict[str, Optional[float]] = {}
+        try:
+            econn = sqlite3.connect(ETF_DB_PATH, timeout=10)
+            econn.row_factory = sqlite3.Row
+            eph = ",".join("?" * len(codes))
+            for rr in econn.execute(
+                f"""WITH latest AS (
+                        SELECT e.stock_code, e.etf_amount,
+                               ROW_NUMBER() OVER (PARTITION BY e.stock_code ORDER BY e.trade_date DESC) AS rn
+                        FROM etf_inclusion_daily e
+                        WHERE e.stock_code IN ({eph})
+                          AND e.etf_amount IS NOT NULL
+                          AND e.etf_amount > 0
+                    )
+                    SELECT stock_code, etf_amount
+                    FROM latest
+                    WHERE rn = 1""",
+                codes,
+            ):
+                etf_amount_map[rr["stock_code"]] = rr["etf_amount"]
+            econn.close()
+        except Exception as _e:
+            logger.debug(f"[market-radar] etf amount map error: {_e}")
 
         # 6. 조합
         result = []
@@ -1133,7 +1199,7 @@ def get_semiconductor_valuestream():
 
             ref_prices = {}
             ref_chgs   = {}
-            for rd in REF_DATES:
+            for rd in ref_dates:
                 rp = ref_price_map.get(code, {}).get(rd)
                 ref_prices[rd] = rp
                 if cur and rp and rp > 0:
@@ -1145,6 +1211,11 @@ def get_semiconductor_valuestream():
             if mktcap and ttm_rev and ttm_rev > 0:
                 psr = round(mktcap / ttm_rev, 2)
 
+            etf_amount = etf_amount_map.get(code)
+            etf_ratio_pct = None
+            if etf_amount and mktcap and mktcap > 0:
+                etf_ratio_pct = round(float(etf_amount) / float(mktcap) * 100.0, 2)
+
             result.append({
                 "sort_order":   sort_order,
                 "stock_code":   code,
@@ -1154,11 +1225,13 @@ def get_semiconductor_valuestream():
                 "customers":    customers,
                 "main_business": main_biz,
                 "ticker_raw":   ticker_raw,
-                "etf_flag":     etf_flag,
                 "market":       uni.get("market"),
                 "sector":       uni.get("sector"),
                 "price":        cur,
+                "day_change_pct": day_change_map.get(code),
                 "market_cap":   mktcap,
+                "etf_amount":   etf_amount,
+                "etf_ratio_pct": etf_ratio_pct,
                 "pbr":          uni.get("pbr"),
                 "per":          uni.get("per"),
                 "ttm_revenue":  round(ttm_rev) if ttm_rev else None,
@@ -1167,7 +1240,7 @@ def get_semiconductor_valuestream():
                 "ref_chgs":     ref_chgs,
             })
 
-        return {"rows": result, "ref_dates": REF_DATES}
+        return {"rows": result, "ref_dates": ref_dates}
     finally:
         conn.close()
 
@@ -1176,3 +1249,374 @@ def get_semiconductor_valuestream():
 def refresh_semiconductor_valuestream():
     """semiconductor_valuestream 테이블 기준일 가격 재계산 (별도 저장 없이 API 호출 시 자동 최신화)."""
     return {"status": "ok", "note": "API 호출 시마다 price_history에서 실시간 계산됩니다."}
+
+
+@router.get("/semiconductor/summary")
+def get_semiconductor_summary(
+    start_date: Optional[str] = Query(None, description="시작일 YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="종료일 YYYY-MM-DD"),
+):
+    """반도체 카테고리(LV1) 종합현황 집계.
+    - 주가 변동률: 카테고리 내 종목의 평균 변동률(시작일 대비 종료일)
+    - 상승종목수: 종료일 기준 전일 대비 상승 종목 수
+    - 코스피/나스닥 대비: 카테고리 평균 변동률과 지수 변동률 비교
+    """
+    conn = _db()
+    try:
+        latest = conn.execute(
+            "SELECT MAX(date) AS d FROM price_history WHERE stock_code='^KS11' AND close > 0"
+        ).fetchone()
+        latest_date = latest["d"] if latest and latest["d"] else DEFAULT_REF_DATES[0]
+        sd = _normalize_ref_date(start_date, DEFAULT_REF_DATES[2])
+        ed = _normalize_ref_date(end_date, latest_date)
+
+        # 종목 + 카테고리
+        base_rows = conn.execute("""
+            SELECT stock_code, company_name, lv1
+            FROM semiconductor_valuestream
+            WHERE stock_code IS NOT NULL AND stock_code != ''
+            ORDER BY sort_order
+        """).fetchall()
+        if not base_rows:
+            return {"rows": [], "start_date": sd, "end_date": ed}
+
+        codes = [r["stock_code"] for r in base_rows]
+        ph = ",".join("?" * len(codes))
+
+        # 경량화: 종목별 상관 서브쿼리로 시작/종료/최신/전일 가격 조회
+        price_rows = conn.execute(
+            f"""
+            SELECT c.stock_code,
+                   (SELECT close FROM price_history p WHERE p.stock_code=c.stock_code AND p.date<=? AND p.close>0 ORDER BY p.date DESC LIMIT 1) AS start_close,
+                   (SELECT close FROM price_history p WHERE p.stock_code=c.stock_code AND p.date<=? AND p.close>0 ORDER BY p.date DESC LIMIT 1) AS end_close,
+                   (SELECT close FROM price_history p WHERE p.stock_code=c.stock_code AND p.close>0 ORDER BY p.date DESC LIMIT 1) AS cur_close,
+                   (SELECT close FROM price_history p WHERE p.stock_code=c.stock_code AND p.close>0 ORDER BY p.date DESC LIMIT 1 OFFSET 1) AS prev_close
+            FROM (SELECT DISTINCT stock_code FROM semiconductor_valuestream WHERE stock_code IS NOT NULL AND stock_code!='') c
+            """,
+            (sd, ed),
+        ).fetchall()
+        pmap: Dict[str, Dict[str, Optional[float]]] = {}
+        for r in price_rows:
+            pmap[r["stock_code"]] = {
+                "start": r["start_close"],
+                "end": r["end_close"],
+                "cur": r["cur_close"],
+                "prev": r["prev_close"],
+            }
+
+        # PSR (기존 로직과 동일: 시총/TTM매출)
+        uni_map: Dict[str, Optional[float]] = {}
+        for r in conn.execute(
+            f"SELECT stock_code, market_cap FROM stock_universe WHERE stock_code IN ({ph})",
+            codes,
+        ):
+            uni_map[r["stock_code"]] = (round(r["market_cap"] / 1e8) if r["market_cap"] else None)
+
+        ttm_map: Dict[str, Optional[float]] = {}
+        for r in conn.execute(
+            f"""SELECT stock_code, SUM(revenue) AS ttm
+                FROM (
+                    SELECT stock_code, revenue,
+                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) AS rn
+                    FROM financial_data
+                    WHERE stock_code IN ({ph}) AND is_annual = 0 AND revenue IS NOT NULL
+                )
+                WHERE rn <= 4
+                GROUP BY stock_code""",
+            codes,
+        ):
+            ttm_map[r["stock_code"]] = (round(r["ttm"] / 1e8) if r["ttm"] else None)
+
+        # 지수 시작/종료 변동률
+        def _index_change(sym: str) -> Optional[float]:
+            rs = conn.execute(
+                """SELECT close FROM price_history
+                   WHERE stock_code=? AND date <= ? AND close > 0
+                   ORDER BY date DESC LIMIT 1""",
+                (sym, sd),
+            ).fetchone()
+            re_ = conn.execute(
+                """SELECT close FROM price_history
+                   WHERE stock_code=? AND date <= ? AND close > 0
+                   ORDER BY date DESC LIMIT 1""",
+                (sym, ed),
+            ).fetchone()
+            if not rs or not re_:
+                return None
+            s0 = rs["close"]
+            e0 = re_["close"]
+            if not s0:
+                return None
+            return round((e0 - s0) / s0 * 100.0, 2)
+
+        kospi_chg = _index_change("^KS11")
+        nasdaq_chg = _index_change("^IXIC")
+
+        # 카테고리 집계
+        grp: Dict[str, Dict[str, Any]] = {}
+        for r in base_rows:
+            code = r["stock_code"]
+            lv1 = r["lv1"] or "기타"
+            g = grp.setdefault(lv1, {
+                "sector": lv1,
+                "count": 0,
+                "sum_chg": 0.0,
+                "chg_n": 0,
+                "up_count": 0,
+                "sum_psr": 0.0,
+                "psr_n": 0,
+            })
+            g["count"] += 1
+
+            pp = pmap.get(code, {})
+            s_close = pp.get("start")
+            e_close = pp.get("end")
+            if s_close and e_close and float(s_close) != 0:
+                c = (float(e_close) - float(s_close)) / float(s_close) * 100.0
+                g["sum_chg"] += c
+                g["chg_n"] += 1
+
+            cur = pp.get("cur")
+            prev = pp.get("prev")
+            if cur and prev and float(cur) > float(prev):
+                g["up_count"] += 1
+
+            mkt = uni_map.get(code)
+            ttm = ttm_map.get(code)
+            if mkt and ttm and ttm > 0:
+                g["sum_psr"] += (float(mkt) / float(ttm))
+                g["psr_n"] += 1
+
+        rows = []
+        total_count = 0
+        total_up = 0
+        total_chg_sum = 0.0
+        total_chg_n = 0
+        total_psr_sum = 0.0
+        total_psr_n = 0
+
+        for i, lv1 in enumerate(sorted(grp.keys()), start=1):
+            g = grp[lv1]
+            avg_chg = round(g["sum_chg"] / g["chg_n"], 2) if g["chg_n"] > 0 else None
+            up_ratio = round(g["up_count"] / g["count"] * 100.0, 1) if g["count"] > 0 else 0.0
+            avg_psr = round(g["sum_psr"] / g["psr_n"], 2) if g["psr_n"] > 0 else None
+            rows.append({
+                "no": i,
+                "sector": lv1,
+                "avg_change_pct": avg_chg,
+                "stock_count": g["count"],
+                "up_count": g["up_count"],
+                "up_ratio_pct": up_ratio,
+                "avg_psr": avg_psr,
+                "vs_kospi": "outperform" if (avg_chg is not None and kospi_chg is not None and avg_chg >= kospi_chg) else "underperform",
+                "vs_nasdaq": "outperform" if (avg_chg is not None and nasdaq_chg is not None and avg_chg >= nasdaq_chg) else "underperform",
+            })
+            total_count += g["count"]
+            total_up += g["up_count"]
+            total_chg_sum += g["sum_chg"]
+            total_chg_n += g["chg_n"]
+            total_psr_sum += g["sum_psr"]
+            total_psr_n += g["psr_n"]
+
+        total_avg_chg = round(total_chg_sum / total_chg_n, 2) if total_chg_n > 0 else None
+        total_up_ratio = round(total_up / total_count * 100.0, 1) if total_count > 0 else 0.0
+        total_avg_psr = round(total_psr_sum / total_psr_n, 2) if total_psr_n > 0 else None
+
+        summary_row = {
+            "no": 0,
+            "sector": "종합",
+            "avg_change_pct": total_avg_chg,
+            "stock_count": total_count,
+            "up_count": total_up,
+            "up_ratio_pct": total_up_ratio,
+            "avg_psr": total_avg_psr,
+            "vs_kospi": "outperform" if (total_avg_chg is not None and kospi_chg is not None and total_avg_chg >= kospi_chg) else "underperform",
+            "vs_nasdaq": "outperform" if (total_avg_chg is not None and nasdaq_chg is not None and total_avg_chg >= nasdaq_chg) else "underperform",
+        }
+
+        return {
+            "start_date": sd,
+            "end_date": ed,
+            "kospi_change_pct": kospi_chg,
+            "nasdaq_change_pct": nasdaq_chg,
+            "summary": summary_row,
+            "rows": rows,
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/semiconductor/financials")
+def get_semiconductor_financials(
+    type: str = Query("annual", pattern="^(annual|quarterly)$")
+):
+    """
+    SemiconductorView 종목실적 탭용 API.
+    반환 형식:
+      [{ name, lv1, type: 'revenue'|'profit', data: {period_label: value(억원)} }]
+    """
+    conn = _db()
+    try:
+        base_rows = conn.execute("""
+            SELECT stock_code, company_name, lv1
+            FROM semiconductor_valuestream
+            WHERE stock_code IS NOT NULL AND stock_code != ''
+            ORDER BY sort_order
+        """).fetchall()
+        if not base_rows:
+            return []
+
+        codes = [r["stock_code"] for r in base_rows]
+        ph = ",".join("?" * len(codes))
+        lv1_map = {r["stock_code"]: (r["lv1"] or "기타") for r in base_rows}
+        name_map = {r["stock_code"]: r["company_name"] for r in base_rows}
+
+        is_annual = 1 if type == "annual" else 0
+        rows = conn.execute(
+            f"""
+            SELECT stock_code, year, quarter, revenue, operating_profit
+            FROM financial_data
+            WHERE stock_code IN ({ph})
+              AND is_annual = ?
+            ORDER BY stock_code, year ASC, quarter ASC
+            """,
+            codes + [is_annual],
+        ).fetchall()
+
+        data_map: Dict[str, Dict[str, Dict[str, float]]] = {}
+        for r in rows:
+            sc = r["stock_code"]
+            if sc not in data_map:
+                data_map[sc] = {"revenue": {}, "profit": {}}
+            if type == "annual":
+                period = f"{int(r['year'])}"
+            else:
+                q = int(r["quarter"] or 0)
+                if q <= 0:
+                    continue
+                period = f"{int(r['year'])}.{q}Q"
+
+            rev = r["revenue"]
+            op = r["operating_profit"]
+            data_map[sc]["revenue"][period] = round(rev / 1e8) if rev is not None else None
+            data_map[sc]["profit"][period] = round(op / 1e8) if op is not None else None
+
+        out: List[Dict[str, Any]] = []
+        for sc in codes:
+            if sc not in data_map:
+                continue
+            out.append({
+                "name": name_map.get(sc, sc),
+                "lv1": lv1_map.get(sc, "기타"),
+                "type": "revenue",
+                "data": data_map[sc]["revenue"],
+            })
+            out.append({
+                "name": name_map.get(sc, sc),
+                "lv1": lv1_map.get(sc, "기타"),
+                "type": "profit",
+                "data": data_map[sc]["profit"],
+            })
+        return out
+    finally:
+        conn.close()
+
+
+@router.get("/semiconductor/financial-detail")
+def get_semiconductor_financial_detail(stock_code: str = Query(...)):
+    """
+    종목실적 탭 하단 상세표용:
+    - 연결/별도 재무상태 + 손익 (최근 연간)
+    - 연결/별도 현금흐름 (최근 연간)
+    """
+    conn = _db()
+    try:
+        sc = (stock_code or "").strip()
+        if not sc:
+            return {"ok": False, "reason": "stock_code required"}
+
+        fin_rows = conn.execute(
+            """
+            SELECT report_type, year, quarter, is_annual,
+                   revenue, operating_profit, net_income,
+                   total_assets, total_liabilities, total_equity
+            FROM financial_data
+            WHERE stock_code=?
+              AND is_annual=1
+              AND report_type IN ('CFS','OFS')
+            ORDER BY year DESC, quarter DESC
+            """,
+            (sc,),
+        ).fetchall()
+
+        cf_rows = conn.execute(
+            """
+            SELECT report_type, year, quarter, is_annual,
+                   operating_cf, investing_cf, financing_cf, capex
+            FROM cash_flow_data
+            WHERE stock_code=?
+              AND is_annual=1
+              AND report_type IN ('CFS','OFS')
+            ORDER BY year DESC, quarter DESC
+            """,
+            (sc,),
+        ).fetchall()
+
+        def _pick_latest(rows, rt: str):
+            for r in rows:
+                if (r["report_type"] or "CFS") == rt:
+                    return r
+            return None
+
+        cfs_fin = _pick_latest(fin_rows, "CFS")
+        ofs_fin = _pick_latest(fin_rows, "OFS")
+        cfs_cf = _pick_latest(cf_rows, "CFS")
+        ofs_cf = _pick_latest(cf_rows, "OFS")
+
+        def _to_uk(v):
+            return round(float(v) / 1e8) if v is not None else None
+
+        def _map_fin(r):
+            if not r:
+                return None
+            return {
+                "year": r["year"],
+                "revenue": _to_uk(r["revenue"]),
+                "operating_profit": _to_uk(r["operating_profit"]),
+                "net_income": _to_uk(r["net_income"]),
+                "total_assets": _to_uk(r["total_assets"]),
+                "total_liabilities": _to_uk(r["total_liabilities"]),
+                "total_equity": _to_uk(r["total_equity"]),
+            }
+
+        def _map_cf(r):
+            if not r:
+                return None
+            op = _to_uk(r["operating_cf"])
+            inv = _to_uk(r["investing_cf"])
+            fin = _to_uk(r["financing_cf"])
+            capex = _to_uk(r["capex"])
+            fcf = (op - capex) if (op is not None and capex is not None) else None
+            return {
+                "year": r["year"],
+                "operating_cf": op,
+                "investing_cf": inv,
+                "financing_cf": fin,
+                "capex": capex,
+                "free_cf": fcf,
+            }
+
+        return {
+            "ok": True,
+            "stock_code": sc,
+            "financial": {
+                "cfs": _map_fin(cfs_fin),
+                "ofs": _map_fin(ofs_fin),
+            },
+            "cashflow": {
+                "cfs": _map_cf(cfs_cf),
+                "ofs": _map_cf(ofs_cf),
+            },
+        }
+    finally:
+        conn.close()

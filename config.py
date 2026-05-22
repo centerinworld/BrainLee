@@ -95,6 +95,22 @@ STOCKEASY_EMAIL    = os.getenv("STOCKEASY_EMAIL", "")
 STOCKEASY_PASSWORD = os.getenv("STOCKEASY_PASSWORD", "")
 COLLECT_CYCLE_DELAY = int(os.getenv("COLLECT_CYCLE_DELAY", "300"))
 
+# ── Kiwoom REST/WebSocket (옵션) ───────────────────────────────
+KIWOOM_ENABLED = os.getenv("KIWOOM_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+KIWOOM_APP_KEY = os.getenv("KIWOOM_APP_KEY", "")
+KIWOOM_SECRET_KEY = os.getenv("KIWOOM_SECRET_KEY", "")
+KIWOOM_BASE_URL = os.getenv("KIWOOM_BASE_URL", "https://api.kiwoom.com")
+# 실시간 웹소켓 URL은 계정/가이드에 따라 상이할 수 있어 .env에서 override 권장
+KIWOOM_WS_URL = os.getenv("KIWOOM_WS_URL", "")
+KIWOOM_RT_ENABLED = os.getenv("KIWOOM_RT_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+KIWOOM_RT_TYPES = os.getenv("KIWOOM_RT_TYPES", "0A,0B,0C")
+KIWOOM_RT_SNAPSHOT_SEC = int(os.getenv("KIWOOM_RT_SNAPSHOT_SEC", "12"))
+KIWOOM_RT_BATCH_SIZE = int(os.getenv("KIWOOM_RT_BATCH_SIZE", "120"))
+KIWOOM_RT_BATCHES_PER_CYCLE = int(os.getenv("KIWOOM_RT_BATCHES_PER_CYCLE", "6"))
+KIWOOM_RT_UNIVERSE = os.getenv("KIWOOM_RT_UNIVERSE", "ALL").upper()  # ALL | ACTIVE
+KIWOOM_FLOW_ENABLED = os.getenv("KIWOOM_FLOW_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+KIWOOM_FLOW_TOP_N = int(os.getenv("KIWOOM_FLOW_TOP_N", "10"))
+
 # ── 서킷브레이커 / 재시도 ─────────────────────────────────────
 CB_FAILURE_THRESHOLD = int(os.getenv("CB_FAILURE_THRESHOLD", "5"))
 CB_RECOVERY_SECS     = int(os.getenv("CB_RECOVERY_SECS",    "120"))

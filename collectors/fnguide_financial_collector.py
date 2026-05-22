@@ -348,6 +348,65 @@ def _auto_update_profile(stock_code: str, learned: dict[str, str]) -> None:
 # ─────────────────────────────────────────────────────────
 # FnGuide 파싱
 # ─────────────────────────────────────────────────────────
+def fetch_fnguide_eps_bps(stock_code: str) -> dict[int, dict[str, float]]:
+    """
+    FnGuide SVD_Main.asp에서 연도별 EPS/BPS 추출.
+    반환: {year: {"eps": float, "bps": float}}
+    단위: 원/주
+    """
+    url = (
+        f"https://comp.fnguide.com/SVO2/ASP/SVD_Main.asp"
+        f"?pGB=1&gicode=A{stock_code}&cID=&MenuYn=Y&ReportGB=&NewMenuID=101&stkGb=701"
+    )
+    resp = api_limiter.get("FNGUIDE", url, headers=FNGUIDE_HEADERS, timeout=20)
+    if resp is None or resp.status_code != 200:
+        return {}
+
+    try:
+        tables = pd.read_html(StringIO(resp.text))
+    except Exception:
+        return {}
+
+    result: dict[int, dict[str, float]] = {}
+
+    for t in tables:
+        if t.empty or t.shape[1] < 2:
+            continue
+        t = t.copy()
+        t.columns = [_flatten(c) for c in t.columns]
+        labels = t.iloc[:, 0].astype(str)
+
+        eps_mask = labels.str.contains("EPS", na=False)
+        bps_mask = labels.str.contains("BPS", na=False)
+        if not eps_mask.any() and not bps_mask.any():
+            continue
+
+        year_cols: dict[int, str] = {}
+        for c in t.columns[1:]:
+            m = re.search(r"Annual\s*(20\d{2})/12", str(c))
+            if not m:
+                m = re.search(r"(20\d{2})/12", str(c))
+            if m:
+                year_cols[int(m.group(1))] = c
+
+        year_cols = {y: c for y, c in year_cols.items() if "(E)" not in str(c)}
+        if not year_cols:
+            continue
+
+        for y, col in year_cols.items():
+            yvals = result.setdefault(y, {})
+            if eps_mask.any():
+                v = _parse_val(t.loc[eps_mask].iloc[0][col])
+                if v is not None and "eps" not in yvals:
+                    yvals["eps"] = v
+            if bps_mask.any():
+                v = _parse_val(t.loc[bps_mask].iloc[0][col])
+                if v is not None and "bps" not in yvals:
+                    yvals["bps"] = v
+
+    return result
+
+
 def fetch_fnguide_all(stock_code: str, report_type: str) -> dict:
     """
     FnGuide SVD_Finance.asp 1회 요청으로 P&L + BS + CF 모두 추출.
@@ -407,10 +466,15 @@ def fetch_fnguide_all(stock_code: str, report_type: str) -> dict:
         "계속영업이익",
     ]
     _NI_EXCL_DEFAULT = [*prof.get("net_income_exclude_keywords", []), "비지배", "귀속되지않는"]
-    _OP_CF_KW = [*prof.get("op_cf_keywords",  []), "영업활동으로인한현금흐름", "영업활동현금흐름"]
-    _INV_CF_KW= [*prof.get("inv_cf_keywords", []), "투자활동으로인한현금흐름", "투자활동현금흐름"]
-    _FIN_CF_KW= [*prof.get("fin_cf_keywords", []), "재무활동으로인한현금흐름", "재무활동현금흐름"]
-    _CAPEX_KW = ["설비투자", "유형자산의취득", "유형자산취득", "CAPEX", "자본적지출"]
+    _OP_CF_KW    = [*prof.get("op_cf_keywords",  []), "영업활동으로인한현금흐름", "영업활동현금흐름"]
+    _INV_CF_KW   = [*prof.get("inv_cf_keywords", []), "투자활동으로인한현금흐름", "투자활동현금흐름"]
+    _FIN_CF_KW   = [*prof.get("fin_cf_keywords", []), "재무활동으로인한현금흐름", "재무활동현금흐름"]
+    _CAPEX_KW    = ["설비투자", "유형자산의취득", "유형자산취득", "CAPEX", "자본적지출"]
+    _CASH_END_KW = ["기말현금및현금성자산", "현금및현금성자산기말잔액",
+                    "현금및현금성자산의기말잔액", "기말의현금및현금성자산",
+                    "현금및현금성자산의기말"]
+    _DEPR_KW     = ["감가상각비", "유형자산상각비", "유형자산의감가상각비",
+                    "현금유출이없는비용등가산"]
 
     annual: dict[int, dict] = {}
     quarterly: dict[int, dict[int, dict]] = {}
@@ -465,7 +529,7 @@ def fetch_fnguide_all(stock_code: str, report_type: str) -> dict:
         has_cf  = labels.str.contains("영업활동|투자활동|재무활동", na=False).any()
 
         rev_row = op_row = ni_row = asset_row = eq_row = None
-        op_cf_row = inv_cf_row = fin_cf_row = capex_row = None
+        op_cf_row = inv_cf_row = fin_cf_row = capex_row = cash_end_row = depr_row = None
 
         if has_is:
             op_row  = _find(_OP_KW_DEFAULT, field="operating_profit")
@@ -488,10 +552,12 @@ def fetch_fnguide_all(stock_code: str, report_type: str) -> dict:
             eq_row    = _find(["자본총계", "자본"], ["비지배", "기타금융", "기타포괄"], field="total_equity")
 
         if has_cf:
-            op_cf_row  = _find(_OP_CF_KW,  field="operating_cf")
-            inv_cf_row = _find(_INV_CF_KW, field="investing_cf")
-            fin_cf_row = _find(_FIN_CF_KW, field="financing_cf")
-            capex_row  = _find(_CAPEX_KW,  field="capex")
+            op_cf_row    = _find(_OP_CF_KW,    field="operating_cf")
+            inv_cf_row   = _find(_INV_CF_KW,   field="investing_cf")
+            fin_cf_row   = _find(_FIN_CF_KW,   field="financing_cf")
+            capex_row    = _find(_CAPEX_KW,    field="capex")
+            cash_end_row = _find(_CASH_END_KW, field="cash_end")
+            depr_row     = _find(_DEPR_KW,     field="depreciation")
 
         has_any = any(r is not None for r in [
             rev_row, op_row, ni_row, asset_row, eq_row,
@@ -508,6 +574,7 @@ def fetch_fnguide_all(stock_code: str, report_type: str) -> dict:
                 ("total_assets", asset_row), ("total_equity", eq_row),
                 ("operating_cf", op_cf_row), ("investing_cf", inv_cf_row),
                 ("financing_cf", fin_cf_row), ("capex", capex_row),
+                ("cash_end", cash_end_row), ("depreciation", depr_row),
             ]:
                 if row is None or key in ydata:
                     continue
@@ -522,6 +589,7 @@ def fetch_fnguide_all(stock_code: str, report_type: str) -> dict:
                 ("revenue", rev_row), ("operating_profit", op_row), ("net_income", ni_row),
                 ("operating_cf", op_cf_row), ("investing_cf", inv_cf_row),
                 ("financing_cf", fin_cf_row), ("capex", capex_row),
+                ("cash_end", cash_end_row), ("depreciation", depr_row),
             ]:
                 if row is None or key in qdata:
                     continue
@@ -672,12 +740,12 @@ def upsert_cashflow(
     override: bool,
 ) -> str:
     existing = conn.execute("""
-        SELECT id, operating_cf, investing_cf, financing_cf, capex
+        SELECT id, operating_cf, investing_cf, financing_cf, capex, cash_end, depreciation
         FROM cash_flow_data
         WHERE stock_code=? AND year=? AND quarter=? AND is_annual=? AND report_type=?
     """, (stock_code, year, quarter, is_annual, report_type)).fetchone()
 
-    cf_fields = ["operating_cf", "investing_cf", "financing_cf", "capex"]
+    cf_fields = ["operating_cf", "investing_cf", "financing_cf", "capex", "cash_end", "depreciation"]
 
     if existing is None:
         if any(data.get(f) is not None for f in cf_fields):
@@ -685,12 +753,14 @@ def upsert_cashflow(
                 INSERT INTO cash_flow_data
                     (stock_code, year, quarter, is_annual, report_type,
                      operating_cf, investing_cf, financing_cf, capex,
+                     cash_end, depreciation,
                      data_source, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,'fnguide',datetime('now'))
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,'fnguide',datetime('now'))
             """, (
                 stock_code, year, quarter, is_annual, report_type,
                 data.get("operating_cf"), data.get("investing_cf"),
                 data.get("financing_cf"), data.get("capex"),
+                data.get("cash_end"), data.get("depreciation"),
             ))
             return "inserted"
         return "skipped"
@@ -771,6 +841,7 @@ def run(
         "snapshot_saved": 0,
         "cross_verified": 0, "cross_mismatch": 0, "cross_unverified": 0,
         "q4_computed": 0,
+        "eps_bps_updated": 0,
         "errors": 0,
     }
 
@@ -835,6 +906,20 @@ def run(
             except Exception as e:
                 logger.warning(f"{code} {rt}: {e}")
                 stats["errors"] += 1
+
+        # EPS/BPS: SVD_Main.asp에서 종목당 1회 수집 (CFS 연간 레코드에만 적용)
+        try:
+            eps_bps = fetch_fnguide_eps_bps(code)
+            for yr, eb in eps_bps.items():
+                if not (year_from <= yr <= year_to):
+                    continue
+                if not eb:
+                    continue
+                res = upsert_financial(conn, code, yr, 0, 1, "CFS", eb, override)
+                if res in ("fill_only", "overridden", "inserted"):
+                    stats["eps_bps_updated"] += 1
+        except Exception as e:
+            logger.warning(f"{code} EPS/BPS: {e}")
 
         if i % 50 == 0:
             conn.commit()

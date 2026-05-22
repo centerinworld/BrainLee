@@ -28,6 +28,7 @@ class CashFlowIngest(BaseModel):
     year: int
     quarter: int
     is_annual: bool = False
+    report_type: str = "CFS"   # 'CFS' 연결 / 'OFS' 별도
     operating_cf:  Optional[float] = None
     investing_cf:  Optional[float] = None
     financing_cf:  Optional[float] = None

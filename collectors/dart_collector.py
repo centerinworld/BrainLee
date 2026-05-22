@@ -21,6 +21,7 @@ from typing import Optional
 import config
 from collectors.base import BaseCollector
 from financial_profiles import get_profile
+from collectors.dart_mapping_engine import resolve_field
 
 try:
     from api_rate_limiter import api_limiter as _rl
@@ -76,17 +77,70 @@ _BLANK_FIN = {
 }
 
 _BLANK_CF = {
-    "operating_cf": 0.0, "investing_cf": 0.0, "financing_cf": 0.0,
-    "capex": 0.0, "cash_end": 0.0,
+    "operating_cf": None, "investing_cf": None, "financing_cf": None,
+    "capex": None, "cash_end": None, "depreciation": None,
 }
 
-# CF 계정과목 매핑
+# CF 계정과목 키워드 매핑 (account_id 매핑 실패 시 낙하)
+# 출처: config/dart_cf_account_catalog.json (top150 종목 전수조사 2026-05-17)
+#
+# 주의: account_nm에서 공백 제거 후 매칭 (str.replace(' ',''))
+# 순서: 더 구체적인 패턴을 먼저 나열
 _CF_MAP = [
-    (["영업활동으로인한현금흐름", "영업활동현금흐름"],          "operating_cf"),
-    (["투자활동으로인한현금흐름", "투자활동현금흐름"],          "investing_cf"),
-    (["재무활동으로인한현금흐름", "재무활동현금흐름"],          "financing_cf"),
-    (["유형자산의취득", "유형자산취득"],                        "capex"),
-    (["현금및현금성자산의순증감", "기말현금및현금성자산"],       "cash_end"),
+    # ── 영업활동 (OCF) ──────────────────────────────────────────────────────
+    # 표준 패턴: "영업활동현금흐름", "영업활동으로인한현금흐름"
+    # 순합계 변형: "영업활동순현금흐름합계", "영업활동으로인한순현금흐름"
+    # 이마트 패턴: "영업활동으로부터의순현금유입" (비표준, account_id=-표준계정코드 미사용-)
+    # 직접법 제외: "영업활동으로인한현금수취액/지급액" → 단방향이므로 제외
+    ([
+        "영업활동으로인한현금흐름",
+        "영업활동현금흐름",
+        "영업활동순현금흐름합계",
+        "영업활동으로인한순현금흐름",
+        "영업활동순현금흐름",
+        "영업활동으로부터의순현금유입",    # 이마트 등 비표준
+        "영업활동으로부터의현금흐름",      # 변형 패턴
+    ], "operating_cf"),
+
+    # ── 투자활동 (ICF) ──────────────────────────────────────────────────────
+    # 주의: "유입액"/"유출액"은 단방향 소계 → _parse_cf_df 에서 account_id 매핑 시 이미 스킵
+    ([
+        "투자활동으로인한현금흐름",
+        "투자활동현금흐름",
+        "투자활동순현금흐름합계",
+        "투자활동으로인한순현금흐름",
+        "투자활동순현금흐름",
+    ], "investing_cf"),
+
+    # ── 재무활동 (FCF) ──────────────────────────────────────────────────────
+    ([
+        "재무활동으로인한현금흐름",
+        "재무활동현금흐름",
+        "재무활동순현금흐름합계",
+        "재무활동으로인한순현금흐름",
+        "재무활동순현금흐름",
+    ], "financing_cf"),
+
+    # ── CapEx (PP&E 우선, 무형자산은 fallback) ───────────────────────────────
+    # 순서: PP&E 키워드 먼저 → 매칭 시 capex 확정, 무형자산은 PP&E 없을 때만 사용
+    (["유형자산의취득", "유형자산취득", "유형자산및투자부동산의취득"], "capex"),
+    (["무형자산의취득", "무형자산취득"], "capex"),
+
+    # ── 감가상각 ────────────────────────────────────────────────────────────
+    (["감가상각비", "감가상각비및무형자산상각비", "유무형자산상각비",
+      "유형자산감가상각비"], "depreciation"),
+
+    # ── 기말현금 ────────────────────────────────────────────────────────────
+    # account_id "dart_CashAndCashEquivalentsAtEndOfPeriodCf" 가 PRIMARY
+    # 아래는 account_id 미매핑 기업 fallback
+    ([
+        "기말현금및현금성자산",
+        "기말의현금및현금성자산",
+        "현금및현금성자산기말잔액",
+        "현금및현금성자산의기말잔액",
+        "기말의현금",
+        "당기말현금및현금성자산",
+    ], "cash_end"),
 ]
 
 
@@ -113,6 +167,7 @@ def _parse_fin_df(df, stock_code: Optional[str] = None) -> dict:
     for _, row in df.iterrows():
         sj  = str(row.get("sj_nm", "")).replace(" ", "")
         acc = str(row.get("account_nm", "")).replace(" ", "")
+        acc_id = str(row.get("account_id", "")).strip()
         val_col = "thstrm_amount"
         if not acc or val_col not in row or _pd.isna(row[val_col]):
             continue
@@ -120,12 +175,28 @@ def _parse_fin_df(df, stock_code: Optional[str] = None) -> dict:
             val = float(str(row[val_col]).replace(",", ""))
         except ValueError:
             continue
+
+        mapped = resolve_field(stock_code or "", acc_id, acc)
+        if mapped in m:
+            if mapped in ("revenue", "operating_profit", "net_income", "eps") and "손익계산서" not in sj:
+                mapped = None
+            if mapped in ("total_assets", "total_liabilities", "total_equity", "capital_stock", "bps") and "재무상태표" not in sj:
+                mapped = None
+        if mapped:
+            if val != 0 or m.get(mapped) in (None, 0, 0.0):
+                m[mapped] = val
+            continue
+
         for keywords, field in account_map:
             if field == "net_income" and "주당" in acc:
                 continue
             if field == "net_income" and any(x in acc for x in ("귀속", "비지배", "지배기업")):
                 continue
             if field == "net_income" and ni_excludes and any(x in acc for x in ni_excludes):
+                continue
+            # revenue: "매출원가", "매출총이익", "매출차감" 등 하위항목은 제외
+            # (ifrs-full_Revenue로 account_id 매핑이 먼저 수행되므로, 키워드 스캔에서 하위항목이 덮어쓰는 버그 방지)
+            if field == "revenue" and any(x in acc for x in ("원가", "총이익", "차감", "비용", "손실")):
                 continue
             # 손익 항목은 포괄손익계산서 행만 허용 (자본변동표 0 덮어쓰기 방지)
             if field in ("revenue", "operating_profit", "net_income", "eps"):
@@ -136,21 +207,43 @@ def _parse_fin_df(df, stock_code: Optional[str] = None) -> dict:
                 if "재무상태표" not in sj:
                     continue
             if any(kw in acc for kw in keywords):
-                # 0값보다 비영값 우선
+                # 이미 비영값이 세팅된 경우 키워드 스캔으로 덮어쓰기 방지
+                # (resolve_field로 올바른 값이 이미 세팅된 경우 보호)
+                if m.get(field) not in (None, 0, 0.0):
+                    break  # 이미 올바른 값 존재 → 키워드 매칭으로 덮어쓰지 않음
                 if val != 0 or m.get(field) in (None, 0, 0.0):
                     m[field] = val
                 break
+
+    # 매출액 음수 sanity check: 음수 매출은 데이터 오류로 간주
+    if m.get("revenue") is not None and m["revenue"] < 0:
+        m["revenue"] = None
+
     return m
 
 
-def _parse_cf_df(df) -> dict:
+# capex를 위한 PP&E 우선 account_id 목록 (무형자산 account_id보다 신뢰도 높음)
+_CAPEX_PPE_IDS = frozenset({
+    "ifrs-full_PurchaseOfPropertyPlantAndEquipment",
+    "ifrs-full_PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",
+    "dart_PurchaseOfOtherPropertyPlantAndEquipment",
+})
+_CAPEX_INTANGIBLE_IDS = frozenset({
+    "ifrs-full_PurchaseOfIntangibleAssets",
+    "ifrs-full_PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities",
+})
+
+
+def _parse_cf_df(df, stock_code: Optional[str] = None) -> dict:
     """DART cash flow DataFrame → CF dict."""
     import pandas as _pd
     m = dict(_BLANK_CF)
+    _capex_from_ppe = False  # PP&E capex 세팅 여부 (무형자산 override 방지)
     if df is None or df.empty:
         return m
     for _, row in df.iterrows():
         acc = str(row.get("account_nm", "")).replace(" ", "")
+        acc_id = str(row.get("account_id", "")).strip()
         val_col = "thstrm_amount"
         if not acc or val_col not in row or _pd.isna(row[val_col]):
             continue
@@ -158,10 +251,52 @@ def _parse_cf_df(df) -> dict:
             val = float(str(row[val_col]).replace(",", ""))
         except ValueError:
             continue
+
+        mapped = resolve_field(stock_code or "", acc_id, acc)
+        if mapped in m:
+            # 현금흐름표 계열만 허용
+            if mapped in ("operating_cf", "investing_cf", "financing_cf", "capex", "cash_end", "depreciation"):
+                # OCF/ICF/FCF 순합계 필드에서 "현금유입액"/"현금유출액" 같은 단방향 소계는 skip
+                if mapped in ("operating_cf", "investing_cf", "financing_cf") and (
+                    "유입액" in acc or "유출액" in acc or "현금유입" in acc or "현금유출" in acc
+                ):
+                    pass  # account_id 매핑 스킵 → keyword scan으로 낙하
+                elif mapped == "capex":
+                    is_ppe = acc_id in _CAPEX_PPE_IDS
+                    is_int = acc_id in _CAPEX_INTANGIBLE_IDS
+                    if is_ppe:
+                        # PP&E 항상 우선
+                        m["capex"] = abs(val)
+                        _capex_from_ppe = True
+                        continue
+                    elif is_int and _capex_from_ppe:
+                        continue  # PP&E 이미 있으면 무형자산 skip
+                    else:
+                        m["capex"] = abs(val)
+                        continue
+                else:
+                    m[mapped] = val
+                    continue
+
         for keywords, field in _CF_MAP:
             if any(kw in acc for kw in keywords):
-                m[field] = val
-                break
+                if field == "capex":
+                    if m["capex"] is not None and _capex_from_ppe:
+                        break  # PP&E 값 보호
+                    # PP&E 키워드: 유형자산의취득, 유형자산및투자부동산의취득
+                    is_ppe_kw = any(kw in acc for kw in
+                                    ["유형자산의취득", "유형자산취득", "유형자산및투자부동산의취득"])
+                    if is_ppe_kw:
+                        m["capex"] = abs(val)
+                        _capex_from_ppe = True
+                    elif m["capex"] is None:
+                        m["capex"] = abs(val)  # 무형자산만 있는 경우 fallback
+                    break
+                else:
+                    if m[field] is not None:
+                        break  # account_id 매핑으로 이미 세팅된 값 유지
+                    m[field] = val
+                    break
     return m
 
 
@@ -334,32 +469,26 @@ class DARTCollector(BaseCollector):
                     logger.warning(f"[DART-CF] 쿼터 소진 — {stock_code} CF 수집 중단")
                     return results
 
-                cf_data = None
+                # CFS·OFS 각각 독립 수집 — 연결/별도 모두 저장
                 for fs_div in ["CFS", "OFS"]:
                     try:
                         df = dart.finstate_all(stock_code, year, rprt_code, fs_div=fs_div)
                         if df is not None and not df.empty:
-                            # 현금흐름 계정명 포함 여부 확인
                             accs = df["account_nm"].astype(str).str.replace(" ", "")
                             if accs.str.contains("영업활동").any():
-                                cf_data = df
-                                break
+                                m = _parse_cf_df(df, stock_code=stock_code)
+                                results.append({
+                                    "stock_code":  stock_code,
+                                    "year":        year,
+                                    "quarter":     quarter,
+                                    "is_annual":   (quarter == 4),
+                                    "report_type": fs_div,
+                                    **m,
+                                })
                     except Exception:
                         pass
                     if _USE_RL:
                         _rl.wait("DART")
-
-                if cf_data is None:
-                    continue
-
-                m = _parse_cf_df(cf_data)
-                results.append({
-                    "stock_code": stock_code,
-                    "year":       year,
-                    "quarter":    quarter,
-                    "is_annual":  (quarter == 4),
-                    **m,
-                })
 
         logger.info(f"[DART현금흐름] {stock_code}: {len(results)}건")
         return results

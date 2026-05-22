@@ -1,4 +1,15 @@
 import React from 'react';
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 
 const API = (path) => path;
 
@@ -113,21 +124,20 @@ const SemiconductorSectorView = () => {
     let cancelled = false;
     setLoading(true);
     setError('');
-    Promise.all([
-      fetch(API(`/api/semiconductor/stocks?ref_dates=${encodeURIComponent(refParam)}`)).then(r => r.ok ? r.json() : Promise.reject(new Error('stocks'))),
+    Promise.allSettled([
+      fetch(API(`/api/semiconductor/stocks?ref_dates=${encodeURIComponent(refParam)}`)).then(r => r.ok ? r.json() : []).catch(() => []),
       fetch(API('/semiconductor-lab/api/stocks')).then(r => r.ok ? r.json() : { items: [] }).catch(() => ({ items: [] })),
-      fetch(API('/api/semiconductor/financials?type=annual')).then(r => r.ok ? r.json() : []),
-      fetch(API('/api/semiconductor/financials?type=quarterly')).then(r => r.ok ? r.json() : []),
-      fetch(API(`/api/semiconductor/benchmarks?ref_dates=${encodeURIComponent(refParam)}`)).then(r => r.ok ? r.json() : []),
-    ]).then(([stockRows, lab, annual, quarter, benchmarkRows]) => {
+      fetch(API('/api/semiconductor/financials?type=annual')).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch(API('/api/semiconductor/financials?type=quarterly')).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch(API(`/api/semiconductor/benchmarks?ref_dates=${encodeURIComponent(refParam)}`)).then(r => r.ok ? r.json() : []).catch(() => []),
+    ]).then((results) => {
       if (cancelled) return;
+      const [stockRows, lab, annual, quarter, benchmarkRows] = results.map(r => r.value ?? r.reason ?? null);
       setStocks(Array.isArray(stockRows) ? stockRows : []);
       setLabStocks(Array.isArray(lab?.items) ? lab.items : []);
       setAnnualRows(Array.isArray(annual) ? annual : []);
       setQuarterRows(Array.isArray(quarter) ? quarter : []);
       setBenchmarks(Array.isArray(benchmarkRows) ? benchmarkRows : []);
-    }).catch(() => {
-      if (!cancelled) setError('반도체 데이터를 불러오지 못했습니다.');
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });
@@ -203,7 +213,37 @@ const SemiconductorSectorView = () => {
     ['all', '전종목'],
     ['yoy', 'YoY 실적'],
     ['qoq', 'QoQ 실적'],
+    ['stock', '종목 실적'],
   ];
+
+  const categoryOptions = React.useMemo(() => {
+    return groupedStocks.map(([k]) => k);
+  }, [groupedStocks]);
+  const [pickedCategory, setPickedCategory] = React.useState('');
+  const [pickedCode, setPickedCode] = React.useState('');
+
+  React.useEffect(() => {
+    if (!categoryOptions.length) return;
+    if (!pickedCategory || !categoryOptions.includes(pickedCategory)) {
+      setPickedCategory(categoryOptions[0]);
+    }
+  }, [categoryOptions, pickedCategory]);
+
+  const categoryStocks = React.useMemo(() => {
+    const hit = groupedStocks.find(([k]) => k === pickedCategory);
+    return hit ? hit[1] : [];
+  }, [groupedStocks, pickedCategory]);
+
+  React.useEffect(() => {
+    if (!categoryStocks.length) return;
+    const exists = categoryStocks.some(s => s.code === pickedCode);
+    if (!pickedCode || !exists) setPickedCode(categoryStocks[0].code);
+  }, [categoryStocks, pickedCode]);
+
+  const pickedStock = React.useMemo(
+    () => categoryStocks.find(s => s.code === pickedCode) || null,
+    [categoryStocks, pickedCode],
+  );
 
   return (
     <div className="semi-page">
@@ -258,6 +298,179 @@ const SemiconductorSectorView = () => {
       {!loading && activeTab === 'all' && <AllStocksTables groupedStocks={groupedStocks} dates={dates} />}
       {!loading && activeTab === 'yoy' && <FinancialTable rows={annualRows} mode="yoy" />}
       {!loading && activeTab === 'qoq' && <FinancialTable rows={quarterRows} mode="qoq" />}
+      {!loading && activeTab === 'stock' && (
+        <StockPerformancePanel
+          categoryOptions={categoryOptions}
+          pickedCategory={pickedCategory}
+          setPickedCategory={setPickedCategory}
+          categoryStocks={categoryStocks}
+          pickedCode={pickedCode}
+          setPickedCode={setPickedCode}
+          pickedStock={pickedStock}
+          annualRows={annualRows}
+          quarterRows={quarterRows}
+        />
+      )}
+    </div>
+  );
+};
+
+const _periodOrder = (label, quarterly = false) => {
+  if (!label) return -1;
+  if (!quarterly) {
+    const y = Number(String(label).replace(/[^\d]/g, ''));
+    return Number.isFinite(y) ? y : -1;
+  }
+  const m = String(label).match(/(\d+)\.(\d)Q/i);
+  if (!m) return -1;
+  return Number(m[1]) * 10 + Number(m[2]);
+};
+
+const _buildSeries = (rows, name, quarterly = false) => {
+  const rev = rows.find(r => r.name === name && r.type === 'revenue');
+  const prof = rows.find(r => r.name === name && r.type === 'profit');
+  const keys = Array.from(new Set([
+    ...Object.keys(rev?.data || {}),
+    ...Object.keys(prof?.data || {}),
+  ])).sort((a, b) => _periodOrder(a, quarterly) - _periodOrder(b, quarterly));
+  return keys.map(k => ({
+    period: k,
+    revenue: rev?.data?.[k] ?? null,
+    profit: prof?.data?.[k] ?? null,
+  })).filter(r => r.revenue != null || r.profit != null);
+};
+
+const StockPerformancePanel = ({
+  categoryOptions,
+  pickedCategory,
+  setPickedCategory,
+  categoryStocks,
+  pickedCode,
+  setPickedCode,
+  pickedStock,
+  annualRows,
+  quarterRows,
+}) => {
+  const annualSeries = React.useMemo(
+    () => (pickedStock ? _buildSeries(annualRows, pickedStock.name, false) : []),
+    [annualRows, pickedStock],
+  );
+  const quarterSeries = React.useMemo(
+    () => (pickedStock ? _buildSeries(quarterRows, pickedStock.name, true) : []),
+    [quarterRows, pickedStock],
+  );
+
+  const latestAnnual = annualSeries.length ? annualSeries[annualSeries.length - 1] : null;
+  const latestQuarter = quarterSeries.length ? quarterSeries[quarterSeries.length - 1] : null;
+
+  return (
+    <div className="semi-card" style={{display:'flex',flexDirection:'column',gap:'0.8rem'}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:'0.6rem',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'wrap'}}>
+          <b style={{fontSize:'0.92rem'}}>카테고리</b>
+          {categoryOptions.map(c => (
+            <button key={c}
+              onClick={() => setPickedCategory(c)}
+              style={{
+                padding:'0.25rem 0.55rem', borderRadius:'999px', cursor:'pointer',
+                border: pickedCategory === c ? '1px solid #22d3ee' : '1px solid rgba(148,163,184,0.35)',
+                background: pickedCategory === c ? 'rgba(34,211,238,0.15)' : 'rgba(255,255,255,0.04)',
+                color: pickedCategory === c ? '#67e8f9' : '#cbd5e1', fontWeight:700, fontSize:'0.74rem',
+              }}>
+              {c}
+            </button>
+          ))}
+        </div>
+
+        <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
+          <b style={{fontSize:'0.86rem'}}>기업</b>
+          <select value={pickedCode} onChange={e => setPickedCode(e.target.value)}
+            style={{padding:'0.34rem 0.5rem', borderRadius:'8px', background:'rgba(15,23,42,0.9)', color:'#e2e8f0', border:'1px solid rgba(148,163,184,0.4)'}}>
+            {categoryStocks.map(s => <option key={s.code} value={s.code}>{s.name} ({s.code})</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(360px,1fr))',gap:'0.8rem'}}>
+        <div style={{background:'rgba(15,23,42,0.85)',border:'1px solid rgba(148,163,184,0.25)',borderRadius:'10px',padding:'0.7rem'}}>
+          <h4 style={{margin:'0 0 0.45rem',fontSize:'0.85rem'}}>연간 실적 (매출: 막대 / 이익: 선)</h4>
+          <div style={{height:'260px'}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={annualSeries}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+                <XAxis dataKey="period" tick={{fill:'#cbd5e1', fontSize:11}} />
+                <YAxis yAxisId="l" tick={{fill:'#94a3b8', fontSize:11}} />
+                <YAxis yAxisId="r" orientation="right" tick={{fill:'#94a3b8', fontSize:11}} />
+                <Tooltip />
+                <Legend />
+                <Bar yAxisId="l" dataKey="revenue" name="매출(억)" fill="#22d3ee" radius={[4,4,0,0]} />
+                <Line yAxisId="r" type="monotone" dataKey="profit" name="이익(억)" stroke="#f97316" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div style={{background:'rgba(15,23,42,0.85)',border:'1px solid rgba(148,163,184,0.25)',borderRadius:'10px',padding:'0.7rem'}}>
+          <h4 style={{margin:'0 0 0.45rem',fontSize:'0.85rem'}}>분기 실적 (매출: 막대 / 이익: 선)</h4>
+          <div style={{height:'260px'}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={quarterSeries}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+                <XAxis dataKey="period" tick={{fill:'#cbd5e1', fontSize:11}} />
+                <YAxis yAxisId="l" tick={{fill:'#94a3b8', fontSize:11}} />
+                <YAxis yAxisId="r" orientation="right" tick={{fill:'#94a3b8', fontSize:11}} />
+                <Tooltip />
+                <Legend />
+                <Bar yAxisId="l" dataKey="revenue" name="매출(억)" fill="#38bdf8" radius={[4,4,0,0]} />
+                <Line yAxisId="r" type="monotone" dataKey="profit" name="이익(억)" stroke="#fb7185" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="semi-table-wrap">
+        <table className="semi-excel-table" style={{minWidth:'860px'}}>
+          <thead>
+            <tr>
+              <th style={thBase} colSpan={2}>종목 종합현황</th>
+              <th style={thBase} colSpan={2}>실적 스냅샷</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>기업명</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{pickedStock?.name || '-'}</td>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>연간 최신(매출/이익)</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{latestAnnual ? `${fmtNum(latestAnnual.revenue)} / ${fmtNum(latestAnnual.profit)}` : '-'}</td>
+            </tr>
+            <tr>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>카테고리</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{`${pickedStock?.lv1 || '-'} / ${pickedStock?.lv2 || '-'}`}</td>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>분기 최신(매출/이익)</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{latestQuarter ? `${fmtNum(latestQuarter.revenue)} / ${fmtNum(latestQuarter.profit)}` : '-'}</td>
+            </tr>
+            <tr>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>현재가(등락률)</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{pickedStock ? `${fmtNum(pickedStock.close)} (${fmtPct(pickedStock.chg_pct, 1)})` : '-'}</td>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>PBR / PER / PSR</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{pickedStock ? `${pickedStock.pbr ?? '-'} / ${pickedStock.per ?? '-'} / ${pickedStock.psr ?? '-'}` : '-'}</td>
+            </tr>
+            <tr>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>시가총액(억)</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{pickedStock?.mktcap != null ? fmtNum(pickedStock.mktcap) : '-'}</td>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>TTM 매출(억)</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{pickedStock?.ttm_rev != null ? fmtNum(pickedStock.ttm_rev) : '-'}</td>
+            </tr>
+            <tr>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>주요 고객</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{pickedStock?.customer || '-'}</td>
+              <td style={{...cellBase, background:'#eef2ff', fontWeight:800, color:'#1e293b'}}>주요 사업</td>
+              <td style={{...cellBase, background:'#fff', textAlign:'right', fontWeight:700}}>{pickedStock?.main_biz || '-'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

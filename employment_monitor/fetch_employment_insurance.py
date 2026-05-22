@@ -50,10 +50,12 @@ DART_COMPANY_URL = 'https://opendart.fss.or.kr/api/company.json'
 # ─── DB 초기화 ──────────────────────────────────────────────────────────────
 
 def init_db(conn: sqlite3.Connection):
-    """bizr_no 컬럼 추가 (없으면)."""
+    """컬럼 보정 (bizr_no, source)."""
     cols = {r[1] for r in conn.execute("PRAGMA table_info(employment_company)")}
     if 'bizr_no' not in cols:
         conn.execute("ALTER TABLE employment_company ADD COLUMN bizr_no TEXT")
+    if 'source' not in cols:
+        conn.execute("ALTER TABLE employment_company ADD COLUMN source TEXT")
         conn.commit()
     # bizr_no 캐시 테이블
     conn.execute("""
@@ -279,9 +281,9 @@ def run(limit: int = 0, single_code: str = '', dry_run: bool = False, delay: flo
 
         emp_conn.execute("""
             INSERT OR REPLACE INTO employment_company
-            (ym, stock_code, stock_name, worker_count, yoy_change, mom_change, bizr_no)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (ym, code, name or saeopja_nm, sangsi, yoy, mom, bizr))
+            (ym, stock_code, stock_name, worker_count, yoy_change, mom_change, bizr_no, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (ym, code, name or saeopja_nm, sangsi, yoy, mom, bizr, 'insurance_api'))
         emp_conn.commit()
         ok += 1
 

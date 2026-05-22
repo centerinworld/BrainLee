@@ -15,8 +15,9 @@ signal_engine.py — 시그널 보드 계산 엔진 (v2 — 퀀트/추세추종 
 
 import json, sqlite3, logging, time as _time, math as _math
 import numpy as _np
+import os as _os
 from collections import defaultdict as _defaultdict
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from pathlib import Path
 
 # ── 모듈 레벨 캐시 (섹터 활성화 맵 — 3개 함수에서 중복 호출 방지) ──────
@@ -532,6 +533,514 @@ def calc_market_signals(db_conn=None) -> list:
 
     if not db_conn: conn.commit(); conn.close()
     return results
+
+
+def _ensure_market_regime_tables(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS market_signal_briefing (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            briefing_date TEXT NOT NULL,          -- YYYY-MM-DD (KST)
+            market TEXT NOT NULL,                 -- KOSPI | KOSDAQ
+            stage INTEGER NOT NULL,               -- 1~5
+            score REAL NOT NULL,
+            buy_allowed INTEGER NOT NULL DEFAULT 0,
+            defense_needed INTEGER NOT NULL DEFAULT 0,
+            forced_level TEXT DEFAULT '',         -- none|stage4|stage5
+            summary TEXT DEFAULT '',              -- 5줄 요약
+            factors_json TEXT DEFAULT '{}',
+            model TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(briefing_date, market)
+        )
+    """)
+
+
+def _latest_trade_date_market(conn: sqlite3.Connection, market_name: str) -> str:
+    row = conn.execute(
+        """
+        WITH su AS (
+            SELECT stock_code, market,
+                   ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY updated_at DESC) rn
+            FROM stock_universe
+        )
+        SELECT substr(ph.date,1,10) as d
+        FROM price_history ph
+        JOIN su ON su.stock_code=ph.stock_code AND su.rn=1
+        WHERE su.market LIKE ?
+          AND ph.close > 0
+          AND ph.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+        GROUP BY d
+        ORDER BY d DESC
+        LIMIT 1
+        """,
+        (f"%{market_name}%",),
+    ).fetchone()
+    return row[0] if row and row[0] else date.today().isoformat()
+
+
+def _norm_us_yield(symbol: str, val: float | None) -> float | None:
+    if val is None:
+        return None
+    # ^TNX/^TYX는 소스에 따라 10배 스케일(예: 45.95) 또는 실제금리(4.595)가 섞임
+    if symbol in ("^TNX", "^TYX") and val > 20:
+        return val / 10.0
+    return val
+
+
+def _get_latest_close(conn: sqlite3.Connection, symbols: list[str]) -> tuple[float | None, str | None]:
+    for s in symbols:
+        row = conn.execute(
+            "SELECT close, substr(date,1,10) FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
+            (s,),
+        ).fetchone()
+        if row:
+            return float(row[0]), s
+    return None, None
+
+
+def _get_nth_close(conn: sqlite3.Connection, symbols: list[str], n: int) -> float | None:
+    for s in symbols:
+        rows = conn.execute(
+            "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT ?",
+            (s, n),
+        ).fetchall()
+        if len(rows) >= n:
+            return float(rows[n - 1][0])
+    return None
+
+
+def _ma_from_symbol(conn: sqlite3.Connection, symbols: list[str], n: int = 200) -> tuple[float | None, float | None, float | None]:
+    for s in symbols:
+        rows = conn.execute(
+            "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT ?",
+            (s, max(n + 20, 260)),
+        ).fetchall()
+        if len(rows) >= n:
+            closes = [float(r[0]) for r in rows]  # newest first
+            cur = closes[0]
+            ma_n = sum(closes[:n]) / n
+            ma50 = sum(closes[:50]) / 50 if len(closes) >= 50 else None
+            # slope: ma200(today) - ma200(20d ago)
+            ma_prev = sum(closes[20:20 + n]) / n if len(closes) >= (n + 20) else ma_n
+            slope_pct = ((ma_n - ma_prev) / ma_prev * 100.0) if ma_prev else 0.0
+            return cur, ma_n, slope_pct if ma50 is None else ma50
+    return None, None, None
+
+
+def _compute_market_regime_one(conn: sqlite3.Connection, market_label: str) -> dict:
+    is_kospi = market_label == "KOSPI"
+    index_symbols = ["^KS11"] if is_kospi else ["^KQ11"]
+    market_like = "유가증권" if is_kospi else "코스닥"
+    trade_date = _latest_trade_date_market(conn, market_like)
+
+    # ---- 1) Trend ----
+    rows = conn.execute(
+        "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 260",
+        (index_symbols[0],),
+    ).fetchall()
+    closes = [float(r[0]) for r in rows]
+    cur = closes[0] if closes else None
+    ma200 = (sum(closes[:200]) / 200.0) if len(closes) >= 200 else None
+    ma50 = (sum(closes[:50]) / 50.0) if len(closes) >= 50 else None
+    ma200_prev = (sum(closes[20:220]) / 200.0) if len(closes) >= 220 else ma200
+    ma200_slope = ((ma200 - ma200_prev) / ma200_prev * 100.0) if ma200 and ma200_prev else 0.0
+    ma200_gap = ((cur - ma200) / ma200 * 100.0) if cur and ma200 else 0.0
+    idx_20d_ret = ((cur - closes[20]) / closes[20] * 100.0) if len(closes) >= 21 and closes[20] else 0.0
+
+    trend_score = 0
+    trend_score += 7 if (cur and ma200 and cur > ma200) else 0
+    trend_score += 5 if ma200_slope > 0 else (2 if ma200_slope > -0.3 else 0)
+    trend_score += 4 if (cur and ma50 and cur > ma50) else 0
+    trend_score += 4 if (-8 <= ma200_gap <= 12) else (1 if ma200_gap < 20 else 0)
+
+    # ---- 2) US rates ----
+    y10_raw, y10_sym = _get_latest_close(conn, ["^TNX", "10Y=F"])
+    y30_raw, y30_sym = _get_latest_close(conn, ["^TYX", "30Y=F"])
+    y10 = _norm_us_yield(y10_sym, y10_raw)
+    y30 = _norm_us_yield(y30_sym, y30_raw)
+    y10_20_raw = _get_nth_close(conn, ["^TNX", "10Y=F"], 21)
+    y10_20 = _norm_us_yield(y10_sym or "^TNX", y10_20_raw)
+    y10_chg20_bp = ((y10 - y10_20) * 100.0) if (y10 is not None and y10_20 is not None) else 0.0
+
+    rates_score = 0
+    rates_score += 5 if (y10 is not None and y10 <= 4.2) else (3 if (y10 is not None and y10 <= 4.7) else 0)
+    rates_score += 3 if (y30 is not None and y30 <= 4.8) else (1 if (y30 is not None and y30 <= 5.0) else 0)
+    rates_score += 4 if y10_chg20_bp <= 0 else (2 if y10_chg20_bp <= 30 else 0)
+
+    # ---- 3) Valuation ----
+    sp_per = float(_os.getenv("SP500_FORWARD_PER", "22.0") or 22.0)
+    nq_per = float(_os.getenv("NASDAQ_FORWARD_PER", "28.0") or 28.0)
+    sp_10y_avg = float(_os.getenv("SP500_FORWARD_PER_10Y_AVG", "19.0") or 19.0)
+
+    val_row = conn.execute(
+        """
+        WITH su AS (
+            SELECT stock_code, market, per, pbr,
+                   ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY updated_at DESC) rn
+            FROM stock_universe
+        )
+        SELECT
+          AVG(CASE WHEN per > 0 THEN per END) as per_avg,
+          AVG(CASE WHEN pbr > 0 THEN pbr END) as pbr_avg
+        FROM su
+        WHERE rn=1 AND market LIKE ?
+        """,
+        (f"%{market_like}%",),
+    ).fetchone()
+    mkt_per = float(val_row[0] or 0.0)
+    mkt_pbr = float(val_row[1] or 0.0)
+
+    val_score = 0
+    val_score += 5 if sp_per <= 21 else (3 if sp_per <= 24 else 1)
+    val_score += 3 if nq_per <= 27 else (2 if nq_per <= 31 else 0)
+    if is_kospi:
+        val_score += 4 if mkt_per <= 12 else (2 if mkt_per <= 15 else 0)
+        val_score += 3 if mkt_pbr <= 1.1 else (2 if mkt_pbr <= 1.4 else 0)
+    else:
+        val_score += 4 if mkt_per <= 18 else (2 if mkt_per <= 22 else 0)
+        val_score += 3 if mkt_pbr <= 1.8 else (1 if mkt_pbr <= 2.2 else 0)
+
+    # ---- 4) Flow ----
+    flow_row = conn.execute(
+        """
+        WITH su AS (
+          SELECT stock_code, market, ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY updated_at DESC) rn
+          FROM stock_universe
+        ),
+        d AS (
+          SELECT substr(ph.date,1,10) d,
+                 SUM(COALESCE(ph.frn_net_buy_amt,0))/100.0 as frn,
+                 SUM(COALESCE(ph.inst_net_buy_amt,0))/100.0 as inst
+          FROM price_history ph
+          JOIN su ON su.stock_code=ph.stock_code AND su.rn=1
+          WHERE su.market LIKE ?
+            AND ph.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+          GROUP BY d
+          ORDER BY d DESC
+          LIMIT 70
+        )
+        SELECT
+          SUM(CASE WHEN rn<=5  THEN frn ELSE 0 END),
+          SUM(CASE WHEN rn<=20 THEN frn ELSE 0 END),
+          SUM(CASE WHEN rn<=60 THEN frn ELSE 0 END),
+          SUM(CASE WHEN rn<=20 THEN inst ELSE 0 END),
+          SUM(CASE WHEN rn<=20 THEN (frn+inst) ELSE 0 END)
+        FROM (
+          SELECT d.*, ROW_NUMBER() OVER(ORDER BY d DESC) rn FROM d
+        )
+        """,
+        (f"%{market_like}%",),
+    ).fetchone()
+    frn5 = float(flow_row[0] or 0.0)
+    frn20 = float(flow_row[1] or 0.0)
+    frn60 = float(flow_row[2] or 0.0)
+    inst20 = float(flow_row[3] or 0.0)
+    both20 = float(flow_row[4] or 0.0)
+
+    flow_score = 0
+    flow_score += 5 if frn5 > 0 else 1
+    flow_score += 5 if frn20 > 0 else 0
+    flow_score += 4 if frn60 > 0 else 0
+    flow_score += 3 if inst20 > 0 else 1
+    flow_score += 3 if both20 > 0 else 0
+
+    # ---- 5) Risk appetite ----
+    vix, _ = _get_latest_close(conn, ["^VIX"])
+    usd, _ = _get_latest_close(conn, ["USDKRW=X"])
+    usd_rows = conn.execute(
+        "SELECT close FROM price_history WHERE stock_code='USDKRW=X' AND close>0 ORDER BY date DESC LIMIT 220"
+    ).fetchall()
+    usd_closes = [float(r[0]) for r in usd_rows]
+    usd_ma200 = (sum(usd_closes[:200]) / 200.0) if len(usd_closes) >= 200 else None
+    usd_20ret = ((usd_closes[0] - usd_closes[20]) / usd_closes[20] * 100.0) if len(usd_closes) >= 21 and usd_closes[20] else 0.0
+    usd_up = usd_20ret > 0
+
+    fg_row = conn.execute(
+        """
+        SELECT sr.value
+        FROM signal_result sr
+        JOIN signal_config sc ON sc.id = sr.config_id
+        WHERE sc.name='fear_greed' AND sr.stock_code=''
+        ORDER BY sr.calc_date DESC, sr.created_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    fear_greed = float(fg_row[0] or 50.0) if fg_row else 50.0
+
+    risk_score = 0
+    risk_score += 5 if (vix is not None and vix < 20) else (3 if (vix is not None and vix <= 25) else 0)
+    risk_score += 5 if (usd is not None and usd_ma200 is not None and usd <= usd_ma200) else 1
+    risk_score += 3 if not usd_up else 0
+    risk_score += 2 if fear_greed >= 45 else 0
+
+    # ---- 6) Breadth ----
+    breadth_row = conn.execute(
+        """
+        WITH su AS (
+            SELECT stock_code, market, ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY updated_at DESC) rn
+            FROM stock_universe
+        ),
+        p AS (
+            SELECT ph.stock_code, substr(ph.date,1,10) d, ph.close,
+                   LAG(ph.close) OVER(PARTITION BY ph.stock_code ORDER BY ph.date) prev_close
+            FROM price_history ph
+            JOIN su ON su.stock_code=ph.stock_code AND su.rn=1
+            WHERE su.market LIKE ?
+              AND ph.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND substr(ph.date,1,10) >= date(?, '-3 days')
+        )
+        SELECT
+          AVG(CASE WHEN close > prev_close THEN 1.0 ELSE 0.0 END) * 100.0 as up_ratio
+        FROM p
+        WHERE d = ?
+          AND prev_close IS NOT NULL
+        """,
+        (f"%{market_like}%", trade_date, trade_date),
+    ).fetchone()
+    up_ratio = float(breadth_row[0] or 50.0)
+
+    # 최근 120영업일 신고가/신저가 비율 (근사)
+    hl_rows = conn.execute(
+        """
+        WITH su AS (
+            SELECT stock_code, market, ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY updated_at DESC) rn
+            FROM stock_universe
+        ),
+        h AS (
+            SELECT ph.stock_code, substr(ph.date,1,10) d, ph.close,
+                   MAX(ph.close) OVER(PARTITION BY ph.stock_code ORDER BY ph.date ROWS BETWEEN 119 PRECEDING AND CURRENT ROW) h120,
+                   MIN(ph.close) OVER(PARTITION BY ph.stock_code ORDER BY ph.date ROWS BETWEEN 119 PRECEDING AND CURRENT ROW) l120
+            FROM price_history ph
+            JOIN su ON su.stock_code=ph.stock_code AND su.rn=1
+            WHERE su.market LIKE ?
+              AND ph.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND substr(ph.date,1,10) >= date(?, '-20 days')
+        )
+        SELECT
+          SUM(CASE WHEN d=? AND close >= h120 * 0.999 THEN 1 ELSE 0 END) as nh,
+          SUM(CASE WHEN d=? AND close <= l120 * 1.001 THEN 1 ELSE 0 END) as nl
+        FROM h
+        """,
+        (f"%{market_like}%", trade_date, trade_date, trade_date),
+    ).fetchone()
+    nh = int(hl_rows[0] or 0)
+    nl = int(hl_rows[1] or 0)
+    nh_nl_ratio = (nh / nl) if nl > 0 else (999.0 if nh > 0 else 1.0)
+    breadth_div = (idx_20d_ret > 0 and up_ratio < 45)
+
+    breadth_score = 0
+    breadth_score += 4 if up_ratio >= 55 else (2 if up_ratio >= 45 else 0)
+    breadth_score += 3 if nh_nl_ratio >= 1.2 else (1 if nh_nl_ratio >= 0.8 else 0)
+    breadth_score += 2 if (-10 <= ma200_gap <= 15) else 0
+    breadth_score += 1 if not breadth_div else 0
+
+    total = float(trend_score + rates_score + val_score + flow_score + risk_score + breadth_score)
+    total = max(0.0, min(100.0, round(total, 1)))
+
+    # Base stage from score
+    if total >= 80:
+        stage = 1
+    elif total >= 65:
+        stage = 2
+    elif total >= 45:
+        stage = 3
+    elif total >= 25:
+        stage = 4
+    else:
+        stage = 5
+    base_stage = stage
+
+    # Forced downgrades
+    hard4_conds = [
+        (y10 is not None and y10 > 4.7, "미국10년물>4.7%"),
+        (y30 is not None and y30 > 5.0, "미국30년물>5.0%"),
+        (sp_per > sp_10y_avg * 1.15, "S&P500 FwdPER 10Y평균+15%"),
+        (ma200_gap > 20, f"{market_label} MA200괴리+20% 과열"),
+        (frn20 < 0, "외국인20일 순매도"),
+        (usd is not None and usd_ma200 is not None and usd > usd_ma200 and usd_up, "원달러 MA200위+상승추세"),
+        (vix is not None and vix > 25, "VIX>25"),
+        (breadth_div, "지수상승 중 상승종목<45%"),
+    ]
+    hard5_conds = [
+        (cur is not None and ma200 is not None and cur < ma200, f"{market_label} MA200 하향이탈"),
+        (y10_chg20_bp > 50, "미국10년물 20일 +50bp 초과"),
+        (vix is not None and vix > 35, "VIX>35"),
+        (both20 < -3000, "외국인+기관 20일 대규모 순매도"),
+        (usd_20ret > 5, "원달러 20일 상승률>5%"),
+        (nl >= max(1, nh * 2), "신저가가 신고가 2배 이상"),
+        (idx_20d_ret <= -10, "지수 20일 -10% 이하"),
+    ]
+    hard4_hit = [m for ok, m in hard4_conds if ok]
+    hard5_hit = [m for ok, m in hard5_conds if ok]
+
+    forced_level = "none"
+    forced_reasons = []
+    if len(hard5_hit) >= 2:
+        stage = 5
+        forced_level = "stage5"
+        forced_reasons = hard5_hit
+    elif len(hard4_hit) >= 2 and stage < 4:
+        stage = 4
+        forced_level = "stage4"
+        forced_reasons = hard4_hit
+
+    buy_allowed = (
+        stage in (1, 2) and
+        (cur is not None and ma200 is not None and cur > ma200) and
+        frn20 >= 0 and
+        (y10 is None or y10 <= 4.7 or y10_chg20_bp <= 0)
+    )
+    sell_defense = stage in (4, 5)
+    buy_block_reasons = [
+        stage in (4, 5),
+        (frn20 < 0 and frn60 < 0),
+        (y10 is not None and y10 >= 4.7 and y10_chg20_bp > 0),
+        (y30 is not None and y30 >= 5.0),
+        ma200_gap >= 20,
+        (sp_per > 24 and idx_20d_ret < 0),
+        (usd_up and usd is not None and usd_ma200 is not None and usd > usd_ma200),
+    ]
+    if any(buy_block_reasons):
+        buy_allowed = False
+
+    positives = []
+    negatives = []
+    if cur and ma200 and cur > ma200: positives.append("지수 MA200 상단")
+    if ma200_slope > 0: positives.append("MA200 기울기 우상향")
+    if frn20 > 0: positives.append("외국인 20일 순매수")
+    if inst20 > 0: positives.append("기관 20일 순매수")
+    if vix is not None and vix < 20: positives.append("VIX 안정권")
+    if up_ratio >= 55: positives.append("시장 폭 양호(상승종목 비율)")
+    if y10 is not None and y10 > 4.7: negatives.append("미국 10년물 고금리")
+    if y30 is not None and y30 > 5.0: negatives.append("미국 30년물 고금리")
+    if frn20 < 0: negatives.append("외국인 20일 순매도")
+    if frn60 < 0: negatives.append("외국인 60일 순매도")
+    if usd_up and usd is not None and usd_ma200 is not None and usd > usd_ma200: negatives.append("원달러 상승추세")
+    if vix is not None and vix > 25: negatives.append("VIX 리스크 상승")
+    if breadth_div: negatives.append("지수 상승 대비 시장 폭 약화")
+
+    return {
+        "market": market_label,
+        "trade_date": trade_date,
+        "stage": stage,
+        "score": total,
+        "buy_allowed": bool(buy_allowed),
+        "sell_defense": bool(sell_defense),
+        "forced_level": forced_level,
+        "forced_reasons": forced_reasons,
+        "base_stage": base_stage,
+        "forced_stage4_hits": hard4_hit,
+        "forced_stage5_hits": hard5_hit,
+        "positive_factors": positives[:6],
+        "negative_factors": negatives[:6],
+        "groups": {
+            "trend": {"score": trend_score, "max": 20, "detail": {"ma200_gap_pct": round(ma200_gap, 2), "ma200_slope_pct": round(ma200_slope, 2)}},
+            "rates": {"score": rates_score, "max": 12, "detail": {"us10y": y10, "us30y": y30, "us10y_20d_bp": round(y10_chg20_bp, 1)}},
+            "valuation": {"score": val_score, "max": 15, "detail": {"sp500_fwd_per": round(sp_per, 2), "nasdaq_fwd_per": round(nq_per, 2), f"{market_label}_per": round(mkt_per, 2), f"{market_label}_pbr": round(mkt_pbr, 2)}},
+            "flow": {"score": flow_score, "max": 20, "detail": {"frn_5d_억": round(frn5, 1), "frn_20d_억": round(frn20, 1), "frn_60d_억": round(frn60, 1), "inst_20d_억": round(inst20, 1)}},
+            "risk": {"score": risk_score, "max": 15, "detail": {"vix": vix, "usdkrw": usd, "usd_20d_ret_pct": round(usd_20ret, 2), "fear_greed": round(fear_greed, 1)}},
+            "breadth": {"score": breadth_score, "max": 10, "detail": {"up_ratio_pct": round(up_ratio, 1), "new_high": nh, "new_low": nl, "nh_nl_ratio": round(nh_nl_ratio, 2), "index_20d_ret_pct": round(idx_20d_ret, 2)}},
+        },
+    }
+
+
+def get_market_regime_snapshot(db_conn=None) -> dict:
+    conn = db_conn or sqlite3.connect(DB_PATH)
+    try:
+        _ensure_market_regime_tables(conn)
+        kospi = _compute_market_regime_one(conn, "KOSPI")
+        kosdaq = _compute_market_regime_one(conn, "KOSDAQ")
+        briefings = []
+        for m in ("KOSPI", "KOSDAQ"):
+            row = conn.execute(
+                """
+                SELECT briefing_date, market, stage, score, buy_allowed, defense_needed, forced_level, summary, created_at
+                FROM market_signal_briefing
+                WHERE market=?
+                ORDER BY briefing_date DESC, id DESC
+                LIMIT 1
+                """,
+                (m,),
+            ).fetchone()
+            if row:
+                briefings.append({
+                    "briefing_date": row[0], "market": row[1], "stage": row[2], "score": row[3],
+                    "buy_allowed": bool(row[4]), "defense_needed": bool(row[5]),
+                    "forced_level": row[6], "summary": row[7], "created_at": row[8],
+                })
+        return {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "principle": "MA200 위는 매수 허가가 아니라 최소 조건. 금리·밸류·수급 악화 시 매수 제한.",
+            "markets": [kospi, kosdaq],
+            "briefings": briefings,
+        }
+    finally:
+        if not db_conn:
+            conn.close()
+
+
+def generate_market_ai_briefings(db_conn=None) -> dict:
+    conn = db_conn or sqlite3.connect(DB_PATH)
+    try:
+        _ensure_market_regime_tables(conn)
+        snap = get_market_regime_snapshot(conn)
+        api_key = (_os.getenv("OPENAI_API_KEY") or "").strip()
+        model = (_os.getenv("MARKET_BRIEF_MODEL") or "gpt-4o-mini").strip()
+        today = date.today().isoformat()
+
+        for m in snap.get("markets", []):
+            summary = ""
+            if api_key:
+                try:
+                    import openai
+                    client = openai.OpenAI(api_key=api_key, timeout=18.0, max_retries=0)
+                    prompt = (
+                        "아래 시장 국면 데이터를 바탕으로 한국어 5줄 이내 아침 브리핑을 작성하세요.\n"
+                        f"- 시장: {m['market']}, 단계: {m['stage']}, 점수: {m['score']}\n"
+                        f"- 매수허용: {m['buy_allowed']}, 방어필요: {m['sell_defense']}, 강제하향: {m['forced_level']}\n"
+                        f"- 긍정요인: {', '.join(m.get('positive_factors', []))}\n"
+                        f"- 부정요인: {', '.join(m.get('negative_factors', []))}\n"
+                        f"- 세부점수: {json.dumps(m.get('groups', {}), ensure_ascii=False)}\n"
+                        "형식: 각 줄은 '• '로 시작. 숫자/행동 제안 중심. 과장 금지."
+                    )
+                    res = client.chat.completions.create(
+                        model=model,
+                        max_completion_tokens=220,
+                        messages=[
+                            {"role": "system", "content": "당신은 한국 주식시장 리스크 관리자입니다."},
+                            {"role": "user", "content": prompt},
+                        ],
+                    )
+                    summary = (res.choices[0].message.content or "").strip()
+                except Exception as e:
+                    summary = f"• AI 요약 생성 실패: {e}"
+            if not summary:
+                summary = (
+                    f"• {m['market']} 단계 {m['stage']} / 점수 {m['score']}\n"
+                    f"• 매수허용: {'가능' if m['buy_allowed'] else '제한'} / 방어: {'필요' if m['sell_defense'] else '보통'}\n"
+                    f"• 긍정: {', '.join(m.get('positive_factors', [])[:2]) or '-'}\n"
+                    f"• 부정: {', '.join(m.get('negative_factors', [])[:2]) or '-'}\n"
+                    "• 세부지표는 시그널 보드 상세를 확인하세요."
+                )
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO market_signal_briefing
+                (briefing_date, market, stage, score, buy_allowed, defense_needed, forced_level, summary, factors_json, model)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    today, m["market"], m["stage"], float(m["score"]),
+                    1 if m["buy_allowed"] else 0, 1 if m["sell_defense"] else 0,
+                    m.get("forced_level", "none"), summary,
+                    json.dumps(m, ensure_ascii=False), model if api_key else "fallback",
+                ),
+            )
+        conn.commit()
+        return {"ok": True, "date": today, "count": len(snap.get("markets", []))}
+    finally:
+        if not db_conn:
+            conn.close()
 
 
 def calc_stock_signals(stock_code: str, db_conn=None) -> list:

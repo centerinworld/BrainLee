@@ -107,6 +107,47 @@ def get_market_signals(refresh: bool = False):
         return []
 
 
+@router.get("/market-regime")
+def get_market_regime():
+    """5단계 시장 국면 점수 + 최신 AI 브리핑 조회."""
+    try:
+        from signal_engine import get_market_regime_snapshot, generate_market_ai_briefings
+        conn = _db()
+        # self-heal: 오늘 브리핑이 없으면 조회 시 1회 생성 시도
+        today = _date.today().isoformat()
+        row = conn.execute(
+            "SELECT COUNT(*) FROM market_signal_briefing WHERE briefing_date=?",
+            (today,),
+        ).fetchone()
+        cnt = int(row[0] or 0) if row else 0
+        if cnt < 2:
+            try:
+                generate_market_ai_briefings(conn)
+            except Exception:
+                logger.exception("[시그널/market-regime] today briefing self-heal failed")
+        data = get_market_regime_snapshot(conn)
+        conn.close()
+        return data
+    except Exception as e:
+        logger.error(f"[시그널/market-regime] {e}")
+        return {"generated_at": "", "markets": [], "briefings": [], "error": str(e)}
+
+
+@router.post("/market-regime/briefing")
+def generate_market_regime_briefing():
+    """시장 국면 AI 브리핑 즉시 생성(수동 트리거)."""
+    try:
+        from signal_engine import generate_market_ai_briefings, get_market_regime_snapshot
+        conn = _db()
+        gen = generate_market_ai_briefings(conn)
+        snap = get_market_regime_snapshot(conn)
+        conn.close()
+        return {"result": gen, "snapshot": snap}
+    except Exception as e:
+        logger.error(f"[시그널/market-regime/briefing] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── GET /api/signals/stock/{stock_code} ────────────────────────
 @router.get("/stock/{stock_code}")
 def get_stock_signals(stock_code: str, refresh: bool = False):

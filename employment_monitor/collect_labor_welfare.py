@@ -5,7 +5,7 @@ B490001/gySjbPstateInfoService/getGySjBoheomBsshItem
 - 우리 stock_universe 상장사와 이름 매칭 → 사업장별 인원 합산
 - employment.db wlb_monthly 테이블에 월별 저장
 
-실행: python3 employment_monitor/collect_labor_welfare.py [--test] [--month YYYYMM]
+실행: python3 employment_monitor/collect_labor_welfare.py [--test]
 """
 
 import os, re, sys, time, sqlite3, logging, argparse
@@ -63,7 +63,7 @@ def _clean(s: str) -> str:
 def load_stock_universe():
     conn = sqlite3.connect(STOCK_DB)
     rows = conn.execute(
-        "SELECT stock_code, stock_name FROM stock_universe WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ')"
+        "SELECT stock_code, stock_name FROM stock_universe WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ') AND (secugrp_nm = '주권' OR secugrp_nm IS NULL)"
     ).fetchall()
     conn.close()
     result = {}  # clean_name → (code, name)
@@ -283,11 +283,19 @@ def save_to_db(data_ym: str, aggregated: dict):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='근로복지공단 고용보험 월별 인원 수집')
     parser.add_argument('--test', action='store_true', help='테스트: 50페이지만 수집')
-    parser.add_argument('--month', type=str, default=None, help='수집월 YYYYMM (기본: 현재월)')
+    parser.add_argument('--month', type=str, default=None, help='[주의] 라벨 수동 지정 YYYYMM (기본 비권장)')
+    parser.add_argument('--allow-override-month', action='store_true', help='--month 강제 허용 (기본: 현재월과 다르면 종료)')
     parser.add_argument('--test-pages', type=int, default=50, help='테스트 시 스캔 페이지 수')
     args = parser.parse_args()
 
-    data_ym = args.month or datetime.now().strftime('%Y%m')
+    now_ym = datetime.now().strftime('%Y%m')
+    data_ym = args.month or now_ym
+    if data_ym != now_ym and not args.allow_override_month:
+        raise SystemExit(
+            f"[ABORT] WLB API는 과거월 조회 파라미터를 지원하지 않습니다. "
+            f"현재월({now_ym})과 다른 data_ym({data_ym}) 저장은 라벨 오염 위험이 큽니다. "
+            f"정말 필요하면 --allow-override-month를 명시하세요."
+        )
     init_db()
 
     test_pages = args.test_pages if args.test else 0

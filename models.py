@@ -201,6 +201,8 @@ class CashFlowData(Base):
     financing_cf_q = Column(Float, nullable=True)   # 재무CF 분기 순값
     capex_q        = Column(Float, nullable=True)   # CapEx 분기 순값
     value_type     = Column(String, nullable=True)  # NULL|cumulative→derived|derived_q4
+    report_type    = Column(String, nullable=True, default="CFS")  # CFS(연결) | OFS(별도)
+    data_source    = Column(String, nullable=True)   # 'dart' / 'fnguide' / None
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

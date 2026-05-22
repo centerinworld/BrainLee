@@ -578,9 +578,25 @@ def _send_telegram_alert(contract: dict):
         "주의": "⚠️",
     }.get(signal, "📌")
 
+    def _safe_text(v, default="미확인"):
+        if v is None:
+            return default
+        s = str(v).strip()
+        if not s or s.lower() == "none":
+            return default
+        return s
+
+    def _safe_num(v, default="-"):
+        try:
+            if v is None:
+                return default
+            return f"{float(v):,.0f}".rstrip("0").rstrip(".")
+        except Exception:
+            return default
+
     overseas_tag = "🌏 해외계약" if contract.get("is_overseas") else "🏠 국내계약"
-    ratio_str = (f"{contract['contract_ratio_pct']:.1f}%"
-                 if contract.get("contract_ratio_pct") else "?")
+    ratio_val = contract.get("contract_ratio_pct")
+    ratio_str = (f"{float(ratio_val):.1f}%" if ratio_val is not None else "미확인")
 
     strategies = contract.get("strategy_match_json", "")
     try:
@@ -589,39 +605,29 @@ def _send_telegram_alert(contract: dict):
         strats = []
     strat_str = " ".join(f"[{s}]" for s in strats) if strats else ""
 
-    msg = f"""{signal_emoji} **[DART 수주공시 알림]** {stars}
+    msg = f"""{signal_emoji} <b>DART 수주공시 알림</b> {stars}
 
-📌 {contract['stock_name']} ({contract['stock_code'] or '코드미확인'})
-📄 {contract['report_nm']}
+📌 <b>{_safe_text(contract.get('stock_name'), '종목미확인')}</b> ({_safe_text(contract.get('stock_code'), '코드미확인')})
+📄 {_safe_text(contract.get('report_nm'), '공시제목 미확인')}
 
-💰 계약금액: {contract.get('contract_amount', '?')} {contract.get('contract_unit', '')}
+💰 계약금액: {_safe_num(contract.get('contract_amount'))} {_safe_text(contract.get('contract_unit'), '').strip()}
 📊 매출액 대비: {ratio_str}
-🤝 계약상대방: {contract.get('counterparty', '미확인')}
+🤝 계약상대방: {_safe_text(contract.get('counterparty'), '미확인')}
 {overseas_tag}
 
-🧠 AI 판단: {signal} (스코어 {contract.get('ai_score', 0)})
-📝 {contract.get('ai_summary', '')}
-💡 근거: {contract.get('ai_reason', '')}
-⚠️ 리스크: {contract.get('ai_risk', '')}
+🧠 AI 판단: <b>{signal}</b> (스코어 {contract.get('ai_score', 0)})
+📝 {_safe_text(contract.get('ai_summary'), '-')}
+💡 근거: {_safe_text(contract.get('ai_reason'), '-')}
+⚠️ 리스크: {_safe_text(contract.get('ai_risk'), '-')}
 
 {strat_str}
-🕐 공시일: {contract.get('disclosed_at', '')}"""
+🕐 공시일: {_safe_text(contract.get('disclosed_at'), '')}"""
 
     try:
-        import os
-        bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-        chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-        if not bot_token or not chat_id:
-            logger.warning("[DART수주] 텔레그램 설정 없음")
-            return False
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        resp = requests.post(url, json={
-            "chat_id": chat_id,
-            "text": msg,
-            "parse_mode": "Markdown",
-        }, timeout=10)
-        if resp.status_code == 200:
-            # DB 업데이트
+        from notifier import send as _notify
+        dedup_key = f"dart_contract_{contract.get('rcept_no','')}"
+        sent = _notify(msg, key=dedup_key)
+        if sent:
             conn = sqlite3.connect(DB_PATH, timeout=30)
             conn.execute(
                 "UPDATE dart_contracts SET telegram_sent=1 WHERE rcept_no=?",
@@ -630,6 +636,7 @@ def _send_telegram_alert(contract: dict):
             conn.commit()
             conn.close()
             return True
+        logger.info(f"[DART수주] 중복/실패로 전송 스킵: {dedup_key}")
     except Exception as e:
         logger.error(f"[DART수주] 텔레그램 발송 실패: {e}")
     return False

@@ -9,6 +9,7 @@ import asyncio
 import sqlite3
 import json
 import os
+import re
 from datetime import datetime, timedelta, date
 from collections import Counter
 
@@ -50,6 +51,57 @@ MONITOR_CHANNELS = _load_monitor_channels()
 
 DB_PATH = "/Applications/stock_dashboard/stock.db"
 HOURS   = 12
+_STOCK_DICT = None
+
+
+def _load_stock_dict():
+    global _STOCK_DICT
+    if _STOCK_DICT is not None:
+        return _STOCK_DICT
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT TRIM(stock_name) AS stock_name, COALESCE(market,'미확인') AS market
+            FROM stock_universe
+            WHERE stock_name IS NOT NULL AND LENGTH(TRIM(stock_name)) >= 2
+            """
+        ).fetchall()
+        names = [(r[0], r[1]) for r in rows if r[0]]
+        # 긴 이름 우선 매칭 (부분중복 완화)
+        names.sort(key=lambda x: len(x[0]), reverse=True)
+        _STOCK_DICT = names
+        return _STOCK_DICT
+    finally:
+        conn.close()
+
+
+def _fallback_extract_stocks(texts):
+    if not texts:
+        return []
+    joined = "\n".join(t for t in texts if t).strip()
+    if not joined:
+        return []
+    hit_counter = Counter()
+    market_map = {}
+    for name, market in _load_stock_dict():
+        # 영문/숫자 포함명은 단어경계, 한글명은 포함매칭
+        if re.search(r"[A-Za-z0-9]", name):
+            pattern = rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])"
+            cnt = len(re.findall(pattern, joined))
+        else:
+            cnt = joined.count(name)
+        if cnt > 0:
+            hit_counter[name] += cnt
+            market_map[name] = market
+    out = []
+    for name, cnt in hit_counter.most_common(12):
+        out.append({
+            "name": name,
+            "market": market_map.get(name, "미확인"),
+            "reason": f"채널 내 최근 메시지에서 총 {cnt}회 언급",
+        })
+    return out
 
 # ──────────────────────────────────────────────
 # DB 초기화
@@ -120,10 +172,17 @@ JSON만 응답하고 다른 텍스트는 포함하지 마세요.
         )
         text = response.choices[0].message.content.strip()
         text = text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            return {"summary": "요약 실패", "stocks": []}
+        stocks = parsed.get("stocks", [])
+        if not stocks:
+            stocks = _fallback_extract_stocks(messages)
+            parsed["stocks"] = stocks
+        return parsed
     except Exception as e:
         print(f"[OpenAI 오류] {e}")
-        return {"summary": "요약 실패", "stocks": []}
+        return {"summary": "요약 실패", "stocks": _fallback_extract_stocks(messages)}
 
 # ──────────────────────────────────────────────
 # 텔레그램 봇 전송
@@ -177,8 +236,9 @@ def build_report(now, since, summaries, top_stocks, stock_market):
         "━━━━━━━━━━━━━━━━━━━━━━",
     ]
     for cs in summaries:
+        summary_text = (cs.get("summary") or "").strip() or "요약 데이터 없음"
         lines.append(f"<b>{cs['channel']}</b> ({cs['count']}개)")
-        lines.append(f"📝 {cs['summary']}")
+        lines.append(f"📝 {summary_text}")
         if cs['stocks']:
             lines.append("")
             for s in cs['stocks'][:5]:
@@ -190,14 +250,16 @@ def build_report(now, since, summaries, top_stocks, stock_market):
                     lines.append(f"  └ {reason}")
         lines.append("")
 
-    lines += [
-        "━━━━━━━━━━━━━━━━━━━━━━",
-        f"🏆 <b>금일 언급 TOP {min(10, len(top_stocks))}</b>",
-    ]
-    for i, (name, cnt) in enumerate(top_stocks[:10], 1):
-        mkt = stock_market.get(name, "미확인")
-        tag = "🔵" if mkt == "KOSPI" else "🟢" if mkt == "KOSDAQ" else "⚪"
-        lines.append(f"{i}. {tag} <b>{name}</b> {cnt}회 ({mkt})")
+    lines += ["━━━━━━━━━━━━━━━━━━━━━━"]
+    if top_stocks:
+        lines.append(f"🏆 <b>금일 언급 TOP {min(10, len(top_stocks))}</b>")
+        for i, (name, cnt) in enumerate(top_stocks[:10], 1):
+            mkt = stock_market.get(name, "미확인")
+            tag = "🔵" if mkt == "KOSPI" else "🟢" if mkt == "KOSDAQ" else "⚪"
+            lines.append(f"{i}. {tag} <b>{name}</b> {cnt}회 ({mkt})")
+    else:
+        lines.append("🏆 <b>금일 언급 TOP 0</b>")
+        lines.append("  - 유효 종목 언급이 없습니다.")
     return "\n".join(lines)
 
 # ──────────────────────────────────────────────
@@ -284,19 +346,31 @@ async def collect_and_analyze():
     stock_counter = Counter()
     stock_market  = {}
     for s in all_stocks:
-        name = s.get("name", "")
+        name = (s.get("name", "") or "").strip()
         if name:
             stock_counter[name] += 1
             stock_market[name]   = s.get("market", "미확인")
 
     top_stocks = stock_counter.most_common(20)
+    # 종목 추출 결과가 없으면 노이즈 리포트 전송하지 않음
+    if not top_stocks:
+        print("\nℹ️ 유효 종목 추출 결과가 없어 리포트 전송 생략")
+        print("\n✅ 완료")
+        return
+
     report     = build_report(now, since, channel_summaries, top_stocks, stock_market)
     print("\n" + report)
 
     if BOT_TOKEN and TARGET_CHANNEL_ID:
         try:
-            await send_result(report)
-            print("\n✅ 텔레그램 전송 완료")
+            from notifier import send as _notify
+            session_key = "am" if now.hour < 12 else "pm"
+            dedup_key = f"tg_stock_report_{today_str}_{session_key}"
+            sent = _notify(report, key=dedup_key)
+            if sent:
+                print("\n✅ 텔레그램 전송 완료")
+            else:
+                print("\nℹ️ 텔레그램 전송 스킵(중복 또는 실패)")
         except Exception as e:
             print(f"\n⚠️ 텔레그램 전송 실패: {e}")
 

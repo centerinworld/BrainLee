@@ -972,6 +972,155 @@ def _is_buy_v1(
     return True
 
 
+def _is_buy_value(
+    i: int, sim_start_i: int,
+    dates: list, prices: list, volumes: list,
+    frn_net: list, inst_net: list, fin_rows: list,
+) -> bool:
+    """
+    V1 가치매수 (Graham 내재가치 할인):
+      [A] Graham IV = √(22.5 × EPS × BPS) 대비 25%+ 할인 OR PBR<0.7 AND 0<PER<10
+      [B] 최근 분기 영업이익 > 0 (흑자)
+      [C] 수급 보조: 기관 OR 외국인 5일 순매수 양수
+      [D] MA60 하회 안됨 (추세 붕괴 종목 제외)
+    """
+    if i < sim_start_i or i < 60:
+        return False
+    curr = prices[i]
+    if curr <= 0:
+        return False
+
+    # [D] 최소 추세: MA60 하회 시 제외
+    ma60 = _ma(prices[max(0, i-59):i+1], 60)
+    if ma60 and curr < ma60 * 0.95:
+        return False
+
+    # [B] 재무: 최근 분기 영업이익 > 0
+    fin = _get_financial_as_of(fin_rows, dates[i])
+    if fin is None:
+        return False
+    _y, _q, _rev, op, eps, bps, _eq, _ni, _roe, _ann = fin
+    if not op or op <= 0:
+        return False
+
+    # [A] Graham 가치 조건
+    graham_ok = False
+    if eps and eps > 0 and bps and bps > 0:
+        import math as _math2
+        graham_iv = _math2.sqrt(22.5 * eps * bps)
+        if graham_iv > 0 and curr <= graham_iv * 0.75:  # 25%+ 할인
+            graham_ok = True
+        per = curr / eps
+        pbr = curr / bps
+        if 0 < per < 10 and pbr < 0.7:
+            graham_ok = True
+
+    if not graham_ok:
+        return False
+
+    # [C] 수급 보조 (OR 조건 - 완화)
+    if i >= 5:
+        inst5  = sum(inst_net[i-4:i+1])
+        frn5   = sum(frn_net[i-4:i+1])
+        if inst5 <= 0 and frn5 <= 0:
+            return False
+
+    return True
+
+
+def _is_buy_v2(
+    i: int, sim_start_i: int,
+    dates: list, prices: list, volumes: list,
+    frn_net: list, inst_net: list, fin_rows: list,
+) -> bool:
+    """
+    V2 재무스크리너 (성장/수익성 스코어링):
+      수익성 스코어(영업이익률/ROE/ROA) ≥ 3점 + 영업이익 흑자
+      + 추세(MA20>MA60) OR 수급(기관/외인 순매수)
+    """
+    if i < sim_start_i or i < 60:
+        return False
+    curr = prices[i]
+    if curr <= 0:
+        return False
+
+    fin = _get_financial_as_of(fin_rows, dates[i])
+    if fin is None:
+        return False
+    _y, _q, rev, op, eps, bps, eq, ni, roe, _ann = fin
+
+    if not op or op <= 0:
+        return False
+
+    score = 0
+    if rev and rev > 0:
+        op_margin = op / rev
+        if op_margin >= 0.05:   # 영업이익률 5%+
+            score += 1
+        if op_margin >= 0.08:   # 영업이익률 8%+
+            score += 1
+    if roe and roe >= 10:
+        score += 1
+    if ni and eq and eq > 0 and ni / eq >= 0.05:
+        score += 1
+
+    if score < 3:
+        return False
+
+    ma20 = _ma(prices[max(0, i-19):i+1], 20)
+    ma60 = _ma(prices[max(0, i-59):i+1], 60)
+    trend_ok = bool(ma20 and ma60 and curr > ma20 > ma60)
+
+    supply_ok = False
+    if i >= 5:
+        supply_ok = (sum(inst_net[i-4:i+1]) > 0 or sum(frn_net[i-4:i+1]) > 0)
+
+    return trend_ok or supply_ok
+
+
+def _is_buy_v5(
+    i: int, sim_start_i: int,
+    dates: list, prices: list, volumes: list,
+    frn_net: list, inst_net: list, fin_rows: list,
+) -> bool:
+    """
+    V5 수급 주도 모멘텀 (Supply-Led Momentum):
+      [S] 기관+외국인 5일 동반 순매수 (기관 AND 외국인 모두 양수)
+      [T] 추세: MA20 > MA60 > MA120 정배열
+      [Q] 실적: 영업이익 > 0
+      세 조건 모두 충족 필수
+    """
+    if i < sim_start_i or i < 120:
+        return False
+    curr = prices[i]
+    if curr <= 0:
+        return False
+
+    # [S] 수급: 기관 AND 외국인 5일 동반 순매수
+    if i < 5:
+        return False
+    inst5 = sum(inst_net[i-4:i+1])
+    frn5  = sum(frn_net[i-4:i+1])
+    if inst5 <= 0 or frn5 <= 0:
+        return False
+
+    # [T] 추세: MA20 > MA60 > MA120 정배열
+    ma20  = _ma(prices[max(0, i-19):i+1], 20)
+    ma60  = _ma(prices[max(0, i-59):i+1], 60)
+    ma120 = _ma(prices[max(0, i-119):i+1], 120)
+    if not (ma20 and ma60 and ma120):
+        return False
+    if not (curr > ma20 > ma60 > ma120):
+        return False
+
+    # [Q] 실적: 영업이익 > 0
+    fin = _get_financial_as_of(fin_rows, dates[i])
+    if fin is None or not fin[3] or fin[3] <= 0:
+        return False
+
+    return True
+
+
 def _load_dart_signal_map(min_signal: int = 2, window_days: int = 90) -> dict:
     """
     dart_contracts 테이블에서 최근 window_days 이내 min_signal 이상 수주공시를
@@ -1619,6 +1768,63 @@ def run_backtest_v11_hs(start_date: str, end_date: str,
     )
 
 
+def run_backtest_value(start_date: str, end_date: str,
+                       per_stock: float = 10_000_000,
+                       max_positions: int = 10,
+                       run_name: str = None, run_id: str = None) -> str:
+    """V1 가치매수 (Graham 내재가치 25%+ 할인 OR PBR<0.7 AND PER<10) — 하락장 무관 매수"""
+    return _run_generic_backtest(
+        version='V1_VALUE', signal_fn=_is_buy_value,
+        start_date=start_date, end_date=end_date,
+        per_stock=per_stock, max_positions=max_positions,
+        run_name=run_name or f"V1 가치매수 {start_date[:7]}~{end_date[:7]}",
+        run_id=run_id,
+        stop_loss=-0.12, take_profit=0.25,
+        mktcap_min=50_000_000_000,    # 500억+
+        max_new_per_month=10,
+        use_market_filter=False,      # 하락장에서도 저평가 종목 매수
+        strategy_key='v1_value',
+    )
+
+
+def run_backtest_v2(start_date: str, end_date: str,
+                    per_stock: float = 10_000_000,
+                    max_positions: int = 10,
+                    run_name: str = None, run_id: str = None) -> str:
+    """V2 재무스크리너 (수익성 스코어 ≥ 3점: 영업이익률/ROE/ROA 복합 점수)"""
+    return _run_generic_backtest(
+        version='V2', signal_fn=_is_buy_v2,
+        start_date=start_date, end_date=end_date,
+        per_stock=per_stock, max_positions=max_positions,
+        run_name=run_name or f"V2 재무스크리너 {start_date[:7]}~{end_date[:7]}",
+        run_id=run_id,
+        stop_loss=-0.10, take_profit=0.20,
+        mktcap_min=100_000_000_000,
+        max_new_per_month=10,
+        use_market_filter=True,
+        strategy_key='v2',
+    )
+
+
+def run_backtest_v5(start_date: str, end_date: str,
+                    per_stock: float = 10_000_000,
+                    max_positions: int = 10,
+                    run_name: str = None, run_id: str = None) -> str:
+    """V5 수급 주도 모멘텀 (기관+외국인 5일 동반 순매수 + MA정배열)"""
+    return _run_generic_backtest(
+        version='V5', signal_fn=_is_buy_v5,
+        start_date=start_date, end_date=end_date,
+        per_stock=per_stock, max_positions=max_positions,
+        run_name=run_name or f"V5 수급모멘텀 {start_date[:7]}~{end_date[:7]}",
+        run_id=run_id,
+        stop_loss=-0.08, take_profit=0.20,
+        mktcap_min=100_000_000_000,
+        max_new_per_month=10,
+        use_market_filter=True,
+        strategy_key='v5',
+    )
+
+
 def _run_generic_backtest_with_sc(version: str, signal_fn,
                                    start_date: str, end_date: str,
                                    per_stock: float, max_positions: int,
@@ -1873,8 +2079,8 @@ def run_backtest_v12(start_date: str, end_date: str,
         run_id = str(uuid.uuid4())[:8]
         conn = sqlite3.connect(DB_PATH, timeout=120)
         conn.execute("""
-            INSERT INTO backtest_runs (run_id,name,start_date,end_date,per_stock,max_pos,status)
-            VALUES (?,?,?,?,?,?,'running')
+            INSERT INTO backtest_runs (run_id,name,strategy,start_date,end_date,per_stock,max_pos,status)
+            VALUES (?,?,'v12',?,?,?,?,'running')
         """, (run_id, run_name, start_date, end_date, per_stock, max_positions))
         conn.commit()
     else:
@@ -2743,8 +2949,8 @@ def run_backtest_v8(start_date: str, end_date: str,
         run_id = str(uuid.uuid4())[:8]
         conn = sqlite3.connect(DB_PATH, timeout=120)
         conn.execute("""
-            INSERT INTO backtest_runs (run_id,name,start_date,end_date,per_stock,max_pos,status)
-            VALUES (?,?,?,?,?,?,'running')
+            INSERT INTO backtest_runs (run_id,name,strategy,start_date,end_date,per_stock,max_pos,status)
+            VALUES (?,?,'v8',?,?,?,?,'running')
         """, (run_id, run_name, start_date, end_date, per_stock, max_positions))
         conn.commit()
     else:

@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import threading
+import statistics
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -42,6 +43,74 @@ def _pct(a: float | None, b: float | None) -> float | None:
     if a is None or b is None or b == 0:
         return None
     return (a - b) / b * 100.0
+
+
+def _percentile_scores(values: list[float]) -> list[int]:
+    """
+    값 배열을 0~100 퍼센타일 점수로 변환(동점은 평균 순위).
+    """
+    n = len(values)
+    if n == 0:
+        return []
+    if n == 1:
+        return [50]
+    pairs = sorted(enumerate(values), key=lambda x: x[1])
+    out = [50] * n
+    i = 0
+    while i < n:
+        j = i
+        v = pairs[i][1]
+        while j + 1 < n and pairs[j + 1][1] == v:
+            j += 1
+        # rank is 1-based; use average rank for ties
+        avg_rank = (i + 1 + j + 1) / 2.0
+        score = int(round((avg_rank - 1) / (n - 1) * 100))
+        for k in range(i, j + 1):
+            out[pairs[k][0]] = score
+        i = j + 1
+    return out
+
+
+def _robust_period_return(closes_desc: list[float], n: int, jump_threshold: float = 0.35, cap: float = 0.30) -> float | None:
+    """
+    액면분할/병합 등 비연속 가격점프로 왜곡되는 수익률 완화.
+    - 평시: raw period return 사용
+    - 급격한 일간 점프 감지 시: 일간 수익률 cap 기반 누적수익률 사용
+    closes_desc: 최신 -> 과거 순서
+    """
+    if len(closes_desc) <= n:
+        return None
+    a = closes_desc[0]
+    b = closes_desc[n]
+    if b == 0:
+        return None
+    raw = (a - b) / b
+    # detect discontinuity
+    jumps = []
+    for i in range(n):
+        prev = closes_desc[i + 1]
+        cur = closes_desc[i]
+        if prev and prev > 0:
+            jumps.append(cur / prev - 1.0)
+    if not jumps:
+        return raw * 100.0
+    if max(abs(x) for x in jumps) < jump_threshold and abs(raw) < 1.5:
+        return raw * 100.0
+    # split/역분할 또는 기준일 불연속 가능성이 있으면 구간 median anchor로 완화
+    cur_win = [x for x in closes_desc[0:min(5, len(closes_desc))] if x and x > 0]
+    past_win = [x for x in closes_desc[n:min(n + 5, len(closes_desc))] if x and x > 0]
+    if cur_win and past_win:
+        a_ref = statistics.median(cur_win)
+        b_ref = statistics.median(past_win)
+        if b_ref > 0:
+            robust = (a_ref - b_ref) / b_ref
+            return robust * 100.0
+    # fallback: winsorized daily cumulative
+    cum = 1.0
+    for r in jumps:
+        rr = max(-cap, min(cap, r))
+        cum *= (1.0 + rr)
+    return (cum - 1.0) * 100.0
 
 
 def _is_kr_market_open(now: datetime | None = None) -> bool:
@@ -199,6 +268,9 @@ def _compute_rs_dashboard() -> dict:
             return (arr[0] - arr[n]) / arr[n] * 100.0
 
         rs_list = []
+        raw_1m: list[float] = []
+        raw_3m: list[float] = []
+        raw_6m: list[float] = []
         major_bucket = defaultdict(list)
         middle_bucket = defaultdict(list)
 
@@ -216,9 +288,9 @@ def _compute_rs_dashboard() -> dict:
                 if tvals[i] <= 0:
                     tvals[i] = vols[i] * closes[i]
 
-            r1 = _pct(closes[0], closes[20]) if len(closes) > 20 else None
-            r3 = _pct(closes[0], closes[60]) if len(closes) > 60 else None
-            r6 = _pct(closes[0], closes[120]) if len(closes) > 120 else None
+            r1 = _robust_period_return(closes, 20) if len(closes) > 20 else None
+            r3 = _robust_period_return(closes, 60) if len(closes) > 60 else None
+            r6 = _robust_period_return(closes, 120) if len(closes) > 120 else None
             if r3 is None:
                 continue
 
@@ -226,11 +298,9 @@ def _compute_rs_dashboard() -> dict:
             b3 = bench_ret(meta["market"], 60)
             b6 = bench_ret(meta["market"], 120)
 
-            rs_1m = (r1 or 0.0) - b1
-            rs_3m = r3 - b3
-            rs_6m = (r6 or 0.0) - b6
-            rs = round(50 + rs_3m, 2)
-            mmt = round(rs_1m * 0.25 + rs_3m * 0.5 + rs_6m * 0.25, 2)
+            rs_1m_raw = (r1 or 0.0) - b1
+            rs_3m_raw = r3 - b3
+            rs_6m_raw = (r6 or 0.0) - b6
 
             current = closes[0]
             prev = closes[1] if len(closes) > 1 else closes[0]
@@ -246,19 +316,43 @@ def _compute_rs_dashboard() -> dict:
                 "mid_name": middle_list[0] if middle_list else "",
                 "mid_names": middle_list,
                 "market": meta["market"],
-                "rs": rs,
-                "rs_1m": round(rs_1m, 2),
-                "rs_3m": round(rs_3m, 2),
-                "rs_6m": round(rs_6m, 2),
-                "mmt": mmt,
+                "rs": 0,
+                "rs_1m": 0,
+                "rs_3m": 0,
+                "rs_6m": 0,
+                "mmt": 0,
+                "rs_1m_raw": round(rs_1m_raw, 4),
+                "rs_3m_raw": round(rs_3m_raw, 4),
+                "rs_6m_raw": round(rs_6m_raw, 4),
                 "market_cap": round(meta["market_cap"] / 100_000_000.0, 2) if meta["market_cap"] else 0.0,
                 "current_price": round(current, 2),
                 "change_rate": round(change_rate, 2),
             }
             rs_list.append(row)
-            for s in major_list:
+            raw_1m.append(rs_1m_raw)
+            raw_3m.append(rs_3m_raw)
+            raw_6m.append(rs_6m_raw)
+
+        # stockeasy 형태로 RS를 0~100 백분위 점수로 정규화
+        p1 = _percentile_scores(raw_1m)
+        p3 = _percentile_scores(raw_3m)
+        p6 = _percentile_scores(raw_6m)
+        mmt_raw_list: list[float] = []
+        for i, row in enumerate(rs_list):
+            row["rs_1m"] = p1[i]
+            row["rs_3m"] = p3[i]
+            row["rs_6m"] = p6[i]
+            mmt_raw = p1[i] * 0.25 + p3[i] * 0.5 + p6[i] * 0.25
+            row["mmt_raw"] = mmt_raw
+            mmt_raw_list.append(mmt_raw)
+
+        pm = _percentile_scores(mmt_raw_list)
+        for i, row in enumerate(rs_list):
+            row["mmt"] = pm[i]
+            row["rs"] = p3[i]  # 12M 탭 기본 RS는 3M 상대강도 점수 체계로 사용
+            for s in row.get("major_names") or ["미분류"]:
                 major_bucket[s].append(row["rs"])
-            for s in middle_list:
+            for s in row.get("mid_names") or []:
                 middle_bucket[s].append(row["rs"])
 
         sector_rs = [
@@ -275,8 +369,15 @@ def _compute_rs_dashboard() -> dict:
 
         rs_list.sort(key=lambda x: (x["rs"], x["mmt"]), reverse=True)
 
-        kospi_rs = round(50 + bench_ret("KOSPI", 60), 2)
-        kosdaq_rs = round(50 + bench_ret("KOSDAQ", 60), 2)
+        # 지수 RS도 동일 기준(종목군 내 상대 퍼센타일)로 표시
+        kospi_rs3 = bench_ret("KOSPI", 60)
+        kosdaq_rs3 = bench_ret("KOSDAQ", 60)
+        kospi_rs = _percentile_scores(raw_3m + [kospi_rs3])[-1] if raw_3m else 50
+        kosdaq_rs = _percentile_scores(raw_3m + [kosdaq_rs3])[-1] if raw_3m else 50
+        kospi_cur = bench["KOSPI"][0] if bench.get("KOSPI") else None
+        kospi_prev = bench["KOSPI"][1] if bench.get("KOSPI") and len(bench["KOSPI"]) > 1 else kospi_cur
+        kosdaq_cur = bench["KOSDAQ"][0] if bench.get("KOSDAQ") else None
+        kosdaq_prev = bench["KOSDAQ"][1] if bench.get("KOSDAQ") and len(bench["KOSDAQ"]) > 1 else kosdaq_cur
 
         latest_date = conn.execute("SELECT MAX(date) FROM price_history WHERE close > 0").fetchone()
         return {
@@ -288,6 +389,8 @@ def _compute_rs_dashboard() -> dict:
                 "benchmarks": {
                     "kospi": {
                         "label": "코스피",
+                        "current_price": round(_safe_num(kospi_cur), 2) if kospi_cur is not None else None,
+                        "change_rate": round(_pct(kospi_cur, kospi_prev) or 0.0, 2) if kospi_cur is not None and kospi_prev is not None else None,
                         "rs": kospi_rs,
                         "rs_1m": round(bench_ret("KOSPI", 20), 2),
                         "rs_3m": round(bench_ret("KOSPI", 60), 2),
@@ -295,6 +398,8 @@ def _compute_rs_dashboard() -> dict:
                     },
                     "kosdaq": {
                         "label": "코스닥",
+                        "current_price": round(_safe_num(kosdaq_cur), 2) if kosdaq_cur is not None else None,
+                        "change_rate": round(_pct(kosdaq_cur, kosdaq_prev) or 0.0, 2) if kosdaq_cur is not None and kosdaq_prev is not None else None,
                         "rs": kosdaq_rs,
                         "rs_1m": round(bench_ret("KOSDAQ", 20), 2),
                         "rs_3m": round(bench_ret("KOSDAQ", 60), 2),
@@ -380,7 +485,7 @@ def _compute_52w_high_dashboard() -> dict:
         conn.close()
 
 
-def _cached_or_compute(key: str, compute_fn, open_ttl_sec: int = 600, closed_ttl_sec: int = 86400) -> dict:
+def _cached_or_compute(key: str, compute_fn, open_ttl_sec: int = 1800, closed_ttl_sec: int = 1800) -> dict:
     """
     Double-check locking: 캐시 미스 시 락 밖에서 compute 수행.
     동시 요청이 와도 락 안에서 직렬화되지 않음.
@@ -409,7 +514,7 @@ def _cached_or_compute(key: str, compute_fn, open_ttl_sec: int = 600, closed_ttl
         cache[key] = {
             "generated_at": now.isoformat(timespec="seconds"),
             "ttl_sec": ttl,
-            "mode": "open_10m" if is_open else "closed_cached",
+            "mode": "open_30m" if is_open else "closed_30m",
             "payload": payload,
         }
         _save_cache(cache)
@@ -458,7 +563,7 @@ def get_rs_dashboard_data():
     전체 행은 /dashboard-rows 에서 페이지네이션으로 조회.
     """
     try:
-        payload = _cached_or_compute("dashboard_data", _compute_rs_dashboard, 600, 86400)
+        payload = _cached_or_compute("dashboard_data", _compute_rs_dashboard, 1800, 1800)
         if not payload.get("success"):
             return payload
         data = payload.get("data") or {}
@@ -492,7 +597,7 @@ def get_rs_dashboard_rows(
         rows = _get_cached_list("dashboard_data", "rs_list")
         if not rows:
             # 캐시 없으면 트리거
-            payload = _cached_or_compute("dashboard_data", _compute_rs_dashboard, 600, 86400)
+            payload = _cached_or_compute("dashboard_data", _compute_rs_dashboard, 1800, 1800)
             rows = (payload.get("data") or {}).get("rs_list") or []
 
         filtered = _apply_rs_filters(rows, q, sector, cap_min, market, sector_mode)
@@ -524,7 +629,7 @@ def get_52w_high_data():
     전체 행은 /high52-rows 에서 페이지네이션으로 조회.
     """
     try:
-        payload = _cached_or_compute("high52_data", _compute_52w_high_dashboard, 600, 86400)
+        payload = _cached_or_compute("high52_data", _compute_52w_high_dashboard, 1800, 1800)
         if not payload.get("success"):
             return payload
         data = payload.get("data") or {}
@@ -554,7 +659,7 @@ def get_high52_rows(
     try:
         rows = _get_cached_list("high52_data", "high52_list")
         if not rows:
-            payload = _cached_or_compute("high52_data", _compute_52w_high_dashboard, 600, 86400)
+            payload = _cached_or_compute("high52_data", _compute_52w_high_dashboard, 1800, 1800)
             rows = (payload.get("data") or {}).get("high52_list") or []
 
         # 필터

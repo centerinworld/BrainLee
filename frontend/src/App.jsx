@@ -106,6 +106,7 @@ const App = () => {
   const [quarterTable, setQuarterTable] = useState([]);
   const [cfAnnual, setCfAnnual]       = useState([]);   // 연간 현금흐름표
   const [cfQuarter, setCfQuarter]     = useState([]);   // 분기 현금흐름표
+  const [reportType, setReportType]   = useState('CFS'); // 'CFS'(연결) | 'OFS'(별도)
   const [consensus, setConsensus]     = useState(null); // 컨센서스 (목표주가)
   const [consensusMonths, setConsensusMonths] = useState(12); // 컨센서스 기간 (6/12/24개월)
   const [consensusExpanded, setConsensusExpanded] = useState(false); // 컨센서스 전체 보기 토글
@@ -213,12 +214,12 @@ const App = () => {
       const fetchDays = Math.max(d, 365);
       const [chartRes, tableRes, quarterRes, summRes, aiRes, cfARes, cfQRes, consRes] = await Promise.all([
         fetch(API(`/api/dashboard/chart/${code}?days=${fetchDays}`)),
-        fetch(API(`/api/dashboard/financial-table/${code}?type=annual`)),
-        fetch(API(`/api/dashboard/financial-table/${code}?type=quarter`)),
+        fetch(API(`/api/dashboard/financial-table/${code}?type=annual&report_type=CFS`)),
+        fetch(API(`/api/dashboard/financial-table/${code}?type=quarter&report_type=CFS`)),
         fetch(API(`/api/dashboard/fundamentals/${code}`)),
         fetch(API(`/api/reports/latest/${code}`)),
-        fetch(API(`/api/dashboard/cashflow/${code}?type=annual`)),
-        fetch(API(`/api/dashboard/cashflow/${code}?type=quarter`)),
+        fetch(API(`/api/dashboard/cashflow/${code}?type=annual&report_type=CFS`)),
+        fetch(API(`/api/dashboard/cashflow/${code}?type=quarter&report_type=CFS`)),
         /^\d{6}$/.test(code) ? fetch(API(`/api/consensus/${code}`)) : Promise.resolve(null),
       ]);
 
@@ -336,6 +337,24 @@ const App = () => {
   }, [selectedStock]);
 
   useEffect(() => { fetchWatchlist(); fetchSystem(); }, []);
+
+  // ── reportType(연결/별도) 변경 시 재무제표·현금흐름 재조회 ──────────
+  React.useEffect(() => {
+    if (!selectedStock || !/^\d{6}$/.test(selectedStock)) return;
+    const controller = new AbortController();
+    Promise.all([
+      fetch(API(`/api/dashboard/financial-table/${selectedStock}?type=annual&report_type=${reportType}`), { signal: controller.signal }),
+      fetch(API(`/api/dashboard/financial-table/${selectedStock}?type=quarter&report_type=${reportType}`), { signal: controller.signal }),
+      fetch(API(`/api/dashboard/cashflow/${selectedStock}?type=annual&report_type=${reportType}`), { signal: controller.signal }),
+      fetch(API(`/api/dashboard/cashflow/${selectedStock}?type=quarter&report_type=${reportType}`), { signal: controller.signal }),
+    ]).then(async ([t, q, ca, cq]) => {
+      if (t.ok) setFinTable(await t.json());
+      if (q.ok) setQuarterTable(await q.json());
+      if (ca.ok) setCfAnnual(await ca.json());
+      if (cq.ok) setCfQuarter(await cq.json());
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [reportType, selectedStock]);
 
   // ── 매크로 300초 폴링 ────────────────────────────────────────
   // 앱 마운트 시 즉시 1회 + 이후 300초마다 자동 갱신
@@ -901,6 +920,7 @@ const App = () => {
     const [loading,  setLoading]  = React.useState(false);
     const [expanded, setExpanded] = React.useState(false);
     const [showGuide, setShowGuide] = React.useState(false); // 로직 가이드 토글
+    const [regime, setRegime] = React.useState(null);
 
     React.useEffect(() => {
       if (!stockCode && scope !== 'market') return;
@@ -929,6 +949,14 @@ const App = () => {
         .catch(() => setLoading(false));
     }, [scope, stockCode]);
 
+    React.useEffect(() => {
+      if (scope !== 'market') return;
+      fetch(API('/api/signals/market-regime'))
+        .then(r => r.ok ? r.json() : null)
+        .then(setRegime)
+        .catch(() => {});
+    }, [scope]);
+
     const C = {
       green:  { bg:'rgba(34,197,94,0.12)',  border:'rgba(34,197,94,0.4)',   text:'#22c55e', dot:'#22c55e',  light:'rgba(34,197,94,0.06)' },
       yellow: { bg:'rgba(251,191,36,0.12)', border:'rgba(251,191,36,0.4)',  text:'#fbbf24', dot:'#fbbf24',  light:'rgba(251,191,36,0.06)' },
@@ -938,16 +966,64 @@ const App = () => {
 
     // ── 시그널별 상세 로직 설명 ──────────────────────────────────
     const SIGNAL_GUIDE = {
-      // 시장 시그널
-      supply_flow:    { basis:'외국인+기관 3일 누적 순매수', criteria:'양방향 동반 매수=🟢 / 동반 매도=🔴', action:'동반 매수 시 시장 상승 신뢰도 높음' },
-      vix_trend:      { basis:'VIX 현재가 vs 20일 이동평균', criteria:'MA20 아래=🟢 Risk-On / MA20 위 10%+=🔴 Risk-Off', action:'절대값(30) 기준 폐기 — 추세 방향이 핵심', note:'뉴노멀 환경에서 절대 기준은 무의미' },
-      usd_krw_trend:  { basis:'원/달러 현재가 vs 20일 이동평균', criteria:'MA20 아래=🟢 안정 / MA20 위=🔴 위험', action:'환율 상승 추세 = 외국인 자금 이탈 위험 신호', note:'1400원 고정 기준 대신 추세 방향 확인' },
-      nasdaq_ma200:   { basis:'나스닥 현재가 vs 200일 이동평균선', criteria:'MA200 위=🟢 매매 허가 / MA200 아래=🔴 매매 금지', action:'MA200 아래일 때 주식 비중 최소화 — 폴 튜더 존스 Rule', note:'★ 기계적 매매의 제1원칙 — 200일선이 절대 필터' },
-      sp500_ma200:    { basis:'S&P500 현재가 vs 200일 이동평균선', criteria:'MA200 위=🟢 / MA200 아래=🔴', action:'글로벌 위험자산 선호도 판단 기준', note:'나스닥과 함께 양방향 통과 시 더 강한 매매 신호' },
-      kospi_ma200:    { basis:'KOSPI 현재가 vs 200일 이동평균선', criteria:'MA200 위=🟢 / MA200 아래=🔴', action:'미국 지수와 디커플링 대비 — 국내 독자 필터', note:'미국은 OK여도 KOSPI 아래면 국내주 매매 자제' },
-      kospi_ma_align: { basis:'KOSPI MA20 > MA60 정배열 여부', criteria:'정배열=🟢 상승추세 / 역배열=🔴 하락추세', action:'단기보다 장기 추세 방향 확인용 필터', note:'MA20이 MA60 위 = 단기가 장기보다 강함' },
-      adr_kospi:      { basis:'KOSPI 20일 평균 등락비율 (상승종목수/하락종목수×100)', criteria:'ADR<75=🟢 과매도 극단 / ADR>120=🔴 과매수 극단', action:'지수가 대형주로 왜곡될 때 시장 온기 실제 파악', note:'ADR 75 이하는 공황적 매도 — 역발상 매수 기회' },
-      fear_greed:     { basis:'CNN Fear&Greed Index (수동 입력)', criteria:'>55=🟢 탐욕 / <30=🔴 공포', action:'극단적 공포 = 매수 기회, 극단적 탐욕 = 매도 신호', note:'수동 입력 필요 — 설정에서 업데이트' },
+      // 시장 시그널(신규 5단계 로직 기준)
+      market_regime_5stage: {
+        basis: '6개 그룹 점수 합산(추세/미국금리/밸류/수급/리스크/시장폭) → 0~100점',
+        criteria: '80~100:1단계, 65~79:2단계, 45~64:3단계, 25~44:4단계, 0~24:5단계',
+        action: '1~2단계만 신규매수 검토. 4~5단계는 신규매수 제한/금지 및 방어 우선',
+        note: 'MA200 위는 매수 허가가 아니라 최소 조건'
+      },
+      market_forced_downgrade: {
+        basis: '강제 하향 조건 카운트',
+        criteria: '4단계 트리거 2개↑면 최소 4단계, 5단계 트리거 2개↑면 즉시 5단계',
+        action: '점수가 높아도 강제 하향 조건 충족 시 공격적 매수 차단',
+        note: '금리·환율·변동성·시장폭 악화 시 우선적으로 리스크 관리'
+      },
+      trend_follow: {
+        basis: '추세 그룹 점수(지수 MA200 상단/기울기/괴리/MA50)',
+        criteria: 'KOSPI/KOSDAQ 추세 점수 합산 비율로 green/yellow/red 판정',
+        action: '신규 매수 검토의 최소 조건(충분조건 아님)'
+      },
+      us10y_rate: {
+        basis: '미국 10년물 금리 레벨 + 20일 변화폭',
+        criteria: '금리 그룹 점수 높을수록 완화, 낮을수록 부담',
+        action: '4.7% 상회·상승 추세면 매수 제한 강화'
+      },
+      us30y_rate: {
+        basis: '미국 30년물 금리 레벨',
+        criteria: '5.0% 상회 시 위험 신호 가중',
+        action: '장기 금리 부담 확대로 밸류에이션 리레이팅 점검'
+      },
+      valuation_forward: {
+        basis: '미국/국내 Forward PER·PBR 상대 밸류',
+        criteria: '과열 구간일수록 감점',
+        action: '추세가 좋아도 고평가 과열이면 신규 매수 속도 조절'
+      },
+      foreign_flow: {
+        basis: '외국인 20·60일 누적 순매수/순매도',
+        criteria: '순매수 우위면 가점, 연속 순매도면 감점',
+        action: '외국인 중기 수급이 약하면 신규 매수 제한'
+      },
+      inst_flow: {
+        basis: '기관 20일 누적 수급 + 외국인/기관 동조',
+        criteria: '동시 순매도는 위험 신호',
+        action: '동시 대규모 순매도 시 방어 단계 강화'
+      },
+      vix_risk: {
+        basis: 'VIX 중심 변동성 위험 점수',
+        criteria: 'VIX 상승/고점 구간일수록 감점',
+        action: 'VIX 급등 구간은 포지션 축소·현금 비중 확대'
+      },
+      fx_trend: {
+        basis: '원/달러 MA200 위치 + 상승 추세',
+        criteria: 'MA200 상단 상승 추세면 위험',
+        action: '환율 리스크가 커지면 공격적 매수 차단'
+      },
+      market_breadth: {
+        basis: '상승종목 비율 + 신고가/신저가 + 확산도',
+        criteria: '지수 상승 대비 시장 폭 약화면 감점',
+        action: '지수만 오르고 폭이 약하면 추격매수 지양'
+      },
       // 종목 시그널
       frn_supply:     { basis:'외국인 5일 순매수 누적금액', criteria:'양수=🟢 매수 / 음수=🔴 매도', action:'Step3 진입 트리거 — 외국인 유입 시 매수 고려' },
       inst_supply:    { basis:'기관 5일 순매수 누적금액', criteria:'양수=🟢 매수 / 음수=🔴 매도', action:'Step3 진입 트리거 — 기관+외국인 동반 유입이 가장 강한 신호' },
@@ -972,9 +1048,9 @@ const App = () => {
 
     // ── 그룹 구성 (새 시그널 포함) ──────────────────────────────
     const MARKET_GROUPS = [
-      { key:'regime',  label:'🏛 Market Regime (Step1 — 시장 환경 필터)', names:['nasdaq_ma200','sp500_ma200','kospi_ma200','kospi_ma_align'] },
-      { key:'risk',    label:'⚠ 위험 지표 (추세 기반)',                   names:['vix_trend','usd_krw_trend','adr_kospi'] },
-      { key:'supply',  label:'📊 시장 수급',                              names:['supply_flow','fear_greed'] },
+      { key:'regime',  label:'🏛 Market Regime (시장 환경 필터)', names:['trend_follow','us10y_rate','us30y_rate','valuation_forward'] },
+      { key:'risk',    label:'⚠ 위험 지표',                      names:['vix_risk','fx_trend','market_breadth'] },
+      { key:'supply',  label:'📊 시장 수급',                     names:['foreign_flow','inst_flow'] },
     ];
 
     const STOCK_GROUPS = [
@@ -986,6 +1062,14 @@ const App = () => {
     ];
 
     const GROUPS = scope === 'market' ? MARKET_GROUPS : STOCK_GROUPS;
+    const stageMeta = (stage) => {
+      const n = Number(stage || 3);
+      if (n <= 1) return { label: '1단계 (강한 매수 가능)', tone: 'green', score: 1 };
+      if (n === 2) return { label: '2단계 (선택적 매수)', tone: 'green', score: 2 };
+      if (n === 3) return { label: '3단계 (중립/주의)', tone: 'yellow', score: 3 };
+      if (n === 4) return { label: '4단계 (신규매수 금지, 방어 준비)', tone: 'red', score: 4 };
+      return { label: '5단계 (시장진입 신중, 방어 필요)', tone: 'red', score: 5 };
+    };
 
     if (loading) return (
       <div style={{padding:'0.6rem 1rem',display:'flex',alignItems:'center',gap:'0.5rem',
@@ -996,11 +1080,56 @@ const App = () => {
         시그널 계산 중...
       </div>
     );
-    if (!signals.length) return null;
+    if (!signals.length && !(scope === 'market' && regime?.markets?.length)) return null;
+
+    const getGroupByMarket = (marketName) => {
+      const target = (regime?.markets || []).find((m) => String(m.market || '').toUpperCase() === marketName);
+      return target?.groups || {};
+    };
+
+    const marketSignalsFromRegime = scope === 'market' && regime?.markets?.length > 0 ? (() => {
+      const kospiGroups = getGroupByMarket('KOSPI');
+      const kosdaqGroups = getGroupByMarket('KOSDAQ');
+      const trendK = kospiGroups.trend || {};
+      const trendQ = kosdaqGroups.trend || {};
+      const rates = kospiGroups.rates || kosdaqGroups.rates || {};
+      const valuation = kospiGroups.valuation || kosdaqGroups.valuation || {};
+      const flowK = kospiGroups.flow || {};
+      const flowQ = kosdaqGroups.flow || {};
+      const flowKDetail = flowK.detail || {};
+      const flowQDetail = flowQ.detail || {};
+      const risk = kospiGroups.risk || kosdaqGroups.risk || {};
+      const breadthK = kospiGroups.breadth || {};
+      const breadthQ = kosdaqGroups.breadth || {};
+      const valToSig = (v) => (v >= 0.7 ? 'green' : (v >= 0.4 ? 'yellow' : 'red'));
+      const sum = (v) => `${v?.score ?? 0}/${v?.max ?? 0}`;
+      const frnWeightedAmt = ((Number(flowKDetail['frn_5d_억'] || 0) + Number(flowQDetail['frn_5d_억'] || 0)) * 0.2)
+        + ((Number(flowKDetail['frn_20d_억'] || 0) + Number(flowQDetail['frn_20d_억'] || 0)) * 0.35)
+        + ((Number(flowKDetail['frn_60d_억'] || 0) + Number(flowQDetail['frn_60d_억'] || 0)) * 0.45);
+      const foreignFlowSignal =
+        frnWeightedAmt <= -20000 ? 'red' :
+        frnWeightedAmt <= -3000 ? 'yellow' :
+        valToSig(((flowK.score || 0) + (flowQ.score || 0)) / ((flowK.max || 1) + (flowQ.max || 1)));
+      const foreignFlowDetail = `금액가중(5일20%·20일35%·60일45%): ${frnWeightedAmt.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}억`;
+      const inst20dAmt = Number(flowKDetail['inst_20d_억'] || 0) + Number(flowQDetail['inst_20d_억'] || 0);
+      const instSignal = inst20dAmt <= -30000 ? 'red' : (inst20dAmt < 0 ? 'yellow' : 'green');
+      return [
+        { name:'trend_follow', label:'추세추종 시그널(지수 MA200 상단)', signal: valToSig(((trendK.score || 0) + (trendQ.score || 0)) / ((trendK.max || 1) + (trendQ.max || 1))), detail:`기준: MA200 상단·기울기·MA50·괴리 | KOSPI ${sum(trendK)} · KOSDAQ ${sum(trendQ)}` },
+        { name:'us10y_rate', label:'금리 시그널(미국 10년물)', signal: valToSig((rates.score || 0) / (rates.max || 1)), detail:`기준: 10Y 레벨 + 20일 변화폭 | 점수 ${sum(rates)}` },
+        { name:'us30y_rate', label:'금리 시그널(미국 30년물)', signal: valToSig((rates.score || 0) / (rates.max || 1)), detail:`기준: 30Y 레벨(5.0% 상회 위험) | 점수 ${sum(rates)}` },
+        { name:'valuation_forward', label:'밸류 시그널(Forward PER/PBR)', signal: valToSig((valuation.score || 0) / (valuation.max || 1)), detail:`기준: 미국·국내 상대 밸류 | 점수 ${sum(valuation)}` },
+        { name:'foreign_flow', label:'수급 시그널(외국인 금액가중)', signal: foreignFlowSignal, detail:`기준: 일수보다 금액 우선 | ${foreignFlowDetail}` },
+        { name:'inst_flow', label:'수급 시그널(기관 20일)', signal: instSignal, detail:`기준: 기관 20일 누적 순매수/순매도 | 합계 ${inst20dAmt.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}억` },
+        { name:'vix_risk', label:'리스크 시그널(VIX)', signal: valToSig((risk.score || 0) / (risk.max || 1)), detail:`기준: VIX·공포탐욕·리스크 선호 | 점수 ${sum(risk)}` },
+        { name:'fx_trend', label:'환율 시그널(원/달러 추세)', signal: valToSig((risk.score || 0) / (risk.max || 1)), detail:`기준: MA200 위치 + 20일 상승률 | 점수 ${sum(risk)}` },
+        { name:'market_breadth', label:'시장폭 시그널(상승비율/신고가·신저가)', signal: valToSig(((breadthK.score || 0) + (breadthQ.score || 0)) / ((breadthK.max || 1) + (breadthQ.max || 1))), detail:`기준: 상승종목비율 + NH/NL + 확산도 | KOSPI ${sum(breadthK)} · KOSDAQ ${sum(breadthQ)}` },
+      ];
+    })() : null;
+    const displaySignals = marketSignalsFromRegime || signals;
 
     // 4단계 판정 시그널 분리
-    const judgmentSig = signals.find(s => s.name === 'system_judgment');
-    const normalSigs  = signals.filter(s => s.name !== 'system_judgment');
+    const judgmentSig = displaySignals.find(s => s.name === 'system_judgment');
+    const normalSigs  = displaySignals.filter(s => s.name !== 'system_judgment');
 
     const active  = normalSigs.filter(s => s.signal !== 'gray');
     const greens  = active.filter(s => s.signal === 'green').length;
@@ -1048,13 +1177,22 @@ const App = () => {
       }
       return '매수 보류';
     };
+    const marketWorstStage = scope === 'market' && regime?.markets?.length ? Math.max(...regime.markets.map((m) => Number(m.stage || 3))) : null;
+    const marketStageView = marketWorstStage ? stageMeta(marketWorstStage) : null;
     const OVERALL_LABEL = {
-      green:  { emoji:'🟢', label: scope==='stock' ? getStockLabel() : '시장 우호적' },
-      yellow: { emoji:'🟡', label: scope==='stock' ? getStockLabel() : '시장 혼조' },
-      red:    { emoji:'🔴', label: scope==='stock' ? '매수 보류' : '시장 위험' },
+      green:  { emoji:'🟢', label: scope==='stock' ? getStockLabel() : (marketStageView?.label || '시장 우호적') },
+      yellow: { emoji:'🟡', label: scope==='stock' ? getStockLabel() : (marketStageView?.label || '시장 혼조') },
+      red:    { emoji:'🔴', label: scope==='stock' ? '매수 보류' : (marketStageView?.label || '시장 위험') },
       gray:   { emoji:'⚪', label:'데이터 부족' },
     };
     const ovl = OVERALL_LABEL[overall];
+    const stageIcon = (stage) => {
+      if (stage <= 1) return '🟢';
+      if (stage === 2) return '🟩';
+      if (stage === 3) return '🟨';
+      if (stage === 4) return '🟧';
+      return '🔴';
+    };
 
     const renderSignalCard = (s) => {
       const c    = C[s.signal] || C.gray;
@@ -1116,6 +1254,136 @@ const App = () => {
     return (
       <div style={{borderRadius:'10px',border:`1px solid ${oc.border}`,
         background:'rgba(255,255,255,0.02)',marginBottom:'0.75rem',overflow:'hidden'}}>
+
+        {scope === 'market' && regime?.markets?.length > 0 && (
+          <div style={{padding:'0.8rem 1rem',borderBottom:'1px solid var(--glass-border)',background:'rgba(15,23,42,0.45)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.45rem',gap:'0.6rem',flexWrap:'wrap'}}>
+              <div style={{fontSize:'0.82rem',fontWeight:700,color:'#2dd4bf'}}>🧭 5단계 시장 국면 보드</div>
+              <span style={{fontSize:'0.68rem',color:'var(--text-secondary)'}}>기준: {regime.generated_at || '-'}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:'0.55rem',marginBottom:'0.55rem'}}>
+              {regime.markets.map((m)=>{
+                const meta = stageMeta(m.stage);
+                const toneBg = meta.tone === 'green' ? 'rgba(34,197,94,0.14)' : (meta.tone === 'yellow' ? 'rgba(251,191,36,0.16)' : 'rgba(239,68,68,0.14)');
+                const toneBorder = meta.tone === 'green' ? 'rgba(34,197,94,0.45)' : (meta.tone === 'yellow' ? 'rgba(251,191,36,0.45)' : 'rgba(239,68,68,0.45)');
+                const toneText = meta.tone === 'green' ? '#86efac' : (meta.tone === 'yellow' ? '#fde68a' : '#fca5a5');
+                return (
+                  <div key={`${m.market}-hero`} style={{padding:'0.65rem 0.75rem',borderRadius:'10px',background:toneBg,border:`1px solid ${toneBorder}`}}>
+                    <div style={{fontSize:'0.72rem',color:'rgba(255,255,255,0.65)',marginBottom:'0.15rem'}}>{m.market} 현재 국면</div>
+                    <div style={{fontSize:'1.02rem',fontWeight:900,color:toneText}}>
+                      {stageIcon(m.stage)} {meta.label}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.74rem'}}>
+                <thead>
+                  <tr style={{borderBottom:'1px solid rgba(255,255,255,0.12)'}}>
+                    {['시장','최종단계','총점','신규매수','방어필요','긍정요인','부정요인','강제하향 사유'].map(h=>(
+                      <th key={h} style={{textAlign:h==='시장'?'left':'center',padding:'0.35rem 0.4rem',color:'var(--text-secondary)',fontWeight:600,whiteSpace:'nowrap'}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {regime.markets.map((m)=>(
+                    <tr key={m.market} style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                      <td style={{padding:'0.35rem 0.4rem',fontWeight:700}}>{m.market}</td>
+                      <td style={{padding:'0.35rem 0.4rem',textAlign:'center',fontWeight:800,color:m.stage<=2?'#22c55e':m.stage===3?'#fbbf24':'#ef4444',
+                        background:m.stage>=4?'rgba(239,68,68,0.14)':m.stage===3?'rgba(251,191,36,0.14)':'rgba(34,197,94,0.12)',
+                        borderRadius:'6px'}}>
+                        {stageIcon(m.stage)} {m.stage}단계
+                      </td>
+                      <td style={{padding:'0.35rem 0.4rem',textAlign:'center'}}>{m.score}</td>
+                      <td style={{padding:'0.35rem 0.4rem',textAlign:'center',color:m.buy_allowed?'#22c55e':'#ef4444',fontWeight:800,
+                        background:m.buy_allowed?'rgba(34,197,94,0.12)':'rgba(239,68,68,0.16)',borderRadius:'6px'}}>
+                        {m.buy_allowed ? '가능' : '제한'}
+                      </td>
+                      <td style={{padding:'0.35rem 0.4rem',textAlign:'center',color:m.sell_defense?'#ef4444':'#94a3b8',fontWeight:m.sell_defense?800:500,
+                        background:m.sell_defense?'rgba(239,68,68,0.16)':'transparent',borderRadius:'6px'}}>
+                        {m.sell_defense ? '필요' : '보통'}
+                      </td>
+                      <td style={{padding:'0.35rem 0.4rem',textAlign:'center',maxWidth:'220px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#86efac',
+                        borderLeft:'1px solid rgba(34,197,94,0.35)',borderRight:'1px solid rgba(34,197,94,0.35)'}}>
+                        {(m.positive_factors||[]).slice(0,2).join(', ') || '-'}
+                      </td>
+                      <td style={{padding:'0.35rem 0.4rem',textAlign:'center',maxWidth:'220px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#fca5a5',
+                        borderLeft:'1px solid rgba(239,68,68,0.35)',borderRight:'1px solid rgba(239,68,68,0.35)'}}>
+                        {(m.negative_factors||[]).slice(0,2).join(', ') || '-'}
+                      </td>
+                      <td style={{padding:'0.35rem 0.4rem',textAlign:'left',color:m.forced_level==='none'?'#94a3b8':'#f59e0b',maxWidth:'260px'}}>
+                        {m.forced_level === 'none' ? '-' : (
+                          <div style={{display:'flex',flexDirection:'column',gap:'0.2rem'}}>
+                            <span style={{fontSize:'0.66rem',fontWeight:800,color:'#f59e0b'}}>{m.forced_level.toUpperCase()}</span>
+                            <span style={{fontSize:'0.66rem',lineHeight:1.35,color:'#fdba74'}}>
+                              {(m.forced_reasons || []).slice(0,2).join(', ') || '-'}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{marginTop:'0.45rem',fontSize:'0.68rem',color:'rgba(255,255,255,0.52)'}}>
+              {regime.principle}
+            </div>
+            <div style={{marginTop:'0.5rem',padding:'0.45rem 0.55rem',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)'}}>
+              <div style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.72)',marginBottom:'0.3rem'}}>단계 스케일 (긍정 → 부정)</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(56px,1fr))',gap:'0.3rem'}}>
+                {[1,2,3,4,5].map((s)=>{
+                  const meta = stageMeta(s);
+                  const active = marketWorstStage === s;
+                  const color = meta.tone === 'green' ? '#22c55e' : (meta.tone === 'yellow' ? '#fbbf24' : '#ef4444');
+                  return (
+                    <div key={`stage-${s}`} style={{padding:'0.28rem 0.25rem',borderRadius:'6px',textAlign:'center',
+                      border:`1px solid ${active ? color : 'rgba(255,255,255,0.15)'}`,
+                      background:active ? (meta.tone === 'green' ? 'rgba(34,197,94,0.15)' : meta.tone === 'yellow' ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.14)') : 'rgba(255,255,255,0.02)'}}>
+                      <div style={{fontSize:'0.66rem',fontWeight:700,color:active ? color : 'rgba(255,255,255,0.65)'}}>{stageIcon(s)} {s}단계</div>
+                      <div style={{fontSize:'0.6rem',marginTop:'0.08rem',color:active ? color : 'rgba(255,255,255,0.5)'}}>{meta.label.replace(`${s}단계 `,'').replace(`${s}단계`,'').trim()}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {(regime.briefings || []).length > 0 && (
+              <div style={{marginTop:'0.55rem',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:'0.5rem'}}>
+                {regime.briefings.map((b, i)=>(
+                  <div key={`${b.market}-${i}`} style={{padding:'0.55rem 0.65rem',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)'}}>
+                    <div style={{fontSize:'0.7rem',fontWeight:700,color:'#93c5fd',marginBottom:'0.25rem'}}>🗞 {b.market} 아침 브리핑 ({b.briefing_date})</div>
+                    <pre style={{margin:0,whiteSpace:'pre-wrap',fontFamily:'inherit',fontSize:'0.69rem',lineHeight:1.45,color:'rgba(255,255,255,0.8)'}}>
+                      {String(b.summary || '').split('\n').slice(0,5).join('\n')}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{marginTop:'0.55rem',padding:'0.55rem 0.65rem',borderRadius:'8px',background:'rgba(56,189,248,0.07)',border:'1px solid rgba(56,189,248,0.2)'}}>
+              <div style={{fontSize:'0.72rem',fontWeight:700,color:'#7dd3fc',marginBottom:'0.22rem'}}>📘 5단계 로직 설명</div>
+              <div style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.75)',lineHeight:1.45}}>
+                • 점수 구간: 1단계(80~100) / 2단계(65~79) / 3단계(45~64) / 4단계(25~44) / 5단계(0~24)<br/>
+                • 신규 매수 허용: 단계 1~2 + 추세추종(지수 MA200 상단) + 외국인 20일 비순매도 + 미국10년물 4.7% 이하 또는 하락추세<br/>
+                • 강제 하향: 위험 조건 다중 충족 시 점수와 무관하게 4~5단계로 하향
+              </div>
+            </div>
+            <div style={{marginTop:'0.55rem',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:'0.45rem'}}>
+              {(regime.markets || []).map((m)=>(
+                <div key={`${m.market}-groups`} style={{padding:'0.5rem 0.6rem',borderRadius:'8px',background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.07)'}}>
+                  <div style={{fontSize:'0.7rem',fontWeight:700,color:'#c4b5fd',marginBottom:'0.25rem'}}>{m.market} 세부 점수</div>
+                  <div style={{display:'flex',gap:'0.25rem',flexWrap:'wrap'}}>
+                    {Object.entries(m.groups || {}).map(([k,v])=>(
+                      <span key={k} style={{fontSize:'0.66rem',padding:'0.1rem 0.35rem',borderRadius:'999px',background:'rgba(99,102,241,0.18)',color:'#a5b4fc'}}>
+                        {k}:{v?.score ?? 0}/{v?.max ?? '-'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 헤더 */}
         <div style={{padding:'0.6rem 1.1rem',background:oc.bg,
@@ -1257,8 +1525,20 @@ const App = () => {
         {/* 시그널 상세 */}
         {expanded && (
           <div style={{padding:'0.8rem 1rem'}}>
+            {scope === 'market' && regime?.markets?.length > 0 && (
+              <div style={{marginBottom:'0.9rem',padding:'0.65rem 0.75rem',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.08)'}}>
+                <div style={{fontSize:'0.73rem',fontWeight:700,color:'#c4b5fd',marginBottom:'0.3rem'}}>시장 단계별 상세 근거</div>
+                {regime.markets.map((m)=>(
+                  <div key={`${m.market}-detail`} style={{fontSize:'0.68rem',lineHeight:1.45,color:'rgba(255,255,255,0.78)',marginBottom:'0.35rem'}}>
+                    • <strong>{m.market}</strong>: {stageMeta(m.stage).label} / 총점 {m.score} /
+                    매수 {m.buy_allowed ? '가능' : '제한'} / 방어 {m.sell_defense ? '필요' : '보통'} /
+                    강제하향 {m.forced_level === 'none' ? '-' : `${m.forced_level} (${(m.forced_reasons || []).join(', ') || '-'})`}
+                  </div>
+                ))}
+              </div>
+            )}
             {GROUPS.map(g => {
-              const grpSigs = signals.filter(s => g.names.includes(s.name));
+              const grpSigs = displaySignals.filter(s => g.names.includes(s.name));
               if (!grpSigs.length) return null;
               return (
                 <div key={g.key} style={{marginBottom:'1rem'}}>
@@ -1299,20 +1579,22 @@ const App = () => {
     const [kosdaqTab,  setKosdaqTab]  = React.useState('90');
     const [nasdaqTab,  setNasdaqTab]  = React.useState('90');
     const [sp500Tab,   setSp500Tab]   = React.useState('90');
+    const [treasuryTabs, setTreasuryTabs] = React.useState({ US2Y:'90', US10Y:'90', US30Y:'90' }); // 90/180/365
     // lastUpdated는 fetchMacro 완료 시 업데이트 (불필요한 5분 타이머 제거)
 
     // 구버전({KOSPI:...}) / 신버전({index:{KOSPI:...}}) 정규화
     const norm = (data) => {
-      if (!data) return { idx:{}, vix:{}, comm:{} };
+      if (!data) return { idx:{}, vix:{}, comm:{}, tsy:{} };
       if (data.index && typeof data.index === 'object')
-        return { idx: data.index||{}, vix: data.vix||{}, comm: data.commodities||{} };
+        return { idx: data.index||{}, vix: data.vix||{}, comm: data.commodities||{}, tsy: data.us_treasury||{} };
       return {
         idx:  { KOSPI: data.KOSPI||{}, KOSDAQ: data.KOSDAQ||{} },
         vix:  data.VIX || {},
         comm: { 'USD/KRW': data['USD/KRW']||{}, GOLD: data.GOLD||{}, OIL: data.OIL||{} },
+        tsy: {},
       };
     };
-    const { idx, vix, comm } = norm(macroData);
+    const { idx, vix, comm, tsy } = norm(macroData);
     const hasData = !!(idx.KOSPI?.value || idx.KOSDAQ?.value || comm['USD/KRW']?.value);
 
     // ── 포맷 헬퍼 ──
@@ -1337,6 +1619,7 @@ const App = () => {
       !v     ? '-' :
       v >= 40 ? '극심한 공포' :
       v >= 20 ? '주의단계' : '안정적';
+    const riskColor = (level) => level === '위험' ? '#ef4444' : level === '주의' ? '#fb923c' : '#34d399';
 
     // VIX 전용 차트 컴포넌트 (IIFE 대신 컴포넌트로 분리)
     const VixChart = ({ data, color }) => {
@@ -1726,6 +2009,132 @@ const App = () => {
         </div>
       </div>
 
+      {/* ══ PARA 2-b: 미국 국채 2Y/10Y/30Y ══ */}
+      <div className="glass-panel" style={card}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.6rem' }}>
+          <span style={{ ...lbl, marginBottom:0 }}>미국 국채 금리 (2Y / 10Y / 30Y)</span>
+          <span style={{ fontSize:'0.65rem', color:'var(--text-secondary)' }}>{tsy.updated_at || '-'}</span>
+        </div>
+        <div style={{ marginTop:'0.1rem', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.6rem' }}>
+          <div style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>
+            10Y-2Y: <span style={{ fontWeight:700, color:(tsy.spreads?.['10Y_minus_2Y'] ?? 0) < 0 ? '#ef4444' : '#93c5fd' }}>
+              {tsy.spreads?.['10Y_minus_2Y'] == null ? '-' : `${tsy.spreads['10Y_minus_2Y'].toFixed(2)}%p`}
+            </span>
+            <span style={{ marginLeft:'0.45rem' }}>(장단기 역전 체크)</span>
+          </div>
+          <div style={{ fontSize:'0.75rem', color:'var(--text-secondary)' }}>
+            30Y-10Y: <span style={{ fontWeight:700, color:(tsy.spreads?.['30Y_minus_10Y'] ?? 0) < 0 ? '#ef4444' : '#93c5fd' }}>
+              {tsy.spreads?.['30Y_minus_10Y'] == null ? '-' : `${tsy.spreads['30Y_minus_10Y'].toFixed(2)}%p`}
+            </span>
+            <span style={{ marginLeft:'0.45rem' }}>(희귀 위험 조합)</span>
+          </div>
+        </div>
+
+        {(() => {
+          const isInversion = (tsy.spreads?.['10Y_minus_2Y'] ?? 0) < 0 || (tsy.spreads?.['30Y_minus_10Y'] ?? 0) < 0;
+          const isDanger = (tsy.risk?.level === '위험') || isInversion;
+          const isWarn = (tsy.risk?.level === '주의');
+          const riskBg = isDanger ? 'rgba(239,68,68,0.16)' : isWarn ? 'rgba(251,146,60,0.16)' : 'rgba(52,211,153,0.10)';
+          const riskBd = isDanger ? 'rgba(239,68,68,0.45)' : isWarn ? 'rgba(251,146,60,0.45)' : 'rgba(52,211,153,0.35)';
+          return (
+        <div style={{ marginTop:'0.65rem', padding:'0.5rem 0.7rem', borderRadius:'8px',
+          background:riskBg, border:`1px solid ${riskBd}` }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.3rem' }}>
+            <span style={{ fontSize:'0.72rem', color:'var(--text-secondary)' }}>오늘 금리 위험신호</span>
+            <span style={{ fontSize:'0.72rem', fontWeight:700, color:riskColor(tsy.risk?.level) }}>
+              {tsy.risk?.level || '데이터 대기'}
+            </span>
+          </div>
+          <div style={{ fontSize:'0.73rem', color:'rgba(255,255,255,0.82)', lineHeight:1.5, whiteSpace:'pre-line' }}>
+            {tsy.ai_summary || '수집 중입니다.'}
+          </div>
+        </div>
+          );
+        })()}
+
+        <div style={{ marginTop:'0.7rem', display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'1rem' }}>
+          {[
+            { key:'US2Y', label:'미국 2년물', unit:'%', color:'#60a5fa', interp:(v)=> v==null?'-': v>=4.8 ? '정책금리 고점 부담' : '단기 정책 기대 반영' },
+            { key:'US10Y', label:'미국 10년물', unit:'%', color:'#f59e0b', interp:(v)=> v==null?'-': v>=5.0 ? '금융시장 스트레스 급증 가능' : v>=4.5 ? '위험자산 압박 구간' : '비교적 안정 구간' },
+            { key:'US30Y', label:'미국 30년물', unit:'%', color:'#ef4444', interp:(v)=> v==null?'-': v>=5.5 ? '매우 위험한 수준 가능' : v>=5.0 ? '장기 재정 신뢰 우려' : '정상~주의 구간' },
+          ].map(({ key, label, unit, color, interp }) => {
+            const d = tsy[key] || {};
+            const ttab = treasuryTabs[key] || '90';
+            const th = d.history || [];
+            const calcTsyReturn = (days) => {
+              if (!th.length || th.length < 2) return null;
+              const sorted = [...th].sort((a,b) => a.date > b.date ? 1 : -1);
+              const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+              const filtered = sorted.filter(r => new Date(r.date) >= cutoff);
+              if (filtered.length < 2) return null;
+              const first = filtered[0]?.close; const last = filtered[filtered.length-1]?.close;
+              if (first == null || first === 0 || last == null) return null;
+              return ((last - first) / first * 100);
+            };
+            const tRetMap = { '90': calcTsyReturn(90), '180': calcTsyReturn(180), '365': calcTsyReturn(365) };
+            const tCurRet = tRetMap[ttab];
+            const tDays = ttab === '90' ? 90 : ttab === '180' ? 180 : 365;
+            const tHistFiltered = (() => {
+              if (!th.length) return [];
+              const sorted = [...th].sort((a,b) => a.date > b.date ? 1 : -1);
+              const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - tDays);
+              return sorted.filter(r => new Date(r.date) >= cutoff);
+            })();
+            const trendUp = (tCurRet ?? 0) >= 0;
+            const trendColor = tCurRet == null ? 'rgba(255,255,255,0.45)' : (trendUp ? '#ef4444' : '#3b82f6');
+            return (
+              <div key={key} className="glass-panel" style={{ padding:'0.9rem 1rem' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'0.18rem' }}>
+                  <p style={{ fontSize:'0.75rem', color:'var(--text-secondary)', marginBottom:0 }}>{label}</p>
+                  <div style={{ textAlign:'right' }}>
+                    <p style={{ fontSize:'0.72rem', color:'var(--text-secondary)', marginBottom:'0.12rem' }}>{d.date || '-'}</p>
+                    <p style={{ fontSize:'0.7rem', color:'var(--text-secondary)' }}>{interp(d.value)}</p>
+                  </div>
+                </div>
+                <h3 style={{ fontSize:'2rem', lineHeight:1, marginBottom:'0.15rem', color:'#ffffff', fontWeight:800 }}>
+                  {d.value == null ? '-' : Number(d.value).toFixed(2)}<span style={{ fontSize:'1rem', color:'var(--text-secondary)', marginLeft:'0.2rem' }}>{unit}</span>
+                </h3>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.32rem' }}>
+                  <span style={{ fontSize:'0.96rem', color:pc(d.change||0), fontWeight:700 }}>
+                    {d.change == null ? '-' : `${arr(d.change)} ${Math.abs(d.change).toFixed(2)}%`}
+                  </span>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', marginBottom:'0.35rem', flexWrap:'wrap' }}>
+                  {[
+                    ['90','3개월'],
+                    ['180','6개월'],
+                    ['365','1년'],
+                  ].map(([k, lbl]) => {
+                    const active = ttab === k;
+                    return (
+                      <button
+                        key={k}
+                        onClick={() => setTreasuryTabs(prev => ({ ...prev, [key]: k }))}
+                        style={{
+                          fontSize:'0.67rem', padding:'0.1rem 0.45rem', borderRadius:'4px',
+                          border:`1px solid ${active ? 'rgba(45,212,191,0.6)' : 'rgba(255,255,255,0.15)'}`,
+                          background: active ? 'rgba(45,212,191,0.12)' : 'transparent',
+                          color: active ? '#2dd4bf' : 'rgba(255,255,255,0.45)', cursor:'pointer'
+                        }}
+                      >
+                        {lbl}
+                      </button>
+                    );
+                  })}
+                  <span style={{
+                    fontSize:'0.8rem', fontWeight:700, marginLeft:'0.2rem',
+                    color: tCurRet == null ? 'rgba(255,255,255,0.45)' : (tCurRet >= 0 ? '#ef4444' : '#3b82f6')
+                  }}>
+                    {tCurRet == null ? '-' : `${tCurRet >= 0 ? '▲' : '▼'} ${Math.abs(tCurRet).toFixed(2)}%`}
+                  </span>
+                </div>
+                <MiniChart data={tHistFiltered} color={tCurRet == null ? color : (trendUp ? '#ef4444' : '#3b82f6')} height={85} dec={2} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ══ PARA 3: 원달러·금·유가 + 미니차트 ══ */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'1rem' }}>
         {[
@@ -1758,17 +2167,18 @@ const App = () => {
           })();
           return (
             <div key={key} className="glass-panel" style={card}>
-              <p style={lbl}>{label}</p>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                <p style={lbl}>{label}</p>
+                <p style={{ fontSize:'0.65rem', color:'var(--text-secondary)' }}>{d.date||'-'}</p>
+              </div>
               <div style={{ display:'flex', alignItems:'baseline', gap:'0.4rem' }}>
                 <span style={{ fontSize:'1.3rem', fontWeight:700 }}>{fv(d.value, dec)}</span>
                 <span style={{ fontSize:'0.68rem', color:'var(--text-secondary)' }}>{unit}</span>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginTop:'0.25rem' }}>
-                <span style={{ fontSize:'0.8rem', fontWeight:600, color: pc(d.change) }}>
+                <span style={{ fontSize:'0.8rem', fontWeight:700, color: pc(d.change) }}>
                   {arr(d.change||0)} {Math.abs(d.change||0).toFixed(1)}%
                 </span>
               </div>
-              <p style={{ fontSize:'0.65rem', color:'var(--text-secondary)', marginTop:'0.15rem', marginBottom:'0.4rem' }}>{d.date||'-'}</p>
+              <div style={{ marginBottom:'0.4rem' }} />
               {/* 탭 버튼 + 기간 수익률 */}
               <div style={{ display:'flex', alignItems:'center', gap:'0.3rem', marginBottom:'0.4rem', flexWrap:'wrap' }}>
                 {[['90','3개월'],['365','1년'],['1095','3년']].map(([val,lbl2])=>(
@@ -1807,6 +2217,19 @@ const App = () => {
       return chartData.slice(-chartDays);
     }, [chartData, chartDays]);
     const isMobile = useIsMobile();
+    // ── 데이터 신뢰도 ─────────────────────────────────────────────────
+    const [dataQuality, setDataQuality] = React.useState(null);
+    const [dqExpanded, setDqExpanded] = React.useState(false);
+    React.useEffect(() => {
+      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) { setDataQuality(null); return; }
+      setDataQuality(null);
+      setDqExpanded(false);
+      fetch(API(`/api/dashboard/data-quality/${selectedStock}`))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setDataQuality(d))
+        .catch(() => {});
+    }, [selectedStock]);
+
     // 종목별 보고서
     const [stockReports, setStockReports] = React.useState([]);
     const [reportsExpanded, setReportsExpanded] = React.useState(false);
@@ -1851,12 +2274,15 @@ const App = () => {
 
     // ── 추가 시그널 (고용/수출/섹터/수급/ETF) ───────────────────────
     const [extraSignals, setExtraSignals] = React.useState(null);
+    const [extraSignalsLoading, setExtraSignalsLoading] = React.useState(false);
     React.useEffect(() => {
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) { setExtraSignals(null); return; }
+      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) { setExtraSignals(null); setExtraSignalsLoading(false); return; }
+      setExtraSignals(null);
+      setExtraSignalsLoading(true);
       fetch(API(`/api/extra-signals/extra-signals/${selectedStock}`))
         .then(r => r.ok ? r.json() : null)
-        .then(d => setExtraSignals(d))
-        .catch(() => {});
+        .then(d => { setExtraSignals(d); setExtraSignalsLoading(false); })
+        .catch(() => { setExtraSignalsLoading(false); });
     }, [selectedStock]);
 
     // ── KRX 공지사항 + 대주주/임원 지분변동 ────────────────────────
@@ -2142,6 +2568,143 @@ const App = () => {
           })()}
         </header>
 
+        {/* ── 데이터 신뢰도 배지 ───────────────────────────────────────── */}
+        {dataQuality && (() => {
+          const gradeIcon = { A:'🟢', B:'🔵', 'B+':'🟢', C:'🟡', D:'⚫' }[dataQuality.grade] || '⚫';
+          const statusColor = {
+            confirmed: '#10b981', ok: '#6b7280', ambiguous: '#f59e0b',
+            missing: '#ef4444', partial: '#f59e0b', na: '#4b5563',
+          };
+          const statusBg = {
+            confirmed: 'rgba(16,185,129,0.06)', ambiguous: 'rgba(245,158,11,0.10)',
+            missing: 'rgba(239,68,68,0.08)', ok: 'transparent', na: 'transparent', partial: 'rgba(245,158,11,0.06)',
+          };
+          // 소스 뱃지 색상
+          const srcColor = (s) => {
+            if (!s) return '#4b5563';
+            if (s.includes('Naver')) return '#3b82f6';
+            if (s.includes('Seibro')) return '#8b5cf6';
+            if (s.includes('2중')) return '#6b7280';
+            return '#4b5563';
+          };
+          // 항목 수 집계
+          const confirmedItems = dataQuality.items.filter(i => i.status === 'confirmed').length;
+          const ambiguousItems = dataQuality.items.filter(i => i.status === 'ambiguous').length;
+          return (
+            <div className="glass-panel" style={{ padding:'0.75rem 1.1rem', border: `1px solid ${dataQuality.grade_color}33` }}>
+              {/* 헤더 행 */}
+              <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', cursor:'pointer' }}
+                   onClick={() => setDqExpanded(p => !p)}>
+                {/* 등급 배지 */}
+                <div style={{ display:'flex', alignItems:'center', gap:'0.4rem',
+                              padding:'0.25rem 0.75rem', borderRadius:'20px',
+                              background: `${dataQuality.grade_color}18`,
+                              border: `1px solid ${dataQuality.grade_color}55`, flexShrink:0 }}>
+                  <span style={{ fontSize:'0.9rem' }}>{gradeIcon}</span>
+                  <span style={{ fontSize:'0.75rem', fontWeight:700, color: dataQuality.grade_color }}>
+                    {dataQuality.grade} — {dataQuality.grade_label}
+                  </span>
+                </div>
+                {/* 항목 수 요약 */}
+                <div style={{ display:'flex', gap:'0.4rem', flexShrink:0 }}>
+                  {confirmedItems > 0 && (
+                    <span style={{ fontSize:'0.68rem', padding:'0.1rem 0.45rem', borderRadius:'10px',
+                                   background:'rgba(16,185,129,0.12)', color:'#10b981', fontWeight:600 }}>
+                      ✅ {confirmedItems}
+                    </span>
+                  )}
+                  {ambiguousItems > 0 && (
+                    <span style={{ fontSize:'0.68rem', padding:'0.1rem 0.45rem', borderRadius:'10px',
+                                   background:'rgba(245,158,11,0.15)', color:'#f59e0b', fontWeight:600 }}>
+                      ⚠️ {ambiguousItems}
+                    </span>
+                  )}
+                </div>
+                {/* 설명 */}
+                <span style={{ fontSize:'0.75rem', color:'var(--text-secondary)', flex:1 }}>
+                  {dataQuality.grade_desc}
+                  {dataQuality.val_year_min && (
+                    <span style={{ marginLeft:'0.5rem', opacity:0.6 }}>
+                      {dataQuality.val_year_min === dataQuality.val_year_max
+                        ? `(검증기간: ${dataQuality.val_year_min}년)`
+                        : `(검증기간: ${dataQuality.val_year_min}~${dataQuality.val_year_max}년, ${dataQuality.val_years?.length || 0}개년)`}
+                    </span>
+                  )}
+                </span>
+                {/* 펼치기 버튼 */}
+                <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)', flexShrink:0 }}>
+                  {dqExpanded ? '▲ 접기' : '▼ 상세보기'}
+                </span>
+              </div>
+
+              {/* 상세 항목 테이블 (펼쳤을 때) */}
+              {dqExpanded && (
+                <div style={{ marginTop:'0.75rem', borderTop:'1px solid rgba(255,255,255,0.08)', paddingTop:'0.65rem' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.76rem' }}>
+                    <thead>
+                      <tr style={{ color:'rgba(255,255,255,0.35)', fontSize:'0.68rem' }}>
+                        <th style={{ textAlign:'left', paddingBottom:'0.4rem', fontWeight:600, letterSpacing:'0.04em', width:'28%' }}>항목</th>
+                        <th style={{ textAlign:'left', paddingBottom:'0.4rem', fontWeight:600, letterSpacing:'0.04em', width:'22%' }}>상태</th>
+                        <th style={{ textAlign:'left', paddingBottom:'0.4rem', fontWeight:600, letterSpacing:'0.04em', width:'22%' }}>검증 소스</th>
+                        <th style={{ textAlign:'left', paddingBottom:'0.4rem', fontWeight:600, letterSpacing:'0.04em' }}>상세</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dataQuality.items.map((item, idx) => (
+                        <tr key={idx} style={{
+                          borderTop:'1px solid rgba(255,255,255,0.05)',
+                          background: statusBg[item.status] || 'transparent',
+                        }}>
+                          <td style={{ padding:'0.35rem 0.5rem 0.35rem 0', color:'rgba(255,255,255,0.75)', minWidth:'130px', fontWeight: item.status==='ambiguous' ? 600 : 400 }}>
+                            {item.field}
+                          </td>
+                          <td style={{ padding:'0.35rem 0.5rem', whiteSpace:'nowrap' }}>
+                            <span style={{ color: statusColor[item.status] || '#6b7280', fontWeight:600 }}>
+                              {item.label}
+                            </span>
+                          </td>
+                          <td style={{ padding:'0.35rem 0.5rem', whiteSpace:'nowrap' }}>
+                            {item.sources && item.sources !== '—' ? (
+                              <span style={{
+                                fontSize:'0.66rem', padding:'0.1rem 0.4rem', borderRadius:'8px',
+                                background:'rgba(255,255,255,0.06)', color: srcColor(item.sources),
+                                border:`1px solid ${srcColor(item.sources)}33`,
+                              }}>
+                                {item.sources}
+                              </span>
+                            ) : (
+                              <span style={{ color:'rgba(255,255,255,0.2)', fontSize:'0.68rem' }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ padding:'0.35rem 0 0.35rem 0.5rem', color:'rgba(255,255,255,0.4)', fontSize:'0.7rem' }}>
+                            {item.detail}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {/* 범례 */}
+                  <div style={{ marginTop:'0.75rem', padding:'0.5rem 0.75rem', background:'rgba(255,255,255,0.03)',
+                                borderRadius:'6px', display:'flex', gap:'0.8rem', flexWrap:'wrap',
+                                fontSize:'0.66rem', color:'rgba(255,255,255,0.3)' }}>
+                    <span style={{ color:'rgba(255,255,255,0.5)', fontWeight:600 }}>범례:</span>
+                    <span><span style={{ color:'#10b981' }}>✅ 완전검증</span> 교차검증 CONFIRMED</span>
+                    <span><span style={{ color:'#6b7280' }}>✔ 검증됨</span> 수집완료 (교차검증 미실시)</span>
+                    <span><span style={{ color:'#f59e0b' }}>⚠️ 재확인</span> 소스 간 불일치</span>
+                    <span><span style={{ color:'#ef4444' }}>❌ 미수집</span></span>
+                    <span><span style={{ color:'#4b5563' }}>〰 구조적 한계</span> DART 미제공</span>
+                    <span style={{ borderLeft:'1px solid rgba(255,255,255,0.1)', paddingLeft:'0.8rem' }}>
+                      <span style={{ color:'#3b82f6' }}>●</span> DART+FnGuide+Naver(3중)
+                      <span style={{ color:'#8b5cf6', marginLeft:'0.5rem' }}>●</span> DART+FnGuide+Seibro(3중)
+                      <span style={{ color:'#6b7280', marginLeft:'0.5rem' }}>●</span> 2중
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* 재무 지표 + 52주 고저가 (6칸) */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:'0.75rem' }}>
           {[
@@ -2196,7 +2759,13 @@ const App = () => {
           <SignalBoard scope="stock" stockCode={selectedStock} key={selectedStock} />
 
           {/* 추가 시그널 */}
-          {/^\d{6}$/.test(selectedStock) && extraSignals && (() => {
+          {/^\d{6}$/.test(selectedStock) && extraSignalsLoading && (
+            <div style={{ padding:'1rem 1.2rem', background:'var(--surface)', borderRadius:'10px', border:'1px solid var(--border)', color:'var(--text-secondary)', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <div style={{ width:'12px', height:'12px', borderRadius:'50%', border:'2px solid var(--accent-mint)', borderTopColor:'transparent', animation:'spin 0.8s linear infinite', flexShrink:0 }}/>
+              추가 시그널 로딩 중...
+            </div>
+          )}
+          {/^\d{6}$/.test(selectedStock) && !extraSignalsLoading && extraSignals && (() => {
             const sigColor = s => s==='green'?'#22c55e':s==='red'?'#ef4444':s==='yellow'?'#fbbf24':'#6b7280';
             const sigLabelColor = (s, isGrey) => isGrey ? 'var(--text-secondary)' : s==='green'?'#22c55e':s==='red'?'#ef4444':s==='yellow'?'#fbbf24':'var(--text-secondary)';
             const em = extraSignals.employment || {};
@@ -2674,6 +3243,28 @@ const App = () => {
           </section>
         )}
 
+                {/* 연결/별도 탭 */}
+        <div style={{ display:'flex', gap:'0.5rem', marginBottom:'0.5rem', alignItems:'center' }}>
+          {['CFS', 'OFS'].map(rt => (
+            <button
+              key={rt}
+              onClick={() => setReportType(rt)}
+              style={{
+                padding:'0.3rem 0.9rem', borderRadius:'6px', border:'none', cursor:'pointer',
+                fontSize:'0.75rem', fontWeight:600,
+                background: reportType === rt ? 'var(--accent-mint)' : 'rgba(255,255,255,0.06)',
+                color: reportType === rt ? '#0a0a14' : 'var(--text-secondary)',
+                transition:'all 0.15s',
+              }}
+            >
+              {rt === 'CFS' ? '연결' : '별도'}
+            </button>
+          ))}
+          <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)', marginLeft:'0.3rem' }}>
+            {reportType === 'CFS' ? '연결재무제표 기준' : '별도(개별)재무제표 기준'}
+          </span>
+        </div>
+
                 {/* 연간 재무 테이블 */}
         <section className="glass-panel" style={{ overflow:'clip' }}>
           <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)' }}>
@@ -2686,7 +3277,9 @@ const App = () => {
                     <span style={{width:'12px',height:'12px',borderRadius:'50%',border:'2px solid var(--accent-mint)',borderTopColor:'transparent',display:'inline-block',animation:'spin 0.8s linear infinite'}}/>
                     DART에서 재무제표 수집 중...
                   </span>
-                : <span style={{color:'var(--text-secondary)'}}>연간 재무데이터 없음 — 매일 자정 DART 공시 기준으로 자동 업데이트됩니다</span>}
+                : <span style={{color:'var(--text-secondary)'}}>
+                    {reportType === 'OFS' ? '별도재무제표 없음 — 이 종목은 별도(개별) 재무제표 데이터가 없습니다' : '연간 재무데이터 없음 — 매일 자정 DART 공시 기준으로 자동 업데이트됩니다'}
+                  </span>}
             </div>
           ) : (
             <table className="premium-table" style={{ width:'100%' }}>
@@ -3049,6 +3642,8 @@ const App = () => {
     const [triggerData, setTriggerData] = React.useState(null);
     const [triggerLoading, setTriggerLoading] = React.useState(false);
     const [screenerMeta, setScreenerMeta] = React.useState(null);
+    const [v18Data, setV18Data] = React.useState(null);
+    const [v18Loading, setV18Loading] = React.useState(false);
     const stickyRef = React.useRef(null);
 
     // 스크리너 메타(로직 설명) — signal_logic.py 에서 동적 로드
@@ -3130,10 +3725,20 @@ const App = () => {
       if (screenTab === 'value' && !valueCandidates.length) fetchValueCandidates();
       if (screenTab === 'ai' && !finStocks.length) fetchFinScreener();
       if (screenTab === 'combo') fetchCombo();
+      if (screenTab === 'gpt_v18' && !v18Data) fetchV18();
     }, [screenTab]);
 
     // 초기(combo) 로드
     React.useEffect(() => { fetchCombo(); }, []);
+
+    const fetchV18 = async () => {
+      setV18Loading(true);
+      try {
+        const res = await fetch(API('/api/trend/v18/recommendations'));
+        if (res.ok) setV18Data(await res.json());
+      } catch (e) { console.error(e); }
+      finally { setV18Loading(false); }
+    };
 
     // 서버 백그라운드 계산 완료 후 자동 재시도 (캐시 cold 상태 대응)
     React.useEffect(() => {
@@ -3317,6 +3922,7 @@ const App = () => {
           </div>
           <div style={{display:'flex',gap:'0.4rem',flexWrap:'wrap'}}>
             {tabBtn('combo', `⭐ AI 적극추천`, comboStocks.length)}
+            {tabBtn('gpt_v18', `🤖 GPT추천(V18)`, v18Data?.summary?.buy_count || 0)}
             {tabBtn('trigger', '🎯 진입트리거 TOP20')}
             {tabBtn('value', '💎 가치매수')}
             {tabBtn('ai',    '📊 재무 스크리너')}
@@ -3330,6 +3936,166 @@ const App = () => {
           ⚠️ AI가 판단한 각각의 주식투자 기법에 따라 필터링을 통과한 종목으로 검증되지 않았음을 안내 드립니다
         </div>
       </div>
+
+      {/* ══ GPT추천(V18) 탭 ══ */}
+      {screenTab === 'gpt_v18' && (
+        v18Loading ? (
+          <div className="glass-panel" style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)'}}>V18 추천 계산 중...</div>
+        ) : (
+          <div className="glass-panel" style={{overflow:'clip'}}>
+            <div style={{padding:'0.7rem 1rem',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'0.5rem',flexWrap:'wrap',borderBottom:'1px solid var(--glass-border)'}}>
+              <div style={{fontSize:'0.8rem',color:'var(--text-secondary)',display:'flex',gap:'0.8rem',flexWrap:'wrap',alignItems:'center'}}>
+                <span>마지막 계산: {v18Data?.updated_at || '-'}</span>
+                <span>매수 {v18Data?.summary?.buy_count ?? 0} · 매도 {v18Data?.summary?.sell_count ?? 0}</span>
+                {v18Data?.kospi_status && (
+                  <span style={{
+                    padding:'0.1rem 0.5rem',borderRadius:'4px',fontSize:'0.72rem',fontWeight:600,
+                    background: v18Data.kospi_status.above_ma60 ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                    color: v18Data.kospi_status.above_ma60 ? '#22c55e' : '#ef4444',
+                    border: `1px solid ${v18Data.kospi_status.above_ma60 ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                  }}>
+                    KOSPI {v18Data.kospi_status.close?.toLocaleString()} {v18Data.kospi_status.above_ma60 ? '▲' : '▼'} MA60 {v18Data.kospi_status.ma60?.toLocaleString()} {v18Data.kospi_status.above_ma60 ? '📈v_anchor ON' : `📉v_anchor OFF(${v18Data.kospi_status.break_days}일)`}
+                  </span>
+                )}
+              </div>
+              <div style={{display:'flex',gap:'0.4rem'}}>
+                <button onClick={fetchV18} style={{padding:'0.25rem 0.7rem',borderRadius:'6px',border:'1px solid rgba(45,212,191,0.3)',background:'rgba(45,212,191,0.08)',color:'var(--accent-mint)',cursor:'pointer',fontSize:'0.75rem'}}>새로고침</button>
+                <button onClick={async()=>{await fetch(API('/api/trend/v18/execute'),{method:'POST'}); fetchV18();}} style={{padding:'0.25rem 0.7rem',borderRadius:'6px',border:'1px solid rgba(239,68,68,0.35)',background:'rgba(239,68,68,0.1)',color:'#ef4444',cursor:'pointer',fontSize:'0.75rem'}}>즉시 실행</button>
+              </div>
+            </div>
+            {/* ── 예산 현황 바 ── */}
+            {v18Data?.summary && (() => {
+              const s = v18Data.summary;
+              const usedPct = s.budget_pct_used || 0;
+              const invested = s.total_invested || 0;
+              const remaining = s.remaining_cash || 0;
+              const capital = s.virtual_capital || 100000000;
+              const reservePct = s.cash_reserve_pct || 20;
+              const maxInvest = capital * (1 - reservePct / 100);
+              const investPct = Math.min(100, (invested / maxInvest) * 100);
+              const barColor = investPct >= 95 ? '#ef4444' : investPct >= 80 ? '#f59e0b' : '#22c55e';
+              return (
+                <div style={{margin:'0 0.8rem',padding:'0.6rem 0.9rem',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.35rem',fontSize:'0.72rem'}}>
+                    <span style={{color:'rgba(255,255,255,0.5)',fontWeight:600}}>💰 예산 현황</span>
+                    <span style={{color:'rgba(255,255,255,0.4)',fontSize:'0.68rem'}}>
+                      총예산 {(capital/1e8).toFixed(0)}억 · 현금유보 {reservePct}% · 투자가능 {(maxInvest/1e8).toFixed(2)}억
+                    </span>
+                  </div>
+                  <div style={{height:'6px',borderRadius:'3px',background:'rgba(255,255,255,0.08)',overflow:'hidden',marginBottom:'0.35rem'}}>
+                    <div style={{height:'100%',width:`${investPct}%`,background:barColor,borderRadius:'3px',transition:'width 0.4s'}}/>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.7rem'}}>
+                    <span style={{color:barColor,fontWeight:600}}>투자중 {(invested/1e6).toFixed(0)}만원 ({investPct.toFixed(0)}%)</span>
+                    <span style={{color: remaining >= 12000000 ? '#22c55e' : '#ef4444'}}>
+                      {remaining >= 12000000 ? `추가매수 가능 ${(remaining/1e6).toFixed(0)}만원` : `⚠️ 예산소진 (잔여 ${(remaining/1e6).toFixed(0)}만원)`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.8rem',padding:'0.8rem'}}>
+              <div>
+                <div style={{fontSize:'0.78rem',fontWeight:700,marginBottom:'0.35rem',color:'#22c55e'}}>매수 추천</div>
+                {(v18Data?.buy_candidates || []).length === 0 ? (
+                  <div style={{padding:'0.8rem',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',fontSize:'0.73rem',color:'rgba(255,255,255,0.35)',lineHeight:1.6}}>
+                    {(() => {
+                      const s = v18Data?.summary || {};
+                      const remaining = s.remaining_cash || 0;
+                      const capital = s.virtual_capital || 100000000;
+                      const reservePct = s.cash_reserve_pct || 20;
+                      const maxInvest = capital * (1 - reservePct / 100);
+                      const invested = s.total_invested || 0;
+                      if (remaining < 12000000)
+                        return `💰 예산 소진 — 투자 한도(${(maxInvest/1e8).toFixed(2)}억) 도달\n현재 ${(invested/1e6).toFixed(0)}만원 투자 중\n매도 후 현금 확보 시 재진입 가능`;
+                      if (!v18Data?.kospi_status?.above_ma60)
+                        return `📉 v_anchor OFF — KOSPI < MA60\nKOSPI가 MA60 아래 ${v18Data?.kospi_status?.break_days||0}일 연속\n하락추세 확인 중, 신규 진입 보류`;
+                      return `⏳ 조건 대기 중\n현재 보유 종목이 모두 최대 티켓 도달\n또는 피라미딩 최소 보유기간(${2}일) 미충족`;
+                    })().split('\n').map((l,i) => <div key={i}>{l}</div>)}
+                  </div>
+                ) : (
+                  <table className="premium-table" style={{width:'100%'}}>
+                    <thead><tr><th>종목</th><th style={{textAlign:'right'}}>점수</th><th style={{textAlign:'center'}}>근거</th></tr></thead>
+                    <tbody>
+                      {(v18Data.buy_candidates).slice(0,10).map((r)=>(
+                        <tr key={r.stock_code}>
+                          <td>{r.stock_name} <span style={{fontSize:'0.68rem',color:'var(--text-secondary)'}}>{r.stock_code}</span></td>
+                          <td style={{textAlign:'right',color:'#22c55e'}}>{r.score}</td>
+                          <td style={{textAlign:'center',fontSize:'0.72rem'}}>{r.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div>
+                <div style={{fontSize:'0.78rem',fontWeight:700,marginBottom:'0.35rem',color:'#ef4444'}}>매도 추천</div>
+                {(v18Data?.sell_candidates || []).length === 0 ? (
+                  <div style={{padding:'0.8rem',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',fontSize:'0.73rem',color:'rgba(255,255,255,0.35)'}}>
+                    ✅ 매도 조건 미충족 — 전 보유 종목 정상 범위
+                  </div>
+                ) : (
+                  <table className="premium-table" style={{width:'100%'}}>
+                    <thead><tr><th>종목</th><th style={{textAlign:'right'}}>수익률</th><th style={{textAlign:'center'}}>사유</th></tr></thead>
+                    <tbody>
+                      {(v18Data.sell_candidates).slice(0,10).map((r)=>(
+                        <tr key={r.stock_code}>
+                          <td>{r.stock_name} <span style={{fontSize:'0.68rem',color:'var(--text-secondary)'}}>{r.stock_code}</span></td>
+                          <td style={{textAlign:'right',color:(r.profit_pct||0)>=0?'#ef4444':'#3b82f6'}}>{(r.profit_pct||0).toFixed(2)}%</td>
+                          <td style={{textAlign:'center',fontSize:'0.72rem'}}>{r.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+            {/* ── V18.1p 전략 설명 ── */}
+            <div style={{margin:'0.5rem 0.8rem 0.8rem',padding:'0.9rem 1rem',borderRadius:'10px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}}>
+              <div style={{fontSize:'0.75rem',fontWeight:700,color:'rgba(255,255,255,0.55)',marginBottom:'0.55rem',letterSpacing:'0.04em'}}>📋 V18.1p 전략 로직</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem 1.2rem',fontSize:'0.72rem',color:'rgba(255,255,255,0.45)'}}>
+                <div>
+                  <div style={{fontWeight:600,color:'rgba(255,255,255,0.6)',marginBottom:'0.25rem'}}>백테스트 성과 (2020-03 ~ 2025-12)</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.15rem'}}>
+                    <span>· 누적수익률 <span style={{color:'#22c55e',fontWeight:700}}>+645%</span> (피라미딩 max=2 적용)</span>
+                    <span>· 최대낙폭(MDD) <span style={{color:'#f59e0b'}}>-26.4%</span></span>
+                    <span>· 전체 6구간 모두 KOSPI 초과 ✅</span>
+                    <span>· 거래비용 35bp에서도 <span style={{color:'#22c55e'}}>+486%</span> 유지</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontWeight:600,color:'rgba(255,255,255,0.6)',marginBottom:'0.25rem'}}>예산 및 포지션 규칙</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.15rem'}}>
+                    <span>· 총 예산: <span style={{color:'rgba(255,255,255,0.65)'}}>1억원</span> · 현금 유보: <span style={{color:'#f59e0b'}}>20%</span> (2,000만원 상시 보유)</span>
+                    <span>· 종목당 티켓: <span style={{color:'rgba(255,255,255,0.65)'}}>1,200만원</span> · 최대 <span style={{color:'rgba(255,255,255,0.65)'}}>2티켓</span></span>
+                    <span>· 피라미딩: 1번째 매수 후 <span style={{color:'rgba(255,255,255,0.65)'}}>2일 이후</span>에만 2번째 허용</span>
+                    <span>· 예산 소진 시 추가 매수 자동 차단</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontWeight:600,color:'rgba(255,255,255,0.6)',marginBottom:'0.25rem'}}>매수 신호 조건</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.15rem'}}>
+                    <span>· v_anchor: KOSPI&gt;MA60 + 대형주 7종 (삼성/SK하이닉스 등)</span>
+                    <span>· combo: 추세·가치·재무 2개↑ 일치 종목</span>
+                    <span>· 매도 후 쿨다운: v_anchor 5일 / combo 3일</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontWeight:600,color:'rgba(255,255,255,0.6)',marginBottom:'0.25rem'}}>매도 신호 조건</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.15rem'}}>
+                    <span>· v_anchor: 하드스탑 <span style={{color:'#ef4444'}}>-10%</span> 또는 KOSPI&lt;MA60 <span style={{color:'#ef4444'}}>3일 연속</span></span>
+                    <span>· combo: 하드스탑 <span style={{color:'#ef4444'}}>-10%</span> 또는 MA20↓+MA60↓ 추세이탈</span>
+                    <span>· 10분마다 장중 실시간 체크 (장중 악재 즉시 대응)</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{marginTop:'0.5rem',paddingTop:'0.4rem',borderTop:'1px solid rgba(255,255,255,0.06)',fontSize:'0.68rem',color:'rgba(255,255,255,0.3)'}}>
+                V18.1p(피라미딩 max=2) · 비용 민감도: 15bp +645% / 25bp +521% / 35bp +486% · 2026-05-20 확정
+              </div>
+            </div>
+          </div>
+        )
+      )}
 
       {/* ══ 진입트리거 TOP20 탭 ══ */}
       {screenTab === 'trigger' && (() => {
@@ -4412,6 +5178,7 @@ const App = () => {
     const [aiHoldings, setAiHoldings] = React.useState([]);
     const [aiLoading,  setAiLoading]  = React.useState(false);
     const [aiSubTab,   setAiSubTab]   = React.useState('holdings'); // AI탭 서브탭
+    const [v18Data, setV18Data] = React.useState(null);
 
     const loadPeak = async () => {
       setPeakLoading(true);
@@ -4448,6 +5215,13 @@ const App = () => {
       const iv = isKRMarketOpen() ? setInterval(loadPeak, 600000) : null;
       return () => { if (iv) clearInterval(iv); };
     }, []);
+
+    const loadV18 = async () => {
+      try {
+        const r = await fetch(API('/api/trend/v18/recommendations'));
+        if (r.ok) setV18Data(await r.json());
+      } catch (e) { console.error(e); }
+    };
 
     const fp = (v) => v != null ? Math.round(v).toLocaleString('ko-KR') : '-';
     const pc = (v) => v > 0 ? '#ef4444' : v < 0 ? '#3b82f6' : 'rgba(255,255,255,0.35)';
@@ -4516,6 +5290,7 @@ const App = () => {
       { key:'momentum', label:'모멘텀 Easy', color:'#34d399' },
       { key:'value',    label:'벨류 Easy',   color:'#60a5fa' },
       { key:'ai_rec',   label:'⭐ AI 추천',  color:'#ef4444' },
+      { key:'gpt_v18',  label:'🤖 GPT추천(V18)', color:'#22c55e' },
     ];
 
     return (
@@ -4578,7 +5353,7 @@ const App = () => {
           curHoldings.length === 0 ? (
             <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
               <TrendingUp size={40} style={{ margin: '0 auto 1rem', display: 'block', opacity: 0.3 }} />
-              <p style={{ fontSize: '1rem', fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>현재 [{strategy === 'peak' ? 'Peak Easy' : strategy === 'momentum' ? '모멘텀 Easy' : strategy === 'value' ? '벨류 Easy' : 'AI 추천'}] 전략 보유 종목이 없습니다.</p>
+              <p style={{ fontSize: '1rem', fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>현재 [{strategy === 'peak' ? 'Peak Easy' : strategy === 'momentum' ? '모멘텀 Easy' : strategy === 'value' ? '벨류 Easy' : strategy === 'gpt_v18' ? 'GPT추천(V18)' : 'AI 추천'}] 전략 보유 종목이 없습니다.</p>
               <p style={{ fontSize: '0.8rem', marginTop: '0.6rem' }}>{strategy === 'ai_rec' ? 'AI 자동매매 즉시 실행 후 종목이 등록됩니다.' : '추세 매수 시그널 발생 시 자동으로 등록됩니다.'}</p>
               <p style={{ fontSize: '0.75rem', marginTop: '0.3rem', color: 'rgba(255,255,255,0.25)' }}>이탈 종목 {curExits.length}건</p>
             </div>
@@ -4614,8 +5389,11 @@ const App = () => {
                           )}
                         </td>
                         <td style={{ textAlign: 'right' }}>{fp(h.buy_price)}</td>
-                        <td style={{ textAlign: 'right', color: pc(h.current_price - h.buy_price), fontWeight: 600 }}>
+                        <td style={{ textAlign: 'right', color: pc(h.daily_change_pct || 0), fontWeight: 600 }}>
                           {fp(h.current_price)}
+                          <span style={{marginLeft:'0.35rem',fontSize:'0.72rem',color:pc(h.daily_change_pct || 0)}}>
+                            {(h.daily_change_pct || 0) >= 0 ? '+' : ''}{(h.daily_change_pct || 0).toFixed(1)}%
+                          </span>
                         </td>
                         <td style={{ textAlign: 'right', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                           {h.entry_date ? h.entry_date.slice(5).replace('-','/') : '-'}
@@ -4786,7 +5564,7 @@ const App = () => {
             <span>
               <span style={{fontWeight:700,color:'#ef4444',marginRight:'0.4rem'}}>⭐ AI 적극검토 자동매매</span>
               추세추종+가치매수+재무스크리너 <strong>2개↑</strong> 동시충족 →
-              <strong>1,000만원</strong> 가상매수 → MA20 2일연속 이탈 / MA60붕괴 / -15%손절 시 매도
+              <strong>1,000만원</strong> 가상매수 → MA20 2일연속 이탈 / MA60붕괴 / 하드손절(-20%) 시 매도
             </span>
             <div style={{display:'flex',alignItems:'center',gap:'0.6rem',flexShrink:0}}>
               <button onClick={loadAiHoldings} style={{
@@ -4795,6 +5573,58 @@ const App = () => {
               }}>🔄 새로고침</button>
             </div>
           </div>
+        )}
+
+        {!loading && strategy === 'gpt_v18' && (
+          <>
+          <div style={{padding:'0.65rem 1rem',
+            background:'linear-gradient(135deg,rgba(34,197,94,0.1),rgba(45,212,191,0.08))',
+            border:'1px solid rgba(34,197,94,0.28)',borderRadius:'8px',
+            fontSize:'0.72rem',color:'rgba(255,255,255,0.68)',lineHeight:1.7,
+            display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'0.5rem'}}>
+            <span>
+              <span style={{fontWeight:700,color:'#22c55e',marginRight:'0.4rem'}}>🤖 GPT추천(V18.1)</span>
+              장중 10분마다 매수/매도 추천 및 가상매매 실행 · 종목당 1,200만원 기준 · 하드 스탑 -10%
+            </span>
+            <div style={{display:'flex',gap:'0.45rem'}}>
+              <button onClick={loadV18} style={{
+                padding:'0.3rem 0.65rem',borderRadius:'6px',fontSize:'0.75rem',cursor:'pointer',
+                background:'rgba(255,255,255,0.05)',border:'1px solid var(--glass-border)',color:'var(--text-secondary)',
+              }}>추천 갱신</button>
+              <button onClick={async()=>{await fetch(API('/api/trend/v18/execute'),{method:'POST'}); loadPeak(); loadV18();}} style={{
+                padding:'0.3rem 0.65rem',borderRadius:'6px',fontSize:'0.75rem',cursor:'pointer',
+                background:'rgba(34,197,94,0.15)',border:'1px solid rgba(34,197,94,0.35)',color:'#22c55e',
+              }}>즉시 실행</button>
+            </div>
+          </div>
+          {/* ── V18.1 전략 설명 (가상매매 탭) ── */}
+          <div style={{padding:'0.8rem 1rem',borderRadius:'10px',background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.07)',fontSize:'0.71rem',color:'rgba(255,255,255,0.42)',lineHeight:1.75}}>
+            <div style={{fontWeight:700,color:'rgba(255,255,255,0.55)',marginBottom:'0.45rem',fontSize:'0.73rem'}}>📋 V18.1 전략 개요</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'0.5rem 1rem'}}>
+              <div>
+                <span style={{color:'rgba(255,255,255,0.55)',fontWeight:600}}>백테스트 성과</span><br/>
+                누적수익 <span style={{color:'#22c55e',fontWeight:700}}>+601%</span> · MDD <span style={{color:'#f59e0b'}}>-26.3%</span><br/>
+                KOSPI +110% 대비 <span style={{color:'#22c55e'}}>+491%p 초과</span><br/>
+                6/6 구간 전부 시장 초과 달성
+              </div>
+              <div>
+                <span style={{color:'rgba(255,255,255,0.55)',fontWeight:600}}>매수 로직</span><br/>
+                추세·가치·재무 중 <strong style={{color:'rgba(255,255,255,0.65)'}}>2개↑ 동시 충족</strong><br/>
+                3개 일치(combo_3way) 종목 최우선<br/>
+                종합점수 순 최대 15종목 추출
+              </div>
+              <div>
+                <span style={{color:'rgba(255,255,255,0.55)',fontWeight:600}}>매도 로직</span><br/>
+                하드 스탑: <span style={{color:'#ef4444',fontWeight:700}}>-10%</span> 손절<br/>
+                추세 이탈: MA20↓ + MA20&lt;MA60<br/>
+                또는 현재가 &lt; MA60×98.5%
+              </div>
+            </div>
+            <div style={{marginTop:'0.4rem',paddingTop:'0.35rem',borderTop:'1px solid rgba(255,255,255,0.05)',color:'rgba(255,255,255,0.25)',fontSize:'0.66rem'}}>
+              Codex 스윕 2,592건 최적화 · dd_cut -10% · ext_ticket 30% · ext_max 60M · 비용 35bp 시뮬에서도 +412% 유지
+            </div>
+          </div>
+          </>
         )}
 
         {/* ══ 매매 내역 탭 ══ */}
@@ -4882,13 +5712,15 @@ const App = () => {
       stock_code:"", stock_name:"", sector:"", tx_type:"buy",
       quantity:"", price:"", tx_date:"", memo:""
     });
+    const [autoSummary, setAutoSummary] = React.useState(null);
 
     const load = async () => {
-      const [p, t] = await Promise.all([
-        fetch(API('/api/portfolio')).then(r=>r.ok?r.json():[]),
-        fetch(API('/api/portfolio/transactions')).then(r=>r.ok?r.json():[]),
-      ]);
-      setPortfolio(p); setTransactions(t);
+      const p = await fetch(API('/api/portfolio')).then(r=>r.ok?r.json():[]);
+      setPortfolio(p);
+    };
+    const loadTransactions = async () => {
+      const t = await fetch(API('/api/portfolio/transactions')).then(r=>r.ok?r.json():[]);
+      setTransactions(t);
     };
 
     // ── 실시간 1분 폴링: /api/realtime/prices 로 현재가·손익만 갱신 ──
@@ -4922,6 +5754,12 @@ const App = () => {
       const iv=isKRMarketOpen()?setInterval(applyRealtime,60000):null;
       return ()=>{if(iv)clearInterval(iv);};
     }, []);
+
+    React.useEffect(() => {
+      if (tab === 'tx' && transactions.length === 0) {
+        loadTransactions();
+      }
+    }, [tab]);
 
     // 섹터 그룹핑
     const groups = React.useMemo(()=>{
@@ -5106,6 +5944,15 @@ const App = () => {
 
     const collectingCount = portfolio.filter(h => h.collecting).length;
     const noDataCount     = portfolio.filter(h => h.has_price === false).length;
+    const loadAutoTrading = async () => {
+      try {
+        const s = await fetch(API('/api/kis-trading/account/summary')).then(r => r.ok ? r.json() : null);
+        setAutoSummary(s);
+      } catch {}
+    };
+    React.useEffect(() => {
+      if (tab === 'auto') loadAutoTrading();
+    }, [tab]);
 
     return (
       <div className="fade-in" style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
@@ -5185,7 +6032,7 @@ const App = () => {
         {/* 탭 + 버튼 */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div style={{display:'flex',gap:'0.4rem'}}>
-            {[{k:'holdings',l:'보유종목'},{k:'tx',l:'거래내역'}].map(({k,l})=>(
+            {[{k:'holdings',l:'보유종목'},{k:'tx',l:'거래내역'},{k:'auto',l:'자동매매'}].map(({k,l})=>(
               <button key={k} onClick={()=>setTab(k)} style={{
                 padding:'0.35rem 0.9rem',borderRadius:'6px',fontSize:'0.8rem',cursor:'pointer',fontWeight:600,
                 border:tab===k?'1px solid var(--accent-mint)':'1px solid var(--glass-border)',
@@ -5268,13 +6115,10 @@ const App = () => {
                   <thead><tr>
                     <th style={{minWidth:'90px'}}>종목명</th>
                     <th style={{textAlign:'center',minWidth:'70px'}}>추세추종 신호</th>
-                    <th style={{textAlign:'right',minWidth:'70px'}}>현재가</th>
-                    <th style={{textAlign:'right',minWidth:'65px'}}>등락률</th>
-                    <th style={{textAlign:'right',minWidth:'70px'}}>매입가</th>
-                    <th style={{textAlign:'right',minWidth:'65px'}}>수익률</th>
+                    <th style={{textAlign:'right',minWidth:'105px',borderLeft:'1px solid rgba(255,255,255,0.12)'}}>주가(%)</th>
+                    <th style={{textAlign:'right',minWidth:'105px'}}>매입가(%)</th>
                     <th style={{textAlign:'right',minWidth:'55px'}}>수량</th>
-                    <th style={{textAlign:'right',minWidth:'90px'}}>손익</th>
-                    <th style={{textAlign:'right',minWidth:'90px'}}>평가액</th>
+                    <th style={{textAlign:'right',minWidth:'130px',borderLeft:'1px solid rgba(255,255,255,0.12)'}}>평가액 / 손익</th>
                     <th style={{textAlign:'center',minWidth:'110px'}}>5일수급(외/기)</th>
                     <th style={{textAlign:'center',minWidth:'130px'}}>대차잔고</th>
                     <th></th>
@@ -5295,18 +6139,17 @@ const App = () => {
                           <input value={editForm.sector} onChange={e=>setEditForm(p=>({...p,sector:e.target.value}))}
                             style={{...inputStyle,textAlign:'left',width:'70px',marginTop:'2px'}} placeholder="섹터"/>
                         </td>
-                        <td style={{textAlign:'right',color:'var(--text-secondary)'}}>{fp(h.current_price)}</td>
-                        <td style={{textAlign:'right',color:pc(h.change_pct)}}>{pct(h.change_pct)}</td>
+                        <td style={{textAlign:'center',color:'var(--text-secondary)'}}>-</td>
+                        <td style={{textAlign:'right',color:'var(--text-secondary)',borderLeft:'1px solid rgba(255,255,255,0.08)'}}>{fp(h.current_price)}</td>
                         <td style={{textAlign:'right'}}>
                           <input value={editForm.avg_price} onChange={e=>setEditForm(p=>({...p,avg_price:e.target.value}))}
                             style={inputStyle} placeholder="매입가"/>
                         </td>
-                        <td style={{textAlign:'right',color:'var(--text-secondary)'}}>-</td>
                         <td style={{textAlign:'right'}}>
                           <input value={editForm.quantity} onChange={e=>setEditForm(p=>({...p,quantity:e.target.value}))}
                             style={inputStyle} placeholder="수량"/>
                         </td>
-                        <td colSpan={2} style={{textAlign:'center'}}>
+                        <td style={{textAlign:'center',borderLeft:'1px solid rgba(255,255,255,0.08)'}}>
                           <div style={{display:'flex',gap:'0.4rem',justifyContent:'center'}}>
                             <button onClick={()=>saveEdit(h.stock_code)} style={{
                               padding:'0.25rem 0.7rem',borderRadius:'5px',border:'none',
@@ -5319,6 +6162,8 @@ const App = () => {
                             }}>취소</button>
                           </div>
                         </td>
+                        <td style={{textAlign:'center',color:'var(--text-secondary)'}}>-</td>
+                        <td style={{textAlign:'center',color:'var(--text-secondary)'}}>-</td>
                         <td>
                           <button onClick={()=>deleteHolding(h.stock_code)} style={{
                             padding:'0.2rem 0.5rem',borderRadius:'4px',border:'none',
@@ -5336,7 +6181,7 @@ const App = () => {
                         <td onClick={()=>{changeStock(h.stock_code);changeTab('analysis');}}
                           style={{minWidth:'90px',maxWidth:'130px'}}>
                           <div style={{fontWeight:600,display:'flex',alignItems:'center',gap:'0.4rem',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                            {h.stock_name}
+                            {h.stock_name || h.stock_code}
                             {(h.avg_price === 0 || h.avg_price == null) && (
                               <span title="평균매입가가 0원입니다. 🔄 평단 재계산 버튼을 눌러 복원하세요"
                                 style={{display:'inline-flex',alignItems:'center',fontSize:'0.62rem',color:'#f87171',padding:'1px 5px',border:'1px solid rgba(248,113,133,0.4)',borderRadius:'4px',flexShrink:0,cursor:'help'}}>
@@ -5392,44 +6237,61 @@ const App = () => {
                             );
                           })()}
                         </td>
-                        <td style={{textAlign:'right',fontSize:'0.85rem',whiteSpace:'nowrap'}}>
+                        <td style={{textAlign:'right',fontSize:'0.85rem',whiteSpace:'nowrap',borderLeft:'1px solid rgba(255,255,255,0.08)',fontVariantNumeric:'tabular-nums'}}>
                           {h.has_price===false
                             ? <span style={{fontSize:'0.72rem',color:'var(--accent-mint)'}}>{h.collecting?'수집중...':'미수집'}</span>
-                            : fp(h.current_price)}
+                            : (
+                              <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',lineHeight:1.15}}>
+                                <span>{fp(h.current_price)}</span>
+                                <span style={{color:pc(h.change_pct),fontWeight:600}}>({pct(h.change_pct)})</span>
+                              </div>
+                            )}
                         </td>
-                        <td style={{textAlign:'right',color:h.has_price===false?'var(--text-secondary)':pc(h.change_pct)}}>
-                          {h.has_price===false?'-':pct(h.change_pct)}
-                        </td>
-                        <td style={{textAlign:'right',fontSize:'0.85rem',whiteSpace:'nowrap'}}>{fp(h.avg_price)}</td>
-                        <td style={{textAlign:'right',color:h.has_price===false?'var(--text-secondary)':pc(h.profit_pct),fontWeight:600}}>
-                          {h.has_price===false?'-':pct(h.profit_pct)}
+                        <td style={{textAlign:'right',fontSize:'0.85rem',whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'}}>
+                          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',lineHeight:1.15}}>
+                            <span>{fp(h.avg_price)}</span>
+                            <span style={{color:h.has_price===false?'var(--text-secondary)':pc(h.profit_pct),fontWeight:600}}>
+                              ({h.has_price===false?'-':pct(h.profit_pct)})
+                            </span>
+                          </div>
                         </td>
                         <td style={{textAlign:'right',fontSize:'0.85rem',whiteSpace:'nowrap'}}>{Math.round(h.quantity).toLocaleString('ko-KR')}</td>
-                        <td style={{textAlign:'right',fontWeight:600,fontSize:'0.85rem',whiteSpace:'nowrap',color:h.has_price===false?'var(--text-secondary)':pc(h.profit)}}>
-                          {h.has_price===false?'-':(h.profit>=0?'+':'')+fp(h.profit)}
+                        <td style={{textAlign:'right',fontWeight:600,fontSize:'0.85rem',whiteSpace:'nowrap',borderLeft:'1px solid rgba(255,255,255,0.08)'}}>
+                          <div style={{color:'var(--text-primary)'}}>{fp(h.total_value)}</div>
+                          <div style={{color:h.has_price===false?'var(--text-secondary)':pc(h.profit)}}>
+                            {h.has_price===false?'-':`(${(h.profit>=0?'+':'')+fp(h.profit)})`}
+                          </div>
                         </td>
-                        <td style={{textAlign:'right',fontWeight:600,fontSize:'0.85rem',whiteSpace:'nowrap'}}>{fp(h.total_value)}</td>
                         {/* 수급 컬럼 */}
                         <td style={{textAlign:'center',whiteSpace:'nowrap'}}>
                           {(() => {
                             const frn  = h.frn_net_buy;   // null=데이터없음, 0=있지만0
                             const inst = h.inst_net_buy;
-                            if(frn == null && inst == null) return <span style={{color:'rgba(255,255,255,0.2)',fontSize:'0.7rem'}}>-</span>;
-                            // 소수점1자리 표시 (소형주 0.1억도 표시)
-                            const fmt = (v) => {
-                              if(v == null) return <span style={{color:'rgba(255,255,255,0.2)'}}>-</span>;
-                              if(v === 0) return <span style={{color:'rgba(255,255,255,0.25)',fontSize:'0.7rem'}}>±0</span>;
+                            if(frn == null && inst == null) return <span style={{color:'rgba(255,255,255,0.25)',fontSize:'0.7rem'}}>±0</span>;
+                            const fmtAmt = (v) => {
+                              if(v == null) return '-';
+                              if(v === 0) return '0억';
                               const abs = Math.abs(v);
                               const disp = abs < 10 ? abs.toFixed(1) : Math.round(abs).toLocaleString();
-                              return <span style={{color:v>0?'#ef4444':'#3b82f6',fontSize:'0.72rem',fontWeight:600}}>{v>0?'+':'-'}{disp}억</span>;
+                              return `${v>0?'+':'-'}${disp}억`;
                             };
+                            const light = (v) => {
+                              if(v == null || v === 0) return {bg:'rgba(148,163,184,0.14)', bd:'rgba(148,163,184,0.35)', fg:'#94a3b8', icon:'●'};
+                              if(v > 0) return {bg:'rgba(239,68,68,0.16)', bd:'rgba(239,68,68,0.42)', fg:'#f87171', icon:'▲'};
+                              return {bg:'rgba(34,197,94,0.16)', bd:'rgba(34,197,94,0.42)', fg:'#4ade80', icon:'▼'};
+                            };
+                            const fr = light(frn), ins = light(inst);
                             return (
-                              <div style={{display:'flex',flexDirection:'column',gap:'1px',alignItems:'center'}}>
-                                <div style={{display:'flex',gap:'3px',alignItems:'center'}}>
-                                  <span style={{fontSize:'0.58rem',color:'rgba(255,255,255,0.3)'}}>외</span>{fmt(frn)}
+                              <div style={{display:'flex',gap:'4px',justifyContent:'center'}}>
+                                <div style={{minWidth:'54px',padding:'2px 4px',borderRadius:'6px',background:'rgba(20,30,50,0.75)',border:`1px solid ${fr.bd}`,display:'flex',flexDirection:'column',alignItems:'center',lineHeight:1.05}}>
+                                  <span style={{fontSize:'0.54rem',color:'rgba(255,255,255,0.5)'}}>외인</span>
+                                  <span style={{fontSize:'0.72rem',fontWeight:700,color:fr.fg}}>{fr.icon}</span>
+                                  <span style={{fontSize:'0.66rem',fontWeight:700,color:fr.fg}}>{fmtAmt(frn)}</span>
                                 </div>
-                                <div style={{display:'flex',gap:'3px',alignItems:'center'}}>
-                                  <span style={{fontSize:'0.58rem',color:'rgba(255,255,255,0.3)'}}>기</span>{fmt(inst)}
+                                <div style={{minWidth:'54px',padding:'2px 4px',borderRadius:'6px',background:'rgba(20,30,50,0.75)',border:`1px solid ${ins.bd}`,display:'flex',flexDirection:'column',alignItems:'center',lineHeight:1.05}}>
+                                  <span style={{fontSize:'0.54rem',color:'rgba(255,255,255,0.5)'}}>기관</span>
+                                  <span style={{fontSize:'0.72rem',fontWeight:700,color:ins.fg}}>{ins.icon}</span>
+                                  <span style={{fontSize:'0.66rem',fontWeight:700,color:ins.fg}}>{fmtAmt(inst)}</span>
                                 </div>
                               </div>
                             );
@@ -5572,6 +6434,48 @@ const App = () => {
               </section>
             );
           })
+        )}
+
+        {tab==='auto' && (
+          <div style={{display:'flex',flexDirection:'column',gap:'0.9rem'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <h3 style={{fontSize:'0.95rem',fontWeight:700,color:'var(--accent-mint)'}}>KIS 자동매매 계좌현황</h3>
+              <button onClick={loadAutoTrading} style={{padding:'0.35rem 0.8rem',borderRadius:'8px',background:'rgba(45,212,191,0.15)',border:'1px solid rgba(45,212,191,0.35)',color:'var(--accent-mint)',cursor:'pointer'}}>새로고침</button>
+            </div>
+            <div style={{fontSize:'0.76rem',color:'var(--text-secondary)',marginTop:'-0.3rem'}}>
+              계좌: <span style={{color:'var(--text-primary)',fontWeight:700}}>{autoSummary?.account_no || autoSummary?.account_no_masked || '-'}</span>
+              <span style={{marginLeft:'0.6rem'}}>상품코드: {autoSummary?.account_prod || '-'}</span>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'0.6rem'}}>
+              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>예수금(주문가능)</p><h3>{fp(autoSummary?.summary?.cash_available || 0)}원</h3></div>
+              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>D+2 예수금</p><h3>{fp(autoSummary?.summary?.cash_d2 || 0)}원</h3></div>
+              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>평가금액</p><h3>{fp(autoSummary?.summary?.total_eval || 0)}원</h3></div>
+              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>평가손익</p><h3 style={{color:pc(autoSummary?.summary?.total_profit || 0)}}>{fp(autoSummary?.summary?.total_profit || 0)}원</h3></div>
+            </div>
+
+            <section className="glass-panel" style={{padding:'0.9rem'}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.5rem'}}>
+                <span style={{fontWeight:700,fontSize:'0.82rem'}}>실계좌 보유잔고 ({autoSummary?.holdings_count || 0}종목)</span>
+                <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>업데이트: {autoSummary?.updated_at || '-'}</span>
+              </div>
+              <table className="premium-table" style={{width:'100%'}}>
+                <thead><tr><th>종목</th><th style={{textAlign:'right'}}>수량</th><th style={{textAlign:'right'}}>평균단가</th><th style={{textAlign:'right'}}>현재가</th><th style={{textAlign:'right'}}>손익</th><th style={{textAlign:'right'}}>수익률</th></tr></thead>
+                <tbody>
+                  {(autoSummary?.holdings || []).slice(0, 20).map((h, i) => (
+                    <tr key={`${h.stock_code}-${i}`}>
+                      <td>{h.stock_name} <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>{h.stock_code}</span></td>
+                      <td style={{textAlign:'right'}}>{fp(h.quantity)}</td>
+                      <td style={{textAlign:'right'}}>{fp(h.avg_price)}</td>
+                      <td style={{textAlign:'right'}}>{fp(h.current_price)}</td>
+                      <td style={{textAlign:'right',color:pc(h.profit)}}>{fp(h.profit)}</td>
+                      <td style={{textAlign:'right',color:pc(h.profit_pct)}}>{pct(h.profit_pct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          </div>
         )}
 
         {/* 거래 내역 탭 */}
@@ -8679,20 +9583,26 @@ const App = () => {
     }, []);
 
     const strategyEndpoints = {
-      v4:      '/api/backtest/run',
-      v_trend: '/api/backtest/run-v1',
-      v_dart:  '/api/backtest/run-v1-dart',
-      v8:      '/api/backtest/run-v8',
-      v10:     '/api/backtest/run-v10',
-      v11:     '/api/backtest/run-v11',
-      v12:     '/api/backtest/run-v12',
+      v1_value: '/api/backtest/run-v1-value',
+      v2:       '/api/backtest/run-v2',
+      v4:       '/api/backtest/run',
+      v5:       '/api/backtest/run-v5',
+      v8:       '/api/backtest/run-v8',
+      v10:      '/api/backtest/run-v10',
+      v10_hs:   '/api/backtest/run-v10-hs',
+      v11:      '/api/backtest/run-v11',
+      v11_hs:   '/api/backtest/run-v11-hs',
+      v12:      '/api/backtest/run-v12',
+      v_trend:  '/api/backtest/run-v1',
+      v_dart:   '/api/backtest/run-v1-dart',
     };
 
     const startBacktest = async () => {
       setRunning(true);
       try {
-        const endpoint = strategyEndpoints[form.strategy] || '/api/backtest/run';
-        const stratLabels = { v1:'V1 가치매수', v2:'V2 재무성장', v3:'V3 추세단독', v4:'V4 복합콤보', v5:'V5 수급모멘텀', v6:'V6 추세+재무', v7:'V7 가치+모멘텀', v8:'V8 수출선행', v10:'V10 이익폭발', v11:'V11 흑자전환', v12:'V12 섹터대세', v_trend:'VT MA정배열', v_dart:'VT+DART필터', combo:'AI콤보(구)' };
+        const endpoint = strategyEndpoints[form.strategy];
+        if (!endpoint) { alert(`지원하지 않는 전략: ${form.strategy}`); setRunning(false); return; }
+        const stratLabels = { v1_value:'V1 가치매수', v2:'V2 재무스크리너', v4:'V4 복합콤보', v5:'V5 수급모멘텀', v8:'V8 수출선행', v10:'V10 이익폭발', v10_hs:'V10+HS수출', v11:'V11 흑자전환', v11_hs:'V11+HS수출', v12:'V12 섹터대세', v_trend:'VT MA정배열', v_dart:'VT+DART필터' };
         const r = await fetch(API(endpoint), {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
@@ -8949,19 +9859,28 @@ const App = () => {
               <select value={form.strategy}
                 onChange={e => setForm(p => ({...p, strategy: e.target.value}))}
                 style={{...inputS, width:'100%', boxSizing:'border-box', cursor:'pointer'}}>
-                <option value="v1">V1 가치매수</option>
-                <option value="v2">V2 재무성장 ★단일팩터 CAGR최고</option>
-                <option value="v3">V3 추세단독</option>
-                <option value="v4">V4 복합콤보</option>
-                <option value="v5">V5 수급모멘텀</option>
-                <option value="v6">V6 추세+재무</option>
-                <option value="v7">V7 가치+모멘텀</option>
-                <option value="v8">V8 수출선행 (HS무역)</option>
-                <option value="v10">V10 이익폭발</option>
-                <option value="v11">V11 흑자전환 ★하락장강세</option>
-                <option value="v12">V12 섹터대세</option>
-                <option value="v_trend">VT MA정배열 ★추천</option>
-                <option value="v_dart">VT+DART필터</option>
+                <optgroup label="── 가치/재무 발굴 ──">
+                  <option value="v1_value">V1 가치매수 (Graham 저평가)</option>
+                  <option value="v2">V2 재무스크리너 (수익성 스코어)</option>
+                </optgroup>
+                <optgroup label="── 추세/콤보 ──">
+                  <option value="v4">V4 복합콤보 ★추천 (AI 삼중필터)</option>
+                  <option value="v_trend">VT MA정배열 ★추천</option>
+                  <option value="v_dart">VT+DART필터</option>
+                </optgroup>
+                <optgroup label="── 수급 모멘텀 ──">
+                  <option value="v5">V5 수급모멘텀 (기관+외인 동반)</option>
+                </optgroup>
+                <optgroup label="── 실적/전환 ──">
+                  <option value="v10">V10 이익폭발 (고성장 2분기)</option>
+                  <option value="v10_hs">V10+HS수출</option>
+                  <option value="v11">V11 흑자전환 ★하락장강세</option>
+                  <option value="v11_hs">V11+HS수출</option>
+                </optgroup>
+                <optgroup label="── 섹터/수출 ──">
+                  <option value="v8">V8 수출선행 (HS무역통계)</option>
+                  <option value="v12">V12 섹터대세</option>
+                </optgroup>
               </select>
             </div>
           </div>
@@ -10031,7 +10950,7 @@ const App = () => {
           <span>📊 기업별 고용인원 연간 추이 — <strong style={{color:'#34d399'}}>사업보고서</strong> 기준 (2023~2025년 연말 기준)</span>
           <span style={{color:'var(--text-secondary)'}}>• 직접 고용인원만 집계 (자회사 제외)</span>
           <span style={{color:'var(--text-secondary)'}}>• 482개 상장기업 대상</span>
-          <span style={{color:'#f59e0b', marginLeft:'auto'}}>⚠️ 고용보험 피보험자(WLB)와 다른 기준의 별도 데이터</span>
+          <span style={{color:'#f59e0b', marginLeft:'auto'}}>⚠️ 국민연금과 다른 기준의 사업보고서 데이터</span>
         </div>
 
         <div className="glass-panel" style={{ overflow: 'hidden' }}>
@@ -10116,13 +11035,191 @@ const App = () => {
     );
   };
 
+  // ── 기업별 인원 그래프 (월별 추이) ────────────────────────────
+  const CompanyChartView = () => {
+    const [input, setInput] = React.useState('');
+    const [suggestions, setSuggestions] = React.useState([]);
+    const [chartData, setChartData] = React.useState(null);
+    const [loading, setLoading] = React.useState(false);
+    const [notFound, setNotFound] = React.useState(false);
+
+    const doSearch = async (codeOrName) => {
+      const raw = (codeOrName || input).trim();
+      if (!raw) return;
+      setLoading(true); setNotFound(false); setSuggestions([]);
+
+      // 6자리 숫자면 코드로 직접 조회, 아니면 종목명 검색 먼저
+      let code = raw;
+      if (!/^\d{6}$/.test(raw)) {
+        try {
+          const rs = await fetch(`/api/search?q=${encodeURIComponent(raw)}`).then(r => r.json());
+          const items = rs.results || rs || [];
+          if (items.length === 0) { setNotFound(true); setLoading(false); return; }
+          if (items.length > 1) { setSuggestions(items.slice(0, 8)); setLoading(false); return; }
+          code = items[0].stock_code || items[0].code;
+        } catch { setNotFound(true); setLoading(false); return; }
+      }
+
+      try {
+        const d = await fetch(`/api/employment-v2/insurance/chart?code=${code}`).then(r => r.json());
+        if (d.notFound || !d.history?.length) { setNotFound(true); setChartData(null); }
+        else { setChartData(d); }
+      } catch { setNotFound(true); }
+      setLoading(false);
+    };
+
+    const maxW = chartData ? Math.max(...chartData.history.map(h => h.worker_count || 0)) : 1;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className="glass-panel" style={{ padding: '1rem 1.4rem', display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>📈 기업별 인원 월별 추이</span>
+          <input value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && doSearch()}
+            placeholder="종목명 또는 종목코드 입력"
+            style={{ padding: '0.35rem 0.8rem', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.07)', color: '#fff', fontSize: '0.82rem', width: '220px' }} />
+          <button onClick={() => doSearch()} style={{ padding: '0.35rem 1rem', borderRadius: '7px', background: 'rgba(45,212,191,0.2)', border: '1px solid var(--accent-mint)', color: 'var(--accent-mint)', fontSize: '0.82rem', cursor: 'pointer' }}>조회</button>
+        </div>
+        <div className="glass-panel" style={{ padding: '0.55rem 1rem', fontSize: '0.72rem', color: '#fbbf24', background: 'rgba(251,191,36,0.08)' }}>
+          안내: 피보험자 수는 특수고용직/사업장 집계를 포함할 수 있어 사업보고서 인원보다 크게 보일 수 있습니다.
+        </div>
+        {suggestions.length > 0 && (
+          <div className="glass-panel" style={{ padding: '0.8rem 1.2rem' }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>종목을 선택하세요:</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {suggestions.map(s => (
+                <button key={s.stock_code || s.code} onClick={() => { setInput(s.stock_name || s.name); doSearch(s.stock_code || s.code); }}
+                  style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', fontSize: '0.78rem', cursor: 'pointer', background: 'rgba(45,212,191,0.12)', border: '1px solid rgba(45,212,191,0.3)', color: '#fff' }}>
+                  {s.stock_code || s.code} {s.stock_name || s.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {loading && <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>로딩 중...</div>}
+        {notFound && <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>수집된 데이터가 없습니다.</div>}
+
+        {chartData && (() => {
+          const hist = chartData.history || [];
+          const lineData = hist.map(h => ({
+            ym: h.ym,
+            label: h.ym ? h.ym.replace(/(\d{4})(\d{2})/, '$1-$2') : '',
+            workers: h.worker_count != null ? h.worker_count : null,
+            workersActual: h.is_actual ? h.worker_count : null,
+            workersEst: !h.is_actual ? h.worker_count : null,
+            netChange: h.net_change,
+            newHires: h.new_hires,
+            terminations: h.terminations,
+            isActual: h.is_actual,
+          }));
+          const allW = lineData.map(d => d.workers).filter(v => v != null);
+          const minV = allW.length ? Math.min(...allW) : 0;
+          const maxV = allW.length ? Math.max(...allW) : 100;
+          const pad = Math.max((maxV - minV) * 0.1, 10);
+          return (
+            <div className="glass-panel" style={{ padding: '1.2rem' }}>
+              <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+                <span>{chartData.stock_code} · {chartData.stock_name} 피보험자 추이 (25.05~26.05)</span>
+                <span style={{ fontSize: '0.78rem', color: '#c4b5fd', fontWeight: 600 }}>
+                  기준 인원(사업보고서 12월): {chartData.report_workers != null ? chartData.report_workers.toLocaleString('ko-KR') : '-'}명
+                </span>
+                <span style={{ display: 'flex', gap: '0.5rem', fontSize: '0.73rem', fontWeight: 400 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <span style={{ display: 'inline-block', width: 20, height: 2, background: '#2dd4bf' }}></span>
+                    <span style={{ color: '#2dd4bf' }}>고용보험 실측</span>
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <span style={{ display: 'inline-block', width: 20, height: 2, background: '#a78bfa', borderTop: '2px dashed #a78bfa' }}></span>
+                    <span style={{ color: '#a78bfa' }}>NPS 증감기반 추정치</span>
+                  </span>
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={270}>
+                <LineChart data={lineData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.07)" />
+                  <XAxis dataKey="label" tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 11 }} interval={0} angle={-30} textAnchor="end" height={40} />
+                  <YAxis domain={[Math.max(0, minV - pad), maxV + pad]}
+                    tickFormatter={v => v >= 10000 ? (v/10000).toFixed(1)+'만' : v.toLocaleString('ko-KR')}
+                    tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 11 }} width={65} />
+                  <Tooltip
+                    contentStyle={{ background: 'rgba(15,15,25,0.95)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '0.8rem' }}
+                    formatter={(v, name) => {
+                      if (v == null) return ['-', ''];
+                      const label = name === 'workersActual' ? '피보험자(실측)' : '피보험자(추정)';
+                      return [v.toLocaleString('ko-KR') + '명', label];
+                    }}
+                    labelFormatter={l => `기준: ${l}`}
+                  />
+                  <Line type="monotone" dataKey="workersActual" stroke="#2dd4bf" strokeWidth={2.5} connectNulls={false}
+                    dot={props => {
+                      const { cx, cy, payload } = props;
+                      if (payload.workersActual == null) return null;
+                      return <circle key={payload.ym} cx={cx} cy={cy} r={5} fill="#2dd4bf" stroke="#fff" strokeWidth={1.5} />;
+                    }}
+                    activeDot={{ r: 6, fill: '#fff', stroke: '#2dd4bf', strokeWidth: 2 }} />
+                  <Line type="monotone" dataKey="workersEst" stroke="#a78bfa" strokeWidth={2} strokeDasharray="5 3" connectNulls={false}
+                    dot={props => {
+                      const { cx, cy, payload } = props;
+                      if (payload.workersEst == null) return null;
+                      return <circle key={payload.ym} cx={cx} cy={cy} r={3} fill="#a78bfa" strokeWidth={0} />;
+                    }}
+                    activeDot={{ r: 5, fill: '#fff', stroke: '#a78bfa', strokeWidth: 2 }} />
+                </LineChart>
+              </ResponsiveContainer>
+              <div style={{ overflowX: 'auto', marginTop: '0.8rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead><tr style={{ borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+                    {['기준월', '피보험자', '신규취득(국연)', '상실(국연)', '순증감', '출처'].map(h => (
+                      <th key={h} style={{ padding: '0.3rem 0.6rem', textAlign: h === '기준월' || h === '출처' ? 'left' : 'right', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {[...lineData].reverse().map(h => (
+                      <tr key={h.ym} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: h.isActual ? 'rgba(45,212,191,0.05)' : 'transparent' }}>
+                        <td style={{ padding: '0.28rem 0.6rem', color: h.isActual ? '#2dd4bf' : 'rgba(255,255,255,0.6)', fontWeight: h.isActual ? 600 : 400 }}>{h.label}</td>
+                        <td style={{ padding: '0.28rem 0.6rem', textAlign: 'right', fontWeight: 600, color: h.isActual ? '#34d399' : '#a78bfa' }}>
+                          {h.workers != null ? h.workers.toLocaleString('ko-KR') + '명' : '-'}
+                          {!h.isActual && <span style={{ fontSize: '0.7rem', color: 'rgba(167,139,250,0.6)', marginLeft: '0.2rem' }}>(추정)</span>}
+                        </td>
+                        <td style={{ padding: '0.28rem 0.6rem', textAlign: 'right', color: 'rgba(255,255,255,0.55)' }}>
+                          {h.newHires != null ? h.newHires.toLocaleString('ko-KR') : '-'}
+                        </td>
+                        <td style={{ padding: '0.28rem 0.6rem', textAlign: 'right', color: 'rgba(255,255,255,0.55)' }}>
+                          {h.terminations != null ? h.terminations.toLocaleString('ko-KR') : '-'}
+                        </td>
+                        <td style={{ padding: '0.28rem 0.6rem', textAlign: 'right', color: h.netChange > 0 ? '#f87171' : h.netChange < 0 ? '#60a5fa' : 'rgba(255,255,255,0.35)' }}>
+                          {h.netChange != null ? (h.netChange > 0 ? '+' : '') + h.netChange.toLocaleString('ko-KR') : '-'}
+                        </td>
+                        <td style={{ padding: '0.28rem 0.6rem', color: h.isActual ? '#2dd4bf' : '#a78bfa', fontSize: '0.72rem' }}>
+                          {h.isActual ? '고용보험(실측)' : 'NPS 증감기반 추정'}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td colSpan={6} style={{ padding: '0.55rem 0.65rem', color: 'rgba(255,255,255,0.62)', fontSize: '0.72rem', lineHeight: 1.45, borderTop: '1px dashed rgba(255,255,255,0.14)' }}>
+                        ※ 설명: 보라색 구간은 국민연금의 월별 취득·상실(증감) 데이터를 이용한 추정치입니다.
+                        기준 인원은 사업보고서 12월 값이며, 해당 기준점에서 월별 NPS 순증감을 가감해 월별 흐름을 추정합니다
+                        (국민연금 절대 인원으로 직접 표기한 값이 아닙니다).
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    );
+  };
+
   const EmploymentView = () => {
     const [empTab, setEmpTab] = React.useState('company');
 
     return (
       <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div className="glass-panel" style={{ padding: '1rem 1.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {[['company','🏭 고용보험 랭킹 (WLB)'],['nps_trend','👥 기업별 피보험자 현황'],['nps','📋 사업보고서 인원']].map(([k, lbl]) => (
+        <div className="glass-panel" style={{ padding: '0.8rem 1.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem', overflowX: 'auto', flexShrink: 0 }}>
+          {[['company','🏭 국민연금 현황'],['nps_trend','👥 기업별 국민연금'],['company_chart','📈 기업별 그래프'],['nps','📋 사업보고서 인원']].map(([k, lbl]) => (
             <button key={k} onClick={() => setEmpTab(k)} style={{
               padding: '0.35rem 0.9rem', borderRadius: '7px', fontSize: '0.82rem', cursor: 'pointer',
               fontWeight: empTab === k ? 700 : 500,
@@ -10133,8 +11230,23 @@ const App = () => {
           ))}
         </div>
 
-        {empTab === 'company' && <EmploymentYearlyView />}
+        <div className="glass-panel" style={{
+          padding: '0.75rem 1rem',
+          border: '1px solid rgba(245,158,11,0.35)',
+          background: 'rgba(245,158,11,0.08)',
+          fontSize: '0.76rem',
+          lineHeight: 1.55,
+          color: 'rgba(255,255,255,0.88)'
+        }}>
+          <div style={{ fontWeight: 700, color: '#fbbf24', marginBottom: '0.22rem' }}>고용정보 해석 한계점</div>
+          <div>1) 사업보고서 인원은 연말 직접고용 기준이며, WLB/NPS는 사업장·피보험자 기준으로 집계되어 모수가 다를 수 있습니다.</div>
+          <div>2) NPS는 월별 취득/상실(증감) 흐름 데이터로, 절대 인원 1:1 비교 지표가 아닙니다.</div>
+          <div>3) 보험/건설/유통 등 일부 업종은 특고·사업장 구조 영향으로 괴리가 크게 발생할 수 있어 추세 중심으로 해석해야 합니다.</div>
+        </div>
 
+        {empTab === 'company' && <EmploymentYearlyView />}
+        {empTab === 'nps_trend' && <NpsTrendView />}
+        {empTab === 'company_chart' && <CompanyChartView />}
         {empTab === 'nps' && <AnnualEmploymentByReportView />}
         {false && (() => {
           // ── [DISABLED: hooks-in-conditional 위반 방지, AnnualEmploymentByReportView로 이동] ──
@@ -10189,7 +11301,7 @@ const App = () => {
                 <span>📊 기업별 고용인원 연간 추이 — <strong style={{color:'#34d399'}}>사업보고서</strong> 기준 (2023~2025년 연말 기준)</span>
                 <span style={{color:'var(--text-secondary)'}}>• 직접 고용인원만 집계 (자회사 제외)</span>
                 <span style={{color:'var(--text-secondary)'}}>• 482개 상장기업 대상</span>
-                <span style={{color:'#f59e0b', marginLeft:'auto'}}>⚠️ 고용보험 피보험자(WLB)와 다른 기준의 별도 데이터</span>
+                <span style={{color:'#f59e0b', marginLeft:'auto'}}>⚠️ 국민연금과 다른 기준의 사업보고서 데이터</span>
               </div>
 
               {/* 전체 기업 연간 랭킹 테이블 */}
@@ -10257,7 +11369,6 @@ const App = () => {
           );
         })()}
 
-        {empTab === 'nps_trend' && <NpsTrendView />}
       </div>
     );
   };
@@ -10284,7 +11395,7 @@ const App = () => {
       { category: '수출입 (확정)', source: '관세청 수출입무역통계 (KITA)', data: '품목별 월간 확정 수출입 통계 — 전월 확정치', schedule: '월 1회 확정 (hs_trade_lab 배치)', table: 'customs_monthly_record (hs_trade_lab.db)', status: '자동수집', color: '#34d399', freshness: fr.hs_confirmed_latest ? `최신 확정: ${fmtYm(fr.hs_confirmed_latest)}` : null },
       { category: '수출입 (추정)', source: '관세청 10일 단위 잠정치', data: '품목별 10일 단위 수출 잠정 추이 — 당월 추정치', schedule: '10일 단위 (hs_trade_lab 배치)', table: 'trade_series_cache (hs_trade_lab.db)', status: '자동수집', color: '#34d399', freshness: fr.hs_estimated_latest ? `최신 추정: ${fmtYm(fr.hs_estimated_latest)}` : null },
       { category: 'Stock Easy', source: 'StockEasy 사이트 파싱', data: '전략 종목 (가상매매)', schedule: '수동 파싱', table: 'peak_holding', status: '수동', color: '#fbbf24' },
-      { category: '고용 (WLB)', source: '근로복지공단 고용보험 API', data: '상장사 사업장별 피보험자수 + 사업장수 (전체 스캔)', schedule: '매일 20:30 변화감지 → 수집 (~14분)', table: 'wlb_monthly (employment.db)', status: '자동수집', color: '#34d399', freshness: fr.wlb_collected_at ? `수집: ${fr.wlb_collected_at} · 기준: ${fmtYm(fr.wlb_data_ym)}` : null },
+      { category: '국민연금 고용현황', source: '근로복지공단 고용보험 API', data: '상장사 사업장별 피보험자수 + 사업장수 (전체 스캔)', schedule: '매일 20:30 변화감지 → 수집 (~14분)', table: 'wlb_monthly (employment.db)', status: '자동수집', color: '#34d399', freshness: fr.wlb_collected_at ? `수집: ${fr.wlb_collected_at} · 기준: ${fmtYm(fr.wlb_data_ym)}` : null },
       { category: '텔레그램', source: 'Telegram API', data: '채널별 종목 언급 수집', schedule: '수동 수집', table: 'telegram_channels', status: '수동', color: '#fbbf24' },
       { category: '섹터분석', source: '블로그 파싱 (Sector_define)', data: '핫 섹터 분석 포스트 + 종목', schedule: '매일 07:00 자동', table: 'sector_posts / sector_stocks (stock.db)', status: '자동수집', color: '#34d399' },
     ];
@@ -10323,8 +11434,8 @@ const App = () => {
             { label:'🇺🇸 주가 (미국)', val: fr.us_price_latest ? `${fr.us_price_latest} (${fr.us_stock_count ?? '-'}종목)` : '-', color:'#60a5fa' },
             { label:'📦 수출입 확정치', val: fr.hs_confirmed_latest ? fmtYm(fr.hs_confirmed_latest) : '-', color:'#fbbf24' },
             { label:'📊 수출입 추정치', val: fr.hs_estimated_latest ? fmtYm(fr.hs_estimated_latest) : '-', color:'#f97316' },
-            { label:'🏭 고용보험 (WLB)', val: fr.wlb_collected_at ? `수집: ${fr.wlb_collected_at}` : '-', color:'#a78bfa' },
-            { label:'📅 WLB 데이터 기준', val: fr.wlb_data_ym ? fmtYm(fr.wlb_data_ym) : '-', color:'#a78bfa' },
+            { label:'🏭 국민연금 고용현황', val: fr.wlb_collected_at ? `수집: ${fr.wlb_collected_at}` : '-', color:'#a78bfa' },
+            { label:'📅 국민연금 기준월', val: fr.wlb_data_ym ? fmtYm(fr.wlb_data_ym) : '-', color:'#a78bfa' },
           ].map(c => (
             <div key={c.label} style={{ background:'rgba(255,255,255,0.03)', borderRadius:'8px', padding:'0.6rem 0.8rem', border:'1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize:'0.7rem', color:'var(--text-secondary)', marginBottom:'0.2rem' }}>{c.label}</div>

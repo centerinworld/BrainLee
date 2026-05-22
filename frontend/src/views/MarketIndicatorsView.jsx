@@ -27,6 +27,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   const [shortHistory, setShortHistory] = React.useState(null);
   const [shortForeign, setShortForeign] = React.useState(null);
   const [shortMonthly, setShortMonthly] = React.useState(null);
+  const [marketCash, setMarketCash] = React.useState(null);
+  const [cashRange, setCashRange] = React.useState(1095);
 
   React.useEffect(() => {
     fetch(API('/api/market-indicators/available-dates?limit=30'))
@@ -58,6 +60,12 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
       .then(r => r.ok ? r.json() : null)
       .then(setTrendData);
   }, [trendMkt, trendDays]);
+
+  React.useEffect(() => {
+    fetch(API(`/api/market-indicators/market-cash?days=${cashRange}`))
+      .then(r => r.ok ? r.json() : null)
+      .then(setMarketCash);
+  }, [cashRange]);
 
   // 대차 날짜 목록 + 내외국인대차 + 월별대차 초기 로드
   React.useEffect(() => {
@@ -290,10 +298,62 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
         {miTabBtn('investor',    '📊 투자자별 순매수')}
         {miTabBtn('turnover',    '🔄 회전율 상위')}
         {miTabBtn('trend',       '📈 수급 추이')}
+        {miTabBtn('cash',        '💰 예탁금 추이')}
         {miTabBtn('short_rank',  '🏅 대차종목순위')}
         {miTabBtn('short_his',   '📉 대차거래현황')}
         {miTabBtn('short_forg',  '🌐 내외국인대차')}
       </div>
+
+      {/* ── 예탁금 추이 탭 ── */}
+      {miTab === 'cash' && (
+        <div>
+          <div style={{display:'flex',gap:'0.5rem',marginBottom:'1rem',alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{fontSize:'0.82rem',color:'var(--text-secondary)'}}>기간:</span>
+            {[[30,'30일'],[183,'6개월'],[365,'1년'],[1095,'3년']].map(([d,l])=> (
+              <button key={d} onClick={()=>setCashRange(d)} style={{
+                padding:'0.25rem 0.7rem',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'0.78rem',
+                background:cashRange===d?'var(--accent-mint)':'var(--glass-bg)',
+                color:cashRange===d?'#000':'var(--text-secondary)',fontWeight:cashRange===d?700:500,
+              }}>{l}</button>
+            ))}
+            <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>
+              출처: 네이버 증시자금동향 · 단위: 억원
+            </span>
+          </div>
+
+          {marketCash?.rows?.length > 0 ? (
+            <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
+              <div className="glass-panel" style={{padding:'1rem'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.8rem',flexWrap:'wrap',gap:'0.4rem'}}>
+                  <h3 style={{margin:0,fontSize:'0.9rem',fontWeight:700}}>국내 주식시장 예탁금/신용잔고 추이</h3>
+                  <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>
+                    최신기준일: {marketCash.latest_date || '-'} · 업데이트: {marketCash.updated_at || '-'}
+                  </span>
+                </div>
+                <ResponsiveContainer width="100%" height={280}>
+                  <ComposedChart data={marketCash.rows} margin={{top:5,right:10,bottom:5,left:10}}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
+                    <YAxis tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={(v)=>`${Math.round(v).toLocaleString()}`} />
+                    <Tooltip
+                      contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
+                      formatter={(v,n)=>[`${Number(v||0).toLocaleString()}억`, n==='customer_deposit_100m' ? '고객예탁금' : '신용잔고']}
+                      labelFormatter={l=>`날짜: ${l}`}
+                    />
+                    <Legend formatter={(v)=> v==='customer_deposit_100m' ? '고객예탁금' : '신용잔고'} />
+                    <Area type="monotone" dataKey="customer_deposit_100m" name="customer_deposit_100m" stroke="#2dd4bf" fill="rgba(45,212,191,0.16)" strokeWidth={2} />
+                    <Line type="monotone" dataKey="credit_balance_100m" name="credit_balance_100m" stroke="#f59e0b" dot={false} strokeWidth={2} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ) : (
+            <div className="glass-panel" style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)'}}>
+              데이터 로딩 중이거나 수집 데이터가 없습니다.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── 투자자별 순매수 탭 ── */}
       {miTab === 'investor' && (

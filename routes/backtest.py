@@ -288,38 +288,114 @@ async def start_backtest_v12(payload: dict):
     return {"run_id": run_id, "status": "running"}
 
 
+@router.post("/run-v1-value")
+async def start_backtest_v1_value(payload: dict):
+    """V1 가치매수 (Graham 내재가치 25%+ 할인) 백테스트 비동기 실행."""
+    start  = payload.get("start_date", "2018-01-01")
+    end    = payload.get("end_date",   "2025-12-31")
+    per_s  = float(payload.get("per_stock", 10_000_000))
+    name   = payload.get("name", f"V1 가치매수 {start[:7]}~{end[:7]}")
+    run_id = str(uuid.uuid4())[:8]
+    conn = _db()
+    conn.execute(
+        "INSERT OR IGNORE INTO backtest_runs (run_id,name,strategy,start_date,end_date,per_stock,status) "
+        "VALUES (?,?,'v1_value',?,?,?,'running')", (run_id, name, start, end, per_s))
+    conn.commit(); conn.close()
+
+    def _run():
+        try:
+            _bt.run_backtest_value(start, end, per_stock=per_s, run_name=name, run_id=run_id)
+        except Exception as e:
+            c = _sl.connect(DB_PATH, timeout=30)
+            c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
+                      (str(e), run_id))
+            c.commit(); c.close()
+    threading.Thread(target=_run, daemon=True, name=f"BT-V1VALUE-{run_id}").start()
+    return {"run_id": run_id, "status": "running"}
+
+
+@router.post("/run-v2")
+async def start_backtest_v2(payload: dict):
+    """V2 재무스크리너 (수익성 스코어 ≥ 3점) 백테스트 비동기 실행."""
+    start  = payload.get("start_date", "2018-01-01")
+    end    = payload.get("end_date",   "2025-12-31")
+    per_s  = float(payload.get("per_stock", 10_000_000))
+    name   = payload.get("name", f"V2 재무스크리너 {start[:7]}~{end[:7]}")
+    run_id = str(uuid.uuid4())[:8]
+    conn = _db()
+    conn.execute(
+        "INSERT OR IGNORE INTO backtest_runs (run_id,name,strategy,start_date,end_date,per_stock,status) "
+        "VALUES (?,?,'v2',?,?,?,'running')", (run_id, name, start, end, per_s))
+    conn.commit(); conn.close()
+
+    def _run():
+        try:
+            _bt.run_backtest_v2(start, end, per_stock=per_s, run_name=name, run_id=run_id)
+        except Exception as e:
+            c = _sl.connect(DB_PATH, timeout=30)
+            c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
+                      (str(e), run_id))
+            c.commit(); c.close()
+    threading.Thread(target=_run, daemon=True, name=f"BT-V2-{run_id}").start()
+    return {"run_id": run_id, "status": "running"}
+
+
+@router.post("/run-v5")
+async def start_backtest_v5(payload: dict):
+    """V5 수급 주도 모멘텀 (기관+외국인 동반 순매수 + MA정배열) 백테스트 비동기 실행."""
+    start  = payload.get("start_date", "2018-01-01")
+    end    = payload.get("end_date",   "2025-12-31")
+    per_s  = float(payload.get("per_stock", 10_000_000))
+    name   = payload.get("name", f"V5 수급모멘텀 {start[:7]}~{end[:7]}")
+    run_id = str(uuid.uuid4())[:8]
+    conn = _db()
+    conn.execute(
+        "INSERT OR IGNORE INTO backtest_runs (run_id,name,strategy,start_date,end_date,per_stock,status) "
+        "VALUES (?,?,'v5',?,?,?,'running')", (run_id, name, start, end, per_s))
+    conn.commit(); conn.close()
+
+    def _run():
+        try:
+            _bt.run_backtest_v5(start, end, per_stock=per_s, run_name=name, run_id=run_id)
+        except Exception as e:
+            c = _sl.connect(DB_PATH, timeout=30)
+            c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
+                      (str(e), run_id))
+            c.commit(); c.close()
+    threading.Thread(target=_run, daemon=True, name=f"BT-V5-{run_id}").start()
+    return {"run_id": run_id, "status": "running"}
+
+
 STRATEGY_LABELS = {
-    "v1":      "V1 가치매수",
-    "v2":      "V2 재무성장",
-    "v3":      "V3 추세단독",
-    "v4":      "V4 복합콤보",
-    "v5":      "V5 수급모멘텀",
-    "v6":      "V6 추세+재무",
-    "v7":      "V7 가치+모멘텀",
-    "v8":      "V8 수출선행",
-    "v10":     "V10 이익폭발",
-    "v11":     "V11 흑자전환",
-    "v12":     "V12 섹터대세",
-    "v_trend": "VT MA정배열",
-    "v_dart":  "VT+DART필터",
-    "combo":   "AI콤보(구)",
+    "v1_value": "V1 가치매수",
+    "v2":       "V2 재무스크리너",
+    "v4":       "V4 복합콤보",
+    "v5":       "V5 수급모멘텀",
+    "v8":       "V8 수출선행",
+    "v10":      "V10 이익폭발",
+    "v10_hs":   "V10+HS수출",
+    "v11":      "V11 흑자전환",
+    "v11_hs":   "V11+HS수출",
+    "v12":      "V12 섹터대세",
+    "v_trend":  "VT MA정배열",
+    "v_dart":   "VT+DART필터",
+    "combo":    "AI콤보(구)",
 }
 
 STRATEGY_DESC = {
-    "v1":      "Graham 내재가치 할인 + 수급 보조 (저평가 발굴)",
-    "v2":      "매출·OP YoY 성장/수익성 스코어링 — 단일팩터 장기 최고 CAGR",
-    "v3":      "Graham 극단 저평가 단독 — ⚠️ 손절 빈도 높아 단독 비권장",
-    "v4":      "Minervini 추세 + Graham 가치 + 수급 삼중 필터 (AI 콤보)",
-    "v5":      "기관·외국인 단기 동반 순매수 모멘텀 — ⚠️ 수급 57일치 제한",
-    "v6":      "MA정배열 추세 + 재무성장 이중 필터 (V2에 추세 조건 추가)",
-    "v7":      "저평가(PBR<1) + 단기 모멘텀(3개월 수익률) 복합",
-    "v8":      "HS무역통계 YoY 변곡점 + MA60 — 실제 수출 선행지표",
-    "v10":     "OP YoY≥80% + Rev YoY≥30% 2분기 연속 고성장",
-    "v11":     "적자→흑자 전환 2분기 연속 (시장필터 없음) ★하락장 강세",
-    "v12":     "KOSPI 대비 섹터 알파≥15% 대세 추종 — ⚠️ 후행성",
-    "v_trend": "MA20>60>120 정배열 + RSI42-72 + 거래량×1.3배",
-    "v_dart":  "VT MA정배열 + DART 수주공시 ★2 이상 하드필터 (비권장)",
-    "combo":   "AI 적극검토 콤보 (구버전) — V4와 유사",
+    "v1_value": "Graham 내재가치 25%+ 할인 OR PBR<0.7·PER<10 + 영업흑자 (하락장 무관 저평가 발굴)",
+    "v2":       "영업이익률·ROE·ROA 수익성 스코어 ≥ 3점 + 영업흑자 + 추세/수급 보조",
+    "v4":       "Minervini 추세 + Graham 가치 + 수급 삼중 필터 (AI 콤보) ★추천",
+    "v5":       "기관+외국인 5일 동반 순매수 + MA20>60>120 정배열 + 영업흑자",
+    "v8":       "HS무역통계 YoY 변곡점 + MA60 — 실제 수출 선행지표 활용",
+    "v10":      "OP YoY≥80% + Rev YoY≥30% 2분기 연속 고성장",
+    "v10_hs":   "V10 이익폭발 + HS수출 YoY 성장 필터 결합",
+    "v11":      "적자→흑자 전환 2분기 연속 (시장필터 없음) ★하락장 강세",
+    "v11_hs":   "V11 흑자전환 + HS수출 YoY 성장 필터 결합",
+    "v12":      "KOSPI 대비 섹터 알파≥15% 대세 추종 — ⚠️ 후행성",
+    "v_trend":  "MA20>60>120 정배열 + RSI42-72 + 거래량×1.3배 ★추천",
+    "v_dart":   "VT MA정배열 + DART 수주공시 ★2 이상 하드필터",
+    "combo":    "AI 적극검토 콤보 (구버전) — V4와 유사",
 }
 
 # 표준 기간 레이블 (start_date, end_date) → 표시명
@@ -338,7 +414,7 @@ PERIOD_LABELS = {
 }
 
 # 전체 전략 순서 — V1~V12 순번 우선, VT/AI콤보 후반
-ALL_STRATEGIES = ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v10", "v11", "v12", "v_trend", "v_dart", "combo"]
+ALL_STRATEGIES = ["v1_value", "v2", "v4", "v5", "v8", "v10", "v10_hs", "v11", "v11_hs", "v12", "v_trend", "v_dart", "combo"]
 
 # 핵심 5개 기간 (사용자 지정 — 한국 시장 사이클)
 CORE_PERIODS = ["20.3~21.11", "21.12~22.10", "22.11~23.10", "23.11~24.12", "24.6~25.5"]

@@ -89,6 +89,10 @@ const EmploymentYearlyView = () => {
         </div>
       </div>
 
+      <div style={{ padding: '0.55rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: '0.72rem', color: '#fbbf24', background: 'rgba(251,191,36,0.08)' }}>
+        안내: 피보험자 수는 특수고용직/사업장 집계를 포함할 수 있어 사업보고서 인원보다 크게 보일 수 있습니다.
+      </div>
+
       {/* 컨트롤 */}
       <div style={{ padding: '0.7rem 1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         {[
@@ -134,6 +138,7 @@ const EmploymentYearlyView = () => {
                 <th style={{ ...thS, textAlign: 'center', width: '45px' }}>#</th>
                 <th style={{ ...thS, textAlign: 'left' }}>종목명</th>
                 <th style={{ ...thS, textAlign: 'left' }}>섹터</th>
+                <th style={{ ...thS }}>사업보고서 인원</th>
                 <th style={{ ...thS }}>피보험자 (명)</th>
                 <th style={{ ...thS }}>사업장 수</th>
               </tr>
@@ -149,8 +154,14 @@ const EmploymentYearlyView = () => {
                     {row.market && <span style={badgeS(row.market)}>{row.market === '유가증권' ? 'KOSPI' : row.market === '코스닥' ? 'KOSDAQ' : row.market}</span>}
                     {row.stock_name}
                     <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.3)', marginLeft: '0.3rem' }}>{row.stock_code}</span>
+                    <span style={{ fontSize: '0.68rem', color: '#c4b5fd', marginLeft: '0.45rem' }}>
+                      (보고서 {formatNum(row.report_workers)}명)
+                    </span>
                   </td>
                   <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)', fontSize: '0.77rem' }}>{row.sector || '-'}</td>
+                  <td style={{ ...tdS, textAlign: 'right', color: '#c4b5fd', fontWeight: 600 }}>
+                    {formatNum(row.report_workers)}
+                  </td>
                   <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, color: row.total_workers ? '#34d399' : 'rgba(255,255,255,0.25)' }}>
                     {formatNum(row.total_workers)}
                   </td>

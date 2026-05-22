@@ -10,9 +10,6 @@ routes/buy_candidates.py — 매수후보 + 공매도 잔고 API
 
 import logging
 import sqlite3 as _sl
-from datetime import date as _date
-
-import yfinance as _yf
 from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger(__name__)
@@ -35,93 +32,23 @@ CREATE TABLE IF NOT EXISTS buy_candidates (
 )
 """
 
+_CREATE_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_ph_code_date_close ON price_history(stock_code, date DESC, close);
+CREATE INDEX IF NOT EXISTS idx_su_code_base ON stock_universe(stock_code, base_date DESC, market_cap);
+"""
+
 
 def _db():
     return _sl.connect(DB_PATH)
 
 
-def _yf_close(code: str) -> float | None:
-    """Yahoo Finance 최신 종가 (장외 시간에도 동작)."""
-    try:
-        hist = _yf.Ticker(f"{code}.KS").history(period="5d")
-        if hist is None or hist.empty:
-            return None
-        return float(hist["Close"].iloc[-1])
-    except Exception:
-        return None
-
-
-def _trade_signal(conn, code: str, curr: float) -> tuple[str, str]:
-    """간단한 MA/RSI/MACD 기반 매매 신호 계산."""
-    try:
-        rows = conn.execute(
-            "SELECT close, volume, inst_net_buy, frn_net_buy FROM price_history "
-            "WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 270", (code,)
-        ).fetchall()
-        if len(rows) < 30:
-            return "hold", ""
-
-        closes = [r[0] for r in rows]
-        vols   = [r[1] or 0 for r in rows]
-        inst5  = sum(r[2] or 0 for r in rows[:5])
-        frn5   = sum(r[3] or 0 for r in rows[:5])
-        c      = closes[0]
-
-        def _ma(n): return sum(closes[:n]) / n if len(closes) >= n else closes[0]
-        ma5, ma20, ma60 = _ma(5), _ma(20), _ma(60)
-        ma200  = _ma(200)
-        high52 = max(closes[:252] if len(closes) >= 252 else closes)
-        from_h = (c - high52) / high52 * 100
-        avg_vol = sum(vols[1:21]) / 20 if len(vols) >= 21 else 1
-
-        align_up   = c > ma5 > ma20 > ma60
-        align_down = c < ma5 < ma20 < ma60
-        supply_pos = inst5 > 0 and frn5 > 0
-        vol_surge  = vols[0] > avg_vol * 1.8
-
-        # RSI (14)
-        g = []; l = []
-        for i in range(1, min(15, len(closes))):
-            d = closes[i - 1] - closes[i]
-            (g if d > 0 else l).append(abs(d))
-            (l if d > 0 else g).append(0)
-        ag = sum(g) / len(g) if g else 0
-        al = sum(l) / len(l) if l else 1
-        rsi = round(100 - 100 / (1 + ag / al)) if al else 50
-
-        # MACD
-        def _ema(data, n):
-            k = 2 / (n + 1); e = data[0]
-            for v in data[1:]: e = v * k + e * (1 - k)
-            return e
-        ca = list(reversed(closes))
-        macd_v = (_ema(ca[-12:], 12) - _ema(ca[-26:], 26)) if len(ca) >= 26 else 0
-
-        if align_down and c < ma200:
-            return "strong_sell", f"역배열+MA200아래 [RSI:{rsi}]"
-        if c < ma20 and rsi < 45:
-            return "sell", f"MA20이탈+RSI{rsi} [RSI:{rsi}]"
-        if align_up and c > ma200 and 50 <= rsi <= 70 and supply_pos and vol_surge:
-            return "strong_buy", f"완전정배열+RSI{rsi}+수급+거래급증 [RSI:{rsi}]"
-        if align_up and from_h >= -10 and supply_pos and c > ma200:
-            return "strong_buy", f"신고가근접({from_h:.0f}%)+정배열 [RSI:{rsi}]"
-        if align_up and rsi >= 50 and macd_v > 0:
-            return "buy", f"정배열+RSI{rsi}+MACD양전환 [RSI:{rsi}]"
-        if c > ma20 > ma60 and supply_pos:
-            return "buy", f"MA정배열+수급양호 [RSI:{rsi}]"
-        if c > ma20:
-            return "hold", f"MA20위 관망 [RSI:{rsi}]"
-        return "caution", f"MA20아래 [RSI:{rsi}]"
-    except Exception:
-        return "hold", ""
-
-
 # ── GET /api/buy-candidates ─────────────────────────────────────
 @router.get("")
 def get_buy_candidates():
-    today = _date.today().isoformat()
     conn  = _db()
-    conn.execute(_CREATE_TABLE); conn.commit()
+    conn.execute(_CREATE_TABLE)
+    conn.executescript(_CREATE_INDEXES)
+    conn.commit()
 
     rows = conn.execute(
         "SELECT id,stock_code,stock_name,mktcap,target_price,"
@@ -129,45 +56,142 @@ def get_buy_candidates():
         "FROM buy_candidates ORDER BY created_at DESC"
     ).fetchall()
 
+    if not rows:
+        conn.close()
+        return []
+
+    codes = [r[1] for r in rows if r[1]]
+    ph = ",".join("?" for _ in codes)
+
+    # 현재가/직전가 배치 조회 (휴장일에도 최신 거래일 기준으로 계산 가능)
+    price_map = {}
+    if codes:
+        q_price = f"""
+            WITH ranked AS (
+                SELECT stock_code, close,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
+                FROM price_history
+                WHERE stock_code IN ({ph}) AND close > 0
+            )
+            SELECT stock_code, close, rn
+            FROM ranked
+            WHERE rn <= 2
+            ORDER BY stock_code, rn
+        """
+        for sc, close, rn in conn.execute(q_price, codes).fetchall():
+            slot = price_map.setdefault(sc, {"curr": 0.0, "prev": 0.0})
+            if rn == 1:
+                slot["curr"] = float(close or 0.0)
+            elif rn == 2:
+                slot["prev"] = float(close or 0.0)
+        for sc, p in price_map.items():
+            if not p["prev"]:
+                p["prev"] = p["curr"]
+
+    # 시총 배치 조회
+    mktcap_map = {}
+    if codes:
+        q_mkt = f"""
+            WITH ranked AS (
+                SELECT stock_code, market_cap,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY base_date DESC) AS rn
+                FROM stock_universe
+                WHERE stock_code IN ({ph}) AND market_cap > 0
+            )
+            SELECT stock_code, market_cap FROM ranked WHERE rn=1
+        """
+        for sc, mc in conn.execute(q_mkt, codes).fetchall():
+            mktcap_map[sc] = mc
+
+    # 신호 계산용 가격/수급 히스토리 배치 조회 (종목별 최대 270행)
+    hist_map = {}
+    if codes:
+        q_hist = f"""
+            WITH ranked AS (
+                SELECT stock_code, close, volume, inst_net_buy, frn_net_buy,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
+                FROM price_history
+                WHERE stock_code IN ({ph}) AND close > 0
+            )
+            SELECT stock_code, close, volume, inst_net_buy, frn_net_buy
+            FROM ranked
+            WHERE rn <= 270
+            ORDER BY stock_code, rn
+        """
+        for row in conn.execute(q_hist, codes).fetchall():
+            sc = row[0]
+            hist_map.setdefault(sc, []).append((row[1], row[2], row[3], row[4]))
+
+    def _trade_signal_from_rows(rows270: list[tuple]) -> tuple[str, str]:
+        try:
+            if len(rows270) < 30:
+                return "hold", ""
+            closes = [r[0] for r in rows270]
+            vols   = [r[1] or 0 for r in rows270]
+            inst5  = sum(r[2] or 0 for r in rows270[:5])
+            frn5   = sum(r[3] or 0 for r in rows270[:5])
+            c      = closes[0]
+
+            def _ma(n): return sum(closes[:n]) / n if len(closes) >= n else closes[0]
+            ma5, ma20, ma60 = _ma(5), _ma(20), _ma(60)
+            ma200 = _ma(200)
+            high52 = max(closes[:252] if len(closes) >= 252 else closes)
+            from_h = (c - high52) / high52 * 100
+            avg_vol = sum(vols[1:21]) / 20 if len(vols) >= 21 else 1
+
+            align_up = c > ma5 > ma20 > ma60
+            align_down = c < ma5 < ma20 < ma60
+            supply_pos = inst5 > 0 and frn5 > 0
+            vol_surge = vols[0] > avg_vol * 1.8
+
+            g = []; l = []
+            for i in range(1, min(15, len(closes))):
+                d = closes[i - 1] - closes[i]
+                (g if d > 0 else l).append(abs(d))
+                (l if d > 0 else g).append(0)
+            ag = sum(g) / len(g) if g else 0
+            al = sum(l) / len(l) if l else 1
+            rsi = round(100 - 100 / (1 + ag / al)) if al else 50
+
+            def _ema(data, n):
+                k = 2 / (n + 1); e = data[0]
+                for v in data[1:]: e = v * k + e * (1 - k)
+                return e
+            ca = list(reversed(closes))
+            macd_v = (_ema(ca[-12:], 12) - _ema(ca[-26:], 26)) if len(ca) >= 26 else 0
+
+            if align_down and c < ma200:
+                return "strong_sell", f"역배열+MA200아래 [RSI:{rsi}]"
+            if c < ma20 and rsi < 45:
+                return "sell", f"MA20이탈+RSI{rsi} [RSI:{rsi}]"
+            if align_up and c > ma200 and 50 <= rsi <= 70 and supply_pos and vol_surge:
+                return "strong_buy", f"완전정배열+RSI{rsi}+수급+거래급증 [RSI:{rsi}]"
+            if align_up and from_h >= -10 and supply_pos and c > ma200:
+                return "strong_buy", f"신고가근접({from_h:.0f}%)+정배열 [RSI:{rsi}]"
+            if align_up and rsi >= 50 and macd_v > 0:
+                return "buy", f"정배열+RSI{rsi}+MACD양전환 [RSI:{rsi}]"
+            if c > ma20 > ma60 and supply_pos:
+                return "buy", f"MA정배열+수급양호 [RSI:{rsi}]"
+            if c > ma20:
+                return "hold", f"MA20위 관망 [RSI:{rsi}]"
+            return "caution", f"MA20아래 [RSI:{rsi}]"
+        except Exception:
+            return "hold", ""
+
     result = []
     for r in rows:
         code = r[1]
-
-        # 현재가: price_history 오늘치 없으면 Yahoo보충
-        ph = conn.execute(
-            "SELECT close FROM price_history WHERE stock_code=? AND date>=? AND close>0 ORDER BY date DESC LIMIT 1",
-            (code, today)
-        ).fetchone()
-        if not ph:
-            yf_price = _yf_close(code)
-            if yf_price and yf_price > 0:
-                try:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO price_history (stock_code,date,open,high,low,close,volume) VALUES (?,?,?,?,?,?,0)",
-                        (code, today, yf_price, yf_price, yf_price, yf_price)
-                    )
-                    conn.commit()
-                except Exception:
-                    pass
-
-        ph2  = conn.execute(
-            "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 2",
-            (code,)
-        ).fetchall()
-        curr = ph2[0][0] if ph2 else 0
-        prev = ph2[1][0] if len(ph2) > 1 else curr
+        p = price_map.get(code, {"curr": 0.0, "prev": 0.0})
+        curr = p["curr"]
+        prev = p["prev"] if p["prev"] else curr
         chg  = round((curr - prev) / prev * 100, 2) if prev else 0
 
-        mkt_row = conn.execute(
-            "SELECT market_cap FROM stock_universe WHERE stock_code=? AND market_cap>0 ORDER BY base_date DESC LIMIT 1",
-            (code,)
-        ).fetchone()
-        mktcap = mkt_row[0] if mkt_row else r[3]
+        mktcap = mktcap_map.get(code, r[3])
 
         def _ref_chg(ref_d, ref_p):
             return round((curr - ref_p) / ref_p * 100, 2) if ref_d and ref_p and curr else None
 
-        sig, reason = _trade_signal(conn, code, curr)
+        sig, reason = _trade_signal_from_rows(hist_map.get(code, []))
         result.append({
             "id": r[0], "stock_code": code, "stock_name": r[2],
             "mktcap": mktcap, "current_price": curr, "change_pct": chg,

@@ -97,6 +97,7 @@ def collect_one(
     years: int,
     refill_sparse: bool = False,
     refill_depr: bool = False,
+    refill_cash: bool = False,
 ) -> int:
     """단일 종목 현금흐름표 수집. 반환: 저장 건수."""
     latest_y, latest_q = _latest_quarter()
@@ -172,7 +173,11 @@ def collect_one(
                     elif any(k in acc for k in ["유형자산의취득", "유형자산취득"]):
                         if m["capex"] is None:
                             m["capex"] = abs(val)
-                    elif any(k in acc for k in ["현금및현금성자산의기말잔액", "기말의현금및현금성자산"]):
+                    elif any(k in acc for k in [
+                        "현금및현금성자산의기말잔액", "기말의현금및현금성자산",
+                        "현금및현금성자산기말잔액", "기말현금및현금성자산",
+                        "현금및현금성자산의기말", "기말의현금",
+                    ]):
                         m["cash_end"] = val
                     # 감가상각: 여러 항목 합산 (주요 항목만 — 중간계 항목 제외)
                     elif any(kw == acc for kw in _DEPR_KEYWORDS):
@@ -222,6 +227,25 @@ def collect_one(
                                 time.sleep(2 ** _attempt)
                                 continue
                             logger.warning(f"[{code}] {year}Q{qnum} depr 업데이트 실패: {e}")
+                            break
+                continue
+
+            # refill_cash 모드: cash_end만 업데이트
+            if refill_cash and exists and not _is_sparse_cashflow_row(exists):
+                if m["cash_end"] is not None:
+                    for _attempt in range(5):
+                        try:
+                            conn.execute("""
+                                UPDATE cash_flow_data SET cash_end=?
+                                WHERE stock_code=? AND year=? AND quarter=? AND is_annual=?
+                            """, (m["cash_end"], code, year, qnum, is_annual))
+                            saved += 1
+                            break
+                        except Exception as e:
+                            if "locked" in str(e).lower() and _attempt < 4:
+                                time.sleep(2 ** _attempt)
+                                continue
+                            logger.warning(f"[{code}] {year}Q{qnum} cash_end 업데이트 실패: {e}")
                             break
                 continue
 
@@ -328,11 +352,29 @@ def _codes_with_null_depreciation(conn: sqlite3.Connection, codes: list[str], ye
     return result
 
 
+def _codes_with_null_cash_end(conn: sqlite3.Connection, codes: list[str], years: int) -> list[str]:
+    """cash_end=NULL인 행이 존재하는 종목 목록."""
+    periods = [(y, 4, 1) for y in range(2022, 2026)]  # 연간 연도별만
+    result = []
+    for code in codes:
+        rows = conn.execute(
+            "SELECT year, quarter, is_annual, cash_end FROM cash_flow_data WHERE stock_code=? AND is_annual=1",
+            (code,)
+        ).fetchall()
+        existing_map = {(r[0], r[1], r[2]): r[3] for r in rows}
+        for (y, q, ia) in periods:
+            if (y, q, ia) in existing_map and existing_map[(y, q, ia)] is None:
+                result.append(code)
+                break
+    return result
+
+
 def run(
     years: int = 5,
     missing_only: bool = False,
     fill_missing: bool = False,
     refill_depr: bool = False,
+    refill_cash: bool = False,
     limit: int | None = None,
 ):
     conn = sqlite3.connect(DB_PATH, timeout=60)
@@ -351,6 +393,8 @@ def run(
         codes = _codes_with_missing_periods(conn, codes, years)
     elif refill_depr:
         codes = _codes_with_null_depreciation(conn, codes, years)
+    elif refill_cash:
+        codes = _codes_with_null_cash_end(conn, codes, years)
 
     if limit:
         codes = codes[:limit]
@@ -371,6 +415,7 @@ def run(
                 dart, conn, code, years,
                 refill_sparse=fill_missing,
                 refill_depr=refill_depr,
+                refill_cash=refill_cash,
             )
             ok += n
             if n:
@@ -394,6 +439,7 @@ if __name__ == "__main__":
     ap.add_argument("--missing",      action="store_true",      help="cash_flow_data 없는 종목만")
     ap.add_argument("--fill-missing", action="store_true",      help="최근 N년 중 누락 기간이 있는 종목 보강")
     ap.add_argument("--refill-depr",  action="store_true",      help="depreciation=NULL인 행만 재수집/추정")
+    ap.add_argument("--refill-cash",  action="store_true",      help="cash_end=NULL인 연간 행만 재수집")
     ap.add_argument("--limit",        type=int,  default=None,  help="최대 종목수")
     args = ap.parse_args()
     run(
@@ -401,5 +447,6 @@ if __name__ == "__main__":
         missing_only=args.missing,
         fill_missing=args.fill_missing,
         refill_depr=args.refill_depr,
+        refill_cash=args.refill_cash,
         limit=args.limit,
     )

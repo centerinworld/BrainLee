@@ -1,8 +1,6 @@
 import sqlite3
 import os
-import pandas as pd
-import numpy as np
-from typing import Optional
+import time
 from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/api/employment-v2", tags=["employment-v2"])
@@ -10,6 +8,18 @@ router = APIRouter(prefix="/api/employment-v2", tags=["employment-v2"])
 DIR = os.path.dirname(__file__)
 EMP_DB = os.path.join(DIR, "employment.db")
 STOCK_DB = "/Applications/stock_dashboard/stock.db"
+
+
+def _is_preferred_like_name(name: str | None) -> bool:
+    """우선주/종류주로 보이는 종목명 판별 (우성 같은 일반 종목 오탐 최소화)."""
+    if not name:
+        return False
+    n = str(name).strip()
+    # 일반적으로 접미사 형태로 등장
+    suffixes = (
+        "우", "우B", "1우", "2우", "2우B", "3우", "3우B", "전환우", "우선주"
+    )
+    return any(n.endswith(s) for s in suffixes)
 
 @router.get("/yearly")
 def get_yearly_employment(limit: int = 9999, sort_by: str = "count"):
@@ -22,7 +32,7 @@ def get_yearly_employment(limit: int = 9999, sort_by: str = "count"):
     try:
         conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
 
-        ym_row = conn.execute("SELECT MAX(data_ym) FROM wlb_monthly").fetchone()
+        ym_row = conn.execute("SELECT data_ym FROM wlb_monthly ORDER BY fetched_at DESC LIMIT 1").fetchone()
         latest_ym = ym_row[0] if ym_row and ym_row[0] else None
 
         order_col = ("w.total_workers" if sort_by in ("count", "increase")
@@ -49,7 +59,27 @@ def get_yearly_employment(limit: int = 9999, sort_by: str = "count"):
         updated_at = (meta_row[0][:10] if meta_row and meta_row[0]
                       else (latest_ym[:4] + '-' + latest_ym[4:6] + '-01' if latest_ym else None))
 
-        result = [dict(r) for r in rows]
+        rep_rows = conn.execute("""
+            SELECT stock_code, ym, worker_count
+            FROM (
+              SELECT stock_code, ym, worker_count,
+                     ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY ym DESC) AS rn
+              FROM employment_company
+              WHERE source='report_annual' AND ym LIKE '%-12' AND worker_count IS NOT NULL
+            ) t
+            WHERE rn=1
+        """).fetchall()
+        rep_map = {r["stock_code"]: {"ym": r["ym"], "workers": r["worker_count"]} for r in rep_rows}
+
+        result = []
+        for r in rows:
+            d = dict(r)
+            if _is_preferred_like_name(d.get("stock_name")):
+                continue
+            rep = rep_map.get(d["stock_code"], {})
+            d["report_ym"] = rep.get("ym")
+            d["report_workers"] = rep.get("workers")
+            result.append(d)
 
         total_row = (conn.execute("SELECT SUM(total_workers), SUM(workplace_cnt) FROM wlb_monthly WHERE data_ym=?", (latest_ym,)).fetchone()
                      if latest_ym else (0, 0))
@@ -75,192 +105,234 @@ _trend_data_cache_at = 0
 
 def get_trend_data():
     global _trend_data_cache, _trend_data_cache_at
-    import time
     if _trend_data_cache is not None and (time.time() - _trend_data_cache_at) < 3600:
         return _trend_data_cache
 
     conn = sqlite3.connect(EMP_DB)
+    conn.row_factory = sqlite3.Row
     conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS main_db")
+    # 1) universe
+    markets = conn.execute(
+        "SELECT stock_code, stock_name, market, sector_small as sector "
+        "FROM main_db.stock_universe WHERE secugrp_nm='주권'"
+    ).fetchall()
 
-    # 1. KOSPI/KOSDAQ 보통주만 (secugrp_nm='주권' → ETF/ETN 완전 배제)
-    markets = pd.read_sql("SELECT stock_code, stock_name, market, sector_small as sector FROM main_db.stock_universe WHERE secugrp_nm = '주권'", conn)
-
-    # 2. NPS 데이터 가져오기 — nps_workplace_monthly (구) 또는 nps_monthly (신) 시도
-    nps_df = pd.DataFrame()
-    nps_queries = [
-        """
-        SELECT ym, stock_code,
-               nw_acqzr_cnt AS new_cnt,
-               lss_jnngp_cnt AS lost_cnt,
-               (nw_acqzr_cnt - lss_jnngp_cnt) AS net_change
-        FROM nps_workplace_monthly
-        ORDER BY ym ASC
-        """,
-        """
-        SELECT data_ym AS ym, stock_code,
-               new_hires AS new_cnt,
-               terminations AS lost_cnt,
-               net_change
-        FROM nps_monthly
-        ORDER BY data_ym ASC
-        """,
-    ]
-    for _sql in nps_queries:
-        try:
-            nps_df = pd.read_sql(_sql, conn)
-            if not nps_df.empty:
-                nps_df["ym"] = nps_df["ym"].astype(str)
-                break
-        except Exception:
-            pass
-
-    # 3. WLB 근로복지공단 데이터 가져오기 (모든 수집 월)
-    wlb_by_ym = {}   # {data_ym: {stock_code: {total_workers, workplace_cnt}}}
-    wlb_map = {}     # stock_code → {total_workers, workplace_cnt, data_ym}  (최신 월)
+    # 2) nps rows (list/dict 기반으로 처리: pandas 전체 변환 제거)
     try:
-        wlb_all_rows = conn.execute(
-            "SELECT data_ym, stock_code, total_workers, workplace_cnt FROM wlb_monthly ORDER BY data_ym"
+        nps_rows = conn.execute(
+            "SELECT data_ym AS ym, stock_code, new_hires AS new_cnt, "
+            "terminations AS lost_cnt, net_change "
+            "FROM nps_monthly ORDER BY stock_code ASC, data_ym ASC"
         ).fetchall()
-        for r in wlb_all_rows:
-            ym = r[0]
-            if ym not in wlb_by_ym:
-                wlb_by_ym[ym] = {}
-            wlb_by_ym[ym][r[1]] = {'total_workers': r[2], 'workplace_cnt': r[3]}
+    except Exception:
+        nps_rows = []
+
+    # 2-1) 사업보고서 기준 인원(연말 12월) 베이스
+    report_base_map: dict[str, dict] = {}
+    try:
+        base_rows = conn.execute(
+            "SELECT stock_code, ym, worker_count FROM employment_company "
+            "WHERE worker_count IS NOT NULL AND ym LIKE '%-12' "
+            "AND (source='report_annual' OR (source IS NULL AND (bizr_no IS NULL OR bizr_no=''))) "
+            "ORDER BY stock_code ASC, ym DESC"
+        ).fetchall()
+        for r in base_rows:
+            code = r["stock_code"]
+            if code not in report_base_map:
+                report_base_map[code] = {"base_ym": r["ym"], "base_workers": int(r["worker_count"])}
     except Exception:
         pass
 
-    available_wlb_yms = sorted(wlb_by_ym.keys(), reverse=True)
-    latest_wlb_ym = available_wlb_yms[0] if available_wlb_yms else None
-    if latest_wlb_ym:
-        for code, v in wlb_by_ym[latest_wlb_ym].items():
-            wlb_map[code] = {**v, 'data_ym': latest_wlb_ym}
+    # 2-2) 사업자번호 보유 종목 set (한 번만 로딩)
+    bizno_code_set: set[str] = set()
+    try:
+        for r in conn.execute(
+            "SELECT DISTINCT stock_code FROM stock_bizr_no_map WHERE bizr_no IS NOT NULL AND LENGTH(bizr_no)=10"
+        ).fetchall():
+            bizno_code_set.add(r["stock_code"])
+    except Exception:
+        pass
+    try:
+        for r in conn.execute(
+            "SELECT DISTINCT stock_code FROM stock_bizno_map WHERE biz_no_6 IS NOT NULL AND LENGTH(biz_no_6)=6"
+        ).fetchall():
+            bizno_code_set.add(r["stock_code"])
+    except Exception:
+        pass
 
-    def _subtract_ym(ym: str, months: int) -> str:
-        """YYYYMM - N months"""
-        if not ym: return None
-        y, m = int(ym[:4]), int(ym[4:6])
-        m -= months
-        while m <= 0:
-            m += 12
-            y -= 1
-        return f"{y}{m:02d}"
+    # 3. WLB 고용보험 피보험자 (최신 월 스냅샷)
+    wlb_latest_map = {}
+    wlb_map = {}
+    try:
+        yms = [
+            r[0] for r in conn.execute(
+                "SELECT data_ym FROM wlb_monthly GROUP BY data_ym ORDER BY MAX(fetched_at) DESC LIMIT 2"
+            ).fetchall()
+        ]
+        latest_wlb_ym = yms[0] if yms else None
+        prev_wlb_ym   = yms[1] if len(yms) > 1 else None
 
-    def _find_ym(target: str) -> Optional[str]:
-        """Find closest WLB month to target (within ±2 months), excluding latest"""
-        if not target or len(available_wlb_yms) <= 1:
-            return None
-        target_int = int(target)
-        for ym in available_wlb_yms[1:]:  # skip latest
-            if abs(int(ym) - target_int) <= 2:
-                return ym
-        return None
+        if latest_wlb_ym:
+            for r in conn.execute(
+                "SELECT stock_code, total_workers, workplace_cnt FROM wlb_monthly WHERE data_ym=?",
+                (latest_wlb_ym,)
+            ).fetchall():
+                wlb_latest_map[r[0]] = {'total_workers': r[1], 'workplace_cnt': r[2], 'data_ym': latest_wlb_ym}
+                wlb_map[r[0]] = wlb_latest_map[r[0]]
+    except Exception:
+        pass
 
-    # 1M/3M/6M/1Y 비교 대상 월
-    wlb_1m_ym  = _find_ym(_subtract_ym(latest_wlb_ym, 1))
-    wlb_3m_ym  = _find_ym(_subtract_ym(latest_wlb_ym, 3))
-    wlb_6m_ym  = _find_ym(_subtract_ym(latest_wlb_ym, 6))
-    wlb_1y_ym  = _find_ym(_subtract_ym(latest_wlb_ym, 12))
-
-    conn.close()
-    
-    # NPS Pivot for net_change
-    available_months = sorted(nps_df['ym'].unique(), reverse=True)
-    nps_pivot = nps_df.pivot_table(index='stock_code', columns='ym', values='net_change', aggfunc='sum') if not nps_df.empty else pd.DataFrame()
-    new_pivot = nps_df.pivot_table(index='stock_code', columns='ym', values='new_cnt', aggfunc='sum') if not nps_df.empty else pd.DataFrame()
-    lost_pivot = nps_df.pivot_table(index='stock_code', columns='ym', values='lost_cnt', aggfunc='sum') if not nps_df.empty else pd.DataFrame()
-
-    # NPS dictionary for chart history
-    history_dict = {}
-    for _, row in nps_df.iterrows():
-        code = row['stock_code']
-        if code not in history_dict:
-            history_dict[code] = []
-        ym = row['ym']
-        history_dict[code].append({
-            'month': f"{ym[:4]}-{ym[4:]}",
-            'new_cnt': int(row['new_cnt']),
-            'lost_cnt': int(row['lost_cnt']),
-            'net_change': int(row['net_change'])
-        })
-    
-    # Find specific target months
-    target_0m = available_months[0] if len(available_months) > 0 else None
-    target_1m = available_months[1] if len(available_months) > 1 else None
-    target_3m = available_months[3] if len(available_months) > 3 else None
-    target_6m = available_months[6] if len(available_months) > 6 else None
-    target_1y = available_months[11] if len(available_months) > 11 else None
-    
     def _safe_int(v):
         try:
-            return None if v is None or (hasattr(pd, 'isna') and pd.isna(v)) else int(v)
+            return None if v is None else int(v)
         except Exception:
             return None
 
+    def _period_months(end_ym: str, n: int) -> set[str]:
+        out = []
+        y, m = int(end_ym[:4]), int(end_ym[4:6])
+        for _ in range(n):
+            out.append(f"{y}{m:02d}")
+            m -= 1
+            if m == 0:
+                y -= 1
+                m = 12
+        return set(out)
+
+    # 종목별 NPS 버킷 구성 (history는 여기서 만들지 않음)
+    nps_by_code: dict[str, list[dict]] = {}
+    code_max_ym: dict[str, str] = {}
+    for r in nps_rows:
+        if r["new_cnt"] is not None and r["new_cnt"] >= 2000:
+            # 구조변경/이관 의심치 제거
+            continue
+        code = r["stock_code"]
+        row = {
+            "ym": str(r["ym"]),
+            "new_cnt": int(r["new_cnt"] or 0),
+            "lost_cnt": int(r["lost_cnt"] or 0),
+            "net_change": int(r["net_change"] or 0),
+        }
+        nps_by_code.setdefault(code, []).append(row)
+        code_max_ym[code] = row["ym"]
+
+    cum_1m: dict[str, int] = {}
+    cum_3m: dict[str, int] = {}
+    cum_6m: dict[str, int] = {}
+    cum_1y: dict[str, int] = {}
+    cur_new_map: dict[str, int] = {}
+    cur_lost_map: dict[str, int] = {}
+
+    for code, rows in nps_by_code.items():
+        max_ym = code_max_ym.get(code)
+        if not max_ym:
+            continue
+        m1 = _period_months(max_ym, 1)
+        m3 = _period_months(max_ym, 3)
+        m6 = _period_months(max_ym, 6)
+        m12 = _period_months(max_ym, 12)
+        s1 = s3 = s6 = s12 = 0
+        cur = None
+        for rr in rows:
+            ym = rr["ym"]
+            net = rr["net_change"]
+            if ym in m1: s1 += net
+            if ym in m3: s3 += net
+            if ym in m6: s6 += net
+            if ym in m12: s12 += net
+            if ym == max_ym:
+                cur = rr
+        cum_1m[code] = s1
+        cum_3m[code] = s3
+        cum_6m[code] = s6
+        cum_1y[code] = s12
+        if cur:
+            cur_new_map[code] = cur["new_cnt"]
+            cur_lost_map[code] = cur["lost_cnt"]
+
+    def _ym_dash_to_yyyymm(v: str | None) -> str | None:
+        if not v:
+            return None
+        s = str(v).strip()
+        if len(s) == 7 and s[4] == "-":
+            return s[:4] + s[5:7]
+        return s if len(s) == 6 else None
+
     res = []
-    for _, row in markets.iterrows():
+    for row in markets:
         code = row['stock_code']
+        stock_name = row['stock_name']
+        # 우선주/종류주는 제외하고 모회사(보통주)만 사용
+        if _is_preferred_like_name(stock_name):
+            continue
 
-        diff_0m = diff_1m = diff_3m = diff_6m = diff_1y = None
-        new_0m = lost_0m = new_1m = lost_1m = None
-        history = history_dict.get(code, [])
+        wlb  = wlb_map.get(code, {})
+        base = report_base_map.get(code, {})
+        base_ym_dash = base.get("base_ym")
+        base_ym = _ym_dash_to_yyyymm(base_ym_dash)
+        base_workers = base.get("base_workers")
+        ref_ym = code_max_ym.get(code)
 
-        if code in nps_pivot.index:
-            stock_nps = nps_pivot.loc[code]
-            if target_0m: diff_0m = stock_nps.get(target_0m, None)
-            if target_1m: diff_1m = stock_nps.get(target_1m, None)
-            if target_3m: diff_3m = stock_nps.get(target_3m, None)
-            if target_6m: diff_6m = stock_nps.get(target_6m, None)
-            if target_1y: diff_1y = stock_nps.get(target_1y, None)
+        estimated_workers = None
+        estimate_valid = True
+        estimate_invalid_reason = None
+        if base_workers is not None and ref_ym and code in nps_by_code:
+            est = int(base_workers)
+            for rr in nps_by_code[code]:
+                ym = rr["ym"]
+                if base_ym and ym > base_ym and ym <= ref_ym:
+                    est += int(rr["net_change"] or 0)
+            estimated_workers = est
 
-        if code in new_pivot.index:
-            s = new_pivot.loc[code]
-            if target_0m: new_0m = s.get(target_0m, None)
-            if target_1m: new_1m = s.get(target_1m, None)
+        wlb_vs_est_pct = None
+        if estimated_workers not in (None, 0) and wlb.get("total_workers") not in (None, 0):
+            ratio = float(wlb.get("total_workers")) / float(estimated_workers)
+            pct_gap = abs((float(wlb.get("total_workers")) - float(estimated_workers)) / float(estimated_workers)) * 100.0
+            # 정의 차이(직접고용 vs 피보험자 집계) 가능성이 큰 종목은 비교 비활성화
+            if ratio >= 2.0 or ratio <= 0.5 or pct_gap >= 80.0:
+                estimate_valid = False
+                estimate_invalid_reason = "definition_mismatch"
+                estimated_workers = None
+            else:
+                wlb_vs_est_pct = round(((wlb.get("total_workers") - estimated_workers) / estimated_workers) * 100.0, 2)
 
-        if code in lost_pivot.index:
-            s = lost_pivot.loc[code]
-            if target_0m: lost_0m = s.get(target_0m, None)
-            if target_1m: lost_1m = s.get(target_1m, None)
+        # 사업자번호가 전혀 없거나, 사업자번호는 있는데 최신 WLB가 없는 종목은 제외
+        has_any_bizno = (code in bizno_code_set) or (code in report_base_map)
 
-        wlb = wlb_map.get(code, {})
-        w_now = wlb.get('total_workers')
-
-        def _wlb_diff(ref_ym):
-            """해당 월 대비 현재 피보험자 증감"""
-            if ref_ym is None or w_now is None:
-                return None
-            past = wlb_by_ym.get(ref_ym, {}).get(code, {}).get('total_workers')
-            return (w_now - past) if past is not None else None
+        if not has_any_bizno:
+            continue
+        if wlb.get("total_workers") is None:
+            continue
 
         res.append({
-            'stock_code': code,
-            'stock_name': row['stock_name'],
-            'market': row['market'],
-            'sector': row['sector'],
-            'latest_count': None,
-            'total_workers':  w_now,                       # WLB 고용보험 피보험자
-            'workplace_cnt':  wlb.get('workplace_cnt'),    # WLB 사업장 수
-            'wlb_data_ym':    wlb.get('data_ym'),          # WLB 기준 월
-            'wlb_diff_1m':    _wlb_diff(wlb_1m_ym),       # 1개월 전 대비
-            'wlb_diff_3m':    _wlb_diff(wlb_3m_ym),       # 3개월 전 대비
-            'wlb_diff_6m':    _wlb_diff(wlb_6m_ym),       # 6개월 전 대비
-            'wlb_diff_1y':    _wlb_diff(wlb_1y_ym),       # 1년 전 대비
-            'diff_0m':  _safe_int(diff_0m),
-            'diff_1m':  _safe_int(diff_1m),
-            'diff_3m':  _safe_int(diff_3m),
-            'diff_6m':  _safe_int(diff_6m),
-            'diff_1y':  _safe_int(diff_1y),
-            'display_diff_1m': _safe_int(_wlb_diff(wlb_1m_ym) if _wlb_diff(wlb_1m_ym) is not None else diff_1m),
-            'display_diff_3m': _safe_int(_wlb_diff(wlb_3m_ym) if _wlb_diff(wlb_3m_ym) is not None else diff_3m),
-            'display_diff_6m': _safe_int(_wlb_diff(wlb_6m_ym) if _wlb_diff(wlb_6m_ym) is not None else diff_6m),
-            'display_diff_1y': _safe_int(_wlb_diff(wlb_1y_ym) if _wlb_diff(wlb_1y_ym) is not None else diff_1y),
-            'new_0m':   _safe_int(new_0m),
-            'lost_0m':  _safe_int(lost_0m),
-            'new_1m':   _safe_int(new_1m),
-            'lost_1m':  _safe_int(lost_1m),
-            'history': history
+            'stock_code':      code,
+            'stock_name':      stock_name,
+            'market':          row['market'],
+            'sector':          row['sector'],
+            'total_workers':   wlb.get('total_workers'),
+            'workplace_cnt':   wlb.get('workplace_cnt'),
+            'wlb_data_ym':     wlb.get('data_ym'),
+            'base_report_ym':  base_ym_dash,
+            'base_report_workers': base_workers,
+            'estimated_workers': estimated_workers,
+            'wlb_vs_est_pct':  wlb_vs_est_pct,
+            'extra_vs_report': (wlb.get("total_workers") - base_workers) if (wlb.get("total_workers") is not None and base_workers is not None) else None,
+            'estimate_valid': estimate_valid,
+            'estimate_invalid_reason': estimate_invalid_reason,
+            'display_diff_1m': _safe_int(cum_1m.get(code)),
+            'display_diff_3m': _safe_int(cum_3m.get(code)),
+            'display_diff_6m': _safe_int(cum_6m.get(code)),
+            'display_diff_1y': _safe_int(cum_1y.get(code)),
+            'new_0m':  _safe_int(cur_new_map.get(code)),
+            'lost_0m': _safe_int(cur_lost_map.get(code)),
+            'diff_0m': _safe_int(
+                (cur_new_map.get(code) or 0) - (cur_lost_map.get(code) or 0)
+                if cur_new_map.get(code) is not None else None
+            ),
+            'nps_ref_ym': ref_ym
         })
-        
+
+    conn.close()
     _trend_data_cache = res
     _trend_data_cache_at = time.time()
     return _trend_data_cache
@@ -283,19 +355,28 @@ def get_nps_trend(sort_by: str = "workers", limit: int = 200):
             item.pop('history', None)
             result.append(item)
     elif sort_by in ('1m', '3m', '6m', '1y'):
-        # WLB 기간 대비 증감이 있으면 우선 사용하고, 없으면 국민연금 월별 증감으로 fallback
+        # WLB 기간 대비 증감 기준 정렬 — 증가(양수) 먼저↓, 감소(음수) 다음↑, NULL 마지막
         sort_key = f'display_diff_{sort_by}'
-        valid_data = [d for d in data if d.get(sort_key) is not None]
-        valid_data.sort(key=lambda x: x.get(sort_key) or 0, reverse=True)
-        if not valid_data:
-            # diff 데이터 없으면 피보험자수 기준 전체 제공
-            valid_data = sorted(
+        valid_count = sum(1 for d in data if d.get(sort_key) is not None)
+        # 50개 이상 기업에 유효 데이터가 있을 때만 해당 기간 정렬 의미 있음
+        if valid_count < 50:
+            # 데이터 부족 → total_workers 내림차순으로 fallback
+            sorted_data = sorted(
                 data,
                 key=lambda x: (x.get('total_workers') is not None, x.get('total_workers') or 0),
                 reverse=True
             )
+        else:
+            def _sort_key_period(x):
+                v = x.get(sort_key)
+                if v is None:
+                    return (2, 0)      # null → 마지막
+                if v >= 0:
+                    return (0, -v)     # 증가 → 앞 (큰 값 먼저)
+                return (1, -v)         # 감소 → 중간 (절댓값 작은 것 먼저)
+            sorted_data = sorted(data, key=_sort_key_period)
         result = []
-        for d in valid_data[:limit]:
+        for d in sorted_data[:limit]:
             item = d.copy()
             item.pop('history', None)
             result.append(item)
@@ -324,42 +405,32 @@ def get_nps_trend(sort_by: str = "workers", limit: int = 200):
             item.pop('history', None)
             result.append(item)
         
-    # 최신 수집일자 + WLB 메타
+    # 메타 정보
     conn = sqlite3.connect(EMP_DB)
     try:
-        r2 = conn.execute("SELECT MAX(fetched_at), MAX(data_ym) FROM wlb_monthly").fetchone()
-        updated_at = r2[0][:10] if r2 and r2[0] else None
-        wlb_data_ym = r2[1] if r2 else None
+        r2 = conn.execute(
+            "SELECT data_ym, MAX(fetched_at) FROM wlb_monthly GROUP BY data_ym ORDER BY MAX(fetched_at) DESC LIMIT 1"
+        ).fetchone()
+        updated_at = r2[1][:10] if r2 and r2[1] else None
+        wlb_data_ym = r2[0] if r2 else None
+        nps_data_ym = conn.execute("SELECT MAX(data_ym) FROM nps_monthly").fetchone()[0]
     except Exception:
-        updated_at = None
-        wlb_data_ym = None
-    if not updated_at:
-        try:
-            r2 = conn.execute("SELECT MAX(fetched_at) FROM nps_workplace_monthly").fetchone()
-            updated_at = r2[0][:10] if r2 and r2[0] else None
-        except Exception:
-            updated_at = None
-    nps_data_ym = None
-    try:
-        r3 = conn.execute("SELECT MAX(data_ym) FROM nps_monthly").fetchone()
-        nps_data_ym = r3[0] if r3 and r3[0] else None
-    except Exception:
-        try:
-            r3 = conn.execute("SELECT MAX(ym) FROM nps_workplace_monthly").fetchone()
-            nps_data_ym = r3[0] if r3 and r3[0] else None
-        except Exception:
-            nps_data_ym = None
+        updated_at = wlb_data_ym = nps_data_ym = None
     conn.close()
     if not updated_at:
         from datetime import date as _date
         updated_at = _date.today().isoformat()
+
+    # nps_ref_ym: 기간 탭 기준 월 (result 첫 번째 항목에서 추출)
+    nps_ref_ym = result[0].get('nps_ref_ym') if result else None
 
     return {
         "rows": result,
         "date": updated_at,
         "wlb_data_ym": wlb_data_ym,
         "nps_data_ym": nps_data_ym,
-        "has_nps": any(r.get('diff_0m') is not None for r in result),
+        "nps_ref_ym": nps_ref_ym,
+        "has_nps": any(r.get('display_diff_1m') is not None for r in result),
         "has_wlb": any(r.get('total_workers') is not None for r in result),
     }
 
@@ -376,7 +447,8 @@ def get_insurance_employment(limit: int = 200, sort_by: str = "count"):
     try:
         # 최신 ym의 고용보험 데이터
         latest_ym_row = conn.execute(
-            "SELECT MAX(ym) FROM employment_company WHERE bizr_no IS NOT NULL"
+            "SELECT MAX(ym) FROM employment_company "
+            "WHERE (source='insurance_api' OR bizr_no IS NOT NULL)"
         ).fetchone()
         latest_ym = latest_ym_row[0] if latest_ym_row and latest_ym_row[0] else None
         if not latest_ym:
@@ -385,7 +457,7 @@ def get_insurance_employment(limit: int = 200, sort_by: str = "count"):
         rows = conn.execute("""
             SELECT e.ym, e.stock_code, e.stock_name, e.worker_count, e.yoy_change, e.mom_change
             FROM employment_company e
-            WHERE e.bizr_no IS NOT NULL AND e.ym = ?
+            WHERE (e.source='insurance_api' OR e.bizr_no IS NOT NULL) AND e.ym = ?
             ORDER BY e.worker_count DESC NULLS LAST
             LIMIT ?
         """, (latest_ym, limit)).fetchall()
@@ -411,34 +483,174 @@ def get_insurance_employment(limit: int = 200, sort_by: str = "count"):
 
 @router.get("/insurance/chart")
 def get_insurance_chart(code: str = Query(..., description="Stock code")):
-    """특정 종목 고용보험 상시인원 월별 추이."""
+    """
+    기업별 피보험자 월별 추이.
+    WLB 실측(202505, 202605) + NPS 월별 net_change 누적으로 중간 월 추정.
+    단일 월 신규취득 > 전체 피보험자 50% → 회사 구조 변경 이벤트 → NPS 해당 월 제외.
+    """
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute("""
-            SELECT ym, worker_count, yoy_change, mom_change
-            FROM employment_company
-            WHERE stock_code = ? AND worker_count IS NOT NULL
-            ORDER BY ym ASC
+        # 1. WLB 스냅샷 (실측 기준점: 최신 월)
+        wlb_rows = conn.execute("""
+            SELECT data_ym AS ym, total_workers AS worker_count
+            FROM wlb_monthly
+            WHERE stock_code = ? AND total_workers IS NOT NULL AND total_workers > 0
+            ORDER BY data_ym DESC
         """, (code,)).fetchall()
-        if not rows:
+        wlb_map = {r['ym']: r['worker_count'] for r in wlb_rows}
+
+        # 2. NPS 월별 신규/상실 (국민연금)
+        nps_rows = conn.execute("""
+            SELECT data_ym AS ym, new_hires, terminations, net_change
+            FROM nps_monthly
+            WHERE stock_code = ?
+            ORDER BY data_ym ASC
+        """, (code,)).fetchall()
+
+        # NPS 이상값 필터: 단일 월 신규취득 > 현재 피보험자 50% → 회사 구조 변경
+        def _is_anomaly(row, ref_workers):
+            if ref_workers and ref_workers > 0:
+                if row['new_hires'] > ref_workers * 0.5:
+                    return True
+            return False
+
+        # 3. 26-05(최신 WLB) 기준으로 역추정: 25-04까지 back-cast
+        def _prev_ym(ym: str) -> str:
+            y, m = int(ym[:4]), int(ym[4:6])
+            m -= 1
+            if m == 0:
+                y -= 1
+                m = 12
+            return f"{y}{m:02d}"
+
+        def _ym_range(start_ym: str, end_ym: str) -> list[str]:
+            out = []
+            cur = start_ym
+            while cur <= end_ym:
+                out.append(cur)
+                y, m = int(cur[:4]), int(cur[4:6])
+                m += 1
+                if m == 13:
+                    y += 1
+                    m = 1
+                cur = f"{y}{m:02d}"
+            return out
+
+        history = []
+        anchor_ym = max(wlb_map.keys()) if wlb_map else None
+        anchor_workers = wlb_map.get(anchor_ym) if anchor_ym else None
+
+        if anchor_ym and anchor_workers:
+            nps_map = {r['ym']: {'new_hires': r['new_hires'], 'terminations': r['terminations'], 'net_change': r['net_change']} for r in nps_rows}
+            start_ym = "202504"
+            months = _ym_range(start_ym, anchor_ym)
+            workers_map = {anchor_ym: int(anchor_workers)}
+            assumed_zero = []
+
+            cur = anchor_ym
+            while cur > start_ym:
+                prev = _prev_ym(cur)
+                net = nps_map.get(cur, {}).get('net_change')
+                if net is None:
+                    net = 0
+                    assumed_zero.append(cur)
+                workers_map[prev] = int(workers_map[cur] - net)
+                cur = prev
+
+            prev_workers = None
+            for ym in months:
+                w = workers_map.get(ym)
+                nps = nps_map.get(ym, {})
+                mom = round((w - prev_workers) / prev_workers * 100, 1) if (prev_workers not in (None, 0) and w is not None) else None
+                is_actual = (ym == anchor_ym)
+                history.append({
+                    'ym': ym,
+                    'worker_count': w,
+                    'new_hires': nps.get('new_hires'),
+                    'terminations': nps.get('terminations'),
+                    'net_change': nps.get('net_change'),
+                    'mom_change': mom,
+                    'is_actual': is_actual,
+                    'assumed_zero': ym in assumed_zero,
+                })
+                prev_workers = w
+        elif nps_rows:
+            # WLB 없으면 employment_company fallback
+            ec_rows = conn.execute("""
+                SELECT ym, worker_count, mom_change FROM employment_company
+                WHERE stock_code = ? AND worker_count IS NOT NULL ORDER BY ym ASC
+            """, (code,)).fetchall()
+            history = [dict(r) for r in ec_rows]
+
+        if not history:
             return {"history": [], "notFound": True}
-        history = [dict(r) for r in rows]
-        return {"stock_code": code, "history": history}
+
+        # 종목명 조회
+        name_row = conn.execute(
+            "SELECT stock_name FROM wlb_monthly WHERE stock_code = ? LIMIT 1", (code,)
+        ).fetchone()
+        stock_name = name_row['stock_name'] if name_row else code
+
+        report_row = conn.execute(
+            "SELECT ym, worker_count FROM employment_company "
+            "WHERE stock_code=? AND source='report_annual' AND ym LIKE '%-12' "
+            "ORDER BY ym DESC LIMIT 1",
+            (code,),
+        ).fetchone()
+
+        return {
+            "stock_code": code,
+            "stock_name": stock_name,
+            "history": history,
+            "source": "wlb+nps",
+            "base_ym": anchor_ym,
+            "base_workers": anchor_workers,
+            "report_ym": report_row["ym"] if report_row else None,
+            "report_workers": report_row["worker_count"] if report_row else None,
+        }
     finally:
         conn.close()
 
 
 @router.get("/chart")
 def get_nps_chart(query: str = Query(..., description="Stock code or name")):
-    data = get_trend_data()
-    for d in data:
-        if d['stock_code'] == query or d['stock_name'] == query:
-            return {"company": d['stock_name'], "history": d.get('history', []), "notFound": not d.get('history')}
-    for d in data:
-        if query in d['stock_name']:
-            return {"company": d['stock_name'], "history": d.get('history', []), "notFound": not d.get('history')}
-    return {"company": None, "history": [], "notFound": True}
+    conn = sqlite3.connect(EMP_DB)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
+        row = conn.execute(
+            "SELECT stock_code, stock_name FROM stock_db.stock_universe "
+            "WHERE stock_code=? OR stock_name=? LIMIT 1",
+            (query, query),
+        ).fetchone()
+        if not row:
+            row = conn.execute(
+                "SELECT stock_code, stock_name FROM stock_db.stock_universe "
+                "WHERE stock_name LIKE ? ORDER BY stock_name LIMIT 1",
+                (f"%{query}%",),
+            ).fetchone()
+        if not row:
+            return {"company": None, "history": [], "notFound": True}
+
+        code = row["stock_code"]
+        hist_rows = conn.execute(
+            "SELECT data_ym, new_hires, terminations, net_change "
+            "FROM nps_monthly WHERE stock_code=? ORDER BY data_ym ASC",
+            (code,),
+        ).fetchall()
+        history = [
+            {
+                "month": f"{str(r['data_ym'])[:4]}-{str(r['data_ym'])[4:]}",
+                "new_cnt": int(r["new_hires"] or 0),
+                "lost_cnt": int(r["terminations"] or 0),
+                "net_change": int(r["net_change"] or 0),
+            }
+            for r in hist_rows
+        ]
+        return {"company": row["stock_name"], "history": history, "notFound": len(history) == 0}
+    finally:
+        conn.close()
 
 
 @router.get("/annual-trend")

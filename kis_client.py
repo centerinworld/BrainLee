@@ -84,6 +84,22 @@ class KISClient:
             logger.error(f"KIS Token 발급 중 오류 발생: {e}")
             return False
 
+    def _issue_hashkey(self, payload: dict) -> str:
+        """KIS POST 주문용 hashkey 발급."""
+        try:
+            url = f"{self.base_url}/uapi/hashkey"
+            headers = {
+                "Content-Type": "application/json",
+                "appkey": self.app_key,
+                "appsecret": self.app_secret,
+            }
+            r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
+            d = r.json()
+            return d.get("HASH") or d.get("hash") or ""
+        except Exception as e:
+            logger.error(f"KIS hashkey 발급 오류: {e}")
+            return ""
+
     def get_token(self):
         if not self.access_token or time.time() > self.token_expiry:
             if self._load_token_from_file():
@@ -478,6 +494,156 @@ class KISClient:
             except Exception as e:
                 logger.error(f"[KIS잔고] 오류: {e}")
                 return []
+
+    def get_account_snapshot(self) -> dict:
+        """
+        계좌 스냅샷 조회 (TTTC8434R)
+        반환:
+          {
+            "holdings": [...],
+            "summary": {
+              "cash_available": ...,
+              "total_eval": ...,
+              "total_buy": ...,
+              "total_profit": ...,
+              "total_profit_pct": ...
+            }
+          }
+        """
+        token = self.get_token()
+        if not token:
+            return {"holdings": [], "summary": {}}
+        with self.lock:
+            elapsed = time.time() - self.last_call_time
+            if elapsed < 1.0:
+                time.sleep(1.0 - elapsed)
+            self.last_call_time = time.time()
+            url = f"{self.base_url}/uapi/domestic-stock/v1/trading/inquire-balance"
+            headers = {
+                "Content-Type": "application/json",
+                "authorization": f"Bearer {token}",
+                "appkey": self.app_key,
+                "appsecret": self.app_secret,
+                "tr_id": "TTTC8434R",
+            }
+            params = {
+                "CANO": getattr(config, "KIS_ACCOUNT_NO", ""),
+                "ACNT_PRDT_CD": getattr(config, "KIS_ACCOUNT_PROD", "01"),
+                "AFHR_FLPR_YN": "N",
+                "OFL_YN": "",
+                "INQR_DVSN": "02",
+                "UNPR_DVSN": "01",
+                "FUND_STTL_ICLD_YN": "N",
+                "FNCG_AMT_AUTO_RDPT_YN": "N",
+                "PRCS_DVSN": "01",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": "",
+            }
+            try:
+                res = requests.get(url, headers=headers, params=params, timeout=10)
+                data = res.json()
+                if data.get("rt_cd") != "0":
+                    logger.warning(f"[KIS계좌스냅샷] {data.get('msg1','')}")
+                    return {"holdings": [], "summary": {}}
+
+                def _f(v):
+                    try:
+                        return float(str(v).replace(",", "")) if v not in (None, "") else 0.0
+                    except Exception:
+                        return 0.0
+
+                holdings = []
+                for row in data.get("output1", []) or []:
+                    qty = _f(row.get("hldg_qty"))
+                    if qty <= 0:
+                        continue
+                    holdings.append({
+                        "stock_code": row.get("pdno", ""),
+                        "stock_name": row.get("prdt_name", ""),
+                        "quantity": qty,
+                        "avg_price": _f(row.get("pchs_avg_pric")),
+                        "current_price": _f(row.get("prpr")),
+                        "eval_amount": _f(row.get("evlu_amt")),
+                        "profit": _f(row.get("evlu_pfls_amt")),
+                        "profit_pct": _f(row.get("evlu_pfls_rt")),
+                    })
+
+                s = (data.get("output2") or [{}])[0]
+                summary = {
+                    "cash_available": _f(s.get("dnca_tot_amt") or s.get("ord_psbl_cash")),
+                    "cash_d2": _f(s.get("nxdy_excc_amt") or s.get("d2_auto_rdpt_amt")),
+                    "total_eval": _f(s.get("tot_evlu_amt")),
+                    "total_buy": _f(s.get("pchs_amt_smtl_amt")),
+                    "total_profit": _f(s.get("evlu_pfls_smtl_amt")),
+                    "total_profit_pct": _f(s.get("asst_icdc_erng_rt") or s.get("evlu_erng_rt")),
+                }
+                return {"holdings": holdings, "summary": summary}
+            except Exception as e:
+                logger.error(f"[KIS계좌스냅샷] 오류: {e}")
+                return {"holdings": [], "summary": {}}
+
+    def place_order_cash(self, stock_code: str, side: str, qty: int, order_type: str = "market", price: float = 0.0) -> dict:
+        """
+        국내주식 현금 주문.
+        side: buy|sell
+        order_type: market|limit
+        """
+        token = self.get_token()
+        if not token:
+            return {"ok": False, "error": "token_fail"}
+        if side not in ("buy", "sell"):
+            return {"ok": False, "error": "invalid_side"}
+        if qty <= 0:
+            return {"ok": False, "error": "invalid_qty"}
+
+        with self.lock:
+            elapsed = time.time() - self.last_call_time
+            if elapsed < 1.0:
+                time.sleep(1.0 - elapsed)
+            self.last_call_time = time.time()
+
+            url = f"{self.base_url}/uapi/domestic-stock/v1/trading/order-cash"
+            tr_id = "TTTC0802U" if side == "buy" else "TTTC0801U"
+            ord_dvsn = "01" if order_type == "market" else "00"  # 01 시장가 / 00 지정가
+            ord_unpr = "0" if ord_dvsn == "01" else str(int(price))
+
+            payload = {
+                "CANO": getattr(config, "KIS_ACCOUNT_NO", ""),
+                "ACNT_PRDT_CD": getattr(config, "KIS_ACCOUNT_PROD", "01"),
+                "PDNO": str(stock_code).zfill(6),
+                "ORD_DVSN": ord_dvsn,
+                "ORD_QTY": str(int(qty)),
+                "ORD_UNPR": ord_unpr,
+            }
+            hashkey = self._issue_hashkey(payload)
+            headers = {
+                "Content-Type": "application/json",
+                "authorization": f"Bearer {token}",
+                "appkey": self.app_key,
+                "appsecret": self.app_secret,
+                "tr_id": tr_id,
+            }
+            if hashkey:
+                headers["hashkey"] = hashkey
+
+            try:
+                res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+                data = res.json()
+                if data.get("rt_cd") == "0":
+                    out = data.get("output", {}) or {}
+                    return {
+                        "ok": True,
+                        "order_no": out.get("ODNO") or out.get("odno") or "",
+                        "msg": data.get("msg1", "OK"),
+                    }
+                return {
+                    "ok": False,
+                    "error": data.get("msg1") or f"http_{res.status_code}",
+                    "raw": data,
+                }
+            except Exception as e:
+                logger.error(f"[KIS주문] 오류: {e}")
+                return {"ok": False, "error": str(e)}
 
 
 kis_client = KISClient()

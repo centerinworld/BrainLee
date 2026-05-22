@@ -30,6 +30,11 @@ COMPANY_ALIASES = {
     "금호석유": "금호석유화학",
     "코오롱인더스트리": "코오롱인더",
     "코오롱플라스틱": "코오롱ENP",
+    "에스테아이": "에스티아이",
+    "SEMES": "세메스",
+    "지앤비에스 에코": "지앤비에스에코",
+    "바우와우코리아": "오에스피",
+    "삼성디플레이": "삼성디스플레이",
 }
 
 BAD_COMPANY_TOKENS = {
@@ -62,10 +67,12 @@ HS_ALIASES = {
     "MCP": [("854232", "전자집적회로: 메모리")],
     "MCP (복합구조칩 집적회로)": [("854232", "전자집적회로: 메모리")],
     "복합구조칩 집적회로": [("854232", "전자집적회로: 메모리")],
+    "전자집적회로": [("854232", "전자집적회로: 메모리")],
     # 디스플레이
     "MLCC": [("8532240000", "세라믹 유전체의 것(다층)")],
     "OLED TV": [("8528725000", "유기발광다이오드(오엘이디) 방식")],
     "OLED 패널": [("8524911000", "유기발광다이오드 표시 모듈")],
+    "유기발광다이오드 OLED 제조용": [("8524911000", "유기발광다이오드 표시 모듈")],
     "평판디스플레이 텔레비전용": [("8528725000", "유기발광다이오드(오엘이디) 방식")],
     "평판디스플레이 모니터용": [("8528521000", "평판디스플레이 모니터")],
     "평판디스플레이 모듈": [("8524911000", "유기발광다이오드 표시 모듈"), ("8524912000", "액정표시 모듈")],
@@ -85,11 +92,16 @@ HS_ALIASES = {
     "반도체 웨이퍼용 증착장비": [("848620", "반도체 웨이퍼 제조용 기기")],
     "반도체 웨이퍼 습식 식각 / 세척 장비": [("848620", "반도체 웨이퍼 제조용 기기")],
     "건식식각장비": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "CCSS": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "PR박리액": [("848620", "반도체 웨이퍼 제조용 기기")],
+    "유기혼합용제와 시너": [("3814000000", "유기혼합용제와 시너")],
     "고압 수소 열처리 장비": [("848620", "반도체 웨이퍼 제조용 기기")],
     "급속열처리장비": [("848620", "반도체 웨이퍼 제조용 기기")],
     "급속열처리장비(Rapid Thermal Processing, RTP)": [("848620", "반도체 웨이퍼 제조용 기기")],
     "반도체 웨이퍼, 소자의 측정, 검사용 장비": [("9031809070", "반도체 패턴결함 검사장비")],
     "3차원 검사장비, 모듈": [("9031809091", "반도체 검사장비")],
+    "3차원 검사장비": [("9031809091", "반도체 검사장비")],
+    "산업용자동화원자현미경": [("9012101000", "현미경(광학현미경은 제외한다)")],
     "핸들러": [("9031809091", "반도체 검사장비")],
     # 트랙터
     "소형 트랙터": [("8701912000", "농업용 트랙터(18kW이하)"), ("8701101000", "차축이 하나인 트랙터")],
@@ -100,6 +112,9 @@ HS_ALIASES = {
     "면역진단카트리지": [("3822191000", "면역물품")],
     # 변압기
     "초고압 변압기": [("8504231000", "초고압 변압기(10,000~100,000kVA)"), ("8504239000", "초고압 변압기(100,000kVA초과)")],
+    "소형 변압기": [("8504319000", "그 밖의 변압기(용량 1kVA 초과 16kVA 이하)")],
+    "중대형 변압기": [("8504320000", "변압기(용량 16kVA 초과 500kVA 이하)"), ("8504330000", "변압기(용량 500kVA 초과)")],
+    "변환기": [("8504409090", "그 밖의 정지형 변환기")],
     # 광섬유 케이블
     "광섬유 케이블": [("9001100000", "광섬유ㆍ광섬유 다발과 광섬유 케이블")],
     "광섬유 광케이블": [("9001100000", "광섬유ㆍ광섬유 다발과 광섬유 케이블")],
@@ -108,6 +123,14 @@ HS_ALIASES = {
     "탄화규소": [("2849201000", "탄화규소")],
     "SiC": [("2849201000", "탄화규소")],
     "NCM": [("2825902050", "니켈 코발트 망간 수산화물")],
+    "NCA": [("2825902090", "그 밖의 리튬축전지용 화합물(양극활물질 등)")],
+    "진주광택안료": [("3206499000", "그 밖의 무기 안료와 조제품")],
+    "수산화리튬": [("2825209000", "그 밖의 리튬의 산화물과 수산화물")],
+    "영구자석": [("8505110000", "금속제 영구자석")],
+    "리드프레임": [("8536909090", "그 밖의 전기회로 접속용 기기")],
+    "Package Substrate": [("8534009000", "그 밖의 인쇄회로")],
+    "CCL": [("7410210000", "동박적층판용 동박")],
+    "Cap Assembly": [("8507909000", "축전지의 부분품")],
     "과산화수소": [("2847000000", "과산화수소")],
     "솔더볼": [("8311900000", "기타 납땜·용접·용착 재료")],
     # 전기·전력
@@ -118,6 +141,7 @@ HS_ALIASES = {
     "AFCI PCB ASSEMBLY": [("8534009000", "그 밖의 인쇄회로")],
     # 레이저 장비
     "레이저마커": [("8456119000", "기타 레이저 가공기")],
+    "12인치 레이저마커 / 레이저 그루빙": [("8456119000", "기타 레이저 가공기")],
     "기타 레이저마커": [("8456119000", "기타 레이저 가공기")],
     "레이저 그루빙": [("8456119000", "기타 레이저 가공기")],
     "레이저 스텔스다이싱 장비": [("8456119000", "기타 레이저 가공기")],
@@ -129,7 +153,29 @@ HS_ALIASES = {
     # 필러 (의료·미용)
     "필러": [("3001900000", "인체 의료용 조직·세포 등")],
     "리쥬란": [("3001900000", "인체 의료용 조직·세포 등")],
+    "FPCB": [("8534009000", "그 밖의 인쇄회로")],
+    "부직포": [("5603129000", "그 밖의 부직포")],
+    "NCF": [("3921909090", "그 밖의 플라스틱 시트/필름")],
+    "유도무기": [("9306900000", "탄약과 탄약 부분품")],
+    "로켓 발사기": [("9301200000", "로켓 발사기 등 군수 장비")],
+    "레이더": [("8526100000", "레이더 기기")],
 }
+
+# Product normalization rules to reduce repetitive missing_hs labels.
+PRODUCT_CANON_RULES: list[tuple[str, str]] = [
+    ("12인치 레이저마커", "12인치 레이저마커 / 레이저 그루빙"),
+    ("레이저 그루빙", "12인치 레이저마커 / 레이저 그루빙"),
+    ("리드프레임", "리드프레임"),
+    ("전자집적회로", "전자집적회로"),
+    ("FPCB", "FPCB"),
+    ("부직포", "부직포"),
+    ("NCF", "NCF"),
+    ("Non Conductive Film", "NCF"),
+    ("유기발광다이오드 OLED 제조용", "유기발광다이오드 OLED 제조용"),
+    ("유도무기", "유도무기"),
+    ("로켓 발사기", "로켓 발사기"),
+    ("레이더", "레이더"),
+]
 
 
 def has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
@@ -298,7 +344,20 @@ def parse_flow_and_product(raw_text: str, title: str) -> tuple[str, str, str]:
             continue
         product = line.strip()
         break
-    scope_match = re.search(r"\((전국[^)]*|글로벌[^)]*|[가-힣]+ [가-힣]+시|[가-힣]+ [가-힣]+군|[가-힣]+ [가-힣]+구|중국[^)]*|미국[^)]*|베트남[^)]*)\)", product)
+
+    # Fallback: 제목이 "회사명 : 품목 (...)" 형식이면 품목 부분 우선 사용
+    if not product:
+        t = (title or "").strip()
+        if ":" in t:
+            product = t.split(":", 1)[1].strip()
+        else:
+            product = t
+
+    # 지역/국가 scope 추출 (패턴 범위 확대)
+    scope_match = re.search(
+        r"\((전국[^)]*|글로벌[^)]*|[가-힣]+ [가-힣]+(?:시|군|구)|중국[^)]*|미국[^)]*|베트남[^)]*|일본[^)]*|대만[^)]*|홍콩[^)]*|핀란드[^)]*|모로코[^)]*|인도네시아[^)]*)\)",
+        product,
+    )
     if scope_match and not flow_scope:
         flow_scope = scope_match.group(1).strip()
     return flow_type, flow_scope, product or title.strip()
@@ -338,8 +397,15 @@ def hs_entries_for_post(row: sqlite3.Row, product: str, hs_lookup: dict[str, lis
     if len(labels) > MAX_HS_LABELS_PER_POST:
         labels = []
     title = row["title"] or ""
+    core_title = title.split(":", 1)[1].strip() if ":" in title else title
     candidates: list[dict[str, str]] = []
-    for label in [*labels, product]:
+    def _canon(label: str) -> list[str]:
+        out = []
+        for needle, canon in PRODUCT_CANON_RULES:
+            if needle in label:
+                out.append(canon)
+        return out
+    for label in [*labels, product, core_title]:
         if label in BAD_HS_LABELS:
             continue
         if not _label_allowed(label, title):
@@ -354,9 +420,16 @@ def hs_entries_for_post(row: sqlite3.Row, product: str, hs_lookup: dict[str, lis
         if no_flow != simplified:
             candidates.extend(hs_lookup.get(no_flow, []))
         # Remove only geographic scope parentheses
-        no_scope = re.sub(r"\s*\((전국[^)]*|글로벌[^)]*|중국[^)]*|미국[^)]*|베트남[^)]*|일본[^)]*|대만[^)]*|홍콩[^)]*)\)", "", label).strip()
+        no_scope = re.sub(
+            r"\s*\((전국[^)]*|글로벌[^)]*|중국[^)]*|미국[^)]*|베트남[^)]*|일본[^)]*|대만[^)]*|홍콩[^)]*|핀란드[^)]*|모로코[^)]*|인도네시아[^)]*|[가-힣]+ [가-힣]+(?:시|군|구))\)",
+            "",
+            label,
+        ).strip()
         if no_scope != label:
             candidates.extend(hs_lookup.get(no_scope, []))
+        # canonical keyword-based expansions
+        for canon in _canon(label):
+            candidates.extend(hs_lookup.get(canon, []))
     seen: set[str] = set()
     unique: list[dict[str, str]] = []
     for item in candidates:
@@ -485,6 +558,18 @@ def rebuild() -> dict[str, object]:
         if not hs_entries or not stocks:
             continue
         summary["flow_posts_with_hs_and_company"] = int(summary["flow_posts_with_hs_and_company"]) + 1
+
+        # 매핑 성공 시 캐시 상태도 즉시 동기화
+        conn.execute(
+            """
+            UPDATE telegram_post_cache
+            SET mapping_status='mapped',
+                matched_companies_json=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (json.dumps([s["stock_name"] for s in stocks], ensure_ascii=False), row["id"]),
+        )
         for hs in hs_entries:
             for stock in stocks:
                 result = upsert_company_map(

@@ -167,9 +167,9 @@ def _send_sector_ai_telegram(run_type: str = "morning") -> bool:
             "─" * 32,
         ]
         if summary:
-            lines.append(f"📌 {summary}")
+            lines.append(f"📌 핵심 시황: {summary}")
         if market_view:
-            lines.append(f"🔭 {market_view}")
+            lines.append(f"🔭 관찰 포인트: {market_view}")
         if summary or market_view:
             lines.append("─" * 32)
 
@@ -185,10 +185,14 @@ def _send_sector_ai_telegram(run_type: str = "morning") -> bool:
             lines.append(
                 f"   📈 1일 {ret1:+.1f}% / 5일 {ret5:+.1f}% / 20일 {ret20:+.1f}%"
             )
+            lines.append(
+                "   ✅ 진입 시그널: 5일·20일 동반 우상향 + 단기 조정 후 거래대금 회복 여부 체크"
+            )
             if s.get("ai_reason"):
-                lines.append(f"   💡 {s['ai_reason']}")
+                lines.append(f"   💡 상승 이유: {s['ai_reason']}")
             if s.get("ai_risk"):
                 lines.append(f"   ⚠️ 리스크: {s['ai_risk']}")
+            lines.append("   ⛔ 이탈 기준: 5일 수익률 급반전 음수 전환 또는 섹터 주도력 약화")
 
         # 주목 종목 상위 5개
         stocks = data.get("stocks", [])[:5]
@@ -199,6 +203,7 @@ def _send_sector_ai_telegram(run_type: str = "morning") -> bool:
                 short_warn = ""
                 borrow = st.get("borrow_bal_pct", 0) or 0
                 ret20 = st.get("ret_20d", 0) or 0
+                ret_label = "추세초기" if ret20 < 10 else "추세진행" if ret20 < 30 else "가속구간"
                 if borrow > 1.5:
                     short_warn += f" ⚠️대차{borrow:.1f}%"
                 if ret20 > 40:
@@ -206,7 +211,11 @@ def _send_sector_ai_telegram(run_type: str = "morning") -> bool:
                 lines.append(
                     f"   • {st['stock_name']} ({st['stock_code']}) "
                     f"점수:{st.get('score', 0):.0f} "
-                    f"20일:{ret20:+.0f}%{short_warn}"
+                    f"20일:{ret20:+.0f}% ({ret_label}){short_warn}"
+                )
+                lines.append(
+                    f"     └ 인사이트: {st.get('source_sector','')}"
+                    f" 주도 수혜. 점수 상위/수급 과열 여부({('주의' if short_warn else '양호')}) 기준으로 분할 접근."
                 )
 
         msg = "\n".join(lines)

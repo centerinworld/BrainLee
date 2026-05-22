@@ -14,6 +14,7 @@ from urllib.request import urlopen
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT_DIR / "data" / "hs_trade_lab.db"
+ROOT_STOCK_DB = ROOT_DIR.parent / "stock.db"
 CHANNEL_URL = "https://t.me/s/BeOn_BeClear"
 LOOKBACK_DAYS = 370
 
@@ -140,12 +141,49 @@ COMPANY_ALIAS_MAP = {
     "고영": "고영",
     "LG디스플레이": "LG디스플레이",
     "삼성디스플레이": "삼성디스플레이",
+    "삼성디플레이": "삼성디스플레이",
     "온세미": "온세미",
     "이엔에프테크놀로지": "이엔에프테크놀로지",
     "셀바이오휴먼텍": "셀바이오휴먼텍",
+    "바우와우코리아": "오에스피",
+    "LS전선": "LS전선",
+    "에스테아이": "에스티아이",
+    "SEMES": "세메스",
+    "지앤비에스 에코": "지앤비에스에코",
 }
 
 TITLE_ALIAS_MAP = {
+    "바우와우코리아 (오에스피 자회사)": ["개사료"],
+    "달바글로벌 : 기초화장품": ["기초화장용 제품류"],
+    "LS전선 : 광섬유 케이블": ["광섬유 광케이블 (전국)"],
+    "머큐리 케이블(머큐리) : 광섬유": ["광섬유 광케이블 (전국)"],
+    "펨트론": ["3차원 검사장비, 모듈"],
+    "인텍플러스 : 3차원 검사장비": ["3차원 검사장비, 모듈"],
+    "고영 : 3차원 검사장비": ["3차원 검사장비, 모듈"],
+    "파크시스템스 : 산업용자동화원자현미경": ["산업용자동화원자현미경"],
+    "제룡전기 : 변압기": ["중대형 변압기"],
+    "산일전기 : 전압별 변압기": ["중대형 변압기"],
+    "LS ELECTRIC : 변환기": ["소형 변압기"],
+    "일진전기 : 변환기": ["소형 변압기"],
+    "씨큐브 : 진주광택안료": ["진주광택안료"],
+    "상신이디피 : 2차전지 원형 각형 등 팩 모듈(Cap assy포함)": ["Cap Assembly"],
+    "와이엠텍 / LS이모빌리티솔루션(LS ELECTRIC 자회사) : EV Relays (계전기, 전기제어용, 전압 1,000V 이하)": ["EV Relay 1,000V 이하 (전국)"],
+    "와이엠텍 : EV Relays, LS이모빌리티솔루션(LS ELECTRIC 자회사) (계전기, 전기제어용, 전압 1,000V 초과)": ["EV Relay 1,000V 초과 (전국)"],
+    "해성디에스 : Package Substrate + 리드프레임": ["리드프레임"],
+    "두산 : CCL": ["CCL 동박적층판 (전국_대만)"],
+    "엘티씨 : 유기혼합용제와 시너(thinner)": ["유기혼합용제와 시너"],
+    "엘티씨 : PR박리액 (반도체 제조용)": ["PR박리액"],
+    "에스티아이 : CCSS": ["CCSS"],
+    "에스테아이 : CCSS": ["CCSS"],
+    "영구자석": ["희토류 영구자석"],
+    "수산화리튬 : 미래나노텍 / 강원에너지 / 하이드로리튬 / POSCO홀딩스": ["이차전지 소재 (수산화리튬)"],
+    "영구자석 (전국)": ["희토류 영구자석"],
+    "임플란트 : (덴티움 + 오스템임플란트 + 디오 + 덴티스 + 메가젠임플란트)": ["임플란트"],
+    "에코프로비엠, LG화학 : NCA (니켈 코발트 알루미늄 산화물의 리튬염)": ["NCA 니켈 코발트 알루미늄 산화물의 리튬염 (전국)"],
+    "에코프로비엠 : NCA (니켈 코발트 알루미늄 산화물의 리튬염)": ["NCA 니켈 코발트 알루미늄 산화물의 리튬염 (전국)"],
+    "덕산네오룩스 : 유기발광다이오드 OLED 제조용": ["OLED 패널"],
+    "LG화학 : 유기발광다이오드 OLED 제조용": ["OLED 패널"],
+    "LG디스플레이 : 유기발광다이오드 OLED 제조용": ["OLED 패널"],
     "하이즈항공 : 비행기의 부분품 (부산 강서구)": ["비행기의 부분품"],
     "하이즈항공 : 비행기의 부분품 (경남 진주시)": ["비행기의 부분품"],
     "하이즈항공 : 비행기의 부분품 (부산 강서구 + 경남 진주시)": ["비행기의 부분품"],
@@ -384,6 +422,19 @@ def simplify_label(text: str) -> str:
     return normalize_space(simplified)
 
 
+def core_product_label(text: str) -> str:
+    """회사 prefix/지역 scope를 제거한 핵심 품목 라벨."""
+    if not text:
+        return ""
+    base = text.split(":", 1)[1].strip() if ":" in text else text
+    base = re.sub(
+        r"\s*\((전국[^)]*|글로벌[^)]*|중국[^)]*|미국[^)]*|베트남[^)]*|일본[^)]*|대만[^)]*|홍콩[^)]*|핀란드[^)]*|모로코[^)]*|인도네시아[^)]*|[가-힣]+ [가-힣]+(?:시|군|구))\)",
+        "",
+        base,
+    )
+    return simplify_label(base)
+
+
 def parse_message_id(url: str) -> str:
     return url.rstrip("/").split("/")[-1]
 
@@ -468,6 +519,23 @@ def load_existing_maps(conn: sqlite3.Connection) -> tuple[set[str], set[str], se
         row[0]
         for row in conn.execute("SELECT DISTINCT stock_name FROM hs_code_company_map WHERE stock_name <> ''")
     }
+    # listed universe fallback: company-scope posts can include names not yet seen in hs_code_company_map
+    try:
+        sconn = sqlite3.connect(f"file:{ROOT_STOCK_DB}?mode=ro", uri=True)
+        sconn.row_factory = sqlite3.Row
+        for table in ("stock_universe", "stock_meta", "stock_price_daily"):
+            try:
+                for row in sconn.execute(
+                    f"SELECT DISTINCT stock_name, COALESCE(market,'') AS market FROM {table} WHERE stock_name <> ''"
+                ):
+                    market = (row["market"] or "").upper()
+                    if market in {"KOSPI", "KOSDAQ", "유가증권", "코스닥"}:
+                        company_names.add(row["stock_name"])
+            except sqlite3.Error:
+                continue
+        sconn.close()
+    except sqlite3.Error:
+        pass
     company_names.update(COMPANY_ALIAS_MAP.values())
     return hs_display_names, company_sector_names, company_names
 
@@ -479,10 +547,13 @@ def find_matches(
     known_company_names: set[str],
 ) -> tuple[str, list[str], list[str]]:
     normalized_companies = [COMPANY_ALIAS_MAP.get(name, name) for name in post.companies]
+    normalized_companies = [normalize_space(name) for name in normalized_companies if name]
     simplified_text = simplify_label(post.text)
     simplified_title = simplify_label(post.title)
+    core_title = core_product_label(post.title)
     compact_text = simplified_text.replace(" ", "")
     compact_title = simplified_title.replace(" ", "")
+    compact_core_title = core_title.replace(" ", "")
     alias_names: set[str] = set()
     for alias_title, mapped_names in TITLE_ALIAS_MAP.items():
         simplified_alias = simplify_label(alias_title)
@@ -492,8 +563,10 @@ def find_matches(
             or alias_title in post.text
             or simplified_alias in simplified_title
             or simplified_alias in simplified_text
+            or simplified_alias in core_title
             or compact_alias in compact_title
             or compact_alias in compact_text
+            or compact_alias in compact_core_title
         ):
             alias_names.update(mapped_names)
     title_matches = sorted(
@@ -509,15 +582,19 @@ def find_matches(
                 or post.title in name
                 or simplify_label(name) in simplified_text
                 or simplify_label(name) in simplified_title
+                or simplify_label(name) in core_title
                 or simplify_label(name).replace(" ", "") in compact_text
                 or simplify_label(name).replace(" ", "") in compact_title
+                or simplify_label(name).replace(" ", "") in compact_core_title
             )
         }
     )
-    company_matches = sorted({name for name in known_company_names if name in normalized_companies})
+    known_company_names_norm = {normalize_space(name) for name in known_company_names}
+    company_matches = sorted({name for name in normalized_companies if name in known_company_names_norm})
     mapping_status = "mapped" if title_matches else "unmapped"
     if post.mapping_scope == "company" and normalized_companies:
-        mapping_status = "mapped" if company_matches and title_matches else "unmapped"
+        # If title/HS mapping evidence is explicit, keep mapped even when company dictionary lags.
+        mapping_status = "mapped" if title_matches and (company_matches or post.company_count <= 2) else "unmapped"
     return mapping_status, title_matches, company_matches
 
 

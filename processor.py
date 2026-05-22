@@ -1,12 +1,17 @@
 from sqlalchemy.orm import Session
 import models
 from datetime import datetime, timedelta
+import json
+import urllib.parse
+import xml.etree.ElementTree as ET
+import config
 
 _VALID_YEAR_MIN = 2000
 _VALID_YEAR_MAX = 2030
 _VALID_QUARTERS = {1, 2, 3, 4}
 _QUARTER_TO_MONTH = {1: 3, 2: 6, 3: 9, 4: 12}
 _MONTH_TO_Q_LABEL = {'03': '1Q', '06': '2Q', '09': '3Q', '12': '4Q'}
+_TREASURY_BRIEF_CACHE = {"date": "", "text": ""}
 
 
 def _fmt_q_period(raw_period: str) -> str:
@@ -131,9 +136,10 @@ def _calc_eps(eps, net_income, shares_issued):
     return eps
 
 
-def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual"):
+def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual", report_type: str = "CFS"):
     # 주식수 + stock_collection_config 로드
     import sqlite3 as _sl3
+    import sqlalchemy as _sa
     _shares_issued = None
     _preferred_report_type = None
     try:
@@ -150,12 +156,23 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
         _conn.close()
     except Exception:
         pass
+
+    # report_type 필터 조건 (API 파라미터 우선)
+    if report_type == "OFS":
+        _rt_filter = models.FinancialData.report_type == "OFS"
+    else:  # CFS 또는 기본값
+        _rt_filter = _sa.or_(
+            models.FinancialData.report_type == "CFS",
+            models.FinancialData.report_type.is_(None),
+        )
+
     if data_type == "quarter":
         data = (
             db.query(models.FinancialData)
             .filter(
                 models.FinancialData.stock_code == stock_code,
                 models.FinancialData.is_annual.is_(False),
+                _rt_filter,
             )
             .order_by(models.FinancialData.year.desc(), models.FinancialData.quarter.desc())
             .limit(8).all()
@@ -206,6 +223,7 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
                     models.FinancialData.stock_code == stock_code,
                     models.FinancialData.year == year,
                     models.FinancialData.is_annual.is_(True),
+                    _rt_filter,
                 )
                 .order_by(models.FinancialData.quarter.desc())
                 .first()
@@ -261,37 +279,65 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
         return result
 
     # ── 연간 데이터 ──────────────────────────────────────────────
+    _DS_PRIORITY = {'dart': 0, 'fnguide': 1}  # DART 최우선 (EPS 정확성)
     annual_data_raw = (
         db.query(models.FinancialData)
         .filter(
             models.FinancialData.stock_code == stock_code,
             models.FinancialData.is_annual.is_(True),
+            _rt_filter,
         )
         .order_by(models.FinancialData.year.desc(), models.FinancialData.revenue.desc())
         .limit(10).all()
     )
-    # preferred_report_type(지주사=OFS 등)이 설정된 경우 해당 타입 우선 선택
-    if _preferred_report_type:
-        annual_data_raw = sorted(
-            annual_data_raw,
-            key=lambda x: (-x.year, 0 if x.report_type == _preferred_report_type else 1, -(x.revenue or 0))
+    # DART 우선 정렬 (EPS 정확성, FnGuide EPS 단위 오류 회피)
+    annual_data_raw = sorted(
+        annual_data_raw,
+        key=lambda x: (
+            -x.year,
+            0 if _preferred_report_type and x.report_type == _preferred_report_type else 1,
+            _DS_PRIORITY.get(x.data_source or 'other', 2),
+            -(x.revenue or 0)
         )
-    # 같은 연도 첫 번째 레코드 선택 (revenue desc 또는 preferred_report_type 우선)
+    )
+    # 같은 연도 첫 번째 레코드 선택 (DART 우선, 이후 NULL 필드 보완)
     _year_recs: dict = {}
+    _year_all: dict = {}  # 연도별 모든 행 보관 (revenue 이상치 보정용)
     for _d in annual_data_raw:
+        _year_all.setdefault(_d.year, []).append(_d)
         if _d.year not in _year_recs:
             _year_recs[_d.year] = _d
         else:
-            # NULL 필드는 다른 row에서 보완 (preferred 타입 row는 이미 우선 선택됨)
+            # NULL 필드는 다른 row에서 보완 — FnGuide가 가진 D&A 등 추가 필드
             _base = _year_recs[_d.year]
             for _col in ('total_liabilities', 'capital_stock', 'eps', 'bps', 'dps',
-                         'total_assets', 'total_equity', 'roe', 'operating_profit', 'net_income'):
+                         'total_assets', 'total_equity', 'roe', 'operating_profit', 'net_income',
+                         'depreciation_amortization', 'revenue'):
                 if getattr(_base, _col, None) is None and getattr(_d, _col, None) is not None:
                     setattr(_base, _col, getattr(_d, _col))
+
+    # DART revenue 이상치 보정: FnGuide 대비 100배+ 차이 시 FnGuide 값 사용
+    for _yr, _base in _year_recs.items():
+        _base_rev = getattr(_base, 'revenue', None)
+        if not _base_rev or _base_rev < 0:
+            continue
+        for _alt in _year_all.get(_yr, []):
+            if _alt is _base:
+                continue
+            _alt_rev = getattr(_alt, 'revenue', None)
+            if not _alt_rev or _alt_rev <= 0:
+                continue
+            _ratio = max(_base_rev, _alt_rev) / min(_base_rev, _alt_rev)
+            if _ratio >= 50:  # 50배 이상 차이 → FnGuide 쪽 신뢰
+                _base.revenue = _alt_rev
+                break
+
     annual_data = [_year_recs[y] for y in sorted(_year_recs.keys(), reverse=True)[:5]]
 
-    # is_annual=True 레코드가 없으면 분기 데이터로 대체
+    # is_annual=True 레코드가 없으면 분기 데이터로 대체 (OFS 명시 요청 시는 빈 배열 반환)
     if not annual_data:
+        if report_type == "OFS":
+            return []  # 별도재무제표 없음
         annual_data = (
             db.query(models.FinancialData)
             .filter(models.FinancialData.stock_code == stock_code,
@@ -449,6 +495,52 @@ def _query_latest(db: Session, symbol: str):
     return (vals[0] if vals else None), (vals[1] if len(vals) > 1 else None)
 
 
+def _query_latest_any(db: Session, symbols: list[str]):
+    """심볼 후보군 중 데이터가 있는 첫 번째 최신 2일치를 반환."""
+    for s in symbols:
+        latest, prev = _query_latest(db, s)
+        if latest:
+            return s, latest, prev
+    return None, None, None
+
+
+def _fetch_latest_yahoo_close(symbol: str):
+    """DB 미존재 시 Yahoo에서 최근 2개 종가를 직접 조회."""
+    try:
+        import yfinance as yf
+        df = yf.download(symbol, period="10d", interval="1d", progress=False, auto_adjust=True)
+        if df is None or df.empty:
+            return None, None
+        close_col = df.get("Close")
+        if close_col is None:
+            return None, None
+        # yfinance가 단일 종목에서도 DataFrame(MultiIndex)로 반환하는 경우 대응
+        if hasattr(close_col, "iloc") and hasattr(close_col, "columns"):
+            if close_col.empty:
+                return None, None
+            close_series = close_col.iloc[:, 0].dropna()
+        else:
+            close_series = close_col.dropna()
+        closes = close_series.tolist()
+        if not closes:
+            return None, None
+        latest = float(closes[-1])
+        prev = float(closes[-2]) if len(closes) > 1 else None
+        return latest, prev
+    except Exception:
+        return None, None
+
+
+def _normalize_treasury_yield(symbol: str, raw: float | None) -> float | None:
+    """Yahoo 심볼별 금리 퍼센트 정규화."""
+    if raw is None:
+        return None
+    # ^TNX/^TYX는 환경에 따라 4.6 또는 46.0 스케일이 혼재할 수 있어 동적 보정
+    if symbol in ("^TNX", "^TYX"):
+        return round(raw / 10.0, 3) if raw >= 20 else round(raw, 3)
+    return round(raw, 3)
+
+
 def _pct_change(latest, prev) -> float:
     if not latest or not prev or not prev.close or prev.close == 0:
         return 0.0
@@ -478,12 +570,104 @@ def _history(db: Session, symbol: str, days: int = 30) -> list:
     return [{"date": k, "close": v} for k, v in all_items[-days:]]
 
 
+def _fetch_rss_titles(url: str, limit: int = 4) -> list[str]:
+    try:
+        import requests
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
+        out = []
+        for it in root.findall(".//item"):
+            t = it.findtext("title")
+            if t:
+                out.append(t.strip())
+            if len(out) >= limit:
+                break
+        return out
+    except Exception:
+        return []
+
+
+def _build_treasury_ai_brief(y2, y10, y30, spread_10_2, spread_30_10, risk_level: str) -> str:
+    """외부 뉴스 + 금리 데이터 기반 3줄 브리핑(일일 캐시)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if _TREASURY_BRIEF_CACHE.get("date") == today and _TREASURY_BRIEF_CACHE.get("text"):
+        return _TREASURY_BRIEF_CACHE["text"]
+
+    q = urllib.parse.urlencode({"q": "US CPI Federal Reserve Treasury yield DXY when:1d", "hl": "en-US", "gl": "US", "ceid": "US:en"})
+    feeds = [
+        "https://finance.yahoo.com/news/rssindex",
+        "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+        "https://www.marketwatch.com/rss/topstories",
+        f"https://news.google.com/rss/search?{q}",
+    ]
+    titles = []
+    for u in feeds:
+        titles.extend(_fetch_rss_titles(u, limit=3))
+    dedup = []
+    seen = set()
+    for t in titles:
+        k = t.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        dedup.append(t)
+    titles = dedup[:10]
+
+    try:
+        if config.OPENAI_API_KEY:
+            import openai
+            client = openai.OpenAI(api_key=config.OPENAI_API_KEY, timeout=14.0, max_retries=0)
+            payload = {
+                "date": today,
+                "yields_pct": {"2Y": y2, "10Y": y10, "30Y": y30},
+                "spreads_pctp": {"10Y-2Y": spread_10_2, "30Y-10Y": spread_30_10},
+                "risk_level": risk_level,
+                "news_titles": titles,
+            }
+            prompt = (
+                "입력 JSON만 보고 한국어 3줄 이내로 브리핑하라. "
+                "1줄=핵심, 2줄=위험신호, 3줄=의의(투자 시사점). "
+                "사실 기반으로 쓰고 추정이면 '추정' 명시. 마크다운 금지.\n"
+                + json.dumps(payload, ensure_ascii=False)
+            )
+            res = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=170,
+            )
+            txt = (res.choices[0].message.content or "").strip()
+            lines = [x.strip() for x in txt.splitlines() if x.strip()]
+            if len(lines) <= 1:
+                # 모델이 한 줄로 답한 경우 문장 기준으로 3줄 이하 분할
+                parts = [p.strip() for p in txt.replace("! ", "!|").replace("? ", "?|").replace(". ", ".|").split("|") if p.strip()]
+                lines = parts
+            txt = "\n".join(lines[:3]) if lines else ""
+            if txt:
+                _TREASURY_BRIEF_CACHE["date"] = today
+                _TREASURY_BRIEF_CACHE["text"] = txt
+                return txt
+    except Exception:
+        pass
+
+    # fallback
+    l1 = f"핵심: 10Y {y10:.2f}%·30Y {y30:.2f}%·2Y {y2:.2f}%로 금리 레벨은 {risk_level} 구간입니다." if None not in (y2, y10, y30) else "핵심: 미국채 핵심 금리 데이터 수집 중입니다."
+    l2 = f"위험신호: 10Y-2Y {spread_10_2:.2f}%p, 30Y-10Y {spread_30_10:.2f}%p를 함께 보며 역전 여부를 점검해야 합니다." if None not in (spread_10_2, spread_30_10) else "위험신호: 스프레드 데이터 수집 중입니다."
+    l3 = "의의: CPI/연준/달러 뉴스와 결합해 '좋은 상승(성장)'과 '나쁜 상승(재정·물가 우려)'을 구분해야 합니다."
+    txt = "\n".join([l1, l2, l3])
+    _TREASURY_BRIEF_CACHE["date"] = today
+    _TREASURY_BRIEF_CACHE["text"] = txt
+    return txt
+
+
 def get_macro_status(db: Session) -> dict:
     """
     종합 매크로 현황 반환.
     반환 구조:
       index:       { KOSPI, KOSDAQ }          — 지수 + 수급 + 30일 히스토리
       vix:         { value, change, date, history(30일) }
+      us_treasury: { US2Y, US10Y, US30Y, spreads, risk, ai_summary }
       commodities: { USD/KRW, GOLD, OIL }     — 가격 + 30일 히스토리
     """
     # ── KOSPI / KOSDAQ / 나스닥 / S&P500 ─────────────────────
@@ -555,6 +739,98 @@ def get_macro_status(db: Session) -> dict:
         "history": _history(db, "^VIX", 30),
     }
 
+    # ── 미국 국채(2Y/10Y/30Y) ────────────────────────────────
+    us_treasury = {}
+    treasury_sources = {
+        "US2Y": ["2YY=F", "^UST2Y"],
+        "US10Y": ["^TNX", "10Y=F"],
+        "US30Y": ["^TYX", "30Y=F"],
+    }
+    for key, candidates in treasury_sources.items():
+        used_symbol, latest, prev = _query_latest_any(db, candidates)
+        val = _normalize_treasury_yield(used_symbol, float(latest.close) if latest and latest.close is not None else None)
+        prv = _normalize_treasury_yield(used_symbol, float(prev.close) if prev and prev.close is not None else None)
+
+        # DB에 없으면 Yahoo 실시간 폴백
+        used_date = (str(latest.date)[:10] if latest else "-")
+        if val is None:
+            for s in candidates:
+                y_latest, y_prev = _fetch_latest_yahoo_close(s)
+                if y_latest is None:
+                    continue
+                used_symbol = s
+                val = _normalize_treasury_yield(s, y_latest)
+                prv = _normalize_treasury_yield(s, y_prev)
+                used_date = datetime.now().strftime("%Y-%m-%d")
+                break
+        chg = None
+        if val is not None and prv not in (None, 0):
+            chg = round((val - prv) / abs(prv) * 100.0, 2)
+        history_symbol = used_symbol
+        if key == "US2Y" and (used_symbol == "2YY=F"):
+            # 과거 저장이 US2Y 코드로 된 데이터와 호환
+            history_symbol = "US2Y"
+        us_treasury[key] = {
+            "symbol": used_symbol,
+            "value": val,
+            "change": chg,
+            "date": used_date,
+            "history": _history(db, history_symbol, 365) if history_symbol else [],
+        }
+
+    y2 = us_treasury["US2Y"]["value"]
+    y10 = us_treasury["US10Y"]["value"]
+    y30 = us_treasury["US30Y"]["value"]
+    spread_10_2 = (round(y10 - y2, 3) if y10 is not None and y2 is not None else None)
+    spread_30_10 = (round(y30 - y10, 3) if y30 is not None and y10 is not None else None)
+
+    risk_flags = []
+    if y10 is not None and y10 >= 4.5:
+        risk_flags.append("10Y_HIGH")
+    if y10 is not None and y10 >= 5.0:
+        risk_flags.append("10Y_CRITICAL")
+    if y30 is not None and y30 >= 5.0:
+        risk_flags.append("30Y_HIGH")
+    if y30 is not None and y30 >= 5.5:
+        risk_flags.append("30Y_CRITICAL")
+    if spread_10_2 is not None and spread_10_2 < 0:
+        risk_flags.append("INVERSION_10_2")
+    if spread_30_10 is not None and spread_30_10 < 0:
+        risk_flags.append("INVERSION_30_10")
+
+    risk_level = "정상"
+    if any(x in risk_flags for x in ("10Y_CRITICAL", "30Y_CRITICAL", "INVERSION_30_10")):
+        risk_level = "위험"
+    elif any(x in risk_flags for x in ("10Y_HIGH", "30Y_HIGH", "INVERSION_10_2")):
+        risk_level = "주의"
+
+    ai_lines = []
+    if y10 is not None:
+        if y10 >= 5.0:
+            ai_lines.append(f"10년물 {y10:.2f}%: 금융여건 급격 긴축 구간입니다.")
+        elif y10 >= 4.5:
+            ai_lines.append(f"10년물 {y10:.2f}%: 위험자산 밸류에이션 압박 구간입니다.")
+        elif y10 >= 3.5:
+            ai_lines.append(f"10년물 {y10:.2f}%: 중립~긴축 경계 구간입니다.")
+        else:
+            ai_lines.append(f"10년물 {y10:.2f}%: 비교적 안정 구간입니다.")
+    if y30 is not None:
+        if y30 >= 5.5:
+            ai_lines.append(f"30년물 {y30:.2f}%: 장기 재정신뢰 우려가 큰 위험 구간입니다.")
+        elif y30 >= 5.0:
+            ai_lines.append(f"30년물 {y30:.2f}%: 장기채 변동성 확대 주의 구간입니다.")
+        elif y30 >= 4.0:
+            ai_lines.append(f"30년물 {y30:.2f}%: 재정 우려가 서서히 반영되는 구간입니다.")
+        else:
+            ai_lines.append(f"30년물 {y30:.2f}%: 장기채 금리는 정상 범위입니다.")
+    if spread_10_2 is not None:
+        if spread_10_2 < 0:
+            ai_lines.append(f"10Y-2Y 스프레드 {spread_10_2:.2f}%p: 장단기 금리 역전 신호입니다.")
+        else:
+            ai_lines.append(f"10Y-2Y 스프레드 {spread_10_2:.2f}%p: 역전은 아닙니다.")
+    if spread_30_10 is not None and spread_30_10 < 0:
+        ai_lines.append(f"30Y-10Y 스프레드 {spread_30_10:.2f}%p: 매우 드문 위험 신호입니다.")
+
     # ── 원자재 · 환율 (각각 30일 히스토리 포함) ──────────────
     commodity_result = {}
     for symbol, name in [("USDKRW=X", "USD/KRW"), ("GC=F", "GOLD"), ("CL=F", "OIL")]:
@@ -570,5 +846,18 @@ def get_macro_status(db: Session) -> dict:
     return {
         "index":       index_result,
         "vix":         vix_result,
+        "us_treasury": {
+            **us_treasury,
+            "spreads": {
+                "10Y_minus_2Y": spread_10_2,
+                "30Y_minus_10Y": spread_30_10,
+            },
+            "risk": {
+                "level": risk_level,
+                "flags": risk_flags,
+            },
+            "ai_summary": _build_treasury_ai_brief(y2, y10, y30, spread_10_2, spread_30_10, risk_level),
+            "updated_at": us_treasury["US10Y"]["date"] if us_treasury.get("US10Y") else "-",
+        },
         "commodities": commodity_result,
     }

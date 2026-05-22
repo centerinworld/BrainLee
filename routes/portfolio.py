@@ -19,6 +19,7 @@ routes/portfolio.py — 보유종목(Portfolio) API
 
 import io
 import logging
+import re
 import sqlite3 as _sl
 from datetime import datetime, date as _date_cls
 
@@ -29,6 +30,13 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+_PORTFOLIO_CACHE = {"ts": 0.0, "data": None}
+_PORTFOLIO_CACHE_TTL_SEC = 20
+
+
+def _invalidate_portfolio_cache():
+    _PORTFOLIO_CACHE["ts"] = 0.0
+    _PORTFOLIO_CACHE["data"] = None
 
 
 # ── 지연 임포트 헬퍼 (순환 참조 방지) ──────────────────────────
@@ -58,6 +66,41 @@ def _to_억(qty, amt, close):
 def _bavg(rows, s, e, col=1):
     vals = [r[col] or 0 for r in rows[s:e]]
     return sum(vals) / len(vals) if vals else 0
+
+
+def _resolve_stock_code(raw_code: str, stock_name: str, conn: _sl.Connection) -> str:
+    """
+    비정상 코드(A0011A0 등)를 조회용 6자리 코드로 보정.
+    우선순위:
+      1) 정상 6자리 숫자 코드
+      2) 종목명(stock_universe) exact match
+      3) 문자열 내 6자리 숫자 추출
+      4) 숫자만 남긴 뒤 6자리면 사용
+    """
+    code = (raw_code or "").strip()
+    name = (stock_name or "").strip()
+    if re.fullmatch(r"\d{6}", code):
+        return code
+
+    try:
+        if name:
+            row = conn.execute(
+                "SELECT stock_code FROM stock_universe WHERE stock_name=? LIMIT 1",
+                (name,),
+            ).fetchone()
+            if row and row[0] and re.fullmatch(r"\d{6}", str(row[0]).strip()):
+                return str(row[0]).strip()
+    except Exception:
+        pass
+
+    m = re.search(r"(\d{6})", code)
+    if m:
+        return m.group(1)
+
+    digits = re.sub(r"\D", "", code)
+    if len(digits) == 6:
+        return digits
+    return code
 
 
 # ═══════════════════════════════════════════════════════
@@ -202,6 +245,12 @@ def get_portfolio(db: Session = Depends(get_db)):
     - 가중평균단가 = Σ(avg_price × quantity) / Σquantity
     - 평가액 내림차순 정렬
     """
+    import time as _time
+    now_ts = _time.time()
+    cached = _PORTFOLIO_CACHE.get("data")
+    if cached is not None and (now_ts - float(_PORTFOLIO_CACHE.get("ts", 0.0))) < _PORTFOLIO_CACHE_TTL_SEC:
+        return cached
+
     from sqlalchemy import func as _sqlfunc
     collecting = _main_collecting()
     bg_ondemand = _main_bg_ondemand()
@@ -220,26 +269,15 @@ def get_portfolio(db: Session = Depends(get_db)):
         ).all()
     } if last_snap_date else {}
 
-    # stock_universe에서 종목명 보완용 맵 (NULL stock_name 대비)
-    _name_map: dict = {}
-    try:
-        _conn = _sl.connect("stock.db")
-        for _r in _conn.execute("SELECT stock_code, stock_name FROM stock_universe").fetchall():
-            _name_map[_r[0]] = _r[1]
-        _conn.close()
-    except Exception:
-        pass
-
     # 종목코드별 합산
     merged: dict = {}
     for h in holdings:
-        code = h.stock_code or h.stock_name
+        stock_code = (h.stock_code or "").strip()
+        code = stock_code or h.stock_name
         if code not in merged:
-            # stock_name이 None이면 stock_universe에서 보완
-            resolved_name = h.stock_name or _name_map.get(h.stock_code) or h.stock_code
             merged[code] = {
-                "stock_code": h.stock_code,
-                "stock_name": resolved_name,
+                "stock_code": stock_code,
+                "stock_name": (h.stock_name or "").strip() or stock_code,
                 "sector":     h.sector or "기타",
                 "total_qty":  0.0,
                 "total_cost": 0.0,
@@ -253,26 +291,117 @@ def get_portfolio(db: Session = Depends(get_db)):
                 merged[code]["bought_at"] = h.bought_at
 
     result = []
+    _codes = [str(m["stock_code"]).strip() for m in merged.values() if m.get("stock_code")]
+    _query_code_map = {}
+    # stock_name 누락 보완: 전체 stock_universe 스캔 대신 보유 코드만 조회
+    if _codes:
+        try:
+            _conn = _sl.connect("stock.db")
+            ph = ",".join("?" for _ in _codes)
+            nm_rows = _conn.execute(
+                f"SELECT stock_code, stock_name FROM stock_universe WHERE stock_code IN ({ph})",
+                _codes,
+            ).fetchall()
+            nm_map = {str(r[0]).strip(): r[1] for r in nm_rows if r and r[0]}
+            for m in merged.values():
+                sc = str(m.get("stock_code") or "").strip()
+                cur_name = str(m.get("stock_name") or "").strip()
+                # stock_name이 비었거나, 임시로 stock_code가 들어간 경우 모두 보완
+                if sc and ((not cur_name) or (cur_name == sc)):
+                    m["stock_name"] = nm_map.get(sc) or sc
+                _query_code_map[sc] = _resolve_stock_code(sc, m.get("stock_name") or "", _conn)
+            _conn.close()
+        except Exception:
+            pass
+    for m in merged.values():
+        sc = str(m.get("stock_code") or "").strip()
+        if sc and sc not in _query_code_map:
+            _query_code_map[sc] = sc
+
+    _latest_prev_map = {}
+    _supply_rows_map = {}
+    _short_rows_map = {}
+    _query_codes = sorted({c for c in _query_code_map.values() if c})
+    if _query_codes:
+        try:
+            conn = _sl.connect("stock.db")
+            conn.row_factory = _sl.Row
+            ph = ",".join("?" for _ in _query_codes)
+
+            # 최신가/직전가를 종목별 1회 배치 조회
+            q_lp = f"""
+                WITH ranked AS (
+                    SELECT stock_code, date, close,
+                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
+                    FROM price_history
+                    WHERE stock_code IN ({ph}) AND close > 0
+                )
+                SELECT stock_code, date, close, rn
+                FROM ranked
+                WHERE rn <= 2
+            """
+            rows = conn.execute(q_lp, _query_codes).fetchall()
+            for r in rows:
+                sc = r["stock_code"]
+                slot = _latest_prev_map.setdefault(sc, {"latest": None, "prev": None})
+                if r["rn"] == 1:
+                    slot["latest"] = {"close": r["close"], "date": r["date"]}
+                elif r["rn"] == 2:
+                    slot["prev"] = {"close": r["close"], "date": r["date"]}
+
+            # 수급(최근 10행) 배치 조회
+            q_sup = f"""
+                WITH ranked AS (
+                    SELECT stock_code, date, close, frn_net_buy, inst_net_buy, frn_net_buy_amt, inst_net_buy_amt,
+                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
+                    FROM price_history
+                    WHERE stock_code IN ({ph}) AND close > 0
+                )
+                SELECT stock_code, close, frn_net_buy, inst_net_buy, frn_net_buy_amt, inst_net_buy_amt, rn
+                FROM ranked
+                WHERE rn <= 10
+                ORDER BY stock_code, rn
+            """
+            for r in conn.execute(q_sup, _query_codes).fetchall():
+                _supply_rows_map.setdefault(r["stock_code"], []).append(
+                    (r["close"], r["frn_net_buy"], r["inst_net_buy"], r["frn_net_buy_amt"], r["inst_net_buy_amt"])
+                )
+
+            # 대차잔고(최근 30행) 배치 조회
+            q_short = f"""
+                WITH ranked AS (
+                    SELECT stock_code, bas_dt, borrow_bal_qty,
+                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY bas_dt DESC) AS rn
+                    FROM short_sell_daily
+                    WHERE stock_code IN ({ph}) AND borrow_bal_qty IS NOT NULL
+                )
+                SELECT stock_code, bas_dt, borrow_bal_qty, rn
+                FROM ranked
+                WHERE rn <= 30
+                ORDER BY stock_code, rn
+            """
+            for r in conn.execute(q_short, _query_codes).fetchall():
+                _short_rows_map.setdefault(r["stock_code"], []).append((r["bas_dt"], r["borrow_bal_qty"]))
+
+            conn.close()
+        except Exception:
+            pass
+
     for code, m in merged.items():
         total_qty  = m["total_qty"]
         total_cost = m["total_cost"]
         avg_price  = round(total_cost / total_qty, 2) if total_qty else 0.0
 
-        price_row = db.query(models.PriceHistory).filter(
-            models.PriceHistory.stock_code == m["stock_code"],
-            models.PriceHistory.close > 0,
-        ).order_by(models.PriceHistory.date.desc()).first()
+        sc = m["stock_code"]
+        sc_q = _query_code_map.get(sc, sc)
 
-        # 전 거래일 종가: 오늘 날짜보다 이전 날짜의 최신 레코드 (intraday 혼용 방지)
-        prev_row = db.query(models.PriceHistory).filter(
-            models.PriceHistory.stock_code == m["stock_code"],
-            models.PriceHistory.close > 0,
-            models.PriceHistory.date < today_iso,
-        ).order_by(models.PriceHistory.date.desc()).first()
-
-        has_price     = price_row is not None
-        current_price = price_row.close if price_row else avg_price
-        prev_price    = prev_row.close  if prev_row  else current_price
+        lp = _latest_prev_map.get(sc_q, {})
+        latest = lp.get("latest")
+        prev = lp.get("prev")
+        has_price = latest is not None
+        current_price = (latest["close"] if latest else avg_price)
+        # 휴장일/주말 포함 항상 "직전 거래일 대비" 계산: 최신행 vs 그 이전행
+        prev_price = (prev["close"] if prev else current_price)
 
         change_pct  = round((current_price - prev_price) / prev_price * 100, 2) if prev_price else 0.0
         buy_total   = round(total_cost)
@@ -290,34 +419,50 @@ def get_portfolio(db: Session = Depends(get_db)):
             _threading.Thread(target=bg_ondemand, args=(m["stock_code"],), daemon=True).start()
 
         # ── 5일 수급 합계 ────────────────────────────────────────────
-        frn_net = inst_net = None
-        sc = m["stock_code"]
+        frn_net = 0.0
+        inst_net = 0.0
         try:
-            conn = _sl.connect("stock.db")
-            sups = conn.execute(
-                "SELECT close, frn_net_buy, inst_net_buy, frn_net_buy_amt, inst_net_buy_amt "
-                "FROM price_history WHERE stock_code=? AND close>0 "
-                "ORDER BY date DESC LIMIT 10", (sc,)
-            ).fetchall()
-            conn.close()
+            sups = _supply_rows_map.get(sc_q, [])
             # 수급 데이터가 있는 행만 최신 5일 추출
             valid_sup = [r for r in sups if (r[1] or 0) or (r[2] or 0) or (r[3] or 0) or (r[4] or 0)][:5]
             if valid_sup:
                 frn_net  = round(sum(_to_억(r[1], r[3], r[0]) for r in valid_sup), 1)
                 inst_net = round(sum(_to_억(r[2], r[4], r[0]) for r in valid_sup), 1)
+            # 배치맵 누락 시(특수코드 등) 개별 fallback
+            if frn_net == 0.0 and inst_net == 0.0:
+                conn_fb = _sl.connect("stock.db")
+                sups_fb = conn_fb.execute(
+                    "SELECT close, frn_net_buy, inst_net_buy, frn_net_buy_amt, inst_net_buy_amt "
+                    "FROM price_history WHERE stock_code=? AND close>0 "
+                    "ORDER BY date DESC LIMIT 10", (sc_q,)
+                ).fetchall()
+                conn_fb.close()
+                valid_fb = [r for r in sups_fb if (r[1] or 0) or (r[2] or 0) or (r[3] or 0) or (r[4] or 0)][:5]
+                if valid_fb:
+                    frn_net  = round(sum(_to_억(r[1], r[3], r[0]) for r in valid_fb), 1)
+                    inst_net = round(sum(_to_억(r[2], r[4], r[0]) for r in valid_fb), 1)
         except Exception:
             pass
 
         # ── 대차잔고 (buy_candidates/short-sell과 동일 계산) ─────────
         short_data = None
         try:
-            conn = _sl.connect("stock.db")
-            srows = conn.execute(
-                "SELECT bas_dt, borrow_bal_qty FROM short_sell_daily "
-                "WHERE stock_code=? AND borrow_bal_qty IS NOT NULL "
-                "ORDER BY bas_dt DESC LIMIT 30", (sc,)
-            ).fetchall()
-            conn.close()
+            srows = _short_rows_map.get(sc_q, [])
+            # 일부 종목(예: 액스비스)은 short_sell_daily 코드 매핑이 비어 있고
+            # short_rank_daily에 종목명 기준으로만 들어오는 케이스가 있어 fallback 조회.
+            if len(srows) < 5:
+                conn_fb = _sl.connect("stock.db")
+                rank_rows = conn_fb.execute(
+                    "SELECT bas_dt, lnb_rman_stck_cnt "
+                    "FROM short_rank_daily "
+                    "WHERE (stock_code=? AND stock_code IS NOT NULL AND stock_code!='') "
+                    "   OR (stock_name=? AND lnb_rman_stck_cnt IS NOT NULL) "
+                    "ORDER BY bas_dt DESC LIMIT 30",
+                    (sc_q, m.get("stock_name") or ""),
+                ).fetchall()
+                conn_fb.close()
+                if rank_rows:
+                    srows = [(r[0], r[1]) for r in rank_rows if r[1] is not None]
             if len(srows) >= 5:
                 def _savg(rs, s, e):
                     vals = [r[1] for r in rs[s:e] if r[1]]
@@ -569,6 +714,8 @@ def get_portfolio(db: Session = Depends(get_db)):
         })
 
     result.sort(key=lambda x: x["total_value"], reverse=True)
+    _PORTFOLIO_CACHE["ts"] = now_ts
+    _PORTFOLIO_CACHE["data"] = result
     return result
 
 
@@ -576,6 +723,7 @@ def get_portfolio(db: Session = Depends(get_db)):
 def sync_kis_portfolio(db: Session = Depends(get_db)):
     """KIS 당일 체결내역 수동 동기화."""
     cnt = sync_kis_executions(db)
+    _invalidate_portfolio_cache()
     return {"status": "ok", "synced": cnt}
 
 
@@ -589,6 +737,7 @@ def update_bought_at(stock_code: str, payload: dict, db: Session = Depends(get_d
     for row in rows:
         row.bought_at = bought_at
     db.commit()
+    _invalidate_portfolio_cache()
     return {"status": "ok", "stock_code": stock_code, "bought_at": bought_at}
 
 
@@ -654,6 +803,7 @@ def add_transaction(payload: dict, db: Session = Depends(get_db)):
             holding.quantity = max(0.0, holding.quantity - quantity)
 
     db.commit()
+    _invalidate_portfolio_cache()
     return {"status": "ok", "stock_code": stock_code, "tx_type": tx_type,
             "quantity": quantity, "price": price}
 
@@ -760,6 +910,7 @@ def update_portfolio(stock_code: str, payload: dict, db: Session = Depends(get_d
         h.avg_price  = new_price
 
     db.commit()
+    _invalidate_portfolio_cache()
     return {"status": "ok", "code_changed": code_changed,
             "new_code": new_code, "stock_name": new_name}
 
@@ -771,6 +922,7 @@ def delete_portfolio(stock_code: str, db: Session = Depends(get_db)):
     if h:
         db.delete(h)
         db.commit()
+        _invalidate_portfolio_cache()
     return {"status": "ok"}
 
 
@@ -969,6 +1121,7 @@ async def import_portfolio_excel(file: UploadFile = File(...), db: Session = Dep
                                    "quantity": quantity, "avg_price": avg_price})
 
     db.commit()
+    _invalidate_portfolio_cache()
 
     if results["success"]:
         import threading
@@ -1051,6 +1204,7 @@ def recalculate_avg_price(db: Session = Depends(get_db)):
             })
 
     db.commit()
+    _invalidate_portfolio_cache()
     fixed = [r for r in result if r["fixed"]]
     logger.info(f"[재계산] {len(fixed)}/{len(result)}종목 avg_price 수정")
     return {

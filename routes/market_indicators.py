@@ -20,6 +20,10 @@ import sqlite3 as _sl
 import time
 from datetime import date, datetime, timedelta
 from typing import Literal, List, Optional
+import re
+
+import requests
+from bs4 import BeautifulSoup
 
 from fastapi import APIRouter, Query, Depends
 from database import get_db
@@ -28,6 +32,8 @@ from db_utils import STOCK_DB_PATH, connect_stock_db
 # 단순 메모리 캐시 (key: (date_str, limit), value: (timestamp, data))
 _indicator_cache_v5 = {}
 CACHE_TTL = 3600  # 1시간
+_deposit_cache = {"ts": 0.0, "data": None}
+DEPOSIT_CACHE_TTL = 6 * 3600  # 6시간
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -61,6 +67,17 @@ _KR_HOLIDAYS = {
 }
 
 
+def _is_kr_market_open_now(now: datetime | None = None) -> bool:
+    """한국 주식 정규장(09:00~15:30, 영업일) 여부."""
+    now = now or datetime.now()
+    d = now.date()
+    ds = d.isoformat()
+    if not _is_kr_trading_day(ds):
+        return False
+    hhmm = now.hour * 100 + now.minute
+    return 900 <= hhmm <= 1530
+
+
 def _is_kr_trading_day(d: str) -> bool:
     """주말 및 공휴일 제외 → 영업일 여부"""
     try:
@@ -76,6 +93,90 @@ def _db():
     conn = connect_stock_db(timeout=30)
     conn.row_factory = _sl.Row
     return conn
+
+
+def _to_num(s: str) -> float:
+    s = (s or "").strip().replace(",", "")
+    if not s:
+        return 0.0
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
+
+def _parse_yy_mm_dd(s: str) -> str:
+    m = re.match(r"^(\d{2})\.(\d{2})\.(\d{2})$", (s or "").strip())
+    if not m:
+        return ""
+    yy, mm, dd = m.groups()
+    yyyy = 2000 + int(yy)
+    return f"{yyyy:04d}-{int(mm):02d}-{int(dd):02d}"
+
+
+def _fetch_market_cash_3y() -> dict:
+    """네이버 증시자금동향에서 고객예탁금(억원) 3년치 수집."""
+    now_ts = time.time()
+    if _deposit_cache.get("data") and now_ts - float(_deposit_cache.get("ts") or 0) < DEPOSIT_CACHE_TTL:
+        return _deposit_cache["data"]
+
+    cutoff = (date.today() - timedelta(days=365 * 3 + 14)).strftime("%Y-%m-%d")
+    headers = {"User-Agent": "Mozilla/5.0"}
+    all_rows: list[dict] = []
+
+    # 1페이지당 20영업일. 3년(약 750영업일)+여유치까지 최대 80페이지 순회.
+    for page in range(1, 81):
+        url = f"https://finance.naver.com/sise/sise_deposit.naver?page={page}"
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            break
+        soup = BeautifulSoup(r.text, "html.parser")
+        table = soup.select_one("table.type_1") or soup.select_one("table")
+        if not table:
+            break
+
+        page_rows = []
+        for tr in table.select("tr"):
+            tds = [td.get_text(strip=True) for td in tr.select("td")]
+            if len(tds) < 3:
+                continue
+            d = _parse_yy_mm_dd(tds[0])
+            if not d:
+                continue
+            dep_krw_100m = _to_num(tds[1])
+            cred_krw_100m = _to_num(tds[2])
+            page_rows.append(
+                {
+                    "date": d,
+                    "customer_deposit_100m": dep_krw_100m,
+                    "credit_balance_100m": cred_krw_100m,
+                }
+            )
+
+        if not page_rows:
+            break
+
+        all_rows.extend(page_rows)
+        oldest = page_rows[-1]["date"]
+        if oldest <= cutoff:
+            break
+
+    # 중복 제거 + 오름차순 정렬 + 컷오프 적용
+    uniq = {}
+    for r in all_rows:
+        uniq[r["date"]] = r
+    rows = [uniq[k] for k in sorted(uniq.keys()) if k >= cutoff]
+
+    payload = {
+        "source": "naver_finance_sise_deposit",
+        "unit": "억원",
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "latest_date": rows[-1]["date"] if rows else "",
+        "rows": rows,
+    }
+    _deposit_cache["ts"] = now_ts
+    _deposit_cache["data"] = payload
+    return payload
 
 
 def _latest_trade_date(conn: _sl.Connection) -> str:
@@ -114,7 +215,10 @@ def get_investor_top(
     if cache_key in _indicator_cache_v5:
         ts, data = _indicator_cache_v5[cache_key]
         if now - ts < CACHE_TTL:
-            return data
+            if isinstance(data, dict) and "market_open" not in data:
+                _indicator_cache_v5.pop(cache_key, None)
+            else:
+                return data
 
     conn = _db()
     try:
@@ -177,9 +281,10 @@ def get_investor_top(
         """
         rows = conn.execute(sql, (trade_date,)).fetchall()
 
-        # 당일 최신 주가 조회 (trade_date 다음날 이후 최신 close)
+        # 당일 주가는 "장중에만" 표시
+        market_open = _is_kr_market_open_now()
         today_price_map: dict = {}
-        if rows:
+        if rows and market_open:
             codes_in = ",".join(f"'{dict(r)['stock_code']}'" for r in rows)
             today_rows = conn.execute(f"""
                 SELECT stock_code,
@@ -188,10 +293,10 @@ def get_investor_top(
                 FROM price_history
                 WHERE stock_code IN ({codes_in})
                   AND close > 0
-                  AND substr(date,1,10) > ?
+                  AND substr(date,1,10) = ?
                 GROUP BY stock_code
                 HAVING date = MAX(date)
-            """, (trade_date,)).fetchall()
+            """, (datetime.now().strftime("%Y-%m-%d"),)).fetchall()
             for tr in today_rows:
                 today_price_map[tr["stock_code"]] = {
                     "today_close": tr["today_close"],
@@ -240,6 +345,7 @@ def get_investor_top(
 
         result = {
             "trade_date": trade_date,
+            "market_open": market_open,
             "kospi": {
                 "both_buy":  _top_buy(kospi_rows, "both_amt"),
                 "inst_buy":  _top_buy(kospi_rows, "inst_amt"),
@@ -410,29 +516,47 @@ def get_investor_trend(
     conn = _db()
     try:
         is_kospi = "kospi" in market.lower()
-        mkt_name = "유가증권" if is_kospi else "코스닥"
+        market_aliases = ("KOSPI", "유가증권", "코스피") if is_kospi else ("KOSDAQ", "코스닥")
         idx_code = "^KS11"   if is_kospi else "^KQ11"
         since = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         # 1. 개별 종목 집계 — 수급 데이터가 실제로 있는 날만 포함
+        market_placeholders = ",".join("?" for _ in market_aliases)
         inv_rows = conn.execute(
-            """SELECT ph.date                              AS d,
+            f"""WITH su_latest AS (
+                 SELECT stock_code, market,
+                        ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY updated_at DESC) AS rn
+                 FROM stock_universe
+               ),
+               ph_daily AS (
+                 SELECT stock_code,
+                        substr(date,1,10) AS d,
+                        inst_net_buy_amt, frn_net_buy_amt, ind_net_buy_amt,
+                        inst_net_buy, frn_net_buy, ind_net_buy,
+                        ROW_NUMBER() OVER (
+                          PARTITION BY stock_code, substr(date,1,10)
+                          ORDER BY date DESC, rowid DESC
+                        ) AS rn
+                 FROM price_history
+                 WHERE date >= ?
+               )
+               SELECT ph.d AS d,
                       SUM(COALESCE(ph.inst_net_buy_amt, 0)) / 100.0 AS inst_amt,
                       SUM(COALESCE(ph.frn_net_buy_amt,  0)) / 100.0 AS frn_amt,
                       SUM(COALESCE(ph.ind_net_buy_amt,  0)) / 100.0 AS ind_amt,
-                      SUM(COALESCE(ph.inst_net_buy, 0))     AS inst_qty,
-                      SUM(COALESCE(ph.frn_net_buy,  0))     AS frn_qty,
-                      SUM(COALESCE(ph.ind_net_buy,  0))     AS ind_qty
-               FROM price_history ph
-               JOIN stock_universe su ON ph.stock_code = su.stock_code
-               WHERE ph.date >= ?
-                 AND su.market = ?
-                 AND strftime('%w', ph.date) NOT IN ('0', '6')
+                      SUM(COALESCE(ph.inst_net_buy, 0))              AS inst_qty,
+                      SUM(COALESCE(ph.frn_net_buy,  0))              AS frn_qty,
+                      SUM(COALESCE(ph.ind_net_buy,  0))              AS ind_qty
+               FROM ph_daily ph
+               JOIN su_latest su ON ph.stock_code = su.stock_code AND su.rn = 1
+               WHERE ph.rn = 1
+                 AND su.market IN ({market_placeholders})
+                 AND strftime('%w', ph.d) NOT IN ('0', '6')
                  AND (ph.inst_net_buy_amt != 0 OR ph.frn_net_buy_amt != 0
                       OR ph.inst_net_buy != 0  OR ph.frn_net_buy != 0)
-               GROUP BY ph.date
-               ORDER BY ph.date ASC""",
-            (since, mkt_name),
+               GROUP BY ph.d
+               ORDER BY ph.d ASC""",
+            (since, *market_aliases),
         ).fetchall()
 
         # 2. 지수 종가 — ^KS11 / ^KQ11
@@ -750,3 +874,24 @@ def get_short_monthly(months: int = 24):
         return {"rows": [dict(r) for r in reversed(rows)]}
     finally:
         conn.close()
+
+
+@router.get("/market-cash")
+def get_market_cash(days: int = Query(default=365 * 3, ge=30, le=365 * 5)):
+    """국내 증시 고객예탁금/신용잔고 추이.
+
+    source: 네이버 금융 증시자금동향(sise_deposit)
+    unit: 억원
+    """
+    payload = _fetch_market_cash_3y()
+    rows = payload.get("rows", [])
+    if not rows:
+        return {**payload, "rows": []}
+
+    cutoff = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+    trimmed = [r for r in rows if r["date"] >= cutoff]
+    return {
+        **payload,
+        "days": days,
+        "rows": trimmed,
+    }

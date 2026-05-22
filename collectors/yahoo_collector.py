@@ -25,9 +25,16 @@ logger = logging.getLogger(__name__)
 # ── 매크로 심볼 (config override 가능) ─────────────────────────
 _DEFAULT_MACRO: dict[str, str] = {
     "^VIX":     "VIX",
+    "2YY=F":    "US2Y",
+    "^UST2Y":   "US2Y_ALT",
+    "^TNX":     "US10Y",
+    "10Y=F":    "US10Y_ALT",
+    "^TYX":     "US30Y",
+    "30Y=F":    "US30Y_ALT",
     "GC=F":     "GOLD",
     "CL=F":     "OIL",
     "USDKRW=X": "USD/KRW",
+    "DX-Y.NYB": "DXY",
     "^IXIC":    "NASDAQ",
     "^GSPC":    "S&P500",
     "^KS11":    "KOSPI",
@@ -125,14 +132,9 @@ class YahooCollector(BaseCollector):
                 logger.warning(f"[Yahoo] {symbol} 수집 오류: {result}")
                 output[symbol] = []
             else:
-                # 오늘 데이터가 없으면 최신값을 오늘 날짜로 추가
-                rows = result or []
-                today_iso = date.today().isoformat()
-                now_ts    = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-                if rows and not any(r["date"].startswith(today_iso) for r in rows):
-                    latest = max(rows, key=lambda x: x["date"])
-                    rows.append({**latest, "date": now_ts})
-                output[symbol] = rows
+                # 데이터 무결성: 합성(today 복제) 행을 만들지 않고
+                # 실제 거래일 데이터만 저장한다.
+                output[symbol] = result or []
 
         return output
 
@@ -187,10 +189,4 @@ class YahooCollector(BaseCollector):
     ) -> list[dict]:
         """KOSPI/KOSDAQ 지수 히스토리."""
         rows = await asyncio.to_thread(_download_sync, symbol, period)
-        # 오늘 날짜 없으면 최신값 복사
-        today_iso = date.today().isoformat()
-        now_ts    = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        if rows and not any(r["date"].startswith(today_iso) for r in rows):
-            latest = max(rows, key=lambda x: x["date"])
-            rows.append({**latest, "date": now_ts})
         return rows

@@ -109,3 +109,95 @@
 - 따라서 본 문서는 **운영 추론 문서**이며, 최종 규칙 확정 문서가 아님
 - 매도 이력과 Value 표본이 누적되면 재추정 필요
 
+## 7) 일일 반복 실행 루틴 (매수/매도 적중률 개선)
+
+아래 순서를 매일 반복한다.
+
+1. 기본 일치율 검증(트래커 자동 기록)
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --no-telegram
+```
+
+2. 편입일 매수 재현률(과거 1년) 확인
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --replay-entry --lookback-days 365
+```
+
+3. 매도 누적 백테스트(최근 30 스냅샷)
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --backtest-sell --sell-lookback-snapshots 30
+```
+
+4. 매수 파라미터 튜닝(모멘텀/벨류)
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-strategy momentum --iterations 500
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-strategy value --iterations 500
+```
+
+5. 매도 파라미터 튜닝(peak+momentum)
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-sell --strategy peak --iterations 400 --sell-lookback-snapshots 30
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-sell --strategy momentum --iterations 400 --sell-lookback-snapshots 30
+```
+
+6. 재검증(변경 반영 확인)
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --no-telegram
+```
+
+운영 기준:
+- 당일 `compare` 점수만 보지 말고 `replay-entry`/`backtest-sell`를 함께 확인한다.
+- 신규 편입 종목은 `replay-entry`에서 당일 편입 재현 성공 여부를 우선 점검한다.
+
+현재 한계(2026-05-18 점검):
+- 매도는 `hold_days/profit_pct + 당일 가격/수급`만으로는 F1 50% 도달이 어려움.
+- 모멘텀/벨류도 현재 후보엔진 기준으로 F1 상한이 낮게 형성됨(과추출 다수).
+
+다음 확장 항목(필수):
+1. `exits_json.entry_stock_data` vs `exit_stock_data` 변화량(예: RSI, high52_pct, frn/inst 금액 변화) 피처화
+2. 전략별 매도 분류기(peak/momentum 별도)로 재학습
+3. 모멘텀/벨류는 공통 후보엔진이 아닌 전략별 별도 후보 생성기로 분리
+
+## 8) 신규 편입/매도 발굴 중심 일일 점검 (필수)
+
+목적:
+- 보유/매도 정합성 확인을 넘어서, **다음날 신규 편입/매도 후보를 선제 발굴**한다.
+
+매일 점검 항목:
+1. 신규 편입 후보 발굴률
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --replay-entry --lookback-days 365
+```
+- `hit_rate`가 전일 대비 하락하면 후보 생성 로직 우선 수정
+
+2. 신규 매도 후보 발굴률
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --backtest-sell --sell-lookback-snapshots 30
+```
+- `precision`이 낮으면 과신호 억제(후보 상한, score_cut 상향)
+- `recall`이 낮으면 손절/익절 트리거 완화
+
+3. 전략별 튜닝 반복
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-strategy momentum --iterations 500
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-strategy value --iterations 500
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-sell --strategy peak --iterations 400 --sell-lookback-snapshots 30
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-sell --strategy momentum --iterations 400 --sell-lookback-snapshots 30
+```
+
+4. 수정 후 재검증
+```bash
+python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --no-telegram
+```
+
+운영 규칙:
+- “보유 일치”보다 “신규 편입/신규 매도 발굴률”을 우선 KPI로 본다.
+- 수치 악화 시 당일 로직 수정 후 재실행(최소 2회 반복)한다.
+
+## 9) 사용자 확정 검증 규칙 (2026-05-20)
+
+- 보유 종목 검증은 **오늘 시점**이 아니라 **실제 편입일(entry_date) 시점**으로 판정한다.
+- 예: 20일 보유 종목이면 20일 전 데이터 기준으로 매수 신호가 재현되면 `정답`으로 본다.
+- 매도도 동일하게 **실제 편출 발생일(as_of)** 기준으로 판정한다.
+- 이미 `정답`으로 판정된 이벤트는 반복 점검 대상에서 제외한다.
+- 매일 로직 개선 대상은 **미스 이벤트(못 맞춘 편입/편출)**만 남긴다.
