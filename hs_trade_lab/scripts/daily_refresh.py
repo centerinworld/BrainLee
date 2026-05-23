@@ -49,6 +49,14 @@ def main() -> None:
         str(ROOT_DIR.parent / "venv" / "bin" / "python"),
         str(ROOT_DIR / "scripts" / "rebuild_analysis2_cache.py"),
     ]
+    rebuild_flow_mapping_cmd = [
+        str(ROOT_DIR.parent / "venv" / "bin" / "python"),
+        str(ROOT_DIR / "scripts" / "rebuild_telegram_flow_mappings.py"),
+    ]
+    build_trade_cards_cmd = [
+        str(ROOT_DIR.parent / "venv" / "bin" / "python"),
+        str(ROOT_DIR / "scripts" / "build_telegram_trade_cards.py"),
+    ]
     provisional_cmd = [
         str(ROOT_DIR.parent / "venv" / "bin" / "python"),
         str(ROOT_DIR / "scripts" / "collect_provisional_10day.py"),
@@ -61,7 +69,9 @@ def main() -> None:
     subprocess.run(download_cmd, cwd=ROOT_DIR, check=True)
     ingest = subprocess.run(ingest_cmd, cwd=ROOT_DIR, check=True, capture_output=True, text=True)
     backfill = subprocess.run(backfill_cmd, cwd=ROOT_DIR, check=True, capture_output=True, text=True)
+    flow_map = subprocess.run(rebuild_flow_mapping_cmd, cwd=ROOT_DIR, check=True, capture_output=True, text=True)
     rebuild = subprocess.run(rebuild_cache_cmd, cwd=ROOT_DIR, check=True, capture_output=True, text=True)
+    cards = subprocess.run(build_trade_cards_cmd, cwd=ROOT_DIR, check=True, capture_output=True, text=True)
     provisional = subprocess.run(provisional_cmd, cwd=ROOT_DIR, check=False, capture_output=True, text=True)
     provisional_result = {}
     if provisional.returncode == 0:
@@ -78,7 +88,9 @@ def main() -> None:
         "provisional_10day_months": [provisional_start_ym, provisional_end_ym],
         "ingest_result": json.loads(ingest.stdout or "{}"),
         "telegram_backfill_result": json.loads(backfill.stdout or "{}"),
+        "telegram_flow_map_result": json.loads(flow_map.stdout or "{}"),
         "analysis2_cache_result": json.loads(rebuild.stdout or "{}"),
+        "telegram_trade_card_result": json.loads(cards.stdout or "{}"),
         "provisional_10day_result": provisional_result,
     }
     (ROOT_DIR / "data" / "daily_refresh_summary.json").write_text(

@@ -191,12 +191,10 @@ def _load_combo_candidates() -> list[dict]:
     combo = _main._signal_cache.get("combo_candidates", {}).get("data", [])
     if combo:
         return combo
-    # cold cache fallback: trigger compute once
-    try:
-        _main._run_screener_precompute()
-    except Exception:
-        logger.exception("[v14] failed to run screener precompute")
-    return _main._signal_cache.get("combo_candidates", {}).get("data", []) or []
+    # V18 조회 API는 응답 속도 우선:
+    # 콜드 캐시에서 무거운 사전계산(60~120초)을 강제하지 않고 빈 리스트 반환.
+    # 사전계산은 스케줄러/수동 재계산 엔드포인트가 담당한다.
+    return []
 
 
 def _build_v18_recommendations(conn) -> dict:
@@ -237,12 +235,10 @@ def _build_v18_recommendations(conn) -> dict:
     # ── 종목코드별 보유 티켓 수 + 가장 최근 매수일 ───────────────────────
     tickets_by_code: dict[str, int] = {}
     latest_entry_by_code: dict[str, str] = {}   # 종목별 가장 최근 매수일 (YYYY-MM-DD)
-    hold_by_code: dict[str, Any] = {}
     for r in holdings:
         code = str(r[1] or "")
         if not code:
             continue
-        hold_by_code[code] = r
         tickets_by_code[code] = tickets_by_code.get(code, 0) + 1
         entry_d = str(r[6] or "")[:10]
         if entry_d > latest_entry_by_code.get(code, ""):
@@ -418,9 +414,34 @@ def _build_v18_recommendations(conn) -> dict:
         if len(buy_candidates) >= 15:
             break
 
+    # ── AI 스크리너 표시용 관찰 목록: "왜 가상매매엔 있는데 여기엔 없지?" 해소 ──
+    # V18 매수추천은 "신규/추가진입 가능 종목"만 노출되므로,
+    # 이미 보유 중인 종목은 별도 watch_candidates 로 함께 내려준다.
+    watch_candidates = []
+    for r in holdings:
+        h_id, code, name, buy_price, qty, profit_pct, entry_date = r
+        code = str(code or "")
+        if not code:
+            continue
+        cur, _, _ = _latest_price_and_ma(conn, code, 60)
+        bp = _safe_float(buy_price)
+        pct = ((cur - bp) / bp * 100.0) if (bp > 0 and cur > 0) else _safe_float(profit_pct)
+        watch_candidates.append({
+            "id": h_id,
+            "stock_code": code,
+            "stock_name": name,
+            "entry_date": str(entry_date or "")[:10],
+            "tickets": int(tickets_by_code.get(code, 1)),
+            "buy_price": round(bp, 2),
+            "current_price": round(cur, 2) if cur else None,
+            "profit_pct": round(pct, 2),
+            "reason": "holding_v18",
+        })
+
     return {
         "buy_candidates": buy_candidates,
         "sell_candidates": sell_candidates,
+        "watch_candidates": watch_candidates,
         "kospi_status": {
             "above_ma60": kospi_above_ma,
             "close": round(kospi_close, 2),
@@ -431,6 +452,7 @@ def _build_v18_recommendations(conn) -> dict:
             "holdings_count": len(holdings),
             "buy_count": len(buy_candidates),
             "sell_count": len(sell_candidates),
+            "watch_count": len(watch_candidates),
             "ticket_krw": V18_TICKET_KRW,
             # ── 예산 현황 ──────────────────────────────────────────────────
             "virtual_capital": VIRTUAL_CAPITAL,

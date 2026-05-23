@@ -317,7 +317,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
               }}>{l}</button>
             ))}
             <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>
-              출처: 네이버 증시자금동향 · 단위: 억원
+              출처: {(marketCash?.source || '').startsWith('ecos') ? '한국은행 ECOS' : '네이버 증시자금동향'} · 단위: 억원
             </span>
           </div>
 
@@ -337,12 +337,18 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                     <YAxis tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={(v)=>`${Math.round(v).toLocaleString()}`} />
                     <Tooltip
                       contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
-                      formatter={(v,n)=>[`${Number(v||0).toLocaleString()}억`, n==='customer_deposit_100m' ? '고객예탁금' : '신용잔고']}
+                      formatter={(v,n)=>[`${Number(v||0).toLocaleString()}억`, n==='customer_deposit_100m' ? '고객예탁금' : n==='credit_balance_100m' ? '신용잔고' : n==='kospi_trade_value_100m' ? '코스피 거래대금' : '코스닥 거래대금']}
                       labelFormatter={l=>`날짜: ${l}`}
                     />
-                    <Legend formatter={(v)=> v==='customer_deposit_100m' ? '고객예탁금' : '신용잔고'} />
+                    <Legend formatter={(v)=> v==='customer_deposit_100m' ? '고객예탁금' : v==='credit_balance_100m' ? '신용잔고' : v==='kospi_trade_value_100m' ? '코스피 거래대금' : '코스닥 거래대금'} />
                     <Area type="monotone" dataKey="customer_deposit_100m" name="customer_deposit_100m" stroke="#2dd4bf" fill="rgba(45,212,191,0.16)" strokeWidth={2} />
                     <Line type="monotone" dataKey="credit_balance_100m" name="credit_balance_100m" stroke="#f59e0b" dot={false} strokeWidth={2} />
+                    {marketCash?.rows?.some(r => Number(r.kospi_trade_value_100m || 0) > 0) && (
+                      <Line type="monotone" dataKey="kospi_trade_value_100m" name="kospi_trade_value_100m" stroke="#60a5fa" dot={false} strokeWidth={1.8} />
+                    )}
+                    {marketCash?.rows?.some(r => Number(r.kosdaq_trade_value_100m || 0) > 0) && (
+                      <Line type="monotone" dataKey="kosdaq_trade_value_100m" name="kosdaq_trade_value_100m" stroke="#a78bfa" dot={false} strokeWidth={1.8} />
+                    )}
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>

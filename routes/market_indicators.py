@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import sqlite3 as _sl
 import time
+import os
 from datetime import date, datetime, timedelta
 from typing import Literal, List, Optional
 import re
@@ -115,11 +116,98 @@ def _parse_yy_mm_dd(s: str) -> str:
 
 
 def _fetch_market_cash_3y() -> dict:
-    """네이버 증시자금동향에서 고객예탁금(억원) 3년치 수집."""
+    """고객예탁금/신용잔고 3년치 수집.
+    우선순위:
+      1) 한국은행 ECOS (공식 통계)
+      2) 네이버 증시자금동향 (fallback)
+    """
     now_ts = time.time()
     if _deposit_cache.get("data") and now_ts - float(_deposit_cache.get("ts") or 0) < DEPOSIT_CACHE_TTL:
         return _deposit_cache["data"]
 
+    def _ecos_key() -> str:
+        key = (os.getenv("ECOS_API_KEY", "") or os.getenv("BOK_ECOS_API_KEY", "")).strip()
+        if key:
+            return key
+        # 사용자가 전달한 기본 키 파일 fallback
+        for p in [
+            "/Users/brainlee/Downloads/한국은행ECOS.txt",
+            "/Applications/stock_dashboard/한국은행ECOS.txt",
+        ]:
+            try:
+                if os.path.exists(p):
+                    v = open(p, "r", encoding="utf-8").read().strip()
+                    if v:
+                        return v
+            except Exception:
+                pass
+        return ""
+
+    def _ecos_fetch_monthly_series(key: str, stat_code: str, item_code: str, start_ym: str, end_ym: str) -> dict[str, float]:
+        url = f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/10000/{stat_code}/M/{start_ym}/{end_ym}/{item_code}"
+        r = requests.get(url, timeout=15)
+        if r.status_code != 200:
+            return {}
+        j = r.json()
+        rows = (j.get("StatisticSearch") or {}).get("row") or []
+        out: dict[str, float] = {}
+        for row in rows:
+            ym = str(row.get("TIME") or "")
+            if len(ym) != 6:
+                continue
+            d = f"{ym[:4]}-{ym[4:6]}-01"
+            try:
+                v = float(str(row.get("DATA_VALUE") or "0").replace(",", ""))
+            except Exception:
+                v = 0.0
+            out[d] = v
+        return out
+
+    # ── 1) ECOS 우선 ──────────────────────────────────────────
+    try:
+        key = _ecos_key()
+        if key:
+            end = date.today()
+            start = end - timedelta(days=365 * 3 + 31)
+            start_ym = start.strftime("%Y%m")
+            end_ym = end.strftime("%Y%m")
+
+            # 901Y056: 증시주변자금동향
+            dep = _ecos_fetch_monthly_series(key, "901Y056", "S23A", start_ym, end_ym)  # 투자자 예탁금
+            crd = _ecos_fetch_monthly_series(key, "901Y056", "S23E", start_ym, end_ym)  # 신용융자 잔고
+            # 901Y014: 주식시장(월,년) — 시장별 거래대금 (코스피/코스닥 분리)
+            kospi_tv = _ecos_fetch_monthly_series(key, "901Y014", "1060000", start_ym, end_ym)
+            kosdaq_tv = _ecos_fetch_monthly_series(key, "901Y014", "2060000", start_ym, end_ym)
+
+            keys = sorted(set(dep.keys()) | set(crd.keys()) | set(kospi_tv.keys()) | set(kosdaq_tv.keys()))
+            rows = []
+            for d in keys:
+                dep_won = dep.get(d, 0.0)
+                crd_won = crd.get(d, 0.0)
+                # 원 → 억원
+                rows.append({
+                    "date": d,
+                    "customer_deposit_100m": round(dep_won / 100_000_000.0, 2),
+                    "credit_balance_100m": round(crd_won / 100_000_000.0, 2),
+                    "kospi_trade_value_100m": round(kospi_tv.get(d, 0.0) / 100_000_000.0, 2),
+                    "kosdaq_trade_value_100m": round(kosdaq_tv.get(d, 0.0) / 100_000_000.0, 2),
+                })
+
+            if rows:
+                payload = {
+                    "source": "ecos_901Y056_901Y014",
+                    "unit": "억원",
+                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "latest_date": rows[-1]["date"],
+                    "rows": rows,
+                }
+                _deposit_cache["ts"] = now_ts
+                _deposit_cache["data"] = payload
+                return payload
+    except Exception as e:
+        logger.warning("[market-cash] ECOS fetch failed, fallback to naver: %s", e)
+
+    # ── 2) 네이버 fallback ─────────────────────────────────────
     cutoff = (date.today() - timedelta(days=365 * 3 + 14)).strftime("%Y-%m-%d")
     headers = {"User-Agent": "Mozilla/5.0"}
     all_rows: list[dict] = []

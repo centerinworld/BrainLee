@@ -182,10 +182,10 @@ const App = () => {
     const isStale = () => fetchIdRef.current !== myId;  // 종목이 바뀌었으면 true
 
     const d = days !== undefined ? days : chartDays;
-    setLoading(true); setChartData([]); setFinTable([]); setQuarterTable([]);
-    setCfAnnual([]); setCfQuarter([]); setConsensus(null); setConsensusMonths(12); setConsensusExpanded(false);
-    setSummStats(null); setAiReport(null); setCollecting(false);
-    setMarketInfo({}); setSelectedStockName(''); setShortData(null);
+    // 기존 데이터를 유지한 채 갱신해 화면 깜박임을 줄인다.
+    // (최초 로드/명시적 종목 전환 시에만 오버레이)
+    if (days === undefined) setLoading(true);
+    setCollecting(false);
     if (cfPollRef.current) { clearInterval(cfPollRef.current); cfPollRef.current = null; }
 
     // fetch 대상 종목코드를 지역변수로 고정 (클로저 내 stale 방지)
@@ -225,7 +225,8 @@ const App = () => {
 
       if (isStale()) return;  // 종목 전환됨 → 결과 버림
 
-      if (chartRes.ok)   setChartData(await chartRes.json());
+      const chartDataFetched = chartRes.ok ? await chartRes.json() : [];
+      if (chartRes.ok)   setChartData(chartDataFetched);
       if (tableRes.ok)   setFinTable(await tableRes.json());
       if (quarterRes.ok) setQuarterTable(await quarterRes.json());
       if (aiRes.ok)      setAiReport(await aiRes.json());
@@ -313,7 +314,7 @@ const App = () => {
           poll();
         } else {
           // 데이터가 없으면 10초 후 1회 재시도
-          const hasNoData = !(await chartRes.json().catch(()=>[])).length;
+          const hasNoData = chartDataFetched.length === 0;
           if (hasNoData) {
             setTimeout(async () => {
               if (isStale()) return;  // ★ 타이머 발동 전에 종목 바뀌면 취소
@@ -368,6 +369,15 @@ const App = () => {
   useEffect(() => {
     if (activeTab === "analysis" || activeTab === "insight") fetchStockDetail();
   }, [selectedStock, activeTab]);
+
+  // 개별종목 탭 진입/종목 변경 시 본문 스크롤을 항상 맨 위로 초기화
+  useEffect(() => {
+    if (activeTab !== "analysis") return;
+    const el = document.getElementById('main-scroll');
+    if (el && typeof el.scrollTo === 'function') {
+      el.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, [activeTab, selectedStock]);
 
   const handleSearch = async (e, overrideCode = null) => {
     if (e) e.preventDefault();
@@ -928,7 +938,10 @@ const App = () => {
       const cached = _signalFrontCache[cacheKey];
       const now = Date.now();
       // 장중 1시간 / 장외 4시간 캐시 — 백엔드와 동일
-      const frontTtl = isKRMarketOpen() ? 3600000 : 14400000;
+      // 시장 국면/시장 시그널은 체감 지연을 줄이기 위해 더 짧은 TTL 사용
+      const frontTtl = scope === 'market'
+        ? (isKRMarketOpen() ? 60000 : 300000)  // 장중 1분 / 장외 5분
+        : (isKRMarketOpen() ? 3600000 : 14400000);
       if (cached && (now - cached.at) < frontTtl) {
         setSignals(cached.data);
         setLoading(false);
@@ -951,10 +964,16 @@ const App = () => {
 
     React.useEffect(() => {
       if (scope !== 'market') return;
-      fetch(API('/api/signals/market-regime'))
-        .then(r => r.ok ? r.json() : null)
-        .then(setRegime)
-        .catch(() => {});
+      let alive = true;
+      const loadRegime = () => {
+        fetch(API(`/api/signals/market-regime?t=${Date.now()}`))
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (alive) setRegime(d); })
+          .catch(() => {});
+      };
+      loadRegime(); // 페이지 진입 시 즉시 재조회
+      const iv = setInterval(loadRegime, isKRMarketOpen() ? 60000 : 300000); // 장중 1분 / 장외 5분
+      return () => { alive = false; clearInterval(iv); };
     }, [scope]);
 
     const C = {
@@ -1575,6 +1594,8 @@ const App = () => {
     // ── 매크로 대시보드 ──────────────────────────────────────────
   const MacroDashboard = React.memo(() => {
     const [lastUpdated, setLastUpdated] = React.useState(() => new Date().toLocaleTimeString('ko-KR'));
+    const [marketCash, setMarketCash] = React.useState(null);
+    const [cashRange, setCashRange] = React.useState(1095); // 30/183/365/1095
     const [kospiTab,   setKospiTab]   = React.useState('90');
     const [kosdaqTab,  setKosdaqTab]  = React.useState('90');
     const [nasdaqTab,  setNasdaqTab]  = React.useState('90');
@@ -1596,6 +1617,15 @@ const App = () => {
     };
     const { idx, vix, comm, tsy } = norm(macroData);
     const hasData = !!(idx.KOSPI?.value || idx.KOSDAQ?.value || comm['USD/KRW']?.value);
+
+    React.useEffect(() => {
+      let alive = true;
+      fetch(API(`/api/market-indicators/market-cash?days=${cashRange}`))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (alive) setMarketCash(d); })
+        .catch(() => { if (alive) setMarketCash(null); });
+      return () => { alive = false; };
+    }, [cashRange]);
 
     // ── 포맷 헬퍼 ──
     const fv = (v, dec=0) => (v == null ? '-' : Number(v).toLocaleString('ko-KR', {maximumFractionDigits: dec}));
@@ -1747,6 +1777,48 @@ const App = () => {
 
       {/* 시장 시그널 보드 */}
       <SignalBoard scope="market" />
+
+      {/* 예탁금 추이 (한국은행 ECOS/네이버 폴백) */}
+      <div className="glass-panel" style={{ padding:'1rem' }}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'0.6rem',flexWrap:'wrap',marginBottom:'0.7rem'}}>
+          <div style={{fontSize:'0.82rem',fontWeight:700,color:'#2dd4bf'}}>💰 예탁금/신용잔고</div>
+          <div style={{display:'flex',gap:'0.35rem',alignItems:'center'}}>
+            {[[30,'30일'],[183,'6개월'],[365,'1년'],[1095,'3년']].map(([d,l])=>(
+              <button key={d} onClick={()=>setCashRange(d)} style={{
+                padding:'0.14rem 0.5rem', borderRadius:'4px', fontSize:'0.68rem', cursor:'pointer',
+                border: cashRange===d ? '1px solid #2dd4bf' : '1px solid rgba(255,255,255,0.15)',
+                background: cashRange===d ? 'rgba(45,212,191,0.15)' : 'transparent',
+                color: cashRange===d ? '#2dd4bf' : 'rgba(255,255,255,0.55)', fontWeight: cashRange===d ? 700 : 500,
+              }}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{fontSize:'0.7rem',color:'var(--text-secondary)',marginBottom:'0.6rem'}}>
+          출처: {(marketCash?.source || '').startsWith('ecos') ? '한국은행 ECOS' : '네이버 증시자금동향'} · 최신기준일: {marketCash?.latest_date || '-'} · 업데이트: {marketCash?.updated_at || '-'}
+        </div>
+        {marketCash?.rows?.length > 0 ? (
+          <ResponsiveContainer width="100%" height={210}>
+            <ComposedChart data={marketCash.rows} margin={{top:4,right:8,left:2,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="date" tick={{fontSize:9,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
+              <YAxis tick={{fontSize:9,fill:'#94a3b8'}} tickFormatter={v=>`${Math.round(v).toLocaleString()}`} />
+              <Tooltip
+                contentStyle={{background:'rgba(15,15,25,0.95)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'6px',fontSize:'0.72rem'}}
+                formatter={(v,n)=>[
+                  `${Number(v||0).toLocaleString()}억`,
+                  n==='customer_deposit_100m' ? '고객예탁금' : n==='credit_balance_100m' ? '신용융자잔고' : n==='kospi_trade_value_100m' ? '코스피 거래대금' : '코스닥 거래대금'
+                ]}
+                labelFormatter={l=>`날짜: ${l}`}
+              />
+              <Legend formatter={(v)=> v==='customer_deposit_100m' ? '고객예탁금' : v==='credit_balance_100m' ? '신용융자잔고' : v==='kospi_trade_value_100m' ? '코스피 거래대금' : '코스닥 거래대금'} />
+              <Area type="monotone" dataKey="customer_deposit_100m" stroke="#2dd4bf" fill="rgba(45,212,191,0.15)" strokeWidth={2} />
+              <Line type="monotone" dataKey="credit_balance_100m" stroke="#f59e0b" dot={false} strokeWidth={2} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : (
+          <div style={{fontSize:'0.78rem',color:'var(--text-secondary)',padding:'0.7rem 0.2rem'}}>예탁금 데이터를 불러오는 중입니다.</div>
+        )}
+      </div>
 
       {/* 갱신 상태 */}
       <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', fontSize:'0.72rem', color:'var(--text-secondary)', flexWrap:'wrap' }}>
@@ -3300,7 +3372,7 @@ const App = () => {
         {/* 분기 재무 테이블 */}
         <section className="glass-panel" style={{ overflow:'clip' }}>
           <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)' }}>
-            <span style={{ fontSize:'0.8rem', fontWeight:600, color:'var(--accent-purple)' }}>분기 실적 (최근 8분기)</span>
+            <span style={{ fontSize:'0.8rem', fontWeight:600, color:'var(--accent-purple)' }}>분기 실적</span>
           </div>
           {quarterTable.length === 0 ? (
             <div style={{ padding:'1.5rem', textAlign:'center', fontSize:'0.85rem' }}>
@@ -3511,7 +3583,7 @@ const App = () => {
               {/* 분기 현금흐름표 */}
               <section className="glass-panel" style={{ overflow:'clip' }}>
                 <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.6rem' }}>
-                  <span style={{ fontSize:'0.8rem', fontWeight:600, color:'#a78bfa' }}>분기 현금흐름표 (최근 8분기)</span>
+                  <span style={{ fontSize:'0.8rem', fontWeight:600, color:'#a78bfa' }}>분기 현금흐름표</span>
                   <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)' }}>(억원)</span>
                 </div>
                 {cfQuarter.length === 0 ? (
@@ -3946,7 +4018,7 @@ const App = () => {
             <div style={{padding:'0.7rem 1rem',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'0.5rem',flexWrap:'wrap',borderBottom:'1px solid var(--glass-border)'}}>
               <div style={{fontSize:'0.8rem',color:'var(--text-secondary)',display:'flex',gap:'0.8rem',flexWrap:'wrap',alignItems:'center'}}>
                 <span>마지막 계산: {v18Data?.updated_at || '-'}</span>
-                <span>매수 {v18Data?.summary?.buy_count ?? 0} · 매도 {v18Data?.summary?.sell_count ?? 0}</span>
+                <span>매수 {v18Data?.summary?.buy_count ?? 0} · 매도 {v18Data?.summary?.sell_count ?? 0} · 보유관찰 {v18Data?.summary?.watch_count ?? 0}</span>
                 {v18Data?.kospi_status && (
                   <span style={{
                     padding:'0.1rem 0.5rem',borderRadius:'4px',fontSize:'0.72rem',fontWeight:600,
@@ -4049,6 +4121,30 @@ const App = () => {
                   </table>
                 )}
               </div>
+            </div>
+            <div style={{padding:'0 0.8rem 0.8rem'}}>
+              <div style={{fontSize:'0.78rem',fontWeight:700,marginBottom:'0.35rem',color:'rgba(255,255,255,0.78)'}}>보유중 V18 관찰종목</div>
+              {(v18Data?.watch_candidates || []).length === 0 ? (
+                <div style={{padding:'0.8rem',borderRadius:'8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',fontSize:'0.73rem',color:'rgba(255,255,255,0.35)'}}>
+                  현재 V18 보유 종목이 없습니다.
+                </div>
+              ) : (
+                <table className="premium-table" style={{width:'100%'}}>
+                  <thead><tr><th>종목</th><th style={{textAlign:'center'}}>진입일</th><th style={{textAlign:'right'}}>매수가</th><th style={{textAlign:'right'}}>현재가</th><th style={{textAlign:'right'}}>수익률</th><th style={{textAlign:'center'}}>티켓</th></tr></thead>
+                  <tbody>
+                    {(v18Data.watch_candidates).slice(0,12).map((r)=>(
+                      <tr key={`${r.stock_code}_${r.id}`}>
+                        <td>{r.stock_name} <span style={{fontSize:'0.68rem',color:'var(--text-secondary)'}}>{r.stock_code}</span></td>
+                        <td style={{textAlign:'center'}}>{r.entry_date || '-'}</td>
+                        <td style={{textAlign:'right'}}>{r.buy_price?.toLocaleString?.() ?? '-'}</td>
+                        <td style={{textAlign:'right'}}>{r.current_price?.toLocaleString?.() ?? '-'}</td>
+                        <td style={{textAlign:'right',color:(r.profit_pct||0)>=0?'#ef4444':'#3b82f6'}}>{(r.profit_pct||0).toFixed(2)}%</td>
+                        <td style={{textAlign:'center'}}>{r.tickets || 1}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
             {/* ── V18.1p 전략 설명 ── */}
             <div style={{margin:'0.5rem 0.8rem 0.8rem',padding:'0.9rem 1rem',borderRadius:'10px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}}>
@@ -5713,6 +5809,8 @@ const App = () => {
       quantity:"", price:"", tx_date:"", memo:""
     });
     const [autoSummary, setAutoSummary] = React.useState(null);
+    const [autoLoading, setAutoLoading] = React.useState(false);
+    const [autoError, setAutoError] = React.useState('');
 
     const load = async () => {
       const p = await fetch(API('/api/portfolio')).then(r=>r.ok?r.json():[]);
@@ -5734,6 +5832,7 @@ const App = () => {
           if (!res.ok) return;
           const rt = await res.json();
           setRealtimeMeta({ updated_at: rt.updated_at, market_open: rt.market_open });
+          if (rt?.summary) setRtSummary(rt.summary);
           setPortfolio(prev => prev.map(h => {
             const r = rt.holdings[h.stock_code];
             if (!r) return h;
@@ -5779,11 +5878,6 @@ const App = () => {
 
     // 총합: realtime API summary 우선, 없으면 portfolio 로컬 합산
     const [rtSummary, setRtSummary] = React.useState(null);
-    React.useEffect(() => {
-      fetch(API('/api/realtime/prices')).then(r=>r.ok?r.json():null).then(rt=>{
-        if (rt?.summary) setRtSummary(rt.summary);
-      }).catch(()=>{});
-    }, [portfolio]);  // portfolio 바뀔 때마다 재계산
 
     const totalBuy       = rtSummary?.total_buy    ?? portfolio.reduce((s,h)=>s+h.buy_total, 0);
     const totalVal       = rtSummary?.total_value   ?? portfolio.reduce((s,h)=>s+h.total_value, 0);
@@ -5946,9 +6040,24 @@ const App = () => {
     const noDataCount     = portfolio.filter(h => h.has_price === false).length;
     const loadAutoTrading = async () => {
       try {
-        const s = await fetch(API('/api/kis-trading/account/summary')).then(r => r.ok ? r.json() : null);
-        setAutoSummary(s);
-      } catch {}
+        setAutoLoading(true);
+        setAutoError('');
+        const res = await fetch(API('/api/kis-trading/account/summary'));
+        if (!res.ok) {
+          const msg = `계좌 요약 조회 실패 (HTTP ${res.status})`;
+          setAutoSummary(null);
+          setAutoError(msg);
+          return;
+        }
+        const s = await res.json();
+        setAutoSummary(s || null);
+        if (!s?.summary) setAutoError('계좌 요약 데이터가 비어 있습니다.');
+      } catch (e) {
+        setAutoSummary(null);
+        setAutoError(`계좌 요약 조회 오류: ${e?.message || e}`);
+      } finally {
+        setAutoLoading(false);
+      }
     };
     React.useEffect(() => {
       if (tab === 'auto') loadAutoTrading();
@@ -6442,16 +6551,24 @@ const App = () => {
               <h3 style={{fontSize:'0.95rem',fontWeight:700,color:'var(--accent-mint)'}}>KIS 자동매매 계좌현황</h3>
               <button onClick={loadAutoTrading} style={{padding:'0.35rem 0.8rem',borderRadius:'8px',background:'rgba(45,212,191,0.15)',border:'1px solid rgba(45,212,191,0.35)',color:'var(--accent-mint)',cursor:'pointer'}}>새로고침</button>
             </div>
+            {autoLoading && (
+              <div style={{fontSize:'0.78rem',color:'#93c5fd'}}>계좌 예수금/잔고 조회 중...</div>
+            )}
+            {!!autoError && (
+              <div style={{fontSize:'0.78rem',color:'#fca5a5',padding:'0.55rem 0.7rem',border:'1px solid rgba(248,113,113,0.35)',borderRadius:'8px',background:'rgba(248,113,113,0.08)'}}>
+                {autoError}
+              </div>
+            )}
             <div style={{fontSize:'0.76rem',color:'var(--text-secondary)',marginTop:'-0.3rem'}}>
               계좌: <span style={{color:'var(--text-primary)',fontWeight:700}}>{autoSummary?.account_no || autoSummary?.account_no_masked || '-'}</span>
               <span style={{marginLeft:'0.6rem'}}>상품코드: {autoSummary?.account_prod || '-'}</span>
             </div>
 
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'0.6rem'}}>
-              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>예수금(주문가능)</p><h3>{fp(autoSummary?.summary?.cash_available || 0)}원</h3></div>
-              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>D+2 예수금</p><h3>{fp(autoSummary?.summary?.cash_d2 || 0)}원</h3></div>
-              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>평가금액</p><h3>{fp(autoSummary?.summary?.total_eval || 0)}원</h3></div>
-              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>평가손익</p><h3 style={{color:pc(autoSummary?.summary?.total_profit || 0)}}>{fp(autoSummary?.summary?.total_profit || 0)}원</h3></div>
+              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>예수금(주문가능)</p><h3>{autoSummary?.summary?.cash_available != null ? `${fp(autoSummary.summary.cash_available)}원` : '-'}</h3></div>
+              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>D+2 예수금</p><h3>{autoSummary?.summary?.cash_d2 != null ? `${fp(autoSummary.summary.cash_d2)}원` : '-'}</h3></div>
+              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>평가금액</p><h3>{autoSummary?.summary?.total_eval != null ? `${fp(autoSummary.summary.total_eval)}원` : '-'}</h3></div>
+              <div className="glass-panel" style={{padding:'0.9rem'}}><p style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>평가손익</p><h3 style={{color:pc(autoSummary?.summary?.total_profit || 0)}}>{autoSummary?.summary?.total_profit != null ? `${fp(autoSummary.summary.total_profit)}원` : '-'}</h3></div>
             </div>
 
             <section className="glass-panel" style={{padding:'0.9rem'}}>

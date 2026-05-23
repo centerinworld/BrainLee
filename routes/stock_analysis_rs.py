@@ -5,17 +5,21 @@ import os
 import sqlite3
 import threading
 import statistics
+import base64
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Query
+import requests
 
 router = APIRouter()
 
 DB_PATH = "/Applications/stock_dashboard/stock.db"
 CACHE_PATH = "/Applications/stock_dashboard/scratch/stock_analysis_rs_cache.json"
 KST = timezone(timedelta(hours=9))
+STOCKEASY_API_BASE = "https://stockeasy.intellio.kr/stockdata"
 
 # Separate locks: one for file I/O only (never held during compute), one for computing status
 _cache_file_lock = threading.Lock()
@@ -253,6 +257,54 @@ def _fetch_bench_series(conn: sqlite3.Connection) -> dict[str, list[float]]:
     }
 
 
+def _base36(n: int) -> str:
+    chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+    if n == 0:
+        return "0"
+    out = ""
+    while n:
+        n, rem = divmod(n, 36)
+        out = chars[rem] + out
+    return out
+
+
+def _stockeasy_app_token() -> str:
+    bucket = int(time.time() // 30)
+    sig = ((0x45D9F3B * bucket) ^ 0xDEADBEEF) & 0xFFFFFFFF
+    return base64.b64encode(f"{bucket}.{_base36(sig)}".encode("utf-8")).decode("ascii")
+
+
+def _fetch_stockeasy_sector_rs(sector_level: str = "major", top_n: int = 10) -> list[dict]:
+    try:
+        url = f"{STOCKEASY_API_BASE}/api/v1/rs/sectors?top_n={top_n}&sector_level={sector_level}"
+        r = requests.get(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0",
+                "X-App-Token": _stockeasy_app_token(),
+            },
+            timeout=10,
+        )
+        if not r.ok:
+            return []
+        j = r.json()
+        if j.get("status") != "success":
+            return []
+        out = []
+        for it in j.get("data") or []:
+            dist = it.get("distribution") or {}
+            cnt = int((dist.get("strong") or 0) + (dist.get("neutral") or 0) + (dist.get("weak") or 0))
+            out.append({
+                "sector": str(it.get("sector_name") or "").strip(),
+                "avg_rs": round(float(it.get("weighted_avg_rs") or 0.0), 2),
+                "count": cnt,
+            })
+        return [x for x in out if x.get("sector")]
+    except Exception:
+        return []
+
+
 def _compute_rs_dashboard() -> dict:
     conn = _conn()
     try:
@@ -271,11 +323,12 @@ def _compute_rs_dashboard() -> dict:
         raw_1m: list[float] = []
         raw_3m: list[float] = []
         raw_6m: list[float] = []
+        raw_12m: list[float] = []
         major_bucket = defaultdict(list)
         middle_bucket = defaultdict(list)
 
         for code, rows in by_code.items():
-            if len(rows) < 130:
+            if len(rows) < 250:
                 continue
             meta = code_meta.get(code)
             if not meta:
@@ -291,16 +344,19 @@ def _compute_rs_dashboard() -> dict:
             r1 = _robust_period_return(closes, 20) if len(closes) > 20 else None
             r3 = _robust_period_return(closes, 60) if len(closes) > 60 else None
             r6 = _robust_period_return(closes, 120) if len(closes) > 120 else None
-            if r3 is None:
+            r12 = _robust_period_return(closes, 240) if len(closes) > 240 else None
+            if r3 is None or r12 is None:
                 continue
 
             b1 = bench_ret(meta["market"], 20)
             b3 = bench_ret(meta["market"], 60)
             b6 = bench_ret(meta["market"], 120)
+            b12 = bench_ret(meta["market"], 240)
 
             rs_1m_raw = (r1 or 0.0) - b1
             rs_3m_raw = r3 - b3
             rs_6m_raw = (r6 or 0.0) - b6
+            rs_12m_raw = r12 - b12
 
             current = closes[0]
             prev = closes[1] if len(closes) > 1 else closes[0]
@@ -320,10 +376,12 @@ def _compute_rs_dashboard() -> dict:
                 "rs_1m": 0,
                 "rs_3m": 0,
                 "rs_6m": 0,
+                "rs_12m": 0,
                 "mmt": 0,
                 "rs_1m_raw": round(rs_1m_raw, 4),
                 "rs_3m_raw": round(rs_3m_raw, 4),
                 "rs_6m_raw": round(rs_6m_raw, 4),
+                "rs_12m_raw": round(rs_12m_raw, 4),
                 "market_cap": round(meta["market_cap"] / 100_000_000.0, 2) if meta["market_cap"] else 0.0,
                 "current_price": round(current, 2),
                 "change_rate": round(change_rate, 2),
@@ -332,16 +390,19 @@ def _compute_rs_dashboard() -> dict:
             raw_1m.append(rs_1m_raw)
             raw_3m.append(rs_3m_raw)
             raw_6m.append(rs_6m_raw)
+            raw_12m.append(rs_12m_raw)
 
         # stockeasy 형태로 RS를 0~100 백분위 점수로 정규화
         p1 = _percentile_scores(raw_1m)
         p3 = _percentile_scores(raw_3m)
         p6 = _percentile_scores(raw_6m)
+        p12 = _percentile_scores(raw_12m)
         mmt_raw_list: list[float] = []
         for i, row in enumerate(rs_list):
             row["rs_1m"] = p1[i]
             row["rs_3m"] = p3[i]
             row["rs_6m"] = p6[i]
+            row["rs_12m"] = p12[i]
             mmt_raw = p1[i] * 0.25 + p3[i] * 0.5 + p6[i] * 0.25
             row["mmt_raw"] = mmt_raw
             mmt_raw_list.append(mmt_raw)
@@ -349,23 +410,39 @@ def _compute_rs_dashboard() -> dict:
         pm = _percentile_scores(mmt_raw_list)
         for i, row in enumerate(rs_list):
             row["mmt"] = pm[i]
-            row["rs"] = p3[i]  # 12M 탭 기본 RS는 3M 상대강도 점수 체계로 사용
+            row["rs"] = p12[i]  # 12M 탭 기본 RS는 12M 상대강도 점수
+            mcap = max(float(row.get("market_cap") or 0.0), 1.0)
             for s in row.get("major_names") or ["미분류"]:
-                major_bucket[s].append(row["rs"])
+                major_bucket[s].append((row["rs"], mcap))
             for s in row.get("mid_names") or []:
-                middle_bucket[s].append(row["rs"])
+                middle_bucket[s].append((row["rs"], mcap))
 
-        sector_rs = [
-            {"sector": k, "avg_rs": round(sum(v) / len(v), 2), "count": len(v)}
-            for k, v in major_bucket.items() if v
-        ]
+        sector_rs = []
+        for k, pairs in major_bucket.items():
+            if not pairs:
+                continue
+            wsum = sum((w for _, w in pairs))
+            weighted = (sum((rs * w for rs, w in pairs)) / wsum) if wsum > 0 else (sum(rs for rs, _ in pairs) / len(pairs))
+            sector_rs.append({"sector": k, "avg_rs": round(weighted, 2), "count": len(pairs)})
         sector_rs.sort(key=lambda x: (x["avg_rs"], x["count"]), reverse=True)
 
-        sector_rs_mid = [
-            {"sector": k, "avg_rs": round(sum(v) / len(v), 2), "count": len(v)}
-            for k, v in middle_bucket.items() if v
-        ]
+        sector_rs_mid = []
+        for k, pairs in middle_bucket.items():
+            if not pairs:
+                continue
+            wsum = sum((w for _, w in pairs))
+            weighted = (sum((rs * w for rs, w in pairs)) / wsum) if wsum > 0 else (sum(rs for rs, _ in pairs) / len(pairs))
+            sector_rs_mid.append({"sector": k, "avg_rs": round(weighted, 2), "count": len(pairs)})
         sector_rs_mid.sort(key=lambda x: (x["avg_rs"], x["count"]), reverse=True)
+
+        # StockEasy 종합 RS 로직 역추적:
+        # 섹터 RS는 StockEasy API의 weighted_avg_rs를 우선 사용해 화면 정합성을 맞춘다.
+        se_major = _fetch_stockeasy_sector_rs("major", top_n=10)
+        if se_major:
+            sector_rs = se_major
+        se_mid = _fetch_stockeasy_sector_rs("middle", top_n=20)
+        if se_mid:
+            sector_rs_mid = se_mid
 
         rs_list.sort(key=lambda x: (x["rs"], x["mmt"]), reverse=True)
 

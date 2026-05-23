@@ -1287,7 +1287,6 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
             )
             SELECT * FROM ranked WHERE rn = 1
             ORDER BY year DESC
-            LIMIT 5
         """, (stock_code,)).fetchall()
         # 필드별 최우선 값 맵: ranked CTE는 OCF 기준 최선 행 1개만 선택하므로
         # capex/cash_end/depr이 다른 행에 있을 경우 별도로 수집
@@ -1315,7 +1314,6 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
             SELECT * FROM cash_flow_data
             WHERE stock_code = ? AND is_annual = 0 {_rt_sql}
             ORDER BY year DESC, quarter DESC
-            LIMIT 8
         """, (stock_code,)).fetchall()
 
         # Q4 추론용: 필드별로 non-null 값이 있는 최우선 행에서 수집

@@ -175,7 +175,7 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
                 _rt_filter,
             )
             .order_by(models.FinancialData.year.desc(), models.FinancialData.quarter.desc())
-            .limit(8).all()
+            .all()
         )
         result = []
         for d in data:
@@ -272,8 +272,6 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
             })
 
         result.sort(key=lambda x: x['period'])
-        # 최근 8분기만 반환
-        result = result[-8:] if len(result) > 8 else result
         for r in result:
             r['period'] = _fmt_q_period(r['period'])
         return result
@@ -288,7 +286,7 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
             _rt_filter,
         )
         .order_by(models.FinancialData.year.desc(), models.FinancialData.revenue.desc())
-        .limit(10).all()
+        .all()
     )
     # DART 우선 정렬 (EPS 정확성, FnGuide EPS 단위 오류 회피)
     annual_data_raw = sorted(
@@ -332,7 +330,7 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
                 _base.revenue = _alt_rev
                 break
 
-    annual_data = [_year_recs[y] for y in sorted(_year_recs.keys(), reverse=True)[:5]]
+    annual_data = [_year_recs[y] for y in sorted(_year_recs.keys(), reverse=True)]
 
     # is_annual=True 레코드가 없으면 분기 데이터로 대체 (OFS 명시 요청 시는 빈 배열 반환)
     if not annual_data:
