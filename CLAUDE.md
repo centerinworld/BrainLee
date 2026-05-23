@@ -24,6 +24,7 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 ### 세션 시작 시
 - **이 파일을 먼저 읽는다.** 파일 내용으로 프로젝트 구조를 파악하고, 불필요한 파일 열람을 최소화한다.
 - 작업 전 필요한 정보가 이 파일에 있으면 파일을 새로 열지 않는다.
+- **ETF/ETN 정보는 장중(09:00~15:30) 수집 금지.** ETF/ETN 수집은 장 마감 후 배치(야간/새벽 백필 포함)로만 수행한다.
 
 ### 작업 완료 시 (필수 — 자동으로 수행)
 다음 중 하나라도 해당하면 **이 파일(CLAUDE.md)을 반드시 업데이트**한다:
@@ -915,4 +916,7 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 
 | 2026-05-22 | **Codex 전수 상세검증 산출물 생성**: 사용자 요청에 따라 요약이 아닌 오류군 상세 CSV 전수 추출(`scratch/full_reverify_20260522/*`). 핵심: 분기 revenue<0 1,015건, 연간 DART/FnGuide 매출 괴리 634건, FIN_NAVER CLOSE_MATCH 2,902건, source null(2022+) 24,727건, report_type null 2,076건, 매핑 미커버리지 3,530건. Claude 즉시 수정용 핸드오프 `docs/codex_handoff_financial_verified_errors_2026-05-22.md` 생성. |
 | 2026-05-22 | **Codex 전수검증 후 대규모 재무 데이터 정비**: ①Q4 음수 531→143건(73%↓), 전체 음수분기 1015→399건(61%↓): 300+개사 DART 연간 재다운로드+Q4 재계산, 9M/Q1/H1 DART 재수집으로 누적/standalone 혼용 케이스 수정, 불가 케이스 NULL처리. ②report_type NULL 1,848건→0건: 전체 CFS로 설정. ③source NULL ~70,598건→0건: legacy_collected/data_quality_null 마킹. ④None소스 Q4 음수 중 양수대체행 있는 55건 삭제. 신규 data_source: quarterly_recalc_9m, quarterly_recalc_dart, legacy_collected, data_quality_null 추가. |
+| 2026-05-22 | **HS Trade Telegram 동기화 누락 보완**: `hs_trade_lab/scripts/daily_refresh.py`에 `rebuild_telegram_flow_mappings.py` + `build_telegram_trade_cards.py` 단계를 추가해 텔레그램 원문 수집 후 카드/매핑 테이블이 매일 자동 갱신되도록 수정. 점검 산출물은 `scratch/hs_trade_audit_20260522/` (`summary.json`, `mapped_without_trade_card.csv`, `flow_missing_in_latest_analysis2_sample1000.csv`, `recent_unmapped_posts_300.csv`)에 저장. |
+| 2026-05-22 | **BigQuery 3배주/우상향 패턴 파이프라인 추가**: `scripts/bigquery_triple_pipeline.py` 신규 — `v_3x_candidate_screen` 기반으로 `triple_pattern_daily`/`triple_pattern_sector_daily`를 일일 적재(스코어 임계치 기본 62). `scripts/bigquery_triple_morning_alert.py` 신규 — 최신 후보 TOP N 조회 후 텔레그램 아침 리포트 발송(설정 시) 및 `reports/bq_triple_morning_*.md` 저장. 운영 문서 `docs/bigquery_triple_pipeline_ops_20260522.md` 추가. |
 | 2026-05-22 | **Codex 2차 검토 5가지 이슈 해소**: ①cash_flow_data source NULL 52,712건→0건(legacy_collected 43,867건+data_quality_null 8,845건 마킹). ②financial_anomalies unit_error 52건·cfs_ofs_mislabeled 29건 is_resolved=1 확인(기완료). ③CAPEX 부호 혼재(dart_ofs_backfill) 918건→0건(ABS 절댓값 적용, 전체 규약: capex>0). ④Q4 음수 dart 소스 29건=실제손실(한국전력·조선업·코로나) 확정. ⑤depreciation NULL 53% 구조적 한계 확정+API fallback 규칙 문서화. |
+| 2026-05-23 | **Codex 3차 검토 분석 및 수정**: ①REV_COLLAPSE 14건 진짜오류 수정(17건 중 3건은 금융/구조): Q3 revenue 이상치(연간 대비 2% 미만) 12건 NULL처리, 파생 quarterly_recalc Q4 11건 NULL. 대상: 한국가스공사·AP위성·HDC현대EP·우성·동신건설·큐캐피탈·크레오에스지·토탈소프트·잉크테크·에이티넘인베스트 등. ②연간 vs 분기합 불일치 1,874건 분류 완료: 698건=금융구조차이, 195건=반올림, 542건=legacy혼재(원천없음, 즉시수정불가). ③snapshot_gap 19,025건=Codex 과대보고(financial_source_snapshot 커버리지 문제, financial_data 오류 아님). ④CF anomaly 338건=구조적 한계(legacy분기OCF미수집). |
