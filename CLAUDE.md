@@ -50,6 +50,7 @@
 │   ├── portfolio.py     → /api/portfolio/*
 │   ├── buy_candidates.py→ /api/buy-candidates/*
 │   ├── market_indicators.py → /api/market-indicators/*  ★2026-04 신규
+│   ├── order_contracts.py → /api/order-contracts/*      ★2026-07 신규 (수주공시 급증 스크리너)
 │   ├── reports.py       → /api/reports/*
 │   ├── telegram.py      → /api/telegram/*
 │   ├── backtest.py      → /api/backtest/*
@@ -62,6 +63,8 @@
 │   ├── dart_collector.py# DART 공시
 │   ├── yahoo_collector.py # Yahoo Finance (해외지수)
 │   └── base.py          # BaseCollector (rate limit, async)
+│
+├── collect_order_contracts.py  # DART 수주공시 히스토리 백필 스크립트 ★2026-07 신규
 │
 ├── .claude/
 │   ├── settings.json    # hooks 설정 (UserPromptSubmit, Stop)
@@ -91,6 +94,7 @@
 | `stock_meta` | 1097 | stock_code, float_shares, shares_outstanding | 유동주식수 |
 | `short_sell_daily` | 7만 | bas_dt, stock_code, short_qty, borrow_bal_qty, borrow_bal_pct | 대차잔고/공매도 |
 | `buy_candidates` | 28 | stock_code, target_price, memo | 매수 후보 |
+| `order_contracts` | ★신규 | stock_code, rcept_no(unique), rcept_dt, contract_amount, revenue_ratio_pct, is_termination, verified | DART 수주(단일판매·공급계약) 공시 — 수주잔고 급증 스크리너용. routes/order_contracts.py 자체 CREATE TABLE IF NOT EXISTS (models.py 미등록, buy_candidates 패턴과 동일) |
 | `watchlist` | 61 | stock_code | 관심종목 |
 | `telegram_channels` | 9 | channel_id, channel_name | 텔레그램 채널 |
 | `report_files` | 2691 | stock_code, sector, report_date, file_path | 섹터 보고서 |
@@ -228,6 +232,17 @@ GET  /index-investor     # 지수 투자자 일별 (params: days=20)
 GET  /available-dates    # 수급 데이터 있는 영업일 목록
 ```
 
+### routes/order_contracts.py → /api/order-contracts ★신규(2026-07)
+```
+GET  /stock/{code}       # 종목별 수주(단일판매·공급계약) 공시 목록 + 매출대비 비교
+GET  /backlog/{code}     # 종목별 월별 추정 수주잔고 누적 추이
+GET  /screener/surge     # 수주잔고 급증 종목 스크리너 (params: window_months=3, min_growth_pct=50)
+POST /collect/today      # 오늘자 전종목 수주공시 스캔+저장 (수동 트리거, 스케줄러와 동일 로직)
+POST /collect/{code}     # 특정 종목 기간 백필 (params: months=24)
+PATCH /{id}/verify       # 파싱값 사람 검증/정정 (contract_amount 등 수정 + verified=1)
+DELETE /{id}             # 오탐 공시 삭제
+```
+
 ### routes/reports.py → /api/reports
 ```
 GET  /stock/{code}       # 종목 리포트 목록
@@ -278,6 +293,7 @@ POST /investor-trends    # 투자자 동향 저장
 | `_job_screener_precompute` | 매 30분 | 시그널 캐시 갱신 |
 | `_job_krx_daily` | 18:00 daily (영업일) | KRX API 전종목 OHLCV + 지수 수집 (KRX 데이터 확정 시간 고려) |
 | `_job_supply_daily` | 17:30 daily (영업일) | KIS 전종목 최근 30일 수급 누락분 보완 |
+| `_job_order_contracts_daily` | 19:00 daily (영업일) | ★2026-07 DART 오늘자 단일판매·공급계약체결/해지 공시 스캔+파싱 저장 → order_contracts |
 
 ---
 
@@ -300,37 +316,40 @@ def _cache():
 
 ## 6. 프론트엔드 컴포넌트 (App.jsx)
 
-모든 컴포넌트가 `frontend/src/App.jsx` 단일 파일 (~7949줄).
+모든 컴포넌트가 `frontend/src/App.jsx` 단일 파일 (~8470줄).
 
-### 컴포넌트 → 탭 키 → 시작 줄번호
+⚠ 줄번호는 컴포넌트 추가/수정 시마다 계속 밀림 — 정확한 위치가 필요하면
+`grep -n "^  const \w*View = \|^const MarketIndicatorsView"` 로 먼저 재확인할 것.
+
+### 컴포넌트 → 탭 키 → 시작 줄번호 (2026-07-25 기준)
 | 컴포넌트 | 탭 키 | 줄번호 |
 |---------|-------|--------|
-| `BuyCandidateView` | buy_candidates | 392 |
-| `WatchlistView` | watchlist | 732 |
-| `MacroDashboard` | macro | 1228 |
-| `StockAnalysis` | analysis | 1678 |
-| `Screener` | screener | 2432 |
-| `PeakView` | trend | 3592 |
-| `PortfolioView` | portfolio | 4056 |
-| `TradeAnalysis2` | hs_trade2 | 4869 |
-| `SectorReports` | reports | 5748 |
-| `SignalSettings` | (settings 내부) | 5851 |
-| `AIInsight` | insight | 6031 |
-| `BacktestView` | backtest | 6084 |
-| `SettingsView` | settings | 6413 |
-| `TelegramMentions` | telegram | 6708 |
-| `SystemStatus` | system | 6951 |
-| `MarketIndicatorsView` | market_indicators | 6978 |
+| `MarketIndicatorsView` | market_indicators | 64 |
+| `BuyCandidateView` | buy_candidates | 983 |
+| `OrderContractsView` | order_contracts | 1323 ★신규(2026-07) |
+| `WatchlistView` | watchlist | 1666 |
+| `StockAnalysis` | analysis | 2612 |
+| `Screener` | screener | 3387 |
+| `PeakView` | trend | 4778 |
+| `PortfolioView` | portfolio | 5242 |
+| `TradeAnalysis2` | hs_trade2 | 6153 |
+| `SectorReports` | reports | 7032 |
+| `SignalSettings` | (settings 내부) | 7135 |
+| `AIInsight` | insight | 7315 |
+| `BacktestView` | backtest | 7368 |
+| `SettingsView` | settings | 7697 |
+| `TelegramMentions` | telegram | 7992 |
+| `SystemStatus` | system | 8235 |
 
 ### 네비게이션 구조
 ```
-NAV_ITEMS 정의: 7459줄
-렌더 스위치:    7585줄
+NAV_ITEMS 정의: 8264줄
+렌더 스위치:    8287줄 이하 (activeTab === '...' && <...>)
 
-순서: macro → market_indicators → analysis → screener → trend
-    → reports → telegram → backtest → hs_trade → hs_trade2
+순서: macro → market_indicators → analysis → semiconductor_sector → screener → trend
+    → reports → telegram → backtest → hs_trade2
     ── (구분선) ──
-    buy_candidates → watchlist → portfolio
+    order_contracts → buy_candidates → watchlist → portfolio
     ── (구분선) ──
     settings → system
 ```
@@ -420,6 +439,7 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 시그널 계산 10초 지연 | ✅ 개선 | 서버 시작 시 warm-up + stale-while-revalidate |
 | 재무제표 단위 오류 | ✅ 완전수정 | op_profit 597건·net_income 20건·equity 5건 억원→원 변환, Q4 254건 재계산, CFS/OFS 혼용 36건 재수집, 지주사 Q4 NULL 10건 처리, 수집오류 삭제 2건 |
 | financial_data 백업 | ℹ️ 보관 | `financial_data_backup_20260412` 테이블로 수정 전 원본 보관 |
+| DART 수주잔고 표준필드 | ℹ️ 없음 | DART Open API에 "수주잔고" 필드 자체가 없음. 단일판매·공급계약체결/해지 공시(kind='I') 개별 파싱으로 근사. `order_contracts.parse_ok=0`은 자동추출 실패(원문 확인 필요), `verified=0`은 사람 미검증 상태 |
 | 재무제표 Q4 대규모 손실 | ℹ️ 정상 | 잔존 14건(삼성SDI2016/현대건설2024/대한항공 등)은 실제 이벤트 손실로 수학적 정확값 |
 
 ---
@@ -437,6 +457,7 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | Telegram 알림 | `peak_monitor.py` + `notifier.py` | — |
 | DB 스키마 변경 | `init_db.py` + `migrate_db.py` | — |
 | KIS 수집 로직 | `collectors/kis_collector.py` | — |
+| 수주공시 급증 스크리너 | `collectors/dart_collector.py`(수집·파싱) + `routes/order_contracts.py`(API) + `collect_order_contracts.py`(백필) | — |
 | 환경변수 추가 | `.env` + `config.py` | — |
 
 ---
@@ -460,3 +481,4 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |
+| 2026-07-25 | 수주잔고 급증 스크리너 신규 구축: DART에는 "수주잔고" 표준 필드가 없어 단일판매·공급계약체결/해지 공시(kind='I')를 개별 파싱하는 방식으로 구현. ①`collectors/dart_collector.py`: `get_contract_disclosures`/`get_todays_contract_disclosures`/`parse_contract_document`(정규식 기반 계약금액·매출대비비율·계약상대·계약기간 추출) 추가 ②`order_contracts` 테이블 신규(routes/order_contracts.py 자체 CREATE TABLE, buy_candidates 패턴) — parse_ok/verified 플래그로 자동추출값 사람검증 워크플로 전제 ③`routes/order_contracts.py` API 7종: 종목별 목록/추정 수주잔고 추이/급증 스크리너(직전 동기간 대비 신규계약 증가율)/수동 수집/검증/삭제 ④`scheduler.py` `_job_order_contracts_daily` 19:00 영업일 잡 추가(오늘자 공시 자동 수집) ⑤`collect_order_contracts.py` 신규 — 과거 이력 백필 전용 스크립트(스케줄러는 당일분만 처리하므로 급증 비교 기준선 확보에 필수) ⑥App.jsx `OrderContractsView` 탭 추가(급증 스크리너 테이블 + 종목별 상세/수주잔고 추이 차트 + 파싱값 검증 UI). ⚠ 파싱은 회사별 공시 서식 차이로 100% 정확하지 않을 수 있어 "검증" 버튼으로 DART 원문 대조 확인 필요, 소규모 미공시 계약은 반영 안 됨 |

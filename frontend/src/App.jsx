@@ -1319,6 +1319,349 @@ const App = () => {
   };
 
 
+  // ── 수주잔고 급증 스크리너 (DART 단일판매·공급계약 공시 기반) ────
+  const OrderContractsView = () => {
+    const [windowMonths, setWindowMonths] = React.useState(3);
+    const [minGrowth,    setMinGrowth]    = React.useState(50);
+    const [candidates,   setCandidates]   = React.useState([]);
+    const [loading,      setLoading]      = React.useState(true);
+    const [scanning,     setScanning]     = React.useState(false);
+
+    const [addQuery,  setAddQuery]  = React.useState('');
+    const [searchRes, setSearchRes] = React.useState([]);
+    const [showDrop,  setShowDrop]  = React.useState(false);
+    const [backfilling, setBackfilling] = React.useState('');
+
+    const [selCode, setSelCode] = React.useState(null);
+    const [selName, setSelName] = React.useState('');
+    const [detail,  setDetail]  = React.useState(null);
+    const [backlog, setBacklog] = React.useState([]);
+    const [detailLoading, setDetailLoading] = React.useState(false);
+
+    const [editId,   setEditId]   = React.useState(null);
+    const [editForm, setEditForm] = React.useState({});
+
+    const loadScreener = React.useCallback(() => {
+      setLoading(true);
+      fetch(API(`/api/order-contracts/screener/surge?window_months=${windowMonths}&min_growth_pct=${minGrowth}`))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { setCandidates(d?.candidates || []); setLoading(false); })
+        .catch(() => setLoading(false));
+    }, [windowMonths, minGrowth]);
+
+    React.useEffect(() => { loadScreener(); }, [loadScreener]);
+
+    // 종목 검색 (개별 백필용)
+    React.useEffect(() => {
+      if (!addQuery.trim()) { setSearchRes([]); setShowDrop(false); return; }
+      const t = setTimeout(async () => {
+        const res = await fetch(API(`/api/search?q=${encodeURIComponent(addQuery)}`));
+        if (res.ok) { setSearchRes(await res.json()); setShowDrop(true); }
+      }, 300);
+      return () => clearTimeout(t);
+    }, [addQuery]);
+
+    const runTodayScan = async () => {
+      setScanning(true);
+      try {
+        const res = await fetch(API('/api/order-contracts/collect/today'), { method: 'POST' });
+        const d = res.ok ? await res.json() : null;
+        alert(d ? `오늘자 공시 ${d.scanned}건 중 신규 ${d.saved}건 저장 완료` : '스캔 실패');
+      } catch { alert('스캔 실패'); }
+      setScanning(false);
+      loadScreener();
+    };
+
+    const backfillStock = async (code, name) => {
+      setShowDrop(false); setAddQuery(''); setBackfilling(code);
+      try {
+        const res = await fetch(API(`/api/order-contracts/collect/${code}?months=24`), { method: 'POST' });
+        const d = res.ok ? await res.json() : null;
+        alert(d ? `${name}(${code}) 최근 24개월 공시 ${d.scanned}건 중 신규 ${d.saved}건 저장` : '백필 실패');
+      } catch { alert('백필 실패'); }
+      setBackfilling('');
+      loadScreener();
+      if (selCode === code) openDetail(code, name);
+    };
+
+    const openDetail = React.useCallback(async (code, name) => {
+      setSelCode(code); setSelName(name); setDetailLoading(true);
+      setEditId(null); setEditForm({});
+      try {
+        const [dRes, bRes] = await Promise.all([
+          fetch(API(`/api/order-contracts/stock/${code}?months=${windowMonths * 6}`)),
+          fetch(API(`/api/order-contracts/backlog/${code}?months=${windowMonths * 6}`)),
+        ]);
+        setDetail(dRes.ok ? await dRes.json() : null);
+        setBacklog(bRes.ok ? (await bRes.json())?.data || [] : []);
+      } catch { setDetail(null); setBacklog([]); }
+      setDetailLoading(false);
+    }, [windowMonths]);
+
+    const saveVerify = async (id) => {
+      await fetch(API(`/api/order-contracts/${id}/verify`), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      setEditId(null); setEditForm({});
+      if (selCode) openDetail(selCode, selName);
+    };
+
+    const deleteContract = async (id) => {
+      if (!window.confirm('이 공시 레코드를 삭제하시겠습니까? (오탐 제거용)')) return;
+      await fetch(API(`/api/order-contracts/${id}`), { method: 'DELETE' });
+      if (selCode) openDetail(selCode, selName);
+    };
+
+    const eok = (v) => v == null ? '-' : (v / 1e8).toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + '억';
+    const pctBadge = (v, isNew) => {
+      if (isNew) return <span style={{ color: '#22c55e', fontWeight: 700 }}>🆕 신규급증</span>;
+      if (v == null) return '-';
+      return <span style={{ color: v >= 0 ? '#ef4444' : '#3b82f6', fontWeight: 700 }}>{v >= 0 ? '+' : ''}{v}%</span>;
+    };
+
+    const inputSt = { padding: '0.25rem 0.5rem', borderRadius: '5px', background: 'rgba(255,255,255,0.08)',
+      border: '1px solid rgba(255,255,255,0.2)', color: '#fff', fontSize: '0.78rem', width: '100%' };
+
+    return (
+      <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {/* 헤더 */}
+        <div className="glass-panel" style={{ padding: '1rem 1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <FileText size={20} color="#fb7185" />
+            <h2 style={{ fontSize: '1rem', fontWeight: 700 }}>수주잔고 급증 스크리너</h2>
+            <span style={{ padding: '0.15rem 0.6rem', background: 'rgba(251,113,133,0.15)', borderRadius: '20px', fontSize: '0.72rem', color: '#fb7185' }}>
+              DART 단일판매·공급계약 공시
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>비교기간:</label>
+            <select value={windowMonths} onChange={e => setWindowMonths(Number(e.target.value))}
+              style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: '#fff', borderRadius: '6px', padding: '0.25rem 0.5rem', fontSize: '0.78rem' }}>
+              <option value={1}>1개월</option>
+              <option value={3}>3개월</option>
+              <option value={6}>6개월</option>
+              <option value={12}>12개월</option>
+            </select>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>최소증가율:</label>
+            <input type="number" value={minGrowth} onChange={e => setMinGrowth(Number(e.target.value))}
+              style={{ ...inputSt, width: '60px' }} />
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>%</span>
+            <button onClick={runTodayScan} disabled={scanning}
+              style={{ padding: '0.35rem 0.7rem', borderRadius: '6px', border: 'none', cursor: scanning ? 'default' : 'pointer',
+                background: '#fb7185', color: '#000', fontSize: '0.76rem', fontWeight: 700, opacity: scanning ? 0.6 : 1 }}>
+              {scanning ? '스캔중...' : '오늘자 공시 스캔'}
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', position: 'relative' }}>
+            <input value={addQuery} onChange={e => setAddQuery(e.target.value)}
+              placeholder="종목 검색 → 24개월 히스토리 수집..."
+              style={{ padding: '0.4rem 0.8rem', borderRadius: '8px', background: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--glass-border)', color: '#fff', fontSize: '0.82rem', width: '230px' }} />
+            {showDrop && searchRes.length > 0 && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '3px',
+                background: 'rgba(20,20,35,0.97)', border: '1px solid var(--glass-border)',
+                borderRadius: '8px', zIndex: 50, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                {searchRes.slice(0, 8).map((item, i) => (
+                  <div key={i} onClick={() => backfillStock(item.code, item.name)}
+                    style={{ padding: '0.5rem 0.8rem', cursor: 'pointer', display: 'flex', justifyContent: 'space-between',
+                      borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.82rem' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,113,133,0.1)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <span style={{ fontWeight: 600 }}>{item.name}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{item.code}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {backfilling && (
+              <span style={{ position: 'absolute', top: '100%', marginTop: '4px', fontSize: '0.7rem', color: '#fb7185' }}>
+                {backfilling} 수집 중...
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 스크리너 테이블 */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>로딩 중...</div>
+        ) : candidates.length === 0 ? (
+          <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+            <FileText size={40} style={{ margin: '0 auto 1rem', display: 'block', opacity: 0.3 }} />
+            <p>급증 후보가 없습니다. 히스토리가 없으면 종목 검색으로 먼저 수집하거나, "오늘자 공시 스캔"을 실행해주세요.</p>
+          </div>
+        ) : (
+          <div className="glass-panel" style={{ overflow: 'auto' }}>
+            <table className="premium-table" style={{ width: '100%', minWidth: '900px' }}>
+              <thead><tr>
+                <th style={{ minWidth: '110px' }}>기업명</th>
+                <th style={{ textAlign: 'right' }}>최근{windowMonths}개월 신규계약</th>
+                <th style={{ textAlign: 'right' }}>직전 동기간</th>
+                <th style={{ textAlign: 'center' }}>증감률</th>
+                <th style={{ textAlign: 'center' }}>공시건수</th>
+                <th style={{ textAlign: 'right' }}>매출대비</th>
+                <th>최근공시일</th>
+                <th></th>
+              </tr></thead>
+              <tbody>
+                {candidates.map(c => (
+                  <tr key={c.stock_code} onClick={() => openDetail(c.stock_code, c.stock_name)}
+                    style={{ cursor: 'pointer', background: selCode === c.stock_code ? 'rgba(251,113,133,0.06)' : undefined }}>
+                    <td>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{c.stock_name}</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{c.stock_code}</div>
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{eok(c.recent_sum)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{eok(c.prev_sum)}</td>
+                    <td style={{ textAlign: 'center' }}>{pctBadge(c.growth_pct, c.is_new_surge)}</td>
+                    <td style={{ textAlign: 'center' }}>{c.recent_disclosure_count}</td>
+                    <td style={{ textAlign: 'right' }}>{c.recent_to_revenue_pct != null ? c.recent_to_revenue_pct + '%' : '-'}</td>
+                    <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{c.latest_disclosure_date}</td>
+                    <td>
+                      <button onClick={e => { e.stopPropagation(); backfillStock(c.stock_code, c.stock_name); }}
+                        title="히스토리 갱신"
+                        style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--glass-border)',
+                          background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.68rem' }}>
+                        갱신
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 종목 상세 */}
+        {selCode && (
+          <div className="glass-panel" style={{ padding: '1.2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>
+                {selName} ({selCode}) 수주공시 상세
+                {detail?.latest_annual_revenue ? (
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 400, marginLeft: '0.6rem' }}>
+                    최근 연매출 {eok(detail.latest_annual_revenue)}
+                  </span>
+                ) : null}
+              </h3>
+              <span onClick={() => setSelCode(null)} style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>닫기 ✕</span>
+            </div>
+
+            {detailLoading ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>로딩 중...</div>
+            ) : (
+              <>
+                {backlog.length > 1 && (
+                  <div style={{ marginBottom: '1rem' }}>
+                    <ResponsiveContainer width="100%" height={160}>
+                      <AreaChart data={backlog} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                        <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                        <Tooltip contentStyle={{ background: 'var(--bg-dark)', border: '1px solid var(--glass-border)', fontSize: '0.78rem' }}
+                          formatter={(v, n) => [eok(v), n]} />
+                        <Area type="monotone" dataKey="cumulative_backlog_est" stroke="#fb7185" fill="rgba(251,113,133,0.18)" strokeWidth={2} name="추정 수주잔고" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="premium-table" style={{ width: '100%', minWidth: '1000px' }}>
+                    <thead><tr>
+                      <th>공시일</th>
+                      <th>구분</th>
+                      <th style={{ textAlign: 'right' }}>계약금액</th>
+                      <th style={{ textAlign: 'right' }}>매출대비</th>
+                      <th>계약상대</th>
+                      <th>계약기간</th>
+                      <th style={{ textAlign: 'center' }}>검증</th>
+                      <th></th>
+                    </tr></thead>
+                    <tbody>
+                      {(detail?.disclosures || []).map(row => {
+                        const isEdit = editId === row.id;
+                        return (
+                          <tr key={row.id}>
+                            <td style={{ fontSize: '0.78rem' }}>{row.rcept_dt}</td>
+                            <td>
+                              <span style={{ fontSize: '0.72rem', color: row.is_termination ? '#ef4444' : '#22c55e', fontWeight: 700 }}>
+                                {row.is_termination ? '해지' : '신규'}
+                              </span>
+                              {!row.parse_ok && <div title="자동 파싱 실패 — 원문 확인 필요" style={{ fontSize: '0.62rem', color: '#f59e0b' }}>⚠ 파싱실패</div>}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              {isEdit ? (
+                                <input value={editForm.contract_amount ?? ''} onChange={e => setEditForm(p => ({ ...p, contract_amount: e.target.value }))}
+                                  style={inputSt} placeholder="원 단위" />
+                              ) : eok(row.contract_amount)}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              {isEdit ? (
+                                <input value={editForm.revenue_ratio_pct ?? ''} onChange={e => setEditForm(p => ({ ...p, revenue_ratio_pct: e.target.value }))}
+                                  style={inputSt} placeholder="%" />
+                              ) : (row.revenue_ratio_pct != null ? row.revenue_ratio_pct + '%' : '-')}
+                            </td>
+                            <td style={{ fontSize: '0.78rem' }}>
+                              {isEdit ? (
+                                <input value={editForm.counterpart ?? ''} onChange={e => setEditForm(p => ({ ...p, counterpart: e.target.value }))} style={inputSt} />
+                              ) : (row.counterpart || '-')}
+                            </td>
+                            <td style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                              {row.contract_start ? `${row.contract_start} ~ ${row.contract_end || ''}` : (row.contract_date || '-')}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              {row.verified ? (
+                                <span style={{ fontSize: '0.68rem', color: '#22c55e' }}>✓ 검증됨</span>
+                              ) : (
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>미검증</span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.3rem' }}>
+                                {isEdit ? (
+                                  <>
+                                    <button onClick={() => saveVerify(row.id)}
+                                      style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: 'none', background: '#22c55e', color: '#000', cursor: 'pointer', fontSize: '0.68rem', fontWeight: 700 }}>저장</button>
+                                    <button onClick={() => { setEditId(null); setEditForm({}); }}
+                                      style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.68rem' }}>취소</button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button onClick={() => { setEditId(row.id); setEditForm({ contract_amount: row.contract_amount ?? '', revenue_ratio_pct: row.revenue_ratio_pct ?? '', counterpart: row.counterpart ?? '' }); }}
+                                      style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.68rem' }}>검증</button>
+                                    <a href={row.dart_url} target="_blank" rel="noreferrer"
+                                      style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--glass-border)', color: '#60a5fa', textDecoration: 'none', fontSize: '0.68rem' }}>원문</a>
+                                    <button onClick={() => deleteContract(row.id)}
+                                      style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', border: 'none', background: 'rgba(239,68,68,0.12)', color: '#ef4444', cursor: 'pointer', fontSize: '0.68rem' }}>삭제</button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {(!detail?.disclosures || detail.disclosures.length === 0) && (
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-secondary)' }}>수집된 공시가 없습니다.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="glass-panel" style={{ padding: '0.75rem 1rem', fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)' }}>
+          ⚠ DART 공시 원문에서 계약금액/매출대비 비율을 자동 추출합니다. 회사별 공시 서식 차이로 일부 값이 정확하지 않을 수 있으니
+          "검증" 버튼으로 원문(DART 링크) 대조 후 수정해주세요. 수주잔고는 신규계약 누적 - 해지계약 누적의 추정치이며,
+          공시 의무가 없는 소규모 계약은 반영되지 않습니다.
+        </div>
+      </div>
+    );
+  };
+
+
   // ── 관심종목 ─────────────────────────────────────────────────
   const WatchlistView = () => {
     const [addQuery, setAddQuery] = React.useState("");
@@ -7932,6 +8275,7 @@ const App = () => {
     { key: 'hs_trade2', icon: <Ship size={17} style={{color:'#93c5fd'}} />,            label: '📦 수출입분석' },
     null,
     // ── 하단 섹션 ──────────────────────────────────
+    { key: 'order_contracts', icon: <FileText size={17} style={{color:'#fb7185'}} />, label: '수주잔고 급증' },
     { key: 'buy_candidates', icon: <Target size={17} style={{color:'#f59e0b'}} />,    label: '매수후보' },
     { key: 'watchlist', icon: <Star size={17} style={{color:'#facc15'}} />,            label: '관심종목' },
     { key: 'portfolio', icon: <Wallet size={17} style={{color:'#c084fc'}} />,          label: '계좌현황 🔒' },
@@ -8092,6 +8436,7 @@ const App = () => {
               />
             </div>
           )}
+          {activeTab === 'order_contracts' && <OrderContractsView />}
           {activeTab === 'buy_candidates' && <BuyCandidateView />}
           {activeTab === 'watchlist' && <WatchlistView />}
           {activeTab === 'portfolio' && portfolioAuth && <PortfolioView />}

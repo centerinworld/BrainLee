@@ -39,6 +39,9 @@ _FINANCIAL_KEYWORDS = [
     "유상증자", "무상증자", "자본감소", "전환사채",
 ]
 
+# 수주(단일판매·공급계약) 공시 키워드 — kind='I'(거래소공시) 중 필터
+_ORDER_CONTRACT_KEYWORDS = ["단일판매", "공급계약체결", "공급계약해지"]
+
 # 계정과목 → 필드명 매핑
 _ACCOUNT_MAP = [
     (["매출액", "영업수익"],                                      "revenue"),
@@ -376,3 +379,133 @@ class DARTCollector(BaseCollector):
             except Exception as e:
                 logger.debug(f"[DART] {stock_code} 공시 확인 오류: {e}")
         return False
+
+    # ══════════════════════════════════════════════════════════
+    # 4) 수주공시 (단일판매·공급계약체결/해지) — 수주잔고 급증 탐지용
+    # ══════════════════════════════════════════════════════════
+
+    async def get_contract_disclosures(self, stock_code: str, start: str, end: str) -> list[dict]:
+        """종목의 기간(YYYYMMDD~YYYYMMDD) 내 단일판매·공급계약 공시 목록 (금액 파싱 전)."""
+        return await self._run_sync(self._fetch_contract_list_sync, stock_code, start, end)
+
+    def _fetch_contract_list_sync(self, stock_code: str, start: str, end: str) -> list[dict]:
+        dart = self._get_dart()
+        if dart is None:
+            return []
+        try:
+            df = dart.list(stock_code, start=start, end=end, kind="I", final=False)
+        except Exception as e:
+            logger.debug(f"[DART수주] {stock_code} 목록 조회 오류: {e}")
+            return []
+        if df is None or df.empty or "report_nm" not in df.columns:
+            return []
+        out = []
+        for _, row in df.iterrows():
+            nm = str(row.get("report_nm", ""))
+            if not any(kw in nm for kw in _ORDER_CONTRACT_KEYWORDS):
+                continue
+            out.append({
+                "rcept_no":       str(row.get("rcept_no", "")),
+                "rcept_dt":       str(row.get("rcept_dt", "")),
+                "report_nm":      nm,
+                "corp_name":      str(row.get("corp_name", "")),
+                "is_termination": "해지" in nm,
+            })
+        return out
+
+    async def get_todays_contract_disclosures(self) -> list[dict]:
+        """오늘자 전체 종목 수주(단일판매·공급계약) 공시 스캔 (kind='I'). 스케줄러 일일 잡용."""
+        return await self._run_sync(self._fetch_todays_contract_sync)
+
+    def _fetch_todays_contract_sync(self) -> list[dict]:
+        dart = self._get_dart()
+        if dart is None:
+            return []
+        today_str = date.today().strftime("%Y%m%d")
+        try:
+            df = dart.list(today_str, today_str, kind="I")
+        except Exception as e:
+            logger.warning(f"[DART수주] 오늘자 목록 조회 오류: {e}")
+            return []
+        if df is None or df.empty or "report_nm" not in df.columns:
+            return []
+        out = []
+        for _, row in df.iterrows():
+            nm = str(row.get("report_nm", ""))
+            if not any(kw in nm for kw in _ORDER_CONTRACT_KEYWORDS):
+                continue
+            code = str(row.get("stock_code", "") or "").zfill(6)
+            if not code.isdigit() or len(code) != 6:
+                continue
+            out.append({
+                "stock_code":     code,
+                "rcept_no":       str(row.get("rcept_no", "")),
+                "rcept_dt":       str(row.get("rcept_dt", "")),
+                "report_nm":      nm,
+                "corp_name":      str(row.get("corp_name", "")),
+                "is_termination": "해지" in nm,
+            })
+        return out
+
+    async def parse_contract_document(self, rcept_no: str) -> dict:
+        """공시 원문(document.xml)에서 계약금액/매출액대비/계약상대/계약기간 추출.
+        DART는 회사마다 서식이 조금씩 달라 정규식 매칭 실패 시 parse_ok=False로
+        표시하고 raw_snippet만 남긴다 — 사람 검증(verified) 후 확정하는 워크플로 전제.
+        """
+        return await self._run_sync(self._parse_contract_document_sync, rcept_no)
+
+    def _parse_contract_document_sync(self, rcept_no: str) -> dict:
+        result = {
+            "contract_amount": None, "revenue_ratio_pct": None,
+            "recent_revenue": None, "counterpart": None,
+            "contract_date": None, "contract_start": None, "contract_end": None,
+            "parse_ok": False, "raw_snippet": "",
+        }
+        dart = self._get_dart()
+        if dart is None:
+            return result
+        try:
+            text = dart.document(rcept_no)
+        except Exception as e:
+            logger.debug(f"[DART수주] {rcept_no} 원문 조회 오류: {e}")
+            return result
+        if not text:
+            return result
+
+        import re
+        plain = re.sub(r"<[^>]+>", " ", str(text))
+        plain = re.sub(r"&nbsp;?", " ", plain)
+        plain = re.sub(r"\s+", " ", plain).strip()
+        result["raw_snippet"] = plain[:800]
+
+        def _num(pattern: str):
+            m = re.search(pattern, plain)
+            if not m:
+                return None
+            try:
+                return float(m.group(1).replace(",", ""))
+            except ValueError:
+                return None
+
+        result["contract_amount"]   = _num(r"계약금액\s*\(?원?\)?\s*([\d,]{4,})")
+        result["revenue_ratio_pct"] = _num(r"매출액\s*대비\s*\(?%?\)?\s*([\d]+(?:\.[\d]+)?)")
+        result["recent_revenue"]    = _num(r"최근\s*매출액\s*\(?원?\)?\s*([\d,]{4,})")
+
+        m = re.search(r"계약상대\s*[:：]?\s*([^\d]{2,60}?)\s*(?=\d|판매[·ㆍ]?공급지역|계약기간|시작일|주요\s*계약조건)", plain)
+        if m:
+            cand = m.group(1).strip(" -:：")
+            if cand:
+                result["counterpart"] = cand[:100]
+
+        m = re.search(r"계약\s*[\(（]?수주[\)）]?\s*일자\s*[:：]?\s*(\d{4}[-./]\d{2}[-./]\d{2})", plain)
+        if m:
+            result["contract_date"] = m.group(1)
+
+        dates = re.findall(r"(\d{4}[-./]\d{2}[-./]\d{2})", plain)
+        if len(dates) >= 2:
+            result["contract_start"], result["contract_end"] = dates[0], dates[1]
+        elif len(dates) == 1 and not result["contract_date"]:
+            result["contract_date"] = dates[0]
+
+        result["parse_ok"] = result["contract_amount"] is not None
+        return result

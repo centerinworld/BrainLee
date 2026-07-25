@@ -98,6 +98,7 @@ class CollectionScheduler:
             ("전종목수급수집",  self._loop_supply_daily), # ★ KIS 전종목 30일 수급
             ("네이버밸류에이션", self._loop_naver_fundamentals),  # ★ 네이버 PBR/PER/EPS
             ("현금흐름배치",    self._loop_cashflow_batch),       # ★ DART 현금흐름표 월간
+            ("수주공시",        self._loop_order_contracts),      # ★ DART 단일판매·공급계약 공시
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -687,6 +688,47 @@ class CollectionScheduler:
                 logger.error(f"[현금흐름배치] 오류: {result.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[현금흐름배치] 잡 오류: {e}")
+
+    # ──────────────────────────────────────────────────────────
+    # 수주공시 일별 수집 (19:00 — 장 마감 후 당일 공시 확정 시간대)
+    # ──────────────────────────────────────────────────────────
+
+    def _loop_order_contracts(self) -> None:
+        """19:00 영업일마다 — 오늘자 단일판매·공급계약체결/해지 공시 스캔."""
+        logger.info("[수주공시] 루프 시작")
+        while not self._stop_event.is_set():
+            self._wait_until(19, 0, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("수주공시", self._job_order_contracts_daily)
+            self._wait_secs(3600)
+        logger.info("[수주공시] 루프 종료")
+
+    def _job_order_contracts_daily(self) -> None:
+        """DART kind='I' 오늘자 단일판매·공급계약 공시 스캔 + 파싱 저장."""
+        from collectors.dart_collector import DARTCollector
+        from routes.order_contracts import _save_disclosure, _db
+
+        dart_collector = DARTCollector(api_key=config.DART_API_KEY)
+
+        async def _run():
+            items = await dart_collector.get_todays_contract_disclosures()
+            conn = _db()
+            saved = 0
+            try:
+                for item in items:
+                    try:
+                        if await _save_disclosure(conn, dart_collector, item):
+                            saved += 1
+                            conn.commit()
+                    except Exception as e:
+                        logger.warning(f"[수주공시] {item.get('rcept_no')} 저장 오류: {e}")
+            finally:
+                conn.close()
+            return len(items), saved
+
+        scanned, saved = asyncio.run(_run())
+        logger.info(f"[수주공시] 오늘자 스캔 완료 — 대상 {scanned}건 중 신규 {saved}건 저장")
 
     def _job_naver_fundamentals(self) -> None:
         """네이버금융 전종목 PBR/PER/EPS 배치 수집."""
