@@ -1,0 +1,244 @@
+{
+  "ran_at": "2026-06-28T00:18:56",
+  "hs_company_map_deleted": [],
+  "sector_stocks_deleted_count": 0,
+  "sector_stocks_deleted": [],
+  "sector_stocks_kept_aliases": [
+    {
+      "id": 291,
+      "post_id": 49,
+      "category": "금융",
+      "stock_name": "하이닉스",
+      "stock_code": "000660",
+      "canonical_name": "SK하이닉스",
+      "ref_price": 2052000.0
+    },
+    {
+      "id": 344,
+      "post_id": 57,
+      "category": "IT",
+      "stock_name": "LG그룹",
+      "stock_code": "003550",
+      "canonical_name": "LG",
+      "ref_price": 122900.0
+    },
+    {
+      "id": 173,
+      "post_id": 32,
+      "category": "아시아 증시",
+      "stock_name": "현대자동차",
+      "stock_code": "005380",
+      "canonical_name": "현대차",
+      "ref_price": 613000.0
+    },
+    {
+      "id": 251,
+      "post_id": 39,
+      "category": "기술",
+      "stock_name": "현대자동차",
+      "stock_code": "005380",
+      "canonical_name": "현대차",
+      "ref_price": 700000.0
+    },
+    {
+      "id": 175,
+      "post_id": 32,
+      "category": "아시아 증시",
+      "stock_name": "POSCO",
+      "stock_code": "005490",
+      "canonical_name": "POSCO홀딩스",
+      "ref_price": 525000.0
+    },
+    {
+      "id": 150,
+      "post_id": 29,
+      "category": "로봇",
+      "stock_name": "삼성",
+      "stock_code": "005930",
+      "canonical_name": "삼성전자",
+      "ref_price": 268500.0
+    },
+    {
+      "id": 157,
+      "post_id": 30,
+      "category": "로봇",
+      "stock_name": "삼성",
+      "stock_code": "005930",
+      "canonical_name": "삼성전자",
+      "ref_price": 268500.0
+    },
+    {
+      "id": 65,
+      "post_id": 7,
+      "category": "엔비디아 실적 발표",
+      "stock_name": "파수",
+      "stock_code": "150900",
+      "canonical_name": "파수AI",
+      "ref_price": 5660.0
+    },
+    {
+      "id": 194,
+      "post_id": 26,
+      "category": "로봇",
+      "stock_name": "현대중공업",
+      "stock_code": "329180",
+      "canonical_name": "HD현대중공업",
+      "ref_price": 658000.0
+    },
+    {
+      "id": 235,
+      "post_id": 41,
+      "category": "조선",
+      "stock_name": "현대중공업",
+      "stock_code": "329180",
+      "canonical_name": "HD현대중공업",
+      "ref_price": 640000.0
+    },
+    {
+      "id": 40,
+      "post_id": 6,
+      "category": "감속기",
+      "stock_name": "씨메스",
+      "stock_code": "475400",
+      "canonical_name": "씨메스로보틱스",
+      "ref_price": 31700.0
+    }
+  ],
+  "verification": {
+    "stock_universe_verified": [
+      {
+        "stock_code": "000640",
+        "stock_name": "동아쏘시오홀딩스",
+        "market": "KOSPI",
+        "sector_large": "의료"
+      },
+      {
+        "stock_code": "353200",
+        "stock_name": "대덕전자",
+        "market": "KOSPI",
+        "sector_large": "IT"
+      }
+    ],
+    "remaining_sector_stock_mismatches": [
+      {
+        "id": 291,
+        "stock_name": "하이닉스",
+        "stock_code": "000660",
+        "canonical_name": "SK하이닉스"
+      },
+      {
+        "id": 344,
+        "stock_name": "LG그룹",
+        "stock_code": "003550",
+        "canonical_name": "LG"
+      },
+      {
+        "id": 173,
+        "stock_name": "현대자동차",
+        "stock_code": "005380",
+        "canonical_name": "현대차"
+      },
+      {
+        "id": 251,
+        "stock_name": "현대자동차",
+        "stock_code": "005380",
+        "canonical_name": "현대차"
+      },
+      {
+        "id": 175,
+        "stock_name": "POSCO",
+        "stock_code": "005490",
+        "canonical_name": "POSCO홀딩스"
+      },
+      {
+        "id": 150,
+        "stock_name": "삼성",
+        "stock_code": "005930",
+        "canonical_name": "삼성전자"
+      },
+      {
+        "id": 157,
+        "stock_name": "삼성",
+        "stock_code": "005930",
+        "canonical_name": "삼성전자"
+      },
+      {
+        "id": 65,
+        "stock_name": "파수",
+        "stock_code": "150900",
+        "canonical_name": "파수AI"
+      },
+      {
+        "id": 194,
+        "stock_name": "현대중공업",
+        "stock_code": "329180",
+        "canonical_name": "HD현대중공업"
+      },
+      {
+        "id": 235,
+        "stock_name": "현대중공업",
+        "stock_code": "329180",
+        "canonical_name": "HD현대중공업"
+      },
+      {
+        "id": 40,
+        "stock_name": "씨메스",
+        "stock_code": "475400",
+        "canonical_name": "씨메스로보틱스"
+      }
+    ],
+    "remaining_daeduck_pollution": [],
+    "hs_000640_rows": [
+      {
+        "stock_code": "000640",
+        "stock_name": "동아쏘시오홀딩스",
+        "hs_code": "300290",
+        "sector_name": "바이오 원료 및 의약품 (전국) 수출"
+      },
+      {
+        "stock_code": "000640",
+        "stock_name": "동아쏘시오홀딩스",
+        "hs_code": "3002909990",
+        "sector_name": "바이오 원료 및 의약품 (전국) 수출"
+      },
+      {
+        "stock_code": "000640",
+        "stock_name": "동아쏘시오홀딩스",
+        "hs_code": "300490",
+        "sector_name": "원료의약품 (전국) 수출"
+      },
+      {
+        "stock_code": "000640",
+        "stock_name": "동아쏘시오홀딩스",
+        "hs_code": "3004909990",
+        "sector_name": "원료의약품 (전국) 수출"
+      }
+    ],
+    "hs_353200_rows": [
+      {
+        "stock_code": "353200",
+        "stock_name": "대덕전자",
+        "hs_code": "853400",
+        "sector_name": "기타 인쇄회로 (전국) 수출"
+      },
+      {
+        "stock_code": "353200",
+        "stock_name": "대덕전자",
+        "hs_code": "8534002000",
+        "sector_name": "기타 인쇄회로 (전국) 수출"
+      },
+      {
+        "stock_code": "353200",
+        "stock_name": "대덕전자",
+        "hs_code": "8534009000",
+        "sector_name": "기타 인쇄회로 (전국) 수출"
+      },
+      {
+        "stock_code": "353200",
+        "stock_name": "대덕전자",
+        "hs_code": "8536909090",
+        "sector_name": "기타 인쇄회로 (전국) 수출"
+      }
+    ]
+  }
+}

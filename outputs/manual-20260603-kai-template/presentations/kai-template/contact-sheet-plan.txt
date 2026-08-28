@@ -1,0 +1,5 @@
+single-slide template:
+- one clean blank template slide
+- strong top chrome with right-side brand zone
+- white body area with no table or grid
+- editable slogan text on the top-right

@@ -1,0 +1,16 @@
+template deck:
+- cover template
+- agenda template
+- executive summary template
+- three-pillar strategy template
+- KPI dashboard template
+- roadmap template
+- issue-risk-action template
+- priority matrix template
+- workstream alignment template
+- appendix/detail template
+
+rhythm goals:
+- alternate between card, lane, matrix, and wide-detail structures
+- keep the same KAI master banner across all slides
+- ensure each slide reads differently at thumbnail size

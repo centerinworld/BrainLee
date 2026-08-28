@@ -1,0 +1,18 @@
+{
+  "elapsed_sec": 21215.8,
+  "summary": {
+    "health": {
+      "ok": true,
+      "enabled": true,
+      "token_alive": true,
+      "base_url": "https://api.kiwoom.com",
+      "ws_url": "wss://api.kiwoom.com:10000/api/dostk/websocket"
+    },
+    "credit_saved": 3450513,
+    "credit_errors": 33,
+    "foreign_saved": 107150,
+    "foreign_errors": 38,
+    "stocks": 2200,
+    "ok": true
+  }
+}

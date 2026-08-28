@@ -1,0 +1,16 @@
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.csv
+*.xlsx
+*.pdf
+venv/
+venv_backup/
+StockAnalysis.app/
+.claude/
+.claude/**
+reports/
+reports/**
+hs_trade_lab/
+hs_trade_lab/data/customs_downloads/

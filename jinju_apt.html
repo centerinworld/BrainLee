@@ -1,0 +1,1411 @@
+
+        <!DOCTYPE html>
+        <html lang="ko">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>진주시 아파트 실거래가</title>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+                
+                :root {
+                    --primary-color: #2563eb;
+                    --bg-color: #f8fafc;
+                    --card-bg: #ffffff;
+                    --text-main: #1e293b;
+                    --text-light: #64748b;
+                }
+                
+                body {
+                    font-family: 'Noto Sans KR', sans-serif;
+                    background-color: var(--bg-color);
+                    color: var(--text-main);
+                    margin: 0;
+                    padding: 40px 20px;
+                }
+                
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }
+                
+                h1 {
+                    text-align: center;
+                    color: var(--primary-color);
+                    margin-bottom: 10px;
+                    font-weight: 700;
+                    font-size: 2.5rem;
+                }
+                
+                .subtitle {
+                    text-align: center;
+                    color: var(--text-light);
+                    margin-bottom: 40px;
+                    font-size: 1.1rem;
+                }
+                
+                .grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+                    gap: 24px;
+                }
+                
+                .card {
+                    background-color: var(--card-bg);
+                    border-radius: 16px;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                    padding: 28px;
+                    transition: transform 0.3s ease, box-shadow 0.3s ease;
+                    border: 1px solid #e2e8f0;
+                }
+                
+                .card:hover {
+                    transform: translateY(-8px);
+                    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+                    border-color: #cbd5e1;
+                }
+                
+                .apt-name {
+                    font-size: 1.3rem;
+                    font-weight: 700;
+                    margin-bottom: 16px;
+                    color: #0f172a;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                
+                .dong-badge {
+                    background-color: #e0e7ff;
+                    color: #4338ca;
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                }
+                
+                .price {
+                    font-size: 1.8rem;
+                    font-weight: 700;
+                    color: #ef4444;
+                    margin-bottom: 20px;
+                    padding-bottom: 16px;
+                    border-bottom: 2px dashed #f1f5f9;
+                }
+                
+                .info-row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 12px;
+                    font-size: 0.95rem;
+                }
+                
+                .info-row:last-child {
+                    margin-bottom: 0;
+                }
+                
+                .label {
+                    color: var(--text-light);
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                
+                .value {
+                    font-weight: 600;
+                    color: #334155;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>진주시 아파트 실거래가</h1>
+                <div class="subtitle">마지막 업데이트: 2026년 05월 15일 20시 42분</div>
+                <div class="grid">
+        
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">하대동</span> 상대주공</div>
+                        <div class="price">7,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">41.52㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">2층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1980년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.10</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">하대동</span> 한보타워(하대1차)</div>
+                        <div class="price">16,400만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">91.17㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">8층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1992년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.11</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 들말한보타운</div>
+                        <div class="price">29,100만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.98㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">4층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1997년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.09</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">망경동</span> 망경한보타운</div>
+                        <div class="price">22,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">119.24㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">3층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1997년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.06</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">정촌면 예하리</span> 진주정촌대경파미르</div>
+                        <div class="price">34,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9426㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">16층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2019년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.03</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 더퀸즈웰가</div>
+                        <div class="price">42,900만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">65.6733㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">9층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2015년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.09</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">신안동</span> 신안주공2</div>
+                        <div class="price">15,900만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">49.97㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">5층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1996년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.08</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">초전동</span> 초전해모로루비채2단지</div>
+                        <div class="price">43,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9671㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">4층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2014년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.08</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">주약동</span> 한주럭키타운</div>
+                        <div class="price">21,800만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">76.58㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">7층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1990년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.08</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 들말한보타운</div>
+                        <div class="price">21,800만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.8㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">6층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1997년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.08</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">문산읍 삼곡리</span> 진주문산파란채</div>
+                        <div class="price">26,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9015㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">10층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2010년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.12</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">충무공동</span> 혁신도시엘에이치아파트9단지</div>
+                        <div class="price">43,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.97㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">16층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2017년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.05</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">집현면 봉강리</span> 현대금빛마을</div>
+                        <div class="price">11,400만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.876㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">10층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2000년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.07</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 더퀸즈웰가</div>
+                        <div class="price">39,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">58.4018㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">8층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2015년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.12</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">초전동</span> 진주초전푸르지오1단지</div>
+                        <div class="price">46,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">121.144㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">18층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2009년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.07</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">주약동</span> 현대</div>
+                        <div class="price">21,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.92㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">1층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2000년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.08</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">신안동</span> 그린타운</div>
+                        <div class="price">11,700만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">68.9㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">3층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1992년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.12</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">호탄동</span> 대동디지털황토</div>
+                        <div class="price">31,300만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.6814㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">7층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2003년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.08</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">충무공동</span> 진주혁신도시중흥에스-클래스센트럴시티3단지</div>
+                        <div class="price">64,900만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.8046㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">29층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2020년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.05</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">초전동</span> 초전해모로루비채2단지</div>
+                        <div class="price">48,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9671㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">14층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2014년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.10</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 들말대경</div>
+                        <div class="price">26,900만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.99㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">5층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1998년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.07</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">가좌동</span> 제일풍경채</div>
+                        <div class="price">51,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">138.9363㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">2층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2007년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.07</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">가좌동</span> 스카이시티프라디움</div>
+                        <div class="price">58,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.991㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">24층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2019년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.06</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">충무공동</span> 한림풀에버</div>
+                        <div class="price">44,600만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">67.3717㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">2층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2015년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 엠코타운더프라하</div>
+                        <div class="price">49,600만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9651㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">31층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2014년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.01</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">가좌동</span> 주공그린빌</div>
+                        <div class="price">30,200만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">5층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2005년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.09</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">금산면 장사리</span> 금산아이파크</div>
+                        <div class="price">21,300만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.17㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">2층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2004년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.01</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">신안동</span> 흥한타운2</div>
+                        <div class="price">17,900만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.935㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">4층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1995년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.06</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 들말한보타운</div>
+                        <div class="price">22,800만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.8㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">14층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1997년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">이현동</span> 이현하이클래스웰가</div>
+                        <div class="price">32,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.98㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">7층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2008년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.06</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 들말대경</div>
+                        <div class="price">26,800만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.99㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">11층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1998년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.08</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">가좌동</span> 시티프라디움</div>
+                        <div class="price">51,700만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9941㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">7층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2020년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.08</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 하영그린맨션</div>
+                        <div class="price">10,400만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">82.65㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">17층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1992년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.05</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">강남동</span> 진주강남동일동미라주</div>
+                        <div class="price">36,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9831㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">30층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2021년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">하대동</span> 삼전프라자</div>
+                        <div class="price">9,100만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.94㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">4층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1996년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.07</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">초전동</span> 진주초장엠코타운더이스턴파크</div>
+                        <div class="price">42,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9915㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">3층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2014년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.07</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">금산면 장사리</span> 금산흥한골든빌</div>
+                        <div class="price">17,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.88㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">9층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2002년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.07</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 평거주공1차</div>
+                        <div class="price">9,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">39.69㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">5층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1988년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">옥봉동</span> 국화</div>
+                        <div class="price">5,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">45.82㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">1층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1991년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">가좌동</span> 가좌주공1차</div>
+                        <div class="price">16,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">49.94㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">3층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1993년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.02</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">하대동</span> 대영</div>
+                        <div class="price">12,300만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.86㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">10층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1992년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.06</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">강남동</span> 일진스위트포레강남</div>
+                        <div class="price">33,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">78.0753㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">24층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2021년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">충무공동</span> 진주혁신도시센텀리버파크</div>
+                        <div class="price">52,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">75.54㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">19층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2013년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.03</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 들말흥한타운</div>
+                        <div class="price">20,700만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.871㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">7층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1998년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">초전동</span> 대림</div>
+                        <div class="price">21,700만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.44㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">1층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1995년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.02</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">하대동</span> 현대</div>
+                        <div class="price">22,400만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.93㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">11층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1996년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.05</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">충무공동</span> 혁신도시엘에이치5단지</div>
+                        <div class="price">46,400만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">75.84㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">13층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2014년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.03</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">충무공동</span> 진주혁신도시센텀리버파크</div>
+                        <div class="price">54,300만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.95㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">19층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2013년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.05</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">강남동</span> 일진스위트포레강남</div>
+                        <div class="price">33,400만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">78.0753㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">20층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2021년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 들말한보타운</div>
+                        <div class="price">20,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.8㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">7층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1997년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">신안동</span> 흥한타운2</div>
+                        <div class="price">14,400만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.935㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">5층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1995년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.01</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">충무공동</span> 진주포레스트부영</div>
+                        <div class="price">38,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">59.9925㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">3층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2020년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.01</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">평거동</span> 엠코타운더프라하</div>
+                        <div class="price">53,800만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.9651㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">28층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2014년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.02</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">봉곡동</span> 대산빌리지</div>
+                        <div class="price">2,800만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">34.56㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">2층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2002년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">문산읍 삼곡리</span> 한양</div>
+                        <div class="price">10,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">81.36㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">12층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1996년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.04</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">문산읍 소문리</span> 진주문산코아루</div>
+                        <div class="price">36,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">114.9123㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">3층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2010년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.03</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">하대동</span> 일신</div>
+                        <div class="price">13,700만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">75.78㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">3층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1991년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.02</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">신안동</span> 신안주공3</div>
+                        <div class="price">14,800만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">49.96㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">3층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1997년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.01</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">정촌면 예하리</span> 진주정촌대경파미르</div>
+                        <div class="price">32,000만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">76.253㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">13층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2019년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.01</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">충무공동</span> 진주혁신코오롱하늘채</div>
+                        <div class="price">50,500만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">84.95㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">13층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">2014년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.01</span>
+                        </div>
+                    </div>
+            
+                    <div class="card">
+                        <div class="apt-name"><span class="dong-badge">신안동</span> 신안국제맨션</div>
+                        <div class="price">6,800만원</div>
+                        <div class="info-row">
+                            <span class="label">📐 전용면적</span>
+                            <span class="value">54.2㎡</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏢 층수</span>
+                            <span class="value">5층</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">🏗️ 건축년도</span>
+                            <span class="value">1987년</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">📅 거래일자</span>
+                            <span class="value">2026.05.11</span>
+                        </div>
+                    </div>
+            
+                </div>
+            </div>
+        </body>
+        </html>
+        

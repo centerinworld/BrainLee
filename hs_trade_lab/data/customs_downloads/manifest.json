@@ -1,0 +1,1512 @@
+{
+  "generated_at": "2026-07-07T19:30:07Z",
+  "start_year": 2025,
+  "end_year": 2026,
+  "endpoints": {
+    "itemtrade": {
+      "estimated_requests": 2,
+      "results": [
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/itemtrade/endYymm-202512__strtYymm-202501.jsonl.gz",
+          "count": 116133,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/itemtrade/endYymm-202612__strtYymm-202601.jsonl.gz",
+          "count": 48156,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612"
+          }
+        }
+      ]
+    },
+    "sidoitemtrade": {
+      "estimated_requests": 34,
+      "results": [
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-11__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "11"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-26__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "26"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-27__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "27"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-28__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "28"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-29__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "29"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-30__strtYymm-202501.jsonl.gz",
+          "count": 98,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "30"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-31__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "31"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-36__strtYymm-202501.jsonl.gz",
+          "count": 96,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "36"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-41__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "41"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-43__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "43"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-44__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "44"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-46__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "46"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-47__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "47"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-48__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "48"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-50__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "50"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-51__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "51"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202512__sidoCd-52__strtYymm-202501.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "52"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-11__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "11"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-26__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "26"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-27__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "27"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-28__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "28"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-29__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "29"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-30__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "30"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-31__strtYymm-202601.jsonl.gz",
+          "count": 96,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "31"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-36__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "36"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-41__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "41"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-43__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "43"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-44__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "44"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-46__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "46"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-47__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "47"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-48__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "48"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-50__strtYymm-202601.jsonl.gz",
+          "count": 95,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "50"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-51__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "51"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidoitemtrade/endYymm-202612__sidoCd-52__strtYymm-202601.jsonl.gz",
+          "count": 97,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "52"
+          }
+        }
+      ]
+    },
+    "sidotempertrade": {
+      "estimated_requests": 68,
+      "results": [
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-11__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "11",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-11__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "11",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-26__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "26",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-26__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "26",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-27__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "27",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-27__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "27",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-28__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "28",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-28__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "28",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-29__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "29",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-29__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "29",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-30__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "30",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-30__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "30",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-31__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "31",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-31__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "31",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-36__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "36",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-36__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "36",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-41__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "41",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-41__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "41",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-43__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "43",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-43__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "43",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-44__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "44",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-44__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "44",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-46__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "46",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-46__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "46",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-47__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "47",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-47__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "47",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-48__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "48",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-48__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "48",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-50__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "50",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-50__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "50",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-51__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "51",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-51__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "51",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-1__sidoCd-52__strtYymm-202501.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "52",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202512__imexTpcd-2__sidoCd-52__strtYymm-202501.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "sidoCd": "52",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-11__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "11",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-11__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "11",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-26__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "26",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-26__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "26",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-27__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "27",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-27__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "27",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-28__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "28",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-28__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "28",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-29__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "29",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-29__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "29",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-30__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "30",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-30__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "30",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-31__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "31",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-31__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "31",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-36__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "36",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-36__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "36",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-41__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "41",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-41__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "41",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-43__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "43",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-43__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "43",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-44__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "44",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-44__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "44",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-46__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "46",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-46__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "46",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-47__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "47",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-47__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "47",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-48__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "48",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-48__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "48",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-50__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "50",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-50__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "50",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-51__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "51",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-51__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "51",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-1__sidoCd-52__strtYymm-202601.jsonl.gz",
+          "count": 22,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "52",
+            "imexTpcd": "1",
+            "dtlTmprYn": "N"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotempertrade/dtlTmprYn-N__endYymm-202612__imexTpcd-2__sidoCd-52__strtYymm-202601.jsonl.gz",
+          "count": 21,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "sidoCd": "52",
+            "imexTpcd": "2",
+            "dtlTmprYn": "N"
+          }
+        }
+      ]
+    },
+    "nationtrade": {
+      "estimated_requests": 2,
+      "results": [
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/nationtrade/endYymm-202512__strtYymm-202501.jsonl.gz",
+          "count": 2830,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/nationtrade/endYymm-202612__strtYymm-202601.jsonl.gz",
+          "count": 1177,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612"
+          }
+        }
+      ]
+    },
+    "idfytempertrade": {
+      "estimated_requests": 4,
+      "results": [
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/idfytempertrade/endYymm-202512__imexTpcd-1__strtYymm-202501.jsonl.gz",
+          "count": 1812,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "imexTpcd": "1"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/idfytempertrade/endYymm-202512__imexTpcd-2__strtYymm-202501.jsonl.gz",
+          "count": 2161,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512",
+            "imexTpcd": "2"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/idfytempertrade/endYymm-202612__imexTpcd-1__strtYymm-202601.jsonl.gz",
+          "count": 754,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "imexTpcd": "1"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/idfytempertrade/endYymm-202612__imexTpcd-2__strtYymm-202601.jsonl.gz",
+          "count": 899,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612",
+            "imexTpcd": "2"
+          }
+        }
+      ]
+    },
+    "sidotrade": {
+      "estimated_requests": 2,
+      "results": [
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202512__strtYymm-202501.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202501",
+            "endYymm": "202512"
+          }
+        },
+        {
+          "status": "ok",
+          "path": "/Applications/stock_dashboard/hs_trade_lab/data/customs_downloads/sidotrade/endYymm-202612__strtYymm-202601.jsonl.gz",
+          "count": 18,
+          "result_code": "00",
+          "result_msg": "정상서비스.",
+          "params": {
+            "strtYymm": "202601",
+            "endYymm": "202612"
+          }
+        }
+      ]
+    }
+  },
+  "warnings": []
+}

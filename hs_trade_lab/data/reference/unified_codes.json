@@ -1,0 +1,3034 @@
+[
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020101",
+    "imex_tmpr_unfc_clsf_nm": "(말)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 산 동물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020102",
+    "imex_tmpr_unfc_clsf_nm": "(소)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020103",
+    "imex_tmpr_unfc_clsf_nm": "(돼지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020104",
+    "imex_tmpr_unfc_clsf_nm": "(닭)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020105",
+    "imex_tmpr_unfc_clsf_nm": "(칠면조)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020106",
+    "imex_tmpr_unfc_clsf_nm": "(오리)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020201",
+    "imex_tmpr_unfc_clsf_nm": "(소고기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020202",
+    "imex_tmpr_unfc_clsf_nm": "(돼지고기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 육류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020301",
+    "imex_tmpr_unfc_clsf_nm": "(소 설육)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020302",
+    "imex_tmpr_unfc_clsf_nm": "(돼지 설육)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 설육)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020203",
+    "imex_tmpr_unfc_clsf_nm": "(닭고기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020303",
+    "imex_tmpr_unfc_clsf_nm": "(닭 설육)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020204",
+    "imex_tmpr_unfc_clsf_nm": "(오리고기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020304",
+    "imex_tmpr_unfc_clsf_nm": "(오리 설육)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 어류(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030105",
+    "imex_tmpr_unfc_clsf_nm": "(뱀장어(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030108",
+    "imex_tmpr_unfc_clsf_nm": "(잉어(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030101",
+    "imex_tmpr_unfc_clsf_nm": "(참치(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030106",
+    "imex_tmpr_unfc_clsf_nm": "(먹장어(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030103",
+    "imex_tmpr_unfc_clsf_nm": "(넙치류(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030107",
+    "imex_tmpr_unfc_clsf_nm": "(미꾸라지(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030104",
+    "imex_tmpr_unfc_clsf_nm": "(붕어(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030109",
+    "imex_tmpr_unfc_clsf_nm": "(민어(활어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030202",
+    "imex_tmpr_unfc_clsf_nm": "(연어(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 어류(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030203",
+    "imex_tmpr_unfc_clsf_nm": "(가자미(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030201",
+    "imex_tmpr_unfc_clsf_nm": "(참치(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030205",
+    "imex_tmpr_unfc_clsf_nm": "(고등어(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030209",
+    "imex_tmpr_unfc_clsf_nm": "(삼치(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030208",
+    "imex_tmpr_unfc_clsf_nm": "(꽁치(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030204",
+    "imex_tmpr_unfc_clsf_nm": "(대구(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030207",
+    "imex_tmpr_unfc_clsf_nm": "(명태(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030212",
+    "imex_tmpr_unfc_clsf_nm": "(잉어(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030211",
+    "imex_tmpr_unfc_clsf_nm": "(뱀장어(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030206",
+    "imex_tmpr_unfc_clsf_nm": "(갈치(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032301",
+    "imex_tmpr_unfc_clsf_nm": "(수산물 부산물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030213",
+    "imex_tmpr_unfc_clsf_nm": "(어란(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030302",
+    "imex_tmpr_unfc_clsf_nm": "(연어(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 어류(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030313",
+    "imex_tmpr_unfc_clsf_nm": "(잉어(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030311",
+    "imex_tmpr_unfc_clsf_nm": "(뱀장어(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030303",
+    "imex_tmpr_unfc_clsf_nm": "(가자미(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030301",
+    "imex_tmpr_unfc_clsf_nm": "(참치(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030305",
+    "imex_tmpr_unfc_clsf_nm": "(고등어(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030310",
+    "imex_tmpr_unfc_clsf_nm": "(삼치(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030309",
+    "imex_tmpr_unfc_clsf_nm": "(꽁치(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030304",
+    "imex_tmpr_unfc_clsf_nm": "(대구(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030307",
+    "imex_tmpr_unfc_clsf_nm": "(명태(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030306",
+    "imex_tmpr_unfc_clsf_nm": "(갈치(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030308",
+    "imex_tmpr_unfc_clsf_nm": "(조기(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030312",
+    "imex_tmpr_unfc_clsf_nm": "(먹장어(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030314",
+    "imex_tmpr_unfc_clsf_nm": "(민어(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030315",
+    "imex_tmpr_unfc_clsf_nm": "(어란(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030490",
+    "imex_tmpr_unfc_clsf_nm": "(기타 어류의 어육(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030402",
+    "imex_tmpr_unfc_clsf_nm": "(연어 어육(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030403",
+    "imex_tmpr_unfc_clsf_nm": "(가자미 어육(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030401",
+    "imex_tmpr_unfc_clsf_nm": "(참치 어육(신선 또는 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030590",
+    "imex_tmpr_unfc_clsf_nm": "(기타 어류의 어육(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030504",
+    "imex_tmpr_unfc_clsf_nm": "(대구 어육(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030505",
+    "imex_tmpr_unfc_clsf_nm": "(명태 어육(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030502",
+    "imex_tmpr_unfc_clsf_nm": "(연어 어육(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030503",
+    "imex_tmpr_unfc_clsf_nm": "(가자미 어육(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030501",
+    "imex_tmpr_unfc_clsf_nm": "(참치 어육(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032201",
+    "imex_tmpr_unfc_clsf_nm": "(건조어란)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032202",
+    "imex_tmpr_unfc_clsf_nm": "(훈제어란)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032203",
+    "imex_tmpr_unfc_clsf_nm": "(염장어란)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030790",
+    "imex_tmpr_unfc_clsf_nm": "(기타 어류(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030890",
+    "imex_tmpr_unfc_clsf_nm": "(기타 어류(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030601",
+    "imex_tmpr_unfc_clsf_nm": "(연어(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030690",
+    "imex_tmpr_unfc_clsf_nm": "(기타 어류(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030602",
+    "imex_tmpr_unfc_clsf_nm": "(명태(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030701",
+    "imex_tmpr_unfc_clsf_nm": "(대구(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030703",
+    "imex_tmpr_unfc_clsf_nm": "(명태(북어))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030702",
+    "imex_tmpr_unfc_clsf_nm": "(멸치(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030704",
+    "imex_tmpr_unfc_clsf_nm": "(조기(굴비))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030801",
+    "imex_tmpr_unfc_clsf_nm": "(대구(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030802",
+    "imex_tmpr_unfc_clsf_nm": "(멸치(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030803",
+    "imex_tmpr_unfc_clsf_nm": "(연어(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030804",
+    "imex_tmpr_unfc_clsf_nm": "(갈치(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030805",
+    "imex_tmpr_unfc_clsf_nm": "(정어리(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030806",
+    "imex_tmpr_unfc_clsf_nm": "(고등어(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030807",
+    "imex_tmpr_unfc_clsf_nm": "(조기(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030808",
+    "imex_tmpr_unfc_clsf_nm": "(꽁치(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 수산물 가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030901",
+    "imex_tmpr_unfc_clsf_nm": "(새우(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031001",
+    "imex_tmpr_unfc_clsf_nm": "(새우(훈제하지 않은 것))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030902",
+    "imex_tmpr_unfc_clsf_nm": "(바닷가재(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031002",
+    "imex_tmpr_unfc_clsf_nm": "(바닷가재(훈제하지 않은 것))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030903",
+    "imex_tmpr_unfc_clsf_nm": "(게(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031003",
+    "imex_tmpr_unfc_clsf_nm": "(게(훈제하지 않은 것))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032401",
+    "imex_tmpr_unfc_clsf_nm": "(게(훈제여부 불문))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11030990",
+    "imex_tmpr_unfc_clsf_nm": "(기타 갑각류(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031090",
+    "imex_tmpr_unfc_clsf_nm": "(기타 갑각류(훈제하지 않은 것))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032402",
+    "imex_tmpr_unfc_clsf_nm": "(새우(훈제여부 불문))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032403",
+    "imex_tmpr_unfc_clsf_nm": "(바닷가재(훈제여부 불문))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031101",
+    "imex_tmpr_unfc_clsf_nm": "(굴(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031201",
+    "imex_tmpr_unfc_clsf_nm": "(굴(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031301",
+    "imex_tmpr_unfc_clsf_nm": "(굴(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031401",
+    "imex_tmpr_unfc_clsf_nm": "(굴(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031501",
+    "imex_tmpr_unfc_clsf_nm": "(굴(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 패류(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11039001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 수산물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 패류(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032502",
+    "imex_tmpr_unfc_clsf_nm": "(기타 패류(건조·염장·염수장·훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031103",
+    "imex_tmpr_unfc_clsf_nm": "(홍합(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031203",
+    "imex_tmpr_unfc_clsf_nm": "(홍합(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031303",
+    "imex_tmpr_unfc_clsf_nm": "(홍합(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031403",
+    "imex_tmpr_unfc_clsf_nm": "(홍합(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031601",
+    "imex_tmpr_unfc_clsf_nm": "(갑오징어(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031602",
+    "imex_tmpr_unfc_clsf_nm": "(오징어(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031701",
+    "imex_tmpr_unfc_clsf_nm": "(갑오징어(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031702",
+    "imex_tmpr_unfc_clsf_nm": "(오징어(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031901",
+    "imex_tmpr_unfc_clsf_nm": "(오징어류(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031801",
+    "imex_tmpr_unfc_clsf_nm": "(오징어류(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032001",
+    "imex_tmpr_unfc_clsf_nm": "(오징어류(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031603",
+    "imex_tmpr_unfc_clsf_nm": "(낙지(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031604",
+    "imex_tmpr_unfc_clsf_nm": "(주꾸미(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031605",
+    "imex_tmpr_unfc_clsf_nm": "(문어(옥토퍼스종)(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031705",
+    "imex_tmpr_unfc_clsf_nm": "(문어(옥토퍼스종)(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031703",
+    "imex_tmpr_unfc_clsf_nm": "(낙지(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031704",
+    "imex_tmpr_unfc_clsf_nm": "(주꾸미(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031104",
+    "imex_tmpr_unfc_clsf_nm": "(백합(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031106",
+    "imex_tmpr_unfc_clsf_nm": "(피조개(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031107",
+    "imex_tmpr_unfc_clsf_nm": "(새조개(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031105",
+    "imex_tmpr_unfc_clsf_nm": "(바지락(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031207",
+    "imex_tmpr_unfc_clsf_nm": "(새조개(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031205",
+    "imex_tmpr_unfc_clsf_nm": "(바지락(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031206",
+    "imex_tmpr_unfc_clsf_nm": "(피조개(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 패류(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031305",
+    "imex_tmpr_unfc_clsf_nm": "(바지락(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031490",
+    "imex_tmpr_unfc_clsf_nm": "(기타 패류(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031405",
+    "imex_tmpr_unfc_clsf_nm": "(바지락(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031590",
+    "imex_tmpr_unfc_clsf_nm": "(기타 패류(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031102",
+    "imex_tmpr_unfc_clsf_nm": "(전복(산 것, 신선, 냉장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031202",
+    "imex_tmpr_unfc_clsf_nm": "(전복(냉동))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031302",
+    "imex_tmpr_unfc_clsf_nm": "(전복(건조))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031402",
+    "imex_tmpr_unfc_clsf_nm": "(전복(염장·염수장))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11031502",
+    "imex_tmpr_unfc_clsf_nm": "(전복(훈제))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032404",
+    "imex_tmpr_unfc_clsf_nm": "(기타 갑각류(훈제여부 불문))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020401",
+    "imex_tmpr_unfc_clsf_nm": "(우유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020402",
+    "imex_tmpr_unfc_clsf_nm": "(분유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020490",
+    "imex_tmpr_unfc_clsf_nm": "(기타 유제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020404",
+    "imex_tmpr_unfc_clsf_nm": "(버터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020403",
+    "imex_tmpr_unfc_clsf_nm": "(치즈)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11029001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 축산물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21900101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 동물성 원료 및 연료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020501",
+    "imex_tmpr_unfc_clsf_nm": "(녹용과 녹각)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020590",
+    "imex_tmpr_unfc_clsf_nm": "(기타 동물성 한약재)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11019001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 농산물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020701",
+    "imex_tmpr_unfc_clsf_nm": "(축산물 부산물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010301",
+    "imex_tmpr_unfc_clsf_nm": "(튜립)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010302",
+    "imex_tmpr_unfc_clsf_nm": "(백합)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010303",
+    "imex_tmpr_unfc_clsf_nm": "(히아신스)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 화훼류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010101",
+    "imex_tmpr_unfc_clsf_nm": "(산 수목)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010304",
+    "imex_tmpr_unfc_clsf_nm": "(장미)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010307",
+    "imex_tmpr_unfc_clsf_nm": "(카네이션)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010305",
+    "imex_tmpr_unfc_clsf_nm": "(국화)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010490",
+    "imex_tmpr_unfc_clsf_nm": "(기타 채두류 종자류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010306",
+    "imex_tmpr_unfc_clsf_nm": "(심비디움)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010401",
+    "imex_tmpr_unfc_clsf_nm": "(종자용 감자)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010410",
+    "imex_tmpr_unfc_clsf_nm": "(감자)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010405",
+    "imex_tmpr_unfc_clsf_nm": "(토마토)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010407",
+    "imex_tmpr_unfc_clsf_nm": "(양파)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010418",
+    "imex_tmpr_unfc_clsf_nm": "(파)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010408",
+    "imex_tmpr_unfc_clsf_nm": "(마늘)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010419",
+    "imex_tmpr_unfc_clsf_nm": "(부추)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010490",
+    "imex_tmpr_unfc_clsf_nm": "(기타 채소류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010402",
+    "imex_tmpr_unfc_clsf_nm": "(양배추)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010401",
+    "imex_tmpr_unfc_clsf_nm": "(배추)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010414",
+    "imex_tmpr_unfc_clsf_nm": "(상추)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010404",
+    "imex_tmpr_unfc_clsf_nm": "(당근)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010403",
+    "imex_tmpr_unfc_clsf_nm": "(무)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010420",
+    "imex_tmpr_unfc_clsf_nm": "(고추냉이와 겨자무)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010406",
+    "imex_tmpr_unfc_clsf_nm": "(오이)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010109",
+    "imex_tmpr_unfc_clsf_nm": "(완두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 곡류 및 두류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010417",
+    "imex_tmpr_unfc_clsf_nm": "(가지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010409",
+    "imex_tmpr_unfc_clsf_nm": "(고추)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010415",
+    "imex_tmpr_unfc_clsf_nm": "(시금치)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010416",
+    "imex_tmpr_unfc_clsf_nm": "(호박)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010411",
+    "imex_tmpr_unfc_clsf_nm": "(고사리)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010402",
+    "imex_tmpr_unfc_clsf_nm": "(종자용 완두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010501",
+    "imex_tmpr_unfc_clsf_nm": "(사료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010403",
+    "imex_tmpr_unfc_clsf_nm": "(종자용 녹두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010107",
+    "imex_tmpr_unfc_clsf_nm": "(녹두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010404",
+    "imex_tmpr_unfc_clsf_nm": "(종자용 팥)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010106",
+    "imex_tmpr_unfc_clsf_nm": "(팥)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010405",
+    "imex_tmpr_unfc_clsf_nm": "(종자용 강낭콩)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010108",
+    "imex_tmpr_unfc_clsf_nm": "(강낭콩)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010412",
+    "imex_tmpr_unfc_clsf_nm": "(고구마)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010504",
+    "imex_tmpr_unfc_clsf_nm": "(코코넛)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010590",
+    "imex_tmpr_unfc_clsf_nm": "(기타 견과류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010507",
+    "imex_tmpr_unfc_clsf_nm": "(캐슈넛)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010501",
+    "imex_tmpr_unfc_clsf_nm": "(아몬드)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010503",
+    "imex_tmpr_unfc_clsf_nm": "(호두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010502",
+    "imex_tmpr_unfc_clsf_nm": "(밤)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010508",
+    "imex_tmpr_unfc_clsf_nm": "(피스타치오)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010505",
+    "imex_tmpr_unfc_clsf_nm": "(잣)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010506",
+    "imex_tmpr_unfc_clsf_nm": "(은행)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010601",
+    "imex_tmpr_unfc_clsf_nm": "(바나나)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010690",
+    "imex_tmpr_unfc_clsf_nm": "(기타 과실류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010602",
+    "imex_tmpr_unfc_clsf_nm": "(파인애플)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010616",
+    "imex_tmpr_unfc_clsf_nm": "(망고)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010603",
+    "imex_tmpr_unfc_clsf_nm": "(오렌지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010610",
+    "imex_tmpr_unfc_clsf_nm": "(라임)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010604",
+    "imex_tmpr_unfc_clsf_nm": "(레몬)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010605",
+    "imex_tmpr_unfc_clsf_nm": "(포도)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010617",
+    "imex_tmpr_unfc_clsf_nm": "(수박)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010609",
+    "imex_tmpr_unfc_clsf_nm": "(멜론)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010606",
+    "imex_tmpr_unfc_clsf_nm": "(사과)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010607",
+    "imex_tmpr_unfc_clsf_nm": "(배)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010618",
+    "imex_tmpr_unfc_clsf_nm": "(모과)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010614",
+    "imex_tmpr_unfc_clsf_nm": "(살구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010613",
+    "imex_tmpr_unfc_clsf_nm": "(체리)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010619",
+    "imex_tmpr_unfc_clsf_nm": "(복숭아)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010615",
+    "imex_tmpr_unfc_clsf_nm": "(자두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010608",
+    "imex_tmpr_unfc_clsf_nm": "(딸기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010620",
+    "imex_tmpr_unfc_clsf_nm": "(키위)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010611",
+    "imex_tmpr_unfc_clsf_nm": "(감)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010612",
+    "imex_tmpr_unfc_clsf_nm": "(대추)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010621",
+    "imex_tmpr_unfc_clsf_nm": "(매실)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011401",
+    "imex_tmpr_unfc_clsf_nm": "(농산물 부산물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010701",
+    "imex_tmpr_unfc_clsf_nm": "(커피두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010702",
+    "imex_tmpr_unfc_clsf_nm": "(커피의 각과 피)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010790",
+    "imex_tmpr_unfc_clsf_nm": "(기타 커피류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010801",
+    "imex_tmpr_unfc_clsf_nm": "(녹차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010802",
+    "imex_tmpr_unfc_clsf_nm": "(홍차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010803",
+    "imex_tmpr_unfc_clsf_nm": "(마테)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010901",
+    "imex_tmpr_unfc_clsf_nm": "(후추)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010990",
+    "imex_tmpr_unfc_clsf_nm": "(기타 향신료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011001",
+    "imex_tmpr_unfc_clsf_nm": "(계피)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011002",
+    "imex_tmpr_unfc_clsf_nm": "(정향)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011090",
+    "imex_tmpr_unfc_clsf_nm": "(기타 식물성 한약재)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011003",
+    "imex_tmpr_unfc_clsf_nm": "(코리앤더의 씨)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011004",
+    "imex_tmpr_unfc_clsf_nm": "(커민의 씨)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011005",
+    "imex_tmpr_unfc_clsf_nm": "(회향의 씨와 주니퍼의 열매)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010413",
+    "imex_tmpr_unfc_clsf_nm": "(생강)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010902",
+    "imex_tmpr_unfc_clsf_nm": "(심황(강황))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010903",
+    "imex_tmpr_unfc_clsf_nm": "(월계수 잎)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010102",
+    "imex_tmpr_unfc_clsf_nm": "(밀)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010103",
+    "imex_tmpr_unfc_clsf_nm": "(보리)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010104",
+    "imex_tmpr_unfc_clsf_nm": "(옥수수)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010101",
+    "imex_tmpr_unfc_clsf_nm": "(쌀)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010203",
+    "imex_tmpr_unfc_clsf_nm": "(밀가루)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 제분 생산품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010204",
+    "imex_tmpr_unfc_clsf_nm": "(옥수수가루)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010202",
+    "imex_tmpr_unfc_clsf_nm": "(보리가루)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010201",
+    "imex_tmpr_unfc_clsf_nm": "(쌀가루)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010105",
+    "imex_tmpr_unfc_clsf_nm": "(대두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010301",
+    "imex_tmpr_unfc_clsf_nm": "(땅콩)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 채유용 종자 및 과실)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010304",
+    "imex_tmpr_unfc_clsf_nm": "(유채씨)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010305",
+    "imex_tmpr_unfc_clsf_nm": "(해바라기씨)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010302",
+    "imex_tmpr_unfc_clsf_nm": "(참깨)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010303",
+    "imex_tmpr_unfc_clsf_nm": "(들깨)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21010201",
+    "imex_tmpr_unfc_clsf_nm": "(수목 종자류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011101",
+    "imex_tmpr_unfc_clsf_nm": "(인삼근)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011102",
+    "imex_tmpr_unfc_clsf_nm": "(인삼분말)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 인삼류 및 인삼 조제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032101",
+    "imex_tmpr_unfc_clsf_nm": "(김)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032102",
+    "imex_tmpr_unfc_clsf_nm": "(미역)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032103",
+    "imex_tmpr_unfc_clsf_nm": "(톳)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 해초류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21900201",
+    "imex_tmpr_unfc_clsf_nm": "(기타 식물성 원료 및 연료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011103",
+    "imex_tmpr_unfc_clsf_nm": "(인삼 수액과 엑스)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020101",
+    "imex_tmpr_unfc_clsf_nm": "(돈지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 동물성 유지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020102",
+    "imex_tmpr_unfc_clsf_nm": "(우지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020201",
+    "imex_tmpr_unfc_clsf_nm": "(대두유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 식물성 유지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020202",
+    "imex_tmpr_unfc_clsf_nm": "(참기름)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020203",
+    "imex_tmpr_unfc_clsf_nm": "(들기름)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020301",
+    "imex_tmpr_unfc_clsf_nm": "(마가린)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21020390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 유지 가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11020601",
+    "imex_tmpr_unfc_clsf_nm": "(축산물 가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032204",
+    "imex_tmpr_unfc_clsf_nm": "(수산물 통조림)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11032291",
+    "imex_tmpr_unfc_clsf_nm": "(수산물 통조림 또는 기타 수산물 가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21030101",
+    "imex_tmpr_unfc_clsf_nm": "(원당)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21030201",
+    "imex_tmpr_unfc_clsf_nm": "(정당)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21039001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 당류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21030301",
+    "imex_tmpr_unfc_clsf_nm": "(당밀)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11040101",
+    "imex_tmpr_unfc_clsf_nm": "(검)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11049001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 조제식료품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11040102",
+    "imex_tmpr_unfc_clsf_nm": "(캔디류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11040190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 설탕과자류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011201",
+    "imex_tmpr_unfc_clsf_nm": "(코코아두)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011202",
+    "imex_tmpr_unfc_clsf_nm": "(코코아 페이스트)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011203",
+    "imex_tmpr_unfc_clsf_nm": "(코코아 버터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011204",
+    "imex_tmpr_unfc_clsf_nm": "(코코아 분말(설탕 및 감미료 미 함유))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011205",
+    "imex_tmpr_unfc_clsf_nm": "(코코아 분말(설탕 및 감미료 함유))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011206",
+    "imex_tmpr_unfc_clsf_nm": "(초콜릿 및 초콜릿과자)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 코코아 조제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011301",
+    "imex_tmpr_unfc_clsf_nm": "(곡물 가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11040201",
+    "imex_tmpr_unfc_clsf_nm": "(베이커리류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 농산물 가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011302",
+    "imex_tmpr_unfc_clsf_nm": "(채소류가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11040301",
+    "imex_tmpr_unfc_clsf_nm": "(김치)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011303",
+    "imex_tmpr_unfc_clsf_nm": "(견과류 가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011304",
+    "imex_tmpr_unfc_clsf_nm": "(과실류 가공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11050101",
+    "imex_tmpr_unfc_clsf_nm": "(과실주스)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11059001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 음료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010703",
+    "imex_tmpr_unfc_clsf_nm": "(인스턴트 커피)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11010890",
+    "imex_tmpr_unfc_clsf_nm": "(기타 차류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11040401",
+    "imex_tmpr_unfc_clsf_nm": "(빙과류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11011104",
+    "imex_tmpr_unfc_clsf_nm": "(인삼음료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11060102",
+    "imex_tmpr_unfc_clsf_nm": "(맥주)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11060101",
+    "imex_tmpr_unfc_clsf_nm": "(포도주)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11069001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 주류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11060104",
+    "imex_tmpr_unfc_clsf_nm": "(청주)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11060103",
+    "imex_tmpr_unfc_clsf_nm": "(막걸리)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11060201",
+    "imex_tmpr_unfc_clsf_nm": "(위스키)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11060202",
+    "imex_tmpr_unfc_clsf_nm": "(브랜디)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11060203",
+    "imex_tmpr_unfc_clsf_nm": "(소주)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21040101",
+    "imex_tmpr_unfc_clsf_nm": "(엽연초)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "11070101",
+    "imex_tmpr_unfc_clsf_nm": "(담배)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25900101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 화학공업제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "14010101",
+    "imex_tmpr_unfc_clsf_nm": "(간이세율적용분)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010101",
+    "imex_tmpr_unfc_clsf_nm": "(비(非)금속광물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010204",
+    "imex_tmpr_unfc_clsf_nm": "(철광)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 금속광물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010205",
+    "imex_tmpr_unfc_clsf_nm": "(동광)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010206",
+    "imex_tmpr_unfc_clsf_nm": "(니켈광)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010207",
+    "imex_tmpr_unfc_clsf_nm": "(알루미늄광)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010208",
+    "imex_tmpr_unfc_clsf_nm": "(아연광)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010209",
+    "imex_tmpr_unfc_clsf_nm": "(주석광)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010202",
+    "imex_tmpr_unfc_clsf_nm": "(은)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010201",
+    "imex_tmpr_unfc_clsf_nm": "(금)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23010203",
+    "imex_tmpr_unfc_clsf_nm": "(백금)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020102",
+    "imex_tmpr_unfc_clsf_nm": "(석탄)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020103",
+    "imex_tmpr_unfc_clsf_nm": "(갈탄과 토탄)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020104",
+    "imex_tmpr_unfc_clsf_nm": "(코크스와 레토르트카본)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020105",
+    "imex_tmpr_unfc_clsf_nm": "(가스)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23900101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 광산물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25019001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 석유화학제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 석유제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020101",
+    "imex_tmpr_unfc_clsf_nm": "(원유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020202",
+    "imex_tmpr_unfc_clsf_nm": "(휘발유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020201",
+    "imex_tmpr_unfc_clsf_nm": "(나프타)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020203",
+    "imex_tmpr_unfc_clsf_nm": "(등유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020204",
+    "imex_tmpr_unfc_clsf_nm": "(경유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020205",
+    "imex_tmpr_unfc_clsf_nm": "(중유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23020206",
+    "imex_tmpr_unfc_clsf_nm": "(윤활유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "29010101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 원자재)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25030101",
+    "imex_tmpr_unfc_clsf_nm": "(무기화합물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25020501",
+    "imex_tmpr_unfc_clsf_nm": "(농약)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24029001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 비(非)철금속)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25030201",
+    "imex_tmpr_unfc_clsf_nm": "(유기화합물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25010201",
+    "imex_tmpr_unfc_clsf_nm": "(석유화학섬유원료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25020302",
+    "imex_tmpr_unfc_clsf_nm": "(비타민(유도체))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25020390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 의약품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25020303",
+    "imex_tmpr_unfc_clsf_nm": "(비타민(투여용))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040601",
+    "imex_tmpr_unfc_clsf_nm": "(의료위생용품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25049001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 화학비료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25040101",
+    "imex_tmpr_unfc_clsf_nm": "(질소비료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25040201",
+    "imex_tmpr_unfc_clsf_nm": "(인산비료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25040301",
+    "imex_tmpr_unfc_clsf_nm": "(칼륨비료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25040401",
+    "imex_tmpr_unfc_clsf_nm": "(복합비료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25020101",
+    "imex_tmpr_unfc_clsf_nm": "(염료 및 안료)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25020201",
+    "imex_tmpr_unfc_clsf_nm": "(도료 및 잉크)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13060201",
+    "imex_tmpr_unfc_clsf_nm": "(문구류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25029001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 정밀화학제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13050101",
+    "imex_tmpr_unfc_clsf_nm": "(향수 및 화장수)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13050103",
+    "imex_tmpr_unfc_clsf_nm": "(색조화장품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13050104",
+    "imex_tmpr_unfc_clsf_nm": "(매니큐어 및 패디큐어 제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13059001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 화장품류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13050102",
+    "imex_tmpr_unfc_clsf_nm": "(기초화장품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13050201",
+    "imex_tmpr_unfc_clsf_nm": "(샴푸)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13050290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 헤어제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13050202",
+    "imex_tmpr_unfc_clsf_nm": "(린스)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13900101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 비내구소비재)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25020401",
+    "imex_tmpr_unfc_clsf_nm": "(사진용화합물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010301",
+    "imex_tmpr_unfc_clsf_nm": "(실리콘웨이퍼)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25010101",
+    "imex_tmpr_unfc_clsf_nm": "(합성수지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25059001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 플라스틱제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25050101",
+    "imex_tmpr_unfc_clsf_nm": "(플라스틱 관)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25050201",
+    "imex_tmpr_unfc_clsf_nm": "(필름류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040501",
+    "imex_tmpr_unfc_clsf_nm": "(플라스틱제 생활용품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12041001",
+    "imex_tmpr_unfc_clsf_nm": "(장식용 세공품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32039002",
+    "imex_tmpr_unfc_clsf_nm": "(기타 일반기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12900101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 내구소비재)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21080101",
+    "imex_tmpr_unfc_clsf_nm": "(천연고무)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "25010301",
+    "imex_tmpr_unfc_clsf_nm": "(합성고무)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21080201",
+    "imex_tmpr_unfc_clsf_nm": "(원료용 고무제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13030201",
+    "imex_tmpr_unfc_clsf_nm": "(고무타이어 및 타이어튜브)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13039001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 고무제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21050101",
+    "imex_tmpr_unfc_clsf_nm": "(소와 마속 가죽)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21050201",
+    "imex_tmpr_unfc_clsf_nm": "(양가죽)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21059001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 가죽)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13030101",
+    "imex_tmpr_unfc_clsf_nm": "(가죽제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13040101",
+    "imex_tmpr_unfc_clsf_nm": "(가죽제 가방)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13040201",
+    "imex_tmpr_unfc_clsf_nm": "(합성수지제 가방)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13040301",
+    "imex_tmpr_unfc_clsf_nm": "(직물제 가방)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13049001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 가방)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13020101",
+    "imex_tmpr_unfc_clsf_nm": "(가죽제 의류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13020501",
+    "imex_tmpr_unfc_clsf_nm": "(양말 및 장갑)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13020590",
+    "imex_tmpr_unfc_clsf_nm": "(기타 의류부속품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21060101",
+    "imex_tmpr_unfc_clsf_nm": "(밍크모피(생모피))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21060190",
+    "imex_tmpr_unfc_clsf_nm": "(기타모피(생모피))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21060102",
+    "imex_tmpr_unfc_clsf_nm": "(여우모피(생모피))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21060201",
+    "imex_tmpr_unfc_clsf_nm": "(밍크모피(유연처리 또는 드레스가공))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21060290",
+    "imex_tmpr_unfc_clsf_nm": "(기타모피(유연처리 또는 드레스가공))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21060202",
+    "imex_tmpr_unfc_clsf_nm": "(여우모피(유연처리 또는 드레스가공))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13020201",
+    "imex_tmpr_unfc_clsf_nm": "(모피 의류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21060301",
+    "imex_tmpr_unfc_clsf_nm": "(인조모피)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21099001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 목재)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21090101",
+    "imex_tmpr_unfc_clsf_nm": "(원목)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21090201",
+    "imex_tmpr_unfc_clsf_nm": "(제재목)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21090301",
+    "imex_tmpr_unfc_clsf_nm": "(단판)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21090401",
+    "imex_tmpr_unfc_clsf_nm": "(파티클보드)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21090501",
+    "imex_tmpr_unfc_clsf_nm": "(섬유판)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21090601",
+    "imex_tmpr_unfc_clsf_nm": "(합판)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040401",
+    "imex_tmpr_unfc_clsf_nm": "(목제 생활용품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21090701",
+    "imex_tmpr_unfc_clsf_nm": "(건축용 목제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13069001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 비내구성 생활용품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21070101",
+    "imex_tmpr_unfc_clsf_nm": "(펄프)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21070102",
+    "imex_tmpr_unfc_clsf_nm": "(고지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21070201",
+    "imex_tmpr_unfc_clsf_nm": "(신문용지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21070290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 종이제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21070204",
+    "imex_tmpr_unfc_clsf_nm": "(벽지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21070202",
+    "imex_tmpr_unfc_clsf_nm": "(인쇄용지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "21070203",
+    "imex_tmpr_unfc_clsf_nm": "(화장지(가정용 제외))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13060101",
+    "imex_tmpr_unfc_clsf_nm": "(종이제 생활용품(가정용 화장지, 패드, 냅킨))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13010101",
+    "imex_tmpr_unfc_clsf_nm": "(서적)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13010201",
+    "imex_tmpr_unfc_clsf_nm": "(신문 등 정기간행물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13010301",
+    "imex_tmpr_unfc_clsf_nm": "(악보)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13019001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 인쇄물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010101",
+    "imex_tmpr_unfc_clsf_nm": "(견)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020101",
+    "imex_tmpr_unfc_clsf_nm": "(견사)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030101",
+    "imex_tmpr_unfc_clsf_nm": "(천연섬유직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010102",
+    "imex_tmpr_unfc_clsf_nm": "(모)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020102",
+    "imex_tmpr_unfc_clsf_nm": "(모사)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010103",
+    "imex_tmpr_unfc_clsf_nm": "(면)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020103",
+    "imex_tmpr_unfc_clsf_nm": "(면사)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010104",
+    "imex_tmpr_unfc_clsf_nm": "(마)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020104",
+    "imex_tmpr_unfc_clsf_nm": "(마사)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020201",
+    "imex_tmpr_unfc_clsf_nm": "(나일론사(장섬유사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020202",
+    "imex_tmpr_unfc_clsf_nm": "(폴리에스테르사(장섬유사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 합성섬유사(장섬유사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020302",
+    "imex_tmpr_unfc_clsf_nm": "(비스코스사(장섬유사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 재생·반합성섬유사(장섬유사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020301",
+    "imex_tmpr_unfc_clsf_nm": "(아세테이트사(장섬유사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030201",
+    "imex_tmpr_unfc_clsf_nm": "(나일론 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030202",
+    "imex_tmpr_unfc_clsf_nm": "(폴리에스테르 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 합성장섬유 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030204",
+    "imex_tmpr_unfc_clsf_nm": "(폴리에스테르 또는 아크릴 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030203",
+    "imex_tmpr_unfc_clsf_nm": "(아크릴 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030301",
+    "imex_tmpr_unfc_clsf_nm": "(재생·반합성장섬유 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010201",
+    "imex_tmpr_unfc_clsf_nm": "(나일론섬유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010202",
+    "imex_tmpr_unfc_clsf_nm": "(폴리에스테르섬유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 합성섬유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010301",
+    "imex_tmpr_unfc_clsf_nm": "(아세테이트섬유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010391",
+    "imex_tmpr_unfc_clsf_nm": "(모든 재생·반합성섬유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010302",
+    "imex_tmpr_unfc_clsf_nm": "(비스코스섬유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22010390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 재생·반합성섬유)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020402",
+    "imex_tmpr_unfc_clsf_nm": "(폴리에스테르사(방적사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020490",
+    "imex_tmpr_unfc_clsf_nm": "(기타 합성섬유사(방적사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020591",
+    "imex_tmpr_unfc_clsf_nm": "(모든 재생·반합성섬유사(방적사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020401",
+    "imex_tmpr_unfc_clsf_nm": "(나일론사(방적사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020403",
+    "imex_tmpr_unfc_clsf_nm": "(아크릴사(방적사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020491",
+    "imex_tmpr_unfc_clsf_nm": "(모든 합성섬유사(방적사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020502",
+    "imex_tmpr_unfc_clsf_nm": "(비스코스사(방적사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22020590",
+    "imex_tmpr_unfc_clsf_nm": "(기타 재생·반합성섬유사(방적사))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030401",
+    "imex_tmpr_unfc_clsf_nm": "(합성단섬유 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030501",
+    "imex_tmpr_unfc_clsf_nm": "(재생·반합성단섬유 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22900101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 섬유제품(의류 제외))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22039001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22029001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 섬유사)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "22030601",
+    "imex_tmpr_unfc_clsf_nm": "(편직물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13020301",
+    "imex_tmpr_unfc_clsf_nm": "(편물제 의류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13020401",
+    "imex_tmpr_unfc_clsf_nm": "(직물제 의류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13030301",
+    "imex_tmpr_unfc_clsf_nm": "(신발류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23039001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 비(非)금속광물제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020204",
+    "imex_tmpr_unfc_clsf_nm": "(다이아몬드공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23030101",
+    "imex_tmpr_unfc_clsf_nm": "(시멘트제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23030201",
+    "imex_tmpr_unfc_clsf_nm": "(석면제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23030301",
+    "imex_tmpr_unfc_clsf_nm": "(도자제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "23030401",
+    "imex_tmpr_unfc_clsf_nm": "(유리 및 유리제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12060101",
+    "imex_tmpr_unfc_clsf_nm": "(진주)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12060201",
+    "imex_tmpr_unfc_clsf_nm": "(다이아몬드)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12069001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 보석류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040901",
+    "imex_tmpr_unfc_clsf_nm": "(장신구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24010701",
+    "imex_tmpr_unfc_clsf_nm": "(철강 원부자재)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24010801",
+    "imex_tmpr_unfc_clsf_nm": "(고철)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24010601",
+    "imex_tmpr_unfc_clsf_nm": "(철강 반제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24010201",
+    "imex_tmpr_unfc_clsf_nm": "(철강 판재)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24010101",
+    "imex_tmpr_unfc_clsf_nm": "(봉·형강)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24010501",
+    "imex_tmpr_unfc_clsf_nm": "(강선)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24010401",
+    "imex_tmpr_unfc_clsf_nm": "(주·단강)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24010301",
+    "imex_tmpr_unfc_clsf_nm": "(강관)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32010101",
+    "imex_tmpr_unfc_clsf_nm": "(금속구조물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32010201",
+    "imex_tmpr_unfc_clsf_nm": "(철강재 용기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 기계요소)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31060490",
+    "imex_tmpr_unfc_clsf_nm": "(기타 선박용 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020101",
+    "imex_tmpr_unfc_clsf_nm": "(볼트 및 너트)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040201",
+    "imex_tmpr_unfc_clsf_nm": "(가사용구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31060101",
+    "imex_tmpr_unfc_clsf_nm": "(자동차 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31060201",
+    "imex_tmpr_unfc_clsf_nm": "(철도차량 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030402",
+    "imex_tmpr_unfc_clsf_nm": "(가열기구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030406",
+    "imex_tmpr_unfc_clsf_nm": "(냉난방기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 공구류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031001",
+    "imex_tmpr_unfc_clsf_nm": "(섬유기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24020101",
+    "imex_tmpr_unfc_clsf_nm": "(동)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24020701",
+    "imex_tmpr_unfc_clsf_nm": "(비(非)철금속의 부산물)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24020201",
+    "imex_tmpr_unfc_clsf_nm": "(니켈)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24020301",
+    "imex_tmpr_unfc_clsf_nm": "(알루미늄)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32010202",
+    "imex_tmpr_unfc_clsf_nm": "(알루미늄 용기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12019001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 가전제품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24020401",
+    "imex_tmpr_unfc_clsf_nm": "(연)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24020501",
+    "imex_tmpr_unfc_clsf_nm": "(아연)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "24020601",
+    "imex_tmpr_unfc_clsf_nm": "(주석)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020201",
+    "imex_tmpr_unfc_clsf_nm": "(수공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020202",
+    "imex_tmpr_unfc_clsf_nm": "(커팅공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020207",
+    "imex_tmpr_unfc_clsf_nm": "(착암공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031504",
+    "imex_tmpr_unfc_clsf_nm": "(기타 금형)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031501",
+    "imex_tmpr_unfc_clsf_nm": "(프레스 금형)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020208",
+    "imex_tmpr_unfc_clsf_nm": "(탭핑공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020209",
+    "imex_tmpr_unfc_clsf_nm": "(드릴링공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020210",
+    "imex_tmpr_unfc_clsf_nm": "(보링공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020211",
+    "imex_tmpr_unfc_clsf_nm": "(밀링공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031901",
+    "imex_tmpr_unfc_clsf_nm": "(식품가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031902",
+    "imex_tmpr_unfc_clsf_nm": "(식품가공기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12049001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 내구성 생활용품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32010301",
+    "imex_tmpr_unfc_clsf_nm": "(핵반응기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32010302",
+    "imex_tmpr_unfc_clsf_nm": "(핵반응기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030403",
+    "imex_tmpr_unfc_clsf_nm": "(증기발생 보일러)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030404",
+    "imex_tmpr_unfc_clsf_nm": "(온수 보일러)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031701",
+    "imex_tmpr_unfc_clsf_nm": "(용접기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031702",
+    "imex_tmpr_unfc_clsf_nm": "(용접기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31060401",
+    "imex_tmpr_unfc_clsf_nm": "(선박 엔진)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030101",
+    "imex_tmpr_unfc_clsf_nm": "(증기터빈)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030106",
+    "imex_tmpr_unfc_clsf_nm": "(내연기관 및 터빈의 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31060301",
+    "imex_tmpr_unfc_clsf_nm": "(항공기 엔진)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030103",
+    "imex_tmpr_unfc_clsf_nm": "(불꽃 점화식 내연기관)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030104",
+    "imex_tmpr_unfc_clsf_nm": "(압축 점화식 내연기관)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030102",
+    "imex_tmpr_unfc_clsf_nm": "(수력터빈)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030105",
+    "imex_tmpr_unfc_clsf_nm": "(터보제트)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 내연기관 및 터빈)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32039001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 일반기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030201",
+    "imex_tmpr_unfc_clsf_nm": "(액체펌프)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31060390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 항공기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030203",
+    "imex_tmpr_unfc_clsf_nm": "(펌프 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050702",
+    "imex_tmpr_unfc_clsf_nm": "(반도체제조용장비 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050602",
+    "imex_tmpr_unfc_clsf_nm": "(디스플레이패널제조용장비 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030202",
+    "imex_tmpr_unfc_clsf_nm": "(기체펌프)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33030301",
+    "imex_tmpr_unfc_clsf_nm": "(정보기기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12010401",
+    "imex_tmpr_unfc_clsf_nm": "(에어컨)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030405",
+    "imex_tmpr_unfc_clsf_nm": "(공기조절기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12010201",
+    "imex_tmpr_unfc_clsf_nm": "(냉장고)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030401",
+    "imex_tmpr_unfc_clsf_nm": "(냉방기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031101",
+    "imex_tmpr_unfc_clsf_nm": "(화학기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030690",
+    "imex_tmpr_unfc_clsf_nm": "(기타 농기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031102",
+    "imex_tmpr_unfc_clsf_nm": "(화학기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031305",
+    "imex_tmpr_unfc_clsf_nm": "(인쇄·제본기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031002",
+    "imex_tmpr_unfc_clsf_nm": "(피혁가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031201",
+    "imex_tmpr_unfc_clsf_nm": "(고무·플라스틱 가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031004",
+    "imex_tmpr_unfc_clsf_nm": "(섬유 및 피혁가공기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030501",
+    "imex_tmpr_unfc_clsf_nm": "(액체 및 기체 여과기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050701",
+    "imex_tmpr_unfc_clsf_nm": "(반도체제조용장비)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030502",
+    "imex_tmpr_unfc_clsf_nm": "(액체 및 기체 여과기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12010601",
+    "imex_tmpr_unfc_clsf_nm": "(청소,세척기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32032001",
+    "imex_tmpr_unfc_clsf_nm": "(식품포장기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32032002",
+    "imex_tmpr_unfc_clsf_nm": "(식품포장기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050201",
+    "imex_tmpr_unfc_clsf_nm": "(중량계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020206",
+    "imex_tmpr_unfc_clsf_nm": "(공기압공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030604",
+    "imex_tmpr_unfc_clsf_nm": "(농기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030301",
+    "imex_tmpr_unfc_clsf_nm": "(운반하역기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030803",
+    "imex_tmpr_unfc_clsf_nm": "(기타 건설 중장비)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030802",
+    "imex_tmpr_unfc_clsf_nm": "(지게차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31900101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 수송장비)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31050101",
+    "imex_tmpr_unfc_clsf_nm": "(엘리베이터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31050201",
+    "imex_tmpr_unfc_clsf_nm": "(에스컬레이터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030801",
+    "imex_tmpr_unfc_clsf_nm": "(불도우저)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030302",
+    "imex_tmpr_unfc_clsf_nm": "(운반하역기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030804",
+    "imex_tmpr_unfc_clsf_nm": "(건설기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030601",
+    "imex_tmpr_unfc_clsf_nm": "(경작기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030602",
+    "imex_tmpr_unfc_clsf_nm": "(수확·탈곡기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030603",
+    "imex_tmpr_unfc_clsf_nm": "(낙농기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031301",
+    "imex_tmpr_unfc_clsf_nm": "(제지기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031302",
+    "imex_tmpr_unfc_clsf_nm": "(제본기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031303",
+    "imex_tmpr_unfc_clsf_nm": "(지가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031304",
+    "imex_tmpr_unfc_clsf_nm": "(인쇄기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33030202",
+    "imex_tmpr_unfc_clsf_nm": "(프린터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031401",
+    "imex_tmpr_unfc_clsf_nm": "(복사기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33010101",
+    "imex_tmpr_unfc_clsf_nm": "(유선통신기기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031402",
+    "imex_tmpr_unfc_clsf_nm": "(복사기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12010301",
+    "imex_tmpr_unfc_clsf_nm": "(세탁기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031003",
+    "imex_tmpr_unfc_clsf_nm": "(재봉기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031801",
+    "imex_tmpr_unfc_clsf_nm": "(주조설비)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031802",
+    "imex_tmpr_unfc_clsf_nm": "(주조설비 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031601",
+    "imex_tmpr_unfc_clsf_nm": "(압연기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031602",
+    "imex_tmpr_unfc_clsf_nm": "(압연기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030701",
+    "imex_tmpr_unfc_clsf_nm": "(금속절삭가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030702",
+    "imex_tmpr_unfc_clsf_nm": "(금속성형가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030703",
+    "imex_tmpr_unfc_clsf_nm": "(광물가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030704",
+    "imex_tmpr_unfc_clsf_nm": "(목재가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030706",
+    "imex_tmpr_unfc_clsf_nm": "(가공공작기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020205",
+    "imex_tmpr_unfc_clsf_nm": "(전동공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050301",
+    "imex_tmpr_unfc_clsf_nm": "(전자계산기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32059001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 정밀기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33030101",
+    "imex_tmpr_unfc_clsf_nm": "(컴퓨터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33030203",
+    "imex_tmpr_unfc_clsf_nm": "(스캐너)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33030290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 컴퓨터 주변기기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33030204",
+    "imex_tmpr_unfc_clsf_nm": "(보조기억장치)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050302",
+    "imex_tmpr_unfc_clsf_nm": "(전자계산기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32059002",
+    "imex_tmpr_unfc_clsf_nm": "(기타 정밀기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010101",
+    "imex_tmpr_unfc_clsf_nm": "(메모리반도체)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030901",
+    "imex_tmpr_unfc_clsf_nm": "(광산기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030902",
+    "imex_tmpr_unfc_clsf_nm": "(광산기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32030705",
+    "imex_tmpr_unfc_clsf_nm": "(유리가공기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031202",
+    "imex_tmpr_unfc_clsf_nm": "(고무·플라스틱 가공기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031502",
+    "imex_tmpr_unfc_clsf_nm": "(다이캐스팅 금형)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32031503",
+    "imex_tmpr_unfc_clsf_nm": "(플라스틱 금형)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020102",
+    "imex_tmpr_unfc_clsf_nm": "(밸브)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020103",
+    "imex_tmpr_unfc_clsf_nm": "(베어링)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050601",
+    "imex_tmpr_unfc_clsf_nm": "(디스플레이패널제조용장비)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040201",
+    "imex_tmpr_unfc_clsf_nm": "(소형 직류 전동기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040203",
+    "imex_tmpr_unfc_clsf_nm": "(소형 직류·교류 겸용 전동기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040206",
+    "imex_tmpr_unfc_clsf_nm": "(중대형 직류·교류 겸용 전동기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040204",
+    "imex_tmpr_unfc_clsf_nm": "(중대형 직류 전동기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040102",
+    "imex_tmpr_unfc_clsf_nm": "(직류 발전기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040202",
+    "imex_tmpr_unfc_clsf_nm": "(소형 교류 전동기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040205",
+    "imex_tmpr_unfc_clsf_nm": "(중대형 교류 전동기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040103",
+    "imex_tmpr_unfc_clsf_nm": "(교류 발전기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040101",
+    "imex_tmpr_unfc_clsf_nm": "(엔진결합 발전기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040207",
+    "imex_tmpr_unfc_clsf_nm": "(전동기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040104",
+    "imex_tmpr_unfc_clsf_nm": "(발전기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040303",
+    "imex_tmpr_unfc_clsf_nm": "(전기변환장치 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040302",
+    "imex_tmpr_unfc_clsf_nm": "(안정기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040401",
+    "imex_tmpr_unfc_clsf_nm": "(유압식 변압기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040490",
+    "imex_tmpr_unfc_clsf_nm": "(기타 변압기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040301",
+    "imex_tmpr_unfc_clsf_nm": "(변환기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34900101",
+    "imex_tmpr_unfc_clsf_nm": "(기타 IT부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040402",
+    "imex_tmpr_unfc_clsf_nm": "(변압기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32049001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 전기기계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32049002",
+    "imex_tmpr_unfc_clsf_nm": "(기타 전기기계 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040601",
+    "imex_tmpr_unfc_clsf_nm": "(일차전지 및 축전지)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040901",
+    "imex_tmpr_unfc_clsf_nm": "(발광다이오드(LED) 장치)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040990",
+    "imex_tmpr_unfc_clsf_nm": "(기타 조명장치)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040902",
+    "imex_tmpr_unfc_clsf_nm": "(조명장치 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020104",
+    "imex_tmpr_unfc_clsf_nm": "(스마트폰)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020101",
+    "imex_tmpr_unfc_clsf_nm": "(CDMA 방식 휴대전화)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020102",
+    "imex_tmpr_unfc_clsf_nm": "(TDMA 방식 휴대전화)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020103",
+    "imex_tmpr_unfc_clsf_nm": "(OFDM 방식 휴대전화)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 방식 휴대전화)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33029001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 무선통신기기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020301",
+    "imex_tmpr_unfc_clsf_nm": "(방송용 통신기기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33029002",
+    "imex_tmpr_unfc_clsf_nm": "(기타 무선통신기기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33010102",
+    "imex_tmpr_unfc_clsf_nm": "(유선통신기기부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12010501",
+    "imex_tmpr_unfc_clsf_nm": "(음향기기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33040201",
+    "imex_tmpr_unfc_clsf_nm": "(방송기기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010102",
+    "imex_tmpr_unfc_clsf_nm": "(시스템반도체)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34020101",
+    "imex_tmpr_unfc_clsf_nm": "(액정 디바이스)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34020190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 평판디스플레이패널)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33040101",
+    "imex_tmpr_unfc_clsf_nm": "(방송기기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020201",
+    "imex_tmpr_unfc_clsf_nm": "(레이더)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33030201",
+    "imex_tmpr_unfc_clsf_nm": "(모니터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12010102",
+    "imex_tmpr_unfc_clsf_nm": "(LCD TV)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12010190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 TV)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12010105",
+    "imex_tmpr_unfc_clsf_nm": "(흑백 TV)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020202",
+    "imex_tmpr_unfc_clsf_nm": "(레이더 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34020102",
+    "imex_tmpr_unfc_clsf_nm": "(평판디스플레이 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "33020302",
+    "imex_tmpr_unfc_clsf_nm": "(방송용 통신기기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040501",
+    "imex_tmpr_unfc_clsf_nm": "(차단기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040504",
+    "imex_tmpr_unfc_clsf_nm": "(기타 전기공급 및 제어장치)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040502",
+    "imex_tmpr_unfc_clsf_nm": "(배전반)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040505",
+    "imex_tmpr_unfc_clsf_nm": "(전기공급 및 제어장치 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010201",
+    "imex_tmpr_unfc_clsf_nm": "(다이오드)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010202",
+    "imex_tmpr_unfc_clsf_nm": "(트랜지스터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 개별소자반도체)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010203",
+    "imex_tmpr_unfc_clsf_nm": "(발광다이오드(LED))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010204",
+    "imex_tmpr_unfc_clsf_nm": "(개별소자반도체 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010190",
+    "imex_tmpr_unfc_clsf_nm": "(기타 집적회로반도체)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "34010103",
+    "imex_tmpr_unfc_clsf_nm": "(집적회로반도체 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32040701",
+    "imex_tmpr_unfc_clsf_nm": "(전선 및 케이블)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31020101",
+    "imex_tmpr_unfc_clsf_nm": "(철도차량)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31909001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 수송장비 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31019001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 자동차(수송장비))"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31010101",
+    "imex_tmpr_unfc_clsf_nm": "(화물자동차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020501",
+    "imex_tmpr_unfc_clsf_nm": "(전기자동차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020101",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 1,000cc이하 승용차 - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020201",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 1,000cc이하 승용차 - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020102",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 1,000cc초과 승용차(1,500cc이하) - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020202",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 1,000cc초과 승용차(1,500cc이하) - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020103",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 1,500cc초과 승용차(2,000cc이하) - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020203",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 1,500cc초과 승용차(2,000cc이하) - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020104",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 2,000cc초과 승용차(3,000cc이하) - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020204",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 2,000cc초과 승용차(3,000cc이하) - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020105",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 3,000cc초과 승용차(4,000cc이하) - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020205",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 3,000cc초과 승용차(4,000cc이하) - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020106",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 4,000cc초과 승용차 - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020206",
+    "imex_tmpr_unfc_clsf_nm": "(가솔린 4,000cc초과 승용차 - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020301",
+    "imex_tmpr_unfc_clsf_nm": "(디젤 1,500cc이하 승용차 - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020401",
+    "imex_tmpr_unfc_clsf_nm": "(디젤 1,500cc이하 승용차 - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020302",
+    "imex_tmpr_unfc_clsf_nm": "(디젤 1,500cc초과 승용차(2,000cc이하) - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020402",
+    "imex_tmpr_unfc_clsf_nm": "(디젤 1,500cc초과 승용차(2,000cc이하) - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020303",
+    "imex_tmpr_unfc_clsf_nm": "(디젤 2,000cc초과 승용차(2,500cc이하) - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020403",
+    "imex_tmpr_unfc_clsf_nm": "(디젤 2,000cc초과 승용차(2,500cc이하) - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020304",
+    "imex_tmpr_unfc_clsf_nm": "(디젤 2,500cc초과 승용차 - 신차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020404",
+    "imex_tmpr_unfc_clsf_nm": "(디젤 2,500cc초과 승용차 - 중고차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31010201",
+    "imex_tmpr_unfc_clsf_nm": "(특장차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020701",
+    "imex_tmpr_unfc_clsf_nm": "(모터사이클)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020790",
+    "imex_tmpr_unfc_clsf_nm": "(기타 2륜차)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12030201",
+    "imex_tmpr_unfc_clsf_nm": "(전기 자전거)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12030101",
+    "imex_tmpr_unfc_clsf_nm": "(페달식 자전거)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12020601",
+    "imex_tmpr_unfc_clsf_nm": "(신체장애인용 차량)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31060501",
+    "imex_tmpr_unfc_clsf_nm": "(자전거 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31030301",
+    "imex_tmpr_unfc_clsf_nm": "(무동력 항공기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31030101",
+    "imex_tmpr_unfc_clsf_nm": "(헬리콥터)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31030201",
+    "imex_tmpr_unfc_clsf_nm": "(비행기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31030501",
+    "imex_tmpr_unfc_clsf_nm": "(우주선)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31030401",
+    "imex_tmpr_unfc_clsf_nm": "(낙하산)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31030601",
+    "imex_tmpr_unfc_clsf_nm": "(무인기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31060302",
+    "imex_tmpr_unfc_clsf_nm": "(우주선 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31040101",
+    "imex_tmpr_unfc_clsf_nm": "(여객선)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31040201",
+    "imex_tmpr_unfc_clsf_nm": "(화물선)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31040301",
+    "imex_tmpr_unfc_clsf_nm": "(어선)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31040401",
+    "imex_tmpr_unfc_clsf_nm": "(요트)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31040501",
+    "imex_tmpr_unfc_clsf_nm": "(모터보트)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31040601",
+    "imex_tmpr_unfc_clsf_nm": "(예인선)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31049001",
+    "imex_tmpr_unfc_clsf_nm": "(기타 선박)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "31040701",
+    "imex_tmpr_unfc_clsf_nm": "(군함)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050504",
+    "imex_tmpr_unfc_clsf_nm": "(기타 사진 및 광학기기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050502",
+    "imex_tmpr_unfc_clsf_nm": "(안경류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050505",
+    "imex_tmpr_unfc_clsf_nm": "(사진 및 광학기기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050501",
+    "imex_tmpr_unfc_clsf_nm": "(카메라)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050503",
+    "imex_tmpr_unfc_clsf_nm": "(현미경)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050401",
+    "imex_tmpr_unfc_clsf_nm": "(전자현미경)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050402",
+    "imex_tmpr_unfc_clsf_nm": "(전자현미경 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050290",
+    "imex_tmpr_unfc_clsf_nm": "(기타 계측기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050209",
+    "imex_tmpr_unfc_clsf_nm": "(계측기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020203",
+    "imex_tmpr_unfc_clsf_nm": "(측정공구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32020212",
+    "imex_tmpr_unfc_clsf_nm": "(공구류 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050101",
+    "imex_tmpr_unfc_clsf_nm": "(의료용기기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050102",
+    "imex_tmpr_unfc_clsf_nm": "(의료용기기 부품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050202",
+    "imex_tmpr_unfc_clsf_nm": "(온도계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050203",
+    "imex_tmpr_unfc_clsf_nm": "(기압계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050204",
+    "imex_tmpr_unfc_clsf_nm": "(습도계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050206",
+    "imex_tmpr_unfc_clsf_nm": "(유량압력계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050205",
+    "imex_tmpr_unfc_clsf_nm": "(속도계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050207",
+    "imex_tmpr_unfc_clsf_nm": "(전자계측기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32050208",
+    "imex_tmpr_unfc_clsf_nm": "(전기계측기)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040301",
+    "imex_tmpr_unfc_clsf_nm": "(손목시계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040390",
+    "imex_tmpr_unfc_clsf_nm": "(기타 시계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040302",
+    "imex_tmpr_unfc_clsf_nm": "(전자시계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040303",
+    "imex_tmpr_unfc_clsf_nm": "(자명종시계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040304",
+    "imex_tmpr_unfc_clsf_nm": "(벽시계)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040305",
+    "imex_tmpr_unfc_clsf_nm": "(시계줄)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040701",
+    "imex_tmpr_unfc_clsf_nm": "(악기류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "32010401",
+    "imex_tmpr_unfc_clsf_nm": "(무기 및 총포탄)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040101",
+    "imex_tmpr_unfc_clsf_nm": "(가구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12040801",
+    "imex_tmpr_unfc_clsf_nm": "(완구류)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "13060301",
+    "imex_tmpr_unfc_clsf_nm": "(운동용구)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12050101",
+    "imex_tmpr_unfc_clsf_nm": "(예술품)"
+  },
+  {
+    "imex_tmpr_unfc_clsf_cd": "12050201",
+    "imex_tmpr_unfc_clsf_nm": "(수집품 및 골동품)"
+  }
+]

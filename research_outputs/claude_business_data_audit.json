@@ -1,0 +1,1519 @@
+{
+  "generated_at": "2026-06-19T21:19:52.009164+09:00",
+  "database": "/Applications/stock_dashboard/stock.db",
+  "material": {
+    "summary": {
+      "dart_material_purchase": {
+        "rows": 2652,
+        "stocks": 1072
+      },
+      "cost_structure": {
+        "rows": 27742,
+        "stocks": 2356
+      },
+      "dart_cost_quarterly": {
+        "rows": 37891,
+        "stocks": 2333
+      }
+    },
+    "yearly_coverage": [
+      {
+        "year": 2021,
+        "rows": 1,
+        "stocks": 1,
+        "non_null": 0
+      },
+      {
+        "year": 2022,
+        "rows": 828,
+        "stocks": 828,
+        "non_null": 797
+      },
+      {
+        "year": 2023,
+        "rows": 899,
+        "stocks": 899,
+        "non_null": 877
+      },
+      {
+        "year": 2024,
+        "rows": 924,
+        "stocks": 924,
+        "non_null": 900
+      }
+    ],
+    "annual_purchase_outliers": [],
+    "cost_structure_ratio_mismatch": [
+      {
+        "stock_code": "036710",
+        "stock_name": "심텍홀딩스",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 531875000000.0,
+        "revenue": 1710417170744.0,
+        "raw_material_ratio": 802938.0550745685,
+        "expected_ratio": 0.3109621495255711,
+        "abs_diff": 802937.744112419
+      },
+      {
+        "stock_code": "072470",
+        "stock_name": "우리산업홀딩스",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 100564859000.0,
+        "revenue": 495522375288.0,
+        "raw_material_ratio": 231195.80805421897,
+        "expected_ratio": 0.2029471604416475,
+        "abs_diff": 231195.60510705854
+      },
+      {
+        "stock_code": "023450",
+        "stock_name": "동남합성",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 134500000000.0,
+        "revenue": 193400000000.0,
+        "raw_material_ratio": 11225.270395481715,
+        "expected_ratio": 0.6954498448810755,
+        "abs_diff": 11224.574945636834
+      },
+      {
+        "stock_code": "032960",
+        "stock_name": "동일기연",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 8595366000.0,
+        "revenue": 26699392928.0,
+        "raw_material_ratio": 9143.121251027826,
+        "expected_ratio": 0.3219311399019087,
+        "abs_diff": 9142.799319887923
+      },
+      {
+        "stock_code": "004840",
+        "stock_name": "DRB동일",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 1010720150000.0,
+        "revenue": 661800000000.0,
+        "raw_material_ratio": 5612.255524636786,
+        "expected_ratio": 1.5272289966757329,
+        "abs_diff": 5610.7282956401095
+      },
+      {
+        "stock_code": "072470",
+        "stock_name": "우리산업홀딩스",
+        "year": 2023,
+        "quarter": 4,
+        "raw_material_cost": 420435000000.0,
+        "revenue": 575273528400.0,
+        "raw_material_ratio": 3455.3629664283876,
+        "expected_ratio": 0.7308436408839284,
+        "abs_diff": 3454.6321227875037
+      },
+      {
+        "stock_code": "003310",
+        "stock_name": "대주산업",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 66986000000.0,
+        "revenue": 99235803613.0,
+        "raw_material_ratio": 1501.5715100511097,
+        "expected_ratio": 0.6750184667343668,
+        "abs_diff": 1500.8964915843753
+      },
+      {
+        "stock_code": "009270",
+        "stock_name": "신원",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 370836000000.0,
+        "revenue": 995439504318.0,
+        "raw_material_ratio": 1187.4191969715373,
+        "expected_ratio": 0.37253494400352216,
+        "abs_diff": 1187.0466620275338
+      },
+      {
+        "stock_code": "035610",
+        "stock_name": "솔본",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 93816000000.0,
+        "revenue": 93816087048.0,
+        "raw_material_ratio": 956.1730183947117,
+        "expected_ratio": 0.9999990721420735,
+        "abs_diff": 955.1730193225696
+      },
+      {
+        "stock_code": "054450",
+        "stock_name": "텔레칩스",
+        "year": 2023,
+        "quarter": 4,
+        "raw_material_cost": 82143000000.0,
+        "revenue": 203076923.0,
+        "raw_material_ratio": 0.4454510040908393,
+        "expected_ratio": 404.4920456077621,
+        "abs_diff": 404.0465946036713
+      },
+      {
+        "stock_code": "334970",
+        "stock_name": "프레스티지바이오로직스",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 5848328000.0,
+        "revenue": 6325247843.0,
+        "raw_material_ratio": 375.7188721716502,
+        "expected_ratio": 0.9246006077804847,
+        "abs_diff": 374.79427156386976
+      },
+      {
+        "stock_code": "026150",
+        "stock_name": "특수건설",
+        "year": 2024,
+        "quarter": 4,
+        "raw_material_cost": 204689448674.0,
+        "revenue": 212529706481.0,
+        "raw_material_ratio": 357.45480691628177,
+        "expected_ratio": 0.9631098262129256,
+        "abs_diff": 356.49169709006884
+      },
+      {
+        "stock_code": "014470",
+        "stock_name": "부방",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 338459000000.0,
+        "revenue": 338458898642.0,
+        "raw_material_ratio": 324.0566731776789,
+        "expected_ratio": 1.000000299469154,
+        "abs_diff": 323.0566728782097
+      },
+      {
+        "stock_code": "069080",
+        "stock_name": "웹젠",
+        "year": 2024,
+        "quarter": 4,
+        "raw_material_cost": 90997000000.0,
+        "revenue": 402127074.0,
+        "raw_material_ratio": 0.42504430436428675,
+        "expected_ratio": 226.28916549896365,
+        "abs_diff": 225.86412119459936
+      },
+      {
+        "stock_code": "042370",
+        "stock_name": "비츠로테크",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 225000000000.0,
+        "revenue": 347689372623.0,
+        "raw_material_ratio": 172.63087040405063,
+        "expected_ratio": 0.647129356593731,
+        "abs_diff": 171.9837410474569
+      },
+      {
+        "stock_code": "054800",
+        "stock_name": "아이디스홀딩스",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 341694922000.0,
+        "revenue": 874051270582.0,
+        "raw_material_ratio": 154.793370233435,
+        "expected_ratio": 0.3909323554583673,
+        "abs_diff": 154.40243787797664
+      },
+      {
+        "stock_code": "015860",
+        "stock_name": "일진홀딩스",
+        "year": 2023,
+        "quarter": 4,
+        "raw_material_cost": 1554479000000.0,
+        "revenue": 1471896022592.0,
+        "raw_material_ratio": 131.3496246716958,
+        "expected_ratio": 1.0561065293610699,
+        "abs_diff": 130.29351814233473
+      },
+      {
+        "stock_code": "014160",
+        "stock_name": "대영포장",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 928592000000.0,
+        "revenue": 302600000000.0,
+        "raw_material_ratio": 124.38658170496467,
+        "expected_ratio": 3.068711169861203,
+        "abs_diff": 121.31787053510347
+      },
+      {
+        "stock_code": "052710",
+        "stock_name": "아모텍",
+        "year": 2022,
+        "quarter": 4,
+        "raw_material_cost": 125509455000.0,
+        "revenue": 215714387212.0,
+        "raw_material_ratio": 118.7757857296265,
+        "expected_ratio": 0.5818316368330672,
+        "abs_diff": 118.19395409279343
+      },
+      {
+        "stock_code": "003310",
+        "stock_name": "대주산업",
+        "year": 2024,
+        "quarter": 4,
+        "raw_material_cost": 14878654000.0,
+        "revenue": 128093497.0,
+        "raw_material_ratio": 0.14112069717459555,
+        "expected_ratio": 116.15463976286009,
+        "abs_diff": 116.01351906568549
+      }
+    ],
+    "quarterly_material_likely_bad_parse": [
+      {
+        "stock_code": "177350",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2026.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "크기에가격변동추이를 산출하기 어렵습니다. 3. 원재료 및 생산설비 1) 원재료 매입액 (단위: 천원) 품목 2026년 1분기 2025년 2024년 필름소재 부문 2,169,581 8,89"
+      },
+      {
+        "stock_code": "170920",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2026.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "비 관련 외 합 계 98,838 100% 3. 원재료 및 생산설비 가. 원재료 매입현황 (단위 : 백만원) 사업부문 구 분 2026년(제20기 1분기) 2025년(제19기) 2024년(제18기) 케미칼 "
+      },
+      {
+        "stock_code": "162300",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2026.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "경쟁력이 있는 중국 등에서 일부 원재료를 수입하고 있습니다. 가. 주요 원재료 매입현황 (단위 : 백만원) 매입유형 품 목 구 분 2026년1분기 2025년 2024년 (제19기) (제18기) (제17기) 원재"
+      },
+      {
+        "stock_code": "159580",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 27.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": " 총 계 - 16,690 100.0 3. 원재료 및 생산설비 가. 주요 원재료 매입현황 (단위 : 백만원,%) 사업부문 매입유형 품목 매입액(제27기 1분기) 비율(%) 비고 (주요매입처) 특수관계여부 궁중비책 외주생산"
+      },
+      {
+        "stock_code": "158430",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 1.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "주 용역을 의뢰하여 발생하는 외주용역비와 티머니 솔루션 제품에 사용되는 원재료 매입이 발생하고 있습니다. 1) 가격변동추이 당사가 영위하는 사업은 정형화된 물품이 납품되는 것이 아"
+      },
+      {
+        "stock_code": "154040",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 3227343.0,
+        "confidence": 0.75,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "키는 납품업체 여부(경쟁강도)가 제품별 가격에 미치는 영향이 큽니다. [원재료 매입액] (단위 : 천원, %) 품목 매입액 비율(%) 전자파차단소재 부문 3,227,343 100.00 (*) 2026년 1분기 기준 매입액입니다. 2. 생산설비 | 산설비 (1) 생산설비 등 (단위 : 천원) 구 분 기초 취 득 처 분 감가"
+      },
+      {
+        "stock_code": "154030",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 100.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": " 생산품은 나종자입니다. 최종 제품인 종자의 원재료는 나종자이며, 전체 원재료비 가운데 나종자가 차지하는 비중이 100%입니다. 당사에서 상품으로 판매되는 것들은 나종자를 정선, 코팅, 포장"
+      },
+      {
+        "stock_code": "148930",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 30.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "튬이온 소스로 배터리의 용량과 평균 전압을 결정하며, 리튬이온전지 전체 재료비의 30~35% 차지하는 핵심소재 음극재 양극에서 나온 리튬이온을 저장 및 방출"
+      },
+      {
+        "stock_code": "147830",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 1.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": " 위하여 원자재 가공 후 매입하고 있으며, 금속제품의 가공 정도에 따라 재료 매입 가격이 상이하므로 시중에 공시되는 철강재의 1차유통가격을 기재하였습니다.② 합성수지제품 : 주요한 자재 및 매입액이 "
+      },
+      {
+        "stock_code": "146060",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2024.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "KELP, ERW강관, 무계목강관 등으로 구성되어 있습니다. 가. 주요 원재료 매입현황 (단위 : 백만원) 매입유형 품목 구분 2024년 2025년 2026년 1분기 원재료 SKELP 국내 - - - 수입 "
+      },
+      {
+        "stock_code": "141080",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 727309.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "위: 천원) 매입유형 구 분 2026년 1분기 2025년 2024년 시약재료비 국 내 727,309 4,225,542 3,664,503 수 입 1,538,668 8,044"
+      },
+      {
+        "stock_code": "137950",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2026.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "이며 수출이 포함된 평균단가입니다. 3. 원재료 및 생산설비 가. 주요 원재료 매입 현황 및 매입처 (단위 : 백만원, 천$) 매입유형 품목 구분 2026년 1분기 2025년 2024년 원재료 대두유 국내 - - - 수입 - "
+      },
+      {
+        "stock_code": "137080",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2026.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "사 영업비밀로서 기재하지 않습니다. 3. 원재료 및 생산설비 가. 주요 원재료 매입 현황 (단위: 백만원, $) 품 목 구 분 2026연도 1분기 2025연도 2024연도 (제32기) (제31기) (제30기"
+      },
+      {
+        "stock_code": "123860",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 25.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": " - 해당사항 없음 3. 원재료 및 생산설비 가. 주요 원재료 ○ 주요 원재료 매입 현황 (단위 : 백만원) 매입유형 품목 제25기 1분기 제24기 연간 제23기 연간 매입처 특수관계여부 매입액 비율 "
+      },
+      {
+        "stock_code": "123410",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 17.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "격은 영업비밀이기에 기재하지 않았습니다. 3. 원재료 및 생산설비 가. 원재료 매입현황 (단위: 천원) 구분 품 목 제17기 1분기 제16기 제15기 지배회사 코리아에프티(국내법인) 원재료 활성"
+      },
+      {
+        "stock_code": "119500",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2026.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": " 안정된 원자재 공급을 받고 있습니다. 가. 원재료 현황 (1) 연도별 원재료 매입금액 (단위: 백만원) 매입유형 품 목 2026년 제42기 1분기 2025년 제41기 2024년제40기 원재료 합금강 "
+      },
+      {
+        "stock_code": "115570",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2026.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": " 불만 최소화에 주력하고 있습니다. 3. 원재료 및 생산설비 가. 주요 원재료 매입 현황 (단위 : 백만원) 품 목 구분 2026년(제31기) 2025년(제30기) 2024년(제29기) 비고 PVC, "
+      },
+      {
+        "stock_code": "115450",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 50.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": ")메탈과 씨엔아이전선 등의 전기동선 및 강판(하우징) 프레스 업체가 총 원재료 매입액에서 50% 이상을 차지하고 있습니다.(변압기 부문) 변압기를 구성하는 원재료는 "
+      },
+      {
+        "stock_code": "108670",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 18.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "료 현황 (단위 : 백만원, %) 사업부문 매입유형 주요품목 구체적용도 원재료매입액 주요매입처 제18기1분기 비중(%) 건축자재 원재료 PVC, 가소제, MMA 창호, 바닥"
+      },
+      {
+        "stock_code": "108380",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "material_cost_krw": 2026.0,
+        "confidence": 0.6,
+        "source_report_nm": "분기보고서 (2026.03)",
+        "excerpt": "접 수출 내역도 포함되어 있습니다. 3. 원재료 및 생산설비 가. 주요 원재료 매입 현황 (단위:천원,천USD) 매입유형 품목 구분 연도별 매입금액 2026년 1분기 2025년 2024년 원재료 등체 국내 1,362,665 5,"
+      }
+    ],
+    "verdict": {
+      "annual_material_purchase": "usable_with_sanity_filters",
+      "cost_structure_annual_backfill": "mostly_usable",
+      "dart_cost_quarterly_material": "not_safe_without_reparser"
+    }
+  },
+  "backlog": {
+    "summary": {
+      "order_backlog": {
+        "rows": 6707,
+        "stocks": 838
+      },
+      "dart_backlog_quarterly": {
+        "rows": 1425,
+        "stocks": 261
+      }
+    },
+    "year_quarter_coverage": [
+      {
+        "year": 2016,
+        "quarter": 4,
+        "rows": 1,
+        "stocks": 1,
+        "non_null_amount": 1,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2017,
+        "quarter": 4,
+        "rows": 1,
+        "stocks": 1,
+        "non_null_amount": 1,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2018,
+        "quarter": 4,
+        "rows": 1,
+        "stocks": 1,
+        "non_null_amount": 1,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2019,
+        "quarter": 4,
+        "rows": 2,
+        "stocks": 2,
+        "non_null_amount": 2,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2020,
+        "quarter": 1,
+        "rows": 60,
+        "stocks": 60,
+        "non_null_amount": 60,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2020,
+        "quarter": 2,
+        "rows": 60,
+        "stocks": 60,
+        "non_null_amount": 60,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2020,
+        "quarter": 3,
+        "rows": 60,
+        "stocks": 60,
+        "non_null_amount": 60,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2020,
+        "quarter": 4,
+        "rows": 68,
+        "stocks": 68,
+        "non_null_amount": 68,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2021,
+        "quarter": 1,
+        "rows": 67,
+        "stocks": 67,
+        "non_null_amount": 67,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2021,
+        "quarter": 2,
+        "rows": 66,
+        "stocks": 66,
+        "non_null_amount": 66,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2021,
+        "quarter": 3,
+        "rows": 71,
+        "stocks": 71,
+        "non_null_amount": 71,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2021,
+        "quarter": 4,
+        "rows": 75,
+        "stocks": 75,
+        "non_null_amount": 75,
+        "non_null_to_rev": 1
+      },
+      {
+        "year": 2022,
+        "quarter": 1,
+        "rows": 69,
+        "stocks": 69,
+        "non_null_amount": 69,
+        "non_null_to_rev": 0
+      },
+      {
+        "year": 2022,
+        "quarter": 2,
+        "rows": 116,
+        "stocks": 116,
+        "non_null_amount": 116,
+        "non_null_to_rev": 4
+      },
+      {
+        "year": 2022,
+        "quarter": 3,
+        "rows": 118,
+        "stocks": 118,
+        "non_null_amount": 118,
+        "non_null_to_rev": 4
+      },
+      {
+        "year": 2022,
+        "quarter": 4,
+        "rows": 457,
+        "stocks": 457,
+        "non_null_amount": 457,
+        "non_null_to_rev": 5
+      },
+      {
+        "year": 2023,
+        "quarter": 1,
+        "rows": 378,
+        "stocks": 378,
+        "non_null_amount": 378,
+        "non_null_to_rev": 8
+      },
+      {
+        "year": 2023,
+        "quarter": 2,
+        "rows": 383,
+        "stocks": 383,
+        "non_null_amount": 383,
+        "non_null_to_rev": 4
+      },
+      {
+        "year": 2023,
+        "quarter": 3,
+        "rows": 400,
+        "stocks": 400,
+        "non_null_amount": 400,
+        "non_null_to_rev": 6
+      },
+      {
+        "year": 2023,
+        "quarter": 4,
+        "rows": 418,
+        "stocks": 418,
+        "non_null_amount": 418,
+        "non_null_to_rev": 2
+      },
+      {
+        "year": 2024,
+        "quarter": 1,
+        "rows": 425,
+        "stocks": 425,
+        "non_null_amount": 425,
+        "non_null_to_rev": 7
+      },
+      {
+        "year": 2024,
+        "quarter": 2,
+        "rows": 443,
+        "stocks": 443,
+        "non_null_amount": 443,
+        "non_null_to_rev": 3
+      },
+      {
+        "year": 2024,
+        "quarter": 3,
+        "rows": 449,
+        "stocks": 449,
+        "non_null_amount": 449,
+        "non_null_to_rev": 4
+      },
+      {
+        "year": 2024,
+        "quarter": 4,
+        "rows": 465,
+        "stocks": 465,
+        "non_null_amount": 465,
+        "non_null_to_rev": 2
+      },
+      {
+        "year": 2025,
+        "quarter": 1,
+        "rows": 458,
+        "stocks": 458,
+        "non_null_amount": 458,
+        "non_null_to_rev": 4
+      },
+      {
+        "year": 2025,
+        "quarter": 2,
+        "rows": 482,
+        "stocks": 482,
+        "non_null_amount": 482,
+        "non_null_to_rev": 2
+      },
+      {
+        "year": 2025,
+        "quarter": 3,
+        "rows": 493,
+        "stocks": 493,
+        "non_null_amount": 493,
+        "non_null_to_rev": 4
+      },
+      {
+        "year": 2025,
+        "quarter": 4,
+        "rows": 519,
+        "stocks": 519,
+        "non_null_amount": 519,
+        "non_null_to_rev": 1
+      },
+      {
+        "year": 2026,
+        "quarter": 1,
+        "rows": 102,
+        "stocks": 102,
+        "non_null_amount": 102,
+        "non_null_to_rev": 7
+      }
+    ],
+    "likely_bad_parse": [
+      {
+        "stock_code": "128660",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2025.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2025.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "하고 있음 (단위 : 톤,백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 탈산제 2025년 12월 11일 2026년 상반기 16,470 73,041 8,351 "
+      },
+      {
+        "stock_code": "123750",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2026.01,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2026.01,
+        "backlog_confidence": 0.65,
+        "excerpt": "수주상황 (단위 : 대, 백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 전기자전거外 2026.01.09 2026.07.24 11,000 11,829 800 857 10,"
+      },
+      {
+        "stock_code": "115450",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2025.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2025.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "체인사업부문] (단위 : 백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 수막구균 백신 공급 2025년 11월 06일 2026년 06월 30일 182,665 6,491 72"
+      },
+      {
+        "stock_code": "112610",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 1023.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 1023.0,
+        "backlog_confidence": 0.65,
+        "excerpt": " 누적 풍력타워부문의 수주총액은 228백만USD이며, 2026년 3월말 수주잔고는 1,023백만USD입니다. 해상풍력 하부구조물 부문에서는 Orsted, RWE 등"
+      },
+      {
+        "stock_code": "109960",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 3.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 3.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "다. 수주상황 (단위 : 백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 새울 3, 4호기(구. 신고리 원자력 5, 6호기)주설비 공사 2020.05.20"
+      },
+      {
+        "stock_code": "106080",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2025.06,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2025.06,
+        "backlog_confidence": 0.65,
+        "excerpt": "략하였습니다. (단위 : ea ) 품목 수주일자 기간 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 ESS CAN 2025.06.25 5년 16,939,893 - - - 16,939,893 - ESS"
+      },
+      {
+        "stock_code": "092300",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2026.1,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2026.1,
+        "backlog_confidence": 0.65,
+        "excerpt": "수주현황 (단위 : 백만원,천㎡) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 PCB 2026.1.1~2026.03.31 2026.1.1~ 319 55,748 131 2"
+      },
+      {
+        "stock_code": "091700",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 5.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 5.0,
+        "backlog_confidence": 0.65,
+        "excerpt": " 거래로 고객의 생산계획에 따라 수시로 생산, 납품하는 형태이기 때문에 수주잔고는 의미가 없습니다. 5. 위험관리 및 파생거래 회사는 여러 활동으로 인하여 시장위험(환위험, "
+      },
+      {
+        "stock_code": "090850",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 5.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 5.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "하는 거래금액을 기준으로 매출이 발생하는 사업으로써 수주계약 및 납품, 수주잔고로 표시될 수 있는 사업형태가 아닙니다. 5. 위험관리 및 파생거래 연결회사는 여러 활동으로 인하여 시장위험(가격위"
+      },
+      {
+        "stock_code": "090470",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 32.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 32.0,
+        "backlog_confidence": 0.65,
+        "excerpt": " 2026. 1. 1 부터 2026. 03. 31까지 수주한 총액이며, 수주잔고는 32기 1분기말 매출 6,418백만원 인식 후의 결산일 현재 잔고입니다. ("
+      },
+      {
+        "stock_code": "089230",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 5.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 5.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "와 그에 따른 인터넷방송수요의 변화를 정확히 예측할 수 없어 수주물량, 수주잔고 등 별도 수주상황을 관리하지 않고 있습니다. 5. 위험관리 및 파생거래 1) 자본위험관리 연결실체의 자본관리 목적은 계"
+      },
+      {
+        "stock_code": "086890",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2010.06,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2010.06,
+        "backlog_confidence": 0.65,
+        "excerpt": "과 같습니다. (단위 : 백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 클로티냅 2010.06.24 2026.06.23 4,540 vial 696 1,797 vial"
+      },
+      {
+        "stock_code": "075580",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 26.03,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 26.03,
+        "backlog_confidence": 0.65,
+        "excerpt": "나. 수주상황 (단위 : 백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 조선 26.03.31 까지 - - 375,082 - 90,924 - 284,158 5."
+      },
+      {
+        "stock_code": "069510",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2026.04,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2026.04,
+        "backlog_confidence": 0.65,
+        "excerpt": "주현황 (단위 : 천개, 백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 CAR용 2026.04 2026.06 25,451 167,265 12,877 85,567 12"
+      },
+      {
+        "stock_code": "066700",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2026.01,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2026.01,
+        "backlog_confidence": 0.65,
+        "excerpt": "다. 수주상황 (단위 : 백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 유전체 서열분석 2026.01 ~ 2026.03 - - 3,101 - 1,988 - 1,113 합 계"
+      },
+      {
+        "stock_code": "060280",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 5.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 5.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "현황에 관한 사항 당사의 수주는 P/O에 의한 단납기로 진행되는 형태로 수주잔고는 의미가 없다고 판단되어 기재하지 않습니다. 5. 위험관리 및 파생거래 가. 재무위험관리정책 당사는 영업활동에서 파생되"
+      },
+      {
+        "stock_code": "060240",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 3.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 3.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "다.(주2) 수주총액 및 기납품액은 2026년 1분기 당기 발생분이며, 수주잔고는 전기이월분을 포함한 누적 잔고 기준입니다.(주3) 상기 품목은 여러 거래처들의 수주 합계 금액입니다. 각 고객별 수주 "
+      },
+      {
+        "stock_code": "053690",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "(지배회사 기준) (단위 : 원) 구분 유형 프로젝트명 발주처 수주총액 수주잔고 총매출누계액 관급 용역형 가락동농수산물시장2단계 외 8건 서울특별시농수산식품공사 등 15,659,243,214 7,"
+      },
+      {
+        "stock_code": "053350",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2026.03,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2026.03,
+        "backlog_confidence": 0.65,
+        "excerpt": "3월 31일) (단위 : 백만원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 수협은행 인터넷 뱅킹 구축 외주비 2026.03.13 2027.05.15 - 4,267 - 66 - 4,201 수협은행"
+      },
+      {
+        "stock_code": "049470",
+        "fiscal_year": 2026,
+        "fiscal_quarter": 1,
+        "backlog_amount": 2025.0,
+        "backlog_unit": "원",
+        "backlog_amount_krw": 2025.0,
+        "backlog_confidence": 0.65,
+        "excerpt": "03월 31일) (단위 : 천원) 품목 수주일자 납기 수주총액 기납품액 수주잔고 수량 금액 수량 금액 수량 금액 2025~2026년 전산장비 통합유지보수 계약 2025.01.01 2026.12"
+      }
+    ],
+    "normalized_mismatch": [
+      {
+        "stock_code": "006400",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 70382426000000.0,
+        "backlog_normalized": 703824.3,
+        "expected_million": 70382426.0,
+        "abs_diff": 69678601.7,
+        "data_source": "dart_document_backfill"
+      },
+      {
+        "stock_code": "075580",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 46526913000000.0,
+        "backlog_normalized": 465269.1,
+        "expected_million": 46526913.0,
+        "abs_diff": 46061643.9,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "102940",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 35372454000000.0,
+        "backlog_normalized": 353724.5,
+        "expected_million": 35372454.0,
+        "abs_diff": 35018729.5,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "232140",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 25680578000000.0,
+        "backlog_normalized": 256805.8,
+        "expected_million": 25680578.0,
+        "abs_diff": 25423772.2,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "086280",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 22280431000000.0,
+        "backlog_normalized": 222804.3,
+        "expected_million": 22280431.0,
+        "abs_diff": 22057626.7,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "003550",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 21151355000000.0,
+        "backlog_normalized": 211513.5,
+        "expected_million": 21151355.0,
+        "abs_diff": 20939841.5,
+        "data_source": "dart_document_backfill"
+      },
+      {
+        "stock_code": "064350",
+        "stock_name": "현대로템",
+        "year": 2025,
+        "quarter": 1,
+        "backlog_amount": 805573731000.0,
+        "backlog_normalized": 21118700.0,
+        "expected_million": 805573.731,
+        "abs_diff": 20313126.269,
+        "data_source": "dart_api"
+      },
+      {
+        "stock_code": "010140",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 19748587657000.0,
+        "backlog_normalized": 197485.9,
+        "expected_million": 19748587.657,
+        "abs_diff": 19551101.757000003,
+        "data_source": "dart_document_backfill"
+      },
+      {
+        "stock_code": "095610",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 19637511000000.0,
+        "backlog_normalized": 196375.1,
+        "expected_million": 19637511.0,
+        "abs_diff": 19441135.9,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "064350",
+        "stock_name": "현대로템",
+        "year": 2024,
+        "quarter": 3,
+        "backlog_amount": 977652646000.0,
+        "backlog_normalized": 18993300.0,
+        "expected_million": 977652.646,
+        "abs_diff": 18015647.354,
+        "data_source": "dart_api"
+      },
+      {
+        "stock_code": "344820",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 18167100000000.0,
+        "backlog_normalized": 181671.0,
+        "expected_million": 18167100.0,
+        "abs_diff": 17985429.0,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "064350",
+        "stock_name": "현대로템",
+        "year": 2024,
+        "quarter": 1,
+        "backlog_amount": 1081730710000.0,
+        "backlog_normalized": 18588700.0,
+        "expected_million": 1081730.71,
+        "abs_diff": 17506969.29,
+        "data_source": "dart_api"
+      },
+      {
+        "stock_code": "089980",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 17506828000000.0,
+        "backlog_normalized": 175068.3,
+        "expected_million": 17506828.0,
+        "abs_diff": 17331759.7,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "009540",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 17350794000000.0,
+        "backlog_normalized": 173507.9,
+        "expected_million": 17350794.0,
+        "abs_diff": 17177286.1,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "064350",
+        "stock_name": "현대로템",
+        "year": 2023,
+        "quarter": 3,
+        "backlog_amount": 1281215273000.0,
+        "backlog_normalized": 18169400.0,
+        "expected_million": 1281215.273,
+        "abs_diff": 16888184.726999998,
+        "data_source": "dart_api"
+      },
+      {
+        "stock_code": "033640",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 17042152000000.0,
+        "backlog_normalized": 170421.5,
+        "expected_million": 17042152.0,
+        "abs_diff": 16871730.5,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "036460",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 15497377000000.0,
+        "backlog_normalized": 154973.8,
+        "expected_million": 15497377.0,
+        "abs_diff": 15342403.2,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "064350",
+        "stock_name": "현대로템",
+        "year": 2023,
+        "quarter": 1,
+        "backlog_amount": 1368124398000.0,
+        "backlog_normalized": 14313900.0,
+        "expected_million": 1368124.398,
+        "abs_diff": 12945775.602,
+        "data_source": "dart_api"
+      },
+      {
+        "stock_code": "329180",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 10509104000000.0,
+        "backlog_normalized": 105091.0,
+        "expected_million": 10509104.0,
+        "abs_diff": 10404013.0,
+        "data_source": "dart_doc_backfill2"
+      },
+      {
+        "stock_code": "418420",
+        "stock_name": null,
+        "year": 2022,
+        "quarter": 4,
+        "backlog_amount": 9005336000000.0,
+        "backlog_normalized": 90053.4,
+        "expected_million": 9005336.0,
+        "abs_diff": 8915282.6,
+        "data_source": "dart_doc_backfill2"
+      }
+    ],
+    "extreme_backlog_to_revenue": [],
+    "verdict": {
+      "order_backlog": "unsafe_until_bad_parses_filtered_and_units_rebuilt",
+      "dart_backlog_quarterly": "contains_source_evidence_but_parser_needs_harder_table_extraction"
+    }
+  },
+  "segment_revenue": {
+    "summary": {
+      "segment_revenue": {
+        "rows": 16583,
+        "stocks": 2563
+      }
+    },
+    "year_quarter_coverage": [
+      {
+        "year": 2018,
+        "quarter": 0,
+        "rows": 908,
+        "stocks": 908,
+        "total_rows": 908,
+        "breakdown_rows": 0
+      },
+      {
+        "year": 2019,
+        "quarter": 0,
+        "rows": 1903,
+        "stocks": 1903,
+        "total_rows": 1903,
+        "breakdown_rows": 0
+      },
+      {
+        "year": 2020,
+        "quarter": 0,
+        "rows": 2025,
+        "stocks": 2025,
+        "total_rows": 2025,
+        "breakdown_rows": 0
+      },
+      {
+        "year": 2021,
+        "quarter": 0,
+        "rows": 2128,
+        "stocks": 2128,
+        "total_rows": 2128,
+        "breakdown_rows": 0
+      },
+      {
+        "year": 2022,
+        "quarter": 0,
+        "rows": 2216,
+        "stocks": 2216,
+        "total_rows": 2216,
+        "breakdown_rows": 0
+      },
+      {
+        "year": 2022,
+        "quarter": 4,
+        "rows": 1,
+        "stocks": 1,
+        "total_rows": 0,
+        "breakdown_rows": 1
+      },
+      {
+        "year": 2023,
+        "quarter": 0,
+        "rows": 2367,
+        "stocks": 2367,
+        "total_rows": 2367,
+        "breakdown_rows": 0
+      },
+      {
+        "year": 2023,
+        "quarter": 4,
+        "rows": 2,
+        "stocks": 1,
+        "total_rows": 0,
+        "breakdown_rows": 2
+      },
+      {
+        "year": 2024,
+        "quarter": 0,
+        "rows": 2492,
+        "stocks": 2492,
+        "total_rows": 2492,
+        "breakdown_rows": 0
+      },
+      {
+        "year": 2024,
+        "quarter": 4,
+        "rows": 2,
+        "stocks": 1,
+        "total_rows": 0,
+        "breakdown_rows": 2
+      },
+      {
+        "year": 2025,
+        "quarter": 0,
+        "rows": 2537,
+        "stocks": 2537,
+        "total_rows": 2537,
+        "breakdown_rows": 0
+      },
+      {
+        "year": 2025,
+        "quarter": 4,
+        "rows": 2,
+        "stocks": 1,
+        "total_rows": 0,
+        "breakdown_rows": 2
+      }
+    ],
+    "standard_income_statement_names_saved_as_segments": [
+      {
+        "stock_code": "051910",
+        "year": 2025,
+        "quarter": 4,
+        "segment_name": "기타영업수익",
+        "revenue": 1646811000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2025,
+        "quarter": 4,
+        "segment_name": "기타영업외수익",
+        "revenue": 1473707000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2024,
+        "quarter": 4,
+        "segment_name": "기타영업수익",
+        "revenue": 1480020000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2024,
+        "quarter": 4,
+        "segment_name": "기타영업외수익",
+        "revenue": 1395489000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2023,
+        "quarter": 4,
+        "segment_name": "기타영업수익",
+        "revenue": 676874000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2023,
+        "quarter": 4,
+        "segment_name": "기타영업외수익",
+        "revenue": 1733332000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2022,
+        "quarter": 4,
+        "segment_name": "기타영업외수익",
+        "revenue": 2309180000000.0,
+        "report_type": "CFS"
+      }
+    ],
+    "consolidated_total_vs_financial_mismatch": [
+      {
+        "stock_code": "019550",
+        "year": 2024,
+        "quarter": 0,
+        "seg_revenue": 286.83,
+        "fin_revenue": 1586.0,
+        "ratio_if_segment_is_eok": 18085119.798234552
+      },
+      {
+        "stock_code": "036710",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 17104.17,
+        "fin_revenue": 662411.0,
+        "ratio_if_segment_is_eok": 2582108.3889005464
+      },
+      {
+        "stock_code": "072470",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 4955.22,
+        "fin_revenue": 434977.0,
+        "ratio_if_segment_is_eok": 1139191.267584263
+      },
+      {
+        "stock_code": "032680",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 733730501.21,
+        "fin_revenue": 73400000000.0,
+        "ratio_if_segment_is_eok": 999632.8354359673
+      },
+      {
+        "stock_code": "042420",
+        "year": 2025,
+        "quarter": 0,
+        "seg_revenue": 4368.01,
+        "fin_revenue": 1213276.0,
+        "ratio_if_segment_is_eok": 360017.8360076355
+      },
+      {
+        "stock_code": "054950",
+        "year": 2025,
+        "quarter": 0,
+        "seg_revenue": 1731.29,
+        "fin_revenue": 1560000.0,
+        "ratio_if_segment_is_eok": 110980.1282051282
+      },
+      {
+        "stock_code": "042420",
+        "year": 2024,
+        "quarter": 0,
+        "seg_revenue": 3680.58,
+        "fin_revenue": 4188281.0,
+        "ratio_if_segment_is_eok": 87878.05784759905
+      },
+      {
+        "stock_code": "036460",
+        "year": 2025,
+        "quarter": 0,
+        "seg_revenue": 357273.36,
+        "fin_revenue": 527000000.0,
+        "ratio_if_segment_is_eok": 67793.80645161291
+      },
+      {
+        "stock_code": "018470",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 5623.85,
+        "fin_revenue": 19120018.0,
+        "ratio_if_segment_is_eok": 29413.413732141886
+      },
+      {
+        "stock_code": "032960",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 266.99,
+        "fin_revenue": 940091.0,
+        "ratio_if_segment_is_eok": 28400.442084861996
+      },
+      {
+        "stock_code": "021320",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 18930.78,
+        "fin_revenue": 76116203.0,
+        "ratio_if_segment_is_eok": 24870.893783285537
+      },
+      {
+        "stock_code": "036460",
+        "year": 2023,
+        "quarter": 0,
+        "seg_revenue": 445559.95,
+        "fin_revenue": 2393083490.0,
+        "ratio_if_segment_is_eok": 18618.65462955494
+      },
+      {
+        "stock_code": "023450",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 1934.01,
+        "fin_revenue": 11981894.0,
+        "ratio_if_segment_is_eok": 16141.104236108247
+      },
+      {
+        "stock_code": "021320",
+        "year": 2024,
+        "quarter": 0,
+        "seg_revenue": 18270.4,
+        "fin_revenue": 138965813.0,
+        "ratio_if_segment_is_eok": 13147.40626171129
+      },
+      {
+        "stock_code": "016710",
+        "year": 2023,
+        "quarter": 0,
+        "seg_revenue": 12168.17,
+        "fin_revenue": 129946955.0,
+        "ratio_if_segment_is_eok": 9363.951621644386
+      },
+      {
+        "stock_code": "023600",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 5820.11,
+        "fin_revenue": 66363935.0,
+        "ratio_if_segment_is_eok": 8769.989302171429
+      },
+      {
+        "stock_code": "007070",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 112264.29,
+        "fin_revenue": 1326887212.0,
+        "ratio_if_segment_is_eok": 8460.725899286155
+      },
+      {
+        "stock_code": "081660",
+        "year": 2020,
+        "quarter": 0,
+        "seg_revenue": 31288.06,
+        "fin_revenue": 376281349.0,
+        "ratio_if_segment_is_eok": 8315.070646778191
+      },
+      {
+        "stock_code": "016710",
+        "year": 2024,
+        "quarter": 0,
+        "seg_revenue": 12123.55,
+        "fin_revenue": 147987646.0,
+        "ratio_if_segment_is_eok": 8192.271671109627
+      },
+      {
+        "stock_code": "006040",
+        "year": 2022,
+        "quarter": 0,
+        "seg_revenue": 90262.58,
+        "fin_revenue": 1292870671.0,
+        "ratio_if_segment_is_eok": 6981.562968721719
+      }
+    ],
+    "breakdown_rows_likely_krw_mixed_with_eok": [
+      {
+        "stock_code": "051910",
+        "year": 2022,
+        "quarter": 4,
+        "segment_name": "기타영업외수익",
+        "revenue": 2309180000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2023,
+        "quarter": 4,
+        "segment_name": "기타영업외수익",
+        "revenue": 1733332000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2025,
+        "quarter": 4,
+        "segment_name": "기타영업수익",
+        "revenue": 1646811000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2024,
+        "quarter": 4,
+        "segment_name": "기타영업수익",
+        "revenue": 1480020000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2025,
+        "quarter": 4,
+        "segment_name": "기타영업외수익",
+        "revenue": 1473707000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2024,
+        "quarter": 4,
+        "segment_name": "기타영업외수익",
+        "revenue": 1395489000000.0,
+        "report_type": "CFS"
+      },
+      {
+        "stock_code": "051910",
+        "year": 2023,
+        "quarter": 4,
+        "segment_name": "기타영업수익",
+        "revenue": 676874000000.0,
+        "report_type": "CFS"
+      }
+    ],
+    "verdict": {
+      "segment_revenue": "not_safe_for_factor_use",
+      "reason": "contains consolidated totals, income statement accounts as fake segments, and mixed units"
+    }
+  }
+}

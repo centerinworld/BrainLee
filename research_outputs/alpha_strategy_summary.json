@@ -1,0 +1,304 @@
+{
+  "run_scope": {
+    "db": "/Applications/stock_dashboard/stock.db",
+    "start": "2021-06-01",
+    "end": "2026-06-05",
+    "test_start": "2025-01-01",
+    "transaction_cost_per_rebalance": 0.003,
+    "universe_note": "6-digit KOSPI/KOSDAQ rows with stock_universe/stock_meta market labels; symbols with >60% one-day returns removed as corporate-action glitches.",
+    "signal_timing_note": "monthly close signal, next monthly return; no future returns in score."
+  },
+  "three_x_profile": {
+    "three_x_stock_count": 1078,
+    "median_max_12m_ratio": 4.52,
+    "p90_max_12m_ratio": 12.48
+  },
+  "summaries": [
+    {
+      "name": "regime_squeeze_top3",
+      "months": 60,
+      "total_return_pct": 1187.09,
+      "cagr_pct": 66.69,
+      "avg_monthly_pct": 5.13,
+      "hit_rate_pct": 36.7,
+      "max_drawdown_pct": -41.32,
+      "sharpe_monthly": 1.3,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": 129.08,
+        "cagr_pct": 26.03,
+        "avg_monthly_pct": 2.44,
+        "hit_rate_pct": 25.6,
+        "max_drawdown_pct": -41.32,
+        "sharpe_monthly": 0.8
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 461.84,
+        "cagr_pct": 238.17,
+        "avg_monthly_pct": 11.93,
+        "hit_rate_pct": 64.7,
+        "max_drawdown_pct": -13.24,
+        "sharpe_monthly": 2.27
+      },
+      "avg_names_per_month": 1.6
+    },
+    {
+      "name": "regime_squeeze_top10",
+      "months": 60,
+      "total_return_pct": 623.92,
+      "cagr_pct": 48.57,
+      "avg_monthly_pct": 3.79,
+      "hit_rate_pct": 33.3,
+      "max_drawdown_pct": -17.09,
+      "sharpe_monthly": 1.31,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": 55.65,
+        "cagr_pct": 13.14,
+        "avg_monthly_pct": 1.21,
+        "hit_rate_pct": 25.6,
+        "max_drawdown_pct": -17.09,
+        "sharpe_monthly": 0.67
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 365.09,
+        "cagr_pct": 195.94,
+        "avg_monthly_pct": 10.31,
+        "hit_rate_pct": 52.9,
+        "max_drawdown_pct": -7.03,
+        "sharpe_monthly": 2.49
+      },
+      "avg_names_per_month": 5.2
+    },
+    {
+      "name": "rs_12_1_top10",
+      "months": 60,
+      "total_return_pct": -79.94,
+      "cagr_pct": -27.48,
+      "avg_monthly_pct": -1.72,
+      "hit_rate_pct": 41.7,
+      "max_drawdown_pct": -88.54,
+      "sharpe_monthly": -0.44,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": -88.43,
+        "cagr_pct": -45.22,
+        "avg_monthly_pct": -3.93,
+        "hit_rate_pct": 34.9,
+        "max_drawdown_pct": -88.54,
+        "sharpe_monthly": -0.99
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 73.33,
+        "cagr_pct": 47.44,
+        "avg_monthly_pct": 3.87,
+        "hit_rate_pct": 58.8,
+        "max_drawdown_pct": -14.16,
+        "sharpe_monthly": 1.18
+      },
+      "avg_names_per_month": 10.0
+    },
+    {
+      "name": "rs_6m_supply_top10",
+      "months": 60,
+      "total_return_pct": 79.63,
+      "cagr_pct": 12.43,
+      "avg_monthly_pct": 1.21,
+      "hit_rate_pct": 35.0,
+      "max_drawdown_pct": -25.99,
+      "sharpe_monthly": 0.6,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": 1.86,
+        "cagr_pct": 0.51,
+        "avg_monthly_pct": 0.14,
+        "hit_rate_pct": 25.6,
+        "max_drawdown_pct": -25.99,
+        "sharpe_monthly": 0.11
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 76.35,
+        "cagr_pct": 49.25,
+        "avg_monthly_pct": 3.9,
+        "hit_rate_pct": 58.8,
+        "max_drawdown_pct": -13.59,
+        "sharpe_monthly": 1.27
+      },
+      "avg_names_per_month": 6.7
+    },
+    {
+      "name": "breakout_base_top10",
+      "months": 60,
+      "total_return_pct": 139.8,
+      "cagr_pct": 19.12,
+      "avg_monthly_pct": 1.67,
+      "hit_rate_pct": 41.7,
+      "max_drawdown_pct": -16.33,
+      "sharpe_monthly": 0.88,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": 17.6,
+        "cagr_pct": 4.63,
+        "avg_monthly_pct": 0.44,
+        "hit_rate_pct": 32.6,
+        "max_drawdown_pct": -16.33,
+        "sharpe_monthly": 0.43
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 103.92,
+        "cagr_pct": 65.36,
+        "avg_monthly_pct": 4.79,
+        "hit_rate_pct": 64.7,
+        "max_drawdown_pct": -12.6,
+        "sharpe_monthly": 1.56
+      },
+      "avg_names_per_month": 6.3
+    },
+    {
+      "name": "quality_trend_proxy_top12",
+      "months": 60,
+      "total_return_pct": 52.28,
+      "cagr_pct": 8.78,
+      "avg_monthly_pct": 1.03,
+      "hit_rate_pct": 31.7,
+      "max_drawdown_pct": -34.42,
+      "sharpe_monthly": 0.45,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": -24.09,
+        "cagr_pct": -7.4,
+        "avg_monthly_pct": -0.43,
+        "hit_rate_pct": 23.3,
+        "max_drawdown_pct": -34.42,
+        "sharpe_monthly": -0.26
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 100.62,
+        "cagr_pct": 63.47,
+        "avg_monthly_pct": 4.73,
+        "hit_rate_pct": 52.9,
+        "max_drawdown_pct": -16.24,
+        "sharpe_monthly": 1.47
+      },
+      "avg_names_per_month": 6.2
+    },
+    {
+      "name": "defensive_rs_supply_top8",
+      "months": 60,
+      "total_return_pct": 76.06,
+      "cagr_pct": 11.98,
+      "avg_monthly_pct": 1.09,
+      "hit_rate_pct": 30.0,
+      "max_drawdown_pct": -17.74,
+      "sharpe_monthly": 0.69,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": -8.83,
+        "cagr_pct": -2.55,
+        "avg_monthly_pct": -0.18,
+        "hit_rate_pct": 16.3,
+        "max_drawdown_pct": -16.17,
+        "sharpe_monthly": -0.24
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 93.1,
+        "cagr_pct": 59.12,
+        "avg_monthly_pct": 4.31,
+        "hit_rate_pct": 64.7,
+        "max_drawdown_pct": -17.74,
+        "sharpe_monthly": 1.71
+      },
+      "avg_names_per_month": 3.6
+    },
+    {
+      "name": "KOSPI_^KS11",
+      "months": 60,
+      "total_return_pct": 147.54,
+      "cagr_pct": 19.88,
+      "avg_monthly_pct": 1.91,
+      "hit_rate_pct": 50.0,
+      "max_drawdown_pct": -32.69,
+      "sharpe_monthly": 0.72,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": -23.64,
+        "cagr_pct": -7.25,
+        "avg_monthly_pct": -0.47,
+        "hit_rate_pct": 41.9,
+        "max_drawdown_pct": -32.69,
+        "sharpe_monthly": -0.3
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 224.17,
+        "cagr_pct": 129.38,
+        "avg_monthly_pct": 7.94,
+        "hit_rate_pct": 70.6,
+        "max_drawdown_pct": -19.08,
+        "sharpe_monthly": 2.08
+      }
+    },
+    {
+      "name": "all_liquid_equal_weight",
+      "months": 60,
+      "total_return_pct": -13.17,
+      "cagr_pct": -2.78,
+      "avg_monthly_pct": 0.03,
+      "hit_rate_pct": 50.0,
+      "max_drawdown_pct": -42.82,
+      "sharpe_monthly": 0.02,
+      "train_2021_2024": {
+        "name": "train_2021_2024",
+        "months": 43,
+        "total_return_pct": -40.48,
+        "cagr_pct": -13.48,
+        "avg_monthly_pct": -0.99,
+        "hit_rate_pct": 44.2,
+        "max_drawdown_pct": -42.82,
+        "sharpe_monthly": -0.53
+      },
+      "test_2025_2026": {
+        "name": "test_2025_2026",
+        "months": 17,
+        "total_return_pct": 45.89,
+        "cagr_pct": 30.55,
+        "avg_monthly_pct": 2.61,
+        "hit_rate_pct": 64.7,
+        "max_drawdown_pct": -17.65,
+        "sharpe_monthly": 1.0
+      }
+    }
+  ],
+  "pick_paths": {
+    "regime_squeeze_top3": "/Applications/stock_dashboard/research_outputs/regime_squeeze_top3_picks.csv",
+    "regime_squeeze_top10": "/Applications/stock_dashboard/research_outputs/regime_squeeze_top10_picks.csv",
+    "rs_12_1_top10": "/Applications/stock_dashboard/research_outputs/rs_12_1_top10_picks.csv",
+    "rs_6m_supply_top10": "/Applications/stock_dashboard/research_outputs/rs_6m_supply_top10_picks.csv",
+    "breakout_base_top10": "/Applications/stock_dashboard/research_outputs/breakout_base_top10_picks.csv",
+    "quality_trend_proxy_top12": "/Applications/stock_dashboard/research_outputs/quality_trend_proxy_top12_picks.csv",
+    "defensive_rs_supply_top8": "/Applications/stock_dashboard/research_outputs/defensive_rs_supply_top8_picks.csv"
+  }
+}

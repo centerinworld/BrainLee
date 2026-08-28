@@ -1,0 +1,362 @@
+{
+  "oos_period": "2025-04~2026-04",
+  "oos_baseline": {
+    "label": "OOS_baseline(stop20)",
+    "months": 13,
+    "active_months": 13,
+    "total_return_pct": 174.42,
+    "cagr_pct": 153.92,
+    "active_month_hit_rate_pct": 69.2,
+    "trade_hit_rate_pct": 60.0,
+    "max_drawdown_pct": -8.33,
+    "sharpe": 2.43,
+    "avg_names": 5.0,
+    "trade_count": 65
+  },
+  "kospi_oos": {
+    "total_return_pct": 231.54,
+    "max_drawdown_pct": -19.08
+  },
+  "lookahead_check": {
+    "issues": [
+      {
+        "table": "dart_material_purchase",
+        "error": "no such column: fiscal_year"
+      },
+      {
+        "table": "cost_structure",
+        "year_range": "2016~2026",
+        "quarter_range": "1~4",
+        "count": 27742,
+        "risk": "MEDIUM — created_at 컬럼 없음. discover_market2x_signals에서 lag_months=2 적용 여부 의존",
+        "mitigation": "raw_material_cost_yoy 89% null → 대부분 스코어 기여 없음. 있는 데이터에서 lag_months=2 검증 필요"
+      }
+    ],
+    "material_coverage": {
+      "raw_material_cost_yoy": "10.8%",
+      "dart_material_yoy": "0.0%",
+      "annual_material_yoy": "12.1%"
+    },
+    "verdict": "LOW RISK: 실제로 look-ahead 위험이 높은 dart_material_yoy=100% null, raw_material_cost_yoy=10.8% 유효. 전략 수익의 대부분은 가격 추세+수급 피처에서 발생하며 이는 당일까지 확인 가능한 데이터. 단, 10% 유효한 raw_material_cost_yoy의 lag 정합성은 discover_market2x_signals.py 검토 필요."
+  },
+  "slippage_sensitivity": {
+    "slippage_0.0035": {
+      "train_valid": {
+        "label": "tcost_0.0035",
+        "months": 51,
+        "active_months": 51,
+        "total_return_pct": 206.29,
+        "cagr_pct": 30.13,
+        "active_month_hit_rate_pct": 60.8,
+        "trade_hit_rate_pct": 55.3,
+        "max_drawdown_pct": -18.42,
+        "sharpe": 1.18,
+        "avg_names": 5.0,
+        "trade_count": 255
+      },
+      "oos": {
+        "label": "sizing=equal regime=False tcost=0.0035",
+        "months": 13,
+        "active_months": 13,
+        "total_return_pct": 174.42,
+        "cagr_pct": 153.92,
+        "active_month_hit_rate_pct": 69.2,
+        "trade_hit_rate_pct": 60.0,
+        "max_drawdown_pct": -8.33,
+        "sharpe": 2.43,
+        "avg_names": 5.0,
+        "trade_count": 65
+      },
+      "all": {
+        "label": "sizing=equal regime=False tcost=0.0035",
+        "months": 64,
+        "active_months": 64,
+        "total_return_pct": 740.53,
+        "cagr_pct": 49.06,
+        "active_month_hit_rate_pct": 62.5,
+        "trade_hit_rate_pct": 56.2,
+        "max_drawdown_pct": -18.42,
+        "sharpe": 1.47,
+        "avg_names": 5.0,
+        "trade_count": 320
+      }
+    },
+    "slippage_0.007": {
+      "train_valid": {
+        "label": "tcost_0.007",
+        "months": 51,
+        "active_months": 51,
+        "total_return_pct": 157.03,
+        "cagr_pct": 24.87,
+        "active_month_hit_rate_pct": 58.8,
+        "trade_hit_rate_pct": 55.3,
+        "max_drawdown_pct": -21.21,
+        "sharpe": 1.01,
+        "avg_names": 5.0,
+        "trade_count": 255
+      },
+      "oos": {
+        "label": "sizing=equal regime=False tcost=0.0070",
+        "months": 13,
+        "active_months": 13,
+        "total_return_pct": 163.02,
+        "cagr_pct": 144.17,
+        "active_month_hit_rate_pct": 69.2,
+        "trade_hit_rate_pct": 60.0,
+        "max_drawdown_pct": -9.0,
+        "sharpe": 2.34,
+        "avg_names": 5.0,
+        "trade_count": 65
+      },
+      "all": {
+        "label": "sizing=equal regime=False tcost=0.0070",
+        "months": 64,
+        "active_months": 64,
+        "total_return_pct": 576.06,
+        "cagr_pct": 43.09,
+        "active_month_hit_rate_pct": 60.9,
+        "trade_hit_rate_pct": 56.2,
+        "max_drawdown_pct": -21.21,
+        "sharpe": 1.33,
+        "avg_names": 5.0,
+        "trade_count": 320
+      }
+    },
+    "slippage_0.01": {
+      "train_valid": {
+        "label": "tcost_0.01",
+        "months": 51,
+        "active_months": 51,
+        "total_return_pct": 121.06,
+        "cagr_pct": 20.52,
+        "active_month_hit_rate_pct": 54.9,
+        "trade_hit_rate_pct": 55.3,
+        "max_drawdown_pct": -24.06,
+        "sharpe": 0.87,
+        "avg_names": 5.0,
+        "trade_count": 255
+      },
+      "oos": {
+        "label": "sizing=equal regime=False tcost=0.0100",
+        "months": 13,
+        "active_months": 13,
+        "total_return_pct": 153.61,
+        "cagr_pct": 136.09,
+        "active_month_hit_rate_pct": 69.2,
+        "trade_hit_rate_pct": 60.0,
+        "max_drawdown_pct": -9.57,
+        "sharpe": 2.25,
+        "avg_names": 5.0,
+        "trade_count": 65
+      },
+      "all": {
+        "label": "sizing=equal regime=False tcost=0.0100",
+        "months": 64,
+        "active_months": 64,
+        "total_return_pct": 460.62,
+        "cagr_pct": 38.16,
+        "active_month_hit_rate_pct": 57.8,
+        "trade_hit_rate_pct": 56.2,
+        "max_drawdown_pct": -24.06,
+        "sharpe": 1.21,
+        "avg_names": 5.0,
+        "trade_count": 320
+      }
+    },
+    "slippage_0.015": {
+      "train_valid": {
+        "label": "tcost_0.015",
+        "months": 51,
+        "active_months": 51,
+        "total_return_pct": 71.77,
+        "cagr_pct": 13.57,
+        "active_month_hit_rate_pct": 52.9,
+        "trade_hit_rate_pct": 55.3,
+        "max_drawdown_pct": -28.6,
+        "sharpe": 0.63,
+        "avg_names": 5.0,
+        "trade_count": 255
+      },
+      "oos": {
+        "label": "sizing=equal regime=False tcost=0.0150",
+        "months": 13,
+        "active_months": 13,
+        "total_return_pct": 138.59,
+        "cagr_pct": 123.16,
+        "active_month_hit_rate_pct": 69.2,
+        "trade_hit_rate_pct": 60.0,
+        "max_drawdown_pct": -10.52,
+        "sharpe": 2.11,
+        "avg_names": 5.0,
+        "trade_count": 65
+      },
+      "all": {
+        "label": "sizing=equal regime=False tcost=0.0150",
+        "months": 64,
+        "active_months": 64,
+        "total_return_pct": 309.83,
+        "cagr_pct": 30.28,
+        "active_month_hit_rate_pct": 56.2,
+        "trade_hit_rate_pct": 56.2,
+        "max_drawdown_pct": -28.6,
+        "sharpe": 1.02,
+        "avg_names": 5.0,
+        "trade_count": 320
+      }
+    }
+  },
+  "position_sizing": {
+    "sizing_equal": {
+      "label": "sizing_equal",
+      "months": 13,
+      "active_months": 13,
+      "total_return_pct": 174.42,
+      "cagr_pct": 153.92,
+      "active_month_hit_rate_pct": 69.2,
+      "trade_hit_rate_pct": 60.0,
+      "max_drawdown_pct": -8.33,
+      "sharpe": 2.43,
+      "avg_names": 5.0,
+      "trade_count": 65
+    },
+    "sizing_score": {
+      "label": "sizing_score",
+      "months": 13,
+      "active_months": 13,
+      "total_return_pct": 177.12,
+      "cagr_pct": 156.22,
+      "active_month_hit_rate_pct": 69.2,
+      "trade_hit_rate_pct": 60.0,
+      "max_drawdown_pct": -8.25,
+      "sharpe": 2.45,
+      "avg_names": 5.0,
+      "trade_count": 65
+    },
+    "sizing_vol_inv": {
+      "label": "sizing_vol_inv",
+      "months": 13,
+      "active_months": 13,
+      "total_return_pct": 177.04,
+      "cagr_pct": 156.16,
+      "active_month_hit_rate_pct": 69.2,
+      "trade_hit_rate_pct": 60.0,
+      "max_drawdown_pct": -7.68,
+      "sharpe": 2.5,
+      "avg_names": 5.0,
+      "trade_count": 65
+    }
+  },
+  "regime_filter": {
+    "regime_False": {
+      "label": "sizing=equal regime=False tcost=0.0035",
+      "months": 13,
+      "active_months": 13,
+      "total_return_pct": 174.42,
+      "cagr_pct": 153.92,
+      "active_month_hit_rate_pct": 69.2,
+      "trade_hit_rate_pct": 60.0,
+      "max_drawdown_pct": -8.33,
+      "sharpe": 2.43,
+      "avg_names": 5.0,
+      "trade_count": 65
+    },
+    "regime_True": {
+      "label": "sizing=equal regime=True tcost=0.0035",
+      "months": 13,
+      "active_months": 13,
+      "total_return_pct": 174.42,
+      "cagr_pct": 153.92,
+      "active_month_hit_rate_pct": 69.2,
+      "trade_hit_rate_pct": 60.0,
+      "max_drawdown_pct": -8.33,
+      "sharpe": 2.43,
+      "avg_names": 5.0,
+      "trade_count": 65
+    }
+  },
+  "best_combo": {
+    "regime": false,
+    "sizing": "equal",
+    "tcost": 0.0035
+  },
+  "oos_monthly": [
+    {
+      "signal_month": "2025-04",
+      "n": 5,
+      "net_ret": 0.07744578166520914,
+      "equity": 107744578.16652092
+    },
+    {
+      "signal_month": "2025-05",
+      "n": 5,
+      "net_ret": 0.02259803046608891,
+      "equity": 110179393.42648387
+    },
+    {
+      "signal_month": "2025-06",
+      "n": 5,
+      "net_ret": -0.024938464801420323,
+      "equity": 107431688.50167564
+    },
+    {
+      "signal_month": "2025-07",
+      "n": 5,
+      "net_ret": -0.059857451605438254,
+      "equity": 101001101.40629607
+    },
+    {
+      "signal_month": "2025-08",
+      "n": 5,
+      "net_ret": 0.053230259544112285,
+      "equity": 106377416.24839443
+    },
+    {
+      "signal_month": "2025-09",
+      "n": 5,
+      "net_ret": 0.2018757401809363,
+      "equity": 127852435.89207463
+    },
+    {
+      "signal_month": "2025-10",
+      "n": 5,
+      "net_ret": 0.019553345550005465,
+      "equity": 130352378.75048226
+    },
+    {
+      "signal_month": "2025-11",
+      "n": 5,
+      "net_ret": -0.056701170386564824,
+      "equity": 122961246.31265715
+    },
+    {
+      "signal_month": "2025-12",
+      "n": 5,
+      "net_ret": 0.2325386508656731,
+      "equity": 151554488.63896415
+    },
+    {
+      "signal_month": "2026-01",
+      "n": 5,
+      "net_ret": 0.19279865526715634,
+      "equity": 180773990.24825796
+    },
+    {
+      "signal_month": "2026-02",
+      "n": 5,
+      "net_ret": -0.0340487761522167,
+      "equity": 174618857.12015203
+    },
+    {
+      "signal_month": "2026-03",
+      "n": 5,
+      "net_ret": 0.21118579043776314,
+      "equity": 211495878.48641014
+    },
+    {
+      "signal_month": "2026-04",
+      "n": 5,
+      "net_ret": 0.29752404418301337,
+      "equity": 274420987.5817261
+    }
+  ]
+}

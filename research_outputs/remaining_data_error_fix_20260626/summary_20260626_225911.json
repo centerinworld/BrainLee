@@ -1,0 +1,43 @@
+{
+  "run_id": "20260626_225911",
+  "before": {
+    "financial_q_rev_eq_annual": 32,
+    "cashflow_q_eq_annual": 2296,
+    "kiwoom_bad_market_fields": 2197620,
+    "valuation_internal_mismatch": 1077,
+    "fnguide_fin_snapshot_gap": 630,
+    "fnguide_cf_snapshot_gap": 1822
+  },
+  "repairs": {
+    "financial": {
+      "affected": 32,
+      "backup": "data_quality_backup_fin_q_eq_annual_20260626_225911"
+    },
+    "cashflow": {
+      "affected": 2296,
+      "backup": "data_quality_backup_cf_q_eq_annual_20260626_225911"
+    },
+    "kiwoom": {
+      "affected": 2197620,
+      "backup": "data_quality_backup_kiwoom_market_fields_20260626_225911"
+    },
+    "valuation": {
+      "affected": 1077,
+      "backup": "data_quality_backup_stock_universe_valuation_20260626_225911"
+    },
+    "snapshots": {
+      "financial": 630,
+      "cashflow": 1198,
+      "financial_backup": "data_quality_backup_missing_fnguide_fin_snapshot_20260626_225911",
+      "cashflow_backup": "data_quality_backup_missing_fnguide_cf_snapshot_20260626_225911"
+    }
+  },
+  "after": {
+    "financial_q_rev_eq_annual": 0,
+    "cashflow_q_eq_annual": 7,
+    "kiwoom_bad_market_fields": 0,
+    "valuation_internal_mismatch": 0,
+    "fnguide_fin_snapshot_gap": 0,
+    "fnguide_cf_snapshot_gap": 0
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "base_dt": "20260619",
+  "max_pages": 20,
+  "total_codes": 2645,
+  "todo_codes": 2644,
+  "done_at_start": 1,
+  "ok": 2644,
+  "failed": 0,
+  "saved_rows": 4478431,
+  "sample_errors": [],
+  "health": {
+    "ok": true,
+    "enabled": true,
+    "token_alive": true,
+    "base_url": "https://api.kiwoom.com",
+    "ws_url": "wss://api.kiwoom.com:10000/api/dostk/websocket"
+  },
+  "window": {
+    "rows": 1051452,
+    "stocks": 2213,
+    "min_dt": "2020-01-02",
+    "max_dt": "2021-12-30",
+    "by_year": [
+      {
+        "year": "2020",
+        "rows": 513877,
+        "stocks": 2121
+      },
+      {
+        "year": "2021",
+        "rows": 537575,
+        "stocks": 2213
+      }
+    ]
+  },
+  "finished_at": "2026-06-21T07:18:47"
+}

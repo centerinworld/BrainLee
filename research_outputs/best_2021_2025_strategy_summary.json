@@ -1,0 +1,426 @@
+{
+  "scope": {
+    "db": "/Applications/stock_dashboard/stock.db",
+    "dataset": "/Applications/stock_dashboard/research_outputs/market2x_signal_dataset.parquet",
+    "budget_krw": 100000000,
+    "signal_month_start": "2021-01",
+    "last_signal_month": "2025-03",
+    "exit_window_note": "last 1-month exits are in 2025-04, before 2025-05",
+    "transaction_cost_round_trip": 0.0035,
+    "train": "2021-01~2023-12",
+    "validation": "2024-01~2025-03"
+  },
+  "benchmark": {
+    "name": "KOSPI_buy_hold_monthly",
+    "months": 51,
+    "active_months": 51,
+    "trade_count": 51,
+    "avg_names": 1.0,
+    "final_equity_krw": 85901532,
+    "total_return_pct": -14.1,
+    "cagr_pct": -3.51,
+    "monthly_hit_rate_pct": 49.0,
+    "active_month_hit_rate_pct": 49.0,
+    "trade_hit_rate_pct": 49.0,
+    "avg_monthly_net_pct": -0.17,
+    "max_drawdown_pct": -34.62,
+    "sharpe_monthly": -0.11,
+    "train_return_pct": -16.1,
+    "test_return_pct": 2.38,
+    "test_month_hit_rate_pct": 40.0
+  },
+  "tested_rules": 3480,
+  "investable_rules": 558,
+  "best_return": {
+    "name": "backlog_trend__pure_rs_lowvol__fin_growth_pos__top3",
+    "months": 51,
+    "active_months": 42,
+    "trade_count": 120,
+    "avg_names": 2.86,
+    "final_equity_krw": 237198731,
+    "total_return_pct": 137.2,
+    "cagr_pct": 22.54,
+    "monthly_hit_rate_pct": 47.1,
+    "active_month_hit_rate_pct": 57.1,
+    "trade_hit_rate_pct": 47.5,
+    "avg_monthly_net_pct": 2.15,
+    "max_drawdown_pct": -32.29,
+    "sharpe_monthly": 0.73,
+    "train_return_pct": 42.55,
+    "test_return_pct": 66.4,
+    "test_month_hit_rate_pct": 66.7,
+    "selection_score": 41.2745
+  },
+  "best_win_rate": {
+    "name": "backlog_trend__business_accel__market_above_ma10_low_vol__top10",
+    "months": 51,
+    "active_months": 25,
+    "trade_count": 244,
+    "avg_names": 9.76,
+    "final_equity_krw": 149926995,
+    "total_return_pct": 49.93,
+    "cagr_pct": 10.0,
+    "monthly_hit_rate_pct": 37.3,
+    "active_month_hit_rate_pct": 76.0,
+    "trade_hit_rate_pct": 48.8,
+    "avg_monthly_net_pct": 0.84,
+    "max_drawdown_pct": -11.5,
+    "sharpe_monthly": 0.97,
+    "train_return_pct": 38.9,
+    "test_return_pct": 7.94,
+    "test_month_hit_rate_pct": 40.0,
+    "selection_score": 33.013
+  },
+  "balanced_recommendation": {
+    "name": "backlog_trend__pure_rs_lowvol__market_ret3_pos__top8",
+    "months": 51,
+    "active_months": 26,
+    "trade_count": 208,
+    "avg_names": 8.0,
+    "final_equity_krw": 227633025,
+    "total_return_pct": 127.63,
+    "cagr_pct": 21.35,
+    "monthly_hit_rate_pct": 27.5,
+    "active_month_hit_rate_pct": 53.8,
+    "trade_hit_rate_pct": 47.6,
+    "avg_monthly_net_pct": 1.82,
+    "max_drawdown_pct": -21.13,
+    "sharpe_monthly": 0.97,
+    "train_return_pct": 30.94,
+    "test_return_pct": 73.84,
+    "test_month_hit_rate_pct": 40.0,
+    "selection_score": 45.4395
+  },
+  "rule_details": {
+    "backlog_trend__pure_rs_lowvol__fin_growth_pos__top3": {
+      "filters": [
+        "liquid_1b",
+        "price_ok",
+        "trend_ma",
+        "mom_3m_pos",
+        "backlog_pos",
+        "fin_growth_pos"
+      ],
+      "score": [
+        {
+          "field": "r_ret_12_1",
+          "weight": 0.28
+        },
+        {
+          "field": "r_ret_6m",
+          "weight": 0.22
+        },
+        {
+          "field": "r_near_high52",
+          "weight": 0.18
+        },
+        {
+          "field": "r_low_vol60",
+          "weight": 0.2
+        },
+        {
+          "field": "r_avg_turnover20",
+          "weight": 0.12
+        }
+      ],
+      "top_n": 3,
+      "budget": 100000000,
+      "rebalance": "월말 신호 확인 후 다음 거래일 시가 매수, 해당 월 말 종가 매도. 월별 선정 종목 균등 배분.",
+      "cost": 0.0035
+    },
+    "backlog_trend__business_accel__market_above_ma10_low_vol__top10": {
+      "filters": [
+        "liquid_1b",
+        "price_ok",
+        "trend_ma",
+        "mom_3m_pos",
+        "backlog_pos",
+        "market_above_ma10",
+        "low_vol"
+      ],
+      "score": [
+        {
+          "field": "r_ret_6m",
+          "weight": 0.17
+        },
+        {
+          "field": "r_near_high52",
+          "weight": 0.14
+        },
+        {
+          "field": "r_fin_rev_yoy",
+          "weight": 0.13
+        },
+        {
+          "field": "r_fin_op_yoy",
+          "weight": 0.15
+        },
+        {
+          "field": "r_cf_ocf_yoy",
+          "weight": 0.1
+        },
+        {
+          "field": "r_backlog_yoy",
+          "weight": 0.1
+        },
+        {
+          "field": "r_new_order_yoy",
+          "weight": 0.1
+        },
+        {
+          "field": "r_supply60_to_turnover",
+          "weight": 0.11
+        }
+      ],
+      "top_n": 10,
+      "budget": 100000000,
+      "rebalance": "월말 신호 확인 후 다음 거래일 시가 매수, 해당 월 말 종가 매도. 월별 선정 종목 균등 배분.",
+      "cost": 0.0035
+    },
+    "backlog_trend__pure_rs_lowvol__market_ret3_pos__top8": {
+      "filters": [
+        "liquid_1b",
+        "price_ok",
+        "trend_ma",
+        "mom_3m_pos",
+        "backlog_pos",
+        "market_ret3_pos"
+      ],
+      "score": [
+        {
+          "field": "r_ret_12_1",
+          "weight": 0.28
+        },
+        {
+          "field": "r_ret_6m",
+          "weight": 0.22
+        },
+        {
+          "field": "r_near_high52",
+          "weight": 0.18
+        },
+        {
+          "field": "r_low_vol60",
+          "weight": 0.2
+        },
+        {
+          "field": "r_avg_turnover20",
+          "weight": 0.12
+        }
+      ],
+      "top_n": 8,
+      "budget": 100000000,
+      "rebalance": "월말 신호 확인 후 다음 거래일 시가 매수, 해당 월 말 종가 매도. 월별 선정 종목 균등 배분.",
+      "cost": 0.0035
+    }
+  },
+  "top10": [
+    {
+      "name": "backlog_trend__pure_rs_lowvol__market_ret3_pos__top8",
+      "months": 51,
+      "active_months": 26,
+      "trade_count": 208,
+      "avg_names": 8.0,
+      "final_equity_krw": 227633025,
+      "total_return_pct": 127.63,
+      "cagr_pct": 21.35,
+      "monthly_hit_rate_pct": 27.5,
+      "active_month_hit_rate_pct": 53.8,
+      "trade_hit_rate_pct": 47.6,
+      "avg_monthly_net_pct": 1.82,
+      "max_drawdown_pct": -21.13,
+      "sharpe_monthly": 0.97,
+      "train_return_pct": 30.94,
+      "test_return_pct": 73.84,
+      "test_month_hit_rate_pct": 40.0,
+      "selection_score": 45.4395
+    },
+    {
+      "name": "base_trend__trend_material__supply60_positive__top3",
+      "months": 51,
+      "active_months": 51,
+      "trade_count": 153,
+      "avg_names": 3.0,
+      "final_equity_krw": 182004401,
+      "total_return_pct": 82.0,
+      "cagr_pct": 15.13,
+      "monthly_hit_rate_pct": 56.9,
+      "active_month_hit_rate_pct": 56.9,
+      "trade_hit_rate_pct": 52.9,
+      "avg_monthly_net_pct": 1.47,
+      "max_drawdown_pct": -31.38,
+      "sharpe_monthly": 0.66,
+      "train_return_pct": -14.15,
+      "test_return_pct": 112.0,
+      "test_month_hit_rate_pct": 80.0,
+      "selection_score": 43.324000000000005
+    },
+    {
+      "name": "base_trend__trend_material__market_ret3_pos__top5",
+      "months": 51,
+      "active_months": 26,
+      "trade_count": 130,
+      "avg_names": 5.0,
+      "final_equity_krw": 188775845,
+      "total_return_pct": 88.78,
+      "cagr_pct": 16.13,
+      "monthly_hit_rate_pct": 27.5,
+      "active_month_hit_rate_pct": 53.8,
+      "trade_hit_rate_pct": 50.8,
+      "avg_monthly_net_pct": 1.36,
+      "max_drawdown_pct": -9.32,
+      "sharpe_monthly": 0.94,
+      "train_return_pct": 18.01,
+      "test_return_pct": 59.97,
+      "test_month_hit_rate_pct": 40.0,
+      "selection_score": 42.75999999999999
+    },
+    {
+      "name": "backlog_trend__pure_rs_lowvol__market_ret3_pos__top10",
+      "months": 51,
+      "active_months": 26,
+      "trade_count": 258,
+      "avg_names": 9.92,
+      "final_equity_krw": 223532057,
+      "total_return_pct": 123.53,
+      "cagr_pct": 20.84,
+      "monthly_hit_rate_pct": 29.4,
+      "active_month_hit_rate_pct": 57.7,
+      "trade_hit_rate_pct": 47.3,
+      "avg_monthly_net_pct": 1.79,
+      "max_drawdown_pct": -20.43,
+      "sharpe_monthly": 0.93,
+      "train_return_pct": 45.22,
+      "test_return_pct": 53.93,
+      "test_month_hit_rate_pct": 40.0,
+      "selection_score": 42.6275
+    },
+    {
+      "name": "backlog_trend__pure_rs_lowvol__fin_growth_pos_supply_positive__top3",
+      "months": 51,
+      "active_months": 42,
+      "trade_count": 119,
+      "avg_names": 2.83,
+      "final_equity_krw": 228244779,
+      "total_return_pct": 128.24,
+      "cagr_pct": 21.43,
+      "monthly_hit_rate_pct": 49.0,
+      "active_month_hit_rate_pct": 59.5,
+      "trade_hit_rate_pct": 47.1,
+      "avg_monthly_net_pct": 2.0,
+      "max_drawdown_pct": -26.83,
+      "sharpe_monthly": 0.77,
+      "train_return_pct": 41.4,
+      "test_return_pct": 61.41,
+      "test_month_hit_rate_pct": 73.3,
+      "selection_score": 42.463499999999996
+    },
+    {
+      "name": "base_trend__trend_material__plain__top5",
+      "months": 51,
+      "active_months": 51,
+      "trade_count": 255,
+      "avg_names": 5.0,
+      "final_equity_krw": 200991120,
+      "total_return_pct": 100.99,
+      "cagr_pct": 17.85,
+      "monthly_hit_rate_pct": 52.9,
+      "active_month_hit_rate_pct": 52.9,
+      "trade_hit_rate_pct": 50.6,
+      "avg_monthly_net_pct": 1.6,
+      "max_drawdown_pct": -25.45,
+      "sharpe_monthly": 0.8,
+      "train_return_pct": 8.2,
+      "test_return_pct": 85.75,
+      "test_month_hit_rate_pct": 66.7,
+      "selection_score": 42.0625
+    },
+    {
+      "name": "base_trend__trend_material__supply_positive__top5",
+      "months": 51,
+      "active_months": 51,
+      "trade_count": 255,
+      "avg_names": 5.0,
+      "final_equity_krw": 201403954,
+      "total_return_pct": 101.4,
+      "cagr_pct": 17.91,
+      "monthly_hit_rate_pct": 51.0,
+      "active_month_hit_rate_pct": 51.0,
+      "trade_hit_rate_pct": 50.6,
+      "avg_monthly_net_pct": 1.6,
+      "max_drawdown_pct": -25.45,
+      "sharpe_monthly": 0.81,
+      "train_return_pct": 8.2,
+      "test_return_pct": 86.13,
+      "test_month_hit_rate_pct": 60.0,
+      "selection_score": 41.5335
+    },
+    {
+      "name": "backlog_trend__pure_rs_lowvol__fin_growth_pos__top3",
+      "months": 51,
+      "active_months": 42,
+      "trade_count": 120,
+      "avg_names": 2.86,
+      "final_equity_krw": 237198731,
+      "total_return_pct": 137.2,
+      "cagr_pct": 22.54,
+      "monthly_hit_rate_pct": 47.1,
+      "active_month_hit_rate_pct": 57.1,
+      "trade_hit_rate_pct": 47.5,
+      "avg_monthly_net_pct": 2.15,
+      "max_drawdown_pct": -32.29,
+      "sharpe_monthly": 0.73,
+      "train_return_pct": 42.55,
+      "test_return_pct": 66.4,
+      "test_month_hit_rate_pct": 66.7,
+      "selection_score": 41.2745
+    },
+    {
+      "name": "strong_trend__trend_material__market_ret3_pos__top5",
+      "months": 51,
+      "active_months": 26,
+      "trade_count": 130,
+      "avg_names": 5.0,
+      "final_equity_krw": 185667027,
+      "total_return_pct": 85.67,
+      "cagr_pct": 15.67,
+      "monthly_hit_rate_pct": 27.5,
+      "active_month_hit_rate_pct": 53.8,
+      "trade_hit_rate_pct": 49.2,
+      "avg_monthly_net_pct": 1.33,
+      "max_drawdown_pct": -9.32,
+      "sharpe_monthly": 0.92,
+      "train_return_pct": 21.5,
+      "test_return_pct": 52.81,
+      "test_month_hit_rate_pct": 33.3,
+      "selection_score": 40.867999999999995
+    },
+    {
+      "name": "base_trend__trend_material__supply_rank60__top5",
+      "months": 51,
+      "active_months": 51,
+      "trade_count": 255,
+      "avg_names": 5.0,
+      "final_equity_krw": 199259215,
+      "total_return_pct": 99.26,
+      "cagr_pct": 17.61,
+      "monthly_hit_rate_pct": 51.0,
+      "active_month_hit_rate_pct": 51.0,
+      "trade_hit_rate_pct": 50.6,
+      "avg_monthly_net_pct": 1.58,
+      "max_drawdown_pct": -25.45,
+      "sharpe_monthly": 0.8,
+      "train_return_pct": 8.2,
+      "test_return_pct": 84.15,
+      "test_month_hit_rate_pct": 60.0,
+      "selection_score": 40.83749999999999
+    }
+  ],
+  "output_files": {
+    "all_results": "/Applications/stock_dashboard/research_outputs/best_2021_2025_strategy_all_results.csv",
+    "top50": "/Applications/stock_dashboard/research_outputs/best_2021_2025_strategy_top50.csv",
+    "summary": "/Applications/stock_dashboard/research_outputs/best_2021_2025_strategy_summary.json",
+    "selected_monthly_prefix": "/Applications/stock_dashboard/research_outputs/best_2021_2025_<strategy>_monthly.csv",
+    "selected_picks_prefix": "/Applications/stock_dashboard/research_outputs/best_2021_2025_<strategy>_picks.csv"
+  }
+}

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stock-dashboard.programtrading2020backfill</string>
+  <key>WorkingDirectory</key>
+  <string>/Applications/stock_dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/stock_dashboard/venv/bin/python</string>
+    <string>scripts/collect_broker_program_trading.py</string>
+    <string>--start</string>
+    <string>20200101</string>
+    <string>--end</string>
+    <string>20260620</string>
+    <string>--source</string>
+    <string>both</string>
+    <string>--market-only</string>
+    <string>--skip-existing</string>
+    <string>--sleep</string>
+    <string>0.1</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Applications/stock_dashboard/run/program_trading_backfill_20260620/market_2020_20260620.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Applications/stock_dashboard/run/program_trading_backfill_20260620/market_2020_20260620.launchd.err</string>
+</dict>
+</plist>

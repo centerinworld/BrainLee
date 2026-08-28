@@ -1,0 +1,22 @@
+{
+  "output": "/Applications/stock_dashboard/outputs/manual-20260603-kai-template/presentations/kai-template/output/KAI_16x9_Template.pptx",
+  "outputBytes": 13179,
+  "slideCount": 1,
+  "slideSize": {
+    "width": 1280,
+    "height": 720
+  },
+  "previewDir": "/Applications/stock_dashboard/outputs/manual-20260603-kai-template/presentations/kai-template/preview/final",
+  "previewPaths": [
+    "/Applications/stock_dashboard/outputs/manual-20260603-kai-template/presentations/kai-template/preview/final/slide-01.png"
+  ],
+  "layoutResults": [],
+  "slides": [
+    {
+      "index": 1,
+      "requestedSlideNumber": 1,
+      "modulePath": "/Applications/stock_dashboard/outputs/manual-20260603-kai-template/presentations/kai-template/slides/slide-01.mjs",
+      "exportName": "slide01"
+    }
+  ]
+}

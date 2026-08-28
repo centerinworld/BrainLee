@@ -1,0 +1,8 @@
+task mode: create
+primary deck-profile: template-and-edit style single-slide template build
+secondary profile gates: none
+required proof objects: 16:9 blank corporate template slide, editable slogan text, fixed-height top banner
+source/asset requirements: follow provided PNG composition as reference only; do not embed a table
+brand authenticity constraints: keep the slogan as editable PowerPoint text objects instead of flattening it into an image
+profile-specific QA gates: top banner must remain below 1.8 cm equivalent on a 19.05 cm slide; body must stay clean white; editable text must be preserved in PPTX
+known missing inputs: official vector logo asset was not provided, so the right-side mark will be approximated with editable text and geometric accents

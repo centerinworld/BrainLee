@@ -1,0 +1,998 @@
+{
+  "generated_at": "2026-06-23T22:57:36.054566",
+  "method": {
+    "selection_guardrail": "future return columns are used only for population-level feature notes, never for a pick score or mask",
+    "execution": "signal month features -> next month first open buy -> month-end close sell, equal-weight top 5",
+    "transaction_cost": 0.007,
+    "periods": {
+      "train": [
+        "2021-01",
+        "2023-12"
+      ],
+      "valid": [
+        "2024-01",
+        "2025-05"
+      ],
+      "oos": [
+        "2025-06",
+        "2026-05"
+      ],
+      "all": [
+        "2021-01",
+        "2026-05"
+      ]
+    },
+    "benchmark": "same-month liquid tradable universe equal-weight; KOSPI retained only as a warning reference because local ^KS11 has known data-quality concerns"
+  },
+  "logic_count": 5,
+  "summaries": [
+    {
+      "logic": "improved_growth_export_momentum_top5",
+      "split": "train",
+      "months": 36,
+      "active_months": 6,
+      "total_return_pct": -14.07,
+      "cagr_pct": -4.93,
+      "avg_monthly_pct": -0.4,
+      "hit_month_pct": 50.0,
+      "mdd_pct": -17.33,
+      "sharpe": -0.63,
+      "period": "2021-01~2023-12",
+      "trade_count": 28,
+      "avg_names": 0.78,
+      "liquid_universe_return_pct": -20.57,
+      "kospi_return_pct": -16.1,
+      "alpha_vs_liquid_universe_pct": 6.5,
+      "alpha_vs_kospi_pct": 2.03
+    },
+    {
+      "logic": "improved_growth_export_momentum_top5",
+      "split": "valid",
+      "months": 17,
+      "active_months": 8,
+      "total_return_pct": 74.78,
+      "cagr_pct": 48.31,
+      "avg_monthly_pct": 4.13,
+      "hit_month_pct": 75.0,
+      "mdd_pct": -19.24,
+      "sharpe": 0.99,
+      "period": "2024-01~2025-05",
+      "trade_count": 24,
+      "avg_names": 1.41,
+      "liquid_universe_return_pct": 2.7,
+      "kospi_return_pct": 23.01,
+      "alpha_vs_liquid_universe_pct": 72.08,
+      "alpha_vs_kospi_pct": 51.77
+    },
+    {
+      "logic": "improved_growth_export_momentum_top5",
+      "split": "oos",
+      "months": 12,
+      "active_months": 12,
+      "total_return_pct": 91.76,
+      "cagr_pct": 91.76,
+      "avg_monthly_pct": 6.6,
+      "hit_month_pct": 58.3,
+      "mdd_pct": -18.8,
+      "sharpe": 1.48,
+      "period": "2025-06~2026-05",
+      "trade_count": 42,
+      "avg_names": 3.5,
+      "liquid_universe_return_pct": 13.21,
+      "kospi_return_pct": 167.08,
+      "alpha_vs_liquid_universe_pct": 78.55,
+      "alpha_vs_kospi_pct": -75.32
+    },
+    {
+      "logic": "improved_growth_export_momentum_top5",
+      "split": "all",
+      "months": 65,
+      "active_months": 26,
+      "total_return_pct": 188.02,
+      "cagr_pct": 21.57,
+      "avg_monthly_pct": 2.08,
+      "hit_month_pct": 61.5,
+      "mdd_pct": -19.24,
+      "sharpe": 0.71,
+      "period": "2021-01~2026-05",
+      "trade_count": 94,
+      "avg_names": 1.45,
+      "liquid_universe_return_pct": -7.65,
+      "kospi_return_pct": 175.65,
+      "alpha_vs_liquid_universe_pct": 195.67,
+      "alpha_vs_kospi_pct": 12.37
+    },
+    {
+      "logic": "improved_quality_value_momentum_top8",
+      "split": "train",
+      "months": 36,
+      "active_months": 6,
+      "total_return_pct": -4.36,
+      "cagr_pct": -1.48,
+      "avg_monthly_pct": -0.1,
+      "hit_month_pct": 33.3,
+      "mdd_pct": -11.37,
+      "sharpe": -0.16,
+      "period": "2021-01~2023-12",
+      "trade_count": 46,
+      "avg_names": 1.28,
+      "liquid_universe_return_pct": -20.57,
+      "kospi_return_pct": -16.1,
+      "alpha_vs_liquid_universe_pct": 16.21,
+      "alpha_vs_kospi_pct": 11.74
+    },
+    {
+      "logic": "improved_quality_value_momentum_top8",
+      "split": "valid",
+      "months": 17,
+      "active_months": 3,
+      "total_return_pct": -14.03,
+      "cagr_pct": -10.12,
+      "avg_monthly_pct": -0.75,
+      "hit_month_pct": 33.3,
+      "mdd_pct": -22.92,
+      "sharpe": -0.49,
+      "period": "2024-01~2025-05",
+      "trade_count": 21,
+      "avg_names": 1.24,
+      "liquid_universe_return_pct": 2.7,
+      "kospi_return_pct": 23.01,
+      "alpha_vs_liquid_universe_pct": -16.73,
+      "alpha_vs_kospi_pct": -37.04
+    },
+    {
+      "logic": "improved_quality_value_momentum_top8",
+      "split": "oos",
+      "months": 12,
+      "active_months": 8,
+      "total_return_pct": 48.44,
+      "cagr_pct": 48.44,
+      "avg_monthly_pct": 3.56,
+      "hit_month_pct": 62.5,
+      "mdd_pct": -3.35,
+      "sharpe": 1.73,
+      "period": "2025-06~2026-05",
+      "trade_count": 59,
+      "avg_names": 4.92,
+      "liquid_universe_return_pct": 13.21,
+      "kospi_return_pct": 167.08,
+      "alpha_vs_liquid_universe_pct": 35.23,
+      "alpha_vs_kospi_pct": -118.64
+    },
+    {
+      "logic": "improved_quality_value_momentum_top8",
+      "split": "all",
+      "months": 65,
+      "active_months": 17,
+      "total_return_pct": 22.05,
+      "cagr_pct": 3.75,
+      "avg_monthly_pct": 0.41,
+      "hit_month_pct": 47.1,
+      "mdd_pct": -29.5,
+      "sharpe": 0.31,
+      "period": "2021-01~2026-05",
+      "trade_count": 126,
+      "avg_names": 1.94,
+      "liquid_universe_return_pct": -7.65,
+      "kospi_return_pct": 175.65,
+      "alpha_vs_liquid_universe_pct": 29.7,
+      "alpha_vs_kospi_pct": -153.6
+    },
+    {
+      "logic": "forward_growth_export_quality_top5",
+      "split": "train",
+      "months": 36,
+      "active_months": 19,
+      "total_return_pct": -25.14,
+      "cagr_pct": -9.2,
+      "avg_monthly_pct": -0.68,
+      "hit_month_pct": 31.6,
+      "mdd_pct": -30.81,
+      "sharpe": -0.46,
+      "period": "2021-01~2023-12",
+      "trade_count": 81,
+      "avg_names": 2.25,
+      "liquid_universe_return_pct": -20.57,
+      "kospi_return_pct": -16.1,
+      "alpha_vs_liquid_universe_pct": -4.57,
+      "alpha_vs_kospi_pct": -9.04
+    },
+    {
+      "logic": "forward_growth_export_quality_top5",
+      "split": "valid",
+      "months": 17,
+      "active_months": 8,
+      "total_return_pct": 7.92,
+      "cagr_pct": 5.53,
+      "avg_monthly_pct": 0.78,
+      "hit_month_pct": 37.5,
+      "mdd_pct": -26.44,
+      "sharpe": 0.32,
+      "period": "2024-01~2025-05",
+      "trade_count": 35,
+      "avg_names": 2.06,
+      "liquid_universe_return_pct": 2.7,
+      "kospi_return_pct": 23.01,
+      "alpha_vs_liquid_universe_pct": 5.22,
+      "alpha_vs_kospi_pct": -15.09
+    },
+    {
+      "logic": "forward_growth_export_quality_top5",
+      "split": "oos",
+      "months": 12,
+      "active_months": 12,
+      "total_return_pct": 17.46,
+      "cagr_pct": 17.46,
+      "avg_monthly_pct": 2.3,
+      "hit_month_pct": 50.0,
+      "mdd_pct": -25.31,
+      "sharpe": 0.53,
+      "period": "2025-06~2026-05",
+      "trade_count": 46,
+      "avg_names": 3.83,
+      "liquid_universe_return_pct": 13.21,
+      "kospi_return_pct": 167.08,
+      "alpha_vs_liquid_universe_pct": 4.25,
+      "alpha_vs_kospi_pct": -149.62
+    },
+    {
+      "logic": "forward_growth_export_quality_top5",
+      "split": "all",
+      "months": 65,
+      "active_months": 39,
+      "total_return_pct": -5.11,
+      "cagr_pct": -0.96,
+      "avg_monthly_pct": 0.25,
+      "hit_month_pct": 38.5,
+      "mdd_pct": -43.5,
+      "sharpe": 0.1,
+      "period": "2021-01~2026-05",
+      "trade_count": 162,
+      "avg_names": 2.49,
+      "liquid_universe_return_pct": -7.65,
+      "kospi_return_pct": 175.65,
+      "alpha_vs_liquid_universe_pct": 2.54,
+      "alpha_vs_kospi_pct": -180.76
+    },
+    {
+      "logic": "forward_supply_demand_base_top5",
+      "split": "train",
+      "months": 36,
+      "active_months": 6,
+      "total_return_pct": -2.11,
+      "cagr_pct": -0.71,
+      "avg_monthly_pct": -0.04,
+      "hit_month_pct": 50.0,
+      "mdd_pct": -9.93,
+      "sharpe": -0.07,
+      "period": "2021-01~2023-12",
+      "trade_count": 30,
+      "avg_names": 0.83,
+      "liquid_universe_return_pct": -20.57,
+      "kospi_return_pct": -16.1,
+      "alpha_vs_liquid_universe_pct": 18.46,
+      "alpha_vs_kospi_pct": 13.99
+    },
+    {
+      "logic": "forward_supply_demand_base_top5",
+      "split": "valid",
+      "months": 17,
+      "active_months": 8,
+      "total_return_pct": -1.95,
+      "cagr_pct": -1.38,
+      "avg_monthly_pct": 0.02,
+      "hit_month_pct": 50.0,
+      "mdd_pct": -20.42,
+      "sharpe": 0.01,
+      "period": "2024-01~2025-05",
+      "trade_count": 40,
+      "avg_names": 2.35,
+      "liquid_universe_return_pct": 2.7,
+      "kospi_return_pct": 23.01,
+      "alpha_vs_liquid_universe_pct": -4.65,
+      "alpha_vs_kospi_pct": -24.96
+    },
+    {
+      "logic": "forward_supply_demand_base_top5",
+      "split": "oos",
+      "months": 12,
+      "active_months": 12,
+      "total_return_pct": 11.2,
+      "cagr_pct": 11.2,
+      "avg_monthly_pct": 1.31,
+      "hit_month_pct": 50.0,
+      "mdd_pct": -18.44,
+      "sharpe": 0.46,
+      "period": "2025-06~2026-05",
+      "trade_count": 60,
+      "avg_names": 5.0,
+      "liquid_universe_return_pct": 13.21,
+      "kospi_return_pct": 167.08,
+      "alpha_vs_liquid_universe_pct": -2.01,
+      "alpha_vs_kospi_pct": -155.88
+    },
+    {
+      "logic": "forward_supply_demand_base_top5",
+      "split": "all",
+      "months": 65,
+      "active_months": 26,
+      "total_return_pct": 6.73,
+      "cagr_pct": 1.21,
+      "avg_monthly_pct": 0.22,
+      "hit_month_pct": 50.0,
+      "mdd_pct": -28.32,
+      "sharpe": 0.15,
+      "period": "2021-01~2026-05",
+      "trade_count": 130,
+      "avg_names": 2.0,
+      "liquid_universe_return_pct": -7.65,
+      "kospi_return_pct": 175.65,
+      "alpha_vs_liquid_universe_pct": 14.38,
+      "alpha_vs_kospi_pct": -168.92
+    },
+    {
+      "logic": "forward_turnaround_cashflow_top5",
+      "split": "train",
+      "months": 36,
+      "active_months": 13,
+      "total_return_pct": 63.95,
+      "cagr_pct": 17.92,
+      "avg_monthly_pct": 1.59,
+      "hit_month_pct": 53.8,
+      "mdd_pct": -17.97,
+      "sharpe": 0.8,
+      "period": "2021-01~2023-12",
+      "trade_count": 39,
+      "avg_names": 1.08,
+      "liquid_universe_return_pct": -20.57,
+      "kospi_return_pct": -16.1,
+      "alpha_vs_liquid_universe_pct": 84.52,
+      "alpha_vs_kospi_pct": 80.05
+    },
+    {
+      "logic": "forward_turnaround_cashflow_top5",
+      "split": "valid",
+      "months": 17,
+      "active_months": 3,
+      "total_return_pct": -6.73,
+      "cagr_pct": -4.8,
+      "avg_monthly_pct": -0.21,
+      "hit_month_pct": 33.3,
+      "mdd_pct": -21.28,
+      "sharpe": -0.11,
+      "period": "2024-01~2025-05",
+      "trade_count": 7,
+      "avg_names": 0.41,
+      "liquid_universe_return_pct": 2.7,
+      "kospi_return_pct": 23.01,
+      "alpha_vs_liquid_universe_pct": -9.43,
+      "alpha_vs_kospi_pct": -29.74
+    },
+    {
+      "logic": "forward_turnaround_cashflow_top5",
+      "split": "oos",
+      "months": 12,
+      "active_months": 6,
+      "total_return_pct": 0.91,
+      "cagr_pct": 0.91,
+      "avg_monthly_pct": 0.15,
+      "hit_month_pct": 50.0,
+      "mdd_pct": -8.72,
+      "sharpe": 0.13,
+      "period": "2025-06~2026-05",
+      "trade_count": 20,
+      "avg_names": 1.67,
+      "liquid_universe_return_pct": 13.21,
+      "kospi_return_pct": 167.08,
+      "alpha_vs_liquid_universe_pct": -12.3,
+      "alpha_vs_kospi_pct": -166.17
+    },
+    {
+      "logic": "forward_turnaround_cashflow_top5",
+      "split": "all",
+      "months": 65,
+      "active_months": 22,
+      "total_return_pct": 54.32,
+      "cagr_pct": 8.34,
+      "avg_monthly_pct": 0.86,
+      "hit_month_pct": 50.0,
+      "mdd_pct": -22.68,
+      "sharpe": 0.47,
+      "period": "2021-01~2026-05",
+      "trade_count": 66,
+      "avg_names": 1.02,
+      "liquid_universe_return_pct": -7.65,
+      "kospi_return_pct": 175.65,
+      "alpha_vs_liquid_universe_pct": 61.97,
+      "alpha_vs_kospi_pct": -121.33
+    }
+  ],
+  "details": {
+    "improved_growth_export_momentum_top5": {
+      "description": "매출 상위권, 영업이익 개선, 수출 상위권, 단기 수급을 결합한 초기 추세 종목 선별",
+      "mask": "liquid & early_trend & not_extended & not_chasing_high_loose & fin_rev_q70 & fin_op_q60 & export_q60 & supply20_q60",
+      "score_cols": [
+        [
+          "r_fin_rev_yoy",
+          0.2
+        ],
+        [
+          "r_fin_op_yoy",
+          0.18
+        ],
+        [
+          "r_fin_op_margin",
+          0.12
+        ],
+        [
+          "r_cf_ocf_margin",
+          0.12
+        ],
+        [
+          "r_low_vol60",
+          0.14
+        ],
+        [
+          "r_supply20_to_turnover",
+          0.1
+        ],
+        [
+          "r_ret_3m",
+          0.06
+        ],
+        [
+          "r_near_high52",
+          -0.12
+        ],
+        [
+          "r_ret_6m",
+          -0.08
+        ]
+      ],
+      "train": {
+        "logic": "improved_growth_export_momentum_top5",
+        "split": "train",
+        "months": 36,
+        "active_months": 6,
+        "total_return_pct": -14.07,
+        "cagr_pct": -4.93,
+        "avg_monthly_pct": -0.4,
+        "hit_month_pct": 50.0,
+        "mdd_pct": -17.33,
+        "sharpe": -0.63,
+        "period": "2021-01~2023-12",
+        "trade_count": 28,
+        "avg_names": 0.78,
+        "liquid_universe_return_pct": -20.57,
+        "kospi_return_pct": -16.1,
+        "alpha_vs_liquid_universe_pct": 6.5,
+        "alpha_vs_kospi_pct": 2.03
+      },
+      "valid": {
+        "logic": "improved_growth_export_momentum_top5",
+        "split": "valid",
+        "months": 17,
+        "active_months": 8,
+        "total_return_pct": 74.78,
+        "cagr_pct": 48.31,
+        "avg_monthly_pct": 4.13,
+        "hit_month_pct": 75.0,
+        "mdd_pct": -19.24,
+        "sharpe": 0.99,
+        "period": "2024-01~2025-05",
+        "trade_count": 24,
+        "avg_names": 1.41,
+        "liquid_universe_return_pct": 2.7,
+        "kospi_return_pct": 23.01,
+        "alpha_vs_liquid_universe_pct": 72.08,
+        "alpha_vs_kospi_pct": 51.77
+      },
+      "oos": {
+        "logic": "improved_growth_export_momentum_top5",
+        "split": "oos",
+        "months": 12,
+        "active_months": 12,
+        "total_return_pct": 91.76,
+        "cagr_pct": 91.76,
+        "avg_monthly_pct": 6.6,
+        "hit_month_pct": 58.3,
+        "mdd_pct": -18.8,
+        "sharpe": 1.48,
+        "period": "2025-06~2026-05",
+        "trade_count": 42,
+        "avg_names": 3.5,
+        "liquid_universe_return_pct": 13.21,
+        "kospi_return_pct": 167.08,
+        "alpha_vs_liquid_universe_pct": 78.55,
+        "alpha_vs_kospi_pct": -75.32
+      },
+      "all": {
+        "logic": "improved_growth_export_momentum_top5",
+        "split": "all",
+        "months": 65,
+        "active_months": 26,
+        "total_return_pct": 188.02,
+        "cagr_pct": 21.57,
+        "avg_monthly_pct": 2.08,
+        "hit_month_pct": 61.5,
+        "mdd_pct": -19.24,
+        "sharpe": 0.71,
+        "period": "2021-01~2026-05",
+        "trade_count": 94,
+        "avg_names": 1.45,
+        "liquid_universe_return_pct": -7.65,
+        "kospi_return_pct": 175.65,
+        "alpha_vs_liquid_universe_pct": 195.67,
+        "alpha_vs_kospi_pct": 12.37
+      }
+    },
+    "improved_quality_value_momentum_top8": {
+      "description": "추세가 살아 있으면서 매출/이익/현금흐름/수급 품질이 모두 중상위권인 종목을 넓게 선별",
+      "mask": "liquid & trend_alive & not_extended & not_chasing_high & fin_rev_q60 & fin_op_q60 & ocf_q60 & supply60_q60",
+      "score_cols": [
+        [
+          "r_fin_rev_yoy",
+          0.16
+        ],
+        [
+          "r_fin_op_yoy",
+          0.14
+        ],
+        [
+          "r_cf_ocf_margin",
+          0.14
+        ],
+        [
+          "r_low_vol60",
+          0.14
+        ],
+        [
+          "r_supply60_to_turnover",
+          0.12
+        ],
+        [
+          "r_export_yoy",
+          0.1
+        ],
+        [
+          "r_above_low52",
+          0.08
+        ],
+        [
+          "r_near_high52",
+          -0.1
+        ],
+        [
+          "r_ret_6m",
+          -0.08
+        ]
+      ],
+      "train": {
+        "logic": "improved_quality_value_momentum_top8",
+        "split": "train",
+        "months": 36,
+        "active_months": 6,
+        "total_return_pct": -4.36,
+        "cagr_pct": -1.48,
+        "avg_monthly_pct": -0.1,
+        "hit_month_pct": 33.3,
+        "mdd_pct": -11.37,
+        "sharpe": -0.16,
+        "period": "2021-01~2023-12",
+        "trade_count": 46,
+        "avg_names": 1.28,
+        "liquid_universe_return_pct": -20.57,
+        "kospi_return_pct": -16.1,
+        "alpha_vs_liquid_universe_pct": 16.21,
+        "alpha_vs_kospi_pct": 11.74
+      },
+      "valid": {
+        "logic": "improved_quality_value_momentum_top8",
+        "split": "valid",
+        "months": 17,
+        "active_months": 3,
+        "total_return_pct": -14.03,
+        "cagr_pct": -10.12,
+        "avg_monthly_pct": -0.75,
+        "hit_month_pct": 33.3,
+        "mdd_pct": -22.92,
+        "sharpe": -0.49,
+        "period": "2024-01~2025-05",
+        "trade_count": 21,
+        "avg_names": 1.24,
+        "liquid_universe_return_pct": 2.7,
+        "kospi_return_pct": 23.01,
+        "alpha_vs_liquid_universe_pct": -16.73,
+        "alpha_vs_kospi_pct": -37.04
+      },
+      "oos": {
+        "logic": "improved_quality_value_momentum_top8",
+        "split": "oos",
+        "months": 12,
+        "active_months": 8,
+        "total_return_pct": 48.44,
+        "cagr_pct": 48.44,
+        "avg_monthly_pct": 3.56,
+        "hit_month_pct": 62.5,
+        "mdd_pct": -3.35,
+        "sharpe": 1.73,
+        "period": "2025-06~2026-05",
+        "trade_count": 59,
+        "avg_names": 4.92,
+        "liquid_universe_return_pct": 13.21,
+        "kospi_return_pct": 167.08,
+        "alpha_vs_liquid_universe_pct": 35.23,
+        "alpha_vs_kospi_pct": -118.64
+      },
+      "all": {
+        "logic": "improved_quality_value_momentum_top8",
+        "split": "all",
+        "months": 65,
+        "active_months": 17,
+        "total_return_pct": 22.05,
+        "cagr_pct": 3.75,
+        "avg_monthly_pct": 0.41,
+        "hit_month_pct": 47.1,
+        "mdd_pct": -29.5,
+        "sharpe": 0.31,
+        "period": "2021-01~2026-05",
+        "trade_count": 126,
+        "avg_names": 1.94,
+        "liquid_universe_return_pct": -7.65,
+        "kospi_return_pct": 175.65,
+        "alpha_vs_liquid_universe_pct": 29.7,
+        "alpha_vs_kospi_pct": -153.6
+      }
+    },
+    "forward_growth_export_quality_top5": {
+      "description": "매출/영업이익 성장과 수출 성장 확인 후, 아직 52주 고점 추격이 아닌 초기 추세만 선별",
+      "mask": "liquid & early_trend & not_extended & not_chasing_high & fin_rev_q70 & fin_op_q70 & export_positive",
+      "score_cols": [
+        [
+          "r_fin_rev_yoy",
+          0.18
+        ],
+        [
+          "r_fin_op_yoy",
+          0.16
+        ],
+        [
+          "r_export_yoy",
+          0.14
+        ],
+        [
+          "r_cf_ocf_margin",
+          0.1
+        ],
+        [
+          "r_supply20_to_turnover",
+          0.12
+        ],
+        [
+          "r_low_vol60",
+          0.1
+        ],
+        [
+          "r_ret_3m",
+          0.08
+        ],
+        [
+          "r_near_high52",
+          -0.12
+        ]
+      ],
+      "train": {
+        "logic": "forward_growth_export_quality_top5",
+        "split": "train",
+        "months": 36,
+        "active_months": 19,
+        "total_return_pct": -25.14,
+        "cagr_pct": -9.2,
+        "avg_monthly_pct": -0.68,
+        "hit_month_pct": 31.6,
+        "mdd_pct": -30.81,
+        "sharpe": -0.46,
+        "period": "2021-01~2023-12",
+        "trade_count": 81,
+        "avg_names": 2.25,
+        "liquid_universe_return_pct": -20.57,
+        "kospi_return_pct": -16.1,
+        "alpha_vs_liquid_universe_pct": -4.57,
+        "alpha_vs_kospi_pct": -9.04
+      },
+      "valid": {
+        "logic": "forward_growth_export_quality_top5",
+        "split": "valid",
+        "months": 17,
+        "active_months": 8,
+        "total_return_pct": 7.92,
+        "cagr_pct": 5.53,
+        "avg_monthly_pct": 0.78,
+        "hit_month_pct": 37.5,
+        "mdd_pct": -26.44,
+        "sharpe": 0.32,
+        "period": "2024-01~2025-05",
+        "trade_count": 35,
+        "avg_names": 2.06,
+        "liquid_universe_return_pct": 2.7,
+        "kospi_return_pct": 23.01,
+        "alpha_vs_liquid_universe_pct": 5.22,
+        "alpha_vs_kospi_pct": -15.09
+      },
+      "oos": {
+        "logic": "forward_growth_export_quality_top5",
+        "split": "oos",
+        "months": 12,
+        "active_months": 12,
+        "total_return_pct": 17.46,
+        "cagr_pct": 17.46,
+        "avg_monthly_pct": 2.3,
+        "hit_month_pct": 50.0,
+        "mdd_pct": -25.31,
+        "sharpe": 0.53,
+        "period": "2025-06~2026-05",
+        "trade_count": 46,
+        "avg_names": 3.83,
+        "liquid_universe_return_pct": 13.21,
+        "kospi_return_pct": 167.08,
+        "alpha_vs_liquid_universe_pct": 4.25,
+        "alpha_vs_kospi_pct": -149.62
+      },
+      "all": {
+        "logic": "forward_growth_export_quality_top5",
+        "split": "all",
+        "months": 65,
+        "active_months": 39,
+        "total_return_pct": -5.11,
+        "cagr_pct": -0.96,
+        "avg_monthly_pct": 0.25,
+        "hit_month_pct": 38.5,
+        "mdd_pct": -43.5,
+        "sharpe": 0.1,
+        "period": "2021-01~2026-05",
+        "trade_count": 162,
+        "avg_names": 2.49,
+        "liquid_universe_return_pct": -7.65,
+        "kospi_return_pct": 175.65,
+        "alpha_vs_liquid_universe_pct": 2.54,
+        "alpha_vs_kospi_pct": -180.76
+      }
+    },
+    "forward_supply_demand_base_top5": {
+      "description": "수급 누적/저변동 베이스 위에 수주잔고, 원재료 투입, 수출 중 하나 이상의 수요 신호가 붙은 종목 선별",
+      "mask": "liquid & early_trend & not_extended & base_recovery & supply60_q70 & low_vol_q60 & demand_any",
+      "score_cols": [
+        [
+          "r_supply60_to_turnover",
+          0.18
+        ],
+        [
+          "r_low_vol60",
+          0.14
+        ],
+        [
+          "r_backlog_yoy",
+          0.13
+        ],
+        [
+          "r_raw_material_cost_yoy",
+          0.12
+        ],
+        [
+          "r_annual_material_yoy",
+          0.1
+        ],
+        [
+          "r_export_yoy",
+          0.1
+        ],
+        [
+          "r_fin_rev_yoy",
+          0.1
+        ],
+        [
+          "r_ret_6m",
+          -0.07
+        ],
+        [
+          "r_near_high52",
+          -0.06
+        ]
+      ],
+      "train": {
+        "logic": "forward_supply_demand_base_top5",
+        "split": "train",
+        "months": 36,
+        "active_months": 6,
+        "total_return_pct": -2.11,
+        "cagr_pct": -0.71,
+        "avg_monthly_pct": -0.04,
+        "hit_month_pct": 50.0,
+        "mdd_pct": -9.93,
+        "sharpe": -0.07,
+        "period": "2021-01~2023-12",
+        "trade_count": 30,
+        "avg_names": 0.83,
+        "liquid_universe_return_pct": -20.57,
+        "kospi_return_pct": -16.1,
+        "alpha_vs_liquid_universe_pct": 18.46,
+        "alpha_vs_kospi_pct": 13.99
+      },
+      "valid": {
+        "logic": "forward_supply_demand_base_top5",
+        "split": "valid",
+        "months": 17,
+        "active_months": 8,
+        "total_return_pct": -1.95,
+        "cagr_pct": -1.38,
+        "avg_monthly_pct": 0.02,
+        "hit_month_pct": 50.0,
+        "mdd_pct": -20.42,
+        "sharpe": 0.01,
+        "period": "2024-01~2025-05",
+        "trade_count": 40,
+        "avg_names": 2.35,
+        "liquid_universe_return_pct": 2.7,
+        "kospi_return_pct": 23.01,
+        "alpha_vs_liquid_universe_pct": -4.65,
+        "alpha_vs_kospi_pct": -24.96
+      },
+      "oos": {
+        "logic": "forward_supply_demand_base_top5",
+        "split": "oos",
+        "months": 12,
+        "active_months": 12,
+        "total_return_pct": 11.2,
+        "cagr_pct": 11.2,
+        "avg_monthly_pct": 1.31,
+        "hit_month_pct": 50.0,
+        "mdd_pct": -18.44,
+        "sharpe": 0.46,
+        "period": "2025-06~2026-05",
+        "trade_count": 60,
+        "avg_names": 5.0,
+        "liquid_universe_return_pct": 13.21,
+        "kospi_return_pct": 167.08,
+        "alpha_vs_liquid_universe_pct": -2.01,
+        "alpha_vs_kospi_pct": -155.88
+      },
+      "all": {
+        "logic": "forward_supply_demand_base_top5",
+        "split": "all",
+        "months": 65,
+        "active_months": 26,
+        "total_return_pct": 6.73,
+        "cagr_pct": 1.21,
+        "avg_monthly_pct": 0.22,
+        "hit_month_pct": 50.0,
+        "mdd_pct": -28.32,
+        "sharpe": 0.15,
+        "period": "2021-01~2026-05",
+        "trade_count": 130,
+        "avg_names": 2.0,
+        "liquid_universe_return_pct": -7.65,
+        "kospi_return_pct": 175.65,
+        "alpha_vs_liquid_universe_pct": 14.38,
+        "alpha_vs_kospi_pct": -168.92
+      }
+    },
+    "forward_turnaround_cashflow_top5": {
+      "description": "매출 가속/영업이익 턴어라운드와 현금흐름 품질이 같이 개선되는 초기 회복형 종목 선별",
+      "mask": "liquid & early_trend & not_extended & base_recovery & rev_accel_pos & op_turnaround & ocf_q60",
+      "score_cols": [
+        [
+          "r_fin_rev_accel",
+          0.18
+        ],
+        [
+          "r_fin_op_yoy",
+          0.14
+        ],
+        [
+          "r_cf_ocf_margin",
+          0.16
+        ],
+        [
+          "r_supply20_to_turnover",
+          0.12
+        ],
+        [
+          "r_low_vol60",
+          0.12
+        ],
+        [
+          "r_above_low52",
+          0.08
+        ],
+        [
+          "r_ret_3m",
+          0.08
+        ],
+        [
+          "r_fin_debt_ratio",
+          -0.12
+        ]
+      ],
+      "train": {
+        "logic": "forward_turnaround_cashflow_top5",
+        "split": "train",
+        "months": 36,
+        "active_months": 13,
+        "total_return_pct": 63.95,
+        "cagr_pct": 17.92,
+        "avg_monthly_pct": 1.59,
+        "hit_month_pct": 53.8,
+        "mdd_pct": -17.97,
+        "sharpe": 0.8,
+        "period": "2021-01~2023-12",
+        "trade_count": 39,
+        "avg_names": 1.08,
+        "liquid_universe_return_pct": -20.57,
+        "kospi_return_pct": -16.1,
+        "alpha_vs_liquid_universe_pct": 84.52,
+        "alpha_vs_kospi_pct": 80.05
+      },
+      "valid": {
+        "logic": "forward_turnaround_cashflow_top5",
+        "split": "valid",
+        "months": 17,
+        "active_months": 3,
+        "total_return_pct": -6.73,
+        "cagr_pct": -4.8,
+        "avg_monthly_pct": -0.21,
+        "hit_month_pct": 33.3,
+        "mdd_pct": -21.28,
+        "sharpe": -0.11,
+        "period": "2024-01~2025-05",
+        "trade_count": 7,
+        "avg_names": 0.41,
+        "liquid_universe_return_pct": 2.7,
+        "kospi_return_pct": 23.01,
+        "alpha_vs_liquid_universe_pct": -9.43,
+        "alpha_vs_kospi_pct": -29.74
+      },
+      "oos": {
+        "logic": "forward_turnaround_cashflow_top5",
+        "split": "oos",
+        "months": 12,
+        "active_months": 6,
+        "total_return_pct": 0.91,
+        "cagr_pct": 0.91,
+        "avg_monthly_pct": 0.15,
+        "hit_month_pct": 50.0,
+        "mdd_pct": -8.72,
+        "sharpe": 0.13,
+        "period": "2025-06~2026-05",
+        "trade_count": 20,
+        "avg_names": 1.67,
+        "liquid_universe_return_pct": 13.21,
+        "kospi_return_pct": 167.08,
+        "alpha_vs_liquid_universe_pct": -12.3,
+        "alpha_vs_kospi_pct": -166.17
+      },
+      "all": {
+        "logic": "forward_turnaround_cashflow_top5",
+        "split": "all",
+        "months": 65,
+        "active_months": 22,
+        "total_return_pct": 54.32,
+        "cagr_pct": 8.34,
+        "avg_monthly_pct": 0.86,
+        "hit_month_pct": 50.0,
+        "mdd_pct": -22.68,
+        "sharpe": 0.47,
+        "period": "2021-01~2026-05",
+        "trade_count": 66,
+        "avg_names": 1.02,
+        "liquid_universe_return_pct": -7.65,
+        "kospi_return_pct": 175.65,
+        "alpha_vs_liquid_universe_pct": 61.97,
+        "alpha_vs_kospi_pct": -121.33
+      }
+    }
+  },
+  "outputs": {
+    "summary_csv": "/Applications/stock_dashboard/research_outputs/forward_winner_signal_logic_20260623_summary.csv",
+    "feature_notes_csv": "/Applications/stock_dashboard/research_outputs/forward_winner_signal_logic_20260623_feature_notes.csv"
+  }
+}

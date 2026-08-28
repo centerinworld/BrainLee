@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stock-dashboard.kiwoom-investor-2020-2021</string>
+  <key>WorkingDirectory</key>
+  <string>/Applications/stock_dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/stock_dashboard/venv/bin/python</string>
+    <string>scripts/backfill_kiwoom_investor_2020_2021.py</string>
+    <string>--base-dt</string>
+    <string>20260619</string>
+    <string>--max-pages</string>
+    <string>20</string>
+    <string>--sleep</string>
+    <string>0.35</string>
+  </array>
+  <key>StandardOutPath</key>
+  <string>/Applications/stock_dashboard/run/kiwoom_investor_2020_2021/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Applications/stock_dashboard/run/kiwoom_investor_2020_2021/launchd.err</string>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

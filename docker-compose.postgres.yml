@@ -1,0 +1,36 @@
+services:
+  postgres:
+    profiles: ["legacy-docker-rollback"]
+    image: postgres:16
+    container_name: stock_dashboard_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stock_dashboard
+      POSTGRES_USER: stock_dashboard
+      POSTGRES_PASSWORD: stock_dashboard_local
+      TZ: Asia/Seoul
+    ports:
+      - "5432:5432"
+    volumes:
+      - stock_dashboard_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stock_dashboard -d stock_dashboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # 2026-08-14: 이미지 기본값(shared_buffers=128MB, work_mem=4MB)이 24GB짜리
+    # 실DB에는 턱없이 작아 거의 모든 쿼리가 정렬/조인을 디스크 임시파일로 흘려보내고
+    # 있었음(누적 블록I/O 읽기 99GB/쓰기 51GB, 지속 CPU 100~290%). Docker Desktop VM
+    # 전체 한도가 7.75GiB라 여유 있게 상향(호스트 다른 프로세스 몫은 남겨둠).
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c work_mem=32MB
+      -c maintenance_work_mem=256MB
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.max=2000
+      -c pg_stat_statements.track=top
+
+volumes:
+  stock_dashboard_pgdata:

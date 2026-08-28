@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-06-21T05:16:48",
+  "results": [
+    {
+      "name": "kiwoom_stock_universe",
+      "returncode": 0,
+      "elapsed_sec": 1244.6,
+      "log": "/Applications/stock_dashboard/run/page_data_remediation_20260620/kiwoom_stock_universe.json"
+    },
+    {
+      "name": "kiwoom_credit_foreign",
+      "returncode": 0,
+      "elapsed_sec": 21215.8,
+      "log": "/Applications/stock_dashboard/run/page_data_remediation_20260620/kiwoom_credit_foreign.json"
+    },
+    {
+      "name": "market_radar_refresh",
+      "returncode": 0,
+      "elapsed_sec": 653.5,
+      "log": "/Applications/stock_dashboard/run/page_data_remediation_20260620/market_radar_refresh.json"
+    },
+    {
+      "name": "final_page_data_audit_phase2",
+      "returncode": 0,
+      "elapsed_sec": 46.7,
+      "log": "/Applications/stock_dashboard/run/page_data_remediation_20260620/final_page_data_audit_phase2.log",
+      "err": "/Applications/stock_dashboard/run/page_data_remediation_20260620/final_page_data_audit_phase2.err"
+    }
+  ]
+}

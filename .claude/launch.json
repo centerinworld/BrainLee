@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "stock-dashboard",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "echo 'Server already running on 8000'"],
+      "port": 8000
+    }
+  ]
+}

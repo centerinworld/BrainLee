@@ -1,0 +1,33 @@
+# ── Web Framework ─────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+python-multipart
+
+# ── Database ──────────────────────────────────────────────────
+sqlalchemy
+psycopg[binary]
+
+# ── HTTP / Async ──────────────────────────────────────────────
+httpx
+requests
+
+# ── Data / Analysis ───────────────────────────────────────────
+pandas
+pydantic
+
+# ── Korean Market Data ────────────────────────────────────────
+yfinance
+OpenDartReader
+pykrx
+
+# ── Config ────────────────────────────────────────────────────
+python-dotenv
+
+# ── Telegram ──────────────────────────────────────────────────
+telethon
+
+# ── HTML Parsing (Naver Finance fallback) ─────────────────────
+beautifulsoup4
+
+# ── AI ────────────────────────────────────────────────────────
+openai

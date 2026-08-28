@@ -1,0 +1,325 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8" />
+<title>시장 2배 수익률 후보 전략 리서치</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",Arial,sans-serif;margin:40px auto;max-width:1080px;line-height:1.6;color:#172033}h1{font-size:30px;margin-bottom:8px}h2{margin-top:34px;font-size:21px}.summary{background:#f5f8fc;border-left:4px solid #2f80ed;padding:16px 20px}.data-table{border-collapse:collapse;width:100%;font-size:14px;margin:12px 0 22px}.data-table th,.data-table td{border-bottom:1px solid #e6eaf0;padding:8px 10px;text-align:right}.data-table th:first-child,.data-table td:first-child{text-align:left}.note{color:#536073;font-size:14px}code{background:#f4f6f8;padding:2px 4px;border-radius:4px}</style></head><body>
+<h1>시장 2배 수익률 후보 전략 리서치</h1>
+<h2>Executive Summary</h2><div class="summary"><ul>
+<li><b>현재 데이터 기준으로 시장수익률 2배 조건을 근소하게 넘는 후보는 Top3 집중형뿐입니다.</b> 2025-01~2026-05 검증구간에서 <b>regime_squeeze_top3</b>는 461.8%, KOSPI(^KS11)는 224.2%였습니다. 퍼센트 수익률 기준 2.06배입니다.</li>
+<li><b>핵심 신호는 저평가가 아니라 강한 추세의 압축 돌파입니다.</b> 시장이 10개월선 위일 때, 1개월/3개월/6개월 상대강도, 20일 기관+외국인 수급, 거래대금, 52주 고점 근접도를 결합한 점수가 가장 좋았습니다.</li>
+<li><b>실전 적용은 매우 조심해야 합니다.</b> Top3는 전체 MDD -41.3%였고 2026-04 삼성전기 +155.6% 같은 큰 승자가 성과에 기여했습니다. 완화형 Top10은 검증 365.1%로 더 안정적이지만 KOSPI 2배 기준에는 미달했습니다.</li>
+</ul></div>
+<h2>추천 매수/매도 규칙</h2>
+<p><b>매수:</b> 매월 말 신호 계산 후 다음 리밸런싱까지 보유합니다. KOSPI가 10개월 이동평균 위일 때만 진입하고, 후보는 20일 평균 거래대금 50억원 이상, 주가 1,000원 이상, 1개월 수익률 5% 초과, 3개월 수익률 20% 초과, 6개월 수익률 20% 초과, 현재가가 52주 고점의 80% 이상인 종목입니다. 이 후보 중 점수 <code>30% 1개월 RS + 20% 3개월 RS + 20% 20일 기관/외국인 수급 + 20% 거래대금 + 10% 52주 고점 근접도</code> 상위 3개를 동일비중 매수합니다.</p>
+<p><b>매도:</b> 기본 검증은 월간 리밸런싱입니다. 다음 월말에 조건을 다시 계산해 탈락 종목은 매도하고 신규 상위 종목으로 교체합니다. 실전형으로 바꿀 때는 월중 -12% 손절 또는 20일선 이탈 청산을 추가 검증한 뒤 넣는 편이 안전합니다.</p>
+<h2>성과 비교</h2>
+<p><b>검증구간에서는 Top3만 KOSPI 2배 허들을 통과했습니다.</b> Top10은 위험 대비 성과가 더 매끄럽지만, 사용자가 요청한 2배 기준에는 못 미칩니다.</p>
+<table class="dataframe data-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>전략</th>
+      <th>전체 총수익률</th>
+      <th>전체 MDD</th>
+      <th>검증 총수익률</th>
+      <th>검증 MDD</th>
+      <th>검증 승률</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>regime_squeeze_top3</td>
+      <td>1187.1%</td>
+      <td>-41.3%</td>
+      <td>461.8%</td>
+      <td>-13.2%</td>
+      <td>64.7%</td>
+    </tr>
+    <tr>
+      <td>regime_squeeze_top10</td>
+      <td>623.9%</td>
+      <td>-17.1%</td>
+      <td>365.1%</td>
+      <td>-7.0%</td>
+      <td>52.9%</td>
+    </tr>
+    <tr>
+      <td>breakout_base_top10</td>
+      <td>139.8%</td>
+      <td>-16.3%</td>
+      <td>103.9%</td>
+      <td>-12.6%</td>
+      <td>64.7%</td>
+    </tr>
+    <tr>
+      <td>KOSPI_^KS11</td>
+      <td>147.5%</td>
+      <td>-32.7%</td>
+      <td>224.2%</td>
+      <td>-19.1%</td>
+      <td>70.6%</td>
+    </tr>
+    <tr>
+      <td>all_liquid_equal_weight</td>
+      <td>-13.2%</td>
+      <td>-42.8%</td>
+      <td>45.9%</td>
+      <td>-17.6%</td>
+      <td>64.7%</td>
+    </tr>
+  </tbody>
+</table>
+<h2>월별 검증구간 결과</h2>
+<p><b>2025년 1~3월은 시장필터 때문에 현금 대기했습니다.</b> 실제 수익은 2025년 4월 이후 강세 압축 구간에서 발생했습니다.</p>
+<table class="dataframe data-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>signal_month</th>
+      <th>ret_net</th>
+      <th>n</th>
+      <th>best</th>
+      <th>worst</th>
+      <th>cash_month</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2025-01</td>
+      <td>0.0%</td>
+      <td>0</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>True</td>
+    </tr>
+    <tr>
+      <td>2025-02</td>
+      <td>0.0%</td>
+      <td>0</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>True</td>
+    </tr>
+    <tr>
+      <td>2025-03</td>
+      <td>0.0%</td>
+      <td>0</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>True</td>
+    </tr>
+    <tr>
+      <td>2025-04</td>
+      <td>7.8%</td>
+      <td>3</td>
+      <td>23.6%</td>
+      <td>-0.3%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2025-05</td>
+      <td>29.8%</td>
+      <td>3</td>
+      <td>34.2%</td>
+      <td>22.2%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2025-06</td>
+      <td>-3.6%</td>
+      <td>3</td>
+      <td>24.9%</td>
+      <td>-26.5%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2025-07</td>
+      <td>-10.0%</td>
+      <td>3</td>
+      <td>2.5%</td>
+      <td>-26.1%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2025-08</td>
+      <td>11.1%</td>
+      <td>3</td>
+      <td>48.3%</td>
+      <td>-8.7%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2025-09</td>
+      <td>36.5%</td>
+      <td>3</td>
+      <td>47.1%</td>
+      <td>30.5%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2025-10</td>
+      <td>7.9%</td>
+      <td>3</td>
+      <td>26.4%</td>
+      <td>-7.7%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2025-11</td>
+      <td>9.3%</td>
+      <td>3</td>
+      <td>29.3%</td>
+      <td>-6.8%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2025-12</td>
+      <td>6.6%</td>
+      <td>3</td>
+      <td>39.6%</td>
+      <td>-13.1%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2026-01</td>
+      <td>20.6%</td>
+      <td>3</td>
+      <td>71.7%</td>
+      <td>-5.9%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2026-02</td>
+      <td>24.1%</td>
+      <td>3</td>
+      <td>53.4%</td>
+      <td>0.5%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2026-03</td>
+      <td>5.0%</td>
+      <td>3</td>
+      <td>29.0%</td>
+      <td>-38.7%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2026-04</td>
+      <td>63.1%</td>
+      <td>3</td>
+      <td>155.6%</td>
+      <td>-24.3%</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>2026-05</td>
+      <td>-5.1%</td>
+      <td>3</td>
+      <td>3.3%</td>
+      <td>-10.2%</td>
+      <td>False</td>
+    </tr>
+  </tbody>
+</table>
+<h2>성과가 어디서 나왔는가</h2>
+<p><b>성과는 여러 월과 여러 종목에서 나왔지만, 집중 전략답게 큰 승자의 영향이 큽니다.</b> 삼성전기, 삼천당제약, 주성엔지니어링, 대우건설, HJ중공업 등이 검증구간 기여 상위였습니다.</p>
+<table class="dataframe data-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>stock_code</th>
+      <th>stock_name</th>
+      <th>n</th>
+      <th>avg_ret</th>
+      <th>sum_ret</th>
+      <th>max_ret</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>9150</td>
+      <td>삼성전기</td>
+      <td>1</td>
+      <td>155.6%</td>
+      <td>155.6%</td>
+      <td>155.6%</td>
+    </tr>
+    <tr>
+      <td>250</td>
+      <td>삼천당제약</td>
+      <td>2</td>
+      <td>36.1%</td>
+      <td>72.2%</td>
+      <td>71.7%</td>
+    </tr>
+    <tr>
+      <td>36930</td>
+      <td>주성엔지니어링</td>
+      <td>1</td>
+      <td>58.7%</td>
+      <td>58.7%</td>
+      <td>58.7%</td>
+    </tr>
+    <tr>
+      <td>47040</td>
+      <td>대우건설</td>
+      <td>1</td>
+      <td>53.4%</td>
+      <td>53.4%</td>
+      <td>53.4%</td>
+    </tr>
+    <tr>
+      <td>97230</td>
+      <td>HJ중공업</td>
+      <td>1</td>
+      <td>48.3%</td>
+      <td>48.3%</td>
+      <td>48.3%</td>
+    </tr>
+    <tr>
+      <td>222800</td>
+      <td>심텍</td>
+      <td>1</td>
+      <td>47.1%</td>
+      <td>47.1%</td>
+      <td>47.1%</td>
+    </tr>
+    <tr>
+      <td>660</td>
+      <td>SK하이닉스</td>
+      <td>1</td>
+      <td>39.6%</td>
+      <td>39.6%</td>
+      <td>39.6%</td>
+    </tr>
+    <tr>
+      <td>64350</td>
+      <td>현대로템</td>
+      <td>1</td>
+      <td>34.2%</td>
+      <td>34.2%</td>
+      <td>34.2%</td>
+    </tr>
+    <tr>
+      <td>278470</td>
+      <td>에이피알</td>
+      <td>1</td>
+      <td>33.7%</td>
+      <td>33.7%</td>
+      <td>33.7%</td>
+    </tr>
+    <tr>
+      <td>67310</td>
+      <td>하나마이크론</td>
+      <td>1</td>
+      <td>32.7%</td>
+      <td>32.7%</td>
+      <td>32.7%</td>
+    </tr>
+  </tbody>
+</table>
+<h2>3배주 특징</h2>
+<p><b>2021년 이후 12개월 창에서 3배 이상 오른 국내 종목은 1,078개로 잡혔습니다.</b> 중앙값 기준 최대 12개월 상승배율은 4.52배, 상위 10%는 12.48배였습니다. BigQuery의 <code>v_3x_candidate_screen</code> 현재 후보 뷰는 ROE/영업이익률/수급/52주 위치를 쓰지만, 과거 검증에서는 단순 가치보다 단기 상대강도와 수급·거래대금 압축이 더 잘 작동했습니다.</p>
+<h2>주의할 점과 다음 검증</h2><ul>
+<li><b>투자 조언이 아니라 연구 결과입니다.</b> 실제 매매 전 슬리피지, 세금, 체결 가능 수량, 월중 손절을 넣은 이벤트 기반 백테스트가 필요합니다.</li>
+<li><b>데이터 품질 이슈를 일부 제거했습니다.</b> 하루 ±60% 초과 종목은 액면/분할 오류 가능성이 높아 제외했습니다. 기존 백테스트의 900%대 단일 익절은 이 문제와 관련 있을 수 있습니다.</li>
+<li><b>유니버스는 현재 stock_universe/stock_meta 라벨이 있는 KOSPI/KOSDAQ 중심입니다.</b> 완전한 상폐 포함 유니버스가 아니면 생존자 편향이 남을 수 있습니다.</li>
+<li><b>다음 단계는 앱 백테스트 엔진 편입입니다.</b> 같은 규칙을 일별 체결, 익일 시가 진입, -12% 손절, 20일선 이탈, 최대 보유 45거래일 조건으로 재검증해야 합니다.</li>
+</ul><p class="note">Source: /Applications/stock_dashboard/stock.db, BigQuery stock_dashboard v_3x_* views, generated by scripts/research_alpha_strategy.py on 2026-06-18.</p>
+</body></html>

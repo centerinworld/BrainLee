@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+venv_backup/
+*.egg-info/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+stock_data.db
+
+# Logs
+*.log
+nohup.out
+backend.log
+server.log
+collector.log
+
+# Sensitive / Credentials
+env
+kis_token.json
+telegram_sent.json
+*.session
+
+# OS
+.DS_Store
+
+# Large data files
+*.csv
+*.xlsx
+backfill_progress.json
+bulk_progress.txt
+ticker_cache.csv
+docs_cache/
+
+# Build
+.vite/
+frontend/.vite-cache-new/
+StockAnalysis.app/
+reports/
+
+# Claude Code worktrees (자동 생성, 커밋 불필요)
+.claude/worktrees/
+.fuse_hidden*
+
+# API/Runtime state
+.api_quota_state.json
+*.bak
+*.bak2
+*.bak3
+
+# Scratch / temp
+scratch/
+logs/
+verification/
+config/
+
+# hs_trade_lab 관세청 다운로드 캐시 (대용량 바이너리)
+hs_trade_lab/data/customs_downloads/
+hs_trade_lab/data/daily_refresh_summary.json
+
+# 압축/바이너리 (git status 오염 방지)
+*.gz
+*.zip
+*.tar
+*.tar.gz
+*.pkl
+*.pickle
+
+# 아카이브 (로컬 보관용, 커밋 불필요)
+archives/
+.env

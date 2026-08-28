@@ -1,0 +1,1154 @@
+{
+  "generated_at": "2026-06-27T23:56:26",
+  "db": "/Applications/stock_dashboard/stock.db",
+  "additional_dbs": [
+    "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db"
+  ],
+  "results": [
+    {
+      "page": "메인 대시보드/차트",
+      "dataset": "국내 OHLCV",
+      "table": "price_history",
+      "grain": "stock_code,date",
+      "date_col": "date",
+      "key_expr": "stock_code || '|' || date",
+      "required_cols": [
+        "close",
+        "volume"
+      ],
+      "min_rows": 2000000,
+      "freshness_days": 10,
+      "collector": "KIS collect_kis_ohlcv.py",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 5868311,
+      "distinct_keys": 5868311,
+      "duplicate_keys": 0,
+      "min_date": "2010-01-04",
+      "max_date": "2026-06-26",
+      "age_days": 1,
+      "nulls": {
+        "close": {
+          "count": 3,
+          "rate": 0.0
+        },
+        "volume": {
+          "count": 3,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "메인 대시보드/종목검색",
+      "dataset": "상장종목",
+      "table": "stock_universe",
+      "grain": "stock_code,base_date",
+      "date_col": "COALESCE(base_info_updated_at, updated_at, base_date)",
+      "key_expr": "stock_code || '|' || base_date",
+      "required_cols": [
+        "stock_name",
+        "market"
+      ],
+      "min_rows": 2000,
+      "freshness_days": 30,
+      "collector": "KRX/Kiwoom stock info",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 2693,
+      "distinct_keys": 2693,
+      "duplicate_keys": 0,
+      "min_date": "2026-06-21 08:16:22",
+      "max_date": "2026-06-21 08:16:22",
+      "age_days": 6,
+      "nulls": {
+        "stock_name": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "market": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "공공 일별 시세",
+      "table": "stock_price_daily",
+      "grain": "bas_dt,stock_code",
+      "date_col": "bas_dt",
+      "key_expr": "bas_dt || '|' || stock_code",
+      "required_cols": [
+        "close_price",
+        "volume",
+        "market_cap"
+      ],
+      "min_rows": 1000000,
+      "freshness_days": 10,
+      "collector": "public_data_collector.py / KIS fallback",
+      "priority": "P1",
+      "notes": "페이지/전략의 주 시세 소스는 price_history이며 market_cap은 stock_universe fallback 가능",
+      "exists": true,
+      "rows": 811418,
+      "distinct_keys": 811418,
+      "duplicate_keys": 0,
+      "min_date": "20200102",
+      "max_date": "20260619",
+      "age_days": 8,
+      "nulls": {
+        "close_price": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "volume": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "market_cap": {
+          "count": 733433,
+          "rate": 0.9039
+        }
+      },
+      "status": "ok_with_fallback",
+      "severity": "none",
+      "issues": [
+        "covered_by:price_history+stock_universe",
+        "stock_price_daily의 market_cap 결측은 stock_universe로 보완 가능"
+      ],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "투자자별 매매",
+      "table": "investor_trading_daily",
+      "grain": "bas_dt,stock_code",
+      "date_col": "bas_dt",
+      "key_expr": "bas_dt || '|' || stock_code",
+      "required_cols": [
+        "inst_net",
+        "frgn_net"
+      ],
+      "min_rows": 1000000,
+      "freshness_days": 10,
+      "collector": "public_data_collector.py / KIS",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 4508795,
+      "distinct_keys": 4508795,
+      "duplicate_keys": 0,
+      "min_date": "2018-04-23",
+      "max_date": "2026-06-25",
+      "age_days": 2,
+      "nulls": {
+        "inst_net": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "frgn_net": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "Kiwoom 투자자 수급",
+      "table": "kiwoom_investor_daily",
+      "grain": "stock_code,dt",
+      "date_col": "dt",
+      "key_expr": "stock_code || '|' || dt",
+      "required_cols": [
+        "frgnr_invsr",
+        "orgn",
+        "ind_invsr"
+      ],
+      "min_rows": 100000,
+      "freshness_days": 10,
+      "collector": "Kiwoom ka10059",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 4508795,
+      "distinct_keys": 4508795,
+      "duplicate_keys": 0,
+      "min_date": "2018-04-23",
+      "max_date": "2026-06-25",
+      "age_days": 2,
+      "nulls": {
+        "frgnr_invsr": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "orgn": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "ind_invsr": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "외국인 보유",
+      "table": "foreign_holding_daily",
+      "grain": "bas_dt,stock_code",
+      "date_col": "bas_dt",
+      "key_expr": "bas_dt || '|' || stock_code",
+      "required_cols": [
+        "frgn_hold_pct"
+      ],
+      "min_rows": 1000000,
+      "freshness_days": 10,
+      "collector": "public_data_collector.py / Kiwoom",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 107764,
+      "distinct_keys": 107764,
+      "duplicate_keys": 0,
+      "min_date": "20260312",
+      "max_date": "20260608",
+      "age_days": 19,
+      "nulls": {
+        "frgn_hold_pct": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok_with_fallback",
+      "severity": "none",
+      "issues": [
+        "covered_by:kiwoom_foreign_flow",
+        "공공 외국인 보유 API 미신청/지연 구간은 Kiwoom ka10008로 보완"
+      ],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "Kiwoom 외국인 지분",
+      "table": "kiwoom_foreign_flow",
+      "grain": "stock_code,dt",
+      "date_col": "dt",
+      "key_expr": "stock_code || '|' || dt",
+      "required_cols": [
+        "weight",
+        "limit_exhaust_rate"
+      ],
+      "min_rows": 100000,
+      "freshness_days": 10,
+      "collector": "Kiwoom ka10008",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 143044,
+      "distinct_keys": 143044,
+      "duplicate_keys": 0,
+      "min_date": "20260312",
+      "max_date": "20260625",
+      "age_days": 2,
+      "nulls": {
+        "weight": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "limit_exhaust_rate": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "대차잔고 종목",
+      "table": "short_sell_daily",
+      "grain": "bas_dt,stock_code",
+      "date_col": "bas_dt",
+      "key_expr": "bas_dt || '|' || stock_code",
+      "required_cols": [
+        "borrow_bal_qty",
+        "borrow_bal_amt"
+      ],
+      "min_rows": 1000000,
+      "freshness_days": 10,
+      "collector": "collect_short_5years.py / public_data_collector.py",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 3768208,
+      "distinct_keys": 3768208,
+      "duplicate_keys": 0,
+      "min_date": "20200102",
+      "max_date": "20260623",
+      "age_days": 4,
+      "nulls": {
+        "borrow_bal_qty": {
+          "count": 2080,
+          "rate": 0.0006
+        },
+        "borrow_bal_amt": {
+          "count": 3768208,
+          "rate": 1.0
+        }
+      },
+      "status": "ok_with_fallback",
+      "severity": "none",
+      "issues": [
+        "covered_by:short_rank_daily.lnb_bal",
+        "종목별 API가 잔고금액을 제공하지 않는 구간은 대차순위 금액 필드로 보완"
+      ],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "대차순위",
+      "table": "short_rank_daily",
+      "grain": "bas_dt,isin_cd",
+      "date_col": "bas_dt",
+      "key_expr": "bas_dt || '|' || COALESCE(isin_cd,stock_code)",
+      "required_cols": [
+        "lnb_rman_stck_cnt",
+        "lnb_bal"
+      ],
+      "min_rows": 500000,
+      "freshness_days": 10,
+      "collector": "collect_short_5years.py",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 3284460,
+      "distinct_keys": 3284460,
+      "duplicate_keys": 0,
+      "min_date": "20210104",
+      "max_date": "20260623",
+      "age_days": 4,
+      "nulls": {
+        "lnb_rman_stck_cnt": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "lnb_bal": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "외국인 대차잔고",
+      "table": "short_foreign_balance",
+      "grain": "bas_dt",
+      "date_col": "bas_dt",
+      "key_expr": "bas_dt",
+      "required_cols": [
+        "forg_brw_bal"
+      ],
+      "min_rows": 100,
+      "freshness_days": 45,
+      "collector": "collect_short_5years.py",
+      "priority": "P1",
+      "notes": "월/시장 단위 보조지표라 종목 일별 테이블과 같은 행수 기준을 적용하지 않음",
+      "exists": true,
+      "rows": 222,
+      "distinct_keys": 222,
+      "duplicate_keys": 0,
+      "min_date": "20080101",
+      "max_date": "20260601",
+      "age_days": 26,
+      "nulls": {
+        "forg_brw_bal": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표",
+      "dataset": "월별 대차",
+      "table": "short_monthly_stat",
+      "grain": "bas_dt",
+      "date_col": "bas_dt",
+      "key_expr": "bas_dt",
+      "required_cols": [
+        "lnb_bal"
+      ],
+      "min_rows": 100,
+      "freshness_days": 90,
+      "collector": "collect_short_5years.py",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 233,
+      "distinct_keys": 233,
+      "duplicate_keys": 0,
+      "min_date": "20080131",
+      "max_date": "20260619",
+      "age_days": 8,
+      "nulls": {
+        "lnb_bal": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표/텐버거",
+      "dataset": "프로그램 시장",
+      "table": "broker_program_market_daily",
+      "grain": "source,dt,market",
+      "date_col": "dt",
+      "key_expr": "source || '|' || dt || '|' || market",
+      "required_cols": [
+        "prog_net_buy_amt"
+      ],
+      "min_rows": 500,
+      "freshness_days": 10,
+      "collector": "KIS/Kiwoom program collector",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 4022,
+      "distinct_keys": 4022,
+      "duplicate_keys": 0,
+      "min_date": "2020-01-01",
+      "max_date": "2026-06-26",
+      "age_days": 1,
+      "nulls": {
+        "prog_net_buy_amt": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "시장지표/텐버거",
+      "dataset": "프로그램 종목",
+      "table": "broker_program_stock_daily",
+      "grain": "source,stock_code,dt,market_channel",
+      "date_col": "dt",
+      "key_expr": "source || '|' || stock_code || '|' || dt || '|' || market_channel",
+      "required_cols": [
+        "net_buy_amt_krw"
+      ],
+      "min_rows": 50000,
+      "freshness_days": 10,
+      "collector": "Kiwoom program collector",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 65996,
+      "distinct_keys": 65996,
+      "duplicate_keys": 0,
+      "min_date": "2026-05-21",
+      "max_date": "2026-06-26",
+      "age_days": 1,
+      "nulls": {
+        "net_buy_amt_krw": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "latest_distinct_stocks": 2639,
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "재무/텐버거/DART Excel",
+      "dataset": "연결 재무",
+      "table": "financial_data",
+      "grain": "stock_code,year,quarter,is_annual,report_type",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type",
+      "required_cols": [
+        "revenue",
+        "operating_profit"
+      ],
+      "min_rows": 40000,
+      "freshness_days": null,
+      "collector": "DART/FnGuide batch",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 191883,
+      "distinct_keys": 191381,
+      "duplicate_keys": 502,
+      "min_date": 2015,
+      "max_date": 2026,
+      "age_days": -187,
+      "nulls": {
+        "revenue": {
+          "count": 4441,
+          "rate": 0.0231
+        },
+        "operating_profit": {
+          "count": 3541,
+          "rate": 0.0185
+        }
+      },
+      "status": "ok_with_fallback",
+      "severity": "none",
+      "issues": [
+        "covered_by:canonical_financial_data",
+        "raw financial_data 중복 grain은 표준 테이블에서 해소"
+      ],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "재무/텐버거/DART Excel",
+      "dataset": "표준 재무",
+      "table": "canonical_financial_data",
+      "grain": "stock_code,year,quarter,is_annual,report_type",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type",
+      "required_cols": [
+        "revenue",
+        "operating_profit"
+      ],
+      "min_rows": 20000,
+      "freshness_days": null,
+      "collector": "canonical rebuild",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 90811,
+      "distinct_keys": 90811,
+      "duplicate_keys": 0,
+      "min_date": 2015,
+      "max_date": 2026,
+      "age_days": -187,
+      "nulls": {
+        "revenue": {
+          "count": 1851,
+          "rate": 0.0204
+        },
+        "operating_profit": {
+          "count": 2149,
+          "rate": 0.0237
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "재무/텐버거/DART Excel",
+      "dataset": "현금흐름",
+      "table": "cash_flow_data",
+      "grain": "stock_code,year,quarter,is_annual,report_type",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type",
+      "required_cols": [
+        "operating_cf",
+        "capex"
+      ],
+      "min_rows": 20000,
+      "freshness_days": null,
+      "collector": "DART cashflow batch",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 128320,
+      "distinct_keys": 118295,
+      "duplicate_keys": 10025,
+      "min_date": 2016,
+      "max_date": 2026,
+      "age_days": -187,
+      "nulls": {
+        "operating_cf": {
+          "count": 8169,
+          "rate": 0.0637
+        },
+        "capex": {
+          "count": 16113,
+          "rate": 0.1256
+        }
+      },
+      "status": "ok_with_fallback",
+      "severity": "none",
+      "issues": [
+        "covered_by:canonical_cashflow_data",
+        "raw cash_flow_data 중복 grain은 표준 테이블에서 해소"
+      ],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "재무/텐버거/DART Excel",
+      "dataset": "표준 현금흐름",
+      "table": "canonical_cashflow_data",
+      "grain": "stock_code,year,quarter,is_annual,report_type",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type",
+      "required_cols": [
+        "operating_cf",
+        "capex"
+      ],
+      "min_rows": 20000,
+      "freshness_days": null,
+      "collector": "canonical cashflow rebuild",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 78322,
+      "distinct_keys": 78322,
+      "duplicate_keys": 0,
+      "min_date": 2022,
+      "max_date": 2025,
+      "age_days": 178,
+      "nulls": {
+        "operating_cf": {
+          "count": 5964,
+          "rate": 0.0761
+        },
+        "capex": {
+          "count": 11841,
+          "rate": 0.1512
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "재무/텐버거",
+      "dataset": "매입재료비",
+      "table": "dart_material_purchase",
+      "grain": "stock_code,year,report_type",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || report_type",
+      "required_cols": [
+        "material_purchase_krw"
+      ],
+      "min_rows": 3000,
+      "freshness_days": null,
+      "collector": "DART material collector",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 2655,
+      "distinct_keys": 2655,
+      "duplicate_keys": 0,
+      "min_date": 2021,
+      "max_date": 2025,
+      "age_days": 178,
+      "nulls": {
+        "material_purchase_krw": {
+          "count": 78,
+          "rate": 0.0294
+        }
+      },
+      "status": "needs_collection",
+      "severity": "critical",
+      "issues": [
+        "low_volume:2655<3000"
+      ],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "재무/텐버거",
+      "dataset": "수주잔고",
+      "table": "order_backlog",
+      "grain": "stock_code,year,quarter",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || quarter",
+      "required_cols": [
+        "backlog_normalized"
+      ],
+      "min_rows": 1000,
+      "freshness_days": null,
+      "collector": "DART backlog collector",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 6774,
+      "distinct_keys": 6774,
+      "duplicate_keys": 0,
+      "min_date": 2016,
+      "max_date": 2026,
+      "age_days": -187,
+      "nulls": {
+        "backlog_normalized": {
+          "count": 18,
+          "rate": 0.0027
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "재무/텐버거",
+      "dataset": "세그먼트 매출",
+      "table": "segment_revenue",
+      "grain": "stock_code,year,quarter,segment_name",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || quarter || '|' || segment_name",
+      "required_cols": [
+        "revenue"
+      ],
+      "min_rows": 1000,
+      "freshness_days": null,
+      "collector": "DART segment collector",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 16903,
+      "distinct_keys": 16903,
+      "duplicate_keys": 0,
+      "min_date": 2018,
+      "max_date": 2026,
+      "age_days": -187,
+      "nulls": {
+        "revenue": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "고용 페이지",
+      "dataset": "NPS 월별",
+      "table": "nps_workplace_monthly",
+      "grain": "ym,stock_code",
+      "date_col": "ym",
+      "key_expr": "ym || '|' || stock_code",
+      "required_cols": [
+        "nw_acqzr_cnt",
+        "lss_jnngp_cnt"
+      ],
+      "min_rows": 10000,
+      "freshness_days": 75,
+      "collector": "employment_monitor.collect_nps_workplace",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 27641,
+      "distinct_keys": 27641,
+      "duplicate_keys": 0,
+      "min_date": "202504",
+      "max_date": "202605",
+      "age_days": 57,
+      "nulls": {
+        "nw_acqzr_cnt": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "lss_jnngp_cnt": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "고용/재무",
+      "dataset": "DART 임직원",
+      "table": "dart_employee_count",
+      "grain": "stock_code,year,reprt_code,acmtn_dscd",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || reprt_code || '|' || COALESCE(acmtn_dscd, '')",
+      "required_cols": [
+        "total_emp"
+      ],
+      "min_rows": 5000,
+      "freshness_days": null,
+      "collector": "DART employee collector",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 1330,
+      "distinct_keys": 1330,
+      "duplicate_keys": 0,
+      "min_date": 2020,
+      "max_date": 2025,
+      "age_days": 178,
+      "nulls": {
+        "total_emp": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "needs_collection",
+      "severity": "high",
+      "issues": [
+        "low_volume:1330<5000"
+      ],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "컨센서스/종목",
+      "dataset": "컨센서스",
+      "table": "consensus_targets",
+      "grain": "report_idx 또는 자연키",
+      "date_col": "report_date",
+      "key_expr": "COALESCE(CAST(report_idx AS TEXT), stock_code || '|' || report_date || '|' || securities_firm || '|' || analyst || '|' || report_title || '|' || target_price)",
+      "required_cols": [
+        "target_price"
+      ],
+      "min_rows": 1000,
+      "freshness_days": 45,
+      "collector": "collect_consensus",
+      "priority": "P2",
+      "notes": "report_idx가 없는 한경 리포트는 자연키로 중복 판정",
+      "exists": true,
+      "rows": 11162,
+      "distinct_keys": 11162,
+      "duplicate_keys": 0,
+      "min_date": "2024-05-08",
+      "max_date": "2026-06-24",
+      "age_days": 3,
+      "nulls": {
+        "target_price": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "텐버거",
+      "dataset": "텐버거 결과",
+      "table": "tenbagger_results",
+      "grain": "run_time,stock_code",
+      "date_col": "run_time",
+      "key_expr": "run_time || '|' || stock_code",
+      "required_cols": [
+        "total_score",
+        "current_price"
+      ],
+      "min_rows": 10,
+      "freshness_days": 7,
+      "collector": "routes/tenbagger run",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 740,
+      "distinct_keys": 740,
+      "duplicate_keys": 0,
+      "min_date": "2026-06-06 10:20:15",
+      "max_date": "2026-06-25 15:00:00",
+      "age_days": 2,
+      "nulls": {
+        "total_score": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "current_price": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "텐버거",
+      "dataset": "실적 시그널",
+      "table": "earnings_signals",
+      "grain": "stock_code,year,quarter,signal_type",
+      "date_col": "year",
+      "key_expr": "stock_code || '|' || year || '|' || quarter || '|' || signal_type",
+      "required_cols": [
+        "signal_type"
+      ],
+      "min_rows": 1,
+      "freshness_days": null,
+      "collector": "earnings signal scan",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 649,
+      "distinct_keys": 649,
+      "duplicate_keys": 0,
+      "min_date": 2018,
+      "max_date": 2026,
+      "age_days": -187,
+      "nulls": {
+        "signal_type": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "퀀트 주요지표",
+      "dataset": "주요지표 시계열",
+      "table": "quant_major_indicator_series",
+      "grain": "indicator_key,period,series_name,source_name",
+      "date_col": "period",
+      "key_expr": "indicator_key || '|' || period || '|' || series_name || '|' || source_name",
+      "required_cols": [
+        "value"
+      ],
+      "min_rows": 100,
+      "freshness_days": 75,
+      "collector": "scripts/ops/quant_indicators_cron.py",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 136640,
+      "distinct_keys": 136640,
+      "duplicate_keys": 0,
+      "min_date": "1960-01",
+      "max_date": "202606",
+      "age_days": 26,
+      "nulls": {
+        "value": {
+          "count": 2672,
+          "rate": 0.0196
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "마켓 레이더",
+      "dataset": "섹터 가격 캐시",
+      "table": "radar_price_cache",
+      "grain": "ticker,rn",
+      "date_col": "trade_date",
+      "key_expr": "ticker || '|' || rn",
+      "required_cols": [
+        "close"
+      ],
+      "min_rows": 100,
+      "freshness_days": 30,
+      "collector": "market_radar refresh-cache",
+      "priority": "P2",
+      "notes": "",
+      "exists": true,
+      "rows": 79082,
+      "distinct_keys": 79082,
+      "duplicate_keys": 0,
+      "min_date": "2025-02-24",
+      "max_date": "2026-06-19",
+      "age_days": 8,
+      "nulls": {
+        "close": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/stock.db"
+    },
+    {
+      "page": "HS/시그널 영향성",
+      "dataset": "HS 월간 확정 수출입",
+      "table": "customs_monthly_record",
+      "grain": "endpoint,period_ym,hs_code",
+      "date_col": "CASE WHEN period_ym GLOB '20[0-9][0-9]-[0-1][0-9]' THEN period_ym END",
+      "key_expr": "endpoint || '|' || period_ym || '|' || hs_code || '|' || country_code || '|' || sido_code || '|' || imex_type_code || '|' || nature_code || '|' || unified_nature_code",
+      "required_cols": [
+        "export_value",
+        "import_value"
+      ],
+      "min_rows": 1000000,
+      "freshness_days": 75,
+      "collector": "hs_trade_lab/scripts/daily_refresh.py",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 1332214,
+      "distinct_keys": 1332214,
+      "duplicate_keys": 0,
+      "min_date": "2016-01",
+      "max_date": "2026-05",
+      "age_days": -187,
+      "nulls": {
+        "export_value": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "import_value": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db"
+    },
+    {
+      "page": "HS/시그널 영향성",
+      "dataset": "분석2 섹터-HS 캐시",
+      "table": "analysis2_sector_hs_monthly_cache",
+      "grain": "sector_key,period_ym,hs_code",
+      "date_col": "period_ym",
+      "key_expr": "sector_key || '|' || period_ym || '|' || hs_code",
+      "required_cols": [
+        "export_value",
+        "import_value"
+      ],
+      "min_rows": 10000,
+      "freshness_days": 75,
+      "collector": "rebuild_analysis2_cache.py",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 29043,
+      "distinct_keys": 29043,
+      "duplicate_keys": 0,
+      "min_date": "2016-01",
+      "max_date": "2026-05",
+      "age_days": -187,
+      "nulls": {
+        "export_value": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "import_value": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db"
+    },
+    {
+      "page": "HS/시그널 영향성",
+      "dataset": "분석2 기업-HS 캐시",
+      "table": "analysis2_company_hs_monthly_cache",
+      "grain": "sector_key,stock_code,period_ym,hs_code,flow_type",
+      "date_col": "period_ym",
+      "key_expr": "sector_key || '|' || stock_code || '|' || period_ym || '|' || hs_code || '|' || flow_type",
+      "required_cols": [
+        "export_value",
+        "import_value"
+      ],
+      "min_rows": 50000,
+      "freshness_days": 75,
+      "collector": "rebuild_analysis2_cache.py",
+      "priority": "P0",
+      "notes": "",
+      "exists": true,
+      "rows": 99375,
+      "distinct_keys": 99375,
+      "duplicate_keys": 0,
+      "min_date": "2016-01",
+      "max_date": "2026-05",
+      "age_days": -187,
+      "nulls": {
+        "export_value": {
+          "count": 0,
+          "rate": 0.0
+        },
+        "import_value": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db"
+    },
+    {
+      "page": "HS/시그널 영향성",
+      "dataset": "10일 잠정 수출입",
+      "table": "customs_provisional_10day_record",
+      "grain": "dataset_key,category_code,period_ym,period_day",
+      "date_col": "period_ym",
+      "key_expr": "dataset_key || '|' || category_code || '|' || period_ym || '|' || period_day",
+      "required_cols": [
+        "amount_thousand_usd"
+      ],
+      "min_rows": 100,
+      "freshness_days": 45,
+      "collector": "collect_provisional_10day.py",
+      "priority": "P1",
+      "notes": "",
+      "exists": true,
+      "rows": 1452,
+      "distinct_keys": 1452,
+      "duplicate_keys": 0,
+      "min_date": "2025-04",
+      "max_date": "2026-06",
+      "age_days": -187,
+      "nulls": {
+        "amount_thousand_usd": {
+          "count": 0,
+          "rate": 0.0
+        }
+      },
+      "status": "ok",
+      "severity": "none",
+      "issues": [],
+      "db": "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db"
+    }
+  ],
+  "summary": {
+    "total": 31,
+    "ok": 29,
+    "needs_collection": 2,
+    "unstable_or_needs_review": 0,
+    "missing": 0
+  }
+}

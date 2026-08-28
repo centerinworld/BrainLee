@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stock-dashboard.dart-insider-2020-backfill</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/stock_dashboard/venv/bin/python</string>
+    <string>/Applications/stock_dashboard/scripts/backfill_dart_insider_holdings_2020.py</string>
+    <string>--start</string>
+    <string>20200101</string>
+    <string>--sleep</string>
+    <string>0.05</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Applications/stock_dashboard</string>
+  <key>StandardOutPath</key>
+  <string>/Applications/stock_dashboard/run/dart_insider_2020_backfill/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Applications/stock_dashboard/run/dart_insider_2020_backfill/launchd.err</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>

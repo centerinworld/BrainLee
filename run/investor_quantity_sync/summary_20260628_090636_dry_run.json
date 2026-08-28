@@ -1,0 +1,62 @@
+{
+  "run_id": "20260628_090636",
+  "db_path": "/Applications/stock_dashboard/stock.db",
+  "period": {
+    "start": "2020-01-01",
+    "end": "2022-12-31"
+  },
+  "dry_run": true,
+  "overwrite": false,
+  "source": "investor_trading_daily volume net fields (indv_net/inst_net/frgn_net)",
+  "excluded_source": "kiwoom_investor_daily / ka10059 recrawl not used until net-buy parameters are verified",
+  "stats": {
+    "source_rows": 1558951,
+    "target_rows": 1905903,
+    "rows_to_update": 1550081,
+    "inst_cells_to_fill": 329811,
+    "frn_cells_to_fill": 700646,
+    "ind_cells_to_fill": 1549997
+  },
+  "applied_rows": 0,
+  "backup_table": null,
+  "coverage_before": [
+    {
+      "year": "2020",
+      "total_rows": 597332,
+      "quantity_rows": 159416,
+      "coverage_pct": 26.7
+    },
+    {
+      "year": "2021",
+      "total_rows": 636030,
+      "quantity_rows": 285381,
+      "coverage_pct": 44.9
+    },
+    {
+      "year": "2022",
+      "total_rows": 672541,
+      "quantity_rows": 357227,
+      "coverage_pct": 53.1
+    }
+  ],
+  "coverage_after": [
+    {
+      "year": "2020",
+      "total_rows": 597332,
+      "quantity_rows": 159416,
+      "coverage_pct": 26.7
+    },
+    {
+      "year": "2021",
+      "total_rows": 636030,
+      "quantity_rows": 285381,
+      "coverage_pct": 44.9
+    },
+    {
+      "year": "2022",
+      "total_rows": 672541,
+      "quantity_rows": 357227,
+      "coverage_pct": 53.1
+    }
+  ]
+}

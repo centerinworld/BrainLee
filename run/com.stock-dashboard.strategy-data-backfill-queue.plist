@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stock-dashboard.strategy-data-backfill-queue</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Applications/stock_dashboard/scripts/run_strategy_data_backfill_queue.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Applications/stock_dashboard</string>
+  <key>StandardOutPath</key>
+  <string>/Applications/stock_dashboard/run/strategy_data_backfill_queue/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Applications/stock_dashboard/run/strategy_data_backfill_queue/launchd.err</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>

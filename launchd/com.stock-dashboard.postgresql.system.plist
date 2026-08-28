@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stock-dashboard.postgresql</string>
+  <key>UserName</key>
+  <string>brainlee</string>
+  <key>GroupName</key>
+  <string>staff</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/postgresql@16/bin/postgres</string>
+    <string>-D</string>
+    <string>/Volumes/Realtek_NVME/stock_dashboard/postgresql16/data</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Applications/stock_dashboard</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>LC_ALL</key>
+    <string>en_US.UTF-8</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/opt/postgresql@16/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Applications/stock_dashboard/logs/postgresql.launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Applications/stock_dashboard/logs/postgresql.launchd.err.log</string>
+</dict>
+</plist>

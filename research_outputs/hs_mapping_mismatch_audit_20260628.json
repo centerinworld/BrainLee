@@ -1,0 +1,690 @@
+{
+  "ran_at": "2026-06-28T00:10:47",
+  "db_path": "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db",
+  "change_count": 0,
+  "changes": [
+    {
+      "table": "hs_sector_map",
+      "id": 280,
+      "action": "noop",
+      "reason": "270900 is crude oil, not shipbuilding or NCH precursor",
+      "row": {
+        "id": 280,
+        "hs_code": "270900",
+        "hs_name": "석유와 역청유",
+        "sector_key": "energy_materials",
+        "display_name": "석유와 역청유 수입",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: 270900 is crude oil, not shipbuilding or NCH precursor",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 284,
+      "action": "noop",
+      "reason": "semiconductor/display materials or equipment mapped under shipbuilding",
+      "row": {
+        "id": 284,
+        "hs_code": "284920",
+        "hs_name": "탄화규소",
+        "sector_key": "semiconductors",
+        "display_name": "실리콘카바이드 (전국) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: semiconductor/display materials or equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 289,
+      "action": "noop",
+      "reason": "semiconductor/display materials or equipment mapped under shipbuilding",
+      "row": {
+        "id": 289,
+        "hs_code": "340590",
+        "hs_name": "반도체 웨이퍼 연마용 조제품",
+        "sector_key": "semiconductors",
+        "display_name": "삼성SDI : 연마제 (CMP공정에 쓰이는 소재) (경북 구미시) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: semiconductor/display materials or equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 290,
+      "action": "noop",
+      "reason": "semiconductor/display materials or equipment mapped under shipbuilding",
+      "row": {
+        "id": 290,
+        "hs_code": "381400",
+        "hs_name": "유기혼합용제와 시너",
+        "sector_key": "semiconductors",
+        "display_name": "엘티씨 : 유기혼합용제와 시너(thinner) (경기 화성시) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: semiconductor/display materials or equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 292,
+      "action": "noop",
+      "reason": "semiconductor/display materials or equipment mapped under shipbuilding",
+      "row": {
+        "id": 292,
+        "hs_code": "741021",
+        "hs_name": "그 밖의 판·시트·스트립 모양의 것",
+        "sector_key": "semiconductors",
+        "display_name": "CCL 동박적층판 (전국_대만) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: semiconductor/display materials or equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 293,
+      "action": "noop",
+      "reason": "semiconductor/display materials or equipment mapped under shipbuilding",
+      "row": {
+        "id": 293,
+        "hs_code": "831190",
+        "hs_name": "기타 납땜·용접·용착 재료",
+        "sector_key": "semiconductors",
+        "display_name": "솔더볼 (마이크로 솔더볼) (전국) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: semiconductor/display materials or equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 294,
+      "action": "noop",
+      "reason": "semiconductor/display materials or equipment mapped under shipbuilding",
+      "row": {
+        "id": 294,
+        "hs_code": "841410",
+        "hs_name": "진공펌프",
+        "sector_key": "semiconductors",
+        "display_name": "진공펌프(전국) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: semiconductor/display materials or equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 302,
+      "action": "noop",
+      "reason": "semiconductor/display materials or equipment mapped under shipbuilding",
+      "row": {
+        "id": 302,
+        "hs_code": "901210",
+        "hs_name": "현미경(광학현미경은 제외한다)",
+        "sector_key": "semiconductors",
+        "display_name": "파크시스템스 : 산업용자동화원자현미경 (경기 수원) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: semiconductor/display materials or equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 255,
+      "action": "noop",
+      "reason": "power equipment mapped under shipbuilding",
+      "row": {
+        "id": 255,
+        "hs_code": "8504231000",
+        "hs_name": "초고압 변압기(10,000~100,000kVA)",
+        "sector_key": "energy_materials",
+        "display_name": "일진전기 : 초고압 변압기(10,000kVA 초과) (경기 화성시) 수출",
+        "note": "auto-filled from hs_code_company_map coverage | audit 2026-06-28: power equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:29:04",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 256,
+      "action": "noop",
+      "reason": "power equipment mapped under shipbuilding",
+      "row": {
+        "id": 256,
+        "hs_code": "8504239000",
+        "hs_name": "초고압 변압기(100,000kVA초과)",
+        "sector_key": "energy_materials",
+        "display_name": "일진전기 : 초고압 변압기(10,000kVA 초과) (경기 화성시) 수출",
+        "note": "auto-filled from hs_code_company_map coverage | audit 2026-06-28: power equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:29:04",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 257,
+      "action": "noop",
+      "reason": "power equipment mapped under shipbuilding",
+      "row": {
+        "id": 257,
+        "hs_code": "8504319000",
+        "hs_name": "그 밖의 변압기(용량 1kVA 초과 16kVA 이하)",
+        "sector_key": "energy_materials",
+        "display_name": "소형 변압기(100kVA 이하) (전국) 수출",
+        "note": "auto-filled from hs_code_company_map coverage | audit 2026-06-28: power equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:29:04",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 258,
+      "action": "noop",
+      "reason": "power equipment mapped under shipbuilding",
+      "row": {
+        "id": 258,
+        "hs_code": "8504320000",
+        "hs_name": "변압기(용량 16kVA 초과 500kVA 이하)",
+        "sector_key": "energy_materials",
+        "display_name": "제룡전기 : 변압기 (서울 광진구) 수출",
+        "note": "auto-filled from hs_code_company_map coverage | audit 2026-06-28: power equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:29:04",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 259,
+      "action": "noop",
+      "reason": "power equipment mapped under shipbuilding",
+      "row": {
+        "id": 259,
+        "hs_code": "8504330000",
+        "hs_name": "변압기(용량 500kVA 초과)",
+        "sector_key": "energy_materials",
+        "display_name": "제룡전기 : 변압기 (서울 광진구) 수출",
+        "note": "auto-filled from hs_code_company_map coverage | audit 2026-06-28: power equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:29:04",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 273,
+      "action": "noop",
+      "reason": "power equipment mapped under shipbuilding",
+      "row": {
+        "id": 273,
+        "hs_code": "8504409090",
+        "hs_name": "그 밖의 정지형 변환기",
+        "sector_key": "energy_materials",
+        "display_name": "변환기 수출",
+        "note": "manual fill for coverage | audit 2026-06-28: power equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:29:34",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 296,
+      "action": "noop",
+      "reason": "power equipment mapped under shipbuilding",
+      "row": {
+        "id": 296,
+        "hs_code": "850440",
+        "hs_name": "정지형 변환기",
+        "sector_key": "energy_materials",
+        "display_name": "정지형 변환기 (전국) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: power equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 300,
+      "action": "noop",
+      "reason": "power equipment mapped under shipbuilding",
+      "row": {
+        "id": 300,
+        "hs_code": "853710",
+        "hs_name": "기타",
+        "sector_key": "energy_materials",
+        "display_name": "HD현대일렉트릭 : 배전반 (경기 성남시) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: power equipment mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 303,
+      "action": "noop",
+      "reason": "medical device mapped under shipbuilding",
+      "row": {
+        "id": 303,
+        "hs_code": "901832",
+        "hs_name": "금속제 중공 바늘과 봉합용 바늘",
+        "sector_key": "biotech",
+        "display_name": "동방메디컬 : 기타 관모양 금속 바늘, 봉합용 바늘 (내과용·외과용·치과용·수의과용) (충남 보령시) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: medical device mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 304,
+      "action": "noop",
+      "reason": "medical device mapped under shipbuilding",
+      "row": {
+        "id": 304,
+        "hs_code": "901839",
+        "hs_name": "그 밖의 캐눌러ㆍ캐터터와 이와 유사한 것",
+        "sector_key": "biotech",
+        "display_name": "동방메디컬 : 기타 캐눌러 (내과용·외과용·치과용·수의과용) (충남 보령시) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: medical device mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 305,
+      "action": "noop",
+      "reason": "medical device mapped under shipbuilding",
+      "row": {
+        "id": 305,
+        "hs_code": "901920",
+        "hs_name": "오존요법용ㆍ산소요법용ㆍ에어로졸요법용ㆍ인공호흡용이나 그 밖의 치료용 호흡기기",
+        "sector_key": "biotech",
+        "display_name": "인공호흡기 (전국) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: medical device mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 295,
+      "action": "noop",
+      "reason": "OIS camera actuator is consumer/electronics, not shipbuilding",
+      "row": {
+        "id": 295,
+        "hs_code": "850131",
+        "hs_name": "기타",
+        "sector_key": "consumer",
+        "display_name": "손떨림방지(OIS) 액추에이터 (전국) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: OIS camera actuator is consumer/electronics, not shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 297,
+      "action": "noop",
+      "reason": "music record media mapped under shipbuilding",
+      "row": {
+        "id": 297,
+        "hs_code": "852349",
+        "hs_name": "음반",
+        "sector_key": "consumer",
+        "display_name": "음반 (전국) 수출",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: music record media mapped under shipbuilding",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 298,
+      "action": "noop",
+      "reason": "852610 is radar equipment; remove incorrect construction-engine label",
+      "row": {
+        "id": 298,
+        "hs_code": "852610",
+        "hs_name": "레이더 기기",
+        "sector_key": "shipbuilding",
+        "display_name": "레이더 기기",
+        "note": "auto-fill for fallback coverage | audit 2026-06-28: 852610 is radar equipment; remove incorrect construction-engine label",
+        "created_at": "2026-05-25 05:32:57",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 262,
+      "action": "noop",
+      "reason": "radar equipment belongs with machinery/defense bucket, not consumer",
+      "row": {
+        "id": 262,
+        "hs_code": "8526100000",
+        "hs_name": "레이더 기기",
+        "sector_key": "shipbuilding",
+        "display_name": "레이더 기기",
+        "note": "auto-filled from hs_code_company_map coverage | audit 2026-06-28: radar equipment belongs with machinery/defense bucket, not consumer",
+        "created_at": "2026-05-25 05:29:04",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 285,
+      "action": "missing",
+      "reason": "display label contradicts HS code; correct heat-exchanger HS 8419509000 already exists"
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 291,
+      "action": "missing",
+      "reason": "display label contradicts HS code; correct heat-exchanger HS 8419509000 already exists"
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 31,
+      "action": "noop",
+      "reason": "CCTV camera is not biotech",
+      "row": {
+        "id": 31,
+        "hs_code": "8525892000",
+        "hs_name": "산업용 텔레비전 카메라",
+        "sector_key": "consumer",
+        "display_name": "CCTV/산업용 카메라",
+        "note": "아이디스 지역 게시물 alias. CCTV/산업용 카메라 계열 provisional 코드로 우선 분류 | audit 2026-06-28: CCTV camera is not biotech",
+        "created_at": "2026-04-07 13:54:56",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 47,
+      "action": "noop",
+      "reason": "botulinum toxin is biotech/healthcare, not consumer",
+      "row": {
+        "id": 47,
+        "hs_code": "3002491000",
+        "hs_name": "보툴리눔 톡신",
+        "sector_key": "biotech",
+        "display_name": "관련주 : 휴젤 / 메디톡스 / 대웅제약 / 휴메딕스 / 바이오플러스 / 파마리서치 등",
+        "note": "의료미용/톡신 관련주 묶음 게시물 alias. 보툴리눔 톡신 섹터 대표 provisional 코드로 우선 분류 | audit 2026-06-28: botulinum toxin is biotech/healthcare, not consumer",
+        "created_at": "2026-04-07 13:54:56",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 43,
+      "action": "missing",
+      "reason": "duplicate broad medical-device row under consumer; biotech 901890 already exists"
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 44,
+      "action": "noop",
+      "reason": "medical/aesthetic or optical healthcare product mapped under consumer",
+      "row": {
+        "id": 44,
+        "hs_code": "9018908110",
+        "hs_name": "피부미용 레이저 장비",
+        "sector_key": "biotech",
+        "display_name": "의료미용기기",
+        "note": "에스테틱 장비 세부 품목 | audit 2026-06-28: medical/aesthetic or optical healthcare product mapped under consumer",
+        "created_at": "2026-04-07 13:54:56",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 45,
+      "action": "noop",
+      "reason": "medical/aesthetic or optical healthcare product mapped under consumer",
+      "row": {
+        "id": 45,
+        "hs_code": "9018908190",
+        "hs_name": "기타 의료미용 장비",
+        "sector_key": "biotech",
+        "display_name": "의료미용기기",
+        "note": "에스테틱 장비 세부 품목 | audit 2026-06-28: medical/aesthetic or optical healthcare product mapped under consumer",
+        "created_at": "2026-04-07 13:54:56",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 46,
+      "action": "noop",
+      "reason": "medical/aesthetic or optical healthcare product mapped under consumer",
+      "row": {
+        "id": 46,
+        "hs_code": "9018909000",
+        "hs_name": "의료용 부품 및 소모품",
+        "sector_key": "biotech",
+        "display_name": "의료미용 소모품",
+        "note": "의료미용용 부품/소모품 | audit 2026-06-28: medical/aesthetic or optical healthcare product mapped under consumer",
+        "created_at": "2026-04-07 13:54:56",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 96,
+      "action": "noop",
+      "reason": "medical/aesthetic or optical healthcare product mapped under consumer",
+      "row": {
+        "id": 96,
+        "hs_code": "9018908900",
+        "hs_name": "기타 내과ㆍ외과ㆍ치과ㆍ수의과용 기기",
+        "sector_key": "biotech",
+        "display_name": "기타 내과, 외과, 치과, 수의과, 안과용 기기",
+        "note": "클래시스 그래프·표와 2022Q1~2025Q4 분기 합계가 일치하는 exact 코드. 2026Q1 차이는 2026-03 잠정치 공공 API 미반영분으로 판단 | audit 2026-06-28: medical/aesthetic or optical healthcare product mapped under consumer",
+        "created_at": "2026-04-08 10:42:17",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "exact"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 99,
+      "action": "noop",
+      "reason": "medical/aesthetic or optical healthcare product mapped under consumer",
+      "row": {
+        "id": 99,
+        "hs_code": "9001300000",
+        "hs_name": "콘택트렌즈",
+        "sector_key": "biotech",
+        "display_name": "콘택트렌즈",
+        "note": "인터로조 그래프·표와 2022Q1~2025Q4 분기 합계가 일치하는 exact 코드. 2026Q1 차이는 2026-03 잠정치 공공 API 미반영분으로 판단 | audit 2026-06-28: medical/aesthetic or optical healthcare product mapped under consumer",
+        "created_at": "2026-04-08 10:54:55",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "exact"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 229,
+      "action": "missing",
+      "reason": "EV relay has a cleaner auto-specific 8536491000 mapping; avoid cross-sector duplicate with power relay 8536490000"
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 299,
+      "action": "missing",
+      "reason": "broad 853649 auto relay overlaps power relay 8536490000; keep auto-specific 8536491000 only"
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 248,
+      "action": "noop",
+      "reason": "semiconductor-grade hydrogen peroxide mapped under energy/materials",
+      "row": {
+        "id": 248,
+        "hs_code": "2847000000",
+        "hs_name": "과산화수소",
+        "sector_key": "semiconductors",
+        "display_name": "과산화수소 (반도체 제조용) (전국) 수출",
+        "note": "auto-filled from hs_code_company_map coverage | audit 2026-06-28: semiconductor-grade hydrogen peroxide mapped under energy/materials",
+        "created_at": "2026-05-25 05:29:04",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 251,
+      "action": "noop",
+      "reason": "CMP polishing material mapped under energy/materials",
+      "row": {
+        "id": 251,
+        "hs_code": "3405901000",
+        "hs_name": "반도체 웨이퍼 연마용 조제품",
+        "sector_key": "semiconductors",
+        "display_name": "삼성SDI : 연마제 (CMP공정에 쓰이는 소재) (경북 구미시) 수출",
+        "note": "auto-filled from hs_code_company_map coverage | audit 2026-06-28: CMP polishing material mapped under energy/materials",
+        "created_at": "2026-05-25 05:29:04",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_sector_map",
+      "id": 219,
+      "action": "noop",
+      "reason": "OIS camera actuator is consumer/electronics, not auto",
+      "row": {
+        "id": 219,
+        "hs_code": "8501319000",
+        "hs_name": "기타",
+        "sector_key": "consumer",
+        "display_name": "손떨림방지(OIS) 액추에이터 (전국)",
+        "note": "텔레그램 @BeOn_BeClear 과거 공개 글(25630) 기준. OIS 액추에이터 섹터 수출 해석용 broad provisional 코드 | audit 2026-06-28: OIS camera actuator is consumer/electronics, not auto",
+        "created_at": "2026-04-10 09:58:28",
+        "updated_at": "2026-06-27 15:07:58",
+        "mapping_status": "provisional"
+      }
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26645,
+      "action": "missing",
+      "reason": "NCH precursor company row incorrectly used crude-oil HS 270900; correct 2825902090 rows already exist"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26646,
+      "action": "missing",
+      "reason": "NCH precursor company row incorrectly used crude-oil HS 270900; correct 2825902090 rows already exist"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26647,
+      "action": "missing",
+      "reason": "NCH precursor company row incorrectly used crude-oil HS 270900; correct 2825902090 rows already exist"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26648,
+      "action": "missing",
+      "reason": "NCH precursor company row incorrectly used crude-oil HS 270900; correct 2825902090 rows already exist"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 25235,
+      "action": "missing",
+      "reason": "SNT heat-exchanger row used lithium/lysine/plastic-film HS; correct 8419509000 row already exists"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 25236,
+      "action": "missing",
+      "reason": "SNT heat-exchanger row used lithium/lysine/plastic-film HS; correct 8419509000 row already exists"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 25237,
+      "action": "missing",
+      "reason": "SNT heat-exchanger row used lithium/lysine/plastic-film HS; correct 8419509000 row already exists"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26635,
+      "action": "missing",
+      "reason": "SNT heat-exchanger row used lithium/lysine/plastic-film HS; correct 8419509000 row already exists"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26636,
+      "action": "missing",
+      "reason": "SNT heat-exchanger row used lithium/lysine/plastic-film HS; correct 8419509000 row already exists"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26608,
+      "action": "missing",
+      "reason": "HD construction-equipment engine row used radar HS; correct 8408909090 rows already exist"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26623,
+      "action": "missing",
+      "reason": "HD construction-equipment engine row used radar HS; correct 8408909090 rows already exist"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26720,
+      "action": "missing",
+      "reason": "HD construction-equipment engine row used radar HS; correct 8408909090 rows already exist"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26722,
+      "action": "missing",
+      "reason": "HD construction-equipment engine row used radar HS; correct 8408909090 rows already exist"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26686,
+      "action": "missing",
+      "reason": "YMT EV relay has exact 8536491000 row; remove broad relay rows that overlap power-equipment relay"
+    },
+    {
+      "table": "hs_code_company_map",
+      "id": 26275,
+      "action": "missing",
+      "reason": "YMT EV relay has exact 8536491000 row; remove broad relay rows that overlap power-equipment relay"
+    }
+  ],
+  "remaining_cross_sector_duplicates": [],
+  "remaining_suspicious_keyword_rows": []
+}

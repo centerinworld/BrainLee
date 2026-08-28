@@ -1,0 +1,34 @@
+{
+  "financial_data": {
+    "total": 102607,
+    "stocks": 2589,
+    "rev_null": 3981,
+    "op_null": 1346,
+    "ni_null": 8200,
+    "asset_null": 749,
+    "eq_null": 1505
+  },
+  "cash_flow_data": {
+    "total": 71608,
+    "stocks": 2441,
+    "opcf_null": 10198,
+    "capex_null": 19517,
+    "dep_null": 35252
+  },
+  "fnguide_snapshot": {
+    "total": 11831,
+    "stocks": 638
+  },
+  "universe_stocks": 2645,
+  "financial_by_year": {
+    "2026": 3,
+    "2025": 2588,
+    "2024": 2539,
+    "2023": 2412,
+    "2022": 2241,
+    "2021": 2114,
+    "2020": 2011
+  },
+  "snapshot_at": "2026-05-13T19:22:41.120366",
+  "label": "BEFORE_MIGRATION"
+}

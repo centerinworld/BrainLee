@@ -1,0 +1,814 @@
+{
+  "generated_at": "2026-06-28T23:09:54",
+  "scope": {
+    "years": "2021-2026",
+    "unit": "stock-year low-date cohort",
+    "sample_count": 12460,
+    "winner_count": 1199,
+    "base_winner_rate_pct": 9.62,
+    "min_count": 40,
+    "note": "고승률 탐색용. 저점 이후 신호 기반이라 실전 적용 전 신호 발생일 기준 백테스트가 필요합니다."
+  },
+  "top_rules": [
+    {
+      "name": "amount_20x AND new_60d_high AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 43,
+      "winner_count": 19,
+      "winner_rate_pct": 44.19,
+      "winner_capture_pct": 1.58,
+      "median_multiple": 2.48,
+      "avg_multiple": 4.18,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_20x AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 44,
+      "winner_count": 19,
+      "winner_rate_pct": 43.18,
+      "winner_capture_pct": 1.58,
+      "median_multiple": 2.44,
+      "avg_multiple": 4.14,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_15x AND new_60d_high AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 42,
+      "winner_count": 18,
+      "winner_rate_pct": 42.86,
+      "winner_capture_pct": 1.5,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.76,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_20x AND new_60d_high AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 47,
+      "winner_count": 20,
+      "winner_rate_pct": 42.55,
+      "winner_capture_pct": 1.67,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.88,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND new_60d_high AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 59,
+      "winner_count": 25,
+      "winner_rate_pct": 42.37,
+      "winner_capture_pct": 2.09,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.79,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_10x AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 45,
+      "winner_count": 19,
+      "winner_rate_pct": 42.22,
+      "winner_capture_pct": 1.58,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.5,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND new_60d_high AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 50,
+      "winner_count": 21,
+      "winner_rate_pct": 42.0,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.57,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_15x AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 43,
+      "winner_count": 18,
+      "winner_rate_pct": 41.86,
+      "winner_capture_pct": 1.5,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.81,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_10x AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 53,
+      "winner_count": 22,
+      "winner_rate_pct": 41.51,
+      "winner_capture_pct": 1.83,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.59,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_15x AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 51,
+      "winner_count": 21,
+      "winner_rate_pct": 41.18,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.48,
+      "avg_multiple": 3.68,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_15x AND new_60d_high AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 56,
+      "winner_count": 23,
+      "winner_rate_pct": 41.07,
+      "winner_capture_pct": 1.92,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.71,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_10x AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 78,
+      "winner_count": 32,
+      "winner_rate_pct": 41.03,
+      "winner_capture_pct": 2.67,
+      "median_multiple": 2.49,
+      "avg_multiple": 3.5,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_15x AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 44,
+      "winner_count": 18,
+      "winner_rate_pct": 40.91,
+      "winner_capture_pct": 1.5,
+      "median_multiple": 2.33,
+      "avg_multiple": 3.68,
+      "kind": "combo_4"
+    },
+    {
+      "name": "core_sector AND amount_15x AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 64,
+      "winner_count": 26,
+      "winner_rate_pct": 40.62,
+      "winner_capture_pct": 2.17,
+      "median_multiple": 2.49,
+      "avg_multiple": 3.67,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND new_60d_high AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 69,
+      "winner_count": 28,
+      "winner_rate_pct": 40.58,
+      "winner_capture_pct": 2.34,
+      "median_multiple": 2.34,
+      "avg_multiple": 3.5,
+      "kind": "combo_5"
+    },
+    {
+      "name": "KOSDAQ AND amount_15x AND follow20_30pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 42,
+      "winner_count": 17,
+      "winner_rate_pct": 40.48,
+      "winner_capture_pct": 1.42,
+      "median_multiple": 2.41,
+      "avg_multiple": 2.88,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_10x AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 65,
+      "winner_count": 26,
+      "winner_rate_pct": 40.0,
+      "winner_capture_pct": 2.17,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.43,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_20x AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 50,
+      "winner_count": 20,
+      "winner_rate_pct": 40.0,
+      "winner_capture_pct": 1.67,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.78,
+      "kind": "combo_4"
+    },
+    {
+      "name": "KOSDAQ AND amount_10x AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 45,
+      "winner_count": 18,
+      "winner_rate_pct": 40.0,
+      "winner_capture_pct": 1.5,
+      "median_multiple": 2.24,
+      "avg_multiple": 2.84,
+      "kind": "combo_5"
+    },
+    {
+      "name": "small_cap_3000 AND amount_15x AND follow20_30pct AND frn_20d_buy AND export_yoy_30",
+      "count": 40,
+      "winner_count": 16,
+      "winner_rate_pct": 40.0,
+      "winner_capture_pct": 1.33,
+      "median_multiple": 2.24,
+      "avg_multiple": 3.14,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 63,
+      "winner_count": 25,
+      "winner_rate_pct": 39.68,
+      "winner_capture_pct": 2.09,
+      "median_multiple": 2.31,
+      "avg_multiple": 3.66,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_10x AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 53,
+      "winner_count": 21,
+      "winner_rate_pct": 39.62,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.31,
+      "avg_multiple": 3.47,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_20x AND follow20_50pct AND inst_20d_buy AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 48,
+      "winner_count": 19,
+      "winner_rate_pct": 39.58,
+      "winner_capture_pct": 1.58,
+      "median_multiple": 2.33,
+      "avg_multiple": 3.67,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 91,
+      "winner_count": 36,
+      "winner_rate_pct": 39.56,
+      "winner_capture_pct": 3.0,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.55,
+      "kind": "combo_4"
+    },
+    {
+      "name": "KOSDAQ AND new_60d_high AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 43,
+      "winner_count": 17,
+      "winner_rate_pct": 39.53,
+      "winner_capture_pct": 1.42,
+      "median_multiple": 2.5,
+      "avg_multiple": 3.12,
+      "kind": "combo_5"
+    },
+    {
+      "name": "new_60d_high AND follow20_50pct AND frn_20d_buy AND export_yoy_30 AND not_capital_impaired",
+      "count": 74,
+      "winner_count": 29,
+      "winner_rate_pct": 39.19,
+      "winner_capture_pct": 2.42,
+      "median_multiple": 2.49,
+      "avg_multiple": 3.67,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND follow20_30pct AND frn_20d_buy AND contract_signal AND export_yoy_30",
+      "count": 41,
+      "winner_count": 16,
+      "winner_rate_pct": 39.02,
+      "winner_capture_pct": 1.33,
+      "median_multiple": 2.36,
+      "avg_multiple": 3.44,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_15x AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 77,
+      "winner_count": 30,
+      "winner_rate_pct": 38.96,
+      "winner_capture_pct": 2.5,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.71,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_10x AND new_60d_high AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 90,
+      "winner_count": 35,
+      "winner_rate_pct": 38.89,
+      "winner_capture_pct": 2.92,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.48,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND new_60d_high AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 54,
+      "winner_count": 21,
+      "winner_rate_pct": 38.89,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.5,
+      "avg_multiple": 3.49,
+      "kind": "combo_5"
+    },
+    {
+      "name": "KOSDAQ AND core_sector AND amount_15x AND follow20_50pct AND export_yoy_30",
+      "count": 49,
+      "winner_count": 19,
+      "winner_rate_pct": 38.78,
+      "winner_capture_pct": 1.58,
+      "median_multiple": 2.48,
+      "avg_multiple": 3.09,
+      "kind": "combo_5"
+    },
+    {
+      "name": "new_60d_high AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 75,
+      "winner_count": 29,
+      "winner_rate_pct": 38.67,
+      "winner_capture_pct": 2.42,
+      "median_multiple": 2.48,
+      "avg_multiple": 3.66,
+      "kind": "combo_4"
+    },
+    {
+      "name": "KOSDAQ AND amount_10x AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 57,
+      "winner_count": 22,
+      "winner_rate_pct": 38.6,
+      "winner_capture_pct": 1.83,
+      "median_multiple": 2.34,
+      "avg_multiple": 3.03,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_10x AND follow20_50pct AND export_yoy_30",
+      "count": 83,
+      "winner_count": 32,
+      "winner_rate_pct": 38.55,
+      "winner_capture_pct": 2.67,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.41,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_15x AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 60,
+      "winner_count": 23,
+      "winner_rate_pct": 38.33,
+      "winner_capture_pct": 1.92,
+      "median_multiple": 2.33,
+      "avg_multiple": 3.6,
+      "kind": "combo_4"
+    },
+    {
+      "name": "core_sector AND amount_10x AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 81,
+      "winner_count": 31,
+      "winner_rate_pct": 38.27,
+      "winner_capture_pct": 2.59,
+      "median_multiple": 2.34,
+      "avg_multiple": 3.34,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_15x AND follow20_50pct AND export_yoy_30",
+      "count": 68,
+      "winner_count": 26,
+      "winner_rate_pct": 38.24,
+      "winner_capture_pct": 2.17,
+      "median_multiple": 2.44,
+      "avg_multiple": 3.58,
+      "kind": "combo_4"
+    },
+    {
+      "name": "core_sector AND amount_20x AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 55,
+      "winner_count": 21,
+      "winner_rate_pct": 38.18,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.75,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_15x AND new_60d_high AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 76,
+      "winner_count": 29,
+      "winner_rate_pct": 38.16,
+      "winner_capture_pct": 2.42,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.63,
+      "kind": "combo_5"
+    },
+    {
+      "name": "KOSDAQ AND core_sector AND amount_10x AND follow20_50pct AND export_yoy_30",
+      "count": 58,
+      "winner_count": 22,
+      "winner_rate_pct": 37.93,
+      "winner_capture_pct": 1.83,
+      "median_multiple": 2.32,
+      "avg_multiple": 2.99,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_20x AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 66,
+      "winner_count": 25,
+      "winner_rate_pct": 37.88,
+      "winner_capture_pct": 2.09,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.83,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_10x AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 74,
+      "winner_count": 28,
+      "winner_rate_pct": 37.84,
+      "winner_capture_pct": 2.34,
+      "median_multiple": 2.3,
+      "avg_multiple": 3.4,
+      "kind": "combo_4"
+    },
+    {
+      "name": "new_60d_high AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 61,
+      "winner_count": 23,
+      "winner_rate_pct": 37.7,
+      "winner_capture_pct": 1.92,
+      "median_multiple": 2.48,
+      "avg_multiple": 3.5,
+      "kind": "combo_4"
+    },
+    {
+      "name": "core_sector AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 69,
+      "winner_count": 26,
+      "winner_rate_pct": 37.68,
+      "winner_capture_pct": 2.17,
+      "median_multiple": 2.49,
+      "avg_multiple": 3.52,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_20x AND new_60d_high AND follow20_30pct AND frn_20d_buy AND export_yoy_30",
+      "count": 77,
+      "winner_count": 29,
+      "winner_rate_pct": 37.66,
+      "winner_capture_pct": 2.42,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.56,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND follow20_50pct AND inst_20d_buy AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 72,
+      "winner_count": 27,
+      "winner_rate_pct": 37.5,
+      "winner_capture_pct": 2.25,
+      "median_multiple": 2.29,
+      "avg_multiple": 3.32,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30 AND not_capital_impaired",
+      "count": 56,
+      "winner_count": 21,
+      "winner_rate_pct": 37.5,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.49,
+      "avg_multiple": 3.44,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_20x AND volume_10x AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 48,
+      "winner_count": 18,
+      "winner_rate_pct": 37.5,
+      "winner_capture_pct": 1.5,
+      "median_multiple": 2.33,
+      "avg_multiple": 3.7,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND follow20_50pct AND contract_signal AND export_yoy_30",
+      "count": 40,
+      "winner_count": 15,
+      "winner_rate_pct": 37.5,
+      "winner_capture_pct": 1.25,
+      "median_multiple": 2.26,
+      "avg_multiple": 3.64,
+      "kind": "combo_4"
+    },
+    {
+      "name": "KOSDAQ AND new_60d_high AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 51,
+      "winner_count": 19,
+      "winner_rate_pct": 37.25,
+      "winner_capture_pct": 1.58,
+      "median_multiple": 2.48,
+      "avg_multiple": 2.86,
+      "kind": "combo_5"
+    },
+    {
+      "name": "small_cap_3000 AND volume_10x AND follow20_30pct AND frn_20d_buy AND export_yoy_30",
+      "count": 43,
+      "winner_count": 16,
+      "winner_rate_pct": 37.21,
+      "winner_capture_pct": 1.33,
+      "median_multiple": 2.08,
+      "avg_multiple": 3.01,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND follow20_50pct AND export_yoy_30",
+      "count": 97,
+      "winner_count": 36,
+      "winner_rate_pct": 37.11,
+      "winner_capture_pct": 3.0,
+      "median_multiple": 2.31,
+      "avg_multiple": 3.45,
+      "kind": "combo_3"
+    },
+    {
+      "name": "amount_20x AND follow20_30pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 62,
+      "winner_count": 23,
+      "winner_rate_pct": 37.1,
+      "winner_capture_pct": 1.92,
+      "median_multiple": 2.43,
+      "avg_multiple": 3.45,
+      "kind": "combo_4"
+    },
+    {
+      "name": "core_sector AND new_60d_high AND follow20_50pct AND export_yoy_30 AND not_capital_impaired",
+      "count": 100,
+      "winner_count": 37,
+      "winner_rate_pct": 37.0,
+      "winner_capture_pct": 3.09,
+      "median_multiple": 2.49,
+      "avg_multiple": 3.41,
+      "kind": "combo_5"
+    },
+    {
+      "name": "KOSDAQ AND core_sector AND follow20_50pct AND frn_20d_buy AND export_yoy_30",
+      "count": 46,
+      "winner_count": 17,
+      "winner_rate_pct": 36.96,
+      "winner_capture_pct": 1.42,
+      "median_multiple": 2.49,
+      "avg_multiple": 3.05,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_20x AND new_60d_high AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 65,
+      "winner_count": 24,
+      "winner_rate_pct": 36.92,
+      "winner_capture_pct": 2.0,
+      "median_multiple": 2.34,
+      "avg_multiple": 3.74,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 95,
+      "winner_count": 35,
+      "winner_rate_pct": 36.84,
+      "winner_capture_pct": 2.92,
+      "median_multiple": 2.3,
+      "avg_multiple": 3.39,
+      "kind": "combo_4"
+    },
+    {
+      "name": "core_sector AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 57,
+      "winner_count": 21,
+      "winner_rate_pct": 36.84,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.48,
+      "avg_multiple": 3.42,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_20x AND follow20_30pct AND frn_20d_buy AND export_yoy_30",
+      "count": 79,
+      "winner_count": 29,
+      "winner_rate_pct": 36.71,
+      "winner_capture_pct": 2.42,
+      "median_multiple": 2.34,
+      "avg_multiple": 3.51,
+      "kind": "combo_4"
+    },
+    {
+      "name": "core_sector AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 101,
+      "winner_count": 37,
+      "winner_rate_pct": 36.63,
+      "winner_capture_pct": 3.09,
+      "median_multiple": 2.48,
+      "avg_multiple": 3.4,
+      "kind": "combo_4"
+    },
+    {
+      "name": "KOSDAQ AND core_sector AND new_60d_high AND follow20_50pct AND export_yoy_30",
+      "count": 71,
+      "winner_count": 26,
+      "winner_rate_pct": 36.62,
+      "winner_capture_pct": 2.17,
+      "median_multiple": 2.48,
+      "avg_multiple": 3.07,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_15x AND follow20_50pct AND export_yoy_30",
+      "count": 82,
+      "winner_count": 30,
+      "winner_rate_pct": 36.59,
+      "winner_capture_pct": 2.5,
+      "median_multiple": 2.33,
+      "avg_multiple": 3.6,
+      "kind": "combo_3"
+    },
+    {
+      "name": "volume_10x AND new_60d_high AND follow20_50pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 41,
+      "winner_count": 15,
+      "winner_rate_pct": 36.59,
+      "winner_capture_pct": 1.25,
+      "median_multiple": 2.31,
+      "avg_multiple": 3.52,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND new_60d_high AND follow20_50pct AND inst_20d_buy AND export_yoy_30",
+      "count": 77,
+      "winner_count": 28,
+      "winner_rate_pct": 36.36,
+      "winner_capture_pct": 2.34,
+      "median_multiple": 2.48,
+      "avg_multiple": 3.37,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_15x AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 80,
+      "winner_count": 29,
+      "winner_rate_pct": 36.25,
+      "winner_capture_pct": 2.42,
+      "median_multiple": 2.3,
+      "avg_multiple": 3.53,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_20x AND follow20_50pct AND export_yoy_30",
+      "count": 69,
+      "winner_count": 25,
+      "winner_rate_pct": 36.23,
+      "winner_capture_pct": 2.09,
+      "median_multiple": 2.34,
+      "avg_multiple": 3.76,
+      "kind": "combo_3"
+    },
+    {
+      "name": "core_sector AND amount_20x AND follow20_50pct AND export_yoy_30",
+      "count": 58,
+      "winner_count": 21,
+      "winner_rate_pct": 36.21,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.67,
+      "kind": "combo_4"
+    },
+    {
+      "name": "small_cap_3000 AND amount_15x AND new_60d_high AND follow20_30pct AND export_yoy_30",
+      "count": 61,
+      "winner_count": 22,
+      "winner_rate_pct": 36.07,
+      "winner_capture_pct": 1.83,
+      "median_multiple": 2.24,
+      "avg_multiple": 3.1,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND new_60d_high AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 100,
+      "winner_count": 36,
+      "winner_rate_pct": 36.0,
+      "winner_capture_pct": 3.0,
+      "median_multiple": 2.44,
+      "avg_multiple": 3.34,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_15x AND new_60d_high AND follow20_30pct AND frn_20d_buy AND export_yoy_30",
+      "count": 89,
+      "winner_count": 32,
+      "winner_rate_pct": 35.96,
+      "winner_capture_pct": 2.67,
+      "median_multiple": 2.31,
+      "avg_multiple": 3.42,
+      "kind": "combo_5"
+    },
+    {
+      "name": "KOSDAQ AND amount_10x AND follow20_30pct AND inst_20d_buy AND export_yoy_30",
+      "count": 78,
+      "winner_count": 28,
+      "winner_rate_pct": 35.9,
+      "winner_capture_pct": 2.34,
+      "median_multiple": 2.22,
+      "avg_multiple": 2.77,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_10x AND new_60d_high AND follow20_30pct AND frn_20d_buy AND export_yoy_30",
+      "count": 106,
+      "winner_count": 38,
+      "winner_rate_pct": 35.85,
+      "winner_capture_pct": 3.17,
+      "median_multiple": 2.33,
+      "avg_multiple": 3.28,
+      "kind": "combo_5"
+    },
+    {
+      "name": "KOSDAQ AND amount_15x AND follow20_50pct AND export_yoy_30",
+      "count": 53,
+      "winner_count": 19,
+      "winner_rate_pct": 35.85,
+      "winner_capture_pct": 1.58,
+      "median_multiple": 2.3,
+      "avg_multiple": 3.0,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_20x AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 67,
+      "winner_count": 24,
+      "winner_rate_pct": 35.82,
+      "winner_capture_pct": 2.0,
+      "median_multiple": 2.31,
+      "avg_multiple": 3.68,
+      "kind": "combo_4"
+    },
+    {
+      "name": "follow20_50pct AND frn_20d_buy AND export_yoy_30 AND not_capital_impaired",
+      "count": 81,
+      "winner_count": 29,
+      "winner_rate_pct": 35.8,
+      "winner_capture_pct": 2.42,
+      "median_multiple": 2.39,
+      "avg_multiple": 3.53,
+      "kind": "combo_4"
+    },
+    {
+      "name": "amount_10x AND new_60d_high AND follow20_30pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 84,
+      "winner_count": 30,
+      "winner_rate_pct": 35.71,
+      "winner_capture_pct": 2.5,
+      "median_multiple": 2.37,
+      "avg_multiple": 3.22,
+      "kind": "combo_5"
+    },
+    {
+      "name": "core_sector AND amount_20x AND follow20_50pct AND export_yoy_30 AND debt_le_500_or_unknown",
+      "count": 56,
+      "winner_count": 20,
+      "winner_rate_pct": 35.71,
+      "winner_capture_pct": 1.67,
+      "median_multiple": 2.32,
+      "avg_multiple": 3.57,
+      "kind": "combo_5"
+    },
+    {
+      "name": "follow20_50pct AND contract_signal AND export_yoy_30",
+      "count": 42,
+      "winner_count": 15,
+      "winner_rate_pct": 35.71,
+      "winner_capture_pct": 1.25,
+      "median_multiple": 2.25,
+      "avg_multiple": 3.55,
+      "kind": "combo_3"
+    },
+    {
+      "name": "KOSDAQ AND new_60d_high AND follow20_50pct AND export_yoy_30 AND not_capital_impaired",
+      "count": 73,
+      "winner_count": 26,
+      "winner_rate_pct": 35.62,
+      "winner_capture_pct": 2.17,
+      "median_multiple": 2.4,
+      "avg_multiple": 3.04,
+      "kind": "combo_5"
+    },
+    {
+      "name": "amount_20x AND volume_10x AND follow20_30pct AND both_inst_frn_buy AND export_yoy_30",
+      "count": 59,
+      "winner_count": 21,
+      "winner_rate_pct": 35.59,
+      "winner_capture_pct": 1.75,
+      "median_multiple": 2.34,
+      "avg_multiple": 3.38,
+      "kind": "combo_5"
+    }
+  ]
+}

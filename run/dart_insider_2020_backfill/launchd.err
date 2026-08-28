@@ -1,0 +1,10 @@
+2026-06-29 21:07:16,902 INFO corp_code map loaded: 3971 listed companies
+2026-06-29 21:07:41,809 INFO normalized existing insider rows: 44676
+2026-06-29 21:07:41,826 INFO backfill stocks: 2608 listed targets since 20200101
+2026-06-29 21:07:41,979 INFO [1416/2608] 063170 서울옥션 fetched=6 saved=6 run_saved=6
+2026-06-29 21:07:42,216 INFO [1417/2608] 001290 상상인증권 fetched=0 saved=0 run_saved=6
+2026-06-29 21:07:42,463 INFO [1418/2608] 033290 로젠 fetched=2 saved=2 run_saved=8
+2026-06-29 21:08:39,754 INFO [1419/2608] 001470 삼부토건 fetched=1 saved=1 run_saved=9
+2026-06-29 21:08:40,489 INFO [1420/2608] 037760 쎄니트 fetched=5 saved=5 run_saved=14
+2026-06-29 21:08:40,713 INFO [1421/2608] 085670 뉴프렉스 fetched=0 saved=0 run_saved=14
+2026-06-29 21:08:40,970 INFO [1422/2608] 004840 DRB동일 fetched=0 saved=0 run_saved=14

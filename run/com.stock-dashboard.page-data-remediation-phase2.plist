@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stock-dashboard.page-data-remediation-phase2</string>
+  <key>WorkingDirectory</key>
+  <string>/Applications/stock_dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/stock_dashboard/venv/bin/python</string>
+    <string>scripts/run_page_data_remediation_phase2_20260620.py</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Applications/stock_dashboard/run/page_data_remediation_20260620/phase2.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Applications/stock_dashboard/run/page_data_remediation_20260620/phase2.err</string>
+</dict>
+</plist>

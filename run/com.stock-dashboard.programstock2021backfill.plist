@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stock-dashboard.programstock2021backfill</string>
+  <key>WorkingDirectory</key>
+  <string>/Applications/stock_dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/stock_dashboard/venv/bin/python</string>
+    <string>-u</string>
+    <string>scripts/backfill_program_stock_2021.py</string>
+    <string>--start</string>
+    <string>20210101</string>
+    <string>--end</string>
+    <string>20260627</string>
+    <string>--stride</string>
+    <string>20</string>
+    <string>--resume</string>
+    <string>--sleep</string>
+    <string>0.05</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Applications/stock_dashboard/run/program_stock_backfill_2021/backfill.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Applications/stock_dashboard/run/program_stock_backfill_2021/backfill.launchd.err</string>
+</dict>
+</plist>

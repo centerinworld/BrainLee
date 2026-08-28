@@ -1,0 +1,8 @@
+task mode: create
+primary deck-profile: strategy-leadership
+secondary profile gates: template build, appendix-heavy
+required proof objects: editable slide master banner, multiple KAI strategy meeting layouts, 16:9 presentation deck
+source/asset requirements: KAI blue-led corporate template without external brand asset dependency
+brand authenticity constraints: avoid fake official logo recreation; use editable KAI text lockup and corporate color system instead
+profile-specific QA gates: top banner must live on slide master, slides must feel distinct in rhythm, all key content zones must be editable in PowerPoint
+known missing inputs: official KAI CI files were not provided, so the deck uses a text-based KAI mark rather than an imported logo asset

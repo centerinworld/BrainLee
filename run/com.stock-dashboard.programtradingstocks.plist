@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stock-dashboard.programtradingstocks</string>
+  <key>WorkingDirectory</key>
+  <string>/Applications/stock_dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/stock_dashboard/venv/bin/python</string>
+    <string>scripts/collect_broker_program_trading.py</string>
+    <string>--date</string>
+    <string>20260619</string>
+    <string>--source</string>
+    <string>kiwoom</string>
+    <string>--all-stocks</string>
+    <string>--save-all-returned</string>
+    <string>--skip-existing</string>
+    <string>--sleep</string>
+    <string>0.05</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Applications/stock_dashboard/run/program_trading_backfill_20260620/stocks_latest_kiwoom.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Applications/stock_dashboard/run/program_trading_backfill_20260620/stocks_latest_kiwoom.launchd.err</string>
+</dict>
+</plist>

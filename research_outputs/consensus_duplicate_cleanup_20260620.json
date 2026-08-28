@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-06-27T08:59:10",
+  "db": "/Applications/stock_dashboard/stock.db",
+  "backup_table": "consensus_targets_duplicate_backup_20260620",
+  "before_rows": 11170,
+  "before_distinct_keys": 11162,
+  "detected_duplicate_rows": 8,
+  "backup_rows": 14,
+  "deleted_rows": 8,
+  "after_rows": 11162,
+  "after_distinct_keys": 11162,
+  "remaining_duplicate_rows": 0
+}

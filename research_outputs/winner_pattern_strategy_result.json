@@ -1,0 +1,2865 @@
+{
+  "generated_at": "2026-06-22T21:21:12.847954",
+  "periods": {
+    "train": [
+      "2021-01",
+      "2023-12"
+    ],
+    "valid": [
+      "2024-01",
+      "2025-05"
+    ],
+    "oos": [
+      "2025-06",
+      "2026-05"
+    ],
+    "all": [
+      "2021-01",
+      "2026-05"
+    ]
+  },
+  "rules_tested": 110,
+  "top": [
+    {
+      "rule": "turnaround_flow|early_trend & fin_rev_q70 & fin_op_q70 & export_q70|hit0.15|lift3.10",
+      "mask": "early_trend & fin_rev_q70 & fin_op_q70 & export_q70",
+      "ret_col": "ret_m1_stop12_trail",
+      "train_ret": 91.32,
+      "valid_ret": 13.85,
+      "oos_ret": 101.3,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 81.69,
+      "oos_mdd": -8.08,
+      "oos_trades": 42,
+      "all_ret": 338.5,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 351.72,
+      "all_mdd": -26.64,
+      "all_trades": 143,
+      "score": 151.84600000000003
+    },
+    {
+      "rule": "early_quality|early_trend & fin_rev_q70 & fin_op_q70 & export_q70|hit0.15|lift3.10",
+      "mask": "early_trend & fin_rev_q70 & fin_op_q70 & export_q70",
+      "ret_col": "ret_m1_stop12_trail",
+      "train_ret": 85.75,
+      "valid_ret": 14.12,
+      "oos_ret": 94.46,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 74.84,
+      "oos_mdd": -8.08,
+      "oos_trades": 42,
+      "all_ret": 312.22,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 325.44,
+      "all_mdd": -26.47,
+      "all_trades": 143,
+      "score": 139.821
+    },
+    {
+      "rule": "demand_confirmed|early_trend & fin_rev_q70 & fin_op_q70 & export_q70|hit0.15|lift3.10",
+      "mask": "early_trend & fin_rev_q70 & fin_op_q70 & export_q70",
+      "ret_col": "ret_m1_stop12_trail",
+      "train_ret": 96.81,
+      "valid_ret": 12.4,
+      "oos_ret": 87.5,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 67.88,
+      "oos_mdd": -8.08,
+      "oos_trades": 42,
+      "all_ret": 314.8,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 328.03,
+      "all_mdd": -27.58,
+      "all_trades": 143,
+      "score": 132.863
+    },
+    {
+      "rule": "demand_confirmed|early_trend & not_extended_6m & backlog_present & export_q70|hit0.17|lift3.50",
+      "mask": "early_trend & not_extended_6m & backlog_present & export_q70",
+      "ret_col": "ret_m1_stop10",
+      "train_ret": 30.87,
+      "valid_ret": -12.54,
+      "oos_ret": 94.63,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 75.02,
+      "oos_mdd": -18.21,
+      "oos_trades": 51,
+      "all_ret": 122.77,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 136.0,
+      "all_mdd": -36.9,
+      "all_trades": 141,
+      "score": 89.05
+    },
+    {
+      "rule": "demand_confirmed|early_trend & base_recovery & backlog_present & export_q70|hit0.17|lift3.57",
+      "mask": "early_trend & base_recovery & backlog_present & export_q70",
+      "ret_col": "ret_m1_stop10",
+      "train_ret": 11.27,
+      "valid_ret": -8.95,
+      "oos_ret": 97.63,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 78.02,
+      "oos_mdd": -18.21,
+      "oos_trades": 53,
+      "all_ret": 100.23,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 113.46,
+      "all_mdd": -36.71,
+      "all_trades": 143,
+      "score": 88.61899999999999
+    },
+    {
+      "rule": "early_quality|early_trend & base_recovery & backlog_present & export_q70|hit0.17|lift3.57",
+      "mask": "early_trend & base_recovery & backlog_present & export_q70",
+      "ret_col": "ret_m1_stop10",
+      "train_ret": 8.47,
+      "valid_ret": -6.55,
+      "oos_ret": 92.05,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 72.44,
+      "oos_mdd": -24.76,
+      "oos_trades": 53,
+      "all_ret": 94.67,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 107.9,
+      "all_mdd": -37.35,
+      "all_trades": 143,
+      "score": 79.372
+    },
+    {
+      "rule": "early_quality|early_trend & base_recovery & backlog_present & export_q70|hit0.17|lift3.57",
+      "mask": "early_trend & base_recovery & backlog_present & export_q70",
+      "ret_col": "ret_m1_stop12_trail",
+      "train_ret": 9.96,
+      "valid_ret": 11.39,
+      "oos_ret": 77.16,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 57.55,
+      "oos_mdd": -24.76,
+      "oos_trades": 53,
+      "all_ret": 116.99,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 130.22,
+      "all_mdd": -24.76,
+      "all_trades": 143,
+      "score": 74.328
+    },
+    {
+      "rule": "demand_confirmed|early_trend & not_extended_6m & backlog_present & export_q70|hit0.17|lift3.50",
+      "mask": "early_trend & not_extended_6m & backlog_present & export_q70",
+      "ret_col": "ret_m1_stop12_trail",
+      "train_ret": 34.52,
+      "valid_ret": -6.8,
+      "oos_ret": 77.28,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 57.66,
+      "oos_mdd": -18.62,
+      "oos_trades": 51,
+      "all_ret": 122.25,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 135.48,
+      "all_mdd": -31.6,
+      "all_trades": 141,
+      "score": 73.103
+    },
+    {
+      "rule": "turnaround_flow|early_trend & base_recovery & backlog_present & export_q70|hit0.17|lift3.57",
+      "mask": "early_trend & base_recovery & backlog_present & export_q70",
+      "ret_col": "ret_m1_stop10",
+      "train_ret": 0.81,
+      "valid_ret": -6.87,
+      "oos_ret": 88.79,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 69.17,
+      "oos_mdd": -25.03,
+      "oos_trades": 53,
+      "all_ret": 77.23,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 90.46,
+      "all_mdd": -35.53,
+      "all_trades": 143,
+      "score": 72.383
+    },
+    {
+      "rule": "turnaround_flow|early_trend & fin_rev_q70 & fin_op_q70 & export_q70|hit0.15|lift3.10",
+      "mask": "early_trend & fin_rev_q70 & fin_op_q70 & export_q70",
+      "ret_col": "ret_m1_stop10",
+      "train_ret": 100.4,
+      "valid_ret": 3.97,
+      "oos_ret": 51.6,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 31.98,
+      "oos_mdd": -15.41,
+      "oos_trades": 42,
+      "all_ret": 215.85,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 229.08,
+      "all_mdd": -32.13,
+      "all_trades": 143,
+      "score": 70.979
+    },
+    {
+      "rule": "turnaround_flow|early_trend & fin_op_q70 & export_q70 & short_cover_q70|hit0.15|lift3.16",
+      "mask": "early_trend & fin_op_q70 & export_q70 & short_cover_q70",
+      "ret_col": "ret_m1_stop10",
+      "train_ret": 19.49,
+      "valid_ret": 29.42,
+      "oos_ret": 57.24,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 37.62,
+      "oos_mdd": -17.07,
+      "oos_trades": 37,
+      "all_ret": 143.17,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 156.4,
+      "all_mdd": -22.49,
+      "all_trades": 105,
+      "score": 68.888
+    },
+    {
+      "rule": "demand_confirmed|early_trend & base_recovery & backlog_present & export_q70|hit0.17|lift3.57",
+      "mask": "early_trend & base_recovery & backlog_present & export_q70",
+      "ret_col": "ret_m1_stop12_trail",
+      "train_ret": 12.92,
+      "valid_ret": -2.57,
+      "oos_ret": 76.96,
+      "oos_bench": 19.62,
+      "oos_kospi_bench": 196.73,
+      "oos_alpha": 57.34,
+      "oos_mdd": -18.62,
+      "oos_trades": 53,
+      "all_ret": 94.69,
+      "all_bench": -13.23,
+      "all_kospi_bench": 206.25,
+      "all_alpha": 107.92,
+      "all_mdd": -31.97,
+      "all_trades": 143,
+      "score": 68.54
+    }
+  ],
+  "best_detail": {
+    "train": {
+      "rule": "turnaround_flow|early_trend & fin_rev_q70 & fin_op_q70 & export_q70|hit0.15|lift3.10",
+      "period": "2021-01~2023-12",
+      "months": 36,
+      "active_months": 19,
+      "trade_count": 75,
+      "avg_names": 3.95,
+      "total_return_pct": 91.32,
+      "bench_return_pct": -28.18,
+      "kospi_bench_return_pct": -16.1,
+      "alpha_pct": 119.5,
+      "mdd_pct": -12.81,
+      "hit_month_pct": 68.4,
+      "sharpe": 1.03,
+      "monthly": [
+        {
+          "signal_month": "2021-01",
+          "ret_pct": 3.97
+        },
+        {
+          "signal_month": "2021-02",
+          "ret_pct": 1.4
+        },
+        {
+          "signal_month": "2021-03",
+          "ret_pct": 24.92
+        },
+        {
+          "signal_month": "2021-04",
+          "ret_pct": 8.2
+        },
+        {
+          "signal_month": "2021-05",
+          "ret_pct": 1.58
+        },
+        {
+          "signal_month": "2021-06",
+          "ret_pct": -0.85
+        },
+        {
+          "signal_month": "2021-07",
+          "ret_pct": 6.96
+        },
+        {
+          "signal_month": "2021-08",
+          "ret_pct": 3.38
+        },
+        {
+          "signal_month": "2021-09",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2021-10",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2021-11",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2021-12",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-01",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-02",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-03",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-04",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-05",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-06",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-07",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-08",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-09",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-10",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-11",
+          "ret_pct": -12.81
+        },
+        {
+          "signal_month": "2022-12",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2023-01",
+          "ret_pct": 25.19
+        },
+        {
+          "signal_month": "2023-02",
+          "ret_pct": -0.09
+        },
+        {
+          "signal_month": "2023-03",
+          "ret_pct": 6.42
+        },
+        {
+          "signal_month": "2023-04",
+          "ret_pct": 3.76
+        },
+        {
+          "signal_month": "2023-05",
+          "ret_pct": 7.55
+        },
+        {
+          "signal_month": "2023-06",
+          "ret_pct": 1.8
+        },
+        {
+          "signal_month": "2023-07",
+          "ret_pct": -6.79
+        },
+        {
+          "signal_month": "2023-08",
+          "ret_pct": -4.65
+        },
+        {
+          "signal_month": "2023-09",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2023-10",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2023-11",
+          "ret_pct": -0.75
+        },
+        {
+          "signal_month": "2023-12",
+          "ret_pct": 3.67
+        }
+      ],
+      "picks": [
+        {
+          "signal_month": "2021-01",
+          "stock_code": "101160",
+          "score": 0.336993,
+          "raw_return_pct": 20.9,
+          "net_return_pct": 20.2
+        },
+        {
+          "signal_month": "2021-01",
+          "stock_code": "068270",
+          "score": 0.332166,
+          "raw_return_pct": 0.6,
+          "net_return_pct": -0.1
+        },
+        {
+          "signal_month": "2021-01",
+          "stock_code": "214450",
+          "score": 0.296572,
+          "raw_return_pct": -9.65,
+          "net_return_pct": -10.35
+        },
+        {
+          "signal_month": "2021-01",
+          "stock_code": "145020",
+          "score": 0.275667,
+          "raw_return_pct": -10.01,
+          "net_return_pct": -10.71
+        },
+        {
+          "signal_month": "2021-01",
+          "stock_code": "103590",
+          "score": 0.163721,
+          "raw_return_pct": 21.49,
+          "net_return_pct": 20.79
+        },
+        {
+          "signal_month": "2021-02",
+          "stock_code": "108320",
+          "score": 0.366392,
+          "raw_return_pct": 14.37,
+          "net_return_pct": 13.67
+        },
+        {
+          "signal_month": "2021-02",
+          "stock_code": "155650",
+          "score": 0.33627,
+          "raw_return_pct": -10.17,
+          "net_return_pct": -10.87
+        },
+        {
+          "signal_month": "2021-03",
+          "stock_code": "108320",
+          "score": 0.334566,
+          "raw_return_pct": 25.62,
+          "net_return_pct": 24.92
+        },
+        {
+          "signal_month": "2021-04",
+          "stock_code": "017810",
+          "score": 0.433236,
+          "raw_return_pct": 23.7,
+          "net_return_pct": 23.0
+        },
+        {
+          "signal_month": "2021-04",
+          "stock_code": "064290",
+          "score": 0.331278,
+          "raw_return_pct": -5.91,
+          "net_return_pct": -6.61
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "000640",
+          "score": 0.381769,
+          "raw_return_pct": -2.8,
+          "net_return_pct": -3.5
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "098460",
+          "score": 0.328713,
+          "raw_return_pct": -6.67,
+          "net_return_pct": -7.37
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "089970",
+          "score": 0.317814,
+          "raw_return_pct": -5.2,
+          "net_return_pct": -5.9
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "298020",
+          "score": 0.242907,
+          "raw_return_pct": 28.57,
+          "net_return_pct": 27.87
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "084370",
+          "score": 0.226693,
+          "raw_return_pct": -2.48,
+          "net_return_pct": -3.18
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "123410",
+          "score": 0.369109,
+          "raw_return_pct": -8.56,
+          "net_return_pct": -9.26
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "122870",
+          "score": 0.333219,
+          "raw_return_pct": 3.13,
+          "net_return_pct": 2.43
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "043150",
+          "score": 0.321747,
+          "raw_return_pct": -3.74,
+          "net_return_pct": -4.44
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "000490",
+          "score": 0.245173,
+          "raw_return_pct": 6.87,
+          "net_return_pct": 6.17
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "011070",
+          "score": 0.152759,
+          "raw_return_pct": 1.57,
+          "net_return_pct": 0.87
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "121600",
+          "score": 0.392944,
+          "raw_return_pct": -2.93,
+          "net_return_pct": -3.63
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "089790",
+          "score": 0.361399,
+          "raw_return_pct": 24.4,
+          "net_return_pct": 23.7
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "317330",
+          "score": 0.351484,
+          "raw_return_pct": 11.88,
+          "net_return_pct": 11.18
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "122870",
+          "score": 0.314523,
+          "raw_return_pct": 14.99,
+          "net_return_pct": 14.29
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "267270",
+          "score": 0.302107,
+          "raw_return_pct": -10.05,
+          "net_return_pct": -10.75
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "214150",
+          "score": 0.390482,
+          "raw_return_pct": -11.25,
+          "net_return_pct": -11.95
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "041510",
+          "score": 0.349866,
+          "raw_return_pct": 0.14,
+          "net_return_pct": -0.56
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "043150",
+          "score": 0.341496,
+          "raw_return_pct": -4.0,
+          "net_return_pct": -4.7
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "004000",
+          "score": 0.341008,
+          "raw_return_pct": 29.73,
+          "net_return_pct": 29.03
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "047050",
+          "score": 0.305685,
+          "raw_return_pct": 5.75,
+          "net_return_pct": 5.05
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "003670",
+          "score": 0.44636,
+          "raw_return_pct": -13.26,
+          "net_return_pct": -13.96
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "023160",
+          "score": 0.432159,
+          "raw_return_pct": -12.01,
+          "net_return_pct": -12.71
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "013030",
+          "score": 0.404938,
+          "raw_return_pct": -12.74,
+          "net_return_pct": -13.44
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "006400",
+          "score": 0.4019,
+          "raw_return_pct": -12.48,
+          "net_return_pct": -13.18
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "105740",
+          "score": 0.39776,
+          "raw_return_pct": -10.04,
+          "net_return_pct": -10.74
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "149980",
+          "score": 0.475616,
+          "raw_return_pct": -1.31,
+          "net_return_pct": -2.01
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "041510",
+          "score": 0.419002,
+          "raw_return_pct": 45.5,
+          "net_return_pct": 44.8
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "140860",
+          "score": 0.362955,
+          "raw_return_pct": 10.06,
+          "net_return_pct": 9.36
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "086900",
+          "score": 0.358491,
+          "raw_return_pct": 63.67,
+          "net_return_pct": 62.97
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "122870",
+          "score": 0.324332,
+          "raw_return_pct": 11.54,
+          "net_return_pct": 10.84
+        },
+        {
+          "signal_month": "2023-02",
+          "stock_code": "033100",
+          "score": 0.382361,
+          "raw_return_pct": 0.61,
+          "net_return_pct": -0.09
+        },
+        {
+          "signal_month": "2023-03",
+          "stock_code": "033100",
+          "score": 0.39859,
+          "raw_return_pct": 28.93,
+          "net_return_pct": 28.23
+        },
+        {
+          "signal_month": "2023-03",
+          "stock_code": "122870",
+          "score": 0.384442,
+          "raw_return_pct": 7.96,
+          "net_return_pct": 7.26
+        },
+        {
+          "signal_month": "2023-03",
+          "stock_code": "290670",
+          "score": 0.373838,
+          "raw_return_pct": -2.27,
+          "net_return_pct": -2.97
+        },
+        {
+          "signal_month": "2023-03",
+          "stock_code": "272110",
+          "score": 0.177452,
+          "raw_return_pct": -6.15,
+          "net_return_pct": -6.85
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "237880",
+          "score": 0.379364,
+          "raw_return_pct": 0.23,
+          "net_return_pct": -0.47
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "101670",
+          "score": 0.280697,
+          "raw_return_pct": -12.36,
+          "net_return_pct": -13.06
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "228670",
+          "score": 0.211841,
+          "raw_return_pct": -2.24,
+          "net_return_pct": -2.94
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "083310",
+          "score": 0.193291,
+          "raw_return_pct": 3.98,
+          "net_return_pct": 3.28
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "272110",
+          "score": 0.184705,
+          "raw_return_pct": 32.67,
+          "net_return_pct": 31.97
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "340570",
+          "score": 0.490279,
+          "raw_return_pct": -3.37,
+          "net_return_pct": -4.07
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "023160",
+          "score": 0.480178,
+          "raw_return_pct": 2.67,
+          "net_return_pct": 1.97
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "241560",
+          "score": 0.462243,
+          "raw_return_pct": 0.92,
+          "net_return_pct": 0.22
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "352480",
+          "score": 0.447064,
+          "raw_return_pct": 14.35,
+          "net_return_pct": 13.65
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "033100",
+          "score": 0.410978,
+          "raw_return_pct": 26.68,
+          "net_return_pct": 25.98
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "033100",
+          "score": 0.464958,
+          "raw_return_pct": 4.05,
+          "net_return_pct": 3.35
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "079550",
+          "score": 0.462203,
+          "raw_return_pct": -10.59,
+          "net_return_pct": -11.29
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "082740",
+          "score": 0.444672,
+          "raw_return_pct": 6.97,
+          "net_return_pct": 6.27
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "039840",
+          "score": 0.403045,
+          "raw_return_pct": -5.95,
+          "net_return_pct": -6.65
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "011760",
+          "score": 0.400223,
+          "raw_return_pct": 18.04,
+          "net_return_pct": 17.34
+        },
+        {
+          "signal_month": "2023-07",
+          "stock_code": "210540",
+          "score": 0.467728,
+          "raw_return_pct": -10.17,
+          "net_return_pct": -10.87
+        },
+        {
+          "signal_month": "2023-07",
+          "stock_code": "241560",
+          "score": 0.440143,
+          "raw_return_pct": -10.54,
+          "net_return_pct": -11.24
+        },
+        {
+          "signal_month": "2023-07",
+          "stock_code": "033100",
+          "score": 0.337628,
+          "raw_return_pct": 7.64,
+          "net_return_pct": 6.94
+        },
+        {
+          "signal_month": "2023-07",
+          "stock_code": "039840",
+          "score": 0.282651,
+          "raw_return_pct": -11.32,
+          "net_return_pct": -12.02
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "100090",
+          "score": 0.453872,
+          "raw_return_pct": -10.78,
+          "net_return_pct": -11.48
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "009450",
+          "score": 0.410853,
+          "raw_return_pct": -10.1,
+          "net_return_pct": -10.8
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "121600",
+          "score": 0.40931,
+          "raw_return_pct": -10.91,
+          "net_return_pct": -11.61
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "069620",
+          "score": 0.384303,
+          "raw_return_pct": 8.99,
+          "net_return_pct": 8.29
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "004370",
+          "score": 0.360558,
+          "raw_return_pct": 3.05,
+          "net_return_pct": 2.35
+        },
+        {
+          "signal_month": "2023-11",
+          "stock_code": "003230",
+          "score": 0.458614,
+          "raw_return_pct": 2.4,
+          "net_return_pct": 1.7
+        },
+        {
+          "signal_month": "2023-11",
+          "stock_code": "267260",
+          "score": 0.354214,
+          "raw_return_pct": -1.49,
+          "net_return_pct": -2.19
+        },
+        {
+          "signal_month": "2023-11",
+          "stock_code": "103840",
+          "score": 0.208413,
+          "raw_return_pct": -1.07,
+          "net_return_pct": -1.77
+        },
+        {
+          "signal_month": "2023-12",
+          "stock_code": "003230",
+          "score": 0.466351,
+          "raw_return_pct": -11.4,
+          "net_return_pct": -12.1
+        },
+        {
+          "signal_month": "2023-12",
+          "stock_code": "009450",
+          "score": 0.41714,
+          "raw_return_pct": -0.42,
+          "net_return_pct": -1.12
+        },
+        {
+          "signal_month": "2023-12",
+          "stock_code": "267260",
+          "score": 0.370314,
+          "raw_return_pct": 24.94,
+          "net_return_pct": 24.24
+        }
+      ]
+    },
+    "valid": {
+      "rule": "turnaround_flow|early_trend & fin_rev_q70 & fin_op_q70 & export_q70|hit0.15|lift3.10",
+      "period": "2024-01~2025-05",
+      "months": 17,
+      "active_months": 8,
+      "trade_count": 26,
+      "avg_names": 3.25,
+      "total_return_pct": 13.85,
+      "bench_return_pct": 1.01,
+      "kospi_bench_return_pct": 23.01,
+      "alpha_pct": 12.84,
+      "mdd_pct": -26.64,
+      "hit_month_pct": 50.0,
+      "sharpe": 0.43,
+      "monthly": [
+        {
+          "signal_month": "2024-01",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-02",
+          "ret_pct": 29.57
+        },
+        {
+          "signal_month": "2024-03",
+          "ret_pct": -6.24
+        },
+        {
+          "signal_month": "2024-04",
+          "ret_pct": -2.27
+        },
+        {
+          "signal_month": "2024-05",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-06",
+          "ret_pct": -6.51
+        },
+        {
+          "signal_month": "2024-07",
+          "ret_pct": -14.37
+        },
+        {
+          "signal_month": "2024-08",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-09",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-10",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-11",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-12",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2025-01",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2025-02",
+          "ret_pct": 2.54
+        },
+        {
+          "signal_month": "2025-03",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2025-04",
+          "ret_pct": 13.58
+        },
+        {
+          "signal_month": "2025-05",
+          "ret_pct": 2.85
+        }
+      ],
+      "picks": [
+        {
+          "signal_month": "2024-02",
+          "stock_code": "326030",
+          "score": 0.424908,
+          "raw_return_pct": -5.27,
+          "net_return_pct": -5.97
+        },
+        {
+          "signal_month": "2024-02",
+          "stock_code": "237690",
+          "score": 0.411097,
+          "raw_return_pct": 38.1,
+          "net_return_pct": 37.4
+        },
+        {
+          "signal_month": "2024-02",
+          "stock_code": "033100",
+          "score": 0.27206,
+          "raw_return_pct": 100.92,
+          "net_return_pct": 100.22
+        },
+        {
+          "signal_month": "2024-02",
+          "stock_code": "241710",
+          "score": 0.268865,
+          "raw_return_pct": -12.68,
+          "net_return_pct": -13.38
+        },
+        {
+          "signal_month": "2024-03",
+          "stock_code": "108320",
+          "score": 0.464481,
+          "raw_return_pct": -6.94,
+          "net_return_pct": -7.64
+        },
+        {
+          "signal_month": "2024-03",
+          "stock_code": "326030",
+          "score": 0.397965,
+          "raw_return_pct": -10.11,
+          "net_return_pct": -10.81
+        },
+        {
+          "signal_month": "2024-03",
+          "stock_code": "039440",
+          "score": 0.354246,
+          "raw_return_pct": 0.27,
+          "net_return_pct": -0.43
+        },
+        {
+          "signal_month": "2024-03",
+          "stock_code": "145720",
+          "score": 0.345371,
+          "raw_return_pct": -5.39,
+          "net_return_pct": -6.09
+        },
+        {
+          "signal_month": "2024-04",
+          "stock_code": "064760",
+          "score": 0.320203,
+          "raw_return_pct": 0.17,
+          "net_return_pct": -0.53
+        },
+        {
+          "signal_month": "2024-04",
+          "stock_code": "012450",
+          "score": 0.292928,
+          "raw_return_pct": -3.3,
+          "net_return_pct": -4.0
+        },
+        {
+          "signal_month": "2024-06",
+          "stock_code": "108320",
+          "score": 0.468364,
+          "raw_return_pct": -7.29,
+          "net_return_pct": -7.99
+        },
+        {
+          "signal_month": "2024-06",
+          "stock_code": "348210",
+          "score": 0.357242,
+          "raw_return_pct": -11.51,
+          "net_return_pct": -12.21
+        },
+        {
+          "signal_month": "2024-06",
+          "stock_code": "253590",
+          "score": 0.33995,
+          "raw_return_pct": 1.37,
+          "net_return_pct": 0.67
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "086900",
+          "score": 0.527855,
+          "raw_return_pct": -11.98,
+          "net_return_pct": -12.68
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "108320",
+          "score": 0.456085,
+          "raw_return_pct": -16.2,
+          "net_return_pct": -16.9
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "253590",
+          "score": 0.356212,
+          "raw_return_pct": -15.41,
+          "net_return_pct": -16.11
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "003230",
+          "score": 0.32493,
+          "raw_return_pct": -14.56,
+          "net_return_pct": -15.26
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "079550",
+          "score": 0.24851,
+          "raw_return_pct": -10.2,
+          "net_return_pct": -10.9
+        },
+        {
+          "signal_month": "2025-02",
+          "stock_code": "278470",
+          "score": 0.365463,
+          "raw_return_pct": 17.11,
+          "net_return_pct": 16.41
+        },
+        {
+          "signal_month": "2025-02",
+          "stock_code": "090430",
+          "score": 0.296624,
+          "raw_return_pct": -10.58,
+          "net_return_pct": -11.28
+        },
+        {
+          "signal_month": "2025-02",
+          "stock_code": "000660",
+          "score": 0.283996,
+          "raw_return_pct": 3.19,
+          "net_return_pct": 2.49
+        },
+        {
+          "signal_month": "2025-04",
+          "stock_code": "090430",
+          "score": 0.469577,
+          "raw_return_pct": 7.48,
+          "net_return_pct": 6.78
+        },
+        {
+          "signal_month": "2025-04",
+          "stock_code": "140860",
+          "score": 0.251482,
+          "raw_return_pct": 21.09,
+          "net_return_pct": 20.39
+        },
+        {
+          "signal_month": "2025-05",
+          "stock_code": "010140",
+          "score": 0.398556,
+          "raw_return_pct": -1.76,
+          "net_return_pct": -2.46
+        },
+        {
+          "signal_month": "2025-05",
+          "stock_code": "329180",
+          "score": 0.396715,
+          "raw_return_pct": 6.09,
+          "net_return_pct": 5.39
+        },
+        {
+          "signal_month": "2025-05",
+          "stock_code": "042660",
+          "score": 0.283456,
+          "raw_return_pct": 6.31,
+          "net_return_pct": 5.61
+        }
+      ]
+    },
+    "oos": {
+      "rule": "turnaround_flow|early_trend & fin_rev_q70 & fin_op_q70 & export_q70|hit0.15|lift3.10",
+      "period": "2025-06~2026-05",
+      "months": 12,
+      "active_months": 12,
+      "trade_count": 42,
+      "avg_names": 3.5,
+      "total_return_pct": 101.3,
+      "bench_return_pct": 19.62,
+      "kospi_bench_return_pct": 196.73,
+      "alpha_pct": 81.69,
+      "mdd_pct": -8.08,
+      "hit_month_pct": 75.0,
+      "sharpe": 2.47,
+      "monthly": [
+        {
+          "signal_month": "2025-06",
+          "ret_pct": 2.86
+        },
+        {
+          "signal_month": "2025-07",
+          "ret_pct": 3.62
+        },
+        {
+          "signal_month": "2025-08",
+          "ret_pct": 16.73
+        },
+        {
+          "signal_month": "2025-09",
+          "ret_pct": -4.7
+        },
+        {
+          "signal_month": "2025-10",
+          "ret_pct": 4.61
+        },
+        {
+          "signal_month": "2025-11",
+          "ret_pct": -6.84
+        },
+        {
+          "signal_month": "2025-12",
+          "ret_pct": -1.03
+        },
+        {
+          "signal_month": "2026-01",
+          "ret_pct": 9.21
+        },
+        {
+          "signal_month": "2026-02",
+          "ret_pct": 3.86
+        },
+        {
+          "signal_month": "2026-03",
+          "ret_pct": 13.17
+        },
+        {
+          "signal_month": "2026-04",
+          "ret_pct": 23.83
+        },
+        {
+          "signal_month": "2026-05",
+          "ret_pct": 10.74
+        }
+      ],
+      "picks": [
+        {
+          "signal_month": "2025-06",
+          "stock_code": "086900",
+          "score": 0.482659,
+          "raw_return_pct": -13.24,
+          "net_return_pct": -13.94
+        },
+        {
+          "signal_month": "2025-06",
+          "stock_code": "004000",
+          "score": 0.358677,
+          "raw_return_pct": 9.28,
+          "net_return_pct": 8.58
+        },
+        {
+          "signal_month": "2025-06",
+          "stock_code": "004690",
+          "score": 0.315723,
+          "raw_return_pct": 15.95,
+          "net_return_pct": 15.25
+        },
+        {
+          "signal_month": "2025-06",
+          "stock_code": "036460",
+          "score": 0.233376,
+          "raw_return_pct": 2.26,
+          "net_return_pct": 1.56
+        },
+        {
+          "signal_month": "2025-07",
+          "stock_code": "326030",
+          "score": 0.282231,
+          "raw_return_pct": 4.32,
+          "net_return_pct": 3.62
+        },
+        {
+          "signal_month": "2025-08",
+          "stock_code": "036200",
+          "score": 0.452751,
+          "raw_return_pct": 38.31,
+          "net_return_pct": 37.61
+        },
+        {
+          "signal_month": "2025-08",
+          "stock_code": "004000",
+          "score": 0.451986,
+          "raw_return_pct": 10.9,
+          "net_return_pct": 10.2
+        },
+        {
+          "signal_month": "2025-08",
+          "stock_code": "068270",
+          "score": 0.327225,
+          "raw_return_pct": 3.09,
+          "net_return_pct": 2.39
+        },
+        {
+          "signal_month": "2025-09",
+          "stock_code": "425420",
+          "score": 0.447763,
+          "raw_return_pct": -2.83,
+          "net_return_pct": -3.53
+        },
+        {
+          "signal_month": "2025-09",
+          "stock_code": "232140",
+          "score": 0.410648,
+          "raw_return_pct": 1.02,
+          "net_return_pct": 0.32
+        },
+        {
+          "signal_month": "2025-09",
+          "stock_code": "077970",
+          "score": 0.382538,
+          "raw_return_pct": -10.19,
+          "net_return_pct": -10.89
+        },
+        {
+          "signal_month": "2025-10",
+          "stock_code": "095340",
+          "score": 0.414921,
+          "raw_return_pct": 1.52,
+          "net_return_pct": 0.82
+        },
+        {
+          "signal_month": "2025-10",
+          "stock_code": "425420",
+          "score": 0.371611,
+          "raw_return_pct": 7.62,
+          "net_return_pct": 6.92
+        },
+        {
+          "signal_month": "2025-10",
+          "stock_code": "019180",
+          "score": 0.30214,
+          "raw_return_pct": 6.79,
+          "net_return_pct": 6.09
+        },
+        {
+          "signal_month": "2025-11",
+          "stock_code": "009150",
+          "score": 0.453916,
+          "raw_return_pct": 0.92,
+          "net_return_pct": 0.22
+        },
+        {
+          "signal_month": "2025-11",
+          "stock_code": "425420",
+          "score": 0.392455,
+          "raw_return_pct": -13.19,
+          "net_return_pct": -13.89
+        },
+        {
+          "signal_month": "2025-12",
+          "stock_code": "237690",
+          "score": 0.493051,
+          "raw_return_pct": -1.02,
+          "net_return_pct": -1.72
+        },
+        {
+          "signal_month": "2025-12",
+          "stock_code": "131290",
+          "score": 0.403864,
+          "raw_return_pct": 5.73,
+          "net_return_pct": 5.03
+        },
+        {
+          "signal_month": "2025-12",
+          "stock_code": "009150",
+          "score": 0.399352,
+          "raw_return_pct": 8.77,
+          "net_return_pct": 8.07
+        },
+        {
+          "signal_month": "2025-12",
+          "stock_code": "195870",
+          "score": 0.371257,
+          "raw_return_pct": -14.79,
+          "net_return_pct": -15.49
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "009150",
+          "score": 0.404553,
+          "raw_return_pct": 55.19,
+          "net_return_pct": 54.49
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "023160",
+          "score": 0.402122,
+          "raw_return_pct": 1.81,
+          "net_return_pct": 1.11
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "064350",
+          "score": 0.360602,
+          "raw_return_pct": -10.99,
+          "net_return_pct": -11.69
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "062040",
+          "score": 0.302019,
+          "raw_return_pct": 14.65,
+          "net_return_pct": 13.95
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "222800",
+          "score": 0.273147,
+          "raw_return_pct": -11.13,
+          "net_return_pct": -11.83
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "237690",
+          "score": 0.477679,
+          "raw_return_pct": -1.12,
+          "net_return_pct": -1.82
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "051370",
+          "score": 0.407724,
+          "raw_return_pct": -2.69,
+          "net_return_pct": -3.39
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "090460",
+          "score": 0.371064,
+          "raw_return_pct": 15.65,
+          "net_return_pct": 14.95
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "122870",
+          "score": 0.331991,
+          "raw_return_pct": -13.54,
+          "net_return_pct": -14.24
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "117580",
+          "score": 0.327097,
+          "raw_return_pct": 24.51,
+          "net_return_pct": 23.81
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "278470",
+          "score": 0.485115,
+          "raw_return_pct": 22.69,
+          "net_return_pct": 21.99
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "051370",
+          "score": 0.482277,
+          "raw_return_pct": 7.61,
+          "net_return_pct": 6.91
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "098120",
+          "score": 0.421323,
+          "raw_return_pct": 33.1,
+          "net_return_pct": 32.4
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "237690",
+          "score": 0.411467,
+          "raw_return_pct": 1.33,
+          "net_return_pct": 0.63
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "047050",
+          "score": 0.408003,
+          "raw_return_pct": 4.64,
+          "net_return_pct": 3.94
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "047050",
+          "score": 0.431361,
+          "raw_return_pct": -11.36,
+          "net_return_pct": -12.06
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "005930",
+          "score": 0.410415,
+          "raw_return_pct": 39.04,
+          "net_return_pct": 38.34
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "237690",
+          "score": 0.406365,
+          "raw_return_pct": -15.23,
+          "net_return_pct": -15.93
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "051370",
+          "score": 0.360667,
+          "raw_return_pct": -10.44,
+          "net_return_pct": -11.14
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "080220",
+          "score": 0.280297,
+          "raw_return_pct": 120.63,
+          "net_return_pct": 119.93
+        },
+        {
+          "signal_month": "2026-05",
+          "stock_code": "039030",
+          "score": 0.43387,
+          "raw_return_pct": 14.44,
+          "net_return_pct": 13.74
+        },
+        {
+          "signal_month": "2026-05",
+          "stock_code": "036200",
+          "score": 0.315476,
+          "raw_return_pct": 8.44,
+          "net_return_pct": 7.74
+        }
+      ]
+    },
+    "all": {
+      "rule": "turnaround_flow|early_trend & fin_rev_q70 & fin_op_q70 & export_q70|hit0.15|lift3.10",
+      "period": "2021-01~2026-05",
+      "months": 65,
+      "active_months": 39,
+      "trade_count": 143,
+      "avg_names": 3.67,
+      "total_return_pct": 338.5,
+      "bench_return_pct": -13.23,
+      "kospi_bench_return_pct": 206.25,
+      "alpha_pct": 351.72,
+      "mdd_pct": -26.64,
+      "hit_month_pct": 66.7,
+      "sharpe": 1.13,
+      "monthly": [
+        {
+          "signal_month": "2021-01",
+          "ret_pct": 3.97
+        },
+        {
+          "signal_month": "2021-02",
+          "ret_pct": 1.4
+        },
+        {
+          "signal_month": "2021-03",
+          "ret_pct": 24.92
+        },
+        {
+          "signal_month": "2021-04",
+          "ret_pct": 8.2
+        },
+        {
+          "signal_month": "2021-05",
+          "ret_pct": 1.58
+        },
+        {
+          "signal_month": "2021-06",
+          "ret_pct": -0.85
+        },
+        {
+          "signal_month": "2021-07",
+          "ret_pct": 6.96
+        },
+        {
+          "signal_month": "2021-08",
+          "ret_pct": 3.38
+        },
+        {
+          "signal_month": "2021-09",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2021-10",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2021-11",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2021-12",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-01",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-02",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-03",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-04",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-05",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-06",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-07",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-08",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-09",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-10",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2022-11",
+          "ret_pct": -12.81
+        },
+        {
+          "signal_month": "2022-12",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2023-01",
+          "ret_pct": 25.19
+        },
+        {
+          "signal_month": "2023-02",
+          "ret_pct": -0.09
+        },
+        {
+          "signal_month": "2023-03",
+          "ret_pct": 6.42
+        },
+        {
+          "signal_month": "2023-04",
+          "ret_pct": 3.76
+        },
+        {
+          "signal_month": "2023-05",
+          "ret_pct": 7.55
+        },
+        {
+          "signal_month": "2023-06",
+          "ret_pct": 1.8
+        },
+        {
+          "signal_month": "2023-07",
+          "ret_pct": -6.79
+        },
+        {
+          "signal_month": "2023-08",
+          "ret_pct": -4.65
+        },
+        {
+          "signal_month": "2023-09",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2023-10",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2023-11",
+          "ret_pct": -0.75
+        },
+        {
+          "signal_month": "2023-12",
+          "ret_pct": 3.67
+        },
+        {
+          "signal_month": "2024-01",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-02",
+          "ret_pct": 29.57
+        },
+        {
+          "signal_month": "2024-03",
+          "ret_pct": -6.24
+        },
+        {
+          "signal_month": "2024-04",
+          "ret_pct": -2.27
+        },
+        {
+          "signal_month": "2024-05",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-06",
+          "ret_pct": -6.51
+        },
+        {
+          "signal_month": "2024-07",
+          "ret_pct": -14.37
+        },
+        {
+          "signal_month": "2024-08",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-09",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-10",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-11",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2024-12",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2025-01",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2025-02",
+          "ret_pct": 2.54
+        },
+        {
+          "signal_month": "2025-03",
+          "ret_pct": 0.0
+        },
+        {
+          "signal_month": "2025-04",
+          "ret_pct": 13.58
+        },
+        {
+          "signal_month": "2025-05",
+          "ret_pct": 2.85
+        },
+        {
+          "signal_month": "2025-06",
+          "ret_pct": 2.86
+        },
+        {
+          "signal_month": "2025-07",
+          "ret_pct": 3.62
+        },
+        {
+          "signal_month": "2025-08",
+          "ret_pct": 16.73
+        },
+        {
+          "signal_month": "2025-09",
+          "ret_pct": -4.7
+        },
+        {
+          "signal_month": "2025-10",
+          "ret_pct": 4.61
+        },
+        {
+          "signal_month": "2025-11",
+          "ret_pct": -6.84
+        },
+        {
+          "signal_month": "2025-12",
+          "ret_pct": -1.03
+        },
+        {
+          "signal_month": "2026-01",
+          "ret_pct": 9.21
+        },
+        {
+          "signal_month": "2026-02",
+          "ret_pct": 3.86
+        },
+        {
+          "signal_month": "2026-03",
+          "ret_pct": 13.17
+        },
+        {
+          "signal_month": "2026-04",
+          "ret_pct": 23.83
+        },
+        {
+          "signal_month": "2026-05",
+          "ret_pct": 10.74
+        }
+      ],
+      "picks": [
+        {
+          "signal_month": "2021-01",
+          "stock_code": "101160",
+          "score": 0.336993,
+          "raw_return_pct": 20.9,
+          "net_return_pct": 20.2
+        },
+        {
+          "signal_month": "2021-01",
+          "stock_code": "068270",
+          "score": 0.332166,
+          "raw_return_pct": 0.6,
+          "net_return_pct": -0.1
+        },
+        {
+          "signal_month": "2021-01",
+          "stock_code": "214450",
+          "score": 0.296572,
+          "raw_return_pct": -9.65,
+          "net_return_pct": -10.35
+        },
+        {
+          "signal_month": "2021-01",
+          "stock_code": "145020",
+          "score": 0.275667,
+          "raw_return_pct": -10.01,
+          "net_return_pct": -10.71
+        },
+        {
+          "signal_month": "2021-01",
+          "stock_code": "103590",
+          "score": 0.163721,
+          "raw_return_pct": 21.49,
+          "net_return_pct": 20.79
+        },
+        {
+          "signal_month": "2021-02",
+          "stock_code": "108320",
+          "score": 0.366392,
+          "raw_return_pct": 14.37,
+          "net_return_pct": 13.67
+        },
+        {
+          "signal_month": "2021-02",
+          "stock_code": "155650",
+          "score": 0.33627,
+          "raw_return_pct": -10.17,
+          "net_return_pct": -10.87
+        },
+        {
+          "signal_month": "2021-03",
+          "stock_code": "108320",
+          "score": 0.334566,
+          "raw_return_pct": 25.62,
+          "net_return_pct": 24.92
+        },
+        {
+          "signal_month": "2021-04",
+          "stock_code": "017810",
+          "score": 0.433236,
+          "raw_return_pct": 23.7,
+          "net_return_pct": 23.0
+        },
+        {
+          "signal_month": "2021-04",
+          "stock_code": "064290",
+          "score": 0.331278,
+          "raw_return_pct": -5.91,
+          "net_return_pct": -6.61
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "000640",
+          "score": 0.381769,
+          "raw_return_pct": -2.8,
+          "net_return_pct": -3.5
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "098460",
+          "score": 0.328713,
+          "raw_return_pct": -6.67,
+          "net_return_pct": -7.37
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "089970",
+          "score": 0.317814,
+          "raw_return_pct": -5.2,
+          "net_return_pct": -5.9
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "298020",
+          "score": 0.242907,
+          "raw_return_pct": 28.57,
+          "net_return_pct": 27.87
+        },
+        {
+          "signal_month": "2021-05",
+          "stock_code": "084370",
+          "score": 0.226693,
+          "raw_return_pct": -2.48,
+          "net_return_pct": -3.18
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "123410",
+          "score": 0.369109,
+          "raw_return_pct": -8.56,
+          "net_return_pct": -9.26
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "122870",
+          "score": 0.333219,
+          "raw_return_pct": 3.13,
+          "net_return_pct": 2.43
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "043150",
+          "score": 0.321747,
+          "raw_return_pct": -3.74,
+          "net_return_pct": -4.44
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "000490",
+          "score": 0.245173,
+          "raw_return_pct": 6.87,
+          "net_return_pct": 6.17
+        },
+        {
+          "signal_month": "2021-06",
+          "stock_code": "011070",
+          "score": 0.152759,
+          "raw_return_pct": 1.57,
+          "net_return_pct": 0.87
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "121600",
+          "score": 0.392944,
+          "raw_return_pct": -2.93,
+          "net_return_pct": -3.63
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "089790",
+          "score": 0.361399,
+          "raw_return_pct": 24.4,
+          "net_return_pct": 23.7
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "317330",
+          "score": 0.351484,
+          "raw_return_pct": 11.88,
+          "net_return_pct": 11.18
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "122870",
+          "score": 0.314523,
+          "raw_return_pct": 14.99,
+          "net_return_pct": 14.29
+        },
+        {
+          "signal_month": "2021-07",
+          "stock_code": "267270",
+          "score": 0.302107,
+          "raw_return_pct": -10.05,
+          "net_return_pct": -10.75
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "214150",
+          "score": 0.390482,
+          "raw_return_pct": -11.25,
+          "net_return_pct": -11.95
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "041510",
+          "score": 0.349866,
+          "raw_return_pct": 0.14,
+          "net_return_pct": -0.56
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "043150",
+          "score": 0.341496,
+          "raw_return_pct": -4.0,
+          "net_return_pct": -4.7
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "004000",
+          "score": 0.341008,
+          "raw_return_pct": 29.73,
+          "net_return_pct": 29.03
+        },
+        {
+          "signal_month": "2021-08",
+          "stock_code": "047050",
+          "score": 0.305685,
+          "raw_return_pct": 5.75,
+          "net_return_pct": 5.05
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "003670",
+          "score": 0.44636,
+          "raw_return_pct": -13.26,
+          "net_return_pct": -13.96
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "023160",
+          "score": 0.432159,
+          "raw_return_pct": -12.01,
+          "net_return_pct": -12.71
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "013030",
+          "score": 0.404938,
+          "raw_return_pct": -12.74,
+          "net_return_pct": -13.44
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "006400",
+          "score": 0.4019,
+          "raw_return_pct": -12.48,
+          "net_return_pct": -13.18
+        },
+        {
+          "signal_month": "2022-11",
+          "stock_code": "105740",
+          "score": 0.39776,
+          "raw_return_pct": -10.04,
+          "net_return_pct": -10.74
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "149980",
+          "score": 0.475616,
+          "raw_return_pct": -1.31,
+          "net_return_pct": -2.01
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "041510",
+          "score": 0.419002,
+          "raw_return_pct": 45.5,
+          "net_return_pct": 44.8
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "140860",
+          "score": 0.362955,
+          "raw_return_pct": 10.06,
+          "net_return_pct": 9.36
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "086900",
+          "score": 0.358491,
+          "raw_return_pct": 63.67,
+          "net_return_pct": 62.97
+        },
+        {
+          "signal_month": "2023-01",
+          "stock_code": "122870",
+          "score": 0.324332,
+          "raw_return_pct": 11.54,
+          "net_return_pct": 10.84
+        },
+        {
+          "signal_month": "2023-02",
+          "stock_code": "033100",
+          "score": 0.382361,
+          "raw_return_pct": 0.61,
+          "net_return_pct": -0.09
+        },
+        {
+          "signal_month": "2023-03",
+          "stock_code": "033100",
+          "score": 0.39859,
+          "raw_return_pct": 28.93,
+          "net_return_pct": 28.23
+        },
+        {
+          "signal_month": "2023-03",
+          "stock_code": "122870",
+          "score": 0.384442,
+          "raw_return_pct": 7.96,
+          "net_return_pct": 7.26
+        },
+        {
+          "signal_month": "2023-03",
+          "stock_code": "290670",
+          "score": 0.373838,
+          "raw_return_pct": -2.27,
+          "net_return_pct": -2.97
+        },
+        {
+          "signal_month": "2023-03",
+          "stock_code": "272110",
+          "score": 0.177452,
+          "raw_return_pct": -6.15,
+          "net_return_pct": -6.85
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "237880",
+          "score": 0.379364,
+          "raw_return_pct": 0.23,
+          "net_return_pct": -0.47
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "101670",
+          "score": 0.280697,
+          "raw_return_pct": -12.36,
+          "net_return_pct": -13.06
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "228670",
+          "score": 0.211841,
+          "raw_return_pct": -2.24,
+          "net_return_pct": -2.94
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "083310",
+          "score": 0.193291,
+          "raw_return_pct": 3.98,
+          "net_return_pct": 3.28
+        },
+        {
+          "signal_month": "2023-04",
+          "stock_code": "272110",
+          "score": 0.184705,
+          "raw_return_pct": 32.67,
+          "net_return_pct": 31.97
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "340570",
+          "score": 0.490279,
+          "raw_return_pct": -3.37,
+          "net_return_pct": -4.07
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "023160",
+          "score": 0.480178,
+          "raw_return_pct": 2.67,
+          "net_return_pct": 1.97
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "241560",
+          "score": 0.462243,
+          "raw_return_pct": 0.92,
+          "net_return_pct": 0.22
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "352480",
+          "score": 0.447064,
+          "raw_return_pct": 14.35,
+          "net_return_pct": 13.65
+        },
+        {
+          "signal_month": "2023-05",
+          "stock_code": "033100",
+          "score": 0.410978,
+          "raw_return_pct": 26.68,
+          "net_return_pct": 25.98
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "033100",
+          "score": 0.464958,
+          "raw_return_pct": 4.05,
+          "net_return_pct": 3.35
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "079550",
+          "score": 0.462203,
+          "raw_return_pct": -10.59,
+          "net_return_pct": -11.29
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "082740",
+          "score": 0.444672,
+          "raw_return_pct": 6.97,
+          "net_return_pct": 6.27
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "039840",
+          "score": 0.403045,
+          "raw_return_pct": -5.95,
+          "net_return_pct": -6.65
+        },
+        {
+          "signal_month": "2023-06",
+          "stock_code": "011760",
+          "score": 0.400223,
+          "raw_return_pct": 18.04,
+          "net_return_pct": 17.34
+        },
+        {
+          "signal_month": "2023-07",
+          "stock_code": "210540",
+          "score": 0.467728,
+          "raw_return_pct": -10.17,
+          "net_return_pct": -10.87
+        },
+        {
+          "signal_month": "2023-07",
+          "stock_code": "241560",
+          "score": 0.440143,
+          "raw_return_pct": -10.54,
+          "net_return_pct": -11.24
+        },
+        {
+          "signal_month": "2023-07",
+          "stock_code": "033100",
+          "score": 0.337628,
+          "raw_return_pct": 7.64,
+          "net_return_pct": 6.94
+        },
+        {
+          "signal_month": "2023-07",
+          "stock_code": "039840",
+          "score": 0.282651,
+          "raw_return_pct": -11.32,
+          "net_return_pct": -12.02
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "100090",
+          "score": 0.453872,
+          "raw_return_pct": -10.78,
+          "net_return_pct": -11.48
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "009450",
+          "score": 0.410853,
+          "raw_return_pct": -10.1,
+          "net_return_pct": -10.8
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "121600",
+          "score": 0.40931,
+          "raw_return_pct": -10.91,
+          "net_return_pct": -11.61
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "069620",
+          "score": 0.384303,
+          "raw_return_pct": 8.99,
+          "net_return_pct": 8.29
+        },
+        {
+          "signal_month": "2023-08",
+          "stock_code": "004370",
+          "score": 0.360558,
+          "raw_return_pct": 3.05,
+          "net_return_pct": 2.35
+        },
+        {
+          "signal_month": "2023-11",
+          "stock_code": "003230",
+          "score": 0.458614,
+          "raw_return_pct": 2.4,
+          "net_return_pct": 1.7
+        },
+        {
+          "signal_month": "2023-11",
+          "stock_code": "267260",
+          "score": 0.354214,
+          "raw_return_pct": -1.49,
+          "net_return_pct": -2.19
+        },
+        {
+          "signal_month": "2023-11",
+          "stock_code": "103840",
+          "score": 0.208413,
+          "raw_return_pct": -1.07,
+          "net_return_pct": -1.77
+        },
+        {
+          "signal_month": "2023-12",
+          "stock_code": "003230",
+          "score": 0.466351,
+          "raw_return_pct": -11.4,
+          "net_return_pct": -12.1
+        },
+        {
+          "signal_month": "2023-12",
+          "stock_code": "009450",
+          "score": 0.41714,
+          "raw_return_pct": -0.42,
+          "net_return_pct": -1.12
+        },
+        {
+          "signal_month": "2023-12",
+          "stock_code": "267260",
+          "score": 0.370314,
+          "raw_return_pct": 24.94,
+          "net_return_pct": 24.24
+        },
+        {
+          "signal_month": "2024-02",
+          "stock_code": "326030",
+          "score": 0.424908,
+          "raw_return_pct": -5.27,
+          "net_return_pct": -5.97
+        },
+        {
+          "signal_month": "2024-02",
+          "stock_code": "237690",
+          "score": 0.411097,
+          "raw_return_pct": 38.1,
+          "net_return_pct": 37.4
+        },
+        {
+          "signal_month": "2024-02",
+          "stock_code": "033100",
+          "score": 0.27206,
+          "raw_return_pct": 100.92,
+          "net_return_pct": 100.22
+        },
+        {
+          "signal_month": "2024-02",
+          "stock_code": "241710",
+          "score": 0.268865,
+          "raw_return_pct": -12.68,
+          "net_return_pct": -13.38
+        },
+        {
+          "signal_month": "2024-03",
+          "stock_code": "108320",
+          "score": 0.464481,
+          "raw_return_pct": -6.94,
+          "net_return_pct": -7.64
+        },
+        {
+          "signal_month": "2024-03",
+          "stock_code": "326030",
+          "score": 0.397965,
+          "raw_return_pct": -10.11,
+          "net_return_pct": -10.81
+        },
+        {
+          "signal_month": "2024-03",
+          "stock_code": "039440",
+          "score": 0.354246,
+          "raw_return_pct": 0.27,
+          "net_return_pct": -0.43
+        },
+        {
+          "signal_month": "2024-03",
+          "stock_code": "145720",
+          "score": 0.345371,
+          "raw_return_pct": -5.39,
+          "net_return_pct": -6.09
+        },
+        {
+          "signal_month": "2024-04",
+          "stock_code": "064760",
+          "score": 0.320203,
+          "raw_return_pct": 0.17,
+          "net_return_pct": -0.53
+        },
+        {
+          "signal_month": "2024-04",
+          "stock_code": "012450",
+          "score": 0.292928,
+          "raw_return_pct": -3.3,
+          "net_return_pct": -4.0
+        },
+        {
+          "signal_month": "2024-06",
+          "stock_code": "108320",
+          "score": 0.468364,
+          "raw_return_pct": -7.29,
+          "net_return_pct": -7.99
+        },
+        {
+          "signal_month": "2024-06",
+          "stock_code": "348210",
+          "score": 0.357242,
+          "raw_return_pct": -11.51,
+          "net_return_pct": -12.21
+        },
+        {
+          "signal_month": "2024-06",
+          "stock_code": "253590",
+          "score": 0.33995,
+          "raw_return_pct": 1.37,
+          "net_return_pct": 0.67
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "086900",
+          "score": 0.527855,
+          "raw_return_pct": -11.98,
+          "net_return_pct": -12.68
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "108320",
+          "score": 0.456085,
+          "raw_return_pct": -16.2,
+          "net_return_pct": -16.9
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "253590",
+          "score": 0.356212,
+          "raw_return_pct": -15.41,
+          "net_return_pct": -16.11
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "003230",
+          "score": 0.32493,
+          "raw_return_pct": -14.56,
+          "net_return_pct": -15.26
+        },
+        {
+          "signal_month": "2024-07",
+          "stock_code": "079550",
+          "score": 0.24851,
+          "raw_return_pct": -10.2,
+          "net_return_pct": -10.9
+        },
+        {
+          "signal_month": "2025-02",
+          "stock_code": "278470",
+          "score": 0.365463,
+          "raw_return_pct": 17.11,
+          "net_return_pct": 16.41
+        },
+        {
+          "signal_month": "2025-02",
+          "stock_code": "090430",
+          "score": 0.296624,
+          "raw_return_pct": -10.58,
+          "net_return_pct": -11.28
+        },
+        {
+          "signal_month": "2025-02",
+          "stock_code": "000660",
+          "score": 0.283996,
+          "raw_return_pct": 3.19,
+          "net_return_pct": 2.49
+        },
+        {
+          "signal_month": "2025-04",
+          "stock_code": "090430",
+          "score": 0.469577,
+          "raw_return_pct": 7.48,
+          "net_return_pct": 6.78
+        },
+        {
+          "signal_month": "2025-04",
+          "stock_code": "140860",
+          "score": 0.251482,
+          "raw_return_pct": 21.09,
+          "net_return_pct": 20.39
+        },
+        {
+          "signal_month": "2025-05",
+          "stock_code": "010140",
+          "score": 0.398556,
+          "raw_return_pct": -1.76,
+          "net_return_pct": -2.46
+        },
+        {
+          "signal_month": "2025-05",
+          "stock_code": "329180",
+          "score": 0.396715,
+          "raw_return_pct": 6.09,
+          "net_return_pct": 5.39
+        },
+        {
+          "signal_month": "2025-05",
+          "stock_code": "042660",
+          "score": 0.283456,
+          "raw_return_pct": 6.31,
+          "net_return_pct": 5.61
+        },
+        {
+          "signal_month": "2025-06",
+          "stock_code": "086900",
+          "score": 0.482659,
+          "raw_return_pct": -13.24,
+          "net_return_pct": -13.94
+        },
+        {
+          "signal_month": "2025-06",
+          "stock_code": "004000",
+          "score": 0.358677,
+          "raw_return_pct": 9.28,
+          "net_return_pct": 8.58
+        },
+        {
+          "signal_month": "2025-06",
+          "stock_code": "004690",
+          "score": 0.315723,
+          "raw_return_pct": 15.95,
+          "net_return_pct": 15.25
+        },
+        {
+          "signal_month": "2025-06",
+          "stock_code": "036460",
+          "score": 0.233376,
+          "raw_return_pct": 2.26,
+          "net_return_pct": 1.56
+        },
+        {
+          "signal_month": "2025-07",
+          "stock_code": "326030",
+          "score": 0.282231,
+          "raw_return_pct": 4.32,
+          "net_return_pct": 3.62
+        },
+        {
+          "signal_month": "2025-08",
+          "stock_code": "036200",
+          "score": 0.452751,
+          "raw_return_pct": 38.31,
+          "net_return_pct": 37.61
+        },
+        {
+          "signal_month": "2025-08",
+          "stock_code": "004000",
+          "score": 0.451986,
+          "raw_return_pct": 10.9,
+          "net_return_pct": 10.2
+        },
+        {
+          "signal_month": "2025-08",
+          "stock_code": "068270",
+          "score": 0.327225,
+          "raw_return_pct": 3.09,
+          "net_return_pct": 2.39
+        },
+        {
+          "signal_month": "2025-09",
+          "stock_code": "425420",
+          "score": 0.447763,
+          "raw_return_pct": -2.83,
+          "net_return_pct": -3.53
+        },
+        {
+          "signal_month": "2025-09",
+          "stock_code": "232140",
+          "score": 0.410648,
+          "raw_return_pct": 1.02,
+          "net_return_pct": 0.32
+        },
+        {
+          "signal_month": "2025-09",
+          "stock_code": "077970",
+          "score": 0.382538,
+          "raw_return_pct": -10.19,
+          "net_return_pct": -10.89
+        },
+        {
+          "signal_month": "2025-10",
+          "stock_code": "095340",
+          "score": 0.414921,
+          "raw_return_pct": 1.52,
+          "net_return_pct": 0.82
+        },
+        {
+          "signal_month": "2025-10",
+          "stock_code": "425420",
+          "score": 0.371611,
+          "raw_return_pct": 7.62,
+          "net_return_pct": 6.92
+        },
+        {
+          "signal_month": "2025-10",
+          "stock_code": "019180",
+          "score": 0.30214,
+          "raw_return_pct": 6.79,
+          "net_return_pct": 6.09
+        },
+        {
+          "signal_month": "2025-11",
+          "stock_code": "009150",
+          "score": 0.453916,
+          "raw_return_pct": 0.92,
+          "net_return_pct": 0.22
+        },
+        {
+          "signal_month": "2025-11",
+          "stock_code": "425420",
+          "score": 0.392455,
+          "raw_return_pct": -13.19,
+          "net_return_pct": -13.89
+        },
+        {
+          "signal_month": "2025-12",
+          "stock_code": "237690",
+          "score": 0.493051,
+          "raw_return_pct": -1.02,
+          "net_return_pct": -1.72
+        },
+        {
+          "signal_month": "2025-12",
+          "stock_code": "131290",
+          "score": 0.403864,
+          "raw_return_pct": 5.73,
+          "net_return_pct": 5.03
+        },
+        {
+          "signal_month": "2025-12",
+          "stock_code": "009150",
+          "score": 0.399352,
+          "raw_return_pct": 8.77,
+          "net_return_pct": 8.07
+        },
+        {
+          "signal_month": "2025-12",
+          "stock_code": "195870",
+          "score": 0.371257,
+          "raw_return_pct": -14.79,
+          "net_return_pct": -15.49
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "009150",
+          "score": 0.404553,
+          "raw_return_pct": 55.19,
+          "net_return_pct": 54.49
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "023160",
+          "score": 0.402122,
+          "raw_return_pct": 1.81,
+          "net_return_pct": 1.11
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "064350",
+          "score": 0.360602,
+          "raw_return_pct": -10.99,
+          "net_return_pct": -11.69
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "062040",
+          "score": 0.302019,
+          "raw_return_pct": 14.65,
+          "net_return_pct": 13.95
+        },
+        {
+          "signal_month": "2026-01",
+          "stock_code": "222800",
+          "score": 0.273147,
+          "raw_return_pct": -11.13,
+          "net_return_pct": -11.83
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "237690",
+          "score": 0.477679,
+          "raw_return_pct": -1.12,
+          "net_return_pct": -1.82
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "051370",
+          "score": 0.407724,
+          "raw_return_pct": -2.69,
+          "net_return_pct": -3.39
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "090460",
+          "score": 0.371064,
+          "raw_return_pct": 15.65,
+          "net_return_pct": 14.95
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "122870",
+          "score": 0.331991,
+          "raw_return_pct": -13.54,
+          "net_return_pct": -14.24
+        },
+        {
+          "signal_month": "2026-02",
+          "stock_code": "117580",
+          "score": 0.327097,
+          "raw_return_pct": 24.51,
+          "net_return_pct": 23.81
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "278470",
+          "score": 0.485115,
+          "raw_return_pct": 22.69,
+          "net_return_pct": 21.99
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "051370",
+          "score": 0.482277,
+          "raw_return_pct": 7.61,
+          "net_return_pct": 6.91
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "098120",
+          "score": 0.421323,
+          "raw_return_pct": 33.1,
+          "net_return_pct": 32.4
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "237690",
+          "score": 0.411467,
+          "raw_return_pct": 1.33,
+          "net_return_pct": 0.63
+        },
+        {
+          "signal_month": "2026-03",
+          "stock_code": "047050",
+          "score": 0.408003,
+          "raw_return_pct": 4.64,
+          "net_return_pct": 3.94
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "047050",
+          "score": 0.431361,
+          "raw_return_pct": -11.36,
+          "net_return_pct": -12.06
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "005930",
+          "score": 0.410415,
+          "raw_return_pct": 39.04,
+          "net_return_pct": 38.34
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "237690",
+          "score": 0.406365,
+          "raw_return_pct": -15.23,
+          "net_return_pct": -15.93
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "051370",
+          "score": 0.360667,
+          "raw_return_pct": -10.44,
+          "net_return_pct": -11.14
+        },
+        {
+          "signal_month": "2026-04",
+          "stock_code": "080220",
+          "score": 0.280297,
+          "raw_return_pct": 120.63,
+          "net_return_pct": 119.93
+        },
+        {
+          "signal_month": "2026-05",
+          "stock_code": "039030",
+          "score": 0.43387,
+          "raw_return_pct": 14.44,
+          "net_return_pct": 13.74
+        },
+        {
+          "signal_month": "2026-05",
+          "stock_code": "036200",
+          "score": 0.315476,
+          "raw_return_pct": 8.44,
+          "net_return_pct": 7.74
+        }
+      ]
+    }
+  },
+  "verdict": "candidate_pass"
+}

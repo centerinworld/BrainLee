@@ -1,0 +1,745 @@
+{
+  "rows": 64777,
+  "months": 66,
+  "stocks": 2115,
+  "targets": {
+    "3m": {
+      "base_rate_pct": 15.98,
+      "valid_rows": 61364
+    },
+    "6m": {
+      "base_rate_pct": 12.63,
+      "valid_rows": 57900
+    },
+    "12m": {
+      "base_rate_pct": 9.64,
+      "valid_rows": 52375
+    }
+  },
+  "top_single": [
+    {
+      "target": "target_market2x_12m",
+      "condition": "employment_mom_change>0",
+      "support": 205,
+      "hit_rate_pct": 35.12,
+      "base_rate_pct": 11.92,
+      "lift": 2.947
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "backlog_to_rev>0",
+      "support": 83,
+      "hit_rate_pct": 33.73,
+      "base_rate_pct": 11.92,
+      "lift": 2.83
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "nps_terms_3m>=q80(30)",
+      "support": 107,
+      "hit_rate_pct": 24.3,
+      "base_rate_pct": 11.92,
+      "lift": 2.039
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "insider_buy_cnt>0",
+      "support": 1669,
+      "hit_rate_pct": 23.49,
+      "base_rate_pct": 11.92,
+      "lift": 1.97
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "nps_terms_3m>=q70(18)",
+      "support": 184,
+      "hit_rate_pct": 22.28,
+      "base_rate_pct": 11.92,
+      "lift": 1.869
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "nps_hires_3m>=q80(30)",
+      "support": 135,
+      "hit_rate_pct": 21.48,
+      "base_rate_pct": 11.92,
+      "lift": 1.802
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "nps_hires_3m>=q70(19)",
+      "support": 193,
+      "hit_rate_pct": 21.24,
+      "base_rate_pct": 11.92,
+      "lift": 1.782
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "nps_net_3m>=q90(14)",
+      "support": 81,
+      "hit_rate_pct": 20.99,
+      "base_rate_pct": 11.92,
+      "lift": 1.761
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "backlog_to_rev>0",
+      "support": 92,
+      "hit_rate_pct": 31.52,
+      "base_rate_pct": 16.87,
+      "lift": 1.869
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "employment_mom_change>0",
+      "support": 435,
+      "hit_rate_pct": 25.29,
+      "base_rate_pct": 16.87,
+      "lift": 1.499
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_hires_3m>=q90(68)",
+      "support": 805,
+      "hit_rate_pct": 24.97,
+      "base_rate_pct": 16.87,
+      "lift": 1.48
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_terms_3m>=q90(64)",
+      "support": 801,
+      "hit_rate_pct": 24.34,
+      "base_rate_pct": 16.87,
+      "lift": 1.443
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "insider_buy_cnt>0",
+      "support": 3032,
+      "hit_rate_pct": 24.04,
+      "base_rate_pct": 16.87,
+      "lift": 1.425
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "raw_material_cost_yoy>=q70(0.1563)",
+      "support": 1818,
+      "hit_rate_pct": 22.77,
+      "base_rate_pct": 16.87,
+      "lift": 1.35
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_net_3m>=q90(14)",
+      "support": 828,
+      "hit_rate_pct": 22.71,
+      "base_rate_pct": 16.87,
+      "lift": 1.346
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "annual_material_yoy>=q70(0.1479)",
+      "support": 1948,
+      "hit_rate_pct": 22.54,
+      "base_rate_pct": 16.87,
+      "lift": 1.336
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "employment_mom_change>0",
+      "support": 205,
+      "hit_rate_pct": 38.05,
+      "base_rate_pct": 14.13,
+      "lift": 2.694
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "backlog_to_rev>0",
+      "support": 89,
+      "hit_rate_pct": 31.46,
+      "base_rate_pct": 14.13,
+      "lift": 2.227
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_terms_3m>=q90(64)",
+      "support": 520,
+      "hit_rate_pct": 26.15,
+      "base_rate_pct": 14.13,
+      "lift": 1.851
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_hires_3m>=q90(68)",
+      "support": 550,
+      "hit_rate_pct": 24.36,
+      "base_rate_pct": 14.13,
+      "lift": 1.725
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_net_3m>=q90(14)",
+      "support": 600,
+      "hit_rate_pct": 23.83,
+      "base_rate_pct": 14.13,
+      "lift": 1.687
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "insider_buy_cnt>0",
+      "support": 2425,
+      "hit_rate_pct": 22.97,
+      "base_rate_pct": 14.13,
+      "lift": 1.626
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "backlog_yoy>=q90(1.141)",
+      "support": 423,
+      "hit_rate_pct": 22.22,
+      "base_rate_pct": 14.13,
+      "lift": 1.573
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "annual_material_yoy>=q70(0.1479)",
+      "support": 1607,
+      "hit_rate_pct": 22.09,
+      "base_rate_pct": 14.13,
+      "lift": 1.564
+    }
+  ],
+  "top_combo": [
+    {
+      "target": "target_market2x_12m",
+      "condition": "export_yoy>=q90(0.9559) AND contract_cnt>0",
+      "support": 127,
+      "hit_rate_pct": 46.46,
+      "base_rate_pct": 11.92,
+      "lift": 3.897
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "contract_cnt>0 AND export_yoy>=q80(0.4401)",
+      "support": 226,
+      "hit_rate_pct": 41.59,
+      "base_rate_pct": 11.92,
+      "lift": 3.489
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "nps_net_3m>=q70(3) AND export_mom3>0",
+      "support": 53,
+      "hit_rate_pct": 41.51,
+      "base_rate_pct": 11.92,
+      "lift": 3.482
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "nps_net_3m>0 AND export_mom3>0",
+      "support": 73,
+      "hit_rate_pct": 41.1,
+      "base_rate_pct": 11.92,
+      "lift": 3.448
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "contract_cnt>0 AND export_yoy>=q70(0.2592)",
+      "support": 290,
+      "hit_rate_pct": 41.03,
+      "base_rate_pct": 11.92,
+      "lift": 3.443
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "export_yoy>=q90(0.9559) AND backlog_yoy>0",
+      "support": 59,
+      "hit_rate_pct": 40.68,
+      "base_rate_pct": 11.92,
+      "lift": 3.413
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "employment_mom_change>0 AND export_yoy>0",
+      "support": 42,
+      "hit_rate_pct": 40.48,
+      "base_rate_pct": 11.92,
+      "lift": 3.396
+    },
+    {
+      "target": "target_market2x_12m",
+      "condition": "nps_net_3m>=q80(6) AND export_mom3>0",
+      "support": 41,
+      "hit_rate_pct": 39.02,
+      "base_rate_pct": 11.92,
+      "lift": 3.274
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_terms_3m>=q90(64) AND ret_6m>=q90(0.7199)",
+      "support": 103,
+      "hit_rate_pct": 46.6,
+      "base_rate_pct": 16.87,
+      "lift": 2.762
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_terms_3m>=q90(64) AND above_low52>=q90(1.682)",
+      "support": 87,
+      "hit_rate_pct": 44.83,
+      "base_rate_pct": 16.87,
+      "lift": 2.657
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_hires_3m>=q90(68) AND ret_6m>=q90(0.7199)",
+      "support": 122,
+      "hit_rate_pct": 44.26,
+      "base_rate_pct": 16.87,
+      "lift": 2.624
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_terms_3m>=q90(64) AND ret_3m>=q90(0.4511)",
+      "support": 90,
+      "hit_rate_pct": 43.33,
+      "base_rate_pct": 16.87,
+      "lift": 2.569
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "raw_material_cost_yoy>=q80(0.2602) AND above_low52>=q90(1.682)",
+      "support": 126,
+      "hit_rate_pct": 41.27,
+      "base_rate_pct": 16.87,
+      "lift": 2.446
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_hires_3m>=q90(68) AND ret_3m>=q90(0.4511)",
+      "support": 115,
+      "hit_rate_pct": 40.87,
+      "base_rate_pct": 16.87,
+      "lift": 2.423
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "nps_hires_3m>=q90(68) AND above_low52>=q90(1.682)",
+      "support": 113,
+      "hit_rate_pct": 40.71,
+      "base_rate_pct": 16.87,
+      "lift": 2.413
+    },
+    {
+      "target": "target_market2x_3m",
+      "condition": "employment_mom_change>0 AND export_yoy>0",
+      "support": 85,
+      "hit_rate_pct": 40.0,
+      "base_rate_pct": 16.87,
+      "lift": 2.371
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_terms_3m>=q90(64) AND raw_material_cost_yoy>=q70(0.1563)",
+      "support": 43,
+      "hit_rate_pct": 51.16,
+      "base_rate_pct": 14.13,
+      "lift": 3.622
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_terms_3m>=q90(64) AND raw_material_cost_yoy>0",
+      "support": 107,
+      "hit_rate_pct": 43.93,
+      "base_rate_pct": 14.13,
+      "lift": 3.11
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_terms_3m>=q90(64) AND export_mom3>0",
+      "support": 133,
+      "hit_rate_pct": 43.61,
+      "base_rate_pct": 14.13,
+      "lift": 3.087
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "backlog_yoy>=q90(1.141) AND export_mom3>0",
+      "support": 44,
+      "hit_rate_pct": 43.18,
+      "base_rate_pct": 14.13,
+      "lift": 3.057
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "insider_buy_cnt>0 AND backlog_yoy>=q90(1.141)",
+      "support": 52,
+      "hit_rate_pct": 42.31,
+      "base_rate_pct": 14.13,
+      "lift": 2.995
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_terms_3m>=q90(64) AND yoy_raw_material_chg>=q70(0.07301)",
+      "support": 67,
+      "hit_rate_pct": 41.79,
+      "base_rate_pct": 14.13,
+      "lift": 2.958
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_terms_3m>=q90(64) AND annual_material_yoy>=q70(0.1479)",
+      "support": 51,
+      "hit_rate_pct": 41.18,
+      "base_rate_pct": 14.13,
+      "lift": 2.915
+    },
+    {
+      "target": "target_market2x_6m",
+      "condition": "nps_net_3m>=q90(14) AND export_mom3>0",
+      "support": 133,
+      "hit_rate_pct": 40.6,
+      "base_rate_pct": 14.13,
+      "lift": 2.874
+    }
+  ],
+  "top_quant": [
+    {
+      "target": "target_market2x_12m",
+      "indicator_key": "epic:0:14",
+      "indicator_name": "현대차 내수 판매: 모델별 (월)",
+      "series_name": "Casper (AX EV)",
+      "metric": "value",
+      "direction": "high80",
+      "threshold": 1388.2000000000003,
+      "support_months": 4,
+      "support_rows": 3214,
+      "hit_rate_pct": 19.94,
+      "base_rate_pct": 11.92,
+      "lift": 1.673
+    },
+    {
+      "target": "target_market2x_12m",
+      "indicator_key": "epic:20:22",
+      "indicator_name": "국내 주식시장 대차잔고 (월)",
+      "series_name": "borrow_balance_million_krw",
+      "metric": "yoy12",
+      "direction": "low10",
+      "threshold": -0.32596395802516537,
+      "support_months": 4,
+      "support_rows": 3214,
+      "hit_rate_pct": 19.94,
+      "base_rate_pct": 11.92,
+      "lift": 1.673
+    },
+    {
+      "target": "target_market2x_12m",
+      "indicator_key": "epic:0:55",
+      "indicator_name": "현대차 미국 판매: 모델별 (월)",
+      "series_name": "GV60",
+      "metric": "yoy12",
+      "direction": "low20",
+      "threshold": -0.06714575271789205,
+      "support_months": 4,
+      "support_rows": 3475,
+      "hit_rate_pct": 19.77,
+      "base_rate_pct": 11.92,
+      "lift": 1.659
+    },
+    {
+      "target": "target_market2x_12m",
+      "indicator_key": "epic:7:36",
+      "indicator_name": "노선별 철도 여객인원 수 (월)",
+      "series_name": "중앙선_ITX-마음",
+      "metric": "mom3",
+      "direction": "low20",
+      "threshold": 0.009646917202244245,
+      "support_months": 4,
+      "support_rows": 3298,
+      "hit_rate_pct": 19.77,
+      "base_rate_pct": 11.92,
+      "lift": 1.659
+    },
+    {
+      "target": "target_market2x_12m",
+      "indicator_key": "public:20:108",
+      "indicator_name": "공매도·대차잔고 시장 총량",
+      "series_name": "monthly_lending_balance_100m",
+      "metric": "yoy12",
+      "direction": "low10",
+      "threshold": -0.31819511213254614,
+      "support_months": 5,
+      "support_rows": 4100,
+      "hit_rate_pct": 19.56,
+      "base_rate_pct": 11.92,
+      "lift": 1.641
+    },
+    {
+      "target": "target_market2x_12m",
+      "indicator_key": "public:20:108",
+      "indicator_name": "공매도·대차잔고 시장 총량",
+      "series_name": "monthly_lending_remain_qty_sum",
+      "metric": "yoy12",
+      "direction": "low10",
+      "threshold": -0.33108898192364966,
+      "support_months": 5,
+      "support_rows": 4100,
+      "hit_rate_pct": 19.56,
+      "base_rate_pct": 11.92,
+      "lift": 1.641
+    },
+    {
+      "target": "target_market2x_12m",
+      "indicator_key": "epic:20:22",
+      "indicator_name": "국내 주식시장 대차잔고 (월)",
+      "series_name": "borrow_balance_million_krw",
+      "metric": "value",
+      "direction": "low10",
+      "threshold": 44471602.06,
+      "support_months": 5,
+      "support_rows": 4138,
+      "hit_rate_pct": 19.5,
+      "base_rate_pct": 11.92,
+      "lift": 1.636
+    },
+    {
+      "target": "target_market2x_12m",
+      "indicator_key": "epic:22:10",
+      "indicator_name": "지하철 노선별 이용현황 (월)",
+      "series_name": "서해선_alighting",
+      "metric": "mom3",
+      "direction": "low20",
+      "threshold": -0.010092345196590177,
+      "support_months": 4,
+      "support_rows": 3376,
+      "hit_rate_pct": 19.49,
+      "base_rate_pct": 11.92,
+      "lift": 1.635
+    },
+    {
+      "target": "target_market2x_3m",
+      "indicator_key": "epic:0:14",
+      "indicator_name": "현대차 내수 판매: 모델별 (월)",
+      "series_name": "Palisade (LX2)",
+      "metric": "mom3",
+      "direction": "low10",
+      "threshold": -0.44423913704246565,
+      "support_months": 6,
+      "support_rows": 5513,
+      "hit_rate_pct": 24.45,
+      "base_rate_pct": 16.87,
+      "lift": 1.449
+    },
+    {
+      "target": "target_market2x_3m",
+      "indicator_key": "epic:7:36",
+      "indicator_name": "노선별 철도 여객인원 수 (월)",
+      "series_name": "영동선_total",
+      "metric": "value",
+      "direction": "low10",
+      "threshold": 31070.6,
+      "support_months": 5,
+      "support_rows": 4485,
+      "hit_rate_pct": 24.35,
+      "base_rate_pct": 16.87,
+      "lift": 1.443
+    },
+    {
+      "target": "target_market2x_3m",
+      "indicator_key": "epic:22:10",
+      "indicator_name": "지하철 노선별 이용현황 (월)",
+      "series_name": "9호선2~3단계_alighting",
+      "metric": "value",
+      "direction": "high90",
+      "threshold": 3551668.0,
+      "support_months": 4,
+      "support_rows": 3710,
+      "hit_rate_pct": 24.23,
+      "base_rate_pct": 16.87,
+      "lift": 1.436
+    },
+    {
+      "target": "target_market2x_3m",
+      "indicator_key": "epic:22:10",
+      "indicator_name": "지하철 노선별 이용현황 (월)",
+      "series_name": "9호선2~3단계_boarding",
+      "metric": "value",
+      "direction": "high90",
+      "threshold": 3576463.0,
+      "support_months": 4,
+      "support_rows": 3710,
+      "hit_rate_pct": 24.23,
+      "base_rate_pct": 16.87,
+      "lift": 1.436
+    },
+    {
+      "target": "target_market2x_3m",
+      "indicator_key": "epic:22:10",
+      "indicator_name": "지하철 노선별 이용현황 (월)",
+      "series_name": "9호선2~3단계_total",
+      "metric": "value",
+      "direction": "high90",
+      "threshold": 7128131.0,
+      "support_months": 4,
+      "support_rows": 3710,
+      "hit_rate_pct": 24.23,
+      "base_rate_pct": 16.87,
+      "lift": 1.436
+    },
+    {
+      "target": "target_market2x_3m",
+      "indicator_key": "epic:7:36",
+      "indicator_name": "노선별 철도 여객인원 수 (월)",
+      "series_name": "영동선_total",
+      "metric": "yoy12",
+      "direction": "low10",
+      "threshold": -0.5405433218831622,
+      "support_months": 4,
+      "support_rows": 3647,
+      "hit_rate_pct": 24.16,
+      "base_rate_pct": 16.87,
+      "lift": 1.432
+    },
+    {
+      "target": "target_market2x_3m",
+      "indicator_key": "epic:22:10",
+      "indicator_name": "지하철 노선별 이용현황 (월)",
+      "series_name": "1호선_boarding",
+      "metric": "value",
+      "direction": "high90",
+      "threshold": 8115120.0,
+      "support_months": 4,
+      "support_rows": 3743,
+      "hit_rate_pct": 24.02,
+      "base_rate_pct": 16.87,
+      "lift": 1.424
+    },
+    {
+      "target": "target_market2x_3m",
+      "indicator_key": "epic:22:10",
+      "indicator_name": "지하철 노선별 이용현황 (월)",
+      "series_name": "3호선_alighting",
+      "metric": "value",
+      "direction": "high90",
+      "threshold": 16469808.5,
+      "support_months": 4,
+      "support_rows": 3743,
+      "hit_rate_pct": 24.02,
+      "base_rate_pct": 16.87,
+      "lift": 1.424
+    },
+    {
+      "target": "target_market2x_6m",
+      "indicator_key": "epic:20:usdkrw",
+      "indicator_name": "원/달러 환율(월평균)",
+      "series_name": "usd_krw",
+      "metric": "value",
+      "direction": "high90",
+      "threshold": 1443.03,
+      "support_months": 4,
+      "support_rows": 3557,
+      "hit_rate_pct": 24.21,
+      "base_rate_pct": 14.13,
+      "lift": 1.714
+    },
+    {
+      "target": "target_market2x_6m",
+      "indicator_key": "public:23:30",
+      "indicator_name": "식품 가공품 수출입",
+      "series_name": "소비재_식품가공_무역수지",
+      "metric": "value",
+      "direction": "high90",
+      "threshold": -100.7003,
+      "support_months": 6,
+      "support_rows": 5407,
+      "hit_rate_pct": 23.54,
+      "base_rate_pct": 14.13,
+      "lift": 1.667
+    },
+    {
+      "target": "target_market2x_6m",
+      "indicator_key": "epic:7:36",
+      "indicator_name": "노선별 철도 여객인원 수 (월)",
+      "series_name": "대구선_누리로",
+      "metric": "mom3",
+      "direction": "low20",
+      "threshold": -0.8477327360101358,
+      "support_months": 4,
+      "support_rows": 3528,
+      "hit_rate_pct": 23.5,
+      "base_rate_pct": 14.13,
+      "lift": 1.663
+    },
+    {
+      "target": "target_market2x_6m",
+      "indicator_key": "epic:7:36",
+      "indicator_name": "노선별 철도 여객인원 수 (월)",
+      "series_name": "경부선_누리로",
+      "metric": "mom3",
+      "direction": "low20",
+      "threshold": -0.552783809719275,
+      "support_months": 6,
+      "support_rows": 5214,
+      "hit_rate_pct": 23.25,
+      "base_rate_pct": 14.13,
+      "lift": 1.646
+    },
+    {
+      "target": "target_market2x_6m",
+      "indicator_key": "epic:0:55",
+      "indicator_name": "현대차 미국 판매: 모델별 (월)",
+      "series_name": "GV80",
+      "metric": "value",
+      "direction": "high90",
+      "threshold": 2409.6000000000004,
+      "support_months": 5,
+      "support_rows": 4315,
+      "hit_rate_pct": 23.2,
+      "base_rate_pct": 14.13,
+      "lift": 1.642
+    },
+    {
+      "target": "target_market2x_6m",
+      "indicator_key": "public:20:102",
+      "indicator_name": "경제심리지수 ESI 순환변동치",
+      "series_name": "경제심리지수_순환변동치",
+      "metric": "value",
+      "direction": "low10",
+      "threshold": 91.03,
+      "support_months": 6,
+      "support_rows": 5414,
+      "hit_rate_pct": 23.16,
+      "base_rate_pct": 14.13,
+      "lift": 1.64
+    },
+    {
+      "target": "target_market2x_6m",
+      "indicator_key": "epic:0:14",
+      "indicator_name": "현대차 내수 판매: 모델별 (월)",
+      "series_name": "Casper (AX EV)",
+      "metric": "mom3",
+      "direction": "low20",
+      "threshold": -0.38705950317735416,
+      "support_months": 4,
+      "support_rows": 3572,
+      "hit_rate_pct": 23.1,
+      "base_rate_pct": 14.13,
+      "lift": 1.635
+    },
+    {
+      "target": "target_market2x_6m",
+      "indicator_key": "epic:7:36",
+      "indicator_name": "노선별 철도 여객인원 수 (월)",
+      "series_name": "합 계_KTX-청룡",
+      "metric": "mom3",
+      "direction": "low20",
+      "threshold": -0.02597482704614493,
+      "support_months": 4,
+      "support_rows": 3572,
+      "hit_rate_pct": 23.1,
+      "base_rate_pct": 14.13,
+      "lift": 1.635
+    }
+  ]
+}

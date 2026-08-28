@@ -1,0 +1,67 @@
+2026-06-20 22:30:45,747 [INFO] DB 테이블 초기화 완료
+2026-06-20 22:30:45,751 [INFO] === 공공데이터 수집 시작 (20260620) ===
+2026-06-20 22:30:45,751 [INFO] [백필] 20260609 ~ 20260620
+2026-06-20 22:30:45,752 [INFO] [시세] 20260609 수집 시작
+2026-06-20 22:30:46,810 [INFO] [시세] 20260609 → 2805건 저장
+2026-06-20 22:30:47,318 [INFO] [대차] 20260609 수집 시작
+2026-06-20 22:30:51,349 [INFO] [대차] 20260609 → 2698건 저장
+2026-06-20 22:30:51,851 [INFO] [투자자] 20260609 수집 시작
+2026-06-20 22:30:51,897 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260609
+2026-06-20 22:30:52,471 [INFO] [외국인] 20260609 수집 시작
+2026-06-20 22:30:54,987 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260609
+2026-06-20 22:30:56,562 [INFO] [시세] 20260610 수집 시작
+2026-06-20 22:30:57,281 [INFO] [시세] 20260610 → 2803건 저장
+2026-06-20 22:30:57,798 [INFO] [대차] 20260610 수집 시작
+2026-06-20 22:31:01,852 [INFO] [대차] 20260610 → 2697건 저장
+2026-06-20 22:31:02,401 [INFO] [투자자] 20260610 수집 시작
+2026-06-20 22:31:02,456 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260610
+2026-06-20 22:31:03,030 [INFO] [외국인] 20260610 수집 시작
+2026-06-20 22:31:03,218 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260610
+2026-06-20 22:31:04,787 [INFO] [20260611] 시세 이미 2803건 → 스킵
+2026-06-20 22:31:05,359 [INFO] [대차] 20260611 수집 시작
+2026-06-20 22:31:08,805 [INFO] [대차] 20260611 → 2697건 저장
+2026-06-20 22:31:09,372 [INFO] [투자자] 20260611 수집 시작
+2026-06-20 22:31:12,184 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260611
+2026-06-20 22:31:12,731 [INFO] [외국인] 20260611 수집 시작
+2026-06-20 22:31:12,790 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260611
+2026-06-20 22:31:14,425 [INFO] [시세] 20260612 수집 시작
+2026-06-20 22:31:15,130 [INFO] [시세] 20260612 → 2802건 저장
+2026-06-20 22:31:15,638 [INFO] [대차] 20260612 수집 시작
+2026-06-20 22:31:19,200 [INFO] [대차] 20260612 → 2697건 저장
+2026-06-20 22:31:19,704 [INFO] [투자자] 20260612 수집 시작
+2026-06-20 22:31:19,773 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260612
+2026-06-20 22:31:20,345 [INFO] [외국인] 20260612 수집 시작
+2026-06-20 22:31:20,391 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260612
+2026-06-20 22:31:21,946 [INFO] [시세] 20260615 수집 시작
+2026-06-20 22:31:22,564 [INFO] [시세] 20260615 → 2802건 저장
+2026-06-20 22:31:23,077 [INFO] [대차] 20260615 수집 시작
+2026-06-20 22:31:26,771 [INFO] [대차] 20260615 → 2697건 저장
+2026-06-20 22:31:27,346 [INFO] [투자자] 20260615 수집 시작
+2026-06-20 22:31:28,181 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260615
+2026-06-20 22:31:28,745 [INFO] [외국인] 20260615 수집 시작
+2026-06-20 22:31:30,098 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260615
+2026-06-20 22:31:31,678 [INFO] [시세] 20260616 수집 시작
+2026-06-20 22:31:32,389 [INFO] [시세] 20260616 → 2802건 저장
+2026-06-20 22:31:32,889 [INFO] [대차] 20260616 수집 시작
+2026-06-20 22:31:36,316 [INFO] [대차] 20260616 → 2701건 저장
+2026-06-20 22:31:36,851 [INFO] [투자자] 20260616 수집 시작
+2026-06-20 22:31:37,684 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260616
+2026-06-20 22:31:38,198 [INFO] [외국인] 20260616 수집 시작
+2026-06-20 22:31:38,257 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260616
+2026-06-20 22:31:39,880 [INFO] [20260617] 시세 이미 2802건 → 스킵
+2026-06-20 22:31:40,443 [INFO] [대차] 20260617 수집 시작
+2026-06-20 22:31:44,368 [INFO] [대차] 20260617 → 2701건 저장
+2026-06-20 22:31:44,880 [INFO] [투자자] 20260617 수집 시작
+2026-06-20 22:31:45,670 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260617
+2026-06-20 22:31:46,244 [INFO] [외국인] 20260617 수집 시작
+2026-06-20 22:31:46,289 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260617
+2026-06-20 22:31:47,913 [INFO] [20260618] 시세 이미 2801건 → 스킵
+2026-06-20 22:31:48,483 [INFO] [대차] 20260618 수집 시작
+2026-06-20 22:31:51,828 [INFO] [대차] 20260618 → 2700건 저장
+2026-06-20 22:31:52,362 [INFO] [투자자] 20260618 수집 시작
+2026-06-20 22:31:52,416 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getInvstByTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260618
+2026-06-20 22:31:52,959 [INFO] [외국인] 20260618 수집 시작
+2026-06-20 22:31:53,007 [WARNING] API 호출 오류: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo - 404 Client Error: Not Found for url: https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getFrgnIsttTrdrStkInfo?serviceKey=***REDACTED***&numOfRows=5000&pageNo=1&resultType=json&basDt=20260618
+2026-06-20 22:31:54,586 [INFO] [시세] 20260619 수집 시작
+2026-06-20 22:31:55,133 [WARNING] [시세] 20260619 데이터 없음
+2026-06-20 22:31:55,133 [WARNING] [20260619] 시세 없음 — 휴장일이거나 데이터 미제공

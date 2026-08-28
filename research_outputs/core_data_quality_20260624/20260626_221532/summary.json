@@ -1,0 +1,108 @@
+{
+  "run_id": "20260626_221532",
+  "generated_at": "2026-06-26T22:18:24",
+  "database": "/Applications/stock_dashboard/stock.db",
+  "applied_repairs": true,
+  "repairs": [
+    {
+      "table": "price_history",
+      "repair": "repair_invalid_ohlcv_from_stock_price_daily",
+      "affected_rows": 0,
+      "backup_table": "data_quality_backup_price_history_ohlcv_20260626_221532"
+    },
+    {
+      "table": "stock_price_daily",
+      "repair": "repair_invalid_ohlcv_from_price_history",
+      "affected_rows": 0,
+      "backup_table": "data_quality_backup_stock_price_daily_ohlcv_20260626_221532"
+    },
+    {
+      "table": "price_history",
+      "repair": "backfill_trade_amount_close_times_volume",
+      "affected_rows": 2733,
+      "backup_table": "data_quality_backup_price_history_trade_amount_20260626_221532"
+    },
+    {
+      "table": "stock_universe",
+      "repair": "backfill_trading_value_close_times_volume",
+      "affected_rows": 0,
+      "backup_table": "data_quality_backup_stock_universe_trading_value_20260626_221532"
+    }
+  ],
+  "before": {
+    "dynamic": {
+      "table_count": 174,
+      "future_dated_table_columns": 0,
+      "bad_stock_code_tables": 28,
+      "row_count_csv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/before/table_row_counts.csv",
+      "future_rows_csv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/before/future_dated_rows.csv",
+      "bad_stock_code_csv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/before/bad_stock_code_rows.csv"
+    },
+    "core": {
+      "counts": {
+        "price_history_rows": 5868295,
+        "price_history_invalid_ohlcv_numeric": 0,
+        "price_history_trade_amount_missing_repairable": 2733,
+        "price_history_invalid_repairable_from_stock_price_daily": 0,
+        "stock_price_daily_rows": 811418,
+        "stock_price_daily_invalid_ohlcv_numeric": 0,
+        "stock_price_daily_invalid_repairable_from_price_history": 0,
+        "stock_universe_invalid_ohlcv_numeric": 0,
+        "stock_universe_trading_value_missing_repairable": 0,
+        "financial_duplicate_keys": 0,
+        "cashflow_duplicate_keys": 0,
+        "financial_quarter_eq_annual_q1_q3": 32,
+        "cashflow_quarter_eq_annual_q1_q3": 497,
+        "investor_trading_daily_net_inconsistent": 0,
+        "kiwoom_investor_daily_invalid_market_fields": 2197620,
+        "index_rows_after_today": 0,
+        "index_invalid_ohlcv": 0
+      },
+      "issue_files": {
+        "price_history_invalid_ohlcv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/before/price_history_invalid_ohlcv.csv",
+        "stock_price_daily_invalid_ohlcv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/before/stock_price_daily_invalid_ohlcv.csv",
+        "financial_quarter_eq_annual_q1_q3": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/before/financial_quarter_eq_annual_q1_q3.csv",
+        "cashflow_quarter_eq_annual_q1_q3": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/before/cashflow_quarter_eq_annual_q1_q3.csv",
+        "kiwoom_investor_daily_invalid_market_fields": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/before/kiwoom_investor_daily_invalid_market_fields.csv"
+      }
+    }
+  },
+  "after": {
+    "dynamic": {
+      "table_count": 178,
+      "future_dated_table_columns": 0,
+      "bad_stock_code_tables": 28,
+      "row_count_csv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/after/table_row_counts.csv",
+      "future_rows_csv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/after/future_dated_rows.csv",
+      "bad_stock_code_csv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/after/bad_stock_code_rows.csv"
+    },
+    "core": {
+      "counts": {
+        "price_history_rows": 5868295,
+        "price_history_invalid_ohlcv_numeric": 0,
+        "price_history_trade_amount_missing_repairable": 0,
+        "price_history_invalid_repairable_from_stock_price_daily": 0,
+        "stock_price_daily_rows": 811418,
+        "stock_price_daily_invalid_ohlcv_numeric": 0,
+        "stock_price_daily_invalid_repairable_from_price_history": 0,
+        "stock_universe_invalid_ohlcv_numeric": 0,
+        "stock_universe_trading_value_missing_repairable": 0,
+        "financial_duplicate_keys": 0,
+        "cashflow_duplicate_keys": 0,
+        "financial_quarter_eq_annual_q1_q3": 32,
+        "cashflow_quarter_eq_annual_q1_q3": 497,
+        "investor_trading_daily_net_inconsistent": 0,
+        "kiwoom_investor_daily_invalid_market_fields": 2197620,
+        "index_rows_after_today": 0,
+        "index_invalid_ohlcv": 0
+      },
+      "issue_files": {
+        "price_history_invalid_ohlcv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/after/price_history_invalid_ohlcv.csv",
+        "stock_price_daily_invalid_ohlcv": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/after/stock_price_daily_invalid_ohlcv.csv",
+        "financial_quarter_eq_annual_q1_q3": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/after/financial_quarter_eq_annual_q1_q3.csv",
+        "cashflow_quarter_eq_annual_q1_q3": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/after/cashflow_quarter_eq_annual_q1_q3.csv",
+        "kiwoom_investor_daily_invalid_market_fields": "/Applications/stock_dashboard/research_outputs/core_data_quality_20260624/20260626_221532/after/kiwoom_investor_daily_invalid_market_fields.csv"
+      }
+    }
+  }
+}

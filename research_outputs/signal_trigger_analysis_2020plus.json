@@ -1,0 +1,2558 @@
+{
+  "ok": true,
+  "generated_at": "2026-06-28T09:08:25",
+  "source": "stock.db price_history/investor/short/DART + hs_trade_lab analysis2_company_monthly_cache",
+  "scope": {
+    "start_year": 2020,
+    "end_year": 2026,
+    "unit": "stock-year low-date cohort",
+    "winner_definition": "calendar-year low date 이후 같은 연도 고가가 저가 대비 3~50배",
+    "sample_count": 14246,
+    "winner_count": 1985,
+    "base_winner_rate": 13.93
+  },
+  "by_year": [
+    {
+      "year": 2026,
+      "sample_count": 2263,
+      "winner_count": 308,
+      "winner_rate": 13.61
+    },
+    {
+      "year": 2025,
+      "sample_count": 2202,
+      "winner_count": 251,
+      "winner_rate": 11.4
+    },
+    {
+      "year": 2024,
+      "sample_count": 2122,
+      "winner_count": 131,
+      "winner_rate": 6.17
+    },
+    {
+      "year": 2023,
+      "sample_count": 2050,
+      "winner_count": 173,
+      "winner_rate": 8.44
+    },
+    {
+      "year": 2022,
+      "sample_count": 1952,
+      "winner_count": 139,
+      "winner_rate": 7.12
+    },
+    {
+      "year": 2021,
+      "sample_count": 1871,
+      "winner_count": 197,
+      "winner_rate": 10.53
+    },
+    {
+      "year": 2020,
+      "sample_count": 1786,
+      "winner_count": 786,
+      "winner_rate": 44.01
+    }
+  ],
+  "sector_distribution": [
+    {
+      "sector": "IT",
+      "winner_count": 675,
+      "pct": 34.0
+    },
+    {
+      "sector": "의료",
+      "winner_count": 324,
+      "pct": 16.3
+    },
+    {
+      "sector": "경기소비재",
+      "winner_count": 308,
+      "pct": 15.5
+    },
+    {
+      "sector": "산업재",
+      "winner_count": 300,
+      "pct": 15.1
+    },
+    {
+      "sector": "소재",
+      "winner_count": 176,
+      "pct": 8.9
+    },
+    {
+      "sector": "필수소비재",
+      "winner_count": 107,
+      "pct": 5.4
+    },
+    {
+      "sector": "금융",
+      "winner_count": 49,
+      "pct": 2.5
+    },
+    {
+      "sector": "에너지",
+      "winner_count": 37,
+      "pct": 1.9
+    },
+    {
+      "sector": "통신서비스",
+      "winner_count": 5,
+      "pct": 0.3
+    },
+    {
+      "sector": "유틸리티",
+      "winner_count": 4,
+      "pct": 0.2
+    }
+  ],
+  "trigger_stats": [
+    {
+      "key": "amount_10x",
+      "name": "거래대금 10배 이상",
+      "category": "수급/거래대금",
+      "definition": "저점 이후 60거래일 내 거래대금이 직전 60일 평균 대비 10배 이상",
+      "signal_count": 6838,
+      "winner_count": 1385,
+      "winner_rate": 20.3,
+      "winner_coverage": 69.8,
+      "lift_vs_base": 1.45,
+      "median_multiple_when_signal": 1.82,
+      "failed_count": 5453
+    },
+    {
+      "key": "volume_10x",
+      "name": "거래량 10배 이상",
+      "category": "수급/거래량",
+      "definition": "저점 이후 60거래일 내 거래량이 직전 60일 평균 대비 10배 이상",
+      "signal_count": 6717,
+      "winner_count": 1303,
+      "winner_rate": 19.4,
+      "winner_coverage": 65.6,
+      "lift_vs_base": 1.39,
+      "median_multiple_when_signal": 1.78,
+      "failed_count": 5414
+    },
+    {
+      "key": "amount_5x",
+      "name": "거래대금 5배 이상",
+      "category": "수급/거래대금",
+      "definition": "저점 이후 60거래일 내 거래대금이 직전 60일 평균 대비 5배 이상",
+      "signal_count": 9067,
+      "winner_count": 1648,
+      "winner_rate": 18.2,
+      "winner_coverage": 83.0,
+      "lift_vs_base": 1.3,
+      "median_multiple_when_signal": 1.74,
+      "failed_count": 7419
+    },
+    {
+      "key": "employee_growth",
+      "name": "직원수 증가",
+      "category": "고용",
+      "definition": "DART 직원수가 전년 대비 증가",
+      "signal_count": 147,
+      "winner_count": 26,
+      "winner_rate": 17.7,
+      "winner_coverage": 1.3,
+      "lift_vs_base": 1.27,
+      "median_multiple_when_signal": 1.76,
+      "failed_count": 121
+    },
+    {
+      "key": "new_60d_high",
+      "name": "60일 신고가 재돌파",
+      "category": "추세/돌파",
+      "definition": "저점 이후 90거래일 내 직전 60일 고가 돌파",
+      "signal_count": 10907,
+      "winner_count": 1874,
+      "winner_rate": 17.2,
+      "winner_coverage": 94.4,
+      "lift_vs_base": 1.23,
+      "median_multiple_when_signal": 1.69,
+      "failed_count": 9033
+    },
+    {
+      "key": "volume_3x",
+      "name": "거래량 3배 이상",
+      "category": "수급/거래량",
+      "definition": "저점 이후 60거래일 내 거래량이 직전 60일 평균 대비 3배 이상",
+      "signal_count": 10926,
+      "winner_count": 1804,
+      "winner_rate": 16.5,
+      "winner_coverage": 90.9,
+      "lift_vs_base": 1.18,
+      "median_multiple_when_signal": 1.67,
+      "failed_count": 9122
+    },
+    {
+      "key": "ma60_reclaim",
+      "name": "60일선 회복",
+      "category": "추세선",
+      "definition": "저점 이후 90거래일 내 종가가 60일 이동평균 위로 재진입",
+      "signal_count": 12709,
+      "winner_count": 1977,
+      "winner_rate": 15.6,
+      "winner_coverage": 99.6,
+      "lift_vs_base": 1.12,
+      "median_multiple_when_signal": 1.61,
+      "failed_count": 10732
+    },
+    {
+      "key": "kosdaq",
+      "name": "KOSDAQ",
+      "category": "시장",
+      "definition": "KOSDAQ 보통주",
+      "signal_count": 9637,
+      "winner_count": 1496,
+      "winner_rate": 15.5,
+      "winner_coverage": 75.4,
+      "lift_vs_base": 1.11,
+      "median_multiple_when_signal": 1.52,
+      "failed_count": 8141
+    },
+    {
+      "key": "ma20_reclaim",
+      "name": "20일선 회복",
+      "category": "추세선",
+      "definition": "저점 이후 60거래일 내 종가가 20일 이동평균 위로 재진입",
+      "signal_count": 12929,
+      "winner_count": 1983,
+      "winner_rate": 15.3,
+      "winner_coverage": 99.9,
+      "lift_vs_base": 1.1,
+      "median_multiple_when_signal": 1.6,
+      "failed_count": 10946
+    },
+    {
+      "key": "core_sector",
+      "name": "핵심 성장 섹터",
+      "category": "섹터",
+      "definition": "ITㆍ의료ㆍ경기소비재ㆍ산업재 중 하나",
+      "signal_count": 10894,
+      "winner_count": 1607,
+      "winner_rate": 14.8,
+      "winner_coverage": 81.0,
+      "lift_vs_base": 1.06,
+      "median_multiple_when_signal": 1.52,
+      "failed_count": 9287
+    },
+    {
+      "key": "inst_20d_buy",
+      "name": "기관 20일 순매수",
+      "category": "수급/기관",
+      "definition": "저점 이후 20거래일 누적 기관 순매수 수량 또는 금액 환산값이 양수",
+      "signal_count": 7022,
+      "winner_count": 1016,
+      "winner_rate": 14.5,
+      "winner_coverage": 51.2,
+      "lift_vs_base": 1.04,
+      "median_multiple_when_signal": 1.63,
+      "failed_count": 6006
+    },
+    {
+      "key": "small_cap_3000",
+      "name": "시총 3,000억 이하",
+      "category": "규모",
+      "definition": "stock_universe 기준 시가총액 3,000억 이하",
+      "signal_count": 10484,
+      "winner_count": 1399,
+      "winner_rate": 13.3,
+      "winner_coverage": 70.5,
+      "lift_vs_base": 0.96,
+      "median_multiple_when_signal": 1.46,
+      "failed_count": 9085
+    },
+    {
+      "key": "backlog_growth",
+      "name": "수주잔고 증가",
+      "category": "수주잔고",
+      "definition": "최근 수주잔고가 전년 대비 증가",
+      "signal_count": 106,
+      "winner_count": 14,
+      "winner_rate": 13.2,
+      "winner_coverage": 0.7,
+      "lift_vs_base": 0.95,
+      "median_multiple_when_signal": 1.67,
+      "failed_count": 92
+    },
+    {
+      "key": "both_inst_frn_buy",
+      "name": "기관+외국인 동반 순매수",
+      "category": "수급/복합",
+      "definition": "저점 이후 20거래일 기관과 외국인 누적 순매수 수량 또는 금액 환산값이 모두 양수",
+      "signal_count": 4984,
+      "winner_count": 655,
+      "winner_rate": 13.1,
+      "winner_coverage": 33.0,
+      "lift_vs_base": 0.94,
+      "median_multiple_when_signal": 1.6,
+      "failed_count": 4329
+    },
+    {
+      "key": "overseas_contract",
+      "name": "해외 수주 공시",
+      "category": "공시/수주",
+      "definition": "해당 연도 해외 거래처 수주 공시 확인",
+      "signal_count": 1031,
+      "winner_count": 135,
+      "winner_rate": 13.1,
+      "winner_coverage": 6.8,
+      "lift_vs_base": 0.94,
+      "median_multiple_when_signal": 1.56,
+      "failed_count": 896
+    },
+    {
+      "key": "frn_20d_buy",
+      "name": "외국인 20일 순매수",
+      "category": "수급/외국인",
+      "definition": "저점 이후 20거래일 누적 외국인 순매수 수량 또는 금액 환산값이 양수",
+      "signal_count": 8735,
+      "winner_count": 1111,
+      "winner_rate": 12.7,
+      "winner_coverage": 56.0,
+      "lift_vs_base": 0.91,
+      "median_multiple_when_signal": 1.53,
+      "failed_count": 7624
+    },
+    {
+      "key": "export_yoy_100",
+      "name": "수출 YoY 100% 이상",
+      "category": "수출",
+      "definition": "해당 연도 회사-HS 매핑 수출의 3개월 평균 YoY가 100% 이상",
+      "signal_count": 294,
+      "winner_count": 37,
+      "winner_rate": 12.6,
+      "winner_coverage": 1.9,
+      "lift_vs_base": 0.9,
+      "median_multiple_when_signal": 1.64,
+      "failed_count": 257
+    },
+    {
+      "key": "contract_signal",
+      "name": "수주/공급계약 공시",
+      "category": "공시/수주",
+      "definition": "해당 연도 단일판매ㆍ공급계약 등 수주 공시 확인",
+      "signal_count": 2625,
+      "winner_count": 324,
+      "winner_rate": 12.3,
+      "winner_coverage": 16.3,
+      "lift_vs_base": 0.89,
+      "median_multiple_when_signal": 1.5,
+      "failed_count": 2301
+    },
+    {
+      "key": "export_yoy_30",
+      "name": "수출 YoY 30% 이상",
+      "category": "수출",
+      "definition": "해당 연도 회사-HS 매핑 수출의 3개월 평균 YoY가 30% 이상",
+      "signal_count": 836,
+      "winner_count": 96,
+      "winner_rate": 11.5,
+      "winner_coverage": 4.8,
+      "lift_vs_base": 0.82,
+      "median_multiple_when_signal": 1.54,
+      "failed_count": 740
+    },
+    {
+      "key": "export_value_rising",
+      "name": "수출액 증가",
+      "category": "수출",
+      "definition": "3개월 평균 수출액이 전년 동기보다 증가",
+      "signal_count": 1505,
+      "winner_count": 163,
+      "winner_rate": 10.8,
+      "winner_coverage": 8.2,
+      "lift_vs_base": 0.78,
+      "median_multiple_when_signal": 1.52,
+      "failed_count": 1342
+    },
+    {
+      "key": "material_purchase_growth",
+      "name": "원재료 매입 증가",
+      "category": "원가/생산",
+      "definition": "원재료 매입액이 전년 대비 증가",
+      "signal_count": 646,
+      "winner_count": 53,
+      "winner_rate": 8.2,
+      "winner_coverage": 2.7,
+      "lift_vs_base": 0.59,
+      "median_multiple_when_signal": 1.42,
+      "failed_count": 593
+    }
+  ],
+  "combo_stats": [
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "60일 신고가 재돌파"
+      ],
+      "keys": [
+        "amount_10x",
+        "new_60d_high"
+      ],
+      "count": 6270,
+      "winner_count": 1351,
+      "winner_rate": 21.5,
+      "lift_vs_base": 1.55,
+      "median_multiple": 1.88
+    },
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "수출 YoY 30% 이상"
+      ],
+      "keys": [
+        "amount_10x",
+        "export_yoy_30"
+      ],
+      "count": 324,
+      "winner_count": 69,
+      "winner_rate": 21.3,
+      "lift_vs_base": 1.53,
+      "median_multiple": 1.96
+    },
+    {
+      "signals": [
+        "거래량 10배 이상",
+        "60일 신고가 재돌파"
+      ],
+      "keys": [
+        "volume_10x",
+        "new_60d_high"
+      ],
+      "count": 6060,
+      "winner_count": 1265,
+      "winner_rate": 20.9,
+      "lift_vs_base": 1.5,
+      "median_multiple": 1.85
+    },
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "핵심 성장 섹터"
+      ],
+      "keys": [
+        "amount_10x",
+        "core_sector"
+      ],
+      "count": 5333,
+      "winner_count": 1115,
+      "winner_rate": 20.9,
+      "lift_vs_base": 1.5,
+      "median_multiple": 1.82
+    },
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "60일선 회복"
+      ],
+      "keys": [
+        "amount_10x",
+        "ma60_reclaim"
+      ],
+      "count": 6806,
+      "winner_count": 1384,
+      "winner_rate": 20.3,
+      "lift_vs_base": 1.46,
+      "median_multiple": 1.83
+    },
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "거래대금 5배 이상"
+      ],
+      "keys": [
+        "amount_10x",
+        "amount_5x"
+      ],
+      "count": 6838,
+      "winner_count": 1385,
+      "winner_rate": 20.3,
+      "lift_vs_base": 1.45,
+      "median_multiple": 1.82
+    },
+    {
+      "signals": [
+        "거래량 10배 이상",
+        "핵심 성장 섹터"
+      ],
+      "keys": [
+        "volume_10x",
+        "core_sector"
+      ],
+      "count": 5247,
+      "winner_count": 1047,
+      "winner_rate": 20.0,
+      "lift_vs_base": 1.43,
+      "median_multiple": 1.78
+    },
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "거래량 10배 이상"
+      ],
+      "keys": [
+        "amount_10x",
+        "volume_10x"
+      ],
+      "count": 6505,
+      "winner_count": 1285,
+      "winner_rate": 19.8,
+      "lift_vs_base": 1.42,
+      "median_multiple": 1.8
+    },
+    {
+      "signals": [
+        "거래대금 5배 이상",
+        "60일 신고가 재돌파"
+      ],
+      "keys": [
+        "amount_5x",
+        "new_60d_high"
+      ],
+      "count": 8101,
+      "winner_count": 1593,
+      "winner_rate": 19.7,
+      "lift_vs_base": 1.41,
+      "median_multiple": 1.81
+    },
+    {
+      "signals": [
+        "거래량 10배 이상",
+        "60일선 회복"
+      ],
+      "keys": [
+        "volume_10x",
+        "ma60_reclaim"
+      ],
+      "count": 6662,
+      "winner_count": 1301,
+      "winner_rate": 19.5,
+      "lift_vs_base": 1.4,
+      "median_multiple": 1.79
+    },
+    {
+      "signals": [
+        "거래대금 5배 이상",
+        "거래량 10배 이상"
+      ],
+      "keys": [
+        "amount_5x",
+        "volume_10x"
+      ],
+      "count": 6688,
+      "winner_count": 1298,
+      "winner_rate": 19.4,
+      "lift_vs_base": 1.39,
+      "median_multiple": 1.78
+    },
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "기관 20일 순매수"
+      ],
+      "keys": [
+        "amount_10x",
+        "inst_20d_buy"
+      ],
+      "count": 3723,
+      "winner_count": 714,
+      "winner_rate": 19.2,
+      "lift_vs_base": 1.38,
+      "median_multiple": 1.85
+    },
+    {
+      "signals": [
+        "거래대금 5배 이상",
+        "핵심 성장 섹터"
+      ],
+      "keys": [
+        "amount_5x",
+        "core_sector"
+      ],
+      "count": 7010,
+      "winner_count": 1331,
+      "winner_rate": 19.0,
+      "lift_vs_base": 1.36,
+      "median_multiple": 1.75
+    },
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "시총 3,000억 이하"
+      ],
+      "keys": [
+        "amount_10x",
+        "small_cap_3000"
+      ],
+      "count": 5447,
+      "winner_count": 1028,
+      "winner_rate": 18.9,
+      "lift_vs_base": 1.35,
+      "median_multiple": 1.77
+    },
+    {
+      "signals": [
+        "거래량 10배 이상",
+        "기관 20일 순매수"
+      ],
+      "keys": [
+        "volume_10x",
+        "inst_20d_buy"
+      ],
+      "count": 3594,
+      "winner_count": 666,
+      "winner_rate": 18.5,
+      "lift_vs_base": 1.33,
+      "median_multiple": 1.81
+    },
+    {
+      "signals": [
+        "거래량 10배 이상",
+        "시총 3,000억 이하"
+      ],
+      "keys": [
+        "volume_10x",
+        "small_cap_3000"
+      ],
+      "count": 5467,
+      "winner_count": 1003,
+      "winner_rate": 18.3,
+      "lift_vs_base": 1.32,
+      "median_multiple": 1.74
+    },
+    {
+      "signals": [
+        "거래대금 5배 이상",
+        "60일선 회복"
+      ],
+      "keys": [
+        "amount_5x",
+        "ma60_reclaim"
+      ],
+      "count": 8998,
+      "winner_count": 1645,
+      "winner_rate": 18.3,
+      "lift_vs_base": 1.31,
+      "median_multiple": 1.75
+    },
+    {
+      "signals": [
+        "60일 신고가 재돌파",
+        "핵심 성장 섹터"
+      ],
+      "keys": [
+        "new_60d_high",
+        "core_sector"
+      ],
+      "count": 8346,
+      "winner_count": 1522,
+      "winner_rate": 18.2,
+      "lift_vs_base": 1.31,
+      "median_multiple": 1.71
+    },
+    {
+      "signals": [
+        "거래대금 5배 이상",
+        "수출 YoY 30% 이상"
+      ],
+      "keys": [
+        "amount_5x",
+        "export_yoy_30"
+      ],
+      "count": 489,
+      "winner_count": 86,
+      "winner_rate": 17.6,
+      "lift_vs_base": 1.26,
+      "median_multiple": 1.83
+    },
+    {
+      "signals": [
+        "거래대금 10배 이상",
+        "수주/공급계약 공시"
+      ],
+      "keys": [
+        "amount_10x",
+        "contract_signal"
+      ],
+      "count": 1348,
+      "winner_count": 236,
+      "winner_rate": 17.5,
+      "lift_vs_base": 1.26,
+      "median_multiple": 1.75
+    }
+  ],
+  "failure_stats": [
+    {
+      "trigger_key": "ma20_reclaim",
+      "trigger_name": "20일선 회복",
+      "category": "추세선",
+      "signal_count": 12929,
+      "failed_count": 10946,
+      "winner_rate": 15.3,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 20.3,
+          "winner_rate": 3.5,
+          "gap": 16.8
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 32.3,
+          "winner_rate": 16.9,
+          "gap": 15.4
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 2.0,
+          "winner_rate": 0.3,
+          "gap": 1.7
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.2,
+          "winner_rate": 0.7,
+          "gap": 0.5
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "ma60_reclaim",
+      "trigger_name": "60일선 회복",
+      "category": "추세선",
+      "signal_count": 12709,
+      "failed_count": 10732,
+      "winner_rate": 15.6,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 20.1,
+          "winner_rate": 3.5,
+          "gap": 16.6
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 31.5,
+          "winner_rate": 16.8,
+          "gap": 14.7
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.2,
+          "winner_rate": 0.7,
+          "gap": 0.5
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "core_sector",
+      "trigger_name": "핵심 성장 섹터",
+      "category": "섹터",
+      "signal_count": 10894,
+      "failed_count": 9287,
+      "winner_rate": 14.8,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 25.1,
+          "winner_rate": 3.0,
+          "gap": 22.2
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 38.8,
+          "winner_rate": 17.2,
+          "gap": 21.7
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 12.6,
+          "winner_rate": 0.4,
+          "gap": 12.2
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.3,
+          "winner_rate": 0.8,
+          "gap": 0.5
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "volume_3x",
+      "trigger_name": "거래량 3배 이상",
+      "category": "수급/거래량",
+      "signal_count": 10926,
+      "failed_count": 9122,
+      "winner_rate": 16.5,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 17.4,
+          "winner_rate": 2.9,
+          "gap": 14.5
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 18.7,
+          "winner_rate": 9.4,
+          "gap": 9.3
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 1.8,
+          "winner_rate": 0.3,
+          "gap": 1.5
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.2,
+          "winner_rate": 0.7,
+          "gap": 0.5
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "small_cap_3000",
+      "trigger_name": "시총 3,000억 이하",
+      "category": "규모",
+      "signal_count": 10484,
+      "failed_count": 9085,
+      "winner_rate": 13.3,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 28.0,
+          "winner_rate": 3.6,
+          "gap": 24.4
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 37.3,
+          "winner_rate": 16.1,
+          "gap": 21.2
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 13.7,
+          "winner_rate": 0.5,
+          "gap": 13.2
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 0.6,
+          "winner_rate": 0.1,
+          "gap": 0.5
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "new_60d_high",
+      "trigger_name": "60일 신고가 재돌파",
+      "category": "추세/돌파",
+      "signal_count": 10907,
+      "failed_count": 9033,
+      "winner_rate": 17.2,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 20.5,
+          "winner_rate": 3.6,
+          "gap": 16.9
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 27.9,
+          "winner_rate": 15.0,
+          "gap": 12.9
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.2,
+          "winner_rate": 0.7,
+          "gap": 0.4
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 0.1,
+          "winner_rate": 0.1,
+          "gap": 0.0
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "kosdaq",
+      "trigger_name": "KOSDAQ",
+      "category": "시장",
+      "signal_count": 9637,
+      "failed_count": 8141,
+      "winner_rate": 15.5,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 24.2,
+          "winner_rate": 2.5,
+          "gap": 21.7
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 37.1,
+          "winner_rate": 16.6,
+          "gap": 20.5
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 13.4,
+          "winner_rate": 0.3,
+          "gap": 13.0
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.0,
+          "winner_rate": 0.7,
+          "gap": 0.3
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "frn_20d_buy",
+      "trigger_name": "외국인 20일 순매수",
+      "category": "수급/외국인",
+      "signal_count": 8735,
+      "failed_count": 7624,
+      "winner_rate": 12.7,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 20.7,
+          "winner_rate": 4.4,
+          "gap": 16.3
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 31.9,
+          "winner_rate": 16.5,
+          "gap": 15.4
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 2.9,
+          "winner_rate": 0.5,
+          "gap": 2.5
+        },
+        {
+          "key": "no_contract",
+          "name": "수주 공시 부재",
+          "definition": "해당 연도 수주/공급계약 공시 없음",
+          "failed_rate": 80.3,
+          "winner_rate": 80.2,
+          "gap": 0.1
+        },
+        {
+          "key": "inst_frn_both_sell",
+          "name": "기관+외국인 동반 매도",
+          "definition": "저점 이후 20일 기관/외국인 누적 순매수가 모두 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "amount_5x",
+      "trigger_name": "거래대금 5배 이상",
+      "category": "수급/거래대금",
+      "signal_count": 9067,
+      "failed_count": 7419,
+      "winner_rate": 18.2,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 15.4,
+          "winner_rate": 2.8,
+          "gap": 12.6
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 0.9,
+          "winner_rate": 0.2,
+          "gap": 0.7
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.1,
+          "winner_rate": 0.8,
+          "gap": 0.3
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "inst_20d_buy",
+      "trigger_name": "기관 20일 순매수",
+      "category": "수급/기관",
+      "signal_count": 7022,
+      "failed_count": 6006,
+      "winner_rate": 14.5,
+      "dominant_failure_signals": [
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 32.2,
+          "winner_rate": 16.2,
+          "gap": 15.9
+        },
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 17.2,
+          "winner_rate": 4.0,
+          "gap": 13.2
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 3.3,
+          "winner_rate": 0.4,
+          "gap": 3.0
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.3,
+          "winner_rate": 1.0,
+          "gap": 0.3
+        },
+        {
+          "key": "inst_frn_both_sell",
+          "name": "기관+외국인 동반 매도",
+          "definition": "저점 이후 20일 기관/외국인 누적 순매수가 모두 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "amount_10x",
+      "trigger_name": "거래대금 10배 이상",
+      "category": "수급/거래대금",
+      "signal_count": 6838,
+      "failed_count": 5453,
+      "winner_rate": 20.3,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 13.6,
+          "winner_rate": 2.4,
+          "gap": 11.3
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 0.6,
+          "winner_rate": 0.1,
+          "gap": 0.5
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.0,
+          "winner_rate": 0.7,
+          "gap": 0.3
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "volume_10x",
+      "trigger_name": "거래량 10배 이상",
+      "category": "수급/거래량",
+      "signal_count": 6717,
+      "failed_count": 5414,
+      "winner_rate": 19.4,
+      "dominant_failure_signals": [
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 13.5,
+          "winner_rate": 2.3,
+          "gap": 11.2
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 1.0,
+          "winner_rate": 0.2,
+          "gap": 0.8
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 1.0,
+          "winner_rate": 0.6,
+          "gap": 0.4
+        },
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 0.4,
+          "winner_rate": 0.4,
+          "gap": 0.1
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "both_inst_frn_buy",
+      "trigger_name": "기관+외국인 동반 순매수",
+      "category": "수급/복합",
+      "signal_count": 4984,
+      "failed_count": 4329,
+      "winner_rate": 13.1,
+      "dominant_failure_signals": [
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 29.7,
+          "winner_rate": 15.7,
+          "gap": 13.9
+        },
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 16.7,
+          "winner_rate": 5.0,
+          "gap": 11.7
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 2.3,
+          "winner_rate": 0.5,
+          "gap": 1.8
+        },
+        {
+          "key": "no_contract",
+          "name": "수주 공시 부재",
+          "definition": "해당 연도 수주/공급계약 공시 없음",
+          "failed_rate": 80.3,
+          "winner_rate": 80.2,
+          "gap": 0.2
+        },
+        {
+          "key": "inst_frn_both_sell",
+          "name": "기관+외국인 동반 매도",
+          "definition": "저점 이후 20일 기관/외국인 누적 순매수가 모두 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "contract_signal",
+      "trigger_name": "수주/공급계약 공시",
+      "category": "공시/수주",
+      "signal_count": 2625,
+      "failed_count": 2301,
+      "winner_rate": 12.3,
+      "dominant_failure_signals": [
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 35.9,
+          "winner_rate": 15.1,
+          "gap": 20.7
+        },
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 22.2,
+          "winner_rate": 3.7,
+          "gap": 18.5
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 11.1,
+          "winner_rate": 0.9,
+          "gap": 10.2
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        },
+        {
+          "key": "op_loss",
+          "name": "영업적자",
+          "definition": "최근 분기 영업이익이 적자",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "export_value_rising",
+      "trigger_name": "수출액 증가",
+      "category": "수출",
+      "signal_count": 1505,
+      "failed_count": 1342,
+      "winner_rate": 10.8,
+      "dominant_failure_signals": [
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 44.9,
+          "winner_rate": 13.5,
+          "gap": 31.4
+        },
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 24.3,
+          "winner_rate": 6.1,
+          "gap": 18.2
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 10.7,
+          "winner_rate": 0.0,
+          "gap": 10.7
+        },
+        {
+          "key": "no_contract",
+          "name": "수주 공시 부재",
+          "definition": "해당 연도 수주/공급계약 공시 없음",
+          "failed_rate": 78.5,
+          "winner_rate": 70.6,
+          "gap": 7.9
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "overseas_contract",
+      "trigger_name": "해외 수주 공시",
+      "category": "공시/수주",
+      "signal_count": 1031,
+      "failed_count": 896,
+      "winner_rate": 13.1,
+      "dominant_failure_signals": [
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 36.4,
+          "winner_rate": 16.3,
+          "gap": 20.1
+        },
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 21.0,
+          "winner_rate": 3.7,
+          "gap": 17.3
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 11.0,
+          "winner_rate": 0.7,
+          "gap": 10.3
+        },
+        {
+          "key": "export_yoy_neg",
+          "name": "수출 역성장",
+          "definition": "3개월 평균 수출 YoY가 음수",
+          "failed_rate": 3.0,
+          "winner_rate": 2.2,
+          "gap": 0.8
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "export_yoy_30",
+      "trigger_name": "수출 YoY 30% 이상",
+      "category": "수출",
+      "signal_count": 836,
+      "failed_count": 740,
+      "winner_rate": 11.5,
+      "dominant_failure_signals": [
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 45.4,
+          "winner_rate": 10.4,
+          "gap": 35.0
+        },
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 23.2,
+          "winner_rate": 4.2,
+          "gap": 19.1
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 10.1,
+          "winner_rate": 0.0,
+          "gap": 10.1
+        },
+        {
+          "key": "no_contract",
+          "name": "수주 공시 부재",
+          "definition": "해당 연도 수주/공급계약 공시 없음",
+          "failed_rate": 72.3,
+          "winner_rate": 62.5,
+          "gap": 9.8
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    },
+    {
+      "trigger_key": "material_purchase_growth",
+      "trigger_name": "원재료 매입 증가",
+      "category": "원가/생산",
+      "signal_count": 646,
+      "failed_count": 593,
+      "winner_rate": 8.2,
+      "dominant_failure_signals": [
+        {
+          "key": "amount_under_5x",
+          "name": "거래대금 후속 유입 부족",
+          "definition": "저점 이후 60일 거래대금 피크가 5배 미만",
+          "failed_rate": 29.0,
+          "winner_rate": 3.8,
+          "gap": 25.2
+        },
+        {
+          "key": "no_contract",
+          "name": "수주 공시 부재",
+          "definition": "해당 연도 수주/공급계약 공시 없음",
+          "failed_rate": 72.7,
+          "winner_rate": 62.3,
+          "gap": 10.4
+        },
+        {
+          "key": "no_20d_followthrough",
+          "name": "20일 추세 후속 상승 부족",
+          "definition": "저점 이후 20거래일 최고수익률이 15% 미만",
+          "failed_rate": 16.9,
+          "winner_rate": 9.4,
+          "gap": 7.4
+        },
+        {
+          "key": "no_ma60_reclaim",
+          "name": "60일선 회복 실패",
+          "definition": "저점 이후 90일 동안 60일선 회복 실패",
+          "failed_rate": 1.3,
+          "winner_rate": 0.0,
+          "gap": 1.3
+        },
+        {
+          "key": "revenue_yoy_neg",
+          "name": "매출 역성장",
+          "definition": "최근 분기 매출 YoY가 음수",
+          "failed_rate": 0.0,
+          "winner_rate": 0.0,
+          "gap": 0.0
+        }
+      ]
+    }
+  ],
+  "top_winners": [
+    {
+      "year": 2026.0,
+      "stock_code": "042040",
+      "stock_name": "케이피엠테크",
+      "market": "KOSDAQ",
+      "sector": "소재",
+      "multiple": 48.39,
+      "amount_peak_x": 3.99,
+      "vol_peak_x": 4.24,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "042940",
+      "stock_name": "상지건설",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 45.82,
+      "amount_peak_x": 5.75,
+      "vol_peak_x": 32.87,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "145210",
+      "stock_name": "다이나믹디자인",
+      "market": "KOSPI",
+      "sector": "경기소비재",
+      "multiple": 44.12,
+      "amount_peak_x": 20.83,
+      "vol_peak_x": 10.04,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "002070",
+      "stock_name": "비비안",
+      "market": "KOSPI",
+      "sector": "경기소비재",
+      "multiple": 41.36,
+      "amount_peak_x": 19.7,
+      "vol_peak_x": 29.96,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "276730",
+      "stock_name": "한울앤제주",
+      "market": "KOSDAQ",
+      "sector": "필수소비재",
+      "multiple": 40.34,
+      "amount_peak_x": 43.33,
+      "vol_peak_x": 15.53,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "036630",
+      "stock_name": "세종텔레콤",
+      "market": "KOSDAQ",
+      "sector": "통신서비스",
+      "multiple": 38.75,
+      "amount_peak_x": 3.83,
+      "vol_peak_x": 28.63,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2024.0,
+      "stock_code": "016670",
+      "stock_name": "디모아",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 37.36,
+      "amount_peak_x": 2.29,
+      "vol_peak_x": 8.84,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "353810",
+      "stock_name": "이지바이오",
+      "market": "KOSDAQ",
+      "sector": "필수소비재",
+      "multiple": 36.01,
+      "amount_peak_x": null,
+      "vol_peak_x": null,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "019170",
+      "stock_name": "신풍제약",
+      "market": "KOSPI",
+      "sector": "의료",
+      "multiple": 34.02,
+      "amount_peak_x": 84.51,
+      "vol_peak_x": 42.85,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "038880",
+      "stock_name": "아이에이",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 33.33,
+      "amount_peak_x": 20.78,
+      "vol_peak_x": 21.26,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "011930",
+      "stock_name": "신성이엔지",
+      "market": "KOSPI",
+      "sector": "IT",
+      "multiple": 32.09,
+      "amount_peak_x": 142.0,
+      "vol_peak_x": 73.9,
+      "revenue_yoy": null,
+      "export_yoy": 346.0
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "196490",
+      "stock_name": "디에이테크놀로지",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 30.0,
+      "amount_peak_x": 0.0,
+      "vol_peak_x": 0.0,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "352770",
+      "stock_name": "셀레스트라",
+      "market": "KOSDAQ",
+      "sector": "의료",
+      "multiple": 29.61,
+      "amount_peak_x": 61.21,
+      "vol_peak_x": 46.01,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "003060",
+      "stock_name": "에이프로젠바이오로직스",
+      "market": "KOSPI",
+      "sector": "의료",
+      "multiple": 28.06,
+      "amount_peak_x": 23.67,
+      "vol_peak_x": 2.24,
+      "revenue_yoy": null,
+      "export_yoy": 7.1
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "007460",
+      "stock_name": "에이프로젠",
+      "market": "KOSPI",
+      "sector": "의료",
+      "multiple": 27.86,
+      "amount_peak_x": 10.82,
+      "vol_peak_x": 0.89,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "084670",
+      "stock_name": "동양고속",
+      "market": "KOSPI",
+      "sector": "산업재",
+      "multiple": 26.96,
+      "amount_peak_x": 162.72,
+      "vol_peak_x": 134.45,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "060240",
+      "stock_name": "스타코링크",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 26.8,
+      "amount_peak_x": 47.07,
+      "vol_peak_x": 32.08,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "031860",
+      "stock_name": "디에이치엑스컴퍼니",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 25.02,
+      "amount_peak_x": 41.13,
+      "vol_peak_x": 37.66,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "043090",
+      "stock_name": "더테크놀로지",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 24.94,
+      "amount_peak_x": 3.89,
+      "vol_peak_x": 19.49,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "101670",
+      "stock_name": "하이드로리튬",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 24.9,
+      "amount_peak_x": 25.83,
+      "vol_peak_x": 24.51,
+      "revenue_yoy": null,
+      "export_yoy": 384.9
+    },
+    {
+      "year": 2021.0,
+      "stock_code": "101730",
+      "stock_name": "위메이드맥스",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 24.51,
+      "amount_peak_x": 37.52,
+      "vol_peak_x": 18.79,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "270660",
+      "stock_name": "에브리봇",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 23.7,
+      "amount_peak_x": 20.06,
+      "vol_peak_x": 9.48,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "214610",
+      "stock_name": "롤링스톤",
+      "market": "KOSDAQ",
+      "sector": "의료",
+      "multiple": 23.66,
+      "amount_peak_x": 37.13,
+      "vol_peak_x": 22.89,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "192410",
+      "stock_name": "오늘이엔엠",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 23.37,
+      "amount_peak_x": 8.25,
+      "vol_peak_x": 8.2,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "011000",
+      "stock_name": "진원생명과학",
+      "market": "KOSPI",
+      "sector": "의료",
+      "multiple": 23.29,
+      "amount_peak_x": 387.37,
+      "vol_peak_x": 145.92,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "101140",
+      "stock_name": "인바이오젠",
+      "market": "KOSPI",
+      "sector": "IT",
+      "multiple": 23.14,
+      "amount_peak_x": 21.45,
+      "vol_peak_x": 4.86,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "373200",
+      "stock_name": "엑스플러스",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 22.37,
+      "amount_peak_x": 253.38,
+      "vol_peak_x": 62.06,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "040350",
+      "stock_name": "크레오에스지",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 21.69,
+      "amount_peak_x": 14.97,
+      "vol_peak_x": 7.48,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "065170",
+      "stock_name": "비엘팜텍",
+      "market": "KOSDAQ",
+      "sector": "의료",
+      "multiple": 21.68,
+      "amount_peak_x": 3460.75,
+      "vol_peak_x": 314.62,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "320000",
+      "stock_name": "한울반도체",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 20.53,
+      "amount_peak_x": 543.39,
+      "vol_peak_x": 44.33,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "215790",
+      "stock_name": "이노인스트루먼트",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 20.16,
+      "amount_peak_x": 993.0,
+      "vol_peak_x": 187.83,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "109960",
+      "stock_name": "앱토크롬",
+      "market": "KOSDAQ",
+      "sector": "의료",
+      "multiple": 20.07,
+      "amount_peak_x": 6.61,
+      "vol_peak_x": 8.5,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "058450",
+      "stock_name": "한주에이알티",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 20.06,
+      "amount_peak_x": 51.37,
+      "vol_peak_x": 36.5,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "082850",
+      "stock_name": "우리바이오",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 19.8,
+      "amount_peak_x": 2.48,
+      "vol_peak_x": 2.78,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "025950",
+      "stock_name": "동신건설",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 19.73,
+      "amount_peak_x": 87.84,
+      "vol_peak_x": 100.57,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "121850",
+      "stock_name": "코이즈",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 19.7,
+      "amount_peak_x": 9.03,
+      "vol_peak_x": 42.94,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2024.0,
+      "stock_code": "244460",
+      "stock_name": "올리패스",
+      "market": "KOSDAQ",
+      "sector": "의료",
+      "multiple": 19.57,
+      "amount_peak_x": 15.4,
+      "vol_peak_x": 13.97,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "270520",
+      "stock_name": "앱튼",
+      "market": "KOSDAQ",
+      "sector": "에너지",
+      "multiple": 19.5,
+      "amount_peak_x": 6.94,
+      "vol_peak_x": 8.31,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "030530",
+      "stock_name": "원익홀딩스",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 19.46,
+      "amount_peak_x": 15.48,
+      "vol_peak_x": 10.22,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "001080",
+      "stock_name": "만호제강",
+      "market": "KOSPI",
+      "sector": "소재",
+      "multiple": 19.11,
+      "amount_peak_x": 1.06,
+      "vol_peak_x": 1.11,
+      "revenue_yoy": null,
+      "export_yoy": null
+    }
+  ],
+  "failed_signal_examples": [
+    {
+      "year": 2022.0,
+      "stock_code": "054180",
+      "stock_name": "메디콕스",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 153.1,
+      "amount_peak_x": 15.57,
+      "vol_peak_x": 2.58,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "016790",
+      "stock_name": "현대사료",
+      "market": "KOSDAQ",
+      "sector": "필수소비재",
+      "multiple": 130.07,
+      "amount_peak_x": 885.0,
+      "vol_peak_x": 155.17,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "224060",
+      "stock_name": "더코디",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 116.22,
+      "amount_peak_x": 16.85,
+      "vol_peak_x": 33.94,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "035290",
+      "stock_name": "골드앤에스",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 93.23,
+      "amount_peak_x": 2.24,
+      "vol_peak_x": 51.59,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "211050",
+      "stock_name": "인카금융서비스",
+      "market": "KOSDAQ",
+      "sector": "금융",
+      "multiple": 65.64,
+      "amount_peak_x": 11.67,
+      "vol_peak_x": 13.91,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "020710",
+      "stock_name": "시공테크",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 3.0,
+      "amount_peak_x": 221.55,
+      "vol_peak_x": 97.83,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "010470",
+      "stock_name": "오리콤",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 3.0,
+      "amount_peak_x": 92.6,
+      "vol_peak_x": 95.99,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2024.0,
+      "stock_code": "168360",
+      "stock_name": "펨트론",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 3.0,
+      "amount_peak_x": 82.04,
+      "vol_peak_x": 58.42,
+      "revenue_yoy": null,
+      "export_yoy": 96.7
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "307870",
+      "stock_name": "비투엔",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 3.0,
+      "amount_peak_x": 26.58,
+      "vol_peak_x": 23.8,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "069960",
+      "stock_name": "현대백화점",
+      "market": "KOSPI",
+      "sector": "경기소비재",
+      "multiple": 3.0,
+      "amount_peak_x": 6.71,
+      "vol_peak_x": 4.4,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "134580",
+      "stock_name": "탑코미디어",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 3.0,
+      "amount_peak_x": 1.83,
+      "vol_peak_x": 2.8,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "267320",
+      "stock_name": "나인테크",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.99,
+      "amount_peak_x": 348.28,
+      "vol_peak_x": 190.16,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2023.0,
+      "stock_code": "317830",
+      "stock_name": "에스피시스템스",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 2.99,
+      "amount_peak_x": 177.99,
+      "vol_peak_x": 101.69,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2022.0,
+      "stock_code": "037440",
+      "stock_name": "희림",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 2.99,
+      "amount_peak_x": 49.3,
+      "vol_peak_x": 45.52,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2021.0,
+      "stock_code": "046390",
+      "stock_name": "삼화네트웍스",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 2.99,
+      "amount_peak_x": 48.3,
+      "vol_peak_x": 22.9,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2024.0,
+      "stock_code": "313760",
+      "stock_name": "캐리",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.99,
+      "amount_peak_x": 24.6,
+      "vol_peak_x": 32.25,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "179290",
+      "stock_name": "엠아이텍",
+      "market": "KOSDAQ",
+      "sector": "의료",
+      "multiple": 2.99,
+      "amount_peak_x": 23.6,
+      "vol_peak_x": 23.04,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "365270",
+      "stock_name": "큐라클",
+      "market": "KOSDAQ",
+      "sector": "의료",
+      "multiple": 2.99,
+      "amount_peak_x": 14.18,
+      "vol_peak_x": 7.16,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "017940",
+      "stock_name": "E1",
+      "market": "KOSPI",
+      "sector": "에너지",
+      "multiple": 2.99,
+      "amount_peak_x": 10.58,
+      "vol_peak_x": 16.98,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "002990",
+      "stock_name": "금호건설",
+      "market": "KOSPI",
+      "sector": "산업재",
+      "multiple": 2.99,
+      "amount_peak_x": 10.08,
+      "vol_peak_x": 11.36,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "257370",
+      "stock_name": "피엔티엠에스",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.99,
+      "amount_peak_x": 7.16,
+      "vol_peak_x": 7.81,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "086820",
+      "stock_name": "바이오솔루션",
+      "market": "KOSDAQ",
+      "sector": "의료",
+      "multiple": 2.99,
+      "amount_peak_x": 6.87,
+      "vol_peak_x": 7.74,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2024.0,
+      "stock_code": "024060",
+      "stock_name": "흥구석유",
+      "market": "KOSDAQ",
+      "sector": "에너지",
+      "multiple": 2.99,
+      "amount_peak_x": 5.63,
+      "vol_peak_x": 6.65,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "073110",
+      "stock_name": "엘엠에스",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.99,
+      "amount_peak_x": 4.68,
+      "vol_peak_x": 6.53,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "045970",
+      "stock_name": "코아시아",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.99,
+      "amount_peak_x": 3.74,
+      "vol_peak_x": 3.98,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "003100",
+      "stock_name": "선광",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 2.99,
+      "amount_peak_x": 2.33,
+      "vol_peak_x": 3.26,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "090080",
+      "stock_name": "평화산업",
+      "market": "KOSPI",
+      "sector": "경기소비재",
+      "multiple": 2.98,
+      "amount_peak_x": 668.34,
+      "vol_peak_x": 491.34,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2021.0,
+      "stock_code": "274090",
+      "stock_name": "켄코아에어로스페이스",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 2.98,
+      "amount_peak_x": 495.72,
+      "vol_peak_x": 224.72,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "136490",
+      "stock_name": "선진",
+      "market": "KOSPI",
+      "sector": "필수소비재",
+      "multiple": 2.98,
+      "amount_peak_x": 69.02,
+      "vol_peak_x": 56.96,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "066430",
+      "stock_name": "아이로보틱스",
+      "market": "KOSDAQ",
+      "sector": "소재",
+      "multiple": 2.98,
+      "amount_peak_x": 44.14,
+      "vol_peak_x": 18.28,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "171010",
+      "stock_name": "램테크놀러지",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.98,
+      "amount_peak_x": 40.53,
+      "vol_peak_x": 38.1,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2021.0,
+      "stock_code": "037440",
+      "stock_name": "희림",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 2.98,
+      "amount_peak_x": 35.03,
+      "vol_peak_x": 31.34,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "053610",
+      "stock_name": "프로텍",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.98,
+      "amount_peak_x": 31.54,
+      "vol_peak_x": 20.8,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "201490",
+      "stock_name": "미투온",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.98,
+      "amount_peak_x": 11.95,
+      "vol_peak_x": 9.87,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2026.0,
+      "stock_code": "456040",
+      "stock_name": "OCI",
+      "market": "KOSPI",
+      "sector": "소재",
+      "multiple": 2.98,
+      "amount_peak_x": 10.82,
+      "vol_peak_x": 8.88,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "227100",
+      "stock_name": "프로브잇",
+      "market": "KOSDAQ",
+      "sector": "산업재",
+      "multiple": 2.98,
+      "amount_peak_x": 10.45,
+      "vol_peak_x": 10.22,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2025.0,
+      "stock_code": "072770",
+      "stock_name": "멤레이비티",
+      "market": "KOSDAQ",
+      "sector": "IT",
+      "multiple": 2.98,
+      "amount_peak_x": 9.39,
+      "vol_peak_x": 10.6,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "308170",
+      "stock_name": "씨티알모빌리티",
+      "market": "KOSPI",
+      "sector": "경기소비재",
+      "multiple": 2.98,
+      "amount_peak_x": 7.54,
+      "vol_peak_x": 3.42,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2020.0,
+      "stock_code": "084180",
+      "stock_name": "수성웹툰",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 2.98,
+      "amount_peak_x": 6.9,
+      "vol_peak_x": 6.45,
+      "revenue_yoy": null,
+      "export_yoy": null
+    },
+    {
+      "year": 2021.0,
+      "stock_code": "041510",
+      "stock_name": "에스엠",
+      "market": "KOSDAQ",
+      "sector": "경기소비재",
+      "multiple": 2.98,
+      "amount_peak_x": 6.06,
+      "vol_peak_x": 5.42,
+      "revenue_yoy": null,
+      "export_yoy": 175.4
+    }
+  ],
+  "caveats": [
+    "트리거는 저점 이후 20~90거래일 내 관측 가능한 신호 기준입니다. 실제 매수 가능성은 신호 발생일의 종가/거래대금으로 별도 백테스트가 필요합니다.",
+    "DART/수출/직원/원재료 데이터는 기업별 커버리지가 달라 해당 신호의 표본 수가 가격·거래량 신호보다 작습니다.",
+    "수출 신호는 회사-HS 매핑 캐시의 3개월 평균 YoY를 사용해 당월 미확정 0값 왜곡을 줄였습니다."
+  ]
+}

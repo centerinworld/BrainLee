@@ -1,0 +1,128 @@
+[
+  {
+    "strategy": "A_import_borrow_high_quality",
+    "exit_rule": "ma20_slope",
+    "total_return": 1.3944206778555794,
+    "cagr": 1.255921029582575,
+    "alpha_vs_universe_avg": 0.9172232147160513,
+    "mdd": -0.7030461883289081,
+    "trades": 50,
+    "win_rate": 0.64,
+    "avg_trade_ret": 0.27888413557111563,
+    "median_trade_ret": 0.05376616979295823,
+    "exit_reasons": {
+      "ma20_slope_down": 42,
+      "end": 8
+    }
+  },
+  {
+    "strategy": "A_import_borrow_high_quality",
+    "exit_rule": "ma10_dd10",
+    "total_return": 1.4813496687960663,
+    "cagr": 1.332139594683316,
+    "alpha_vs_universe_avg": 1.0041522056565382,
+    "mdd": -0.6022699348385323,
+    "trades": 51,
+    "win_rate": 0.6470588235294118,
+    "avg_trade_ret": 0.29046071937177753,
+    "median_trade_ret": 0.12966598883672864,
+    "exit_reasons": {
+      "ma10_dd10": 45,
+      "end": 6
+    }
+  },
+  {
+    "strategy": "A_import_borrow_high_quality",
+    "exit_rule": "dd15",
+    "total_return": 1.742170061971354,
+    "cagr": 1.5597580274522564,
+    "alpha_vs_universe_avg": 1.264972598831826,
+    "mdd": -0.5475044556528244,
+    "trades": 37,
+    "win_rate": 0.5945945945945946,
+    "avg_trade_ret": 0.4708567735057714,
+    "median_trade_ret": 0.07858552082811165,
+    "exit_reasons": {
+      "dd15": 30,
+      "end": 7
+    }
+  },
+  {
+    "strategy": "A_import_borrow_high_quality",
+    "exit_rule": "none",
+    "total_return": 2.927298869256086,
+    "cagr": 2.5772813837184674,
+    "alpha_vs_universe_avg": 2.4501014061165582,
+    "mdd": -0.885962105487414,
+    "trades": 10,
+    "win_rate": 0.8,
+    "avg_trade_ret": 2.927298869256086,
+    "median_trade_ret": 2.0218417898537995,
+    "exit_reasons": {
+      "end": 10
+    }
+  },
+  {
+    "strategy": "D_import_yoy_quality_liquid",
+    "exit_rule": "ma20_slope",
+    "total_return": 0.7318463347336028,
+    "cagr": 0.6681439515198371,
+    "alpha_vs_universe_avg": 0.25464887159407473,
+    "mdd": -0.6509382468612099,
+    "trades": 63,
+    "win_rate": 0.49206349206349204,
+    "avg_trade_ret": 0.11616608487834952,
+    "median_trade_ret": 0.0,
+    "exit_reasons": {
+      "ma20_slope_down": 53,
+      "end": 10
+    }
+  },
+  {
+    "strategy": "D_import_yoy_quality_liquid",
+    "exit_rule": "ma10_dd10",
+    "total_return": 0.8351013784690435,
+    "cagr": 0.7606294120868591,
+    "alpha_vs_universe_avg": 0.35790391532951543,
+    "mdd": -0.5984274368619114,
+    "trades": 76,
+    "win_rate": 0.4868421052631579,
+    "avg_trade_ret": 0.10988176032487405,
+    "median_trade_ret": 0.0,
+    "exit_reasons": {
+      "ma10_dd10": 66,
+      "end": 10
+    }
+  },
+  {
+    "strategy": "D_import_yoy_quality_liquid",
+    "exit_rule": "dd15",
+    "total_return": 0.6749518443906999,
+    "cagr": 0.6170239502386732,
+    "alpha_vs_universe_avg": 0.19775438125117178,
+    "mdd": -0.6211703758279131,
+    "trades": 54,
+    "win_rate": 0.4074074074074074,
+    "avg_trade_ret": 0.12499108229457392,
+    "median_trade_ret": 0.0,
+    "exit_reasons": {
+      "dd15": 44,
+      "end": 10
+    }
+  },
+  {
+    "strategy": "D_import_yoy_quality_liquid",
+    "exit_rule": "none",
+    "total_return": 2.619147323141613,
+    "cagr": 2.315027113145414,
+    "alpha_vs_universe_avg": 2.141949860002085,
+    "mdd": -0.9096511578323822,
+    "trades": 10,
+    "win_rate": 0.8,
+    "avg_trade_ret": 2.619147323141613,
+    "median_trade_ret": 1.2559018092220833,
+    "exit_reasons": {
+      "end": 10
+    }
+  }
+]
