@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from config import IS_POSTGRES  # noqa: E402
+from db_compat import _ORIGINAL_SQLITE_CONNECT  # noqa: E402
 from scripts.migrate_operational_postgres import (  # noqa: E402
     POSTGRES_URL,
     SQLITE_DB,
@@ -53,7 +54,7 @@ def main() -> None:
     # writer lock과 부딪히면 "database is locked"로 스크립트 전체가 크래시(stdout이
     # 비어 scheduler.py 쪽엔 "report parse failed"로만 보임 — 실제 원인이 가려져
     # 있었음). 다른 잡들이 쓰는 표준 timeout=30으로 맞춤.
-    sqlite_conn = sqlite3.connect(str(SQLITE_DB), timeout=30)
+    sqlite_conn = _ORIGINAL_SQLITE_CONNECT(str(SQLITE_DB), timeout=30)
     pg_conn = psycopg.connect(POSTGRES_URL)
     try:
         active_tables = table_names(sqlite_conn)
