@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from config import IS_POSTGRES  # noqa: E402
+from db_compat import _ORIGINAL_SQLITE_CONNECT  # noqa: E402
 from scripts.migrate_operational_postgres import (  # noqa: E402
     POSTGRES_URL,
     SQLITE_DB,
@@ -53,7 +54,12 @@ def main() -> None:
     # writer lock과 부딪히면 "database is locked"로 스크립트 전체가 크래시(stdout이
     # 비어 scheduler.py 쪽엔 "report parse failed"로만 보임 — 실제 원인이 가려져
     # 있었음). 다른 잡들이 쓰는 표준 timeout=30으로 맞춤.
-    sqlite_conn = sqlite3.connect(str(SQLITE_DB), timeout=30)
+    # 2026-08-29: venv 전역 sitecustomize .pth가 설치된 이후 sqlite3.connect(stock.db)가
+    # 프로세스 전역에서 PostgresCompatConnection으로 라우팅됨 — 이 스크립트는 "진짜
+    # 냉동 SQLite 스냅샷" vs "Postgres"를 비교하는 게 목적이라 라우팅되면 자기자신과
+    # 비교하는 꼴이 되어 델타가 전부 0으로 나오고 pg_stat_statements 확장 뷰가
+    # sqlite_master 번역 경로에 섞여 "누락 테이블"로 오탐됨. 원본(패치 전) 함수로 명시 접속.
+    sqlite_conn = _ORIGINAL_SQLITE_CONNECT(str(SQLITE_DB), timeout=30)
     pg_conn = psycopg.connect(POSTGRES_URL)
     try:
         active_tables = table_names(sqlite_conn)
