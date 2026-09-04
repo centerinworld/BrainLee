@@ -29,3 +29,16 @@ export const isDisclosureTime = () => {
 
 export const _lsGet = (key, fallback) => { try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : fallback; } catch { return fallback; } };
 export const _lsSet = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
+
+// fmtKrw: 원화 가격 표시는 소수점 없이 정수 원 단위로 표시 (App.jsx SignalBoard 구현과 동일)
+export const fmtKrw = (v) => {
+  if (v == null || v === '' || Number.isNaN(Number(v))) return '-';
+  return `${Math.round(Number(v)).toLocaleString('ko-KR')}원`;
+};
+
+// fmtPctUs: 미국주식 등락률(부호 포함, 소수점 둘째자리) (App.jsx USStocksView 구현과 동일)
+export const fmtPctUs = (v) => {
+  if (v == null) return '-';
+  const n = Number(v); if (isNaN(n)) return '-';
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+};
