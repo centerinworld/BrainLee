@@ -164,7 +164,7 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 │       ├── session_start.sh  # 매 프롬프트: CLAUDE.md 지시사항 주입
 │       └── session_stop.sh   # 세션 종료: 로그 기록
 │
-└── frontend/src/App.jsx # 단일 파일 React SPA (~7600줄)
+└── frontend/src/App.jsx # React SPA 메인 (18,612줄) — 다수 컴포넌트가 frontend/src/views/*.jsx로 분리됨. 섹션 6 참조
 ```
 
 ---
@@ -578,76 +578,72 @@ def _cache():
 
 ## 6. 프론트엔드 컴포넌트 (App.jsx)
 
-**App.jsx = 17,395줄**. 다수 컴포넌트가 별도 파일로 분리됨. 2026-07-09(2차) 대규모 리팩터링으로 23개 컴포넌트가 `App` 내부 중첩 정의 → **module-level(App 함수 밖)** 로 이동됨(섹션 11 변경이력 참조). 아래 표의 "위치"는 이제 대부분 App보다 앞쪽(module-level)이다 — `const App = () => {`는 6135줄에서 시작.
+**App.jsx = 18,612줄**. ★2026-09-03 대규모 분리: `Screener`/`PeakView`(→`StrategyCenterView.jsx`)/`BacktestView`/`StrategyHub` 등 8개 컴포넌트가 App.jsx에서 `frontend/src/views/*.jsx` 개별 파일로 이동하고 `React.lazy()`로 로드되도록 변경(토큰 최적화, 섹션 11 참조). 아래 표는 2026-09-04 기준 재검증된 최신 줄번호. `const App = () => {`는 12896줄에서 시작.
+
+⚠️ **분리 시 주의**: App.jsx 모듈 스코프에 있던 헬퍼 함수(`fmtKrw`, `fmtPctUs` 등)는 별도 파일(별도 ES 모듈)로는 자동으로 따라가지 않는다 — 분리 시 반드시 `frontend/src/utils.js`에 있는지 확인 후 명시적으로 import할 것. 2026-09-04에 이 누락으로 인한 `ReferenceError` 크래시 2건이 실제로 발생(섹션 9 참조).
 
 ### 별도 파일로 분리된 컴포넌트 (views/)
-| 파일 | 탭 키 |
+| 파일 | 탭 키 / 용도 |
 |------|-------|
 | `frontend/src/views/MarketIndicatorsView.jsx` | market_indicators |
-| `frontend/src/views/SemiconductorView.jsx` | semiconductor (MarketRadar 내부) |
-| `frontend/src/views/SectorFollowupView.jsx` | sector_followup (MarketRadar 내부) / hot_sector |
 | `frontend/src/views/MarketRadarView.jsx` | market_radar |
-| `frontend/src/views/QuantMajorIndicatorsView.jsx` | quant_indicators ★신규(2026-06-07) |
-| `frontend/src/views/StockAnalysisRsView.jsx` | stock_rs ★신규(2026-05-16) |
-| `frontend/src/views/SemiconductorSectorView.jsx` | semiconductor_sector ★신규(2026-05) |
-| `frontend/src/views/TenbaggerProjectView.jsx` | tenbagger_proj ★신규(2026-06) |
-| `frontend/src/views/SectorRotationView.jsx` | sector_rotation ★신규(2026-06-27) |
-| `frontend/src/views/RiskGateMonitorView.jsx` | risk_gate ★신규(2026-07-23) — routes/kis_trading.py 리스크게이트/주문생애주기/현금원장 모니터 (개요·사전점검·판정이력·주문생애주기·현금원장 5탭) |
-| `frontend/src/EtfCheckView.jsx` | etf_check |
-| `frontend/src/utils.js` | API, isKRMarketOpen, isUSMarketOpen 등 공유 유틸 |
+| `frontend/src/views/SemiconductorView.jsx` | semiconductor_sector (탭 렌더가 실제 사용하는 파일) |
+| `frontend/src/views/SemiconductorSectorView.jsx` | ⚠️ 미사용(고아 파일) — 어디서도 import 안 됨, `semiconductor_sector` 탭은 `SemiconductorView.jsx`를 렌더 |
+| `frontend/src/views/SectorFollowupView.jsx` | sector_followup (MarketRadar 내부) / hot_sector |
+| `frontend/src/views/SectorRotationView.jsx` | sector_rotation |
+| `frontend/src/views/QuantMajorIndicatorsView.jsx` | quant_indicators (내부에서 `CafeSignalsView.jsx`의 `QuantCafeSignalsPanel` import) |
+| `frontend/src/views/CafeSignalsView.jsx` | QuantMajorIndicatorsView 내부 서브패널(단독 탭 아님) |
+| `frontend/src/views/StockAnalysisRsView.jsx` | stock_rs |
+| `frontend/src/views/TenbaggerProjectView.jsx` | tenbagger_proj (nav 라벨 "조건 필터") |
+| `frontend/src/views/RiskGateMonitorView.jsx` | risk_gate — routes/kis_trading.py 리스크게이트/주문생애주기/현금원장 모니터 |
+| `frontend/src/views/SignalImpactView.jsx` | signal_impact |
+| `frontend/src/views/DartExcelView.jsx` | dart_excel |
+| `frontend/src/views/StrategyCenterView.jsx` | trend (구 `PeakView`) ★2026-09-03 App.jsx에서 분리 |
+| `frontend/src/views/Screener.jsx` | screener / 전략센터(StrategyHub) `hubTab==='stocks'` 내부 embed ★2026-09-03 분리 |
+| `frontend/src/views/StrategyHub.jsx` | strategy_hub (내부에 Screener embed, `데이터 라우팅` 탭 포함) ★2026-09-03 분리 |
+| `frontend/src/views/BacktestView.jsx` | backtest ★2026-09-03 분리 |
+| `frontend/src/views/StockDecisionEvidencePanel.jsx` | 분석(`analysis`) 메인 화면 내부, 즉시 로드(lazy 아님) |
+| `frontend/src/views/InvestmentDecisionTaskPanel.jsx` | 분석(`analysis`) 메인 화면 내부, 즉시 로드(lazy 아님) |
+| `frontend/src/EtfCheckView.jsx` | etf_check (views/ 밖, src 바로 아래) |
+| `frontend/src/utils.js` | API, isKRMarketOpen, isUSMarketOpen, fmtKrw, fmtPctUs 등 공유 유틸 ★2026-09-04 fmtKrw/fmtPctUs 추가 |
 
-### App.jsx 내 컴포넌트 → 탭 키 → 시작 줄번호 → 위치(2026-07-09 갱신)
+### App.jsx 내 컴포넌트 → 탭 키 → 시작 줄번호 → 위치(2026-09-04 재검증)
 | 컴포넌트 | 탭 키 | 줄번호 | 위치 |
 |---------|-------|--------|------|
-| `SignalBoard` | (헤더 상시 노출) | 83 | module-level |
-| `BacktestView` | backtest | 984 | module-level |
-| `SignalSettings` | (settings 내부) | 805 | module-level |
-| `StrategyHub` | strategy_hub | 2054 | module-level (`데이터 라우팅` 탭: 2934) |
-| `SettingsView` | settings | 2943 | module-level |
-| `EmploymentView` | employment | 3245 | module-level |
-| `TradeAnalysis2` | hs_trade2 | 3599 | module-level |
-| `DartContractView` | dart_contracts | 5001 | module-level |
-| `DetailedAnalysisView` | detailed_analysis | 6137 | module-level (isMobile prop) |
-| `USStocksView` | us_stocks | 6550 | module-level (isMobile prop, 미국주식/스크리너/인사이트/바이오/13F 거물 동향 탭) |
-| `BuyCandidateView` | buy_candidates | 7170 | module-level (changeStock/changeTab prop) |
-| `Screener` | screener/전략센터 내부 | 7509 | module-level (changeStock/changeTab prop) |
-| `PeakView` | trend | 9534 | module-level (changeStock/changeTab prop) |
-| `PortfolioView` | portfolio | 10152 | module-level (changeStock/changeTab/collecting/fetchWatchlist prop) |
-| `SectorReports` | reports | 11168 | module-level (changeStock/setActiveTab prop) |
-| `TenbaggerView` | tenbagger | 11280 | module-level (changeStock/changeTab prop) |
-| `MegatrendView` | megatrend | 12205 | module-level (setActiveTab prop) |
-| `TelegramMentions` | telegram | 12405 | module-level (changeStock/changeTab prop) |
-| `ExportHealthView` | export_health | 12663 | module-level (changeStock/changeTab prop) |
-| `WatchlistView` | watchlist | 13432 | App 내부 (closure: selectedStock/watchlist 등) |
-| `MacroDashboard` | macro | 13528 | App 내부 (closure: macroData — 이관 보류, 섹션11 참조) |
-| `AIInsight` | insight | 16904 | App 내부 (closure: aiReport/watchlist) |
-| `SystemStatus` | system | 16981 | App 내부 (closure: sysStats) |
-| `DartExcelView` | dart_excel | (views/DartExcelView.jsx) | 별도 파일 |
+| `SignalBoard` | (헤더 상시 노출) | 104 | module-level |
+| `SignalSettings` | (settings 내부) | 826 | module-level |
+| `SettingsView` | settings | 1007 | module-level |
+| `EmploymentView` | employment | 1383 | module-level |
+| `USInsightView` | (미국 인사이트) | 1544 | module-level |
+| `TradeAnalysis2` | hs_trade2 | 1737 | module-level |
+| `DartContractView` | dart_contracts | 3636 | module-level |
+| `DetailedAnalysisView` | detailed_analysis | 5507 | module-level (isMobile prop) |
+| `USStocksView` | us_stocks | 6028 | module-level (isMobile prop, 미국주식/스크리너/인사이트/바이오/13F 거물 동향 탭) |
+| `BuyCandidateView` | buy_candidates | 7627 | module-level (changeStock/changeTab prop) |
+| `PortfolioView` | portfolio | 8278 | module-level |
+| `SectorReports` | reports | 9576 | module-level |
+| `TenbaggerView` | tenbagger | 9688 | module-level |
+| `MegatrendView` | megatrend | 10682 | module-level |
+| `TelegramMentions` | telegram | 10882 | module-level |
+| `ExportHealthView` | export_health | 11140 | module-level |
+| `HardeningPlanPanel`/`TurnaroundWatchPanel`/`ConsensusRevisionPanel`/`CherryScreenerPanel` | exp_roadmap 내부 서브패널(pageTab: hardening/turnaround/cherry/consensus) | 11429/11544/12326/12416 | module-level |
+| `ExperimentRoadmapView` | exp_roadmap (nav 라벨 "실험 로드맵") | 12631 | module-level |
+| `WatchlistView` | watchlist | 13401 | App 내부 (closure) |
+| `MacroDashboard` | macro | 13497 | App 내부 (`React.useState(() => function ...)` 패턴으로 안정화, closure) |
+| `AIInsight` | insight | 18096 | App 내부 (closure) |
+| `SystemStatus` | system | 18173 | App 내부 (closure) |
 
-### 렌더 스위치 탭 전체 목록 (App.jsx ~14518줄)
+### 렌더 스위치 탭 (App.jsx ~18500줄대) — 2026-09-04 기준 확인된 키
 ```
 macro / market_indicators / market_radar / analysis / us_stocks / quant_indicators
 stock_rs / semiconductor_sector / detailed_analysis / buy_candidates / watchlist
-portfolio / screener / tenbagger / tenbagger_proj / dart_excel / dart_contracts / megatrend
-trend / reports / insight / system / export_health / telegram / settings / backtest
-hs_trade2 / employment / etf_check / hot_sector
+portfolio / screener / strategy_hub / tenbagger / tenbagger_proj / sector_rotation
+dart_excel / dart_contracts / megatrend / trend / reports / insight / system
+export_health / telegram / settings / backtest / hs_trade2 / employment / etf_check
+hot_sector / risk_gate / signal_impact / exp_roadmap
 ```
 ※ `global_econ` 탭은 2026-07-02부로 `ceo-briefing-platform` 프론트엔드로 이관되어 stock_dashboard 메뉴에서 제거됨.
-
-### 네비게이션 구조
-```
-NAV_ITEMS 정의: ~14348줄
-렌더 스위치:    ~14517줄
-
-순서: macro → market_indicators → quant_indicators → stock_rs → market_radar
-    → analysis → us_stocks → detailed_analysis → screener
-    → tenbagger → tenbagger_proj → megatrend → trend
-    → reports → telegram → backtest → hs_trade2
-    ── (구분선) ──
-    buy_candidates → watchlist → portfolio
-    ── (구분선) ──
-    settings → system
-```
+※ 이 목록은 App.jsx 렌더 스위치의 `activeTab===` 조건을 grep한 결과이며, 전수 확인은 아님 — 새 탭 추가/삭제 시 이 섹션을 갱신할 것(섹션 상단 필수 행동 규칙 참조).
 
 ### 전역 상태 (App 최상위)
 ```javascript
@@ -874,6 +870,7 @@ EOF
 | 공공데이터포털 투자자API | ❌ 404 | getStocInvtTrdnInfo 서비스 폐지 |
 | investor_trading_daily | ⚠️ 미수정 잔존 | 여전히 매수금액(buy-only) 오염 상태 — kiwoom_investor_daily는 2026-07-21 trde_tp='0' 수정으로 해결됐으나 이 테이블(동일 로직 복사본)은 미반영. |
 | foreign_holding_daily | ℹ️ 정상 적재 중 | 문서상 "0행"으로 남아있었으나 실측 107,764행 확인(Kiwoom ka10008 경유로 이미 채워지고 있음, 문서만 stale이었음) |
+| Screener/StrategyCenterView `fmtKrw`/`fmtPctUs` 스코프 버그 | ✅ 수정(2026-09-04) | 2026-09-03 App.jsx→views 분리 시 각 파일이 참조하던 포맷 함수(`fmtKrw`, `fmtPctUs`)가 다른 ES 모듈로는 안 넘어가 `ReferenceError`로 렌더가 크래시(Screener embed는 전체 화면 블랙아웃까지 발생). `frontend/src/utils.js`에 두 함수를 공용 헬퍼로 추가하고 양쪽에서 import하도록 수정. **재발방지**: 컴포넌트를 별도 파일로 분리할 때는 반드시 참조하는 모든 헬퍼가 import돼 있는지 확인(섹션 6 상단 경고 참조). |
 
 ### 키움 REST API 확인된 엔드포인트 (URI: /api/dostk/stkinfo, Bearer 토큰)
 | API-ID | 설명 | 필수 파라미터 |
@@ -1093,6 +1090,15 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 > 3. 2026-07-01~2026-08-30 전체 이력(276건)은 이번에 전량 archive로 이관되었습니다. 과거 버그 재발/근거 추적 시에만 Read/grep 하세요.
 
 > 📦 **2026-08-30 이전 변경이력은 `docs/CLAUDE_CHANGELOG_ARCHIVE.md`로 이관되었습니다** (2026-09-03). 아래는 2026-08-26 이후 최근 20개 항목만 표시합니다.
+
+### 2026-09-04 미커밋 백엔드/프론트엔드 작업물 대량 정리·커밋 + CLAUDE.md 섹션 6 전면 재검증
+> 이 저장소(`runtime`)에 몇 달째 커밋 안 된 채 쌓여있던 1085개 항목(routes/collectors/scripts/docs/frontend 등)을 점검 후 정리.
+- 10MB 로그 3개·90MB git bundle 백업(`backups/`)·74MB 자동생성 리서치 산출물(`research_outputs/`)·캐시 파일 등 버전관리에 부적합한 것은 `.gitignore`에 추가해 제외하고, 나머지 1275개 정상 소스 파일을 커밋(`81e53ee`). 이미 `.gitignore`에 있었지만 실제로는 계속 추적되던 `hs_trade_lab/data/customs_downloads/`(618개)도 `git rm --cached`로 규칙과 일치시킴.
+- 위 정리 과정에서 섹션 6(프론트엔드 컴포넌트)이 2026-07-09 기준으로 멈춰있고 2026-09-03 views/ 분리가 전혀 반영 안 된 것을 발견 — App.jsx 최신 줄번호로 전면 재검증·갱신, 미사용 고아 파일(`SemiconductorSectorView.jsx`) 발견 기록.
+
+### 2026-09-03 Screener/PeakView 등 8개 컴포넌트를 App.jsx에서 views/*.jsx로 분리 (토큰 최적화)
+> App.jsx가 24K줄까지 불어나 세션 시작 시 로드 비용이 커진 문제로, 대형 컴포넌트를 개별 파일로 분리해 `React.lazy()` 로딩.
+- `Screener`→`views/Screener.jsx`, `PeakView`→`views/StrategyCenterView.jsx`(탭 라벨은 그대로 "가상 매매"), `BacktestView`/`StrategyHub`/`StockDecisionEvidencePanel`/`InvestmentDecisionTaskPanel`/`RiskGateMonitorView`/`CafeSignalsView` 등을 이관. **분리 시 각 컴포넌트가 참조하던 App.jsx 모듈스코프 헬퍼(`fmtKrw`/`fmtPctUs`)를 import하지 않아 런타임 크래시가 발생 — 2026-09-04에 별도 세션이 발견·수정(섹션 9 참조)**.
 
 ### 2026-08-30 사용자 질문 2건 — DART 3키 실사용여부 재확인 중 로테이션 자체가 무력화돼있던 버그 발견·수정 + KRX/공공데이터포털 API 라이브 재검증
 > 사용자: "1. 12시가 넘어가면 dart 초기화되니까 시도해, 그리고 id가 3개나 있는데 모두 사용한거야? / 2. 첨부한 이미지와 같이 krx openapi를 사용하고 있는것으로 알고 있는데, codex가 안된다고 하고 있음. 점검해봐"
