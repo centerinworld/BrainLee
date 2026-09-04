@@ -19,7 +19,7 @@ from pathlib import Path
 import requests
 
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB_PATH = ROOT / "stock.db"
 API_URL = "https://opendart.fss.or.kr/api/list.json"
 

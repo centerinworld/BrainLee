@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-EMP_DB_PATH = "/Applications/stock_dashboard/employment_monitor/employment.db"
-PROJECT_ROOT = "/Applications/stock_dashboard"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+EMP_DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db"
+PROJECT_ROOT = "/Volumes/Realtek_NVME/stock_dashboard/runtime"
 
 
 if PROJECT_ROOT not in sys.path:
@@ -65,10 +65,14 @@ class NpsReport:
     existing_yms: set[str]
     missing_yms: list[str]
     collected: dict[str, dict]
+    latest_count: int
+    reference_count: int
+    coverage_pct: float
     failures: list[str]
 
 
 def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
+    min_coverage_ratio = 0.98
     failures: list[str] = []
     collected: dict[str, dict] = {}
 
@@ -78,6 +82,14 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
         existing_latest = (
             conn_emp.execute("SELECT MAX(data_ym) AS ym FROM nps_monthly").fetchone()["ym"] or ""
         )
+        month_counts = {
+            str(r["ym"]): int(r["cnt"] or 0)
+            for r in conn_emp.execute(
+                "SELECT data_ym AS ym, COUNT(DISTINCT stock_code) AS cnt "
+                "FROM nps_monthly GROUP BY data_ym"
+            ).fetchall()
+            if str(r["ym"] or "").isdigit() and len(str(r["ym"])) == 6
+        }
         existing_yms = {
             str(r["ym"])
             for r in conn_emp.execute("SELECT DISTINCT data_ym AS ym FROM nps_monthly").fetchall()
@@ -87,14 +99,14 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
         conn_emp.close()
 
     def _load_public_api_key() -> str:
-        # Prefer env var; fallback to reading /Applications/stock_dashboard/.env
+        # Prefer env var; fallback to reading /Volumes/Realtek_NVME/stock_dashboard/runtime/.env
         import os
 
         key = os.getenv("PUBLIC_DATA_API_KEY", "").strip()
         if key:
             return key
         try:
-            with open("/Applications/stock_dashboard/.env", "r", encoding="utf-8") as f:
+            with open("/Volumes/Realtek_NVME/stock_dashboard/runtime/.env", "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#") or "=" not in line:
@@ -128,14 +140,14 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
 
         import requests
 
-        url = "http://apis.data.go.kr/B552015/NpsBsnmWorkplaceListInfoService/getNpsBsnmBssInfoList"
+        url = "http://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2"
         params = {
             "serviceKey": unquote(api_key),
-            "bzowr_rgst_no": test_biz_no_6,
-            "data_crt_ym": ym,
+            "bzowrRgstNo": test_biz_no_6,
+            "dataCrtYm": ym,
             "pageNo": 1,
             "numOfRows": 1,
-            "_type": "json",
+            "dataType": "json",
         }
         r = requests.get(url, params=params, timeout=12)
         if r.status_code != 200:
@@ -144,7 +156,8 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
         items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
         if isinstance(items, dict):
             items = [items]
-        return bool(items), None
+        # V2는 요청월 자료가 없어도 최신월 행을 반환할 수 있으므로 응답월을 검증한다.
+        return any(str(item.get("dataCrtYm", "")) == ym for item in items), None
 
     def _detect_api_latest_ym(existing_latest_ym: str) -> str:
         api_key = _load_public_api_key()
@@ -175,9 +188,18 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
     api_latest = _detect_api_latest_ym(existing_latest)
 
     missing: list[str] = []
+    repair_yms: list[str] = []
     if api_latest:
         target_window = set(_iter_months_backwards(api_latest, nps_months))
         missing = sorted(target_window - existing_yms)
+        # A month can exist but still be only partially loaded. Compare each month
+        # with its immediately preceding month and repair only material gaps.
+        for ym in sorted(target_window & existing_yms):
+            prev_ym = _month_add(ym, -1)
+            current_count = month_counts.get(ym, 0)
+            reference_count = month_counts.get(prev_ym, 0)
+            if reference_count and current_count < reference_count * min_coverage_ratio:
+                repair_yms.append(ym)
 
     def _collect_month_into_db(ym: str, limit_codes: int) -> dict:
         api_key = _load_public_api_key()
@@ -193,8 +215,13 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
                 SELECT m.stock_code, m.biz_no_6 AS biz_no_6
                 FROM stock_bizno_map m
                 WHERE LENGTH(m.stock_code)=6 AND m.stock_code GLOB '[0-9]*'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM nps_monthly n
+                    WHERE n.stock_code=m.stock_code AND n.data_ym=?
+                  )
                 ORDER BY m.stock_code
-                """
+                """,
+                (ym,),
             ).fetchall()
             # stock_name은 stock.db에서 조회 (표준 표기)
             name_map = {
@@ -219,7 +246,7 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
 
             import requests
 
-            url = "http://apis.data.go.kr/B552015/NpsBsnmWorkplaceListInfoService/getNpsBsnmBssInfoList"
+            base_url = "http://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2"
             inserted = 0
             attempted = 0
             for r in rows:
@@ -229,13 +256,13 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
                 attempted += 1
                 params = {
                     "serviceKey": unquote(api_key),
-                    "bzowr_rgst_no": biz_no_6,
-                    "data_crt_ym": ym,
+                    "bzowrRgstNo": biz_no_6,
+                    "dataCrtYm": ym,
                     "pageNo": 1,
                     "numOfRows": 10,
-                    "_type": "json",
+                    "dataType": "json",
                 }
-                resp = requests.get(url, params=params, timeout=12)
+                resp = requests.get(f"{base_url}/getBassInfoSearchV2", params=params, timeout=12)
                 if resp.status_code != 200:
                     time.sleep(0.05)
                     continue
@@ -246,9 +273,35 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
                 if not items:
                     time.sleep(0.05)
                     continue
-                item = items[0]
+                base_item = next((x for x in items if str(x.get("dataCrtYm", "")) == ym), None)
+                if not base_item or not base_item.get("seq"):
+                    time.sleep(0.05)
+                    continue
+                seq_params = {
+                    "serviceKey": unquote(api_key),
+                    "seq": base_item["seq"],
+                    "dataCrtYm": ym,
+                    "pageNo": 1,
+                    "numOfRows": 10,
+                    "dataType": "json",
+                }
+                detail_resp = requests.get(f"{base_url}/getDetailInfoSearchV2", params=seq_params, timeout=12)
+                period_resp = requests.get(f"{base_url}/getPdAcctoSttusInfoSearchV2", params=seq_params, timeout=12)
+                if detail_resp.status_code != 200 or period_resp.status_code != 200:
+                    time.sleep(0.05)
+                    continue
+                detail_items = detail_resp.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+                period_items = period_resp.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+                if isinstance(detail_items, dict):
+                    detail_items = [detail_items]
+                if isinstance(period_items, dict):
+                    period_items = [period_items]
+                detail = detail_items[0] if detail_items else {}
+                period = period_items[0] if period_items else {}
                 # nps_monthly: 종목별 월 스냅샷(사업장수/입사/퇴사/증감)
                 stock_code = r["stock_code"]
+                new_hires = int(period.get("nwAcqzrCnt", 0) or 0)
+                terminations = int(period.get("lssJnngpCnt", 0) or 0)
                 conn_emp2.execute(
                     """
                     INSERT OR REPLACE INTO nps_monthly
@@ -258,10 +311,10 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
                     (
                         stock_code,
                         ym,
-                        int(item.get("nwAcqzrCnt", 0) or 0),
-                        int(item.get("lssJnngpCnt", 0) or 0),
-                        int(item.get("jngpCnt", 0) or 0),
-                        int(item.get("wkplCnt", 0) or 0),
+                        new_hires,
+                        terminations,
+                        new_hires - terminations,
+                        1,
                     ),
                 )
                 inserted += 1
@@ -274,11 +327,40 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
             conn_stock.close()
             conn_emp2.close()
 
-    for ym in missing:
+    for ym in sorted(set(missing + repair_yms)):
         try:
             collected[ym] = _collect_month_into_db(ym, limit_codes=limit)
         except Exception as e:
             failures.append(f"{ym}: {e}")
+
+    latest_count = 0
+    reference_count = 0
+    coverage_pct = 0.0
+    if api_latest:
+        conn_emp = _connect_emp()
+        try:
+            latest_count = int(
+                conn_emp.execute(
+                    "SELECT COUNT(DISTINCT stock_code) AS cnt FROM nps_monthly WHERE data_ym=?",
+                    (api_latest,),
+                ).fetchone()["cnt"]
+                or 0
+            )
+            reference_count = int(
+                conn_emp.execute(
+                    "SELECT COUNT(DISTINCT stock_code) AS cnt FROM nps_monthly WHERE data_ym=?",
+                    (_month_add(api_latest, -1),),
+                ).fetchone()["cnt"]
+                or 0
+            )
+        finally:
+            conn_emp.close()
+        coverage_pct = latest_count / reference_count * 100 if reference_count else 0.0
+        if reference_count and latest_count < reference_count * min_coverage_ratio:
+            failures.append(
+                f"NPS {api_latest} coverage incomplete: "
+                f"{latest_count}/{reference_count} ({coverage_pct:.2f}%)"
+            )
 
     return NpsReport(
         api_latest_ym=api_latest,
@@ -286,6 +368,9 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
         existing_yms=existing_yms,
         missing_yms=missing,
         collected=collected,
+        latest_count=latest_count,
+        reference_count=reference_count,
+        coverage_pct=coverage_pct,
         failures=failures,
     )
 
@@ -398,7 +483,7 @@ def audit_investor(years: int, chunk: int, limit_missing: int = 300) -> Investor
             batch = codes_missing[i : i + chunk]
             cmd = [
                 sys.executable,
-                "/Applications/stock_dashboard/collect_naver_investor.py",
+                "/Volumes/Realtek_NVME/stock_dashboard/runtime/collect_naver_investor.py",
                 "--years",
                 str(float(years)),
                 "--codes",
@@ -417,7 +502,7 @@ def audit_investor(years: int, chunk: int, limit_missing: int = 300) -> Investor
 
     compute_rc: int | None = None
     compute_tail = ""
-    cmd = [sys.executable, "/Applications/stock_dashboard/compute_investor_amounts.py", "--days", str(365 * years + 10)]
+    cmd = [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/compute_investor_amounts.py", "--days", str(365 * years + 10)]
     try:
         compute_rc, out = _run(cmd, timeout_s=None)
         compute_tail = "\n".join(out.strip().splitlines()[-30:])
@@ -455,6 +540,12 @@ def main() -> int:
     nps_r = audit_nps(nps_months=args.nps_months, limit=args.nps_limit)
     print(f"[NPS] api_latest_ym={nps_r.api_latest_ym} existing_latest_ym={nps_r.existing_latest_ym}")
     print(f"[NPS] missing_yms({len(nps_r.missing_yms)}): {', '.join(nps_r.missing_yms) if nps_r.missing_yms else '(none)'}")
+    print(
+        f"[NPS] latest_coverage={nps_r.latest_count}/{nps_r.reference_count} "
+        f"({nps_r.coverage_pct:.2f}%)"
+    )
+    if nps_r.collected:
+        print(f"[NPS] collected={nps_r.collected}")
     if nps_r.failures:
         print("[NPS] failures:")
         for f in nps_r.failures:

@@ -129,7 +129,7 @@ const NpsTrendView = () => {
       </div>
 
       <div style={{ padding: '0.55rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: '0.72rem', color: '#fbbf24', background: 'rgba(251,191,36,0.08)' }}>
-        안내: 피보험자 수는 특수고용직/사업장 집계를 포함할 수 있어 사업보고서 인원보다 크게 보일 수 있습니다.
+        피보험자 수와 대규모 인원 이동은 삭제하지 않습니다. 보험 영업인력, 건설 현장, 다사업장 운영 등 종목별 고용 범위 특성을 함께 표시합니다.
       </div>
 
       {/* 기간 선택 탭 */}
@@ -240,6 +240,16 @@ const NpsTrendView = () => {
                       <span style={{ fontSize: '0.68rem', color: '#c4b5fd', marginLeft: '0.45rem' }}>
                         (보고서 {fmtNum(row.base_report_workers)}명)
                       </span>
+                      {row.employment_scope?.type !== 'general' && (
+                        <span title={row.employment_scope.note} style={{ display:'inline-block', marginLeft:'0.4rem', padding:'0.08rem 0.3rem', borderRadius:'4px', fontSize:'0.62rem', color:'#fbbf24', border:'1px solid rgba(251,191,36,0.35)', background:'rgba(251,191,36,0.08)' }}>
+                          {row.employment_scope.label}
+                        </span>
+                      )}
+                      {row.scope_event_count > 0 && (
+                        <span title="대규모 취득·상실이 관측된 월이 있습니다. 값은 유지되며 집계 범위 또는 사업 변화와 함께 해석합니다." style={{ display:'inline-block', marginLeft:'0.3rem', padding:'0.08rem 0.3rem', borderRadius:'4px', fontSize:'0.62rem', color:'#fca5a5', border:'1px solid rgba(248,113,113,0.35)' }}>
+                          범위변화 {row.scope_event_count}회
+                        </span>
+                      )}
                     </td>
                     <td style={{ ...tdS, color: 'rgba(255,255,255,0.45)', fontSize: '0.74rem' }}>
                       {row.sector || '-'}

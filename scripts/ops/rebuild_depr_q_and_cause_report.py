@@ -6,8 +6,8 @@ from datetime import datetime
 import csv
 import math
 
-DB = Path('/Applications/stock_dashboard/stock.db')
-OUT_DIR = Path('/Applications/stock_dashboard/scratch')
+DB = Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db')
+OUT_DIR = Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch')
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -2,7 +2,7 @@
 # Start the local dashboard on fixed ports after cleaning stale servers.
 set -euo pipefail
 
-PROJECT_ROOT="/Applications/stock_dashboard"
+PROJECT_ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 LOG_DIR="$PROJECT_ROOT/logs"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/Applications/stock_dashboard"
+ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 LABEL="com.stock-dashboard.dart-insider-doc-2020-2023"
 LOG_DIR="$ROOT/run/strategy_data_backfill_queue"
 mkdir -p "$LOG_DIR"

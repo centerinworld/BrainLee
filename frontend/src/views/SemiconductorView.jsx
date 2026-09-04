@@ -13,6 +13,9 @@ import {
   ReferenceLine,
 } from 'recharts';
 
+const SEMI_REF_DATES_STORAGE_KEY = 'sd_semiconductor_ref_dates';
+const isRefDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+
 const SemiconductorView = React.memo(() => {
   const [data, setData]       = React.useState(null);
   const [loading, setLoading] = React.useState(true);
@@ -21,10 +24,27 @@ const SemiconductorView = React.memo(() => {
   const [filterLv1, setFilterLv1] = React.useState('ALL');
   const [search, setSearch]   = React.useState('');
   const _cy = new Date().getFullYear();
-  const [ref1, setRef1] = React.useState(`${_cy}-01-02`);
-  const [ref2, setRef2] = React.useState(`${_cy - 1}-08-01`);
-  const [ref3, setRef3] = React.useState(`${_cy - 1}-04-02`);
-  const [tab, setTab] = React.useState('details'); // details | summary | performance
+  const defaultRefDates = React.useMemo(() => [`${_cy}-01-02`, `${_cy - 1}-08-01`, `${_cy - 1}-04-02`], [_cy]);
+  const initialRefDates = React.useMemo(() => {
+    if (typeof window === 'undefined') return defaultRefDates;
+    try {
+      const url = new URL(window.location.href);
+      const urlDates = [1, 2, 3].map((idx) => url.searchParams.get(`semi_ref${idx}`));
+      if (urlDates.every(isRefDate)) return urlDates;
+      const saved = JSON.parse(window.localStorage.getItem(SEMI_REF_DATES_STORAGE_KEY) || '[]');
+      return Array.isArray(saved) && saved.length === 3 && saved.every(isRefDate)
+        ? saved
+        : defaultRefDates;
+    } catch {
+      return defaultRefDates;
+    }
+  }, [defaultRefDates]);
+  const [ref1, setRef1] = React.useState(() => initialRefDates[0] || defaultRefDates[0]);
+  const [ref2, setRef2] = React.useState(() => initialRefDates[1] || defaultRefDates[1]);
+  const [ref3, setRef3] = React.useState(() => initialRefDates[2] || defaultRefDates[2]);
+  const [tab, setTab] = React.useState('lights'); // lights | megatrend | details | summary | performance
+  const [megatrend, setMegatrend] = React.useState(null);
+  const [megatrendLoading, setMegatrendLoading] = React.useState(false);
   const [sumStart, setSumStart] = React.useState(`${_cy - 1}-04-02`);
   const [sumEnd, setSumEnd] = React.useState('');
   const [summary, setSummary] = React.useState(null);
@@ -39,29 +59,60 @@ const SemiconductorView = React.memo(() => {
   const [histTab, setHistTab] = React.useState('annual');
   const histTableRef = React.useRef(null);
   const loadDebounceRef = React.useRef(null);
+  const saveRefDates = React.useCallback((dates) => {
+    if (typeof window === 'undefined' || !Array.isArray(dates) || !dates.every(isRefDate)) return;
+    try {
+      window.localStorage.setItem(SEMI_REF_DATES_STORAGE_KEY, JSON.stringify(dates));
+      const url = new URL(window.location.href);
+      dates.forEach((date, idx) => url.searchParams.set(`semi_ref${idx + 1}`, date));
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {}
+  }, []);
 
   const loadData = React.useCallback((r1, r2, r3) => {
     setLoading(true);
     const params = new URLSearchParams({ ref1: r1, ref2: r2, ref3: r3 });
-    fetch(`/api/market-radar/semiconductor/valuestream?${params.toString()}`)
+    fetch(`/api/market-radar/semiconductor/valuestream?${params.toString()}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(d => {
         setData(d);
         if (Array.isArray(d?.ref_dates) && d.ref_dates.length === 3) {
-          setRef1(d.ref_dates[0] || r1);
-          setRef2(d.ref_dates[1] || r2);
-          setRef3(d.ref_dates[2] || r3);
+          const nextRefs = [d.ref_dates[0] || r1, d.ref_dates[1] || r2, d.ref_dates[2] || r3];
+          setRef1(nextRefs[0]);
+          setRef2(nextRefs[1]);
+          setRef3(nextRefs[2]);
+          saveRefDates(nextRefs);
+        } else {
+          saveRefDates([r1, r2, r3]);
         }
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [saveRefDates]);
 
   React.useEffect(() => {
+    saveRefDates([ref1, ref2, ref3]);
+  }, [ref1, ref2, ref3, saveRefDates]);
+
+  React.useEffect(() => {
+    loadData(ref1, ref2, ref3);
+    // 기준일 input은 입력 중 자동 새로고침하지 않고, 적용 버튼에서만 재조회한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadData]);
+
+  const applyRefDates = React.useCallback(() => {
     if (loadDebounceRef.current) clearTimeout(loadDebounceRef.current);
-    loadDebounceRef.current = setTimeout(() => loadData(ref1, ref2, ref3), 600);
-    return () => clearTimeout(loadDebounceRef.current);
-  }, [ref1, ref2, ref3, loadData]);
+    loadData(ref1, ref2, ref3);
+  }, [loadData, ref1, ref2, ref3]);
+
+  React.useEffect(() => {
+    if (tab !== 'megatrend' || megatrend) return;
+    setMegatrendLoading(true);
+    fetch('/api/market-radar/semiconductor/megatrend', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => { setMegatrend(d); setMegatrendLoading(false); })
+      .catch(() => setMegatrendLoading(false));
+  }, [tab, megatrend]);
 
   const loadSummary = React.useCallback(() => {
     setSummaryError('');
@@ -228,13 +279,60 @@ const SemiconductorView = React.memo(() => {
     return { firstIndexMap };
   }, [sortedRows]);
 
+  // 카테고리별 신호등 현황 — 2026-07-19 신규(사용자 지시: "일일이 보지 않으면 안 보이는" 카테고리
+  // 단위 등락 다이버전스를 자동으로 요약). refDates[0]이 가장 최근 기준일(단기 등락).
+  const categoryLights = React.useMemo(() => {
+    if (!rows.length || !refDates.length) return { cats: [], overallAvg: {} };
+    const overallAvg = {};
+    refDates.forEach(rd => {
+      const vals = rows.map(r => r.ref_chgs?.[rd]).filter(v => v != null);
+      overallAvg[rd] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    });
+    const byCat = {};
+    rows.forEach(r => {
+      const cat = r.lv1 || '기타';
+      if (!byCat[cat]) byCat[cat] = { count: 0, refs: {}, names: [] };
+      byCat[cat].count += 1;
+      byCat[cat].names.push({ name: r.company_name, chg: r.ref_chgs?.[refDates[0]] });
+      refDates.forEach(rd => {
+        const v = r.ref_chgs?.[rd];
+        if (v != null) {
+          (byCat[cat].refs[rd] || (byCat[cat].refs[rd] = [])).push(v);
+        }
+      });
+    });
+    const cats = Object.entries(byCat).map(([cat, v]) => {
+      const avgByRef = {};
+      refDates.forEach(rd => {
+        const arr = v.refs[rd] || [];
+        avgByRef[rd] = arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+      });
+      const primary = avgByRef[refDates[0]];
+      const overall = overallAvg[refDates[0]];
+      // 신호등: 카테고리 평균 등락 기준(초록=상승/노랑=보합/빨강=하락)
+      const light = primary == null ? '⚪' : primary >= 5 ? '🟢' : primary <= -5 ? '🔴' : '🟡';
+      // 다이버전스: 시장 전체와 방향이 반대이면서 격차가 15%p 이상
+      const diverging = primary != null && overall != null &&
+        Math.sign(primary) !== 0 && Math.sign(overall) !== 0 &&
+        Math.sign(primary) !== Math.sign(overall) && Math.abs(primary - overall) >= 15;
+      const topMover = v.names.filter(n => n.chg != null).sort((a, b) => (b.chg || 0) - (a.chg || 0))[0];
+      return { category: cat, count: v.count, avgByRef, light, diverging, topMover };
+    });
+    cats.sort((a, b) => (b.avgByRef[refDates[0]] ?? -999) - (a.avgByRef[refDates[0]] ?? -999));
+    return { cats, overallAvg };
+  }, [rows, refDates]);
+
   const thSt = {
     padding: '0.55rem 0.6rem', textAlign: 'right',
-    color: '#e2e8f0', fontWeight: 600, fontSize: '0.74rem',
-    background: 'rgba(15,23,42,0.97)',
-    borderBottom: '2px solid rgba(59,130,246,0.4)',
+    color: '#cffafe', fontWeight: 800, fontSize: '0.74rem',
+    background: '#10243f',
+    backgroundImage: 'linear-gradient(180deg, #1e3a5f 0%, #10243f 100%)',
+    borderBottom: '2px solid rgba(34,211,238,0.72)',
+    borderTop: '1px solid rgba(125,211,252,0.18)',
+    boxShadow: '0 6px 14px rgba(0,0,0,0.32)',
     whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none',
-    position: 'sticky', top: 0, zIndex: 10,
+    position: 'sticky', top: 0, zIndex: 120,
+    backgroundClip: 'padding-box',
   };
   const tdSt = {
     padding: '0.38rem 0.6rem', fontSize: '0.78rem',
@@ -445,12 +543,22 @@ const SemiconductorView = React.memo(() => {
           <h2 style={{margin:0, fontSize:'1rem', fontWeight:700, color:'#fff'}}>
             🔬 반도체 밸류스트림 전종목
           </h2>
+          <button onClick={() => setTab('lights')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='lights'?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)', background: tab==='lights'?'rgba(34,211,238,0.14)':'rgba(255,255,255,0.04)', color: tab==='lights'?'#67e8f9':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>🚦카테고리 신호등</button>
+          <button onClick={() => setTab('megatrend')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='megatrend'?'1px solid #f472b6':'1px solid rgba(148,163,184,0.35)', background: tab==='megatrend'?'rgba(244,114,182,0.14)':'rgba(255,255,255,0.04)', color: tab==='megatrend'?'#f9a8d4':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>🚀메가트렌드 탐지</button>
           <button onClick={() => setTab('details')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='details'?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)', background: tab==='details'?'rgba(34,211,238,0.14)':'rgba(255,255,255,0.04)', color: tab==='details'?'#67e8f9':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>전종목</button>
           <button onClick={() => setTab('summary')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='summary'?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)', background: tab==='summary'?'rgba(34,211,238,0.14)':'rgba(255,255,255,0.04)', color: tab==='summary'?'#67e8f9':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>종합현황</button>
           <button onClick={() => setTab('performance')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='performance'?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)', background: tab==='performance'?'rgba(34,211,238,0.14)':'rgba(255,255,255,0.04)', color: tab==='performance'?'#67e8f9':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>종목실적</button>
           {data && tab==='details' && (
             <span style={{fontSize:'0.75rem', color:'#60a5fa'}}>
               {sortedRows.length}/{rows.length}종목
+            </span>
+          )}
+          {data?.as_of_date && tab==='details' && (
+            <span style={{fontSize:'0.72rem', color:'rgba(148,163,184,0.85)'}}>
+              가격 기준일 {data.as_of_date}
+              {data.price_basis === 'realtime'
+                ? ` · 실시간 ${Number(data.realtime_price_count || 0).toLocaleString('ko-KR')}종목`
+                : ' · 완전 적재일 기준'}
             </span>
           )}
           {/* 검색 */}
@@ -481,10 +589,123 @@ const SemiconductorView = React.memo(() => {
         <div style={{padding:'3rem', textAlign:'center', color:'rgba(255,255,255,0.4)'}}>
           로딩 중...
         </div>
+      ) : tab === 'lights' ? (
+        <div style={{padding:'0.8rem 0.4rem'}}>
+          <div style={{fontSize:'0.76rem', color:'rgba(255,255,255,0.55)', marginBottom:'0.8rem', lineHeight:1.5}}>
+            🚦 각 카테고리(공정 단계)의 {refDates[0] ? formatRefLabel(refDates[0]) : ''} 평균 등락을 신호등으로 요약합니다.
+            <b style={{color:'#fbbf24'}}> 🔥 다이버전스</b> 배지는 반도체 전체 평균(
+            <span style={{color: chgColor(categoryLights.overallAvg[refDates[0]])}}>{fmtPct(categoryLights.overallAvg[refDates[0]])}</span>
+            )과 반대 방향으로 15%p 이상 벌어진 카테고리 — "전체는 하락하는데 이 카테고리만 오른다" 같은 흐름을 자동으로 잡아냅니다.
+          </div>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:'0.7rem'}}>
+            {categoryLights.cats.map(c => (
+              <div key={c.category} onClick={() => { setFilterLv1(c.category); setTab('details'); }}
+                style={{
+                  cursor:'pointer', padding:'0.7rem 0.8rem', borderRadius:'10px',
+                  background: c.diverging ? 'rgba(251,191,36,0.08)' : 'rgba(255,255,255,0.03)',
+                  border: c.diverging ? '1px solid rgba(251,191,36,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                }}>
+                <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.35rem'}}>
+                  <span style={{display:'flex', alignItems:'center', gap:'0.4rem'}}>
+                    <span style={{fontSize:'1.1rem'}}>{c.light}</span>
+                    <span style={{
+                      fontSize:'0.78rem', fontWeight:800,
+                      color: LV1_COLORS[c.category] || '#94a3b8',
+                    }}>{c.category}</span>
+                  </span>
+                  <span style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.4)'}}>{c.count}종목</span>
+                </div>
+                {c.diverging && (
+                  <div style={{fontSize:'0.68rem', color:'#fbbf24', fontWeight:700, marginBottom:'0.3rem'}}>
+                    🔥 시장과 반대로 {c.avgByRef[refDates[0]] > 0 ? '나홀로 상승' : '나홀로 하락'} 중
+                  </div>
+                )}
+                <div style={{display:'flex', gap:'0.6rem', flexWrap:'wrap'}}>
+                  {refDates.map(rd => (
+                    <div key={rd} style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.5)'}}>
+                      {formatRefLabel(rd).replace(' 대비','')}
+                      <div style={{fontSize:'0.82rem', fontWeight:700, color: chgColor(c.avgByRef[rd])}}>
+                        {fmtPct(c.avgByRef[rd])}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {c.topMover && c.topMover.name && (
+                  <div style={{fontSize:'0.66rem', color:'rgba(255,255,255,0.45)', marginTop:'0.4rem'}}>
+                    최고 상승: {c.topMover.name} <span style={{color: chgColor(c.topMover.chg)}}>{fmtPct(c.topMover.chg)}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : tab === 'megatrend' ? (
+        <div style={{padding:'0.8rem 0.4rem'}}>
+          {megatrendLoading || !megatrend ? (
+            <div style={{padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)'}}>로딩 중...</div>
+          ) : (
+            <>
+              <div style={{
+                fontSize:'0.76rem', color:'rgba(255,255,255,0.7)', marginBottom:'0.9rem', lineHeight:1.6,
+                padding:'0.7rem 0.9rem', borderRadius:'8px',
+                background:'rgba(244,114,182,0.06)', border:'1px solid rgba(244,114,182,0.25)',
+              }}>
+                <b style={{color:'#f9a8d4'}}>조건: 6개월 수익률 +100%↑ &amp; 52주 고점 대비 -15% 이내</b>
+                {' '}— 지금 이 조건에 해당하는 종목을 빠짐없이 노출하는 <b>스크리너</b>입니다.
+                <div style={{marginTop:'0.4rem', color:'rgba(255,255,255,0.5)'}}>
+                  ⚠️ 검증 결과(walk-forward, n=232건): 여기 뜬 종목의 <b>개별 승률은 19~31%</b>로 낮고,
+                  중앙값 12개월 forward 수익률은 마이너스입니다 — "이미 급등"만으로는 다음 승자를 골라낼 수 없다는
+                  기존 연구(avoid_overheat)와 일치합니다. 단, <b>-20% 손절 + 승자는 무제한 보유</b>를 전제로 한
+                  분산 바스켓 접근에서는 건당 기대값이 학습(+12.1%)·검증(+6.9%) 양쪽에서 플러스로 확인됐습니다.
+                  <b style={{color:'#fbbf24'}}> 개별 종목 매수 확신용이 아니라, 분산 투자 + 엄격한 손절 규율 전제하에서만 참고하세요.</b>
+                </div>
+              </div>
+              <div style={{fontSize:'0.75rem', color:'rgba(255,255,255,0.5)', marginBottom:'0.6rem'}}>
+                {megatrend.count}개 종목 해당
+              </div>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.8rem'}}>
+                  <thead>
+                    <tr style={{borderBottom:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.55)'}}>
+                      <th style={{textAlign:'left', padding:'0.4rem 0.6rem'}}>종목</th>
+                      <th style={{textAlign:'left', padding:'0.4rem 0.6rem'}}>카테고리</th>
+                      <th style={{textAlign:'right', padding:'0.4rem 0.6rem'}}>6개월 수익률</th>
+                      <th style={{textAlign:'right', padding:'0.4rem 0.6rem'}}>52주고점 대비</th>
+                      <th style={{textAlign:'right', padding:'0.4rem 0.6rem'}}>현재가</th>
+                      <th style={{textAlign:'right', padding:'0.4rem 0.6rem'}}>기준일</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(megatrend.results || []).map(r => (
+                      <tr key={r.stock_code} style={{borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+                        <td style={{padding:'0.4rem 0.6rem', color:'#fff', fontWeight:600}}>{r.stock_name}</td>
+                        <td style={{padding:'0.4rem 0.6rem', color: LV1_COLORS[r.lv1] || '#94a3b8'}}>
+                          {r.lv1}{r.lv1_concurrent_count >= 3 ? ` (동반 ${r.lv1_concurrent_count})` : ''}
+                        </td>
+                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'#4ade80', fontWeight:700}}>+{r.ret_6m_pct}%</td>
+                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'rgba(255,255,255,0.6)'}}>{r.dist_from_52w_high_pct}%</td>
+                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'#e2e8f0'}}>{Number(r.current_price).toLocaleString('ko-KR')}</td>
+                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'rgba(255,255,255,0.4)', fontSize:'0.72rem'}}>{r.as_of_date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
       ) : tab === 'details' ? (
-        <div style={{overflowX:'auto', overflowY:'clip'}}>
-          <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.78rem'}}>
-            <thead>
+        <div style={{
+          overflowX:'auto',
+          overflowY:'auto',
+          maxHeight:'calc(100vh - 220px)',
+          position:'relative',
+          '--sticky-table-top':'0px',
+          '--table-scroll-max-height':'calc(100vh - 220px)',
+          scrollbarGutter:'stable',
+        }}>
+          <table style={{width:'100%', borderCollapse:'separate', borderSpacing:0, fontSize:'0.78rem'}}>
+            <thead style={{position:'sticky', top:0, zIndex:120}}>
               <tr>
                 <th style={{...thSt, textAlign:'center', width:'32px'}} onClick={() => handleSort('sort_order')}>#</th>
                 <th style={{...thSt, textAlign:'left', minWidth:'90px'}}>카테고리</th>
@@ -594,7 +815,7 @@ const SemiconductorView = React.memo(() => {
             <label style={{display:'flex', alignItems:'center', gap:'6px'}}>기준3:
               <input type="date" value={ref3} onChange={e => setRef3(e.target.value)} style={{background:'#0f172a', color:'#e2e8f0', border:'1px solid rgba(148,163,184,0.3)', borderRadius:'6px', padding:'2px 6px'}} />
             </label>
-            <button onClick={loadData} style={{padding:'4px 10px', borderRadius:'6px', border:'1px solid rgba(96,165,250,0.45)', background:'rgba(37,99,235,0.18)', color:'#bfdbfe', cursor:'pointer'}}>적용</button>
+            <button onClick={applyRefDates} style={{padding:'4px 10px', borderRadius:'6px', border:'1px solid rgba(96,165,250,0.45)', background:'rgba(37,99,235,0.18)', color:'#bfdbfe', cursor:'pointer'}}>적용</button>
             <span style={{color:'rgba(255,255,255,0.3)'}}>
               변동률 = (현재가 − 기준일가) / 기준일가 × 100
             </span>
@@ -854,16 +1075,18 @@ const SemiconductorView = React.memo(() => {
                 const numClr = (v) => v == null ? '#e2e8f0' : v >= 0 ? '#86efac' : '#fb7185';
                 const pctClr = (v) => v == null ? '#e2e8f0' : v >= 10 ? '#4ade80' : v >= 0 ? '#fde68a' : '#fb7185';
 
+                const periodKey = (r) => (Number(r?.year || 0) * 10) + Number(r?.quarter || 0);
+
                 // 연간: 오래된→최신(왼쪽→오른쪽), TTM은 맨 오른쪽
                 const annCols = [
-                  ...[...(histData.annual || [])].reverse().map(r => ({
+                  ...[...(histData.annual || [])].sort((a, b) => Number(a?.year || 0) - Number(b?.year || 0)).map(r => ({
                     key: String(r.year), label: String(r.year), data: r, isTtm: false,
                   })),
                   ...(histData.ttm ? [{ key: 'ttm', label: 'TTM', data: histData.ttm, isTtm: true }] : []),
                 ];
 
                 // 분기: 오래된→최신(왼쪽→오른쪽)
-                const qtrCols = [...(histData.quarterly || [])].reverse().map(r => ({
+                const qtrCols = [...(histData.quarterly || [])].sort((a, b) => periodKey(a) - periodKey(b)).map(r => ({
                   key: `${r.year}Q${r.quarter}`, label: r.period, data: r, isTtm: false,
                 }));
 

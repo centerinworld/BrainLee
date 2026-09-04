@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import math
 import os
 from collections import defaultdict
@@ -8,6 +9,7 @@ from statistics import mean, pstdev
 from typing import Any
 
 import httpx
+from services.gemini import generate_text, is_configured, model_name
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -286,9 +288,8 @@ def sector_detail(db: Session, sector_key: str) -> dict[str, Any]:
 
 
 async def generate_ai_summary(scope_type: str, scope_key: str, payload: dict[str, Any], db: Session) -> str:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY가 없습니다.")
+    if not is_configured():
+        raise ValueError("GEMINI_API_KEY 또는 GOOGLE_API_KEY가 없습니다.")
 
     prompt = (
         "당신은 한국 수출입 데이터 애널리스트입니다. "
@@ -296,28 +297,19 @@ async def generate_ai_summary(scope_type: str, scope_key: str, payload: dict[str
         "핵심 변화, 주목 포인트, 잠재적 수혜/리스크 기업군을 포함하되 과장하지 마세요.\n"
         f"JSON:\n{json.dumps(payload, ensure_ascii=False)}"
     )
-    response_payload = {
-        "model": "gpt-5-mini",
-        "input": prompt,
-    }
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/responses",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=response_payload,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-    text = data.get("output_text", "").strip()
+    text = await asyncio.to_thread(
+        generate_text,
+        prompt,
+        system_instruction="당신은 한국 수출입 데이터 애널리스트입니다.",
+        temperature=0.2,
+        max_output_tokens=500,
+        timeout=45,
+    )
     cache = db.query(InsightCache).filter(InsightCache.scope_type == scope_type, InsightCache.scope_key == scope_key).first()
     if not cache:
         cache = InsightCache(scope_type=scope_type, scope_key=scope_key)
     cache.summary_text = text
-    cache.model_name = "gpt-5-mini"
+    cache.model_name = model_name()
     cache.detail_json = json.dumps(payload, ensure_ascii=False)
     db.add(cache)
     db.commit()

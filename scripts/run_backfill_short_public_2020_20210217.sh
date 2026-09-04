@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /Applications/stock_dashboard
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime
 
-PY="/Applications/stock_dashboard/venv/bin/python3"
-LOG="/Applications/stock_dashboard/logs/backfill_short_public_20200101_20210217.screen.log"
+PY="/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3"
+LOG="/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/backfill_short_public_20200101_20210217.screen.log"
 
 {
   echo "[$(date '+%Y-%m-%dT%H:%M:%S')] short/public backfill start"

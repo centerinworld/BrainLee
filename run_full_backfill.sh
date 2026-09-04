@@ -2,7 +2,7 @@
 # ============================================================
 # run_full_backfill.sh — 전체 누락 데이터 수집 마스터 스크립트
 # ============================================================
-# 실행: bash /Applications/stock_dashboard/run_full_backfill.sh
+# 실행: bash /Volumes/Realtek_NVME/stock_dashboard/runtime/run_full_backfill.sh
 #
 # 수집 대상 (누락 현황 기준 2026-05-06):
 #   [1] Naver 수급 5년치   — 2021~2023 약 507일 누락 (inst/frn net_buy)
@@ -16,10 +16,10 @@
 
 # set -e 제거 — 개별 수집 실패가 전체를 중단하지 않도록
 
-cd /Applications/stock_dashboard || { echo "디렉토리 없음"; exit 1; }
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime || { echo "디렉토리 없음"; exit 1; }
 source venv/bin/activate || { echo "venv 활성화 실패"; exit 1; }
 
-LOG_DIR="/Applications/stock_dashboard/logs"
+LOG_DIR="/Volumes/Realtek_NVME/stock_dashboard/runtime/logs"
 mkdir -p "$LOG_DIR"
 TS=$(date +%Y%m%d_%H%M%S)
 
@@ -42,7 +42,7 @@ echo "  로그: tail -f $LOG_DIR/naver_5y_${TS}.log"
 # ⚠️ 서버와 DB 공유 — busy_timeout=60초 설정됨
 echo ""
 echo "[2/5] DART 수주공시 누락구간 백필 (2024-07~2025-12)..."
-python3 /Applications/stock_dashboard/dart_backfill_2024_2025.py >> "$LOG_DIR/dart_2024_2025_${TS}.log" 2>&1 &
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/dart_backfill_2024_2025.py >> "$LOG_DIR/dart_2024_2025_${TS}.log" 2>&1 &
 DART_PID=$!
 echo "  PID: $DART_PID"
 echo "  로그: tail -f $LOG_DIR/dart_2024_2025_${TS}.log"
@@ -53,7 +53,7 @@ echo ""
 echo "[3/5] 대차잔고 5년치 백필 (rank + svc + sector)..."
 echo "  ※ apis.data.go.kr API 사용"
 echo "  예상: 약 1~2시간"
-python3 /Applications/stock_dashboard/collect_short_5years.py \
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_short_5years.py \
   --mode all \
   >> "$LOG_DIR/short_5y_${TS}.log" 2>&1 &
 SHORT_PID=$!
@@ -82,7 +82,7 @@ if [ $DART_EXIT -eq 0 ]; then
     echo "✅ DART 2024-07~2025-12 백필 완료 ($(date))"
     DART_CNT=$(python3 -c "
 import sqlite3
-conn = sqlite3.connect('/Applications/stock_dashboard/stock.db', timeout=30)
+conn = sqlite3.connect('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db', timeout=30)
 try:
     r = conn.execute(\"SELECT COUNT(*) FROM dart_contracts WHERE disclosed_at >= '20240701' AND disclosed_at <= '20251231'\").fetchone()
     print(r[0])
@@ -100,7 +100,7 @@ echo "[4/5] DART 수주공시 2021~2024-06 보완..."
 if ps aux | grep -v grep | grep "dart_backfill\|collect_dart_contracts" | grep -q python 2>/dev/null; then
     echo "  → 이미 실행 중. 스킵."
 else
-    python3 /Applications/stock_dashboard/dart_backfill_5years.py \
+    python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/dart_backfill_5years.py \
       >> "$LOG_DIR/dart_5y_${TS}.log" 2>&1 &
     DART5_PID=$!
     echo "  PID: $DART5_PID"
@@ -114,7 +114,7 @@ if [ $SHORT_EXIT -eq 0 ]; then
     echo "✅ 대차잔고 5년치 완료 ($(date))"
     python3 - 2>/dev/null <<'PYEOF'
 import sqlite3
-conn = sqlite3.connect('/Applications/stock_dashboard/stock.db', timeout=30)
+conn = sqlite3.connect('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db', timeout=30)
 for t in ['short_rank_daily','short_sell_daily','short_sector_daily']:
     try:
         r = conn.execute(f'SELECT COUNT(DISTINCT bas_dt), MIN(bas_dt), MAX(bas_dt) FROM {t}').fetchone()
@@ -133,10 +133,10 @@ echo "  ⏳ Naver 수급 수집 계속 진행 중 (PID: $NAVER_PID)"
 echo ""
 echo "  Naver 완료 후 실행할 것:"
 echo "  [5] BigQuery 전체 동기화:"
-echo "      cd /Applications/stock_dashboard && source venv/bin/activate"
+echo "      cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate"
 echo "      python3 bigquery_sync.py --mode full"
 echo ""
 echo "  [6] US 주식 5년치 (별도 서비스):"
-echo "      cd /Applications/us_market_dashboard && source venv/bin/activate"
+echo "      cd /Volumes/Realtek_NVME/us_market_dashboard && source venv/bin/activate"
 echo "      python3 backfill.py --mode all"
 echo "========================================================"

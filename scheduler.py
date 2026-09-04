@@ -33,6 +33,13 @@ from pathlib import Path
 from typing import Callable
 
 import config
+from collection_health import (
+    evaluate_job_outputs,
+    finish_collection_run,
+    interrupt_running_collection_runs,
+    refresh_job_health_snapshot,
+    start_collection_run,
+)
 from db_utils import connect_stock_db, stock_db_write_lock
 
 logger = logging.getLogger(__name__)
@@ -45,8 +52,6 @@ _DB_WRITE_JOBS = {
     "장중1분가격",
     "장중5분수급",
     "장마감",
-    "스크리너사전계산",
-    "스크리너",
     "공공데이터",
     "KIS일별수집",
     "KRX일별수집",
@@ -60,12 +65,17 @@ _DB_WRITE_JOBS = {
     "텐버거오후",
     "HOT섹터블로그",
     "섹터로테이션캐시",
+    "섹터지수보완",
     "스탁이지분석",
     "스탁이지주간",
+    "보유종목매도알림",
     "DART수주공시",
+    "DART수주계약",
     "DART희석공시",
+    "DART희석공시마감",
     "키움신용잔고",
     "키움외국인지분율",
+    "키움대량체결",
     "DART임원매매",
     "DART수주잔고",
     "DART원가재고",
@@ -77,6 +87,7 @@ _DB_WRITE_JOBS = {
     "BQ3배파이프라인",
     "BQ아침알림",
     "컨센서스수집",
+    "재무무결성일일",
     "캐치업수급",
     "캐치업KIS지수",
     "캐치업KRX지수",
@@ -84,22 +95,141 @@ _DB_WRITE_JOBS = {
     "FnGuide재무월간",   # ★ 월간 연결/별도 재무제표 + 스냅샷
     "스탁이지30분동기화",
     "시장시그널브리핑",
+    "글로벌매크로수집",
+    "거시지표백테스트",
     "V14장중10분",
-    "키움연결체크",
     "키움실시간스냅샷",
     "WAL일별체크",
     "실적신호스캔",
     "텐버거위클리",
     "텐버거트리거",
+    "체리형부패밀리학습",
+    "KRX프로그램매매",
     "종목프로그램매매",
-    "페이지데이터감사",
+    "미국일별시세팩터수집",
+    "미국바이오파이프라인",
+    "소스인텔리전스주간",
 }
+# 의도적으로 _DB_WRITE_JOBS에서 제외한 잡 (stock.db에 쓰지 않으므로 배타적 writer 락 불필요):
+#   - 키움연결체크: KiwoomCollector.health_check()로 토큰 상태만 확인하고 로깅만 함.
+#     10분 주기로 락을 다투다 2026-07 이후에만 404회 lock_timeout을 냈다.
+#   - 페이지데이터감사: scripts/audit_all_page_data_quality.py는 전 테이블을 읽고
+#     research_outputs/*.md만 쓴다 (DB write 0건).
+
+_DB_LOCK_RETRY_DELAYS = tuple(
+    int(value.strip())
+    for value in os.getenv("COLLECTION_DB_LOCK_RETRY_SECONDS", "0,60,300").split(",")
+    if value.strip().isdigit()
+) or (0, 60, 300)
+_DB_LOCK_TIMEOUT_SECONDS = float(os.getenv("COLLECTION_DB_LOCK_TIMEOUT_SECONDS", "30"))
+
+# 주간/월간 잡은 한 번 굶으면 다음 기회가 7~30일 뒤라, 기본 재시도 예산(0+60+300초 ≈ 6분)으로는
+# 장시간 락 보유자를 절대 기다려낼 수 없다. 실측: 2026-08-02(일) DART수주잔고가 01:20~07:47
+# (6.5시간) 락을 쥔 동안 그 뒤 예약된 일요일 잡 5개(DART원가재고/매입재료비/임원매매/직원수/임직원CH)가
+# 전부 재시도를 소진하고 그 주를 통째로 건너뛰었다. 이런 잡은 몇 시간이든 기다리는 편이 옳다.
+_DB_LOCK_LONG_WAIT_JOBS = {
+    "현금흐름배치",
+    "DART원가재고",
+    "DART매입재료비",
+    "DART임원매매",
+    "DART직원수",
+    "DART임직원CH",
+    "DART수주잔고",
+    "DART세그먼트",
+    "FnGuide재무월간",
+    "월간업데이트",
+    "텐버거위클리",
+    "스탁이지주간",
+}
+_DB_LOCK_LONG_RETRY_DELAYS = tuple(
+    int(value.strip())
+    for value in os.getenv(
+        "COLLECTION_DB_LOCK_LONG_RETRY_SECONDS", "0,300,900,1800,1800,1800,1800"
+    ).split(",")
+    if value.strip().isdigit()
+) or (0, 300, 900, 1800, 1800, 1800, 1800)
 
 # 장중 시간 (KST)
 _MARKET_OPEN  = (9,  0)
 _MARKET_CLOSE = (15, 40)
 
 from trading_calendar import is_kr_trading_day, is_trading_day  # noqa: E402
+
+
+def _recent_price_trade_dates(
+    limit: int = 5,
+    *,
+    min_coverage: int = 2000,
+    include_today_after_close: bool = False,
+) -> list[str]:
+    """Return recent fully populated trade dates as YYYYMMDD.
+
+    Price history is the most reliable local signal that a Korean trading day
+    has finished and has enough listed-stock coverage to run dependent jobs.
+    """
+    now = datetime.now()
+    today = now.date().isoformat()
+    params: list[object] = [min_coverage, limit]
+    today_clause = ""
+    if not include_today_after_close or (now.hour, now.minute) < _MARKET_CLOSE:
+        today_clause = "WHERE date < ?"
+        params = [today, min_coverage, limit]
+
+    try:
+        with connect_stock_db(timeout=30, row_factory=None, readonly=True) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT date
+                FROM price_history
+                {today_clause}
+                GROUP BY date
+                HAVING COUNT(DISTINCT stock_code) >= ?
+                ORDER BY date DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [str(row[0]).replace("-", "") for row in rows]
+    except Exception as exc:
+        logger.warning(f"[스케줄러] 최근 거래일 조회 실패: {exc}")
+        return [date.today().strftime("%Y%m%d")]
+
+
+def _missing_dataset_dates(
+    table: str,
+    date_col: str,
+    dates: list[str],
+    *,
+    min_coverage: int,
+    coverage_expr: str,
+    where: str = "",
+) -> list[str]:
+    """Return dates whose local table coverage is below the required count."""
+    if not dates:
+        return []
+    iso_dates = [f"{d[:4]}-{d[4:6]}-{d[6:]}" for d in dates]
+    placeholders = ",".join("?" for _ in iso_dates)
+    where_sql = f" AND ({where})" if where else ""
+    try:
+        with connect_stock_db(timeout=30, row_factory=None, readonly=True) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT {date_col}, {coverage_expr} AS coverage
+                FROM {table}
+                WHERE {date_col} IN ({placeholders}){where_sql}
+                GROUP BY {date_col}
+                """,
+                iso_dates,
+            ).fetchall()
+        coverage_by_date = {str(row[0]): int(row[1] or 0) for row in rows}
+        return [
+            raw
+            for raw, iso in zip(dates, iso_dates)
+            if coverage_by_date.get(iso, 0) < min_coverage
+        ]
+    except Exception as exc:
+        logger.warning(f"[스케줄러] 결측 날짜 조회 실패 {table}: {exc}")
+        return dates
 
 
 def _is_market_open() -> bool:
@@ -123,25 +253,99 @@ def _seconds_until(hour: int, minute: int, skip_weekend: bool = True) -> float:
     return max(0.0, (target - datetime.now()).total_seconds())
 
 
-def _run_job_safe(name: str, fn: Callable) -> bool:
-    """예외 격리 래퍼 — 한 잡이 실패해도 스케줄러 전체에 영향 없음."""
+def _current_lock_holder() -> str:
+    """Best-effort read of who currently holds the stock.db writer lock.
+
+    stock_db_write_lock writes "<pid> <job-name> <epoch>" into the lock file
+    while held, so a starved job can name its blocker instead of just logging
+    "timeout". Purely diagnostic — never raises.
+    """
     try:
-        if name in _DB_WRITE_JOBS:
-            with stock_db_write_lock(name, timeout=3) as acquired:
-                if not acquired:
-                    logger.warning(f"[스케줄러] {name} 스킵 — 다른 DB writer 실행 중")
-                    return False
-                logger.info(f"[스케줄러] {name} 시작")
-                fn()
-                logger.info(f"[스케줄러] {name} 완료")
+        from db_utils import DB_WRITE_LOCK_PATH
+
+        raw = DB_WRITE_LOCK_PATH.read_text().strip()
+        if not raw:
+            return "unknown(빈 락파일 — 방금 해제됐거나 비스케줄러 프로세스)"
+        parts = raw.split()
+        if len(parts) >= 3 and parts[2].isdigit():
+            held_for = int(time.time()) - int(parts[2])
+            return f"pid={parts[0]} job={parts[1]} 보유 {held_for // 60}분{held_for % 60}초"
+        return raw[:120]
+    except Exception:
+        return "unknown"
+
+
+def _run_job_safe(name: str, fn: Callable) -> bool:
+    """Run one collection job with a durable ledger and DB-lock retries."""
+
+    def run_once(attempt: int) -> bool:
+        run_id = start_collection_run(name, attempt=attempt)
+        try:
+            logger.info(f"[스케줄러] {name} 시작 (시도 {attempt})")
+            fn()
+            outputs = evaluate_job_outputs(name)
+            refresh_job_health_snapshot(name, outputs)
+            warning = any(item["status"] != "healthy" for item in outputs)
+            status = "success_with_warning" if warning else "success"
+            finish_collection_run(run_id, status, details={"datasets": outputs})
+            if warning:
+                logger.warning(f"[스케줄러] {name} 완료 후 데이터 계약 경고: {outputs}")
+                return False
+            logger.info(f"[스케줄러] {name} 완료")
             return True
-        logger.info(f"[스케줄러] {name} 시작")
-        fn()
-        logger.info(f"[스케줄러] {name} 완료")
-        return True
-    except Exception as e:
-        logger.error(f"[스케줄러] {name} 오류: {e}", exc_info=True)
-        return False
+        except Exception as exc:
+            finish_collection_run(run_id, "failed", error=str(exc))
+            logger.error(f"[스케줄러] {name} 오류: {exc}", exc_info=True)
+            return False
+
+    if name not in _DB_WRITE_JOBS:
+        return run_once(1)
+
+    delays = (
+        _DB_LOCK_LONG_RETRY_DELAYS
+        if name in _DB_LOCK_LONG_WAIT_JOBS
+        else _DB_LOCK_RETRY_DELAYS
+    )
+    for attempt, delay in enumerate(delays, start=1):
+        if delay:
+            logger.warning(f"[스케줄러] {name} DB 잠금 재시도 대기: {delay}초")
+            time.sleep(delay)
+        run_id = start_collection_run(name, attempt=attempt)
+        try:
+            with stock_db_write_lock(name, timeout=_DB_LOCK_TIMEOUT_SECONDS) as acquired:
+                if not acquired:
+                    finish_collection_run(
+                        run_id,
+                        "lock_timeout",
+                        error=f"stock.db writer lock timeout ({_DB_LOCK_TIMEOUT_SECONDS:g}s)",
+                        details={
+                            "retry_scheduled": attempt < len(delays),
+                            "lock_holder": _current_lock_holder(),
+                        },
+                    )
+                    logger.warning(
+                        f"[스케줄러] {name} DB writer 잠금 실패 "
+                        f"({attempt}/{len(delays)}) — 보유자: {_current_lock_holder()}"
+                    )
+                    continue
+                logger.info(f"[스케줄러] {name} 시작 (시도 {attempt})")
+                fn()
+                outputs = evaluate_job_outputs(name)
+                refresh_job_health_snapshot(name, outputs)
+                warning = any(item["status"] != "healthy" for item in outputs)
+                status = "success_with_warning" if warning else "success"
+                finish_collection_run(run_id, status, details={"datasets": outputs})
+                if warning:
+                    logger.warning(f"[스케줄러] {name} 완료 후 데이터 계약 경고: {outputs}")
+                    return False
+                logger.info(f"[스케줄러] {name} 완료")
+                return True
+        except Exception as exc:
+            finish_collection_run(run_id, "failed", error=str(exc))
+            logger.error(f"[스케줄러] {name} 오류: {exc}", exc_info=True)
+            return False
+    logger.error(f"[스케줄러] {name} DB 잠금 재시도 소진")
+    return False
 
 
 class CollectionScheduler:
@@ -154,6 +358,10 @@ class CollectionScheduler:
         self._db_factory = db_factory
         self._threads: list[threading.Thread] = []
         self._stop_event = threading.Event()
+        # FastAPI startup hooks can be invoked more than once during reloads or
+        # integration setup. Starting the same loop twice doubles API traffic.
+        self._start_lock = threading.Lock()
+        self._started = False
         self._kiwoom_rt_cursor = 0
 
     # ══════════════════════════════════════════════════════════
@@ -162,7 +370,17 @@ class CollectionScheduler:
 
     def start(self) -> None:
         """서버 startup 시 호출 — 모든 스케줄 스레드 시작."""
+        with self._start_lock:
+            # Do not clear stop_event while an earlier generation is winding
+            # down: that would revive its loops and duplicate every collector.
+            if self._started or any(thread.is_alive() for thread in self._threads):
+                logger.warning("[스케줄러] 중복 start 요청 무시")
+                return
+            self._started = True
         self._stop_event.clear()
+        interrupted = interrupt_running_collection_runs()
+        if interrupted:
+            logger.warning(f"[스케줄러] 이전 프로세스 미종료 실행 {interrupted}건 정리")
         jobs = [
             ("야간배치",        self._loop_nightly),
             ("월간업데이트",    self._loop_monthly),
@@ -182,10 +400,17 @@ class CollectionScheduler:
             ("텐버거오전",      self._loop_tenbagger_morning),    # ★ 09:00 텐버거 발굴
             ("텐버거정오",      self._loop_tenbagger_noon),       # ★ 12:00 텐버거 발굴
             ("텐버거오후",      self._loop_tenbagger_afternoon),  # ★ 15:00 텐버거 발굴
-            # ("NPS고용업데이트", self._loop_nps_daily),          # ⛔ 비활성: apis.data.go.kr DNS 차단 + 연간 총인원은 월별차이 없어 신호 불필요
+            ("NPS고용업데이트", self._loop_nps_daily),            # ★ 매일 06:00 공개 최신월 감지 + 최근 3개월 보완
             ("미국지수수집",    self._loop_us_indices),           # ★ 매일 06:30 나스닥/S&P500 수집
+            ("글로벌매크로수집", self._loop_global_macro_daily),    # ★ 매일 06:45 글로벌 거시/원자재/이벤트 지표 수집
+            ("거시가격품질감사", self._loop_macro_price_quality),   # ★ 매일 07:05 심볼 혼입·범위 이탈 탐지
+            ("미국일별시세팩터수집", self._loop_us_daily_quotes_and_factors), # ★ 매일 06:30 미국 전종목 OHLCV+팩터 stale-only
+            ("미국바이오파이프라인", self._loop_us_biotech_pipeline), # ★ 매일 06:50 SEC 10-K/10-Q 기반 바이오 후보물질 보강
+            ("소스인텔리전스주간", self._loop_source_intelligence_weekly), # ★ 매주 일요일 10:00 트릴리온 등 등록 소스 티커 의견 재검토
+            ("미국13F거물공시", self._loop_us_13f_refresh), # ★ 매일 07:12 SEC 13F + House PTR 갱신
             ("시장시그널브리핑", self._loop_market_signal_briefing), # ★ 매일 07:00 시장 5단계 국면 + AI 브리핑
             ("HOT섹터블로그",   self._loop_sector_blog),          # ★ 매일 07:00 블로그 신규 포스트 파싱
+            ("섹터지수보완",    self._loop_sector_index_rebuild),  # ★ 매일 18:40 가격히스토리 기반 섹터지수 보완
             ("섹터로테이션캐시", self._loop_sector_rotation_cache), # ★ 장중 1시간 + 장마감 기준 주도섹터 캐시
             ("AI주도섹터",      self._loop_ai_leading_sector),    # ★ 매일 07:20 미국 증시 기반 주도 섹터 판독
             ("섹터오전텔레그램", self._loop_sector_morning_tg),    # ★ 매일 08:30 섹터 AI 리포트 텔레그램
@@ -193,12 +418,21 @@ class CollectionScheduler:
             ("스탁이지분석",    self._loop_stockeasy_analysis),   # ★ 매일 16:30 스탁이지 전략 분석
             ("스탁이지주간",    self._loop_stockeasy_weekly),     # ★ 매주 일요일 09:00 주간 요약
             ("스탁이지30분동기화", self._loop_stockeasy_30m_sync),  # ★ 매 30분 모멘텀 동기화 + 실주문(옵션)
-            ("V14장중10분",   self._loop_v14_10m),                  # ★ 장중 10분 V14 추천/가상매매
+            ("보유종목매도알림", self._loop_portfolio_sell_alerts), # ★ 매일 15:00 보유종목 매도검토 텔레그램 요약
+            # ("V14장중10분", self._loop_v14_10m),                  # ⛔ 2026-07-23 비활성: GPT V18 가상매매 승률27%(-8.6M 누적손실)로 저효율 확인되어 삭제, 조합 가상매매로 대체
+            ("V12골든크로스",  self._loop_gc_20m),                   # ★ 장중 20분 V12 골든크로스 가상매매
+            ("V-RECOVERY",    self._loop_rec_20m),                  # ★ 장중 20분 V-RECOVERY 낙폭반등 가상매매
+            ("V-CONTRACT",    self._loop_cm_20m),                   # ★ 장중 20분 V-CONTRACT-MOMENTUM 해외수주 모멘텀 가상매매(2026-08-09)
+            ("전방검증체크",   self._loop_forward_validation_check),  # ★ 매일 06:10 라이브 가상매매 실측으로 forward_validation 아티팩트 재평가(2026-08-13)
+            ("전략센터상위5가상매매", self._loop_combo_daily),          # ★ 매일 18:35 전략센터 현재 상위 5개를 재선정해 가상매매
             ("키움연결체크",   self._loop_kiwoom_health),            # ★ 키움 REST 연결 상태 점검(장중 10분)
             ("키움실시간스냅샷", self._loop_kiwoom_realtime),         # ★ 장중 1분 키움 실시간 스냅샷 수집
+            ("키움조건검색",   self._loop_kiwoom_condition_snapshot), # ★ 장중 조건식 현재 편입 + 편입/편출 이력
             # ("고용보험배치",  self._loop_insurance_monthly),    # ⛔ 비활성: 연간 총인원 수집 — 월별차이 없어 의미 없음 (사용자 요청)
             ("DART수주공시",   self._loop_dart_contracts),        # ★ 매일 08:00/13:00/17:00 DART 수주공시
+            ("DART수주계약",   self._loop_order_contracts),       # ★ 매일 19:00 수주잔고 급증 proxy 테이블 적재
             ("DART희석공시",   self._loop_dart_dilution),         # ★ 매일 07:10 CB/BW/EB 희석 공시 수집
+            ("DART희석공시마감", self._loop_dart_dilution_close),  # ★ 평일 17:20 당일 CB/BW/EB·증자 공시 반영
             ("키움신용잔고",   self._loop_kiwoom_margin),         # ★ 매일 18:45 종목별 신용/대주 잔고 (코스피+코스닥 80%)
             ("키움외국인지분율", self._loop_kiwoom_foreign_hold),  # ★ 매일 19:15 외국인 지분율 수집 (코스피+코스닥 80%)
             ("DART임원매매",   self._loop_dart_insider),          # ★ 매주 일요일 02:30 임원매매 전종목 + 매일 공시 incremental
@@ -212,6 +446,7 @@ class CollectionScheduler:
             ("BigQuery동기화", self._loop_bigquery_sync),         # ★ 매일 23:30 BigQuery 전체 운영테이블 동기화 → 텐버거 BQ 분석
             ("BQ아침알림", self._loop_bq_morning_alert),          # ★ 매일 07:30 3배 패턴 아침 알림
             ("컨센서스수집",   self._loop_consensus),             # ★ 매일 04:00 한경 컨센서스 증분 수집
+            ("재무무결성일일", self._loop_financial_integrity_daily), # ★ 매일 06:20 재무 이상값 수리 + 무결성 리포트
             ("재무무결점월간", self._loop_financial_integrity_monthly),  # ★ 매월 1일 05:00 재무 무결점 검사
             ("재무무결점분기", self._loop_financial_integrity_quarterly), # ★ 분기 공시마감 1주 후 자동 보완
             ("KRX종목기본정보", self._loop_krx_base_info),               # ★ 매일 18:35 KRX 종목기본정보 + 변동 감지
@@ -225,15 +460,37 @@ class CollectionScheduler:
             ("CF3중검증",     self._loop_cf_triple_validate),          # ★ 매일 05:30 신규 CF 3중 검증 (DART·FnGuide·Seibro)
             ("주간4중검증",   self._loop_weekly_revalidation),         # ★ 매주 일요일 03:00 전종목 4중 검증 Phase A+B+C+E+F
             ("DB유지보수",    self._loop_db_maintenance),              # ★ 매주 일요일 04:00 VACUUM/ANALYZE/WAL checkpoint
+            ("PostgreSQL주간백업", self._loop_postgres_weekly_backup), # ★ 매주 일요일 05:10 전체 스냅샷 백업+검증
+            ("PostgreSQL백업상태", self._loop_postgres_backup_health), # ★ 매일 05:50 해시·카탈로그·신선도 검증
+            ("PostgreSQL커트오버검증", self._loop_postgres_cutover_verify), # ★ 매일 06:10 테이블별 드리프트/매크로오염 감시+자동복구
             ("WAL일별체크",   self._loop_wal_daily_check),            # ★ 매일 04:30 WAL 크기 감시 + 100MB 초과 시 checkpoint
             ("실적신호스캔",  self._loop_earnings_signal_scan),      # ★ 매일 06:00 + 분기실적 시즌 추가 스캔
             ("키움투자자수급", self._loop_kiwoom_investor_daily),       # ★ 매일 19:00 키움 ka10059 종목별 투자자 순매수 수집
             ("키움종목기본정보", self._loop_kiwoom_stock_universe),     # ★ 매주 월요일 06:30 키움 ka10001 PER/PBR/ROE/유동주식수 갱신
+            ("키움대량체결", self._loop_kiwoom_large_trade_rank),      # ★ 장중 10분 키움 ka00190 대량체결 원본 순위
+            ("카페시그널주간",  self._loop_cafe_signal_weekly),         # ★ 매주 월요일 07:10 지표상회 카페 종목/섹터 시그널 구조화
+            ("카페시그널월간",  self._loop_cafe_signal_monthly),        # ★ 매월 1일 07:15 지표상회 카페 월간 시그널 구조화
+            ("체리형부최신채널", self._loop_cherry_latest_channel),      # ★ 매일 08:45 @Brianlee4 최신 체리형부 문서 증분 수집
+            ("체리형부패밀리학습", self._loop_cherry_family_learning),   # ★ 매일 09:05 체리형부 family 등록상태 확인 + 재학습 로그 저장
+            ("퀀트지표트리거",  self._loop_quant_indicator_signal),       # ★ 매일 07:40 지표 이상치 → 관련 종목 매수 후보 텔레그램
+            ("거시지표백테스트", self._loop_macro_indicator_backtest),     # ★ 매주 월요일 07:50 거시지표×섹터 후보 검증
+            ("데이터무결성후속검증", self._loop_data_integrity_followup), # ★ 매일 00:05 2026-08-22 세션 발견 잔여 이상치(revenue_extreme_yoy/dilution) DART 원문대조 재검증
+            ("기업행위조정계수후속확정", self._loop_corporate_action_confirmation_followup), # ★ 매일 00:10 유상증자 TERP 조정계수 매칭 재시도 (turnaround/regime_adaptive 등 백테스트 검증 병목 해소용, DART 미사용)
+            ("가격점프감사재빌드", self._loop_price_jump_audit_rebuild), # ★ 매일 00:15 price_jump_audit 재빌드(2026-08-24 세션: 2주 이상 스테일 방치로 허위오탐 발생 확인, 재발방지)
+            ("가격외부소스재대조", self._loop_naver_price_verify), # ★ 매일 00:20 신규 가격점프 이벤트만 Naver와 교차대조(--only-new, DART 미사용)
+            ("다중소스재무교차검증", self._loop_multi_source_financial_crosscheck), # ★ 매일 00:25 손익/현금흐름/매입재료비를 DART(anchor) vs FnGuide/Naver/Yahoo 다중소스로 교차검증(2026-08-26 세션, DART API 미사용 — FnGuide스크레이핑+naver_financial테이블+yfinance)
+            ("전략센터주간재검증", self._loop_weekly_strategy_reverify), # ★ 매주 일요일 01:30 등록전략 전량 최신데이터로 재실행(2026-08-24: V8 승격/V10·V12 정직한 하향 확인된 바로 그 배치를 정기화)
             ("DART재무재수집",  self._loop_dart_financial_recollect),  # ★ 매일 00:30 DART 재무제표 재수집 (ETF/ETN/상폐 제외)
             ("DART_CF위험군재수집", self._loop_dart_cf_risk_recollect), # ★ 매일 01:00 CF MISSING_Q123/NULL_Q123_DEPR/MIXED_SOURCE 재수집
             ("텐버거위클리",      self._loop_tenbagger_weekly),          # ★ 매주 월요일 07:30 위클리 리포트 + 텔레그램
+            ("텐버거역사검증",    self._loop_tenbagger_historical_validation), # ★ 매주 월요일 08:10 지속형 텐버거 로직 재검증
             ("텐버거트리거",      self._loop_tenbagger_trigger),         # ★ 평일 18:00 복합 트리거 알림
             ("페이지데이터감사",   self._loop_page_data_audit),           # ★ 매일 06:40 전체 페이지 데이터 신선도 감사
+            ("턴어라운드워치사전계산", self._loop_turnaround_watch_precompute), # ★ 매일 04:40 무거운 턴어라운드 발굴 스캔 사전계산(CPU 유휴시간대)
+            ("체리형부스크리너사전계산", self._loop_cherry_screener_precompute), # ★ 매일 04:45 체리형부식 3대 스크리닝 전종목 스캔 사전계산
+            ("투자의사결정RAG", self._loop_investment_decision_rag), # 평일 저가 구간에만 대기 중인 문서 RAG 처리
+            ("FnGuideDART전종목검증", self._loop_fnguide_dart_verify_sweep),   # ★ 매일 03:15 FNGUIDE 일일한도 내에서 전종목 순차 교차검증
+            ("미검증스냅샷백필", self._loop_unverified_snapshot_backfill),   # ★ 매일 03:45 financial_source_snapshot unverified 백로그 정리(2026-08-28 신설, DART만 소비, FnGuide 재수집 불필요)
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -248,8 +505,58 @@ class CollectionScheduler:
 
     def stop(self) -> None:
         """서버 shutdown 시 호출."""
+        with self._start_lock:
+            if not self._started:
+                return
+            self._started = False
         self._stop_event.set()
         logger.info("[스케줄러] 중지 신호 전송")
+
+    def _loop_postgres_sync(self) -> None:
+        """Keep PostgreSQL current while legacy collectors are being retired."""
+        if not config.IS_POSTGRES:
+            return
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            try:
+                subprocess.run(
+                    [sys.executable, str(Path(__file__).parent / "scripts" / "sync_tenbagger_postgres.py")],
+                    cwd=str(Path(__file__).parent),
+                    check=True,
+                    timeout=25 * 60,
+                )
+            except Exception as exc:
+                logger.error("[PostgreSQL증분동기화] 실패: %s", exc)
+            self._wait_secs(30 * 60)
+
+    def _loop_tenbagger_historical_validation(self) -> None:
+        """Rebuild the leakage-controlled historical scoreboard every Monday."""
+        while not self._stop_event.is_set():
+            wait = _seconds_until(8, 10, skip_weekend=False)
+            if self._stop_event.wait(wait):
+                break
+            if datetime.now().weekday() != 0:
+                self._wait_secs(23 * 3600)
+                continue
+            try:
+                outputs = []
+                for script_name in (
+                    "research_historical_tenbagger_scoreboard_v2.py",
+                    "research_historical_tenbagger_causes.py",
+                    "discover_historical_tenbagger_signals.py",
+                ):
+                    result = subprocess.run(
+                        [sys.executable, str(Path(__file__).parent / "scripts" / script_name)],
+                        cwd=str(Path(__file__).parent),
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=20 * 60,
+                    )
+                    outputs.append(f"{script_name}: {result.stdout[-500:]}")
+                logger.info("[텐버거역사검증] 완료: %s", " | ".join(outputs))
+            except Exception as exc:
+                logger.error("[텐버거역사검증] 실패: %s", exc)
 
     # ══════════════════════════════════════════════════════════
     # 스케줄 루프
@@ -375,11 +682,9 @@ class CollectionScheduler:
             "^GSPC": "S&P500",
             "^VIX":  "VIX",
             "2YY=F": "US2Y",
-            "^UST2Y": "US2Y_ALT",
             "^TNX": "US10Y",
             "10Y=F": "US10Y_ALT",
             "^TYX": "US30Y",
-            "30Y=F": "US30Y_ALT",
             "DX-Y.NYB": "DXY",
         }
         for symbol, name in us_symbols.items():
@@ -388,6 +693,68 @@ class CollectionScheduler:
             except Exception as e:
                 logger.warning(f"[미국지수수집] {name}: {e}")
         logger.info("[미국지수수집] 완료")
+
+    def _loop_global_macro_daily(self) -> None:
+        """매일 06:45 — 글로벌 거시/원자재/이벤트 fast-moving 지표 갱신."""
+        logger.info("[글로벌매크로수집] 루프 시작")
+        self._wait_secs(10)
+        while not self._stop_event.is_set():
+            self._wait_until(6, 45, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("글로벌매크로수집", self._job_global_macro_daily)
+            self._wait_secs(23 * 3600)
+        logger.info("[글로벌매크로수집] 루프 종료")
+
+    def _job_global_macro_daily(self) -> None:
+        """global_macro_data 최신화. 퀀트 메뉴 반영은 19:35 브릿지에서 수행."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/collect_global_macro_daily.py",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=420,
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+        )
+        logger.info(f"[글로벌매크로수집] 완료: {result.stdout[-800:] if result.stdout else ''}")
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "global macro collection failed")[-800:])
+
+    def _loop_macro_price_quality(self) -> None:
+        """매일 07:05 거시 심볼 혼입과 비정상 범위 감사."""
+        logger.info("[거시가격품질감사] 루프 시작")
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            self._wait_until(7, 5, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("거시가격품질감사", self._job_macro_price_quality)
+            self._wait_secs(23 * 3600)
+        logger.info("[거시가격품질감사] 루프 종료")
+
+    def _job_macro_price_quality(self) -> None:
+        script = str(Path(__file__).resolve().parent / "scripts" / "repair_macro_price_contamination.py")
+        result = subprocess.run(
+            [sys.executable, script],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            try:
+                from notifier import send
+
+                send(
+                    "<b>거시 가격 품질 감사 실패</b>\n"
+                    + (result.stderr or result.stdout)[-1200:],
+                    key=f"macro_price_quality_failure_{date.today().isoformat()}",
+                )
+            except Exception:
+                pass
+            raise RuntimeError(f"macro price quality audit failed: {(result.stderr or result.stdout)[-1200:]}")
+        logger.info("[거시가격품질감사] 정상: 오염 0건")
 
     def _loop_screener(self) -> None:
         """매 30분 — AI 스크리너 사전계산."""
@@ -486,7 +853,14 @@ class CollectionScheduler:
             conn.close()
 
         # 오늘 DART 공시 종목 (OpenDart API → 공개사이트 fallback)
+        # ⚠️ 2026-08-15 발견: 이 잡은 매일 03:30(자정 이후)에 실행되는데
+        # date.today()로 "오늘"만 조회하면, 실제 공시는 대부분 전날 영업시간 중
+        # 이뤄지므로(예: 8/14 오후 공시 → 8/15 03:30 실행 시점엔 이미 "어제"가 됨)
+        # 구조적으로 항상 놓치고 있었음(에이엘티 172670 반기보고서 등 다수 종목
+        # 영향 — dart_disclosures엔 잡히지만 financial_data 자동갱신은 트리거 안 됨).
+        # 전일~당일 범위로 조회해 자정 전후 어느 쪽에 걸리든 놓치지 않도록 수정.
         today_codes: set[str] = set()
+        yesterday_str = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
         today_str = date.today().strftime("%Y%m%d")
 
         # 1차: OpenDart API
@@ -495,7 +869,7 @@ class CollectionScheduler:
             dart = collector.dart
             if dart:
                 for kind in ["A", "B"]:
-                    df = dart.list(today_str, today_str, kind=kind)
+                    df = dart.list(start=yesterday_str, end=today_str, kind=kind)
                     if df is not None and not df.empty and "stock_code" in df.columns:
                         for c in df["stock_code"].dropna().unique():
                             today_codes.add(str(c).zfill(6))
@@ -512,10 +886,9 @@ class CollectionScheduler:
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
                     "Referer": "https://dart.fss.or.kr",
                 }
-                _today_fmt = date.today().strftime("%Y%m%d")
                 _resp = _req.post(
                     "https://dart.fss.or.kr/dsab007/detailSearch.ax",
-                    data={"startDate": _today_fmt, "endDate": _today_fmt,
+                    data={"startDate": yesterday_str, "endDate": today_str,
                           "pageNo": 1, "pageCount": 200},
                     headers=_headers, timeout=20,
                 )
@@ -677,6 +1050,48 @@ class CollectionScheduler:
         except Exception as e:
             logger.warning(f"[장마감] 체결/스냅샷: {e}")
 
+        # kiwoom_tick_history/kiwoom_minute_snapshot 보존정책 (2026-07-22 신규): 두 테이블 모두
+        # 모든 소비처가 "오늘" 데이터만 조회하는데 삭제로직이 없어 5/26 이후 각각 1210만행/183만행까지
+        # 무제한 누적되던 문제 발견 → 매일 장마감 후 7일 초과분 배치삭제(200건씩 나눠 긴 락 방지).
+        # 2026-08-24: rowid는 SQLite 전용(PostgreSQL엔 없음) — 이 배치삭제가 PostgreSQL
+        # 라우팅 하에서 매일 조용히 실패해 7/31부터 24일치(tick 373만/minute 68만행)가
+        # 다시 무제한 누적됨. id 컬럼이 있는 테이블은 id 기반 배치삭제, 없는 테이블
+        # (kiwoom_minute_snapshot)은 날짜 단위로 나눠 삭제(포터블, 큰 락 회피).
+        for _table, _col in (("kiwoom_tick_history", "event_ts"), ("kiwoom_minute_snapshot", "minute_ts")):
+            try:
+                import sqlite3 as _sl3
+                _c = _sl3.connect("stock.db", timeout=60)
+                _c.execute("PRAGMA busy_timeout=60000")
+                _cutoff = _c.execute("SELECT date('now','-7 day')").fetchone()[0]
+                _deleted = 0
+                if _table == "kiwoom_tick_history":
+                    while True:
+                        _cur = _c.execute(
+                            f"DELETE FROM {_table} WHERE id IN "
+                            f"(SELECT id FROM {_table} WHERE substr({_col},1,10) < ? LIMIT 200000)",
+                            (_cutoff,),
+                        )
+                        _c.commit()
+                        _deleted += _cur.rowcount
+                        if _cur.rowcount < 200000:
+                            break
+                else:
+                    stale_dates = [
+                        r[0] for r in _c.execute(
+                            f"SELECT DISTINCT substr({_col},1,10) FROM {_table} WHERE substr({_col},1,10) < ?",
+                            (_cutoff,),
+                        ).fetchall()
+                    ]
+                    for _d in stale_dates:
+                        _cur = _c.execute(f"DELETE FROM {_table} WHERE substr({_col},1,10) = ?", (_d,))
+                        _c.commit()
+                        _deleted += _cur.rowcount
+                _c.close()
+                if _deleted:
+                    logger.info(f"[장마감] {_table} 보존정책: {_deleted}건 삭제(cutoff={_cutoff})")
+            except Exception as e:
+                logger.warning(f"[장마감] {_table} 보존정책: {e}")
+
     def _job_screener_precompute(self) -> None:
         """AI 스크리너 3종 + combo 사전계산."""
         try:
@@ -818,14 +1233,14 @@ class CollectionScheduler:
                 logger.warning("[KIS일별] 스킵 — 다른 DB writer 실행 중")
                 return
 
-            py = "/Applications/stock_dashboard/venv/bin/python"
+            py = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python"
             if not os.path.exists(py):
                 py = sys.executable
             cmd = [py, "collect_kis_ohlcv.py", "--days", "1"]
             logger.info(f"[KIS일별] {' '.join(cmd)} 시작")
             proc = subprocess.run(
                 cmd,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 text=True,
                 capture_output=True,
                 timeout=3600,
@@ -884,10 +1299,6 @@ class CollectionScheduler:
         finally:
             conn.close()
         return saved
-
-    # Backward-compatible name for old manual hooks. It now uses KIS first.
-    def _job_krx_daily(self) -> None:
-        self._job_kis_ohlcv_daily()
 
     def _job_krx_daily_legacy(self) -> None:
         """Legacy KRX 승인 API 수집. KRX 차단 환경에서는 사용하지 않음."""
@@ -974,12 +1385,23 @@ class CollectionScheduler:
                 if cur.rowcount > 0:
                     ins += 1
                 else:
-                    conn.execute("""
+                    cursor = conn.execute("""
                         UPDATE price_history
                         SET open=?, high=?, low=?, close=?, volume=?, trade_amount=?
                         WHERE stock_code=? AND date=? AND (volume IS NULL OR volume=0)
                     """, (open_, high, low, close, volume, trade_amount, code, today_str))
-                    upd += conn.execute("SELECT changes()").fetchone()[0]
+                    upd += max(cursor.rowcount, 0)
+                    # 2026-08-09 버그수정: 위 UPDATE는 volume이 비어있을 때만 실행되는데,
+                    # KIS 등 다른 경로가 그날 행을 volume까지 이미 채워둔 상태(정상)이면
+                    # trade_amount만 KRX전용 필드라 영원히 못 채워짐(2026-07~08 전종목
+                    # trade_amount=0 회귀의 원인, V-CONTRACT-MOMENTUM 실전 신호가 avg20_amt
+                    # 필터에 전부 걸려 buy_candidates=0으로 나오던 문제로 발견). trade_amount만
+                    # 비어있으면 그 필드만 별도로 채운다(다른 필드는 건드리지 않아 안전).
+                    if trade_amount and trade_amount > 0:
+                        conn.execute("""
+                            UPDATE price_history SET trade_amount=?
+                            WHERE stock_code=? AND date=? AND (trade_amount IS NULL OR trade_amount=0)
+                        """, (trade_amount, code, today_str))
                 # stock_universe 일별 갱신: 시가총액 + 상장주식수 + 소속부
                 if mktcap > 0:
                     conn.execute(
@@ -1202,7 +1624,7 @@ class CollectionScheduler:
                     # ★ amt 기준으로 스킵 여부 판단 (qty는 장중잡이 먼저 쓸 수 있음)
                     # 기존: qty 있으면 skip → 장중잡이 쓴 qty행이 amt 없이 남는 버그
                     # 수정: amt 없으면 항상 업데이트 (qty 포함 전체 갱신)
-                    conn.execute("""
+                    cursor = conn.execute("""
                         UPDATE price_history
                         SET inst_net_buy     = ?,
                             frn_net_buy      = ?,
@@ -1214,7 +1636,7 @@ class CollectionScheduler:
                           AND (inst_net_buy_amt IS NULL OR inst_net_buy_amt = 0)
                           AND (frn_net_buy_amt  IS NULL OR frn_net_buy_amt  = 0)
                     """, (iq, fq, dq, ia, fa, da, code, d))
-                    total_saved += conn.execute("SELECT changes()").fetchone()[0]
+                    total_saved += max(cursor.rowcount, 0)
 
                 if (i + 1) % 50 == 0:
                     conn.commit()
@@ -1516,34 +1938,56 @@ class CollectionScheduler:
         return CollectionScheduler._get_active_codes(conn)
 
     def _job_cashflow_batch(self) -> None:
-        """DART 전종목 현금흐름표 배치 수집 (missing_only=True)."""
-        try:
-            import subprocess
-            result = subprocess.run(
-                ["venv/bin/python3", "collect_dart_cashflow_batch.py", "--fill-missing", "--years", "5"],
-                capture_output=True, text=True, timeout=14400,
-                cwd="/Applications/stock_dashboard",
-            )
-            logger.info(f"[현금흐름배치] 완료: {result.stdout[-300:] if result.stdout else ''}")
-            if result.returncode != 0:
-                logger.error(f"[현금흐름배치] 오류: {result.stderr[-300:]}")
-        except Exception as e:
-            logger.error(f"[현금흐름배치] 잡 오류: {e}")
+        """DART 전종목 현금흐름표 배치 수집 (missing_only=True).
+
+        2026-08-23: 서브프로세스 non-zero returncode를 raise하지 않아 _run_job_safe가
+        실패를 "성공"으로 오기록하던 버그 수정(네이버밸류에이션과 동일 클래스).
+        """
+        import subprocess
+        result = subprocess.run(
+            ["venv/bin/python3", "collect_dart_cashflow_batch.py", "--fill-missing", "--years", "5"],
+            capture_output=True, text=True, timeout=14400,
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"collect_dart_cashflow_batch.py failed: {result.stderr[-500:]}")
+        logger.info(f"[현금흐름배치] 완료: {result.stdout[-300:] if result.stdout else ''}")
+
+        derived = subprocess.run(
+            [sys.executable, "scripts/build_cash_conversion_signals.py", "--since-year", "2020"],
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        logger.info(
+            "[현금전환품질] 파생 신호 재구축 완료: returncode=%s stdout=%s",
+            derived.returncode,
+            derived.stdout[-300:] if derived.stdout else "",
+        )
+        if derived.returncode != 0:
+            logger.warning(f"[현금전환품질] stderr: {derived.stderr[-500:]}")
 
     def _job_naver_fundamentals(self) -> None:
-        """네이버금융 전종목 PBR/PER/EPS 배치 수집 → financial_data + stock_universe 동시 갱신."""
-        try:
-            import subprocess
-            result = subprocess.run(
-                ["venv/bin/python3", "collect_naver_fundamentals.py"],  # 전종목 매일 갱신
-                capture_output=True, text=True, timeout=7200,
-                cwd="/Applications/stock_dashboard",
-            )
-            logger.info(f"[네이버밸류에이션] 완료: {result.stdout[-200:] if result.stdout else ''}")
-            if result.returncode != 0:
-                logger.error(f"[네이버밸류에이션] 오류: {result.stderr[-200:]}")
-        except Exception as e:
-            logger.error(f"[네이버밸류에이션] 잡 오류: {e}")
+        """네이버금융 전종목 PBR/PER/EPS 배치 수집 → financial_data + stock_universe 동시 갱신.
+
+        2026-08-23: 서브프로세스가 non-zero로 종료해도 이 메서드 자체는 예외 없이
+        정상 반환해 _run_job_safe가 "성공"으로 기록하던 버그(키움투자자수급에서
+        2026-08-14에 이미 한 번 발견된 것과 동일 클래스) — 실측 결과 PRAGMA
+        synchronous=NORMAL이 PostgreSQL 라우팅 하에서 매번 즉시 크래시(db_compat.py에서
+        같은 날 수정)해 8/17 이후 completion_health.db엔 매일 "success"로 찍히면서도
+        실제로는 stock_universe per/pbr이 전혀 갱신되지 않고 있었음. non-zero
+        returncode를 raise해 _run_job_safe가 정확히 실패로 기록하고 재시도하도록 수정.
+        """
+        import subprocess
+        result = subprocess.run(
+            ["venv/bin/python3", "collect_naver_fundamentals.py"],  # 전종목 매일 갱신
+            capture_output=True, text=True, timeout=7200,
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"collect_naver_fundamentals.py failed: {result.stderr[-500:]}")
+        logger.info(f"[네이버밸류에이션] 완료: {result.stdout[-200:] if result.stdout else ''}")
 
     # ══════════════════════════════════════════════════════════
     # 텐버거 발굴 스케줄 (09:00 / 12:00 / 15:00 평일)
@@ -1605,12 +2049,20 @@ class CollectionScheduler:
                     "3",
                 ],
                 capture_output=True, text=True, timeout=7200,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
             )
             out = (result.stdout or "")[-300:]
             logger.info(f"[NPS고용] 완료: {out}")
             if result.returncode != 0:
-                logger.warning(f"[NPS고용] 오류(returncode={result.returncode}): {(result.stderr or '')[-200:]}")
+                raise RuntimeError(
+                    f"NPS 수집 실패(returncode={result.returncode}): {(result.stderr or '')[-500:]}"
+                )
+            from employment_monitor.data_quality import audit_employment_data
+            quality = audit_employment_data()
+            if quality["status"] == "error":
+                raise RuntimeError(f"NPS 수집 후 무결성 오류: {quality['errors']}")
+            if quality["warnings"]:
+                logger.warning(f"[NPS고용] 품질 경고: {quality['warnings']}")
             # 캐시 무효화
             try:
                 import sys, importlib
@@ -1633,6 +2085,32 @@ class CollectionScheduler:
         while not self._stop_event.is_set():
             self._wait_until(7, 0)
             _run_job_safe("HOT섹터블로그", self._job_sector_blog)
+
+    def _loop_sector_index_rebuild(self) -> None:
+        """매일 18:40 — price_history 기반 파생 섹터지수 보완."""
+        self._wait_secs(72)
+        while not self._stop_event.is_set():
+            self._wait_until(18, 40, skip_weekend=True)
+            _run_job_safe("섹터지수보완", self._job_sector_index_rebuild)
+
+    def _job_sector_index_rebuild(self) -> None:
+        """Rebuild derived sector_index_daily rows from local OHLCV."""
+        try:
+            import subprocess, sys
+
+            script = str(Path(__file__).resolve().parent / "scripts" / "rebuild_sector_index_from_price_history.py")
+            r = subprocess.run(
+                [sys.executable, script],
+                capture_output=True,
+                text=True,
+                timeout=1800,
+                cwd=str(Path(__file__).resolve().parent),
+            )
+            logger.info(f"[섹터지수보완] 완료: {(r.stdout or '')[-500:]}")
+            if r.returncode != 0:
+                raise RuntimeError((r.stderr or r.stdout or "")[-1000:])
+        except Exception as e:
+            logger.error(f"[섹터지수보완] 오류: {e}", exc_info=True)
 
     def _loop_market_signal_briefing(self) -> None:
         """매일 07:00 — 5단계 시장 국면 점수 계산 + OpenAI 아침 브리핑 저장."""
@@ -1691,8 +2169,8 @@ class CollectionScheduler:
         """블로그 자동파싱 — Sector_define/blog_parser.run_parser() 위임."""
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from Sector_define.blog_parser import run_parser
             run_parser(reprocess_empty=True)
             logger.info("[HOT섹터] 블로그 파싱 완료")
@@ -1748,8 +2226,8 @@ class CollectionScheduler:
         """AI 주도 섹터 리포트 — routes.tenbagger.refresh_sector_ai_report() 위임."""
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from routes.tenbagger import refresh_sector_ai_report
             data = refresh_sector_ai_report(limit=30, force=True)
             sectors = ", ".join([s.get("kr", s.get("ticker", "")) for s in data.get("sectors", [])[:3]])
@@ -1771,8 +2249,8 @@ class CollectionScheduler:
     def _job_sector_morning_tg(self) -> None:
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from routes.tenbagger import _send_sector_ai_telegram
             ok = _send_sector_ai_telegram("morning")
             logger.info(f"[섹터오전텔레그램] {'발송완료' if ok else '스킵(캐시없음)'}")
@@ -1789,8 +2267,8 @@ class CollectionScheduler:
     def _job_sector_lunch_tg(self) -> None:
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from routes.tenbagger import _send_sector_ai_telegram
             ok = _send_sector_ai_telegram("lunch")
             logger.info(f"[섹터점심텔레그램] {'발송완료' if ok else '스킵(캐시없음)'}")
@@ -1829,16 +2307,21 @@ class CollectionScheduler:
                 _run_job_safe("스탁이지주간", self._job_stockeasy_weekly)
 
     def _job_stockeasy_analysis(self) -> None:
-        """스탁이지 3전략 현황 분석 + 로직 적응 검증(조정 전/후 텔레그램)."""
+        """스탁이지 3전략 현황 분석 + 로직 적응 검증(조정 전/후 텔레그램).
+
+        2026-08-22: run_daily_analysis() 자체가 내부에서 이미 run_validation()을
+        호출하고 있는데(stockeasy_analyzer.py 948~954행), 여기서 또 명시적으로
+        run_validation()을 한 번 더 호출해 매일 1회가 아니라 2회씩(각 회당 최대
+        수십 분 소요되는 replay_entry_day_inclusion 전체이력 재현 포함) 중복
+        실행되고 있었음 — stockeasy_logic_tracker.md에 매일 완전히 동일한 내용이
+        2블록씩 쌓이던 원인. 중복 호출 제거.
+        """
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from stockeasy_analyzer import run_daily_analysis
-            from stockeasy_logic_validator import run_validation
             run_daily_analysis()
-            # 분석 직후, 당일 편입/이탈 변화 기반으로 로직 임계값을 미세 조정하고 보고
-            run_validation(["peak", "momentum", "value"], send_tg=True)
             logger.info("[스탁이지] 일별 분석 완료")
         except Exception as e:
             logger.error(f"[스탁이지] 분석 오류: {e}")
@@ -1847,8 +2330,8 @@ class CollectionScheduler:
         """주간 전략 패턴 요약 — DB 누적 분석 결과 기반 리포트."""
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from stockeasy_analyzer import run_weekly_summary
             run_weekly_summary()
             logger.info("[스탁이지] 주간 요약 완료")
@@ -1870,13 +2353,46 @@ class CollectionScheduler:
     def _job_stockeasy_30m_sync(self) -> None:
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from stockeasy_autotrade import run_stockeasy_all_strategies_sync
             result = run_stockeasy_all_strategies_sync()
             logger.info(f"[스탁이지30분동기화] {result}")
         except Exception as e:
             logger.error(f"[스탁이지30분동기화] 오류: {e}", exc_info=True)
+
+    def _loop_portfolio_sell_alerts(self) -> None:
+        """매일 15:00 — 실제 보유종목 매도검토 텔레그램 요약 1회."""
+        self._wait_secs(150)
+        while not self._stop_event.is_set():
+            wait = _seconds_until(15, 0, skip_weekend=True)
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("보유종목매도알림", self._job_portfolio_sell_alerts)
+
+    def _job_portfolio_sell_alerts(self) -> None:
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/portfolio_sell_signal_alert.py",
+                    "--send-telegram",
+                    "--min-score",
+                    "6",
+                    "--limit",
+                    "10",
+                    "--summary",
+                ],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            logger.info(f"[보유종목매도알림] returncode={result.returncode} {result.stdout[-500:] if result.stdout else ''}")
+            if result.returncode != 0:
+                logger.error(f"[보유종목매도알림] 오류: {result.stderr[-500:] if result.stderr else ''}")
+        except Exception as e:
+            logger.error(f"[보유종목매도알림] 오류: {e}", exc_info=True)
 
     def _loop_v14_10m(self) -> None:
         """평일 장중 10분마다 V18.1 가상매매 실행.
@@ -1908,13 +2424,142 @@ class CollectionScheduler:
     def _job_v14_10m(self) -> None:
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from routes.trend import execute_v18_now
             result = execute_v18_now()
             logger.info(f"[V18가상매매] {result}")
         except Exception as e:
             logger.error(f"[V18가상매매] 오류: {e}", exc_info=True)
+
+    def _loop_gc_20m(self) -> None:
+        """평일 장중 20분마다 V12 골든크로스 가상매매 실행."""
+        self._wait_secs(130)  # 서버 시작 초기화 대기 (V18과 시차)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            is_weekday = now.weekday() < 5
+            hm = now.hour * 60 + now.minute
+            in_session = (9 * 60) <= hm <= (15 * 60 + 30)
+            if is_weekday and in_session:
+                _run_job_safe("V12골든크로스매매", self._job_gc_20m)
+                self._wait_secs(1200)   # 20분 대기
+            else:
+                self._wait_secs(60)
+
+    def _job_gc_20m(self) -> None:
+        try:
+            import sys as _sys
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+            from routes.trend import execute_gc_now
+            result = execute_gc_now()
+            logger.info(f"[V12골든크로스] sold={result.get('sold')} bought={result.get('bought')}")
+        except Exception as e:
+            logger.error(f"[V12골든크로스] 오류: {e}", exc_info=True)
+
+    def _loop_rec_20m(self) -> None:
+        """평일 장중 20분마다 V-RECOVERY 낙폭반등 가상매매 실행."""
+        self._wait_secs(190)  # 서버 시작 초기화 대기 (V18/GC와 시차)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            is_weekday = now.weekday() < 5
+            hm = now.hour * 60 + now.minute
+            in_session = (9 * 60) <= hm <= (15 * 60 + 30)
+            if is_weekday and in_session:
+                _run_job_safe("V-RECOVERY매매", self._job_rec_20m)
+                self._wait_secs(1200)   # 20분 대기
+            else:
+                self._wait_secs(60)
+
+    def _job_rec_20m(self) -> None:
+        try:
+            import sys as _sys
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+            from routes.trend import execute_rec_now
+            result = execute_rec_now()
+            logger.info(f"[V-RECOVERY] sold={result.get('sold')} bought={result.get('bought')}")
+        except Exception as e:
+            logger.error(f"[V-RECOVERY] 오류: {e}", exc_info=True)
+
+    def _loop_cm_20m(self) -> None:
+        """평일 장중 20분마다 V-CONTRACT-MOMENTUM 해외수주 모멘텀 가상매매 실행.
+        2026-08-09 신규: 대형수주 카테고리(251개 텐버거 중 14.3%) 실전 반영 —
+        매트릭스 등록(execution_strict)만으로는 실제 수익률에 영향이 없다는 사용자
+        지적에 따라 v_gc/v_recovery와 동일한 라이브 가상매매 라인으로 신규 추가."""
+        self._wait_secs(220)  # V12/V-RECOVERY와 시차
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            is_weekday = now.weekday() < 5
+            hm = now.hour * 60 + now.minute
+            in_session = (9 * 60) <= hm <= (15 * 60 + 30)
+            if is_weekday and in_session:
+                _run_job_safe("V-CONTRACT매매", self._job_cm_20m)
+                self._wait_secs(1200)   # 20분 대기
+            else:
+                self._wait_secs(60)
+
+    def _job_cm_20m(self) -> None:
+        try:
+            import sys as _sys
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+            from routes.trend import execute_cm_now
+            result = execute_cm_now()
+            logger.info(f"[V-CONTRACT] sold={result.get('sold')} bought={result.get('bought')}")
+        except Exception as e:
+            logger.error(f"[V-CONTRACT] 오류: {e}", exc_info=True)
+
+    def _loop_forward_validation_check(self) -> None:
+        """매일 06:15 — 라이브 가상매매(peak_holding/peak_trade) 실측 데이터로
+        forward_validation 검증 아티팩트를 재평가(2026-08-13 신규, 2026-08-14
+        06:10→06:15 조정: 기존 _loop_postgres_cutover_verify와 정확히 같은
+        시각(06:10)에 등록했던 것을 발견 — 스케줄 전수감사로 재발방지).
+        governance의 live_eligible 승격 조건이 rank>=forward_validated로
+        강화됐으나, 이를 채울 파이프라인이 없어서 어떤 전략도 도달 불가능했음.
+        운용기간/거래건수/계좌손실 최소조건(scripts/verify_forward_validation.py
+        참조, 의도적으로 보수적)을 매일 재확인 — 시간이 지나 조건을 충족하면
+        자동으로 반영된다."""
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            self._wait_until(6, 15)
+            _run_job_safe("전방검증체크", self._job_forward_validation_check)
+
+    def _job_forward_validation_check(self) -> None:
+        try:
+            import sys as _sys
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+            from scripts.verify_forward_validation import main as _fv_main
+            _fv_main()
+            logger.info("[전방검증체크] 완료")
+        except Exception as e:
+            logger.error(f"[전방검증체크] 오류: {e}", exc_info=True)
+
+    def _loop_combo_daily(self) -> None:
+        """평일 18:35에 전략센터 현재 상위 5개를 가상매매로 재선정·실행한다.
+
+        메서드 이름은 기존 스레드 등록 호환을 위해 유지한다. 과거 고정 병합조합은
+        더 이상 스케줄하지 않으며, 전략센터 매트릭스의 순위가 바뀌면 다음 실행부터
+        가상매매 대상도 함께 바뀐다.
+        """
+        while not self._stop_event.is_set():
+            self._stop_event.wait(timeout=_seconds_until(18, 35, skip_weekend=True))
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("병합조합가상매매", self._job_combo_daily)
+
+    def _job_combo_daily(self) -> None:
+        try:
+            import sys as _sys
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+            from routes.trend import execute_strategy_center_top_five_now
+            payload = execute_strategy_center_top_five_now()
+            for key, r in payload.get("results", {}).items():
+                logger.info(f"[전략센터상위5가상매매] {key} sold={r.get('sold')} bought={r.get('bought')} ok={r.get('ok')}")
+        except Exception as e:
+            logger.error(f"[전략센터상위5가상매매] 오류: {e}", exc_info=True)
 
     def _loop_kiwoom_health(self) -> None:
         """평일 장중 10분마다 키움 REST 인증 상태 점검."""
@@ -1933,8 +2578,8 @@ class CollectionScheduler:
     def _job_kiwoom_health(self) -> None:
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
             from collectors.kiwoom_collector import KiwoomCollector
             kc = KiwoomCollector()
             st = kc.health_check()
@@ -1973,8 +2618,8 @@ class CollectionScheduler:
         """
         try:
             import sys as _sys
-            if "/Applications/stock_dashboard" not in _sys.path:
-                _sys.path.insert(0, "/Applications/stock_dashboard")
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
             from collectors.kiwoom_collector import KiwoomCollector
 
@@ -2040,6 +2685,32 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[키움실시간스냅샷] 오류: {e}", exc_info=True)
 
+    def _loop_kiwoom_condition_snapshot(self) -> None:
+        """Persist each saved Hero4 condition's current members and IN/OUT deltas."""
+        logger.info("[키움조건검색] 루프 시작")
+        self._wait_secs(110)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            in_session = now.weekday() < 5 and 9 * 60 <= now.hour * 60 + now.minute <= 15 * 60 + 30
+            if in_session:
+                _run_job_safe("키움조건검색", self._job_kiwoom_condition_snapshot)
+                self._wait_secs(max(60, int(getattr(config, "KIWOOM_CONDITION_SNAPSHOT_SECONDS", 300))))
+            else:
+                self._wait_secs(120)
+
+    def _job_kiwoom_condition_snapshot(self) -> None:
+        try:
+            from collectors.kiwoom_collector import KiwoomCollector
+
+            result = KiwoomCollector().collect_condition_snapshot(
+                max_conditions=max(1, int(getattr(config, "KIWOOM_CONDITION_SCAN_LIMIT", 100)))
+            )
+            if not result.get("ok"):
+                raise RuntimeError(result.get("reason") or "condition snapshot failed")
+            logger.info("[키움조건검색] 완료: %s", result)
+        except Exception as exc:
+            logger.error("[키움조건검색] 오류: %s", exc, exc_info=True)
+
     # ══════════════════════════════════════════════════════════
     # 고용보험 상시인원 배치 (매월 5일 02:00)
     # ══════════════════════════════════════════════════════════
@@ -2066,7 +2737,7 @@ class CollectionScheduler:
             result = subprocess.run(
                 ["venv/bin/python3", "employment_monitor/fetch_employment_insurance.py", "--delay", "0.4"],
                 capture_output=True, text=True, timeout=14400,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
             )
             out = (result.stdout or "")[-300:]
             logger.info(f"[고용보험] 완료: {out}")
@@ -2081,6 +2752,9 @@ class CollectionScheduler:
 
     def _loop_bigquery_sync(self) -> None:
         """매일 23:30 stock.db → BigQuery 증분 동기화 (price_history 최근 7일 + 소형 테이블 FULL REFRESH)."""
+        if os.getenv("ENABLE_BIGQUERY_DAILY", "0") != "1":
+            logger.info("[BigQuery동기화] 자동 실행 비활성화: ENABLE_BIGQUERY_DAILY=1 설정 시에만 실행")
+            return
         logger.info("[BigQuery동기화] 루프 시작")
         self._wait_secs(60)  # 서버 기동 여유
         while not self._stop_event.is_set():
@@ -2102,12 +2776,15 @@ class CollectionScheduler:
 
     def _job_bigquery_sync(self) -> None:
         """BigQuery 동기화 후 텐버거/3배 후보 분석까지 연속 실행."""
+        if os.getenv("ENABLE_BIGQUERY_DAILY", "0") != "1":
+            logger.info("[BigQuery동기화] 수동/스케줄 작업 건너뜀: ENABLE_BIGQUERY_DAILY=1 미설정")
+            return
         logger.info("[BigQuery동기화] 증분 동기화 시작")
         try:
             import subprocess, sys
             result = subprocess.run(
-                [sys.executable, "/Applications/stock_dashboard/bigquery_sync.py",
-                 "--mode", "daily", "--days", "7"],
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/bigquery_sync.py",
+                 "--mode", "daily-lite", "--days", "7"],
                 capture_output=True, text=True, timeout=1800
             )
             if result.returncode == 0:
@@ -2122,6 +2799,9 @@ class CollectionScheduler:
 
     def _loop_bq_triple_pipeline(self) -> None:
         """매일 18:30 BigQuery 3배 패턴 일일 파이프라인 실행."""
+        if os.getenv("ENABLE_BQ_TRIPLE_PIPELINE", "0") != "1":
+            logger.info("[BQ3배파이프라인] 자동 실행 비활성화: ENABLE_BQ_TRIPLE_PIPELINE=1 설정 시에만 실행")
+            return
         logger.info("[BQ3배파이프라인] 루프 시작")
         self._wait_secs(60)
         while not self._stop_event.is_set():
@@ -2132,10 +2812,13 @@ class CollectionScheduler:
 
     def _job_bq_triple_pipeline(self) -> None:
         """BigQuery 3배 패턴 계산 스크립트 실행."""
+        if os.getenv("ENABLE_BQ_TRIPLE_PIPELINE", "0") != "1":
+            logger.info("[BQ3배파이프라인] 작업 건너뜀: ENABLE_BQ_TRIPLE_PIPELINE=1 미설정")
+            return
         try:
             result = subprocess.run(
                 ["venv/bin/python3", "scripts/bigquery_triple_pipeline.py"],
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 capture_output=True,
                 text=True,
                 timeout=1800,
@@ -2157,6 +2840,9 @@ class CollectionScheduler:
 
     def _loop_bq_morning_alert(self) -> None:
         """매일 07:30 BigQuery 3배 패턴 아침 알림 실행."""
+        if os.getenv("ENABLE_BQ_MORNING_ALERT", "0") != "1":
+            logger.info("[BQ아침알림] 자동 실행 비활성화: ENABLE_BQ_MORNING_ALERT=1 설정 시에만 실행")
+            return
         logger.info("[BQ아침알림] 루프 시작")
         self._wait_secs(60)
         while not self._stop_event.is_set():
@@ -2166,14 +2852,17 @@ class CollectionScheduler:
             _run_job_safe("BQ아침알림", self._job_bq_morning_alert)
 
     def _job_bq_morning_alert(self) -> None:
-        """텐버거 헌터 아침 알림 — 상위 15 후보 + DeepSeek TOP3 심층 분석 → 텔레그램 발송."""
+        """텐버거 헌터 아침 알림 — 상위 15 후보 + OpenAI mini TOP3 심층 분석 → 텔레그램 발송."""
+        if os.getenv("ENABLE_BQ_MORNING_ALERT", "0") != "1":
+            logger.info("[BQ아침알림] 작업 건너뜀: ENABLE_BQ_MORNING_ALERT=1 미설정")
+            return
         try:
             result = subprocess.run(
                 ["venv/bin/python3", "scripts/tenbagger_morning_alert.py", "--top", "15", "--ai-top", "3"],
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 capture_output=True,
                 text=True,
-                timeout=300,  # DeepSeek 3종목 × 90초 = 최대 270초
+                timeout=300,  # AI 3종목 × 90초 기준 여유 포함
             )
             if result.returncode == 0:
                 logger.info(f"[텐버거알림] ✅ {(result.stdout or '').strip()[-300:]}")
@@ -2274,6 +2963,12 @@ class CollectionScheduler:
                     """, (data_ym, _dt.now().isoformat()))
                 conn.commit(); conn.close()
                 logger.info(f"[근로복지공단] {len(aggregated)}개 기업 저장 완료 (ym={data_ym}), total={current_total:,}")
+                from employment_monitor.data_quality import audit_employment_data
+                quality = audit_employment_data()
+                if quality["status"] == "error":
+                    raise RuntimeError(f"WLB 수집 후 무결성 오류: {quality['errors']}")
+                if quality["warnings"]:
+                    logger.warning(f"[근로복지공단] 품질 경고: {quality['warnings']}")
             else:
                 logger.warning("[근로복지공단] 매칭 결과 없음")
         except Exception as e:
@@ -2309,30 +3004,132 @@ class CollectionScheduler:
     def _job_dart_contracts(self) -> None:
         """DART 수주·공급계약 공시 수집. AI 분석/텔레그램 발송은 중단."""
         try:
-            from collectors.dart_contract_collector import collect_dart_contracts
-            results = collect_dart_contracts(days=1, min_signal=99, skip_ai=True)
-            if results:
-                logger.info(f"[DART수주] {len(results)}건 처리 완료 (AI/텔레그램 OFF)")
+            from collectors.dart_contract_collector import collect_dart_contracts_catchup
+            result = collect_dart_contracts_catchup(
+                max_backfill_days=14,
+                min_signal=99,
+                skip_ai=True,
+            )
+            if result.get("saved_count", 0):
+                logger.info(
+                    "[DART수주] %s~%s 구간 %s건 처리 완료 (AI/텔레그램 OFF)",
+                    result.get("start_date"),
+                    result.get("end_date"),
+                    result.get("saved_count", 0),
+                )
             else:
-                logger.debug("[DART수주] 신규 수주공시 없음")
+                logger.debug(
+                    "[DART수주] %s~%s 구간 신규 수주공시 없음",
+                    result.get("start_date"),
+                    result.get("end_date"),
+                )
         except Exception as e:
-            logger.error(f"[DART수주] 잡 오류: {e}")
+            logger.error(f"[DART수주] 잡 오류: {e}", exc_info=True)
+            raise
+
+    def _loop_order_contracts(self) -> None:
+        """DART 단일판매·공급계약 공시 → order_contracts proxy 테이블 일일 적재."""
+        self._wait_secs(30)
+        while not self._stop_event.is_set():
+            self._wait_until(19, 0, skip_weekend=True)
+            _run_job_safe("DART수주계약", self._job_order_contracts)
+
+    def _job_order_contracts(self) -> None:
+        """오늘자 단일판매·공급계약 공시를 order_contracts 테이블에 저장."""
+        try:
+            from routes.order_contracts import collect_today
+            result = asyncio.run(collect_today())
+            logger.info(
+                "[DART수주계약] 오늘자 스캔 %s건, 신규 %s건 저장",
+                result.get("scanned", 0),
+                result.get("saved", 0),
+            )
+        except Exception as e:
+            logger.error(f"[DART수주계약] 잡 오류: {e}", exc_info=True)
 
     def _loop_dart_dilution(self) -> None:
-        """매일 07:10 — CB/BW/EB 희석 이벤트 공시 수집."""
+        """매일 07:10 — CB/BW/EB 및 유상/무상증자 희석 이벤트 공시 수집."""
         self._wait_secs(30)
         while not self._stop_event.is_set():
             self._wait_until(7, 10, skip_weekend=False)
             _run_job_safe("DART희석공시", self._job_dart_dilution)
 
     def _job_dart_dilution(self) -> None:
-        """DART 희석 이벤트(전환사채/신주인수권부사채/교환사채) 수집."""
+        """DART 희석 이벤트(CB/BW/EB + 유상/무상/유무상증자) 수집."""
         try:
             from collectors.dart_dilution_collector import collect_dilution_events
-            stats = collect_dilution_events(days=365)
+            from collectors.dart_equity_issue_collector import collect_equity_issue_events
+            stats = {
+                # 새 접수번호만 처리한다. 정정 공시는 별도 접수번호로 들어오므로 누락되지 않는다.
+                "cb_bw_eb": collect_dilution_events(days=365, missing_only=True),
+                "equity_issue_2020": collect_equity_issue_events(
+                    since="2020-01-01",
+                    missing_only=True,
+                    limit=500,
+                ),
+            }
             logger.info(f"[DART희석] 완료: {stats}")
         except Exception as e:
             logger.error(f"[DART희석] 잡 오류: {e}", exc_info=True)
+
+    def _loop_dart_dilution_close(self) -> None:
+        """평일 17:20 — 장 마감 뒤 접수된 희석 공시를 개별종목 화면에 반영."""
+        self._wait_secs(30)
+        while not self._stop_event.is_set():
+            self._wait_until(17, 20, skip_weekend=True)
+            _run_job_safe("DART희석공시마감", self._job_dart_dilution)
+
+    def _loop_us_biotech_pipeline(self) -> None:
+        """매일 06:50 — SEC 원문 근거 기반 미국 바이오 파이프라인을 소량씩 갱신."""
+        self._wait_secs(30)
+        while not self._stop_event.is_set():
+            self._wait_until(6, 50, skip_weekend=False)
+            _run_job_safe("미국바이오파이프라인", self._job_us_biotech_pipeline)
+
+    def _job_us_biotech_pipeline(self) -> None:
+        """시총 기준 바이오/의약품 종목을 순차 수집해 SEC 호출 부담을 제한한다."""
+        try:
+            from collectors.us_biotech_pipeline_collector import collect_biotech_pipelines
+            min_cap = float(os.getenv("US_BIOTECH_MIN_MARKET_CAP_USD", "300000000"))
+            batch_size = int(os.getenv("US_BIOTECH_PIPELINE_BATCH_SIZE", "100"))
+            stats = collect_biotech_pipelines(min_market_cap=min_cap, limit=batch_size)
+            logger.info("[미국바이오파이프라인] 완료: %s", stats)
+        except Exception as e:
+            logger.error("[미국바이오파이프라인] 잡 오류: %s", e, exc_info=True)
+
+    def _loop_source_intelligence_weekly(self) -> None:
+        """매일 20:00 — 소스별 신규 글을 반영하고 전수 요약을 갱신한다."""
+        self._wait_secs(45)
+        while not self._stop_event.is_set():
+            self._wait_until(20, 0, skip_weekend=False)
+            _run_job_safe("소스인텔리전스주간", self._job_source_intelligence_weekly)
+
+    def _job_source_intelligence_weekly(self) -> None:
+        script = Path(__file__).resolve().parent / "scripts" / "ops" / "analyze_trillion_us_biotech.py"
+        try:
+            result = subprocess.run([sys.executable, str(script)], cwd=str(script.parent.parent.parent), capture_output=True, text=True, timeout=20 * 60)
+            if result.returncode:
+                raise RuntimeError((result.stderr or result.stdout)[-1000:])
+            logger.info("[소스인텔리전스주간] 완료: %s", (result.stdout or "ok")[-500:])
+        except Exception as exc:
+            logger.error("[소스인텔리전스주간] 오류: %s", exc, exc_info=True)
+
+    def _loop_us_13f_refresh(self) -> None:
+        """매일 07:12 — 공개 13F/PTR 변경 여부를 확인해 미국종목 화면 캐시를 갱신."""
+        self._wait_secs(40)
+        while not self._stop_event.is_set():
+            self._wait_until(7, 12, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("미국13F거물공시", self._job_us_13f_refresh)
+
+    def _job_us_13f_refresh(self) -> None:
+        try:
+            from routes.us_13f import _build_13f_summary
+            result = _build_13f_summary()
+            logger.info("[미국13F거물공시] 운용사 %s명, 정치인 %s명, 오류 %s건", len(result.get("managers", [])), len(result.get("politicians", [])), len(result.get("errors", [])))
+        except Exception as exc:
+            logger.error("[미국13F거물공시] 갱신 실패: %s", exc, exc_info=True)
 
     def _loop_kiwoom_margin(self) -> None:
         """매일 18:45 — 키움 종목별 신용/대주 잔고 수집."""
@@ -2350,6 +3147,34 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[키움신용잔고] 잡 오류: {e}", exc_info=True)
 
+    # ── 키움 대량체결 순위 (장중 10분) ────────────────────────────────────
+    def _loop_kiwoom_large_trade_rank(self) -> None:
+        """키움 ka00190 장중 대량체결 매수/매도 상위 원본을 10분마다 저장."""
+        logger.info("[키움대량체결] 루프 시작")
+        self._wait_secs(75)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            if now.weekday() < 5 and 900 <= now.hour * 100 + now.minute <= 1530:
+                _run_job_safe("키움대량체결", self._job_kiwoom_large_trade_rank)
+                self._wait_secs(600)
+            else:
+                self._wait_secs(60)
+        logger.info("[키움대량체결] 루프 종료")
+
+    def _job_kiwoom_large_trade_rank(self) -> None:
+        """주문 없이 키움 대량체결 원본 순위를 수집한다."""
+        try:
+            from collectors.kiwoom_collector import KiwoomCollector
+
+            collector = KiwoomCollector()
+            results = {
+                "buy": collector.fetch_large_trade_rank(rank_type="buy"),
+                "sell": collector.fetch_large_trade_rank(rank_type="sell"),
+            }
+            logger.info("[키움대량체결] 완료: %s", results)
+        except Exception as exc:
+            logger.error("[키움대량체결] 잡 오류: %s", exc, exc_info=True)
+
     # ── 외국인 지분율 (매일 19:15) ─────────────────────────────────────────
     def _loop_kiwoom_foreign_hold(self) -> None:
         """매일 19:15 — 키움 ka10008 외국인 지분율 수집 (코스피+코스닥 80%)."""
@@ -2362,15 +3187,13 @@ class CollectionScheduler:
         """키움 ka10008 외국인 지분율 수집."""
         try:
             from collectors.kiwoom_collector import KiwoomCollector
-            import sqlite3 as _sl
-            conn = _sl.connect("stock.db", timeout=30)
-            conn.row_factory = _sl.Row
+            conn = connect_stock_db(timeout=30)
             stocks = [r[0] for r in conn.execute("""
                 SELECT stock_code FROM stock_universe
                 WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
                   AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND market_cap IS NOT NULL
-                ORDER BY market_cap DESC LIMIT 2200
+                ORDER BY market_cap DESC
             """).fetchall()]
             conn.close()
             kc = KiwoomCollector()
@@ -2411,19 +3234,24 @@ class CollectionScheduler:
             logger.error(f"[DART임원매매daily] 오류: {e}", exc_info=True)
 
     def _job_dart_insider_bulk(self) -> None:
-        """DART 임원매매 전종목 주간 bulk (시총 상위 2200종목)."""
+        """DART 임원매매와 5% 주요주주 공시를 전종목 단위로 주간 백필한다."""
         try:
-            from collectors.dart_insider_collector import collect_insider_holdings_bulk
+            from collectors.dart_insider_collector import (
+                collect_insider_holdings_bulk,
+                collect_major_holders_bulk,
+            )
             from scripts.build_shareholder_profile import rebuild as rebuild_shareholder_profile
-            stats = collect_insider_holdings_bulk(limit=2200)
-            logger.info(f"[DART임원매매bulk] 완료: {stats}")
+            insider_stats = collect_insider_holdings_bulk(limit=0)
+            logger.info(f"[DART임원매매bulk] 완료: {insider_stats}")
+            major_stats = collect_major_holders_bulk()
+            logger.info(f"[DART주요주주bulk] 완료: {major_stats}")
             profile_stats = rebuild_shareholder_profile()
             logger.info(f"[주식수/주요주주프로필] bulk 재생성 완료: {profile_stats}")
         except Exception as e:
             logger.error(f"[DART임원매매bulk] 오류: {e}", exc_info=True)
 
     def _loop_dart_backlog(self) -> None:
-        """매주 일요일 01:20 — DART 수주잔고 분기 수집(최근 5년)."""
+        """매주 일요일 01:20 — DART 수주잔고 분기 수집(2020년 이후)."""
         self._wait_secs(45)
         while not self._stop_event.is_set():
             now = datetime.now()
@@ -2438,7 +3266,16 @@ class CollectionScheduler:
         try:
             from collectors.dart_backlog_collector import collect_backlog_quarterly
             y_to = datetime.now().year
-            stats = collect_backlog_quarterly(year_from=y_to - 5, year_to=y_to, limit=None, report_type="CFS")
+            stats = collect_backlog_quarterly(year_from=2020, year_to=y_to, limit=None, report_type="CFS")
+            missing_stats = collect_backlog_quarterly(
+                year_from=2020,
+                year_to=y_to,
+                limit=None,
+                report_type="CFS",
+                missing_only=True,
+                eligible_only=True,
+            )
+            stats["missing_only_retry"] = missing_stats
             logger.info(f"[DART수주잔고] 완료: {stats}")
         except Exception as e:
             logger.error(f"[DART수주잔고] 잡 오류: {e}", exc_info=True)
@@ -2461,6 +3298,26 @@ class CollectionScheduler:
             y_to = datetime.now().year
             stats = collect_cost_quarterly(year_from=y_to - 5, year_to=y_to, limit=None, report_type="CFS")
             logger.info(f"[DART원가재고] 완료: {stats}")
+            try:
+                import subprocess as _subprocess
+                import sys as _sys
+                _script = Path(__file__).resolve().parent / "scripts" / "build_inventory_sales_signals.py"
+                _proc = _subprocess.run(
+                    [_sys.executable, str(_script), "--since-year", str(y_to - 6)],
+                    cwd=str(Path(__file__).resolve().parent),
+                    capture_output=True,
+                    text=True,
+                    timeout=900,
+                )
+                if _proc.returncode == 0:
+                    logger.info(f"[DART원가재고] 재고·매출·수주 시그널 빌드 완료: {_proc.stdout.strip()}")
+                else:
+                    logger.warning(
+                        "[DART원가재고] 재고·매출·수주 시그널 빌드 실패 "
+                        f"rc={_proc.returncode} stdout={_proc.stdout[-500:]} stderr={_proc.stderr[-500:]}"
+                    )
+            except Exception as _sig_e:
+                logger.warning(f"[DART원가재고] 재고·매출·수주 시그널 빌드 오류: {_sig_e}")
         except Exception as e:
             logger.error(f"[DART원가재고] 잡 오류: {e}", exc_info=True)
 
@@ -2483,14 +3340,14 @@ class CollectionScheduler:
             cmd = [
                 sys.executable,
                 "collectors/dart_material_purchase_collector.py",
-                "--limit", "2200",
+                "--limit", "2700",
                 "--years",
                 *years,
             ]
             logger.info(f"[DART매입재료비] 시작: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 capture_output=True,
                 text=True,
                 timeout=4 * 3600,
@@ -2527,7 +3384,7 @@ class CollectionScheduler:
             logger.info(f"[DART직원수] 시작: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 capture_output=True,
                 text=True,
                 timeout=4 * 3600,
@@ -2562,7 +3419,7 @@ class CollectionScheduler:
             logger.info(f"[DART임직원CH] 시작: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 capture_output=True,
                 text=True,
                 timeout=4 * 3600,
@@ -2570,13 +3427,57 @@ class CollectionScheduler:
             logger.info(f"[DART임직원CH] 완료: returncode={result.returncode} stdout={result.stdout[-500:] if result.stdout else ''}")
             if result.returncode != 0:
                 logger.warning(f"[DART임직원CH] stderr: {result.stderr[-500:]}")
+            # 2026-09 수정: 아래 두 파생신호 재구축을 "DART임직원CH 성공 시에만"
+            # 실행하도록 else절에 묶어뒀던 기존 구조 — collect_dart_ch_extra.py가
+            # (무관한 원인으로) 실패/타임아웃하면 계약부채·현금전환 신호가
+            # 매주 통째로 갱신 안 되는 연쇄장애였음(실측: 현금전환 신호 39일
+            # 무갱신). 두 신호 모두 financial_data/cash_flow_data/dart_bs_items
+            # 등 별도 원천을 쓰므로 이 잡의 성공 여부와 무관하게 독립 실행.
+            derived = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/build_contract_advance_signals.py",
+                    "--since-year",
+                    "2020",
+                ],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            logger.info(
+                "[계약부채선수금] 파생 신호 재구축 완료: returncode=%s stdout=%s",
+                derived.returncode,
+                derived.stdout[-300:] if derived.stdout else "",
+            )
+            if derived.returncode != 0:
+                logger.warning(f"[계약부채선수금] stderr: {derived.stderr[-500:]}")
+            cashq = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/build_cash_conversion_signals.py",
+                    "--since-year",
+                    "2020",
+                ],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+            logger.info(
+                "[현금전환품질] 파생 신호 재구축 완료: returncode=%s stdout=%s",
+                cashq.returncode,
+                cashq.stdout[-300:] if cashq.stdout else "",
+            )
+            if cashq.returncode != 0:
+                logger.warning(f"[현금전환품질] stderr: {cashq.stderr[-500:]}")
         except subprocess.TimeoutExpired:
             logger.warning("[DART임직원CH] 4시간 타임아웃 — 다음 주 재시도")
         except Exception as e:
             logger.error(f"[DART임직원CH] 잡 오류: {e}", exc_info=True)
 
     def _loop_dart_segment(self) -> None:
-        """매주 일요일 03:30 — 사업부문별 매출 수집 (시총상위 500)."""
+        """매주 일요일 03:30 — 사업부문별 매출 수집."""
         self._wait_secs(90)
         while not self._stop_event.is_set():
             now = datetime.now()
@@ -2587,13 +3488,23 @@ class CollectionScheduler:
                 _run_job_safe("DART세그먼트", self._job_dart_segment)
 
     def _job_dart_segment(self) -> None:
-        """DART fnlttSinglAcntAll IS계정 기반 사업부문별 매출 적재 (시총상위 500)."""
+        """DART HTML 사업보고서 기반 사업부문별 매출 적재."""
         try:
             import subprocess, sys
+            limit = int(os.getenv("DART_SEGMENT_WEEKLY_LIMIT", "1200"))
+            start_year = int(os.getenv("DART_SEGMENT_START_YEAR", "2020"))
+            years = ",".join(str(y) for y in range(start_year, datetime.now().year + 1))
             result = subprocess.run(
-                [sys.executable, "scripts/collect_dart_segment_breakdown.py", "--limit", "500"],
+                [
+                    sys.executable,
+                    "scripts/collect_dart_segment_revenue.py",
+                    "--limit",
+                    str(limit),
+                    "--years",
+                    years,
+                ],
                 capture_output=True, text=True, timeout=7200,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
             )
             logger.info(f"[DART세그먼트] 완료: {result.stdout[-500:] if result.stdout else ''}")
             if result.returncode != 0:
@@ -2622,6 +3533,61 @@ class CollectionScheduler:
     # ══════════════════════════════════════════════════════════
     # 재무 무결점 — 월간 + 분기 마감 후
     # ══════════════════════════════════════════════════════════
+
+    def _loop_financial_integrity_daily(self) -> None:
+        """매일 06:20 — 전일/새벽 수집 후 재무 이상값 수리와 무결성 리포트 생성."""
+        logger.info("[재무무결성일일] 루프 시작")
+        self._wait_secs(70)
+        while not self._stop_event.is_set():
+            self._wait_until(6, 20, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("재무무결성일일", self._job_financial_integrity_daily)
+        logger.info("[재무무결성일일] 루프 종료")
+
+    def _job_financial_integrity_daily(self) -> None:
+        """가벼운 재무 품질 수리 후 data_integrity_check 리포트 저장."""
+        try:
+            repair = subprocess.run(
+                [sys.executable, "scripts/ops/repair_integrity_findings_20260727.py"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+            logger.info(
+                "[재무무결성일일] 수리 완료: returncode=%s stdout=%s",
+                repair.returncode,
+                repair.stdout[-700:] if repair.stdout else "",
+            )
+            if repair.returncode != 0:
+                logger.warning("[재무무결성일일] 수리 stderr=%s", repair.stderr[-700:] if repair.stderr else "")
+                raise RuntimeError(f"daily financial integrity repair failed: {repair.returncode}")
+
+            audit = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/ops/data_integrity_check.py",
+                    "--out-dir",
+                    "research_outputs/data_integrity_daily",
+                ],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+            logger.info(
+                "[재무무결성일일] 검사 완료: returncode=%s stdout=%s",
+                audit.returncode,
+                audit.stdout[-700:] if audit.stdout else "",
+            )
+            if audit.returncode != 0:
+                logger.warning("[재무무결성일일] 검사 경고 stderr=%s", audit.stderr[-700:] if audit.stderr else "")
+                raise RuntimeError(f"daily financial integrity audit failed: {audit.returncode}")
+        except subprocess.TimeoutExpired:
+            logger.warning("[재무무결성일일] 15분 타임아웃")
+        except Exception as e:
+            logger.error(f"[재무무결성일일] 오류: {e}", exc_info=True)
 
     def _loop_financial_integrity_monthly(self) -> None:
         """매월 1일 05:00 — 재무제표·현금흐름표 무결점 검사 및 자동 보완."""
@@ -2684,6 +3650,42 @@ class CollectionScheduler:
     def _job_financial_integrity_quarterly(self) -> None:
         """분기 마감 후 전체 재무 보완 (최근 4분기 집중 점검)."""
         try:
+            from check_financial_integrity import latest_reported_quarter
+
+            latest_year, latest_quarter = latest_reported_quarter()
+            if latest_quarter == 2:
+                start = f"{latest_year}0701"
+                end = date.today().strftime("%Y%m%d")
+                refresh = subprocess.run(
+                    [
+                        sys.executable,
+                        "scripts/refresh_dart_disclosures_recent.py",
+                        "--start", start,
+                        "--end", end,
+                    ],
+                    cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                    capture_output=True,
+                    text=True,
+                    timeout=1800,
+                )
+                if refresh.returncode != 0:
+                    raise RuntimeError(f"Q2 disclosure refresh failed: {refresh.stderr[-700:]}")
+                backfill = subprocess.run(
+                    [
+                        sys.executable,
+                        "scripts/backfill_dart_q2_financials.py",
+                        "--year", str(latest_year),
+                        "--report", f"scratch/q2_backfill_{latest_year}.json",
+                    ],
+                    cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                    capture_output=True,
+                    text=True,
+                    timeout=4 * 3600,
+                )
+                if backfill.returncode != 0:
+                    raise RuntimeError(f"Q2 financial backfill failed: {backfill.stderr[-700:]}")
+                logger.info("[재무무결점분기] Q2 원문 수집 완료: %s", backfill.stdout[-700:])
+
             from check_financial_integrity import run_integrity_check
             run_integrity_check(n_quarters=4, trigger="분기마감자동")
             logger.info("[재무무결점] 분기 마감 후 점검 완료")
@@ -2724,6 +3726,71 @@ class CollectionScheduler:
             f"[KRX종목기본정보] 갱신 {res['updated']} / 스냅샷 {res['history']} / "
             f"변경 {res['changes']} / 스킵 {res['skipped']}"
         )
+        try:
+            from routes.stock_analysis_rs import capture_theme_membership_snapshot
+            snapshot = capture_theme_membership_snapshot(today.isoformat())
+            logger.info(f"[RSTagSnapshot] {snapshot}")
+        except Exception as e:
+            logger.error(f"[RSTagSnapshot] 오류: {e}", exc_info=True)
+        try:
+            from collectors.krx_security_reference_collector import collect_reference
+            from security_master import rebuild_security_master
+            reference_stats = collect_reference(as_of=today.isoformat())
+            logger.info(f"[KRXSecurityReference] 갱신 완료: {reference_stats}")
+            master_stats = rebuild_security_master()
+            logger.info(f"[AsOfSecurityMaster] 재생성 완료: {master_stats}")
+        except Exception as e:
+            logger.error(f"[AsOfSecurityMaster] 재생성 오류: {e}", exc_info=True)
+        # 상장주식수 스냅샷과 최신 DART 공시를 결합해 자본행위/수정계수를 갱신한다.
+        try:
+            import subprocess, sys
+            script = str(Path(__file__).resolve().parent / "scripts" / "build_corporate_action_adjustment_engine.py")
+            result = subprocess.run(
+                [sys.executable, script], capture_output=True, text=True, timeout=300,
+                cwd=str(Path(__file__).resolve().parent),
+            )
+            if result.returncode == 0:
+                logger.info(f"[자본행위보정] 갱신 완료: {result.stdout.strip()[-300:]}")
+                audit_script = str(Path(__file__).resolve().parent / "scripts" / "audit_price_jumps_and_build_canonical.py")
+                audit = subprocess.run(
+                    [sys.executable, audit_script], capture_output=True, text=True, timeout=600,
+                    cwd=str(Path(__file__).resolve().parent),
+                )
+                if audit.returncode == 0:
+                    logger.info(f"[가격급변감사] 갱신 완료: {audit.stdout.strip()[-300:]}")
+                    external_script = str(Path(__file__).resolve().parent / "scripts" / "verify_price_history_with_naver.py")
+                    external = subprocess.run(
+                        [sys.executable, external_script, "--only-new"],
+                        capture_output=True, text=True, timeout=600,
+                        cwd=str(Path(__file__).resolve().parent),
+                    )
+                    if external.returncode == 0:
+                        logger.info(f"[외부가격검증] 신규 사건 확인 완료: {external.stdout.strip()[-300:]}")
+                    else:
+                        logger.error(f"[외부가격검증] 오류: {external.stderr[-300:]}")
+                    for label, rel_script in (
+                        ("시장국면", "scripts/build_market_regime_history.py"),
+                        ("설명형신호", "scripts/build_explainable_stock_signals.py"),
+                        ("데이터계보", "scripts/build_data_lineage_catalog.py"),
+                        ("전략센터전진신호", "scripts/capture_strategy_center_forward_signals.py"),
+                        ("신호사후성과", "scripts/update_live_signal_outcomes.py"),
+                        ("전진검증감사", "scripts/audit_forward_validation.py"),
+                    ):
+                        refresh = subprocess.run(
+                            [sys.executable, str(Path(__file__).resolve().parent / rel_script)],
+                            capture_output=True, text=True, timeout=600,
+                            cwd=str(Path(__file__).resolve().parent),
+                        )
+                        if refresh.returncode == 0:
+                            logger.info(f"[{label}] 갱신 완료: {refresh.stdout.strip()[-200:]}")
+                        else:
+                            logger.error(f"[{label}] 오류: {refresh.stderr[-300:]}")
+                else:
+                    logger.error(f"[가격급변감사] 오류: {audit.stderr[-300:]}")
+            else:
+                logger.error(f"[자본행위보정] 오류: {result.stderr[-300:]}")
+        except Exception as e:
+            logger.error(f"[자본행위보정] 예외: {e}")
 
     # ──────────────────────────────────────────────────────────
     # FnGuide 연결/별도 재무제표 + 스냅샷 (매월 3일 05:00)
@@ -2744,8 +3811,7 @@ class CollectionScheduler:
             now = datetime.now()
             # 백로그 잔량 확인
             try:
-                import sqlite3 as _sl
-                _c = _sl.connect(str(Path(__file__).resolve().parent / "stock.db"))
+                _c = connect_stock_db()
                 row = _c.execute("""
                     SELECT COUNT(DISTINCT su.stock_code)
                     FROM stock_universe su
@@ -2758,7 +3824,7 @@ class CollectionScheduler:
                     WHERE su.market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
                       AND su.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                       AND (fss.last_fetched IS NULL
-                           OR fss.last_fetched < datetime('now','-7 days'))
+                           OR fss.last_fetched::timestamp < datetime('now','-7 days'))
                 """).fetchone()
                 _c.close()
                 backlog = (row[0] if row else 0)
@@ -2965,6 +4031,16 @@ class CollectionScheduler:
             logger.info(f"[공시DB배치] 완료: {r.stdout[-300:]}")
             if r.returncode != 0:
                 logger.error(f"[공시DB배치] 오류: {r.stderr[-300:]}")
+            else:
+                ledger_script = str(Path(__file__).resolve().parent / "scripts" / "build_data_availability_ledger.py")
+                ledger = subprocess.run(
+                    [sys.executable, ledger_script], capture_output=True, text=True, timeout=600,
+                    cwd=str(Path(__file__).resolve().parent),
+                )
+                if ledger.returncode == 0:
+                    logger.info(f"[시점일치원장] 갱신 완료: {ledger.stdout.strip()[-300:]}")
+                else:
+                    logger.error(f"[시점일치원장] 오류: {ledger.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[공시DB배치] 예외: {e}")
 
@@ -3018,43 +4094,95 @@ class CollectionScheduler:
         logger.info("[KRX프로그램매매] 루프 종료")
 
     def _job_krx_program_trading(self) -> None:
-        """KRX 프로그램매매(차익/비차익) 일별 수집."""
+        """Broker market-level program trading catch-up.
+
+        The legacy KRX Playwright collector writes program_trading_daily, while
+        dashboard health and tenbagger signals read broker_program_market_daily.
+        Use the broker collector here so the visible dataset is actually kept
+        fresh, and catch up recent fully populated trading days.
+        """
         import subprocess, sys
-        script = str(Path(__file__).resolve().parent / "scripts" / "collect_krx_program_trading.py")
-        today = date.today().strftime("%Y%m%d")
+        script = str(Path(__file__).resolve().parent / "scripts" / "collect_broker_program_trading.py")
+        dates = _recent_price_trade_dates(limit=5)
+        missing = _missing_dataset_dates(
+            "broker_program_market_daily",
+            "dt",
+            dates,
+            min_coverage=2,
+            coverage_expr="COUNT(DISTINCT market)",
+            where="source='kiwoom'",
+        )
+        if not missing:
+            logger.info("[KRX프로그램매매] 최근 거래일 결측 없음")
+            return
         try:
+            start, end = min(missing), max(missing)
             r = subprocess.run(
-                [sys.executable, script, "--date", today],
+                [
+                    sys.executable, script,
+                    "--start", start,
+                    "--end", end,
+                    "--source", "kiwoom",
+                    "--market-only",
+                    "--skip-existing",
+                ],
                 capture_output=True, text=True, timeout=600,
                 cwd=str(Path(__file__).resolve().parent),
             )
-            logger.info(f"[KRX프로그램매매] {today} 완료: {r.stdout[-200:]}")
+            logger.info(f"[KRX프로그램매매] {start}~{end} 완료: {r.stdout[-500:]}")
             if r.returncode != 0:
-                logger.error(f"[KRX프로그램매매] 오류: {r.stderr[-200:]}")
+                logger.error(f"[KRX프로그램매매] 오류: {r.stderr[-500:]}")
         except Exception as e:
             logger.error(f"[KRX프로그램매매] 예외: {e}")
 
     # ── 브로커 종목별 프로그램매매 — 매일 18:50 영업일 ──
     def _loop_broker_program_stock_trading(self) -> None:
-        """Kiwoom 종목별 프로그램매매 수집 루프 (18:50 영업일)."""
+        """Kiwoom 종목별 프로그램매매 수집 및 서버 재시작 후 결측 보충."""
         logger.info("[종목프로그램매매] 루프 시작")
+        # A process restart at 18:50 used to skip the entire trading day.  Run
+        # one bounded catch-up after startup; the job itself selects only dates
+        # that are below coverage, so a healthy store is a no-op.
+        self._wait_secs(120)
+        if not self._stop_event.is_set():
+            _run_job_safe("종목프로그램매매", self._job_broker_program_stock_trading)
         while not self._stop_event.is_set():
-            now = datetime.now()
-            if now.weekday() < 5 and _seconds_until(18, 50) < 60:
-                _run_job_safe("종목프로그램매매", self._job_broker_program_stock_trading)
-            self._stop_event.wait(60)
+            wait = _seconds_until(18, 50, skip_weekend=True)
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("종목프로그램매매", self._job_broker_program_stock_trading)
         logger.info("[종목프로그램매매] 루프 종료")
 
     def _job_broker_program_stock_trading(self) -> None:
         """Kiwoom 종목별 프로그램 매수/매도/순매수 일별 수집."""
         import subprocess, sys
         script = str(Path(__file__).resolve().parent / "scripts" / "collect_broker_program_trading.py")
-        today = date.today().strftime("%Y%m%d")
+        dates = _recent_price_trade_dates(limit=5)
+        # Do not depend solely on price-history completion.  Program data may
+        # be available for the latest KRX session even while another collector
+        # is late, and that session must still be repaired after a restart.
+        expected = datetime.now().date()
+        while not is_trading_day(expected, "KR"):
+            expected -= timedelta(days=1)
+        expected_key = expected.strftime("%Y%m%d")
+        dates = [expected_key] + [d for d in dates if d != expected_key]
+        missing = _missing_dataset_dates(
+            "broker_program_stock_daily",
+            "dt",
+            dates,
+            min_coverage=2000,
+            coverage_expr="COUNT(DISTINCT stock_code)",
+            where="source='kiwoom'",
+        )
+        if not missing:
+            logger.info("[종목프로그램매매] 최근 거래일 결측 없음")
+            return
         try:
+            start, end = min(missing), max(missing)
             r = subprocess.run(
                 [
                     sys.executable, script,
-                    "--date", today,
+                    "--start", start,
+                    "--end", end,
                     "--source", "kiwoom",
                     "--all-stocks",
                     "--save-all-returned",
@@ -3064,7 +4192,7 @@ class CollectionScheduler:
                 capture_output=True, text=True, timeout=3600,
                 cwd=str(Path(__file__).resolve().parent),
             )
-            logger.info(f"[종목프로그램매매] {today} 완료: {r.stdout[-300:]}")
+            logger.info(f"[종목프로그램매매] {start}~{end} 완료: {r.stdout[-800:]}")
             if r.returncode != 0:
                 logger.error(f"[종목프로그램매매] 오류: {r.stderr[-500:]}")
         except Exception as e:
@@ -3121,6 +4249,199 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[주간4중검증] 오류: {e}", exc_info=True)
 
+    def _loop_postgres_weekly_backup(self) -> None:
+        """매주 일요일 05:10 전체 PostgreSQL 스냅샷 백업."""
+        logger.info("[PostgreSQL주간백업] 루프 시작")
+        self._wait_secs(180)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            days_to_sunday = (6 - now.weekday()) % 7
+            next_run = now.replace(hour=5, minute=10, second=0, microsecond=0) + timedelta(days=days_to_sunday)
+            if next_run <= now:
+                next_run += timedelta(days=7)
+            self._stop_event.wait(timeout=max(0, (next_run - now).total_seconds()))
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("PostgreSQL주간백업", self._job_postgres_weekly_backup)
+        logger.info("[PostgreSQL주간백업] 루프 종료")
+
+    def _job_postgres_weekly_backup(self) -> None:
+        script = str(Path(__file__).resolve().parent / "scripts" / "postgres_disaster_recovery.py")
+        backup_result = subprocess.run(
+            [sys.executable, script, "backup"],
+            capture_output=True,
+            text=True,
+            timeout=3600,
+        )
+        if backup_result.returncode != 0:
+            raise RuntimeError(f"PostgreSQL backup failed: {backup_result.stderr[-1000:]}")
+
+        # 2026-08-22: 백업은 매주 정상 생성됐지만 그 백업을 실제로 복원해보는
+        # restore-test를 트리거하는 스케줄이 애초에 없어서, restore_test_latest.json이
+        # 8/15자 옛 백업을 계속 참조 — audit(매일 05:50)이 "최신 백업과 다른 백업을
+        # 복원테스트함"으로 3일 넘게 매일 텔레그램 실패알림을 반복해서 보내고 있었음.
+        # 백업 생성 직후 그 백업을 대상으로 즉시 restore-test까지 수행해 봉합.
+        import json as _json
+        try:
+            manifest = _json.loads(backup_result.stdout)
+            backup_path = manifest.get("backup_path")
+        except Exception:
+            backup_path = None
+        if backup_path:
+            restore_result = subprocess.run(
+                [sys.executable, script, "restore-test", backup_path],
+                capture_output=True,
+                text=True,
+                timeout=1800,
+            )
+            if restore_result.returncode != 0:
+                logger.error(f"[PostgreSQL주간백업] 복원테스트 실패: {restore_result.stderr[-1000:]}")
+            else:
+                logger.info(f"[PostgreSQL주간백업] 복원테스트 완료: {restore_result.stdout[-500:]}")
+        else:
+            logger.warning("[PostgreSQL주간백업] backup 출력에서 backup_path 파싱 실패 — 복원테스트 스킵")
+
+        prune_result = subprocess.run(
+            [sys.executable, script, "prune", "--apply"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if prune_result.returncode != 0:
+            raise RuntimeError(f"PostgreSQL backup pruning failed: {prune_result.stderr[-1000:]}")
+        logger.info("[PostgreSQL주간백업] 완료: %s", backup_result.stdout[-1200:])
+
+    def _loop_postgres_backup_health(self) -> None:
+        """매일 05:50 최신 전체 백업과 복원시험 증적 검증."""
+        logger.info("[PostgreSQL백업상태] 루프 시작")
+        self._wait_secs(240)
+        while not self._stop_event.is_set():
+            self._wait_until(5, 50, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("PostgreSQL백업상태", self._job_postgres_backup_health)
+            self._wait_secs(23 * 3600)
+        logger.info("[PostgreSQL백업상태] 루프 종료")
+
+    def _job_postgres_backup_health(self) -> None:
+        script = str(Path(__file__).resolve().parent / "scripts" / "postgres_disaster_recovery.py")
+        result = subprocess.run(
+            [sys.executable, script, "audit"],
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        if result.returncode != 0:
+            try:
+                from notifier import send
+
+                send(
+                    "<b>PostgreSQL 백업 검증 실패</b>\n"
+                    + (result.stderr or result.stdout)[-1200:],
+                    key=f"postgres_backup_failure_{date.today().isoformat()}",
+                )
+            except Exception:
+                pass
+            raise RuntimeError(f"PostgreSQL backup audit failed: {(result.stderr or result.stdout)[-1200:]}")
+        logger.info("[PostgreSQL백업상태] 정상: %s", result.stdout[-1000:])
+
+    def _loop_postgres_cutover_verify(self) -> None:
+        """매일 06:10 — SQLite→PostgreSQL 커트오버 전체 정합성(테이블별 드리프트·매크로 오염) 감시.
+
+        2026-08-11 발견: 크론/스케줄러의 일부 작업이 postgres 라우터를 타지 않고
+        stock.db에만 계속 써서 특정 테이블이 조용히 뒤처지는 사례가 반복됨
+        (signal_result/report_files/short_rank_daily/체리형부최신채널 등).
+        이 잡은 verify_postgres_cutover.py로 매일 감시하고, 단순 행수 드리프트는
+        검증된 자연키 upsert 브리지(sync_sqlite_bridge_delta.py)로 자동 복구를
+        1회 시도한 뒤 재검증한다. 복구 후에도 실패가 남으면(매크로 오염, 백업
+        신선도 등 사람 판단이 필요한 항목) 텔레그램으로 알린다.
+        """
+        logger.info("[PostgreSQL커트오버검증] 루프 시작")
+        self._wait_secs(300)
+        while not self._stop_event.is_set():
+            self._wait_until(6, 10, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("PostgreSQL커트오버검증", self._job_postgres_cutover_verify)
+        logger.info("[PostgreSQL커트오버검증] 루프 종료")
+
+    def _job_postgres_cutover_verify(self) -> None:
+        import json as _json
+
+        script = str(Path(__file__).resolve().parent / "scripts" / "verify_postgres_cutover.py")
+        bridge = str(Path(__file__).resolve().parent / "scripts" / "sync_sqlite_bridge_delta.py")
+
+        def _run_verify() -> dict:
+            # 2026-08-22: 데이터량 증가(price_history 840만+행 등)로 실행이 4분대에
+            # 근접해 300초 타임아웃에 자주 걸림 — 강제종료된 불완전 출력이 매번
+            # "report parse failed"로 기록되며 3일 연속 텔레그램 실패알림을 유발.
+            # 실측 단독실행 소요 약 4분 → 여유를 두고 900초로 상향.
+            result = subprocess.run(
+                [sys.executable, script],
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+            try:
+                return _json.loads(result.stdout)
+            except Exception:
+                # 2026-08-25: 실패 원인이 "report parse failed"로만 남아 실제 원인(스크립트
+                # 크래시 시 stderr에 남는 traceback)을 알 수 없었음 — stderr도 함께 로깅해
+                # 다음 발생 시 원인을 바로 알 수 있게 함(예: sqlite3 lock timeout).
+                logger.error(
+                    "[PostgreSQL커트오버검증] 보고서 파싱 실패, returncode=%s stderr=%s stdout=%s",
+                    result.returncode, result.stderr[-1500:] if result.stderr else "", result.stdout[-500:] if result.stdout else "",
+                )
+                return {
+                    "ok": result.returncode == 0,
+                    "failures": ["report parse failed"],
+                    "raw": result.stdout[-1000:],
+                    "stderr": result.stderr[-1000:] if result.stderr else "",
+                }
+
+        report = _run_verify()
+        behind_tables = [item["table"] for item in report.get("postgres_behind", [])]
+        healed = False
+        if behind_tables:
+            logger.warning("[PostgreSQL커트오버검증] 드리프트 감지: %s → 자동 복구 시도", behind_tables)
+            heal_result = subprocess.run(
+                [sys.executable, bridge, *behind_tables],
+                capture_output=True,
+                text=True,
+                timeout=1800,
+            )
+            if heal_result.returncode != 0:
+                raise RuntimeError(
+                    f"PostgreSQL cutover bridge exited {heal_result.returncode}: "
+                    f"{(heal_result.stderr or heal_result.stdout)[-1500:]}"
+                )
+            logger.info("[PostgreSQL커트오버검증] 복구 결과: %s", heal_result.stdout[-1500:])
+            healed = True
+            report = _run_verify()
+
+        if report.get("ok"):
+            if healed:
+                logger.info("[PostgreSQL커트오버검증] 드리프트 자동 복구 완료: %s", behind_tables)
+            else:
+                logger.info("[PostgreSQL커트오버검증] 정상")
+            return
+
+        failures = report.get("failures", [])
+        try:
+            from notifier import send
+
+            stderr_hint = report.get("stderr") or ""
+            send(
+                "<b>PostgreSQL 커트오버 검증 실패</b>\n"
+                + ("자동복구 시도 후에도 실패\n" if healed else "")
+                + "\n".join(str(f) for f in failures[:10])
+                + (f"\n\nstderr:\n{stderr_hint[-500:]}" if stderr_hint else ""),
+                key=f"postgres_cutover_verify_failure_{date.today().isoformat()}",
+            )
+        except Exception:
+            pass
+        raise RuntimeError(f"PostgreSQL cutover verify failed: {failures}")
+
     def _loop_cf_triple_validate(self) -> None:
         """신규 수집된 현금흐름(최근 7일) 대상 DART·FnGuide·Seibro 3중 자동 검증."""
         logger.info("[CF3중검증] 루프 시작")
@@ -3147,6 +4468,269 @@ class CollectionScheduler:
             logger.error(f"[CF3중검증] 오류: {e}", exc_info=True)
 
     # ── DART 재무 재수집 (매일 00:30 — 상폐·ETF·ETN 제외 활성 종목) ───────────
+    def _loop_data_integrity_followup(self) -> None:
+        """매일 00:05 — 2026-08-22 세션에서 발견했으나 DART 일일한도 소진으로 미완료된
+        데이터 이상치(revenue_extreme_yoy, dilution.suspicious_denominator)를
+        scripts/data_integrity_followup.py로 이어서 검증/복구한다.
+
+        DART재무재수집(00:30)보다 먼저 실행 — 신선한 쿼터를 먼저 사용하도록 배치
+        (이 잡의 대상 건수가 훨씬 적어 뒤따르는 잡의 쿼터를 크게 잠식하지 않음).
+        DART 한도 소진(status=020) 감지 시 즉시 안전 종료, 다음날 자동 재개.
+        """
+        logger.info("[데이터무결성후속검증] 루프 시작")
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            next_run = now.replace(hour=0, minute=5, second=0, microsecond=0)
+            if next_run <= now:
+                next_run += timedelta(days=1)
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("데이터무결성후속검증", self._job_data_integrity_followup)
+        logger.info("[데이터무결성후속검증] 루프 종료")
+
+    def _job_data_integrity_followup(self) -> None:
+        import subprocess, sys
+        try:
+            result = subprocess.run(
+                [sys.executable, "scripts/data_integrity_followup.py"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=1800,  # 30분
+            )
+            if result.returncode == 0:
+                logger.info("[데이터무결성후속검증] 완료: %s", (result.stdout or "")[-800:])
+            else:
+                logger.warning(
+                    "[데이터무결성후속검증] 비정상 종료 (code=%s): %s",
+                    result.returncode, (result.stderr or "")[-800:],
+                )
+        except subprocess.TimeoutExpired:
+            logger.warning("[데이터무결성후속검증] 30분 타임아웃 — 내일 재시도")
+        except Exception as e:
+            logger.error(f"[데이터무결성후속검증] 오류: {e}", exc_info=True)
+
+    def _loop_multi_source_financial_crosscheck(self) -> None:
+        """매일 00:25 — scripts/multi_source_financial_crosscheck.py 실행.
+
+        2026-08-26 사용자 지시: "재무데이터 뿐만 아니라 현금흐름표/매입재료비/감가상각비/
+        연결·별도기준 등 모든 데이터에 대해 DART뿐만 아니라 야후/네이버/FnGuide와도
+        중복·다중 점검을 해야한다." DART API 쿼터를 전혀 쓰지 않음(FnGuide는 스크레이핑,
+        Naver는 기존 naver_financial 테이블 재사용, Yahoo는 yfinance) — 다른 DART 잡과
+        경합하지 않으므로 별도 시간대 배치. 결과는 multi_source_financial_mismatch_log에
+        누적되며, DB 값은 자동수정하지 않고 판정만 기록(재무 무결성 선행규칙 준수 —
+        외부소스 불일치가 곧 DART 오류를 의미하지 않음, 분류기준 차이일 수 있어 원문
+        재확인 없이는 자동교정 금지).
+        """
+        logger.info("[다중소스재무교차검증] 루프 시작")
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            next_run = now.replace(hour=0, minute=25, second=0, microsecond=0)
+            if next_run <= now:
+                next_run += timedelta(days=1)
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("다중소스재무교차검증", self._job_multi_source_financial_crosscheck)
+        logger.info("[다중소스재무교차검증] 루프 종료")
+
+    def _job_multi_source_financial_crosscheck(self) -> None:
+        import subprocess, sys
+        try:
+            result = subprocess.run(
+                [sys.executable, "scripts/multi_source_financial_crosscheck.py"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=2400,  # 40분 (yfinance/FnGuide 스크레이핑 네트워크 대기 포함)
+            )
+            if result.returncode == 0:
+                logger.info("[다중소스재무교차검증] 완료: %s", (result.stdout or "")[-800:])
+            else:
+                logger.warning(
+                    "[다중소스재무교차검증] 비정상 종료 (code=%s): %s",
+                    result.returncode, (result.stderr or "")[-800:],
+                )
+        except subprocess.TimeoutExpired:
+            logger.warning("[다중소스재무교차검증] 40분 타임아웃 — 내일 이어서 진행(미확인 대상만 재조회)")
+        except Exception as e:
+            logger.error(f"[다중소스재무교차검증] 오류: {e}", exc_info=True)
+
+    def _loop_corporate_action_confirmation_followup(self) -> None:
+        """매일 00:10 — scripts/corporate_action_confirmation_followup.py 실행.
+
+        2026-08-23: turnaround/regime_adaptive 등 백테스트 검증을 막던 price_jump_audit
+        미해결(21.12~22.10 구간 2,321건)의 79%가 유상증자(rights_issue) 였고, 발행가
+        데이터(dilution_events.conversion_price)로 권리락 이론가(TERP) 조정계수를
+        계산해 확정하는 작업. dilution_events는 다른 스케줄 작업으로 계속 갱신되므로
+        매일 재시도하면 조금씩 review_required가 줄어든다. DART API 미사용(할당량 무관).
+
+        ⚠️ 계수를 실제 backtest 수익률 계산에 적용하는 로직(canonical_price_returns_v
+        등)은 이 자동 잡의 범위가 아니다 — 그건 사람이 코드 리뷰하며 별도로 진행.
+        """
+        logger.info("[기업행위조정계수후속확정] 루프 시작")
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            next_run = now.replace(hour=0, minute=10, second=0, microsecond=0)
+            if next_run <= now:
+                next_run += timedelta(days=1)
+            secs = max(0.0, (next_run - datetime.now()).total_seconds())
+            self._wait_secs(secs)
+            if not self._stop_event.is_set():
+                _run_job_safe("기업행위조정계수후속확정", self._job_corporate_action_confirmation_followup)
+        logger.info("[기업행위조정계수후속확정] 루프 종료")
+
+    def _job_corporate_action_confirmation_followup(self) -> None:
+        import subprocess, sys
+        try:
+            result = subprocess.run(
+                [sys.executable, "scripts/corporate_action_confirmation_followup.py"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10분
+            )
+            if result.returncode == 0:
+                logger.info("[기업행위조정계수후속확정] 완료: %s", (result.stdout or "")[-800:])
+            else:
+                logger.warning(
+                    "[기업행위조정계수후속확정] 비정상 종료 (code=%s): %s",
+                    result.returncode, (result.stderr or "")[-800:],
+                )
+        except subprocess.TimeoutExpired:
+            logger.warning("[기업행위조정계수후속확정] 10분 타임아웃 — 내일 재시도")
+        except Exception as e:
+            logger.error(f"[기업행위조정계수후속확정] 오류: {e}", exc_info=True)
+
+    def _loop_price_jump_audit_rebuild(self) -> None:
+        """매일 00:15 — price_jump_audit 전체 재빌드.
+
+        2026-08-24 세션에서 이 테이블이 2026-08-07~08-14 시점 스냅샷에 멈춰 있어
+        그 사이 정정된 가격(예: 352770 6,013원→96,645원)이 반영 안 되고 허위
+        "가격점프" 오탐을 계속 발생시킨 것을 발견(전체 미해결 5,206→3,002건으로
+        재빌드 한 번에 해소). 수동 실행에만 의존하면 재발이 확실해 매일 자동화한다.
+        """
+        logger.info("[가격점프감사재빌드] 루프 시작")
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            self._wait_until(0, 15)
+            _run_job_safe("가격점프감사재빌드", self._job_price_jump_audit_rebuild)
+        logger.info("[가격점프감사재빌드] 루프 종료")
+
+    def _job_price_jump_audit_rebuild(self) -> None:
+        import json
+        import subprocess, sys
+        try:
+            result = subprocess.run(
+                [sys.executable, "scripts/audit_price_jumps_and_build_canonical.py", "--require-postgres"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True, text=True, timeout=900,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"price jump audit exited {result.returncode}: "
+                    f"{(result.stderr or result.stdout)[-800:]}"
+                )
+            payload = json.loads(result.stdout)
+            if payload.get("database_backend") != "postgresql":
+                raise RuntimeError(f"unexpected database backend: {payload.get('database_backend')}")
+
+            from db_utils import connect_stock_db
+
+            conn = connect_stock_db(timeout=30)
+            try:
+                stored_count, stored_audited_at = conn.execute(
+                    "SELECT COUNT(*), MAX(audited_at) FROM price_jump_audit"
+                ).fetchone()
+            finally:
+                conn.close()
+            if int(stored_count) != int(payload.get("audited_jumps", -1)):
+                raise RuntimeError(
+                    f"postcondition count mismatch: output={payload.get('audited_jumps')} "
+                    f"postgres={stored_count}"
+                )
+            if str(stored_audited_at) != str(payload.get("audited_at")):
+                raise RuntimeError(
+                    f"postcondition timestamp mismatch: output={payload.get('audited_at')} "
+                    f"postgres={stored_audited_at}"
+                )
+            logger.info("[가격점프감사재빌드] 완료: %s", (result.stdout or "")[-700:])
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("가격점프감사재빌드 15분 타임아웃")
+        except Exception as e:
+            logger.error(f"[가격점프감사재빌드] 오류: {e}", exc_info=True)
+            raise
+
+    def _loop_naver_price_verify(self) -> None:
+        """매일 00:20 — 가격점프감사재빌드(00:15) 직후, 신규 플래그된 이벤트만
+        Naver 공식 시세와 교차대조(--only-new라 매일 늘어난 분만 확인, 가볍다)."""
+        logger.info("[가격외부소스재대조] 루프 시작")
+        self._wait_secs(120)
+        while not self._stop_event.is_set():
+            self._wait_until(0, 20)
+            _run_job_safe("가격외부소스재대조", self._job_naver_price_verify)
+        logger.info("[가격외부소스재대조] 루프 종료")
+
+    def _job_naver_price_verify(self) -> None:
+        import subprocess, sys
+        try:
+            result = subprocess.run(
+                [sys.executable, "scripts/verify_price_history_with_naver.py", "--only-new", "--workers", "6"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True, text=True, timeout=1800,
+            )
+            if result.returncode == 0:
+                logger.info("[가격외부소스재대조] 완료: %s", (result.stdout or "")[-500:])
+            else:
+                logger.warning("[가격외부소스재대조] 비정상 종료: %s", (result.stderr or "")[-800:])
+        except subprocess.TimeoutExpired:
+            logger.warning("[가격외부소스재대조] 30분 타임아웃")
+        except Exception as e:
+            logger.error(f"[가격외부소스재대조] 오류: {e}", exc_info=True)
+
+    def _loop_weekly_strategy_reverify(self) -> None:
+        """매주 일요일 01:30 — 등록된 전략 전량을 최신 가격/데이터로 재실행해
+        governance 등급 드리프트를 감지한다.
+
+        2026-08-24 세션에서 1회 수동 실행한 결과 V8이 퇴역→종이운용핵심으로
+        승격되고 V10·V12는 검증대기→퇴역으로 정직하게 하향(오래된 가격으로
+        부풀려졌던 수치가 정정됨)됨을 확인 — 1회성이 아니라 데이터가 계속
+        갱신되므로 정기적으로 재확인해야 함.
+        """
+        logger.info("[전략센터주간재검증] 루프 시작")
+        self._wait_secs(150)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            days_ahead = (6 - now.weekday()) % 7  # 6=일요일
+            next_run = (now + timedelta(days=days_ahead)).replace(hour=1, minute=30, second=0, microsecond=0)
+            if next_run <= now:
+                next_run += timedelta(days=7)
+            self._wait_secs(max(0.0, (next_run - datetime.now()).total_seconds()))
+            if not self._stop_event.is_set():
+                _run_job_safe("전략센터주간재검증", self._job_weekly_strategy_reverify)
+        logger.info("[전략센터주간재검증] 루프 종료")
+
+    def _job_weekly_strategy_reverify(self) -> None:
+        import subprocess, sys
+        try:
+            result = subprocess.run(
+                [sys.executable, "scripts/rerun_all_after_audit_rebuild.py"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True, text=True, timeout=3600,  # 최대 1시간
+            )
+            if result.returncode == 0:
+                logger.info("[전략센터주간재검증] 완료: %s", (result.stdout or "")[-1000:])
+            else:
+                logger.warning("[전략센터주간재검증] 비정상 종료: %s", (result.stderr or "")[-1000:])
+        except subprocess.TimeoutExpired:
+            logger.warning("[전략센터주간재검증] 1시간 타임아웃 — 다음주 재시도")
+        except Exception as e:
+            logger.error(f"[전략센터주간재검증] 오류: {e}", exc_info=True)
+
     def _loop_dart_financial_recollect(self) -> None:
         """매일 00:30 — DART API로 2016~현재 재무제표 재수집 (legacy_dart_recollect.py).
 
@@ -3175,12 +4759,32 @@ class CollectionScheduler:
         """
         import subprocess, sys
         try:
-            script = "/Applications/stock_dashboard/scratch/legacy_dart_recollect.py"
+            from check_financial_integrity import latest_reported_quarter
+
+            latest_year, latest_quarter = latest_reported_quarter()
+            if latest_quarter == 2:
+                q2_result = subprocess.run(
+                    [
+                        sys.executable,
+                        "scripts/backfill_dart_q2_financials.py",
+                        "--year", str(latest_year),
+                        "--report", f"scratch/q2_backfill_{latest_year}.json",
+                    ],
+                    cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                    capture_output=True,
+                    text=True,
+                    timeout=4 * 3600,
+                )
+                if q2_result.returncode != 0:
+                    raise RuntimeError(f"Q2 verified backfill failed: {q2_result.stderr[-700:]}")
+                logger.info("[DART재무재수집] Q2 검증 수집: %s", q2_result.stdout[-500:])
+
+            script = "/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/legacy_dart_recollect.py"
             cmd = [sys.executable, script, "--resume"]
             logger.info(f"[DART재무재수집] 시작: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 capture_output=False,
                 text=True,
                 timeout=4 * 3600,  # 최대 4시간
@@ -3223,7 +4827,7 @@ class CollectionScheduler:
         try:
             import urllib.request as _ur, json as _js
             _env = {}
-            with open("/Applications/stock_dashboard/.env") as _f:
+            with open("/Volumes/Realtek_NVME/stock_dashboard/runtime/.env") as _f:
                 for _ln in _f:
                     if "=" in _ln and not _ln.startswith("#"):
                         _k, _v = _ln.strip().split("=", 1)
@@ -3239,7 +4843,7 @@ class CollectionScheduler:
             logger.warning(f"[DART_CF위험군재수집] DART 상태 확인 실패: {_e}")
 
         try:
-            script = "/Applications/stock_dashboard/scripts/ops/resolve_quarterly_risks_with_dart.py"
+            script = "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/resolve_quarterly_risks_with_dart.py"
             cmd = [
                 sys.executable, script,
                 "--year-from", "2020",
@@ -3249,7 +4853,7 @@ class CollectionScheduler:
             logger.info(f"[DART_CF위험군재수집] 시작: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 capture_output=False,
                 text=True,
                 timeout=3 * 3600,  # 최대 3시간
@@ -3284,18 +4888,29 @@ class CollectionScheduler:
         logger.info("[DB유지보수] 루프 종료")
 
     def _job_db_maintenance(self) -> None:
-        """WAL checkpoint(TRUNCATE) + VACUUM + ANALYZE — stock.db / hs_trade_lab.db."""
-        import sqlite3 as _sl
-        import time as _time
+        """WAL checkpoint(TRUNCATE) + VACUUM + ANALYZE — stock.db / hs_trade_lab.db.
 
-        targets = [
-            ("stock.db", "stock.db"),
-            ("hs_trade_lab.db", "hs_trade_lab/data/hs_trade_lab.db"),
-        ]
-        for label, path in targets:
-            try:
-                t0 = _time.time()
-                conn = _sl.connect(path, timeout=120)
+        2026-08-23: stock.db는 IS_POSTGRES 상태에서 sqlite3.connect()가 라우터를 통해
+        실제로 PostgreSQL에 연결되므로, SQLite 전용 PRAGMA(freelist_count/wal_checkpoint)와
+        VACUUM(인자 없는 SQLite 전체 VACUUM)이 매주 "syntax error at or near PRAGMA"로
+        실패하고 있었음. stock.db는 PostgreSQL 자체 VACUUM ANALYZE로 대체하고,
+        hs_trade_lab.db는 router 미적용 독립 SQLite 파일이므로 기존 방식 유지.
+        """
+        import time as _time
+        from config import IS_POSTGRES
+
+        t0 = _time.time()
+        try:
+            if IS_POSTGRES:
+                import psycopg
+
+                with psycopg.connect(config.DATABASE_URL.replace("postgresql+psycopg://", "postgresql://", 1), autocommit=True) as pconn:
+                    pconn.execute("VACUUM ANALYZE")
+                elapsed = _time.time() - t0
+                logger.info(f"[DB유지보수] stock.db(PostgreSQL VACUUM ANALYZE) 완료 ({elapsed:.1f}s)")
+            else:
+                import sqlite3 as _sl
+                conn = _sl.connect("stock.db", timeout=120)
                 fl_before = conn.execute("PRAGMA freelist_count").fetchone()[0]
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 conn.execute("VACUUM")
@@ -3304,11 +4919,27 @@ class CollectionScheduler:
                 conn.close()
                 elapsed = _time.time() - t0
                 logger.info(
-                    f"[DB유지보수] {label} 완료 ({elapsed:.1f}s)"
-                    f" freelist: {fl_before} → {fl_after}"
+                    f"[DB유지보수] stock.db 완료 ({elapsed:.1f}s) freelist: {fl_before} → {fl_after}"
                 )
-            except Exception as e:
-                logger.error(f"[DB유지보수] {label} 오류: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[DB유지보수] stock.db 오류: {e}", exc_info=True)
+
+        import sqlite3 as _sl2
+        try:
+            t0 = _time.time()
+            conn = _sl2.connect("hs_trade_lab/data/hs_trade_lab.db", timeout=120)
+            fl_before = conn.execute("PRAGMA freelist_count").fetchone()[0]
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.execute("VACUUM")
+            conn.execute("ANALYZE")
+            fl_after = conn.execute("PRAGMA freelist_count").fetchone()[0]
+            conn.close()
+            elapsed = _time.time() - t0
+            logger.info(
+                f"[DB유지보수] hs_trade_lab.db 완료 ({elapsed:.1f}s) freelist: {fl_before} → {fl_after}"
+            )
+        except Exception as e:
+            logger.error(f"[DB유지보수] hs_trade_lab.db 오류: {e}", exc_info=True)
 
     # ── WAL 일별 크기 감시 (매일 04:30) ─────────────────────────────────────────
     def _loop_wal_daily_check(self) -> None:
@@ -3364,7 +4995,7 @@ class CollectionScheduler:
         try:
             result = subprocess.run(
                 [sys.executable, "scripts/audit_all_page_data_quality.py"],
-                cwd="/Applications/stock_dashboard",
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                 capture_output=True,
                 text=True,
                 timeout=1800,
@@ -3376,6 +5007,184 @@ class CollectionScheduler:
             logger.warning("[페이지데이터감사] 30분 타임아웃")
         except Exception as e:
             logger.error(f"[페이지데이터감사] 오류: {e}", exc_info=True)
+
+    # ── 턴어라운드워치 사전계산 (매일 04:40, CPU 유휴시간대) ──────────────────
+    def _loop_turnaround_watch_precompute(self) -> None:
+        """매일 04:40 — /api/tenbagger/turnaround-watch 무거운 전종목 스캔을 미리 계산해 캐싱.
+        2026-07-26 신규: 이 API가 요청마다 재계산되어 CPU를 과점유하는 문제(사용자 리포트)를
+        해결하기 위해, 요청 시점 계산을 없애고 새벽 유휴시간에만 1회 계산하도록 전환.
+        04:40 선택 이유: 00:30 DART재무재수집(최대 4시간)과 04:30 WAL일별체크가 보통 끝난
+        직후이고, 05:00 FnGuide재무월간(매월 3일만)·05:30 CF3중검증 시작 전이라 이 시간대가
+        상대적으로 가장 한가함(CLAUDE.md 야간배치 소요시간 실측 기록 참조)."""
+        logger.info("[턴어라운드워치사전계산] 루프 시작")
+        self._wait_secs(180)
+        while not self._stop_event.is_set():
+            self._wait_until(4, 40, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("턴어라운드워치사전계산", self._job_turnaround_watch_precompute)
+        logger.info("[턴어라운드워치사전계산] 루프 종료")
+
+    def _job_turnaround_watch_precompute(self) -> None:
+        try:
+            from routes.tenbagger import refresh_turnaround_watch_cache
+            data = refresh_turnaround_watch_cache(min_mktcap=300.0)
+            counts = {k: len(v) for k, v in data.items() if isinstance(v, list)}
+            logger.info(f"[턴어라운드워치사전계산] 완료: {counts}")
+        except Exception as e:
+            logger.error(f"[턴어라운드워치사전계산] 오류: {e}", exc_info=True)
+
+    # ── 투자 의사결정 RAG (평일 20:05, DeepSeek 비피크) ─────────────────────
+    def _loop_investment_decision_rag(self) -> None:
+        """평일 20:05에 피크 시간에 접수된 RAG 작업을 자동 재개한다."""
+        logger.info("[투자의사결정RAG] 루프 시작")
+        self._wait_secs(210)
+        while not self._stop_event.is_set():
+            self._wait_until(20, 5, skip_weekend=False)
+            if self._stop_event.is_set(): break
+            _run_job_safe("투자의사결정RAG", self._job_investment_decision_rag)
+        logger.info("[투자의사결정RAG] 루프 종료")
+
+    def _job_investment_decision_rag(self) -> None:
+        try:
+            from routes.investment_decisions import resume_waiting_tasks
+            resumed=resume_waiting_tasks()
+            logger.info(f"[투자의사결정RAG] 대기 작업 {resumed}건 재개")
+        except Exception as e:
+            logger.error(f"[투자의사결정RAG] 오류: {e}", exc_info=True)
+
+    # ── 체리형부식 스크리너 사전계산 (매일 04:45) ──────────────────────────────
+    def _loop_cherry_screener_precompute(self) -> None:
+        """2026-08-09 신규 — 체리형부 채널(수집 텍스트 3,657건+파일 491건) 원문 리포트를
+        역설계한 '3대 스크리닝' 전종목 스캔. 연산 자체는 가벼움(전종목 1초 내)이나
+        턴어라운드워치와 동일한 유휴시간대 사전계산 관례를 따라 04:40 직후(04:45)로 배치."""
+        logger.info("[체리형부스크리너사전계산] 루프 시작")
+        self._wait_secs(200)
+        while not self._stop_event.is_set():
+            self._wait_until(4, 45, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("체리형부스크리너사전계산", self._job_cherry_screener_precompute)
+        logger.info("[체리형부스크리너사전계산] 루프 종료")
+
+    def _job_cherry_screener_precompute(self) -> None:
+        try:
+            from routes.cherry_screener import refresh_cherry_screener_cache
+            data = refresh_cherry_screener_cache()
+            logger.info(
+                f"[체리형부스크리너사전계산] 완료: 스캔 {data['universe_scanned']}종목, "
+                f"3스크린 {len(data['three_screen_pass'])}건, 2스크린 {len(data['two_screen_pass'])}건")
+        except Exception as e:
+            logger.error(f"[체리형부스크리너사전계산] 오류: {e}", exc_info=True)
+
+    # ── FnGuide/DART 전종목 순차 교차검증 (매일 03:15, FNGUIDE 일일한도 준수) ────
+    def _loop_fnguide_dart_verify_sweep(self) -> None:
+        """2026-08-09(2) 신규 — financial_source_snapshot(FnGuide) vs financial_data(DART)
+        연간 P&L/BS 교차검증(cross_validate_annual)을 전종목(~2,585개, 우선주 제외)에 대해
+        FNGUIDE 일일한도(1,500건/일, annual_only 모드는 종목당 3건 소비) 내에서 순차 실행.
+        "오늘 이미 처리한 종목"은 자동 skip하므로 매일 450종목씩만 처리해도 날짜가 바뀌면
+        이어서 다음 종목으로 진행 — 약 6일에 한 바퀴(2,585/450) 순환한다. 03:15 선택 이유:
+        cf_triple_validator(현금흐름 3중검증, 05:30)·FnGuide재무월간(매월3일 05:00)·
+        턴어라운드워치(04:40)·체리형부스크리너(04:45)와 겹치지 않는 새벽 첫 유휴 슬롯이며,
+        450종목×3건×3초(FNGUIDE min_interval)≈68분이라 04:40 이전에 여유있게 종료된다.
+        이 검증은 2026-08-08 이전에는 cross_validate_annual() 자체가 설정 import 버그로
+        한 번도 정상 실행된 적이 없었던 것을 이번 세션에서 발견·수정한 뒤 신설한 것 —
+        CLAUDE.md의 "Codex 검증(500종목)" 기록(2026-05-16)은 이 상시 잡과 무관한 별도의
+        1회성 스팟체크였다."""
+        logger.info("[FnGuideDART전종목검증] 루프 시작")
+        self._wait_secs(150)
+        while not self._stop_event.is_set():
+            self._wait_until(3, 15, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("FnGuideDART전종목검증", self._job_fnguide_dart_verify_sweep)
+        logger.info("[FnGuideDART전종목검증] 루프 종료")
+
+    def _job_fnguide_dart_verify_sweep(self) -> None:
+        try:
+            import sys as _sys
+            from pathlib import Path as _Path
+            _root = str(_Path(__file__).resolve().parent)
+            if _root not in _sys.path:
+                _sys.path.insert(0, _root)
+            from scripts.verify_all_fnguide_dart_20260809 import run_verify_sweep
+            result = run_verify_sweep(limit=450)
+            stats = result["stats"]
+            logger.info(
+                f"[FnGuideDART전종목검증] 완료: 대상 {result['target_count']}종목, {stats}, "
+                f"불일치 {len(result['mismatches'])}건")
+            if result["mismatches"]:
+                self._record_fnguide_dart_mismatches(result["mismatches"])
+        except Exception as e:
+            logger.error(f"[FnGuideDART전종목검증] 오류: {e}", exc_info=True)
+
+    def _record_fnguide_dart_mismatches(self, mismatches: list) -> None:
+        """발견된 불일치를 fnguide_dart_mismatch_log에 누적 기록 — 계정 오매칭 재발 여부를
+        추적하고, 이후 systematic 재감사(어떤 필드가 가장 자주 걸리는지) 근거로 사용."""
+        try:
+            import sqlite3 as _sl
+            import re as _re
+            from datetime import datetime as _dt, timezone as _tz
+            conn = _sl.connect(str(Path(__file__).resolve().parent / "stock.db"), timeout=30)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS fnguide_dart_mismatch_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    stock_code TEXT NOT NULL,
+                    year INTEGER NOT NULL,
+                    field TEXT,
+                    note TEXT,
+                    found_at TEXT NOT NULL
+                )
+            """)
+            now_iso = _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            for m in mismatches:
+                # 2026-08-12 수정: note가 "DART불일치: net_income: FnG=..." 형태로 "DART불일치: "
+                # 접두어 뒤에 필드명이 오는데, 기존 ^([a-z_]+): 는 문자열 맨 앞(한글 접두어)에서만
+                # 찾아 전혀 매칭이 안 되고 있었음(165건 전부 field=NULL로 저장된 채 방치됨 확인)
+                # — 접두어와 무관하게 " {필드명}: FnG=" 패턴을 문자열 어디서든 검색하도록 수정.
+                field_match = _re.search(r"([a-z_]+):\s*FnG=", m.get("note") or "")
+                field = field_match.group(1) if field_match else None
+                conn.execute(
+                    "INSERT INTO fnguide_dart_mismatch_log (stock_code, year, field, note, found_at) "
+                    "VALUES (?,?,?,?,?)",
+                    (m["code"], m["year"], field, m["note"], now_iso),
+                )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"[FnGuideDART전종목검증] 불일치 로그 기록 실패: {e}")
+
+    # ── financial_source_snapshot 미검증 백로그 정리 (매일 03:45) ────────────
+    def _loop_unverified_snapshot_backfill(self) -> None:
+        """2026-08-28 신설 — cross_validate_annual()이 DART 쿼터체크 실패 시 재시도 없이
+        'unverified'로 끝내버려(근본원인 자체는 이번 세션에서 미수정) 매일 신규 수집분의
+        90%(실측 136,441/150,261)가 검증 안 된 채 영구 방치되던 문제의 후속 대응.
+        FnGuide 원본은 financial_source_snapshot에 이미 저장돼 있으므로 재수집 없이
+        DART 쪽만 다시 시도(scripts/backfill_unverified_snapshot.py) — FnGuide 일일한도와
+        무관하게 DART 쿼터만 소비. 03:15 FnGuideDART전종목검증(신규 스냅샷 생성, ~68분)
+        직후 30분 버퍼를 두고 03:45 실행, 04:40 턴어라운드워치 전에 여유있게 종료되도록
+        limit=1000(약 15~20분 예상, DART min_interval 0.8s 기준)."""
+        logger.info("[미검증스냅샷백필] 루프 시작")
+        self._wait_secs(150)
+        while not self._stop_event.is_set():
+            self._wait_until(3, 45, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("미검증스냅샷백필", self._job_unverified_snapshot_backfill)
+        logger.info("[미검증스냅샷백필] 루프 종료")
+
+    def _job_unverified_snapshot_backfill(self) -> None:
+        try:
+            import sys as _sys
+            from pathlib import Path as _Path
+            _root = str(_Path(__file__).resolve().parent)
+            if _root not in _sys.path:
+                _sys.path.insert(0, _root)
+            from scripts.backfill_unverified_snapshot import run_backfill
+            result = run_backfill(limit=1000)
+            logger.info(f"[미검증스냅샷백필] 완료: {result}")
+        except Exception as e:
+            logger.error(f"[미검증스냅샷백필] 오류: {e}", exc_info=True)
 
     # ── 분기실적 TTM 신호 스캔 (매일 06:00, 분기시즌 추가) ──────────────────────
     def _loop_earnings_signal_scan(self) -> None:
@@ -3421,8 +5230,7 @@ class CollectionScheduler:
         """신규 TTM 신호를 텔레그램으로 발송"""
         import sqlite3 as _sl
         try:
-            conn = _sl.connect("stock.db")
-            conn.row_factory = _sl.Row
+            conn = connect_stock_db(timeout=30, row_factory=_sl.Row)
             import datetime as _dt
             cutoff = (_dt.datetime.now() - _dt.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
             rows = conn.execute("""
@@ -3461,23 +5269,15 @@ class CollectionScheduler:
                 )
 
             msg = "\n".join(lines)
-            _send_telegram = getattr(self, "_send_telegram_msg", None)
-            if _send_telegram:
-                _send_telegram(msg)
-            else:
-                import config, requests
-                if config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID:
-                    requests.post(
-                        f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage",
-                        json={"chat_id": config.TELEGRAM_CHAT_ID,
-                              "text": msg, "parse_mode": "HTML"},
-                        timeout=10
-                    )
+            from notifier import send as send_telegram
+            if not send_telegram(msg, key=f"earnings_signals_{cutoff[:10]}"):
+                logger.warning("[실적신호스캔] 텔레그램 미전송 - 발송완료 표기를 건너뜁니다")
+                return
 
-            # telegram_sent 마킹
-            conn2 = _sl.connect("stock.db")
+            # telegram_sent 마킹은 공통 발송기가 성공했을 때만 수행한다.
+            conn2 = connect_stock_db(timeout=30, row_factory=_sl.Row)
             conn2.execute(
-                f"UPDATE earnings_signals SET telegram_sent=1 WHERE created_at>=?", (cutoff,)
+                "UPDATE earnings_signals SET telegram_sent=1 WHERE created_at>=?", (cutoff,)
             )
             conn2.commit()
             conn2.close()
@@ -3487,7 +5287,7 @@ class CollectionScheduler:
 
     # ── 키움 투자자 수급 (매일 19:00) ──────────────────────────────────────────
     def _loop_kiwoom_investor_daily(self) -> None:
-        """매일 19:00 — 키움 ka10059 종목별 투자자 일별 순매수 수집 (상위 1000종목)."""
+        """매일 19:00 — 키움 ka10059 종목별 투자자 일별 수급 수집."""
         logger.info("[키움투자자수급] 루프 시작")
         self._wait_secs(300)
         while not self._stop_event.is_set():
@@ -3497,18 +5297,24 @@ class CollectionScheduler:
             _run_job_safe("키움투자자수급", self._job_kiwoom_investor_daily)
 
     def _job_kiwoom_investor_daily(self) -> None:
-        """키움 ka10059: 시가총액 상위 1000종목 투자자 일별 수급 수집."""
+        """키움 ka10059: listed-stock investor flow collection."""
         try:
             from collectors.kiwoom_collector import KiwoomCollector
             kc = KiwoomCollector()
             if not kc.is_configured():
                 logger.info("[키움투자자수급] 미설정 — 건너뜀")
                 return
-            result = kc.bulk_investor_collect(limit=1000, max_pages=3, sleep_secs=0.4)
+            result = kc.bulk_investor_collect(
+                limit=3000,
+                max_pages=3,
+                sleep_secs=0.2,
+                skip_existing_latest=True,
+            )
             logger.info(
                 f"[키움투자자수급] 완료 — "
                 f"updated={result.get('updated',0)} failed={result.get('failed',0)} "
-                f"saved={result.get('total_saved',0):,}행"
+                f"saved={result.get('total_saved',0):,}행 "
+                f"target_dt={result.get('target_dt')} skipped_existing={result.get('skipped_existing',0)}"
             )
         except Exception as e:
             logger.error(f"[키움투자자수급] 오류: {e}", exc_info=True)
@@ -3572,7 +5378,7 @@ class CollectionScheduler:
         try:
             import subprocess
             result = subprocess.run(
-                [sys.executable, "/Applications/stock_dashboard/scripts/tenbagger_weekly_report.py"],
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/tenbagger_weekly_report.py"],
                 capture_output=True, text=True, timeout=120
             )
             logger.info(f"[텐버거위클리] 완료: {result.stdout[-200:] if result.stdout else ''}")
@@ -3580,6 +5386,281 @@ class CollectionScheduler:
                 logger.error(f"[텐버거위클리] 오류: {result.stderr[-200:]}")
         except Exception as e:
             logger.error(f"[텐버거위클리] 오류: {e}", exc_info=True)
+
+    # ── 지표상회 카페 시그널 구조화 ────────────────────────────────
+    def _loop_cafe_signal_weekly(self) -> None:
+        """매주 월요일 07:10 카페 글을 종목/섹터/지표 시그널로 구조화."""
+        logger.info("[카페시그널주간] 루프 시작")
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            days_until_monday = (7 - now.weekday()) % 7
+            target = (now + timedelta(days=days_until_monday)).replace(
+                hour=7, minute=10, second=0, microsecond=0)
+            if days_until_monday == 0 and now >= target:
+                target += timedelta(days=7)
+            wait = max(0.0, (target - datetime.now()).total_seconds())
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("카페시그널주간", lambda: self._job_cafe_signal("weekly", max_pages=4))
+
+    def _loop_cafe_signal_monthly(self) -> None:
+        """매월 1일 07:15 카페 월간 시그널 요약 생성."""
+        logger.info("[카페시그널월간] 루프 시작")
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            if now.day == 1 and now.hour < 7:
+                target = now.replace(hour=7, minute=15, second=0, microsecond=0)
+            elif now.day == 1 and now.hour == 7 and now.minute < 15:
+                target = now.replace(hour=7, minute=15, second=0, microsecond=0)
+            else:
+                year = now.year + (1 if now.month == 12 else 0)
+                month = 1 if now.month == 12 else now.month + 1
+                target = now.replace(year=year, month=month, day=1, hour=7, minute=15, second=0, microsecond=0)
+            wait = max(0.0, (target - datetime.now()).total_seconds())
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("카페시그널월간", lambda: self._job_cafe_signal("monthly", max_pages=8))
+
+    def _job_cafe_signal(self, run_type: str = "weekly", max_pages: int = 4) -> None:
+        try:
+            import subprocess
+            script = "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/naver_cafe_signal_pipeline.py"
+            result = subprocess.run(
+                [sys.executable, script, "--collect", "--max-pages", str(max_pages), "--run-type", run_type],
+                capture_output=True, text=True, timeout=900,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[카페시그널] {run_type} 완료: {result.stdout[-300:] if result.stdout else ''}")
+            if result.returncode != 0:
+                logger.error(f"[카페시그널] {run_type} 오류: {result.stderr[-400:]}")
+            leadership = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/generate_cafe_monthly_leadership.py"],
+                capture_output=True, text=True, timeout=300,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[카페시그널] 월별 주도섹터/HS 갱신: {leadership.stdout[-300:] if leadership.stdout else ''}")
+            if leadership.returncode != 0:
+                logger.error(f"[카페시그널] 월별 리더십 오류: {leadership.stderr[-400:]}")
+            housing = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/collect_molit_housing_starts.py"],
+                capture_output=True, text=True, timeout=120,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[카페시그널] 국토부 주택건설실적 갱신: {housing.stdout[-300:] if housing.stdout else ''}")
+            if housing.returncode != 0:
+                logger.error(f"[카페시그널] 국토부 주택건설실적 오류: {housing.stderr[-400:]}")
+            steam = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/collect_steam_listed_game_activity.py"],
+                capture_output=True, text=True, timeout=120,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[카페시그널] 상장 게임 Steam 동접 갱신: {steam.stdout[-300:] if steam.stdout else ''}")
+            if steam.returncode != 0:
+                logger.error(f"[카페시그널] 상장 게임 Steam 동접 오류: {steam.stderr[-400:]}")
+            bridges = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/sync_cafe_existing_series_bridges.py"],
+                capture_output=True, text=True, timeout=180,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[카페시그널] 기존 시계열 브리지 갱신: {bridges.stdout[-300:] if bridges.stdout else ''}")
+            if bridges.returncode != 0:
+                logger.error(f"[카페시그널] 기존 시계열 브리지 오류: {bridges.stderr[-400:]}")
+            mappings = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/sync_cafe_quant_mappings.py"],
+                capture_output=True, text=True, timeout=120,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[카페시그널] 퀀트지표 매핑 갱신: {mappings.stdout[-300:] if mappings.stdout else ''}")
+            if mappings.returncode != 0:
+                logger.error(f"[카페시그널] 퀀트지표 매핑 오류: {mappings.stderr[-400:]}")
+            stock_mappings = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/sync_cafe_stock_indicator_mappings.py"],
+                capture_output=True, text=True, timeout=180,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[카페시그널] 종목별 지표 매핑 갱신: {stock_mappings.stdout[-300:] if stock_mappings.stdout else ''}")
+            if stock_mappings.returncode != 0:
+                logger.error(f"[카페시그널] 종목별 지표 매핑 오류: {stock_mappings.stderr[-400:]}")
+            indicator_signals = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/quant_indicator_signal_engine.py", "--send-telegram"],
+                capture_output=True, text=True, timeout=180,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[카페시그널] 지표 이상치 매수 후보 계산: {indicator_signals.stdout[-300:] if indicator_signals.stdout else ''}")
+            if indicator_signals.returncode != 0:
+                logger.error(f"[카페시그널] 지표 이상치 계산 오류: {indicator_signals.stderr[-400:]}")
+        except Exception as e:
+            logger.error(f"[카페시그널] {run_type} 오류: {e}", exc_info=True)
+
+    # ── 퀀트 지표 이상치 → 관련 종목 매수 후보 ────────────────────────
+    def _loop_quant_indicator_signal(self) -> None:
+        """매일 07:40 지표 이상치 기반 관련 종목 후보를 계산하고 텔레그램으로 알림."""
+        logger.info("[퀀트지표트리거] 루프 시작")
+        while not self._stop_event.is_set():
+            wait = _seconds_until(7, 40, skip_weekend=False)
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("퀀트지표트리거", self._job_quant_indicator_signal)
+
+    def _job_quant_indicator_signal(self) -> None:
+        try:
+            import subprocess
+            housing = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/collect_molit_housing_starts.py"],
+                capture_output=True, text=True, timeout=120,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[퀀트지표트리거] 국토부 주택건설실적 갱신: {housing.stdout[-300:] if housing.stdout else ''}")
+            if housing.returncode != 0:
+                logger.error(f"[퀀트지표트리거] 국토부 주택건설실적 오류: {housing.stderr[-400:]}")
+            steam = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/collect_steam_listed_game_activity.py"],
+                capture_output=True, text=True, timeout=120,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[퀀트지표트리거] 상장 게임 Steam 동접 갱신: {steam.stdout[-300:] if steam.stdout else ''}")
+            if steam.returncode != 0:
+                logger.error(f"[퀀트지표트리거] 상장 게임 Steam 동접 오류: {steam.stderr[-400:]}")
+            bridges = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/sync_cafe_existing_series_bridges.py"],
+                capture_output=True, text=True, timeout=180,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[퀀트지표트리거] 기존 시계열 브리지 갱신: {bridges.stdout[-300:] if bridges.stdout else ''}")
+            if bridges.returncode != 0:
+                logger.error(f"[퀀트지표트리거] 기존 시계열 브리지 오류: {bridges.stderr[-400:]}")
+            result = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/sync_cafe_stock_indicator_mappings.py"],
+                capture_output=True, text=True, timeout=180,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[퀀트지표트리거] 종목별 지표 매핑 갱신: {result.stdout[-300:] if result.stdout else ''}")
+            if result.returncode != 0:
+                logger.error(f"[퀀트지표트리거] 종목별 지표 매핑 오류: {result.stderr[-400:]}")
+            signals = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/quant_indicator_signal_engine.py", "--send-telegram"],
+                capture_output=True, text=True, timeout=180,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[퀀트지표트리거] 완료: {signals.stdout[-300:] if signals.stdout else ''}")
+            if signals.returncode != 0:
+                logger.error(f"[퀀트지표트리거] 오류: {signals.stderr[-400:]}")
+            snapshots = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/snapshot_quant_stock_trade_signals.py"],
+                capture_output=True, text=True, timeout=240,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            )
+            logger.info(f"[퀀트지표트리거] 종목 매매 시그널 스냅샷: {snapshots.stdout[-300:] if snapshots.stdout else ''}")
+            if snapshots.returncode != 0:
+                logger.error(f"[퀀트지표트리거] 종목 매매 시그널 스냅샷 오류: {snapshots.stderr[-400:]}")
+        except Exception as e:
+            logger.error(f"[퀀트지표트리거] 오류: {e}", exc_info=True)
+
+    # 2026-08-11 제거: _job_quant_major_indicator_daily가 crontab의
+    # "30 19 * * 1-5 ... quant_indicators_cron.py --mode daily"와 5분 차이로
+    # 완전히 같은 작업을 중복 실행하고 있었다. CLAUDE.md의 퀀트지표 크론 설계는
+    # "FastAPI 서버와 완전히 분리된 별도 프로세스로만 실행(scheduler.py 내부 X)"을
+    # 명시적 리스크회피 설계로 문서화하고 있고, weekly/monthly/annual 모드는
+    # scheduler.py에 대응 항목이 없어 daily만 뒤늦게 잘못 추가된 것으로 판단됨.
+    # crontab 쪽(문서화된 정식 경로)만 남기고 이 중복 트리거는 삭제.
+
+    def _loop_macro_indicator_backtest(self) -> None:
+        """매주 월요일 07:50 — 거시지표×섹터 후보 백테스트 후 검증 통과 조합 승격."""
+        logger.info("[거시지표백테스트] 루프 시작")
+        while not self._stop_event.is_set():
+            wait = _seconds_until(7, 50, skip_weekend=False)
+            if self._stop_event.wait(wait):
+                break
+            if datetime.now().weekday() != 0:
+                self._wait_secs(23 * 3600)
+                continue
+            _run_job_safe("거시지표백테스트", self._job_macro_indicator_backtest)
+
+    def _job_macro_indicator_backtest(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/backtest_macro_indicator_candidates.py",
+                "--promote",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+        )
+        logger.info(f"[거시지표백테스트] 완료: {result.stdout[-800:] if result.stdout else ''}")
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "macro indicator backtest failed")[-800:])
+
+    def _loop_cherry_latest_channel(self) -> None:
+        """매일 08:45 — @Brianlee4 세션으로 최신 체리형부 채널 증분 수집."""
+        logger.info("[체리형부최신채널] 루프 시작")
+        while not self._stop_event.is_set():
+            self._wait_until(8, 45, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("체리형부최신채널", self._job_cherry_latest_channel)
+
+    def _job_cherry_latest_channel(self) -> None:
+        try:
+            # sys.executable(venv python)을 써야 PYTHONPATH의 postgres 라우터가
+            # 적용된다. 과거 하드코딩된 /opt/homebrew/bin/python3.14는 psycopg/
+            # sqlalchemy가 없어 라우터를 못 태우고 stock.db(SQLite)에만 직접
+            # 써서 PostgreSQL과 조용히 드리프트를 일으켰다(2026-08-11 발견).
+            result = subprocess.run(
+                [sys.executable, "scripts/ops/collect_cherry_latest_channel.py"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=1800,
+            )
+            logger.info(f"[체리형부최신채널] 완료: returncode={result.returncode} stdout={result.stdout[-500:] if result.stdout else ''}")
+            if result.returncode != 0:
+                logger.error(f"[체리형부최신채널] 오류: {result.stderr[-700:] if result.stderr else ''}")
+        except subprocess.TimeoutExpired:
+            logger.error("[체리형부최신채널] 30분 타임아웃")
+        except Exception as e:
+            logger.error(f"[체리형부최신채널] 오류: {e}", exc_info=True)
+
+    def _loop_cherry_family_learning(self) -> None:
+        """매일 09:05 — 체리형부 family 4채널 등록 상태를 확인하고 증분 수집/재학습 메타를 저장."""
+        logger.info("[체리형부패밀리학습] 루프 시작")
+        while not self._stop_event.is_set():
+            self._wait_until(9, 5, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("체리형부패밀리학습", self._job_cherry_family_learning)
+
+    def _job_cherry_family_learning(self) -> None:
+        try:
+            # sys.executable(venv python): 위 _job_cherry_latest_channel과 동일한
+            # 이유로 postgres 라우팅을 태우기 위해 python3.14 하드코딩을 제거.
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/ops/refresh_cherry_family_pipeline.py",
+                    "--run-type",
+                    "scheduled",
+                    "--days",
+                    "7",
+                    "--limit",
+                    "1500",
+                ],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=2700,
+            )
+            logger.info(
+                f"[체리형부패밀리학습] 완료: returncode={result.returncode} "
+                f"stdout={result.stdout[-700:] if result.stdout else ''}"
+            )
+            if result.returncode != 0:
+                logger.error(f"[체리형부패밀리학습] 오류: {result.stderr[-700:] if result.stderr else ''}")
+        except subprocess.TimeoutExpired:
+            logger.error("[체리형부패밀리학습] 45분 타임아웃")
+        except Exception as e:
+            logger.error(f"[체리형부패밀리학습] 오류: {e}", exc_info=True)
 
     # ── 텐버거 트리거 알림 ──────────────────────────────────────────
     def _loop_tenbagger_trigger(self) -> None:
@@ -3595,7 +5676,7 @@ class CollectionScheduler:
         try:
             import subprocess
             result = subprocess.run(
-                [sys.executable, "/Applications/stock_dashboard/scripts/tenbagger_trigger_alert.py"],
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/tenbagger_trigger_alert.py"],
                 capture_output=True, text=True, timeout=120
             )
             logger.info(f"[텐버거트리거] 완료: {result.stdout[-200:] if result.stdout else ''}")
@@ -3603,3 +5684,63 @@ class CollectionScheduler:
                 logger.error(f"[텐버거트리거] 오류: {result.stderr[-200:]}")
         except Exception as e:
             logger.error(f"[텐버거트리거] 오류: {e}", exc_info=True)
+
+    # ── 미국 종목 OHLCV 일별 시세 & 팩터 자동 적재 ───────────────────
+    def _loop_us_daily_quotes_and_factors(self) -> None:
+        """매일 한국시간 06:30에 직전 미국 거래 세션을 처리한다.
+
+        토요일 아침은 미국 금요일 정규장 마감분을 처리해야 하므로 한국 주말을
+        기준으로 이 루프를 차단하면 안 된다.
+        """
+        logger.info("[미국일별시세팩터수집] 루프 시작")
+        while not self._stop_event.is_set():
+            wait = _seconds_until(6, 30, skip_weekend=False)
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("미국일별시세팩터수집", self._job_us_daily_quotes_and_factors)
+
+    def _job_us_daily_quotes_and_factors(self) -> None:
+        try:
+            # At 06:30 KST the completed US session is the prior Korea calendar
+            # day. Weekend/holiday mornings should be skipped rather than
+            # repeatedly reprocessing Friday's session on Sunday/Monday.
+            expected_session = (datetime.now().date() - timedelta(days=1))
+            if not is_trading_day(expected_session, "US"):
+                logger.info("[미국일별시세팩터수집] %s 미국 휴장일 - 스킵", expected_session)
+                return
+            result = subprocess.run(
+                [
+                    sys.executable, "scripts/ops/sync_us_daily_quotes_and_factors.py",
+                    "--stale-only", "--stale-before", expected_session.isoformat(),
+                    "--batch-size", "100",
+                ],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True,
+                text=True,
+                timeout=3600,
+            )
+            logger.info(f"[미국일별시세팩터수집] 완료: returncode={result.returncode}")
+            if result.returncode != 0:
+                logger.error(f"[미국일별시세팩터수집] 오류: {result.stderr[-300:] if result.stderr else ''}")
+                return
+            # The rebalance consumes exactly the just-collected US session.  It
+            # must not run on a wall-clock timer while a long stale-only repair
+            # is still in progress.
+            self._job_us_virtual_rebalance(expected_session.isoformat())
+        except Exception as e:
+            logger.error(f"[미국일별시세팩터수집] 오류: {e}", exc_info=True)
+
+    def _job_us_virtual_rebalance(self, expected_market_date: str) -> None:
+        try:
+            import sys as _sys
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+            from routes.us_virtual_trading import run_us_virtual_daily_rebalance
+            result = run_us_virtual_daily_rebalance(expected_market_date=expected_market_date)
+            logger.info(
+                "[미국가상매매리밸런싱] ok=%s market_date=%s bought=%s sold=%s skipped=%s",
+                result.get("ok"), result.get("market_date"), len(result.get("bought", [])),
+                len(result.get("sold", [])), result.get("skipped", False),
+            )
+        except Exception as e:
+            logger.error("[미국가상매매리밸런싱] 오류: %s", e, exc_info=True)

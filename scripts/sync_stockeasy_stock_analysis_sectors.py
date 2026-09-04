@@ -9,7 +9,7 @@ from pathlib import Path
 
 import requests
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 URL = "https://stockeasy.intellio.kr/stock-analysis"
 
 ROW_RE = re.compile(

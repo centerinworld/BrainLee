@@ -5,7 +5,7 @@
 
 set -e
 
-REPORTS_LOCAL="/Applications/stock_dashboard/reports"
+REPORTS_LOCAL="/Volumes/Realtek_NVME/stock_dashboard/runtime/reports"
 MOUNT_POINT="/Users/brainlee/gdrive_reports"
 GDRIVE_REMOTE="gdrive:stock_reports"
 PLIST_PATH="$HOME/Library/LaunchAgents/com.stock-dashboard.gdrive-reports.plist"

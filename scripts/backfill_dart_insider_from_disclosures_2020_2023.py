@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dart_key_manager import get_dart_api_keys
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB_PATH = ROOT / "stock.db"
 PROGRESS_PATH = ROOT / "run" / "dart_insider_doc_backfill_2020_2023.json"
 LOG_PATH = ROOT / "logs" / "dart_insider_doc_backfill_2020_2023.log"

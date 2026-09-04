@@ -10,12 +10,29 @@ routes/buy_candidates.py — 매수후보 + 공매도 잔고 API
 
 import logging
 import sqlite3 as _sl
+import threading
+import time
+from datetime import datetime
 from fastapi import APIRouter, HTTPException
+
+from routes.cherry_screener import _cache_read as _cherry_cache_read
+from routes.cherry_screener import refresh_cherry_screener_cache
+from routes.company_intelligence import _compute_company_intelligence
+from routes.trend import (
+    get_cm_recommendations,
+    get_gc_recommendations,
+    get_rec_recommendations,
+    get_turnover_recommendations,
+    get_v18_recommendations,
+)
+from services.short_sale_service import get_actual_short_sale_rows
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+_AUTO_BOARD_CACHE: dict = {"data": None, "at": 0.0, "computing": False}
+_AUTO_BOARD_CACHE_TTL_SEC = 300
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS buy_candidates (
@@ -39,7 +56,244 @@ CREATE INDEX IF NOT EXISTS idx_su_code_base ON stock_universe(stock_code, base_d
 
 
 def _db():
-    return _sl.connect(DB_PATH)
+    conn = _sl.connect(DB_PATH, timeout=30)
+    if isinstance(conn, _sl.Connection):
+        conn.row_factory = _sl.Row
+    return conn
+
+
+def _safe_num(value):
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _summarize_source_labels(source_keys: list[str]) -> list[str]:
+    labels = {
+        "manual": "수동 후보",
+        "cherry_3": "체리 3대스크린",
+        "cherry_2": "체리 2대스크린",
+        "gc": "전략센터 GC",
+        "cm": "전략센터 계약모멘텀",
+        "rec": "전략센터 리커버리",
+        "v18": "전략센터 V18",
+        "turnover": "전략센터 회전율",
+    }
+    ordered = []
+    for key in source_keys:
+        if key in labels and labels[key] not in ordered:
+            ordered.append(labels[key])
+    return ordered
+
+
+def _parse_date_text(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    text = text.replace("/", "-").replace(".", "-")[:10]
+    for fmt in ("%Y-%m-%d", "%y-%m-%d", "%Y-%m", "%y-%m"):
+        try:
+            parsed = datetime.strptime(text, fmt)
+            if fmt in ("%Y-%m", "%y-%m"):
+                return parsed.replace(day=1)
+            return parsed
+        except Exception:
+            continue
+    return None
+
+
+def _latest_date_text(values):
+    latest = None
+    for value in values:
+        parsed = _parse_date_text(value)
+        if parsed and (latest is None or parsed > latest):
+            latest = parsed
+    return latest.strftime("%Y-%m-%d") if latest else None
+
+
+def _peer_advantage_summary(intel: dict) -> str:
+    peers = intel.get("peer_candidates") or []
+    diffs = intel.get("differentiations") or []
+    bulls = intel.get("bull_points") or []
+    if peers and diffs:
+        peer_names = ", ".join(p.get("stock_name", "") for p in peers[:2] if p.get("stock_name"))
+        return f"{peer_names} 대비 {diffs[0]} 포인트가 먼저 눈에 띈다."
+    if peers and bulls:
+        peer_names = ", ".join(p.get("stock_name", "") for p in peers[:2] if p.get("stock_name"))
+        return f"{peer_names} 대비 {bulls[0]} 논리가 상대적으로 선명하다."
+    if diffs:
+        return f"동종사 대비 {diffs[0]}가 차별화 포인트다."
+    return "경쟁사 대비 차별화 포인트를 추가 학습 중이다."
+
+
+def _build_auto_board() -> dict:
+    conn = _db()
+    conn.row_factory = _sl.Row
+    try:
+        manual_rows = conn.execute(
+            "SELECT stock_code, stock_name, target_price, memo FROM buy_candidates ORDER BY created_at DESC"
+        ).fetchall()
+        manual_map = {
+            str(r["stock_code"]): {
+                "stock_name": r["stock_name"],
+                "target_price": r["target_price"],
+                "memo": r["memo"] or "",
+            }
+            for r in manual_rows
+            if r["stock_code"]
+        }
+
+        cherry = _cherry_cache_read() or refresh_cherry_screener_cache()
+        cherry3 = cherry.get("three_screen_pass", [])[:80]
+        cherry2 = cherry.get("two_screen_pass", [])[:120]
+        gc = (get_gc_recommendations() or {}).get("buy_candidates", [])[:20]
+        cm = (get_cm_recommendations() or {}).get("buy_candidates", [])[:20]
+        rec = (get_rec_recommendations() or {}).get("buy_candidates", [])[:20]
+        v18 = (get_v18_recommendations() or {}).get("buy_candidates", [])[:20]
+        turnover = (get_turnover_recommendations() or {}).get("candidates", [])[:20]
+
+        pool: dict[str, dict] = {}
+
+        def add_candidate(code: str, name: str, source_key: str, weight: int, extra: dict | None = None):
+            if not code:
+                return
+            item = pool.setdefault(code, {
+                "stock_code": code,
+                "stock_name": name or code,
+                "score": 0,
+                "sources": [],
+                "source_labels": [],
+                "target_price": None,
+                "strategy_reasons": [],
+                "cherry_score": None,
+                "cherry_flags": {},
+            })
+            item["score"] += weight
+            if source_key not in item["sources"]:
+                item["sources"].append(source_key)
+            if extra:
+                if extra.get("target_price") and item["target_price"] is None:
+                    item["target_price"] = extra["target_price"]
+                if extra.get("reason"):
+                    item["strategy_reasons"].append(extra["reason"])
+                if extra.get("cherry_score") is not None:
+                    item["cherry_score"] = extra["cherry_score"]
+                if extra.get("cherry_flags"):
+                    item["cherry_flags"].update(extra["cherry_flags"])
+
+        for code, row in manual_map.items():
+            add_candidate(code, row["stock_name"], "manual", 2, {"target_price": row.get("target_price"), "reason": row.get("memo")})
+        for row in cherry3:
+            add_candidate(
+                str(row.get("stock_code") or ""),
+                row.get("stock_name") or "",
+                "cherry_3",
+                5,
+                {
+                    "cherry_score": row.get("score"),
+                    "cherry_flags": {
+                        "turnaround": bool(row.get("screen1_turnaround")),
+                        "revenue_ath": bool(row.get("screen2_revenue_ath")),
+                        "undervalued": bool(row.get("screen3_undervalued_vs_sector")),
+                    },
+                },
+            )
+        for row in cherry2:
+            add_candidate(
+                str(row.get("stock_code") or ""),
+                row.get("stock_name") or "",
+                "cherry_2",
+                3,
+                {
+                    "cherry_score": row.get("score"),
+                    "cherry_flags": {
+                        "turnaround": bool(row.get("screen1_turnaround")),
+                        "revenue_ath": bool(row.get("screen2_revenue_ath")),
+                        "undervalued": bool(row.get("screen3_undervalued_vs_sector")),
+                    },
+                },
+            )
+        for source_key, rows, weight in (
+            ("gc", gc, 3),
+            ("cm", cm, 4),
+            ("rec", rec, 3),
+            ("v18", v18, 4),
+            ("turnover", turnover, 2),
+        ):
+            for row in rows:
+                add_candidate(
+                    str(row.get("stock_code") or ""),
+                    row.get("stock_name") or "",
+                    source_key,
+                    weight,
+                    {"reason": row.get("reason") or row.get("label") or row.get("summary")},
+                )
+
+        # 최종 화면은 40개만 사용하므로 전체 후보에 고비용 기업 분석을 하지 않는다.
+        ranked_pool = sorted(
+            pool.items(),
+            key=lambda pair: (-pair[1]["score"], -len(pair[1]["sources"]), pair[0]),
+        )[:50]
+        items = []
+        for code, item in ranked_pool:
+            intel = _compute_company_intelligence(conn, code)
+            if not intel.get("found"):
+                continue
+            analyst_view = intel.get("analyst_view") or {}
+            current_price = _safe_num(intel.get("current_price"))
+            avg_target = _safe_num(analyst_view.get("avg_target_price") or item.get("target_price"))
+            target_gap = None
+            if current_price and avg_target:
+                target_gap = round((avg_target - current_price) / current_price * 100, 1)
+            item["source_labels"] = _summarize_source_labels(item["sources"])
+            item["cherry_analysis"] = {
+                "value_chain_position": intel.get("value_chain_position"),
+                "main_products": (intel.get("main_products") or [])[:3],
+                "bull_points": (intel.get("bull_points") or [])[:3],
+                "bear_points": (intel.get("bear_points") or [])[:2],
+                "period_summary": intel.get("period_comparison_summary"),
+            }
+            item["analyst_analysis"] = {
+                "coverage_count": analyst_view.get("consensus_count", 0),
+                "extract_count": analyst_view.get("extract_count", 0),
+                "avg_target_price": avg_target,
+                "target_gap_pct": target_gap,
+                "positive_themes": (analyst_view.get("positive_themes") or [])[:4],
+                "risk_themes": (analyst_view.get("risk_themes") or [])[:3],
+            }
+            item["peer_view"] = {
+                "peers": [
+                    {"stock_code": p.get("stock_code"), "stock_name": p.get("stock_name")}
+                    for p in (intel.get("peer_candidates") or [])[:3]
+                ],
+                "why_this_company": _peer_advantage_summary(intel),
+            }
+            item["why_buy_now"] = (intel.get("bull_points") or [None])[0] or (analyst_view.get("positive_themes") or [None])[0] or "후보 논리 보강 중"
+            item["analysis_link_ready"] = True
+            item["analysis_as_of"] = intel.get("analysis_as_of") or intel.get("price_date")
+            items.append(item)
+
+        items.sort(
+            key=lambda row: (
+                -row["score"],
+                -len(row["sources"]),
+                -((row["analyst_analysis"].get("coverage_count") or 0) + (row["analyst_analysis"].get("extract_count") or 0)),
+                -(row["analyst_analysis"].get("target_gap_pct") if row["analyst_analysis"].get("target_gap_pct") is not None else -9999),
+            )
+        )
+        return {
+            "as_of": _latest_date_text([item.get("analysis_as_of") for item in items]),
+            "summary": {
+                "candidate_count": len(items),
+                "from_cherry": len([x for x in items if any(s.startswith("cherry_") for s in x["sources"])]),
+                "from_strategy_center": len([x for x in items if any(s in {"gc", "cm", "rec", "v18", "turnover"} for s in x["sources"])]),
+                "with_analyst_coverage": len([x for x in items if (x["analyst_analysis"].get("coverage_count") or 0) > 0 or (x["analyst_analysis"].get("extract_count") or 0) > 0]),
+            },
+            "items": items[:40],
+        }
+    finally:
+        conn.close()
 
 
 # ── GET /api/buy-candidates ─────────────────────────────────────
@@ -204,6 +458,41 @@ def get_buy_candidates():
     return result
 
 
+@router.get("/auto-board")
+def get_auto_buy_candidate_board():
+    cached = _AUTO_BOARD_CACHE.get("data")
+    if cached and time.time() - _AUTO_BOARD_CACHE["at"] < _AUTO_BOARD_CACHE_TTL_SEC:
+        return cached
+
+    if not _AUTO_BOARD_CACHE.get("computing"):
+        _AUTO_BOARD_CACHE["computing"] = True
+
+        def _refresh():
+            try:
+                _AUTO_BOARD_CACHE["data"] = _build_auto_board()
+                _AUTO_BOARD_CACHE["at"] = time.time()
+            except Exception as e:
+                logger.exception("[매수후보 자동보드] %s", e)
+            finally:
+                _AUTO_BOARD_CACHE["computing"] = False
+
+        threading.Thread(target=_refresh, daemon=True, name="AutoBoardRefresh").start()
+
+    if cached:
+        return cached
+    return {
+        "as_of": None,
+        "summary": {
+            "candidate_count": 0,
+            "from_cherry": 0,
+            "from_strategy_center": 0,
+            "with_analyst_coverage": 0,
+        },
+        "items": [],
+        "refreshing": True,
+    }
+
+
 # ── POST /api/buy-candidates ────────────────────────────────────
 @router.post("")
 def add_buy_candidate(payload: dict):
@@ -253,26 +542,74 @@ def delete_buy_candidate(stock_code: str):
 @router.get("/short-sell/{stock_code}")
 def get_short_sell(stock_code: str):
     conn = _db()
-    rows = conn.execute(
-        "SELECT bas_dt, borrow_bal_qty FROM short_sell_daily "
-        "WHERE stock_code=? AND borrow_bal_qty IS NOT NULL "
-        "ORDER BY bas_dt DESC LIMIT 60",
+    borrow_rows = conn.execute(
+        """
+        SELECT bas_dt, borrow_bal_qty, borrow_bal_amt, borrow_bal_pct
+        FROM short_sell_daily
+        WHERE stock_code=? AND borrow_bal_qty IS NOT NULL
+        ORDER BY bas_dt DESC LIMIT 60
+        """,
         (stock_code,)
     ).fetchall()
     conn.close()
-    if len(rows) < 5:
+    short_rows = get_actual_short_sale_rows(stock_code, limit=60)
+    if not borrow_rows and not short_rows:
         return None
 
-    def _avg(rs, s, e):
-        vals = [r[1] for r in rs[s:e] if r[1]]
+    def _avg(rs, column, start, end):
+        vals = [float(r[column]) for r in rs[start:end] if r[column] is not None]
         return sum(vals) / len(vals) if vals else 0
 
-    today_val = rows[0][1] or 0
-    avg5      = _avg(rows, 0, 5)
-    avg5_prev = _avg(rows, 5, 10)
+    def _weighted_ratio(rs, value_col, total_col, start, end):
+        selected = [r for r in rs[start:end] if r.get(value_col) is not None and r.get(total_col)]
+        total = sum(float(r[total_col]) for r in selected)
+        value = sum(float(r[value_col]) for r in selected)
+        return value / total * 100 if total > 0 else None
+
+    def _pressure_signal(current, baseline):
+        if current is None or baseline is None or baseline <= 0:
+            return "neutral"
+        return "green" if current <= baseline else "red"
+
+    borrow_latest = borrow_rows[0] if borrow_rows else None
+    short_latest = short_rows[0] if short_rows else None
+    today_val = float(borrow_latest["borrow_bal_qty"] or 0) if borrow_latest else None
+    avg5 = _avg(borrow_rows, "borrow_bal_qty", 0, 5) if borrow_rows else None
+    avg5_prev = _avg(borrow_rows, "borrow_bal_qty", 5, 10) if borrow_rows else None
+    short_today = float(short_latest["short_qty"] or 0) if short_latest else None
+    short_avg5 = _avg(short_rows, "short_qty", 0, 5) if short_rows else None
+    short_avg5_prev = _avg(short_rows, "short_qty", 5, 10) if short_rows else None
+    short_amt_today = float(short_latest["short_amt"] or 0) if short_latest else None
+    short_amt_avg5 = _avg(short_rows, "short_amt", 0, 5) if short_rows else None
+    short_ratio = short_latest.get("short_volume_ratio") if short_latest else None
+    short_amount_ratio = short_latest.get("short_amount_ratio") if short_latest else None
+    short_ratio_5d = _weighted_ratio(short_rows, "short_qty", "trade_volume", 0, 5)
+    short_ratio_prev5d = _weighted_ratio(short_rows, "short_qty", "trade_volume", 5, 10)
+    short_amount_ratio_5d = _weighted_ratio(short_rows, "short_amt", "trade_amount", 0, 5)
+    trade_volume = float(short_latest["trade_volume"] or 0) if short_latest else None
+    borrow_date = borrow_latest["bas_dt"] if borrow_latest else None
+    short_date = short_latest["trade_date"] if short_latest else None
     return {
         "today": today_val, "avg5": avg5, "avg5_prev": avg5_prev,
-        "today_signal": "green" if today_val < avg5      else "red",
-        "week_signal":  "green" if avg5      < avg5_prev else "red",
-        "latest_date":  rows[0][0] if rows else None,
+        "today_signal": _pressure_signal(today_val, avg5),
+        "week_signal": _pressure_signal(avg5, avg5_prev),
+        "borrow_bal_amt": borrow_latest["borrow_bal_amt"] if borrow_latest else None,
+        "borrow_bal_pct": borrow_latest["borrow_bal_pct"] if borrow_latest else None,
+        "short_today": short_today,
+        "short_avg5": short_avg5,
+        "short_avg5_prev": short_avg5_prev,
+        "short_amt_today": short_amt_today,
+        "short_amt_avg5": short_amt_avg5,
+        "short_ratio": short_ratio,
+        "short_ratio_5d": short_ratio_5d,
+        "short_ratio_prev5d": short_ratio_prev5d,
+        "short_amount_ratio": short_amount_ratio,
+        "short_amount_ratio_5d": short_amount_ratio_5d,
+        "short_today_signal": _pressure_signal(short_ratio, short_ratio_5d),
+        "short_week_signal": _pressure_signal(short_ratio_5d, short_ratio_prev5d),
+        "trade_volume": trade_volume,
+        "borrow_latest_date": borrow_date,
+        "short_latest_date": short_date,
+        "latest_date": max(d for d in (borrow_date, short_date) if d),
+        "short_source": "KIS_FHPST04830000" if short_latest else None,
     }

@@ -30,8 +30,10 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 from notifier import send as send_telegram
+from services.gemini import is_configured
+from services.gemini_openai_compat import OpenAI
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,9 +41,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DB_PATH   = "/Applications/stock_dashboard/stock.db"
-EMP_DB    = "/Applications/stock_dashboard/employment_monitor/employment.db"
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+DB_PATH   = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+EMP_DB    = "/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db"
+GEMINI_CONFIGURED = is_configured()
 
 STRATEGY_URLS = {
     "peak":     "https://stockeasy.intellio.kr/strategy-room/peak",
@@ -165,7 +167,12 @@ def _normalize_strategy_api(data: dict) -> dict:
             item = dict(row)
             item["name"] = item.get("stock_name") or item.get("name")
             item["sector"] = item.get("sector") or sector
-            item["sector_score"] = item.get("sector_score") or _sector_score(item["sector"])
+            # 2026-07-21: sector_score=0(정상적으로 약한 섹터)도 `or`가 falsy로 취급해
+            # _sector_score() 재계산값으로 조용히 대체하던 버그 수정 — 키가 없을 때만 대체.
+            item["sector_score"] = (
+                item["sector_score"] if item.get("sector_score") is not None
+                else _sector_score(item["sector"])
+            )
             item["entry_date"] = item.get("buy_date") or item.get("entry_date")
             item["hold_days"] = item.get("holding_days", item.get("hold_days", 0))
             item["profit_pct"] = item.get("return_rate", item.get("profit_pct", 0))
@@ -176,7 +183,12 @@ def _normalize_strategy_api(data: dict) -> dict:
             item = dict(row)
             item["name"] = item.get("stock_name") or item.get("name")
             item["sector"] = item.get("sector") or sector
-            item["sector_score"] = item.get("sector_score") or _sector_score(item["sector"])
+            # 2026-07-21: sector_score=0(정상적으로 약한 섹터)도 `or`가 falsy로 취급해
+            # _sector_score() 재계산값으로 조용히 대체하던 버그 수정 — 키가 없을 때만 대체.
+            item["sector_score"] = (
+                item["sector_score"] if item.get("sector_score") is not None
+                else _sector_score(item["sector"])
+            )
             item["entry_date"] = item.get("buy_date") or item.get("entry_date")
             item["hold_days"] = item.get("holding_days", item.get("hold_days", 0))
             item["profit_pct"] = item.get("final_return_rate", item.get("return_rate", item.get("profit_pct", 0)))
@@ -484,7 +496,7 @@ def analyze_strategy_with_ai(strategy: str, data: dict) -> str:
     수집한 종목 데이터를 기반으로 매수 패턴 역추론.
     OpenAI API 사용. 없으면 규칙 기반 분석 반환.
     """
-    if not OPENAI_API_KEY:
+    if not GEMINI_CONFIGURED:
         return _rule_based_analysis(strategy, data)
 
     holdings = data.get("holdings", [])
@@ -521,8 +533,7 @@ def analyze_strategy_with_ai(strategy: str, data: dict) -> str:
 한국어로 800자 이내."""
 
     try:
-        import openai
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI()
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
@@ -785,9 +796,10 @@ def _load_previous_strategy_snapshot(strategy: str) -> tuple[str, set[str]]:
 
 
 def _send_change_reports(reports: list, now_str: str) -> int:
-    """직전 스냅샷 대비 신규 편입/편출만 별도 알림으로 보낸다."""
+    """직전 스냅샷 대비 모든 전략의 변경을 하나의 알림으로 보낸다."""
     today = date.today().isoformat()
-    sent_count = 0
+    change_blocks = []
+    digest_parts = []
     for r in reports:
         strategy = r["strategy"]
         label = r["label"]
@@ -802,7 +814,7 @@ def _send_change_reports(reports: list, now_str: str) -> int:
             continue
 
         lines = [
-            f"🔔 <b>[{label}] 편입/편출 변화</b>",
+            f"<b>[{label}]</b>",
             f"기준: {prev_at[:10] or '이전'} → {now_str[:10]}",
         ]
         if added:
@@ -812,11 +824,22 @@ def _send_change_reports(reports: list, now_str: str) -> int:
             lines.append("\n🔴 <b>편출</b>")
             lines.extend(f"  - {name}" for name in removed)
 
-        digest_src = "|".join([strategy, *added, "=>", *removed])
-        digest = hashlib.sha1(digest_src.encode("utf-8")).hexdigest()[:10]
-        if send_telegram("\n".join(lines), key=f"se_changes_{strategy}_{today}_{digest}"):
-            sent_count += 1
-    return sent_count
+        change_blocks.append("\n".join(lines))
+        digest_parts.append("|".join([strategy, *added, "=>", *removed]))
+
+    if not change_blocks:
+        return 0
+
+    # 전략별 변경을 모아 한 번만 전송한다. 같은 변경은 통합 digest로 하루 한 번만 허용한다.
+    message = "\n\n".join([
+        "🔔 <b>스탁이지 편입/편출 통합 변화</b>",
+        f"확인: {now_str}",
+        *change_blocks,
+    ])
+    digest = hashlib.sha1("\n".join(sorted(digest_parts)).encode("utf-8")).hexdigest()[:12]
+    if send_telegram(message, key=f"se_changes_batch_{today}_{digest}"):
+        return len(change_blocks)
+    return 0
 
 
 def _save_analysis_to_db(reports: list) -> None:

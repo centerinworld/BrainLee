@@ -11,11 +11,11 @@ import sqlite3, sys, json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 from telegram_stock_dedup import filter_new as _filter_new_alerts, mark_sent as _mark_alert_sent
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-ALERT_STATE_FILE = Path("/Applications/stock_dashboard/scratch/trigger_alert_state.json")
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+ALERT_STATE_FILE = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/trigger_alert_state.json")
 
 
 def _db():
@@ -36,16 +36,8 @@ def _save_state(state: dict):
 
 def _send_telegram(msg: str) -> bool:
     try:
-        from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-        import requests
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        for chunk in [msg[i:i+4000] for i in range(0, len(msg), 4000)]:
-            res = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk,
-                                           "parse_mode": "HTML"}, timeout=10)
-            if not res.ok:
-                print(f"텔레그램 실패: {res.status_code} {res.text[:120]}")
-                return False
-        return True
+        from notifier import send
+        return send(msg)
     except Exception as e:
         print(f"텔레그램 실패: {e}")
         return False
@@ -70,7 +62,7 @@ def check_inst_consecutive(conn, min_days=3, min_amt_억=5) -> list:
         ) t
         WHERE rn <= ? AND inst_net_buy_amt > 0
         GROUP BY stock_code
-        HAVING cnt >= ? AND total_억 >= ?
+        HAVING COUNT(*) >= ? AND SUM(inst_net_buy_amt/100.0) >= ?
         ORDER BY total_억 DESC LIMIT 30
     """, (ref_date, min_days+2, min_days, min_amt_억 * min_days)).fetchall()
 
@@ -97,7 +89,7 @@ def check_insider_new(conn, days_back=2) -> list:
         WHERE COALESCE(h.change_amount, h.sp_stock_lmp_irds_cnt, 0) > 0
           AND h.rcept_dt >= ?
         GROUP BY h.stock_code, u.stock_name
-        HAVING buy_qty > 1000
+        HAVING SUM(COALESCE(h.change_amount, h.sp_stock_lmp_irds_cnt, 0)) > 1000
         ORDER BY is_ceo DESC, buy_qty DESC LIMIT 20
     """, (since,)).fetchall()
 

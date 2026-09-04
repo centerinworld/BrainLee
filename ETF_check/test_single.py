@@ -28,6 +28,12 @@ STATE_PATH = DIR / "session_state.json"  # 로그인 세션 저장 파일
 
 BASE_URL  = "https://www.etfcheck.co.kr"
 LOGIN_URL = f"{BASE_URL}/mobile/user/signin"
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/139.0.0.0 Safari/537.36"
+)
+ETF_SCOPE_LABEL = os.getenv("ETF_CHECK_SCOPE_LABEL", "K-ETF")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -72,8 +78,57 @@ def create_context_with_session(playwright):
     ctx     = browser.new_context(
         viewport={"width": 1280, "height": 900},
         storage_state=str(STATE_PATH),   # 저장된 쿠키/세션 로드
+        user_agent=BROWSER_USER_AGENT,
+        locale="ko-KR",
     )
     return browser, ctx
+
+
+def select_scope_tab(page, label: str = ETF_SCOPE_LABEL):
+    if not label:
+        return
+    try:
+        page.get_by_text(label, exact=True).first.click(timeout=3000)
+        time.sleep(1.2)
+    except Exception as e:
+        print(f"[WARN] 스코프 탭 선택 실패 ({label}): {e}")
+
+
+def extract_summary_fields(page, stock_code: str) -> dict:
+    body_text = page.locator("body").inner_text()
+    lines = [line.strip() for line in body_text.splitlines() if line.strip()]
+
+    code_index = 0
+    for idx, line in enumerate(lines):
+        if line == stock_code:
+            code_index = idx
+            break
+    else:
+        for idx, line in enumerate(lines):
+            if re.fullmatch(r"\d{6}", line):
+                code_index = idx
+                break
+
+    window_end = min(len(lines), code_index + 20)
+    window = lines[code_index:window_end]
+
+    def find_value(labels: list[str], pattern: str | None = None):
+        for idx, line in enumerate(window):
+            if any(label in line for label in labels):
+                for candidate in window[idx + 1:idx + 5]:
+                    if pattern is None or re.search(pattern, candidate):
+                        return candidate
+        return None
+
+    return {
+        "debug_lines": lines[:30],
+        "name": lines[code_index - 1] if code_index > 0 else None,
+        "etf_amount": find_value(["ETF 편입금액", "편입금액(추정)", "ETF 편입", "편입금액"], r"[\d,]+"),
+        "price": find_value(["현재가"], r"[\d,]+"),
+        "mktcap": find_value(["시가총액"], r"[\d,]+"),
+        "ratio": find_value(["시총대비"], r"[\d.]+%"),
+        "count": find_value(["ETF 검색수"], r"\d+\s*종목"),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -90,6 +145,8 @@ def get_stock_info(page, stock_code: str) -> dict:
     if "signin" in page.url:
         return {"error": "SESSION_EXPIRED", "stock_code": stock_code}
 
+    select_scope_tab(page)
+
     result = {
         "stock_code":    stock_code,
         "stock_name":    None,
@@ -101,47 +158,7 @@ def get_stock_info(page, stock_code: str) -> dict:
     }
 
     try:
-        raw = page.evaluate("""
-        () => {
-            const lines = document.body.innerText
-                .split('\\n')
-                .map(l => l.trim())
-                .filter(l => l.length > 0);
-
-            const res = {debug_lines: lines.slice(0, 30)};
-
-            for (let i = 0; i < lines.length; i++) {
-                const l = lines[i];
-                if ((l.includes('편입금액') || l.includes('ETF 편입')) && !res.etf_amount) {
-                    const next = lines[i + 1] || '';
-                    if (/[\d,]/.test(next)) res.etf_amount = next;
-                }
-                if (l.includes('현재가') && !res.price) {
-                    res.price = lines[i + 1] || '';
-                }
-                if (l.includes('시가총액') && !res.mktcap) {
-                    res.mktcap = lines[i + 1] || '';
-                }
-                if (l.includes('시총대비') && !res.ratio) {
-                    res.ratio = lines[i + 1] || '';
-                }
-                if (l.includes('ETF 검색수') && !res.count) {
-                    res.count = lines[i + 1] || '';
-                }
-            }
-
-            // 종목명: 6자리 숫자 코드 바로 위/아래에 있는 텍스트
-            // 페이지 상단에서 종목코드(6자리 숫자) 라인을 찾고 바로 위 줄을 종목명으로
-            for (let i = 1; i < lines.length; i++) {
-                if (/^\\d{6}$/.test(lines[i])) {
-                    res.name = lines[i - 1];  // 코드 바로 위 줄 = 종목명
-                    break;
-                }
-            }
-
-            return res;
-        }
-        """)
+        raw = extract_summary_fields(page, stock_code)
 
         print(f"[DEBUG] 상위 30줄:\n{chr(10).join(raw.get('debug_lines', []))}\n")
         print(f"[DEBUG] 추출값: etf={raw.get('etf_amount')} | price={raw.get('price')} | mktcap={raw.get('mktcap')} | ratio={raw.get('ratio')}")
@@ -193,13 +210,13 @@ def save_to_db(data: dict, trade_date: str):
     conn.execute("""
         INSERT OR REPLACE INTO etf_inclusion_daily
         (trade_date, stock_code, stock_name, etf_amount,
-         current_price, market_cap, mktcap_ratio, etf_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         current_price, market_cap, mktcap_ratio, etf_count, scope_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         trade_date, data["stock_code"], data.get("stock_name"),
         data.get("etf_amount"), data.get("current_price"),
         data.get("market_cap"), data.get("mktcap_ratio"),
-        data.get("etf_count"),
+        data.get("etf_count"), ETF_SCOPE_LABEL,
     ))
     conn.commit()
     conn.close()

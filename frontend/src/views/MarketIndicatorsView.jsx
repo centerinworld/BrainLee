@@ -29,6 +29,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   const [shortMonthly, setShortMonthly] = React.useState(null);
   const [marketCash, setMarketCash] = React.useState(null);
   const [cashRange, setCashRange] = React.useState(60);
+  const [rankEvents, setRankEvents] = React.useState(null);
+  const [attentionConfirmation, setAttentionConfirmation] = React.useState(null);
 
   const loadShortForeign = React.useCallback(() => {
     fetch(API('/api/market-indicators/short-foreign?days=120'))
@@ -80,6 +82,22 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
       .then(r => r.ok ? r.json() : null)
       .then(setMarketCash);
   }, [cashRange]);
+
+  React.useEffect(() => {
+    if (miTab !== 'rank_events') return;
+    fetch(API(`/api/market-indicators/rank-events?date=${encodeURIComponent(selDate || '')}&limit=15`))
+      .then(r => r.ok ? r.json() : null)
+      .then(setRankEvents)
+      .catch(() => setRankEvents(null));
+  }, [miTab, selDate]);
+
+  React.useEffect(() => {
+    if (miTab !== 'attention') return;
+    fetch(API('/api/market-indicators/attention-confirmation?limit=100'))
+      .then(r => r.ok ? r.json() : null)
+      .then(setAttentionConfirmation)
+      .catch(() => setAttentionConfirmation(null));
+  }, [miTab]);
 
   // 대차 날짜 목록 + 내외국인대차 + 월별대차 초기 로드
   React.useEffect(() => {
@@ -167,14 +185,14 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   );
 
   const INV_TYPES = [
-    { key: 'both_buy',  label: '외인+기관 합계', color: '#a78bfa' },
-    { key: 'both_sell', label: '외인+기관 매도', color: '#c084fc' },
-    { key: 'frn_buy',   label: '외국인 순매수', color: '#fbbf24' },
+    { key: 'both_buy',  label: '외인+기관 합계', color: '#f87171' },
+    { key: 'both_sell', label: '외인+기관 매도', color: '#34d399' },
+    { key: 'frn_buy',   label: '외국인 순매수', color: '#f87171' },
     { key: 'inst_buy',  label: '기관 순매수',   color: '#f87171' },
-    { key: 'ind_buy',   label: '개인 순매수',   color: '#60a5fa' },
-    { key: 'frn_sell',  label: '외국인 순매도', color: '#fbbf24' },
-    { key: 'inst_sell', label: '기관 순매도',   color: '#f87171' },
-    { key: 'ind_sell',  label: '개인 순매도',   color: '#60a5fa' },
+    { key: 'ind_buy',   label: '개인 순매수',   color: '#f87171' },
+    { key: 'frn_sell',  label: '외국인 순매도', color: '#34d399' },
+    { key: 'inst_sell', label: '기관 순매도',   color: '#34d399' },
+    { key: 'ind_sell',  label: '개인 순매도',   color: '#34d399' },
   ];
 
   const renderInvestorTable = (rows, amtKey, selDate) => {
@@ -208,7 +226,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
               const amt    = r[amtKey] || 0;
               const qtyKey = amtKey.replace('_amt', '_qty');
               const qty    = r[qtyKey] || 0;
-              const c      = amt >= 0 ? '#f87171' : '#60a5fa';
+              const c      = amt >= 0 ? '#f87171' : '#34d399';
               const chg    = r.today_chg_pct;
               const chgC   = chg == null ? 'var(--text-secondary)' : chg >= 0 ? '#f87171' : '#60a5fa';
               return (
@@ -272,8 +290,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
             {rows.map((r, i) => {
               const mktShort = r.market?.includes('유가') || r.market?.toLowerCase().includes('kospi') ? 'KOSPI' :
                                r.market?.includes('코스닥') ? 'KOSDAQ' : r.market || '-';
-              const instC = !r.inst_net_buy_amt ? 'var(--text-secondary)' : r.inst_net_buy_amt >= 0 ? '#f87171' : '#60a5fa';
-              const frnC  = !r.frn_net_buy_amt  ? 'var(--text-secondary)' : r.frn_net_buy_amt  >= 0 ? '#f87171' : '#60a5fa';
+              const instC = !r.inst_net_buy_amt ? 'var(--text-secondary)' : r.inst_net_buy_amt >= 0 ? '#f87171' : '#34d399';
+              const frnC  = !r.frn_net_buy_amt  ? 'var(--text-secondary)' : r.frn_net_buy_amt  >= 0 ? '#f87171' : '#34d399';
               const chgC  = r.chg_pct == null ? 'var(--text-secondary)' : r.chg_pct >= 0 ? '#f87171' : '#60a5fa';
               return (
                 <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}
@@ -335,11 +353,82 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
         {miTabBtn('investor',    '📊 투자자별 순매수')}
         {miTabBtn('turnover',    '🔄 회전율 상위')}
         {miTabBtn('trend',       '📈 수급 추이')}
+        {miTabBtn('rank_events', '⚡ 순위 이벤트')}
+        {miTabBtn('attention',   '🧭 관심도·수급 검증')}
         {miTabBtn('cash',        '💰 예탁금 추이')}
         {miTabBtn('short_rank',  '🏅 대차종목순위')}
         {miTabBtn('short_his',   '📉 대차거래현황')}
         {miTabBtn('short_forg',  '🌐 내외국인대차')}
       </div>
+
+      {/* ── 순위 이벤트 탭 ── */}
+      {miTab === 'rank_events' && (
+        <div className="glass-panel" style={{padding:'1rem'}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:'0.6rem',alignItems:'center',flexWrap:'wrap',marginBottom:'0.8rem'}}>
+            <div>
+              <h3 style={{margin:0,fontSize:'0.92rem',fontWeight:700}}>⚡ 시장 순위 이벤트</h3>
+              <div style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginTop:'0.25rem'}}>{rankEvents?.notice || '기준일 당시의 상위 종목 이벤트를 불러오는 중입니다.'}</div>
+            </div>
+            <select value={selDate} onChange={e=>setSelDate(e.target.value)} style={{background:'var(--glass-bg)',border:'1px solid var(--glass-border)',color:'var(--text-primary)',borderRadius:6,padding:'0.32rem 0.5rem',fontSize:'0.78rem'}}>
+              {(availDates || []).map(d=><option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          {!rankEvents ? <div style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)'}}>로딩 중...</div> : (
+            <div style={{overflowX:'auto',overflowY:'clip'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.78rem'}}>
+                <thead><tr style={{borderBottom:'2px solid var(--glass-border)'}}>{['유형','순위','종목','시장','섹터','지표','기준일'].map(h=><th key={h} style={{padding:'0.42rem 0.5rem',textAlign:['유형','종목','시장','섹터','기준일'].includes(h)?'left':'right',color:'var(--text-secondary)',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+                <tbody>{(rankEvents.events || []).map((event, index) => {
+                  const metric = event.metric == null ? '-' : event.event_type === 'borrow'
+                    ? `${Math.round(Number(event.metric) / 1e8).toLocaleString()}억`
+                    : Number(event.metric).toLocaleString('ko-KR', {maximumFractionDigits:2});
+                  const color = event.event_type === 'supply' ? '#f87171' : event.event_type === 'borrow' ? '#fbbf24' : '#60a5fa';
+                  return <tr key={`${event.event_type}-${event.stock_code}-${index}`} style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                    <td style={{padding:'0.38rem 0.5rem',color,fontWeight:700}}>{event.label}</td><td style={{padding:'0.38rem 0.5rem',textAlign:'right'}}>#{event.rank}</td>
+                    <td style={{padding:'0.38rem 0.5rem'}}><button onClick={()=>{onChangeStock(event.stock_code);onChangeTab('analysis');}} style={{padding:0,border:0,background:'none',cursor:'pointer',color:'var(--text-primary)',fontWeight:700,fontSize:'0.78rem'}}>{event.stock_name || event.stock_code}</button></td>
+                    <td style={{padding:'0.38rem 0.5rem',color:'var(--text-secondary)'}}>{event.market || '-'}</td><td style={{padding:'0.38rem 0.5rem',color:'var(--text-secondary)'}}>{event.sector || '-'}</td>
+                    <td style={{padding:'0.38rem 0.5rem',textAlign:'right'}}>{metric}<span style={{fontSize:'0.64rem',color:'var(--text-secondary)',marginLeft:4}}>{event.metric_label}</span></td><td style={{padding:'0.38rem 0.5rem',color:'var(--text-secondary)'}}>{event.date}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 뉴스·토론 관심도 교차검증 탭 ── */}
+      {miTab === 'attention' && (
+        <div className="glass-panel" style={{padding:'1rem'}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:'0.6rem',alignItems:'flex-start',flexWrap:'wrap',marginBottom:'0.8rem'}}>
+            <div>
+              <h3 style={{margin:0,fontSize:'0.92rem',fontWeight:700}}>🧭 관심도·수급 교차검증</h3>
+              <div style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginTop:'0.28rem',maxWidth:860}}>{attentionConfirmation?.notice || '출처가 있는 뉴스·토론 관심도 집계를 불러오는 중입니다.'}</div>
+            </div>
+            <span style={{fontSize:'0.7rem',fontWeight:700,color:'#fbbf24',padding:'0.24rem 0.5rem',borderRadius:6,background:'rgba(251,191,36,0.12)'}}>연구·가상매매 전용</span>
+          </div>
+          {!attentionConfirmation ? <div style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)'}}>로딩 중...</div> : (attentionConfirmation.items || []).length === 0 ? (
+            <div style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)',fontSize:'0.82rem'}}>연결된 관심도 집계가 없습니다. 토론 원문이 아닌 출처·링크가 있는 순위/건수 집계만 저장합니다.</div>
+          ) : (
+            <div style={{overflowX:'auto',overflowY:'clip'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.78rem',minWidth:900}}>
+                <thead><tr style={{borderBottom:'2px solid var(--glass-border)'}}>{['상태','출처/유형','종목','관심도','외인+기관 5일','교차확인','주의'].map(h=><th key={h} style={{padding:'0.42rem 0.5rem',textAlign:['상태','출처/유형','종목','교차확인','주의'].includes(h)?'left':'right',color:'var(--text-secondary)',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+                <tbody>{attentionConfirmation.items.map((item, index) => {
+                  const confirmed = item.status === 'confirmed_for_paper_review';
+                  const rankText = item.rank ? `#${item.rank}${item.previous_rank ? ` (전 #${item.previous_rank})` : ''}` : (item.mention_count != null ? `${Number(item.mention_count).toLocaleString()}건` : '-');
+                  return <tr key={`${item.source}-${item.source_event_id}-${index}`} style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                    <td style={{padding:'0.42rem 0.5rem'}}><span style={{fontSize:'0.68rem',fontWeight:800,padding:'0.16rem 0.4rem',borderRadius:5,color:confirmed?'#4ade80':'#94a3b8',background:confirmed?'rgba(74,222,128,0.12)':'rgba(148,163,184,0.12)'}}>{confirmed?'가상검토':'문맥·경보'}</span></td>
+                    <td style={{padding:'0.42rem 0.5rem'}}><a href={item.source_url} target="_blank" rel="noreferrer" style={{color:'#60a5fa',textDecoration:'none',fontWeight:700}}>{item.source}</a><div style={{fontSize:'0.66rem',color:'var(--text-secondary)'}}>{item.event_type}</div></td>
+                    <td style={{padding:'0.42rem 0.5rem'}}>{item.stock_code ? <button onClick={()=>{onChangeStock(item.stock_code);onChangeTab('analysis');}} style={{padding:0,border:0,background:'none',cursor:'pointer',color:'var(--text-primary)',fontWeight:700,fontSize:'0.78rem'}}>{item.stock_name || item.stock_code}</button> : <span style={{color:'var(--text-secondary)'}}>{item.sector_name || '-'}</span>}<div style={{fontSize:'0.66rem',color:'var(--text-secondary)'}}>{item.stock_code || item.sector_name || '-'}</div></td>
+                    <td style={{padding:'0.42rem 0.5rem',textAlign:'right'}}>{rankText}</td>
+                    <td style={{padding:'0.42rem 0.5rem',textAlign:'right',color:item.flow_confirmed?'#f87171':'var(--text-secondary)',fontWeight:item.flow_confirmed?800:400}}>{item.flow_5d_억 == null ? '-' : fmtAmt(item.flow_5d_억)}</td>
+                    <td style={{padding:'0.42rem 0.5rem',maxWidth:250,color:'var(--text-secondary)'}}>{(item.reasons || []).join(' · ') || '독립 확인 대기'}</td>
+                    <td style={{padding:'0.42rem 0.5rem',maxWidth:230,color:'#fbbf24',fontSize:'0.7rem'}}>{(item.warnings || []).join(' ') || '-'}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── 예탁금 추이 탭 ── */}
       {miTab === 'cash' && (
@@ -603,7 +692,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   <h3 style={{margin:'0 0 0.8rem',fontSize:'0.9rem',fontWeight:700}}>
                     일별 투자자 순매수 (억원)
                     <span style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginLeft:'0.7rem',fontWeight:400}}>
-                      ▶ 빨강=순매수 / 파랑=순매도
+                      순매수=빨간색 / 순매도=녹색
                     </span>
                   </h3>
                   {barData.length === 0 ? (
@@ -620,16 +709,16 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                       <ReferenceLine y={0} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />
                       <Bar dataKey="inst_amt" name="기관" maxBarSize={16}>
                         {barData.map((entry, i) => (
-                          <Cell key={i} fill={(entry.inst_amt||0) >= 0 ? '#f87171' : '#60a5fa'} opacity={0.85} />
+                          <Cell key={i} fill={(entry.inst_amt||0) >= 0 ? '#f87171' : '#34d399'} opacity={0.85} />
                         ))}
                       </Bar>
                       <Bar dataKey="frn_amt" name="외국인" maxBarSize={16}>
                         {barData.map((entry, i) => (
-                          <Cell key={i} fill={(entry.frn_amt||0) >= 0 ? '#fbbf24' : '#6366f1'} opacity={0.85} />
+                          <Cell key={i} fill={(entry.frn_amt||0) >= 0 ? '#f87171' : '#34d399'} opacity={0.7} />
                         ))}
                       </Bar>
                       <Legend wrapperStyle={{fontSize:'0.78rem',color:'var(--text-secondary)'}}
-                        formatter={(v) => <span style={{color: v==='기관'?'#f87171':'#fbbf24'}}>{v}</span>} />
+                        formatter={(v) => <span style={{color:'var(--text-secondary)'}}>{v}</span>} />
                     </ComposedChart>
                   </ResponsiveContainer>
                   )}
@@ -686,15 +775,15 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                           <td style={{padding:'0.35rem 0.6rem'}}>{r.date}</td>
                           <td style={{padding:'0.35rem 0.6rem',textAlign:'right'}}>{r.close?.toLocaleString()}</td>
                           <td style={{padding:'0.35rem 0.6rem',textAlign:'right',
-                            color:(r.inst_amt||0)>=0?'#f87171':'#60a5fa',fontWeight:600}}>
+                            color:(r.inst_amt||0)>=0?'#f87171':'#34d399',fontWeight:600}}>
                             {fmtAmt(r.inst_amt)}
                           </td>
                           <td style={{padding:'0.35rem 0.6rem',textAlign:'right',
-                            color:(r.frn_amt||0)>=0?'#f87171':'#60a5fa',fontWeight:600}}>
+                            color:(r.frn_amt||0)>=0?'#f87171':'#34d399',fontWeight:600}}>
                             {fmtAmt(r.frn_amt)}
                           </td>
                           <td style={{padding:'0.35rem 0.6rem',textAlign:'right',
-                            color:(r.ind_amt||0)>=0?'#f87171':'#60a5fa',fontWeight:600}}>
+                            color:(r.ind_amt||0)>=0?'#f87171':'#34d399',fontWeight:600}}>
                             {fmtAmt(r.ind_amt)}
                           </td>
                         </tr>

@@ -26,6 +26,25 @@ if _env_file.exists():
                     os.environ[_key] = _val
 # ──────────────────────────────────────────────────────────────
 
+# The deployed dashboard lives in runtime/, while shared secrets may live one
+# level above it. Runtime values and process environment keep precedence.
+_parent_env_file = BASE_DIR.parent / ".env"
+if _parent_env_file.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_parent_env_file, override=False)
+    except ImportError:
+        with open(_parent_env_file) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#") or "=" not in _line:
+                    continue
+                _key, _, _val = _line.partition("=")
+                _key = _key.strip()
+                _val = _val.strip().strip('"').strip("'")
+                if _key and _key not in os.environ:
+                    os.environ[_key] = _val
+
 # Database
 # POSTGRES_DATABASE_URL lets us stage the migration without clobbering an
 # existing DATABASE_URL used by legacy SQLite scripts.
@@ -97,8 +116,45 @@ TELEGRAM_API_ID    = _require_env("TELEGRAM_API_ID")
 TELEGRAM_API_HASH  = _require_env("TELEGRAM_API_HASH")
 TELEGRAM_PHONE     = _require_env("TELEGRAM_PHONE")
 
-# ── OpenAI ─────────────────────────────────────────────────────
+# ── AI / LLM ───────────────────────────────────────────────────
+AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek").lower()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip("\"'")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash").strip("\"'")
+# Legacy callers still read this identifier, but no Gemini key or API is used.
+GEMINI_API_KEY = DEEPSEEK_API_KEY
+DEEPSEEK_FLASH_MODEL = os.getenv("DEEPSEEK_FLASH_MODEL", "deepseek-v4-flash").strip("\"'")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip("\"'").rstrip("/")
+if DEEPSEEK_BASE_URL.endswith("/chat/completions"):
+    DEEPSEEK_BASE_URL = DEEPSEEK_BASE_URL.rsplit("/chat/completions", 1)[0]
+
+
+def get_ai_client(timeout: float = 30.0, max_retries: int = 1):
+    """
+    Returns (client, default_model_name).
+    Uses DeepSeek if DEEPSEEK_API_KEY is available (or AI_PROVIDER == 'deepseek'),
+    otherwise falls back to OpenAI.
+    """
+    import openai
+
+    use_deepseek = (AI_PROVIDER == "deepseek" or not OPENAI_API_KEY) and bool(DEEPSEEK_API_KEY)
+    if use_deepseek:
+        client = openai.OpenAI(
+            api_key=DEEPSEEK_API_KEY,
+            base_url=DEEPSEEK_BASE_URL,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+        return client, DEEPSEEK_MODEL
+    elif OPENAI_API_KEY:
+        client = openai.OpenAI(
+            api_key=OPENAI_API_KEY,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+        return client, "gpt-4o-mini"
+    else:
+        return None, ""
 
 # ── 기타 ───────────────────────────────────────────────────────
 STOCKEASY_EMAIL    = os.getenv("STOCKEASY_EMAIL", "")

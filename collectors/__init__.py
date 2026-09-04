@@ -20,6 +20,7 @@ from .kiwoom_collector import KiwoomCollector
 from .dart_backlog_collector import collect_backlog_quarterly
 from .dart_cost_collector import collect_cost_quarterly
 from .dart_dilution_collector import collect_dilution_events
+from .dart_equity_issue_collector import collect_equity_issue_events
 from .kiwoom_margin_collector import collect_kiwoom_margin_daily
 from .dart_backlog_collector import collect_order_backlog
 from .dart_cost_collector import collect_cost_structure
@@ -30,6 +31,6 @@ __all__ = [
     "KISCollector", "KRXCollector", "YahooCollector",
     "DARTCollector", "PublicDataCollector", "KiwoomCollector",
     "collect_backlog_quarterly", "collect_cost_quarterly",
-    "collect_dilution_events", "collect_kiwoom_margin_daily",
+    "collect_dilution_events", "collect_equity_issue_events", "collect_kiwoom_margin_daily",
     "collect_order_backlog", "collect_cost_structure", "collect_margin_balance_daily",
 ]

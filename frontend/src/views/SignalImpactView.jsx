@@ -106,6 +106,73 @@ const TOOLTIP_STYLE = {
   labelStyle: { color: '#94a3b8' },
 };
 
+const verdictStyle = (verdict) => ({
+  color: verdict === 'rejected' ? '#f87171' : '#4ade80',
+  background: verdict === 'rejected' ? 'rgba(248,113,113,0.10)' : 'rgba(74,222,128,0.10)',
+  border: `1px solid ${verdict === 'rejected' ? 'rgba(248,113,113,0.35)' : 'rgba(74,222,128,0.35)'}`,
+  borderRadius: '6px', padding: '0.22rem 0.6rem', fontSize: '0.72rem', fontWeight: 800,
+});
+
+function DeepDrawdownReport({ report, loading, error }) {
+  if (loading) return <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>연구 결과를 불러오는 중...</div>;
+  if (error || !report) return <div style={{ padding: '2rem', color: '#f87171' }}>{error || '연구 결과가 없습니다.'}</div>;
+  const s = report.summary || {};
+  const first = s.first_event_only || {};
+  const cards = [
+    ['분석 사건', Number(s.all_events || 0).toLocaleString('ko-KR') + '건', `${Number(s.all_stocks || 0).toLocaleString('ko-KR')}종목`, '#38bdf8'],
+    ['252일 중앙수익', `${Number(s.median_returns_from_trigger_pct?.['252'] || 0).toFixed(2)}%`, '낙폭 조건 즉시 진입', '#f87171'],
+    ['252일 플러스', `${Number(s.positive_252d_rate_pct || 0).toFixed(2)}%`, `${Number(s.observed_252d_events || 0).toLocaleString('ko-KR')}건 관찰`, '#fbbf24'],
+    ['종목당 첫 사건', `${Number(first.median_252d_return_pct || 0).toFixed(2)}%`, `플러스 ${Number(first.positive_252d_rate_pct || 0).toFixed(1)}%`, '#f87171'],
+    ['추가 하락 중앙값', `${Number(s.median_additional_loss_after_trigger_pct || 0).toFixed(2)}%`, '진입 이후 저점까지', '#fb7185'],
+    ['30% 기술적 반등', `${Number(s.recovery_rate_pct || 0).toFixed(2)}%`, '투자 승률과 다름', '#a78bfa'],
+  ];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <section style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.8rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#f1f5f9' }}>{report.title}</div>
+            <div style={{ fontSize: '0.76rem', color: '#94a3b8', lineHeight: 1.6, marginTop: '0.35rem', maxWidth: '920px' }}><strong style={{ color: '#cbd5e1' }}>가설:</strong> {report.hypothesis}</div>
+          </div>
+          <span style={verdictStyle(report.verdict)}>{report.verdict_label}</span>
+        </div>
+        <div style={{ marginTop: '0.8rem', padding: '0.7rem 0.85rem', background: 'rgba(248,113,113,0.07)', borderLeft: '3px solid #f87171', borderRadius: '6px', color: '#cbd5e1', fontSize: '0.8rem', lineHeight: 1.6 }}>
+          낙폭만으로 매수하는 전략은 유효하지 않았습니다. 낙폭이 깊을수록 252일 수익과 플러스 비율이 악화됐고, 저점 대비 30% 반등을 확인한 뒤에도 장기 중앙수익은 음수였습니다.
+        </div>
+      </section>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: '0.6rem' }}>
+        {cards.map(([label, value, sub, color]) => <div key={label} style={{ background: 'rgba(255,255,255,0.035)', border: `1px solid ${color}30`, borderRadius: '8px', padding: '0.75rem' }}>
+          <div style={{ fontSize: '0.68rem', color: '#64748b' }}>{label}</div><div style={{ fontSize: '1.18rem', fontWeight: 900, color, marginTop: '0.2rem' }}>{value}</div><div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.15rem' }}>{sub}</div>
+        </div>)}
+      </div>
+
+      <section style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '1rem', overflowX: 'auto' }}>
+        <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f1f5f9', marginBottom: '0.25rem' }}>낙폭 구간별 실제 결과</div>
+        <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '0.7rem' }}>반등률보다 진입 후 252거래일 수익과 플러스 비율을 우선해서 봅니다.</div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px', fontSize: '0.76rem' }}><thead><tr style={{ color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+          {['저점 낙폭','사건','30% 반등률','추가하락','진입 252일','252일 플러스','확인 후 252일'].map((h,i)=><th key={h} style={{ padding: '0.48rem', textAlign: i===0?'left':'right' }}>{h}</th>)}
+        </tr></thead><tbody>{(s.by_trough_drawdown || []).map((r,i)=><tr key={r.bin} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: i%2?'rgba(255,255,255,0.015)':'transparent' }}>
+          <td style={{ padding: '0.48rem', fontWeight: 700, color: '#e2e8f0' }}>{r.bin}%</td><td style={{ padding: '0.48rem', textAlign: 'right' }}>{r.events}</td><td style={{ padding: '0.48rem', textAlign: 'right', color: '#a78bfa' }}>{r.recovery_rate_pct}%</td><td style={{ padding: '0.48rem', textAlign: 'right', color: '#f87171' }}>{r.median_additional_loss_pct}%</td><td style={{ padding: '0.48rem', textAlign: 'right', color: r.median_252d_return_from_trigger_pct>=0?'#4ade80':'#f87171' }}>{r.median_252d_return_from_trigger_pct}%</td><td style={{ padding: '0.48rem', textAlign: 'right' }}>{r.positive_252d_rate_pct}%</td><td style={{ padding: '0.48rem', textAlign: 'right', color: r.median_252d_return_after_confirmation_pct>=0?'#4ade80':'#f87171' }}>{r.median_252d_return_after_confirmation_pct}%</td>
+        </tr>)}</tbody></table>
+      </section>
+
+      <section style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '1rem', overflowX: 'auto' }}>
+        <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f1f5f9', marginBottom: '0.7rem' }}>반등 확인 시 동반 신호</div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '520px', fontSize: '0.76rem' }}><thead><tr style={{ color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.12)' }}><th style={{ padding: '0.45rem', textAlign: 'left' }}>신호</th><th style={{ padding: '0.45rem', textAlign: 'right' }}>관찰</th><th style={{ padding: '0.45rem', textAlign: 'right' }}>252일 중앙수익</th><th style={{ padding: '0.45rem', textAlign: 'right' }}>플러스</th></tr></thead>
+          <tbody>{(s.cause_outcomes_after_confirmation || []).map(r=><tr key={r.cause} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}><td style={{ padding: '0.45rem', color: '#e2e8f0' }}>{r.label}</td><td style={{ padding: '0.45rem', textAlign: 'right' }}>{r.events}</td><td style={{ padding: '0.45rem', textAlign: 'right', color: r.median_252d_return_after_confirmation_pct>=0?'#4ade80':'#f87171' }}>{r.median_252d_return_after_confirmation_pct}%</td><td style={{ padding: '0.45rem', textAlign: 'right' }}>{r.positive_252d_rate_pct}%</td></tr>)}</tbody>
+        </table>
+      </section>
+
+      <section style={{ background: 'rgba(45,212,191,0.05)', border: '1px solid rgba(45,212,191,0.18)', borderRadius: '8px', padding: '1rem' }}>
+        <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#2dd4bf', marginBottom: '0.55rem' }}>실전 판정</div>
+        {['낙폭만으로 매수하지 않는다.','-60% 이하 급락은 기회가 아니라 위험 경고로 우선 해석한다.','사업구조 변화와 이익 추정치 상향이 실제 공시·실적으로 확인된 종목만 별도 후보로 분류한다.','증자·CB·감사의견·거래정지 위험을 선제적으로 제외한다.'].map((t,i)=><div key={t} style={{ display: 'flex', gap: '0.5rem', color: '#cbd5e1', fontSize: '0.78rem', lineHeight: 1.6 }}><span style={{ color: '#2dd4bf', fontWeight: 800 }}>{i+1}.</span><span>{t}</span></div>)}
+        <div style={{ fontSize: '0.66rem', color: '#64748b', marginTop: '0.65rem' }}>업데이트: {report.updated_at?.replace('T',' ')} · {report.methodology?.event_period}</div>
+      </section>
+    </div>
+  );
+}
+
 export default function SignalImpactView() {
   const [progTab, setProgTab] = useState('chart');
   const [winnerYear, setWinnerYear] = useState('2026');
@@ -115,7 +182,21 @@ export default function SignalImpactView() {
   const [winnerError, setWinnerError] = useState('');
   const [triggerAnalysis, setTriggerAnalysis] = useState(null);
   const [triggerAnalysisError, setTriggerAnalysisError] = useState('');
+  const [researchTab, setResearchTab] = useState('signal_event_study');
+  const [hypothesisReports, setHypothesisReports] = useState([]);
+  const [hypothesisLoading, setHypothesisLoading] = useState(true);
+  const [hypothesisError, setHypothesisError] = useState('');
   const reportRef = useRef(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/dashboard/hypothesis-reports')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(d => { if (alive) setHypothesisReports(Array.isArray(d?.reports) ? d.reports : []); })
+      .catch(e => { if (alive) setHypothesisError(e?.message || '가설 보고서 조회 실패'); })
+      .finally(() => { if (alive) setHypothesisLoading(false); });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -302,8 +383,21 @@ export default function SignalImpactView() {
         </button>
       </div>
 
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.10)', paddingBottom: '0.65rem' }}>
+        <button style={tabBtn(researchTab === 'signal_event_study')} onClick={() => setResearchTab('signal_event_study')}>시그널 이벤트 연구</button>
+        {hypothesisReports.map(report => (
+          <button key={report.id} style={tabBtn(researchTab === report.id)} onClick={() => setResearchTab(report.id)}>
+            {report.short_title || report.title}
+            <span style={{ marginLeft: '0.35rem', color: report.verdict === 'rejected' ? '#f87171' : '#4ade80' }}>●</span>
+          </button>
+        ))}
+        <span style={{ alignSelf: 'center', fontSize: '0.68rem', color: '#64748b', marginLeft: '0.25rem' }}>검증된 가설은 이곳에 계속 추가됩니다.</span>
+      </div>
+
       {/* ── 인쇄 대상 영역 ─────────────────────────────────────── */}
       <div ref={reportRef}>
+
+      {researchTab === 'signal_event_study' ? <>
 
         {/* 데이터 수집 현황 */}
         <div style={{ ...sectionStyle, marginBottom: '1.2rem' }}>
@@ -854,6 +948,14 @@ export default function SignalImpactView() {
             ))}
           </div>
         </div>
+
+      </> : (
+        <DeepDrawdownReport
+          report={hypothesisReports.find(report => report.id === researchTab)}
+          loading={hypothesisLoading}
+          error={hypothesisError}
+        />
+      )}
 
       </div>
     </div>

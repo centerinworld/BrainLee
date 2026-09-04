@@ -1,5 +1,17 @@
 # 백업 보존 정책 — 2026-05-16
 
+## PostgreSQL 운영 백업 추가 — 2026-08-10
+
+- 운영 백업 위치: `/Volumes/Realtek_NVME/stock_dashboard/postgres_backups/`
+- 생성 명령: `venv/bin/python scripts/postgres_disaster_recovery.py backup`
+- 각 `.dump` 옆의 `.manifest.json`을 반드시 함께 보존합니다.
+- 매니페스트에는 SHA-256, 파일 크기, 덤프 카탈로그 수, 핵심 테이블 행 수가 기록됩니다.
+- 최신 백업은 월 1회 실제 `restore-test`를 실행해 복원 가능성을 검증합니다.
+- 일일 백업 7개, 주간 백업 8개, 월간 백업 12개를 기본 보존합니다.
+- 삭제 전 최신 성공 백업 2개와 최신 성공 복원시험 대상 백업은 보호합니다.
+- 운영 DB에 직접 덮어쓰지 않습니다. `stock_dashboard_recovered_*` 새 DB로 복원 후 접속 URL을 전환합니다.
+- 상세 절차: `docs/postgres_disaster_recovery.md`
+
 ## 원칙
 
 1. **DB backup 테이블**: 30일 보존 후 CSV export → DROP

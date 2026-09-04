@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-ROOT="/Applications/stock_dashboard"
+ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 PY="$ROOT/venv/bin/python"
 LOG="$ROOT/watchdog.log"
 MARKER_DIR="/tmp/stock_dashboard_watchdog"

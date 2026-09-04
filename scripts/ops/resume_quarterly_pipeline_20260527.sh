@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/Applications/stock_dashboard"
+ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 cd "$ROOT"
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="$ROOT/scratch"

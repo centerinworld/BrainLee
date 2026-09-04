@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 def _load_keys():
     keys = []
@@ -213,7 +213,10 @@ def extract_segment_revenue(soup: BeautifulSoup) -> list[dict]:
             continue
 
         # 컬럼 수가 너무 많으면 복잡한 IFRS 주석 표일 가능성 높음 (제외)
-        max_cols = max(len(r.find_all(['td','th'])) for r in rows[:3] if r.find_all(['td','th']))
+        header_col_counts = [len(r.find_all(['td','th'])) for r in rows[:3] if r.find_all(['td','th'])]
+        if not header_col_counts:
+            continue
+        max_cols = max(header_col_counts)
         if max_cols > 8:
             continue
 
@@ -390,9 +393,9 @@ def collect_segments(
         try:
             conn.execute("""
                 INSERT OR REPLACE INTO segment_revenue
-                (stock_code, corp_code, year, quarter, segment_name, revenue, report_type)
-                VALUES (?, ?, ?, 0, ?, ?, 'CFS')
-            """, (stock_code, corp_code, year, seg_name, rev))
+                (stock_code, corp_code, year, quarter, segment_name, revenue, revenue_pct, report_type)
+                VALUES (?, ?, ?, 0, ?, ?, ?, 'CFS')
+            """, (stock_code, corp_code, year, seg_name, rev, ratio))
             saved += 1
         except sqlite3.Error as e:
             log.debug(f"Insert 실패 {stock_code} {year} {seg_name}: {e}")

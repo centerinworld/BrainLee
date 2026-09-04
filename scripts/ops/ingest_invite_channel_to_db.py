@@ -14,12 +14,12 @@ from typing import Any
 from telethon import TelegramClient
 from telethon.tl.functions.messages import CheckChatInviteRequest, ImportChatInviteRequest
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-SESSION = os.getenv("TELEGRAM_SESSION_PATH", "/Applications/stock_dashboard/telegram_session_scan")
-REPORTS_DIR = Path("/Applications/stock_dashboard/reports")
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+SESSION = os.getenv("TELEGRAM_SESSION_PATH", "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_session_scan")
+REPORTS_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/reports")
 
 
-def _load_env(path: str = "/Applications/stock_dashboard/.env") -> None:
+def _load_env(path: str = "/Volumes/Realtek_NVME/stock_dashboard/runtime/.env") -> None:
     p = Path(path)
     if not p.exists():
         return

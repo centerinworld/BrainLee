@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB_PATH = ROOT / "stock.db"
 
 # ── 확정 전략 파라미터 ──────────────────────────────────────
@@ -379,13 +379,23 @@ def _load_backlog_signal(signal_date: date) -> pd.DataFrame:
             WHERE source_rcept_dt IS NOT NULL
               AND REPLACE(source_rcept_dt, '.', '-') <= ?
               AND backlog_amount_krw IS NOT NULL
-              AND backlog_confidence >= 0.65
+              AND backlog_confidence >= 0.95
             """,
             c, params=(sig,),
         )
         if not dart.empty:
             dart["backlog_amount"] = pd.to_numeric(dart["backlog_amount"], errors="coerce")
             dart = dart.sort_values(["stock_code", "year", "quarter"])
+            g = dart.groupby("stock_code", group_keys=False)
+            previous = g["backlog_amount"].shift(1)
+            adjacent_ratio = pd.concat(
+                [dart["backlog_amount"], previous], axis=1
+            ).max(axis=1) / pd.concat(
+                [dart["backlog_amount"], previous], axis=1
+            ).min(axis=1).replace(0, np.nan)
+            bad_pair = adjacent_ratio.gt(20.0)
+            bad_neighbor = bad_pair.groupby(dart["stock_code"]).shift(-1, fill_value=False)
+            dart = dart[~(bad_pair | bad_neighbor)].copy()
             g = dart.groupby("stock_code", group_keys=False)
             dart["backlog_yoy"] = dart["backlog_amount"] / g["backlog_amount"].shift(4) - 1
             dart["new_order_yoy"] = np.nan

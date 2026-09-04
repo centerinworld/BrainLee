@@ -40,6 +40,12 @@ COMPANY_ALIASES = {
     "현대에너지솔루션": "HD현대에너지솔루션",
 }
 
+TITLE_PREFIX_COMPANY_ALLOWLIST = {
+    "HD현대중공업",
+    "HD현대인프라코어",
+    "제주반도체",
+}
+
 BAD_COMPANY_TOKENS = {
     "",
     "등",
@@ -105,6 +111,12 @@ HS_ALIASES = {
     "MCP (복합구조칩 집적회로)": [("854232", "전자집적회로: 메모리")],
     "복합구조칩 집적회로": [("854232", "전자집적회로: 메모리")],
     "전자집적회로": [("854232", "전자집적회로: 메모리")],
+    "프로세서.컨트롤러": [("854231", "전자집적회로: 프로세서와 컨트롤러")],
+    "플래시 메모리": [("8542321030", "NAND")],
+    "시스템반도체": [("854231", "전자집적회로: 프로세서와 컨트롤러")],
+    "CMOS 이미지센서(CIS)": [("854231", "전자집적회로: 프로세서와 컨트롤러")],
+    "복합부품 집적회로(MCOs) (프로세서, 컨트롤러)": [("854231", "전자집적회로: 프로세서와 컨트롤러")],
+    "MCOs(eMMC/UFS/SiP 등)": [("8542323000", "복합칩·HBM")],
     # 디스플레이
     "MLCC": [("8532240000", "세라믹 유전체의 것(다층)")],
     "OLED TV": [("8528725000", "유기발광다이오드(오엘이디) 방식")],
@@ -140,6 +152,13 @@ HS_ALIASES = {
     "3차원 검사장비": [("9031809091", "반도체 검사장비")],
     "산업용자동화원자현미경": [("9012101000", "현미경(광학현미경은 제외한다)")],
     "핸들러": [("9031809091", "반도체 검사장비")],
+    "TC BONDER": [("848640", "반도체 디바이스/전자집적회로 조립·검사용 기기")],
+    "산업용원자현미경": [("9012101090", "산업용 원자현미경(AFM)")],
+    "반도체 웨이퍼 패턴결함 검사장비 및 반도체오버레이계측기": [
+        ("9031491000", "광학식 표면 테스터"),
+        ("9031494010", "반도체 제조공정용 광학 계측기"),
+    ],
+    "블랭크마스크": [("7006002000", "반도체·평판디스플레이 블랭크마스크용 유리")],
     # 트랙터
     "소형 트랙터": [("8701912000", "농업용 트랙터(18kW이하)"), ("8701101000", "차축이 하나인 트랙터")],
     "중대형 트랙터": [("8701922000", "농업용 트랙터(18kW~37kW)"), ("8701932000", "농업용 트랙터(37kW~75kW)")],
@@ -147,6 +166,9 @@ HS_ALIASES = {
     # 진단·의료기기
     "면역진단기기": [("9027509000", "기타 물리·화학 분석기기"), ("3822191000", "면역물품")],
     "면역진단카트리지": [("3822191000", "면역물품")],
+    "임플란트": [("9021290000", "치과용 임플란트 등")],
+    "엑스선 단층 촬영기": [("9022120000", "엑스선 단층촬영기")],
+    "체성분분석기": [("9018198000", "기타 전기식 진단기기")],
     # 변압기
     "초고압 변압기": [("8504231000", "초고압 변압기(10,000~100,000kVA)"), ("8504239000", "초고압 변압기(100,000kVA초과)")],
     "소형 변압기": [("8504319000", "그 밖의 변압기(용량 1kVA 초과 16kVA 이하)")],
@@ -157,8 +179,10 @@ HS_ALIASES = {
     "광섬유 광케이블": [("9001100000", "광섬유ㆍ광섬유 다발과 광섬유 케이블")],
     # 소재·화학
     "실리콘카바이드": [("2849201000", "탄화규소")],
+    "실리콘 카바이드": [("2849201000", "탄화규소")],
     "탄화규소": [("2849201000", "탄화규소")],
     "SiC": [("2849201000", "탄화규소")],
+    "CNT도전재": [("3824999090", "기타 화학공업 조제품")],
     "NCM": [("2825902050", "니켈 코발트 망간 수산화물")],
     "NCA": [("2825902090", "그 밖의 리튬축전지용 화합물(양극활물질 등)")],
     "진주광택안료": [("3206499000", "그 밖의 무기 안료와 조제품")],
@@ -168,6 +192,9 @@ HS_ALIASES = {
     "Package Substrate": [("8534009000", "그 밖의 인쇄회로")],
     "CCL": [("7410210000", "동박적층판용 동박")],
     "Cap Assembly": [("8507909000", "축전지의 부분품")],
+    "피스톤식 엔진 시동용 연산 축전지": [("8507100000", "피스톤식 엔진 시동용 연산축전지")],
+    "시동용 연산축전지": [("8507100000", "피스톤식 엔진 시동용 연산축전지")],
+    "ESS": [("8507600000", "리튬이온 축전지")],
     "과산화수소": [("2847000000", "과산화수소")],
     "솔더볼": [("8311900000", "기타 납땜·용접·용착 재료")],
     # 전기·전력
@@ -196,6 +223,14 @@ HS_ALIASES = {
     "유도무기": [("9306900000", "탄약과 탄약 부분품")],
     "로켓 발사기": [("9301200000", "로켓 발사기 등 군수 장비")],
     "레이더": [("8526100000", "레이더 기기")],
+    "전차와 그 밖의 장갑차량": [
+        ("8710001000", "전차"),
+        ("8710002000", "그 밖의 장갑차량"),
+    ],
+    "K-2 TANKS 및 기타 수송장비 부품": [
+        ("8710001000", "전차"),
+        ("8710002000", "그 밖의 장갑차량"),
+    ],
     # Be On 최근 수출입 카드 표기 보강
     "펄프": [("4703292000", "표백 활엽수 화학목재펄프"), ("4703212000", "표백 침엽수 화학목재펄프")],
     "인쇄용지": [("4810191000", "인쇄용ㆍ필기용 종이와 판지"), ("4810131000", "인쇄용ㆍ필기용 종이와 판지")],
@@ -243,6 +278,25 @@ PRODUCT_CANON_RULES: list[tuple[str, str]] = [
     ("Non Conductive Film", "NCF"),
     ("유기발광다이오드 OLED 제조용", "유기발광다이오드 OLED 제조용"),
     ("유도무기", "유도무기"),
+    ("플래시 메모리", "플래시 메모리"),
+    ("시스템반도체", "시스템반도체"),
+    ("CMOS 이미지센서", "CMOS 이미지센서(CIS)"),
+    ("복합부품 집적회로", "복합부품 집적회로(MCOs) (프로세서, 컨트롤러)"),
+    ("MCOs", "MCOs(eMMC/UFS/SiP 등)"),
+    ("TC BONDER", "TC BONDER"),
+    ("산업용원자현미경", "산업용원자현미경"),
+    ("패턴결함 검사장비", "반도체 웨이퍼 패턴결함 검사장비 및 반도체오버레이계측기"),
+    ("블랭크마스크", "블랭크마스크"),
+    ("임플란트", "임플란트"),
+    ("피스톤식 엔진 시동용 연산 축전지", "피스톤식 엔진 시동용 연산 축전지"),
+    ("ESS", "ESS"),
+    ("전차", "전차와 그 밖의 장갑차량"),
+    ("K-2 TANKS", "K-2 TANKS 및 기타 수송장비 부품"),
+    ("실리콘 카바이드", "실리콘 카바이드"),
+    ("CNT도전재", "CNT도전재"),
+    ("엑스선 단층 촬영기", "엑스선 단층 촬영기"),
+    ("체성분분석기", "체성분분석기"),
+    ("반도체 웨이퍼용 증착 장비", "반도체 웨이퍼용 증착장비"),
     ("로켓 발사기", "로켓 발사기"),
     ("레이더", "레이더"),
     ("펄프", "펄프"),
@@ -458,7 +512,11 @@ def parse_flow_and_product(raw_text: str, title: str) -> tuple[str, str, str]:
 
     if ":" in product:
         prefix, suffix = product.split(":", 1)
-        if any(marker in prefix for marker in ("/", "+", " 등")) and not suffix.strip().startswith("월별"):
+        normalized_prefix = normalize_company(prefix.strip().lstrip("🔸🔹▪• "))
+        if (
+            any(marker in prefix for marker in ("/", "+", " 등"))
+            or normalized_prefix in TITLE_PREFIX_COMPANY_ALLOWLIST
+        ) and not suffix.strip().startswith("월별"):
             product = suffix.strip()
     product = re.split(r"\s+관련종목\b|\s+관련주\b", product, maxsplit=1)[0].strip()
 
@@ -493,6 +551,12 @@ def parse_companies(row: sqlite3.Row) -> list[str]:
         if any(marker in title_prefix for marker in ("/", "+", " 등")):
             match = re.match(r"(.+?)\s*:\s*.+$", row["title"] or "")
     if not match:
+        title = (row["title"] or "").strip()
+        if ":" in title:
+            title_prefix = title.split(":", 1)[0].strip().lstrip("🔸🔹▪• ")
+            company = normalize_company(title_prefix)
+            if company in TITLE_PREFIX_COMPANY_ALLOWLIST and not is_bad_company_token(company):
+                return [company]
         return []
     raw = re.split(r"\b20\d{2}년\b|잠정치|확정치", match.group(1), maxsplit=1)[0]
     values = []
@@ -770,6 +834,34 @@ def rebuild() -> dict[str, object]:
     for key in ("missing_hs", "missing_company"):
         values = summary[key]
         summary[key] = dict(sorted(values.items(), key=lambda item: item[1], reverse=True)[:40])
+    # Earlier broad-label bugs could leave exact company mappings behind even after
+    # the per-post flow table was rebuilt correctly. Keep only exact rows supported
+    # by at least one current Telegram flow evidence row.
+    stale_exact_rows = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM hs_code_company_map m
+        WHERE m.mapping_status='exact'
+          AND m.note LIKE '텔레그램 @BeOn_BeClear 검증 메시지 기반 exact 매핑:%'
+          AND NOT EXISTS (
+              SELECT 1 FROM telegram_company_hs_flow_map f
+              WHERE f.hs_code=m.hs_code AND f.stock_code=m.stock_code
+          )
+        """
+    ).fetchone()[0]
+    conn.execute(
+        """
+        DELETE FROM hs_code_company_map
+        WHERE mapping_status='exact'
+          AND note LIKE '텔레그램 @BeOn_BeClear 검증 메시지 기반 exact 매핑:%'
+          AND NOT EXISTS (
+              SELECT 1 FROM telegram_company_hs_flow_map f
+              WHERE f.hs_code=hs_code_company_map.hs_code
+                AND f.stock_code=hs_code_company_map.stock_code
+          )
+        """
+    )
+    summary["stale_exact_rows_removed"] = int(stale_exact_rows or 0)
     conn.commit()
     export_audit(conn)
     conn.close()

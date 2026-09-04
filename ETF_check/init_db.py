@@ -1,6 +1,6 @@
 """
 ETF_check DB 초기화
-위치: /Applications/stock_dashboard/ETF_check/etf_check.db
+위치: /Volumes/Realtek_NVME/stock_dashboard/runtime/ETF_check/etf_check.db
 """
 import sqlite3
 import os
@@ -23,9 +23,20 @@ def init_db():
         market_cap  REAL,                      -- 시가총액 (억원)
         mktcap_ratio REAL,                     -- 시총대비 %
         etf_count   INTEGER,                   -- ETF 검색 수
+        scope_label TEXT DEFAULT 'K-ETF',     -- 수집 기준 범위 (예: K-ETF / 전체)
         is_backfilled INTEGER DEFAULT 0,       -- 1=전일 백필 값 (수집 실패 시)
         collected_at TEXT DEFAULT (datetime('now','localtime')),
         UNIQUE(trade_date, stock_code)         -- 날짜+종목 중복 방지
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS etf_stock_meta (
+        stock_code TEXT PRIMARY KEY,
+        stock_name TEXT,
+        market TEXT,
+        secugrp_nm TEXT,
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
     )
     """)
 
@@ -35,6 +46,12 @@ def init_db():
         print("[MIGRATE] is_backfilled 컬럼 추가됨")
     except sqlite3.OperationalError:
         pass  # 이미 존재
+
+    try:
+        cur.execute("ALTER TABLE etf_inclusion_daily ADD COLUMN scope_label TEXT DEFAULT 'K-ETF'")
+        print("[MIGRATE] scope_label 컬럼 추가됨")
+    except sqlite3.OperationalError:
+        pass
 
     # 수집 실행 로그 테이블
     cur.execute("""

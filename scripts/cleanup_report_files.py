@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 
 COMMON_FALSE_NAMES = {
     "업데이트",

@@ -9,7 +9,7 @@ setup_universe.py — stock_universe 최초 설정 스크립트
 import subprocess, sys, os
 from pathlib import Path
 
-BASE = Path("/Applications/stock_dashboard")
+BASE = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 VENV_PYTHON = BASE / "venv/bin/python3"
 EXCEL_PATH  = BASE / "주식종목전체검색.xlsx"  # ← 엑셀 파일을 여기에 복사해 두세요
 
@@ -27,7 +27,7 @@ print("=" * 60)
 
 # 1. stock_universe.py 복사
 print("\n[1] stock_universe.py 복사")
-run(f"cp /Applications/stock_dashboard/stock_universe.py {BASE}/stock_universe.py || true")
+run(f"cp /Volumes/Realtek_NVME/stock_dashboard/runtime/stock_universe.py {BASE}/stock_universe.py || true")
 
 # 2. DB 테이블 생성 + 엑셀 적재
 print("\n[2] DB 테이블 생성 + 엑셀 적재")

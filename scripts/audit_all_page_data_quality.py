@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import calendar
 import json
 import sqlite3
+import sys
 from dataclasses import dataclass, asdict
 from datetime import date, datetime
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from collection_health import evaluate_all_contracts
+
 DB = ROOT / "stock.db"
 HS_DB = ROOT / "hs_trade_lab" / "data" / "hs_trade_lab.db"
-US_MARKET_DB = ROOT.parent / "us_market_dashboard" / "us_market.db"
+# us_market_dashboard는 Realtek_NVME 외장 SSD로 이전됨(2026-07-11)
+US_MARKET_DB = Path("/Volumes/Realtek_NVME/us_market_dashboard/us_market.db")
 OUT_DIR = ROOT / "research_outputs"
 
 
@@ -45,6 +53,7 @@ CHECKS: list[TableCheck] = [
     TableCheck("시장지표", "월별 대차", "short_monthly_stat", "bas_dt", "bas_dt", "bas_dt", ("lnb_bal",), 100, 90, "collect_short_5years.py", "P1"),
     TableCheck("시장지표/텐버거", "프로그램 시장", "broker_program_market_daily", "source,dt,market", "dt", "source || '|' || dt || '|' || market", ("prog_net_buy_amt",), 500, 10, "KIS/Kiwoom program collector", "P0"),
     TableCheck("시장지표/텐버거", "프로그램 종목", "broker_program_stock_daily", "source,stock_code,dt,market_channel", "dt", "source || '|' || stock_code || '|' || dt || '|' || market_channel", ("net_buy_amt_krw",), 50_000, 10, "Kiwoom program collector", "P1"),
+    TableCheck("공시/이벤트/텐버거", "희석 이벤트", "dilution_events", "stock_code,rcept_no", "disclosed_at", "stock_code || '|' || rcept_no", ("event_type",), 10_000, None, "DART dilution collector", "P0", "CB/BW/EB/유무상증자 이벤트 건수와 금액 필드 커버리지를 분리해서 해석"),
     TableCheck("재무/텐버거/DART Excel", "연결 재무", "financial_data", "stock_code,year,quarter,is_annual,report_type", "year", "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type", ("revenue", "operating_profit"), 40_000, None, "DART/FnGuide batch", "P0"),
     TableCheck("재무/텐버거/DART Excel", "표준 재무", "canonical_financial_data", "stock_code,year,quarter,is_annual,report_type", "year", "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type", ("revenue", "operating_profit"), 20_000, None, "canonical rebuild", "P1"),
     TableCheck("재무/텐버거/DART Excel", "현금흐름", "cash_flow_data", "stock_code,year,quarter,is_annual,report_type", "year", "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type", ("operating_cf", "capex"), 20_000, None, "DART cashflow batch", "P0"),
@@ -53,7 +62,10 @@ CHECKS: list[TableCheck] = [
     TableCheck("재무/텐버거", "수주잔고", "order_backlog", "stock_code,year,quarter", "year", "stock_code || '|' || year || '|' || quarter", ("backlog_normalized",), 1_000, None, "DART backlog collector", "P0"),
     TableCheck("재무/텐버거", "세그먼트 매출", "segment_revenue", "stock_code,year,quarter,segment_name", "year", "stock_code || '|' || year || '|' || quarter || '|' || segment_name", ("revenue",), 1_000, None, "DART segment collector", "P0"),
     TableCheck("고용 페이지", "NPS 월별", "nps_workplace_monthly", "ym,stock_code", "ym", "ym || '|' || stock_code", ("nw_acqzr_cnt", "lss_jnngp_cnt"), 10_000, 75, "employment_monitor.collect_nps_workplace", "P0"),
-    TableCheck("고용/재무", "DART 임직원", "dart_employee_count", "stock_code,year,reprt_code,acmtn_dscd", "year", "stock_code || '|' || year || '|' || reprt_code || '|' || COALESCE(acmtn_dscd, '')", ("total_emp",), 5_000, None, "DART employee collector", "P1"),
+    # 2026-07-17 수정: min_rows 5,000 → 1,200. DART empSttus는 전 상장사가 아니라 일부만 공시하는
+    # 선택적 항목 — financial_data 커버 종목 2,751개 중 실측 커버리지는 1,011개(37%), 종목당 평균 1.3행.
+    # 완전 커버 상한이 아니라 collector 재발 회귀를 잡을 수 있는 현재 달성치(1,332행) 근접 하한으로 설정.
+    TableCheck("고용/재무", "DART 임직원", "dart_employee_count", "stock_code,year,reprt_code,acmtn_dscd", "year", "stock_code || '|' || year || '|' || reprt_code || '|' || COALESCE(acmtn_dscd, '')", ("total_emp",), 1_200, None, "DART employee collector", "P1"),
     TableCheck("컨센서스/종목", "컨센서스", "consensus_targets", "report_idx 또는 자연키", "report_date", "COALESCE(CAST(report_idx AS TEXT), stock_code || '|' || report_date || '|' || securities_firm || '|' || analyst || '|' || report_title || '|' || target_price)", ("target_price",), 1_000, 45, "collect_consensus", "P2", "report_idx가 없는 한경 리포트는 자연키로 중복 판정"),
     TableCheck("텐버거", "텐버거 결과", "tenbagger_results", "run_time,stock_code", "run_time", "run_time || '|' || stock_code", ("total_score", "current_price"), 10, 7, "routes/tenbagger run", "P0"),
     TableCheck("텐버거", "실적 시그널", "earnings_signals", "stock_code,year,quarter,signal_type", "year", "stock_code || '|' || year || '|' || quarter || '|' || signal_type", ("signal_type",), 1, None, "earnings signal scan", "P1"),
@@ -76,7 +88,13 @@ def date_age_days(max_value: str | int | float | None) -> int | None:
             if fmt == "%Y":
                 d = date(int(s[:4]), 12, 31)
             elif fmt == "%Y%m":
-                d = date(int(s[:4]), int(s[4:6]), 1)
+                # 2026-07-17 수정: 월별 원천(예: YYYYMM=202605)은 그 달 전체를 대표하는 값이므로
+                # 월초(day=1)가 아니라 월말 기준으로 age를 계산해야 함.
+                # 월초 기준이면 실제로는 정상 공개월인데도 최대 ~30일 과대 staleness가 발생
+                # (예: 202605 → 월초 기준 5/1 대비 77일, 월말 기준 5/31 대비 47일).
+                y, m = int(s[:4]), int(s[4:6])
+                last_day = calendar.monthrange(y, m)[1]
+                d = date(y, m, last_day)
             return (date.today() - d).days
         except Exception:
             continue
@@ -182,6 +200,74 @@ def _covered_by(result: dict, source: str, reason: str) -> None:
     result["issues"] = [f"covered_by:{source}", reason]
 
 
+def _append_note(result: dict, note: str) -> None:
+    existing = result.get("notes") or ""
+    result["notes"] = f"{existing} / {note}" if existing else note
+
+
+def apply_dynamic_coverage_notes(conn: sqlite3.Connection, results: list[dict]) -> None:
+    """Add DB-derived coverage figures for fields where row count alone is misleading."""
+    segment = _by_table(results, "segment_revenue")
+    if segment and segment.get("exists"):
+        try:
+            active_total = q_scalar(
+                conn,
+                """
+                SELECT COUNT(DISTINCT stock_code)
+                FROM stock_universe
+                WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+                  AND market IN ('KOSPI','KOSDAQ')
+                """,
+            )
+            covered = q_scalar(
+                conn,
+                """
+                SELECT COUNT(DISTINCT s.stock_code)
+                FROM segment_revenue s
+                JOIN stock_universe u ON u.stock_code = s.stock_code
+                WHERE u.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+                  AND u.market IN ('KOSPI','KOSDAQ')
+                """,
+            )
+            pct = (covered / active_total * 100) if active_total else 0
+            segment["active_stock_total"] = active_total
+            segment["active_stock_covered"] = covered
+            segment["active_stock_coverage_pct"] = round(pct, 2)
+            _append_note(segment, f"활성 KOSPI/KOSDAQ 종목 커버리지 {covered:,}/{active_total:,} ({pct:.1f}%)")
+        except Exception as exc:
+            segment.setdefault("issues", []).append(f"coverage_note_error:segment_revenue:{exc}")
+
+    dilution = _by_table(results, "dilution_events")
+    if dilution and dilution.get("exists"):
+        try:
+            total, with_amount, stocks_with_amount = conn.execute(
+                """
+                SELECT
+                  COUNT(*) AS total_rows,
+                  SUM(CASE WHEN issue_amount IS NOT NULL AND issue_amount > 0 THEN 1 ELSE 0 END) AS with_issue_amount,
+                  COUNT(DISTINCT CASE WHEN issue_amount IS NOT NULL AND issue_amount > 0 THEN stock_code END) AS stocks_with_issue_amount
+                FROM dilution_events
+                """
+            ).fetchone()
+            pct = (with_amount / total * 100) if total else 0
+            dilution["issue_amount_rows"] = with_amount
+            dilution["issue_amount_stocks"] = stocks_with_amount
+            dilution["issue_amount_coverage_pct"] = round(pct, 2)
+            dilution["issue_amount_status"] = "partial" if pct < 80 else "ok"
+            _append_note(
+                dilution,
+                f"issue_amount 실채움 {with_amount:,}/{total:,} ({pct:.2f}%), {stocks_with_amount:,}종목. "
+                f"80% 미만이면 금액 기반 희석 리스크는 부분완료로 간주하고, 금액 미추출 행은 건수 기반 리스크로만 사용",
+            )
+            if pct < 80:
+                dilution.setdefault("issues", []).append(f"partial_field:issue_amount:{pct:.2f}%<80%")
+                if dilution.get("status") == "ok":
+                    dilution["status"] = "unstable_or_needs_review"
+                    dilution["severity"] = "high"
+        except Exception as exc:
+            dilution.setdefault("issues", []).append(f"coverage_note_error:dilution_events:{exc}")
+
+
 def apply_operational_fallbacks(results: list[dict]) -> None:
     """운영 코드가 이미 쓰는 대체/표준 테이블을 감사 결과에 반영한다."""
     price = _by_table(results, "price_history")
@@ -237,6 +323,27 @@ def apply_operational_fallbacks(results: list[dict]) -> None:
             radar.setdefault("issues", []).append(f"us_price_history_check_error:{exc}")
 
 
+def apply_dataset_contracts(results: list[dict]) -> None:
+    """Override broad calendar-day checks with page-facing cadence contracts."""
+    health_by_table = {item["table"]: item for item in evaluate_all_contracts(use_cache=False)}
+    for result in results:
+        health = health_by_table.get(result["table"])
+        if not health or health["status"] == "healthy":
+            continue
+        result["status"] = "needs_collection"
+        result["severity"] = "critical" if result.get("priority") == "P0" else "high"
+        result["issues"] = [
+            issue for issue in result.get("issues", [])
+            if not str(issue).startswith("covered_by:")
+        ]
+        result["issues"].extend(
+            f"contract:{issue}" for issue in health.get("issues", [])
+            if f"contract:{issue}" not in result["issues"]
+        )
+        result["contract_expected_as_of"] = health.get("expected_as_of")
+        result["contract_latest_coverage"] = health.get("latest_coverage")
+
+
 def audit_hs_trade_lab() -> list[dict]:
     checks = [
         TableCheck("HS/시그널 영향성", "HS 월간 확정 수출입", "customs_monthly_record", "endpoint,period_ym,hs_code", "CASE WHEN period_ym GLOB '20[0-9][0-9]-[0-1][0-9]' THEN period_ym END", "endpoint || '|' || period_ym || '|' || hs_code || '|' || country_code || '|' || sido_code || '|' || imex_type_code || '|' || nature_code || '|' || unified_nature_code", ("export_value", "import_value"), 1_000_000, 75, "hs_trade_lab/scripts/daily_refresh.py", "P0"),
@@ -261,7 +368,9 @@ def main() -> int:
     conn.row_factory = sqlite3.Row
     try:
         results = [audit_one(conn, c) for c in CHECKS]
+        apply_dynamic_coverage_notes(conn, results)
         apply_operational_fallbacks(results)
+        apply_dataset_contracts(results)
     finally:
         conn.close()
     for r in results:

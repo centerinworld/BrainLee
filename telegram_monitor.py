@@ -1,5 +1,5 @@
 """
-텔레그램 채널 모니터링 + OpenAI 요약 + 종목 추출
+텔레그램 채널 모니터링 + OpenAI 요약 + 종목 추출 (비활성화)
 - 오전 9시 / 오후 9시 2회 수집, 같은 날로 합산 저장
 - 일별 언급 횟수 DB 저장
 실행: python3 telegram_monitor.py
@@ -14,29 +14,30 @@ from datetime import datetime, timedelta, date
 from collections import Counter
 
 from telethon import TelegramClient
-import openai
+from services import gemini_openai_compat as openai
 
 # ──────────────────────────────────────────────
 # ★ 설정값 입력 (여기만 수정하세요)
 # ──────────────────────────────────────────────
 # ── config.py에서 모든 설정값 로드 (환경변수 fallback) ──────────
 import sys as _sys
-_sys.path.insert(0, "/Applications/stock_dashboard")
+_sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 import config as _cfg
 
 TELEGRAM_API_ID   = int(getattr(_cfg, "TELEGRAM_API_ID",  0))
 TELEGRAM_API_HASH = getattr(_cfg, "TELEGRAM_API_HASH", "")
-TELEGRAM_SESSION  = os.getenv("TELEGRAM_SESSION_PATH", "/Applications/stock_dashboard/telegram_session")
+TELEGRAM_SESSION  = os.getenv("TELEGRAM_SESSION_PATH", "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_session")
 TELEGRAM_PHONE    = os.getenv("TELEGRAM_PHONE") or getattr(_cfg, "TELEGRAM_PHONE", "")
-OPENAI_API_KEY    = getattr(_cfg, "OPENAI_API_KEY",    "") or os.environ.get("OPENAI_API_KEY", "")
+GEMINI_API_KEY    = getattr(_cfg, "GEMINI_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
 BOT_TOKEN         = getattr(_cfg, "TELEGRAM_BOT_TOKEN","")
 TARGET_CHANNEL_ID = getattr(_cfg, "TELEGRAM_CHAT_ID",  "")
+TELEGRAM_MONITOR_DISABLED = True
 
 # DB에서 활성 채널 로드 (없으면 기본값 사용)
 def _load_monitor_channels(db_path=None):
     try:
         import sqlite3 as _sl
-        conn = _sl.connect(db_path or "/Applications/stock_dashboard/stock.db")
+        conn = _sl.connect(db_path or "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
         rows = conn.execute(
             "SELECT channel_id FROM telegram_channels WHERE is_active=1 ORDER BY id"
         ).fetchall()
@@ -49,7 +50,7 @@ def _load_monitor_channels(db_path=None):
 
 MONITOR_CHANNELS = _load_monitor_channels()
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 HOURS   = 12
 _STOCK_DICT = None
 
@@ -142,7 +143,9 @@ def init_db():
 def analyze_messages(channel_name, messages):
     if not messages:
         return {"summary": "", "stocks": []}
-    client   = openai.OpenAI(api_key=OPENAI_API_KEY)
+    if TELEGRAM_MONITOR_DISABLED:
+        return {"summary": "텔레그램 모니터링 비활성화", "stocks": _fallback_extract_stocks(messages)}
+    client   = openai.OpenAI()
     combined = "\n---\n".join(messages[:50])
     prompt = f"""아래는 텔레그램 주식 채널 '{channel_name}'의 최근 메시지들입니다.
 
@@ -188,17 +191,9 @@ JSON만 응답하고 다른 텍스트는 포함하지 마세요.
 # 텔레그램 봇 전송
 # ──────────────────────────────────────────────
 async def send_result(text):
-    import aiohttp
-    url    = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
-    async with aiohttp.ClientSession() as session:
-        for chunk in chunks:
-            await session.post(url, json={
-                "chat_id": TARGET_CHANNEL_ID,
-                "text": chunk,
-                "parse_mode": "HTML",
-            })
-            await asyncio.sleep(0.5)
+    """Use the shared sender so future monitor activation keeps dedup/error policy."""
+    from notifier import send
+    return await asyncio.to_thread(send, text)
 
 # ──────────────────────────────────────────────
 # 일별 언급 횟수 저장 (오전/오후 누적 합산)
@@ -266,6 +261,10 @@ def build_report(now, since, summaries, top_stocks, stock_market):
 # 메인
 # ──────────────────────────────────────────────
 async def collect_and_analyze():
+    if TELEGRAM_MONITOR_DISABLED:
+        print("텔레그램 모니터링은 비용 절감을 위해 비활성화되었습니다.")
+        return
+
     init_db()
     now       = datetime.now()
     since     = now - timedelta(hours=HOURS)

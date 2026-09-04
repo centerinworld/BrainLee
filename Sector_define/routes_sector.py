@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 class StockInfo(BaseModel):
     category: str

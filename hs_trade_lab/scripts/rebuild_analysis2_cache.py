@@ -13,6 +13,20 @@ EXPORT_DIR = ROOT_DIR / "data" / "mapping_exports"
 DOWNLOADS_DIR = Path("/Users/brainlee/Downloads")
 
 
+def _analysis2_sector_key_case(sector_expr: str, hs_expr: str) -> str:
+    """Split the legacy energy/materials bucket without duplicating HS observations."""
+    return f"""
+        CASE
+          WHEN {sector_expr} = 'energy_materials' AND {hs_expr} LIKE '31%' THEN 'fertilizers'
+          WHEN {sector_expr} = 'energy_materials' AND {hs_expr} LIKE '27%' THEN 'energy'
+          WHEN {sector_expr} = 'energy_materials' AND {hs_expr} LIKE '85%' THEN 'power_infra'
+          WHEN {sector_expr} = 'energy_materials' AND ({hs_expr} LIKE '68%' OR {hs_expr} LIKE '72%' OR {hs_expr} LIKE '73%') THEN 'steel_materials'
+          WHEN {sector_expr} = 'energy_materials' AND ({hs_expr} LIKE '28%' OR {hs_expr} LIKE '29%' OR {hs_expr} LIKE '32%' OR {hs_expr} LIKE '38%' OR {hs_expr} LIKE '39%' OR {hs_expr} LIKE '40%' OR {hs_expr} LIKE '54%') THEN 'chemicals'
+          ELSE {sector_expr}
+        END
+    """
+
+
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -99,7 +113,7 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
 
 def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
     conn.executescript(
-        """
+        f"""
         DELETE FROM analysis2_sector_monthly_cache;
         DELETE FROM analysis2_sector_hs_monthly_cache;
         DELETE FROM analysis2_company_monthly_cache;
@@ -123,7 +137,8 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
                 CASE
                   WHEN sp.sector_key IN (
                     'semiconductors', 'autos', 'batteries', 'biotech',
-                    'consumer', 'shipbuilding', 'energy_materials'
+                    'consumer', 'shipbuilding', 'energy_materials', 'energy',
+                    'chemicals', 'fertilizers', 'steel_materials', 'power_infra'
                   ) THEN 0
                   ELSE 1
                 END AS alias_rank
@@ -139,12 +154,13 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
           ON parent.sector_key = mapped.canonical_sector_key
         WHERE mapped.canonical_sector_key IN (
             'semiconductors', 'autos', 'batteries', 'biotech',
-            'consumer', 'shipbuilding', 'energy_materials'
+            'consumer', 'shipbuilding', 'energy_materials', 'energy',
+            'chemicals', 'fertilizers', 'steel_materials', 'power_infra'
         );
 
         DROP TABLE IF EXISTS tmp_sector_match;
         CREATE TEMP TABLE tmp_sector_match AS
-        WITH ranked AS (
+        WITH categorized AS (
             SELECT
                 cmr.row_key,
                 cmr.period_ym,
@@ -152,21 +168,11 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
                 cmr.export_weight,
                 cmr.import_value,
                 cmr.import_weight,
-                sc.sector_key,
-                sc.sector_label,
+                {_analysis2_sector_key_case('sc.sector_key', 'sm.hs_code')} AS sector_key,
                 sm.hs_code,
                 COALESCE(NULLIF(sm.display_name, ''), NULLIF(sm.hs_name, ''), sm.hs_code) AS hs_name,
                 sm.mapping_status,
-                ROW_NUMBER() OVER (
-                    PARTITION BY cmr.row_key, sc.sector_key
-                    ORDER BY sc.alias_rank ASC,
-                             LENGTH(sm.hs_code) DESC,
-                             CASE sm.mapping_status
-                               WHEN 'exact' THEN 1
-                               WHEN 'composite' THEN 2
-                               ELSE 3 END,
-                             sm.hs_code
-                ) AS rn
+                sc.alias_rank
             FROM customs_monthly_record cmr
             JOIN hs_sector_map sm
               ON cmr.hs_code = sm.hs_code
@@ -174,6 +180,23 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
             JOIN tmp_sector_canonical sc
               ON sc.source_sector_key = sm.sector_key
             WHERE length(cmr.period_ym) = 7
+        ),
+        ranked AS (
+            SELECT
+                c.*,
+                sp.label AS sector_label,
+                ROW_NUMBER() OVER (
+                    PARTITION BY c.row_key, c.sector_key
+                    ORDER BY c.alias_rank ASC,
+                             LENGTH(c.hs_code) DESC,
+                             CASE c.mapping_status
+                               WHEN 'exact' THEN 1
+                               WHEN 'composite' THEN 2
+                               ELSE 3 END,
+                             c.hs_code
+                ) AS rn
+            FROM categorized c
+            JOIN sector_preset sp ON sp.sector_key = c.sector_key
         )
         SELECT *
         FROM ranked
@@ -324,19 +347,27 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
                 SELECT 1 FROM hs_code_company_map hcm WHERE hcm.stock_code = ta.stock_code
             )
         )
-        SELECT
-            c.sector_key,
-            c.sector_label,
-            c.stock_code,
-            c.stock_name,
-            c.sector_name,
-            c.flow_type,
-            c.hs_code,
-            c.hs_name,
-            c.mapping_status,
-            c.rank_num,
-            c.share_pct
-        FROM candidates c
+        , categorized AS (
+            SELECT
+                {_analysis2_sector_key_case('c.sector_key', 'c.hs_code')} AS sector_key,
+                c.stock_code, c.stock_name, c.sector_name, c.flow_type,
+                c.hs_code, c.hs_name, c.mapping_status, c.rank_num, c.share_pct
+            FROM candidates c
+        ), ranked AS (
+            SELECT
+                c.*,
+                sp.label AS sector_label,
+                ROW_NUMBER() OVER (
+                    PARTITION BY c.sector_key, c.stock_code, c.hs_code, c.flow_type, c.sector_name
+                    ORDER BY c.rank_num ASC
+                ) AS rn
+            FROM categorized c
+            JOIN sector_preset sp ON sp.sector_key = c.sector_key
+        )
+        SELECT sector_key, sector_label, stock_code, stock_name, sector_name, flow_type,
+               hs_code, hs_name, mapping_status, rank_num, share_pct
+        FROM ranked
+        WHERE rn = 1
         ;
 
         DROP TABLE IF EXISTS tmp_company_match;
@@ -414,9 +445,9 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
         )
         SELECT
             sector_key,
-            sector_label,
+            MAX(sector_label),
             stock_code,
-            stock_name,
+            MAX(stock_name),
             period_ym,
             GROUP_CONCAT(DISTINCT sector_name),
             GROUP_CONCAT(DISTINCT hs_name),
@@ -429,7 +460,7 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
             ROUND(SUM(import_value), 6),
             ROUND(SUM(import_weight), 6)
         FROM tmp_company_match
-        GROUP BY sector_key, sector_label, stock_code, stock_name, period_ym;
+        GROUP BY sector_key, stock_code, period_ym;
 
         INSERT INTO analysis2_company_hs_monthly_cache (
             sector_key, sector_label, stock_code, stock_name, period_ym, hs_code, hs_name,
@@ -438,33 +469,26 @@ def rebuild_cache(conn: sqlite3.Connection) -> dict[str, int]:
         WITH flow_rows AS (
           SELECT
             sector_key,
-            sector_label,
+            MAX(sector_label) AS sector_label,
             stock_code,
-            stock_name,
+            MAX(stock_name) AS stock_name,
             period_ym,
             hs_code,
-            hs_name,
+            MAX(hs_name) AS hs_name,
             GROUP_CONCAT(DISTINCT sector_name) AS sector_names,
             flow_type,
             MIN(rank_num) AS best_rank,
-            export_value,
-            export_weight,
-            import_value,
-            import_weight
+            SUM(export_value) AS export_value,
+            SUM(export_weight) AS export_weight,
+            SUM(import_value) AS import_value,
+            SUM(import_weight) AS import_weight
           FROM tmp_company_match
           GROUP BY
             sector_key,
-            sector_label,
             stock_code,
-            stock_name,
             period_ym,
             hs_code,
-            hs_name,
-            flow_type,
-            export_value,
-            export_weight,
-            import_value,
-            import_weight
+            flow_type
         )
         SELECT
             sector_key,

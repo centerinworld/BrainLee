@@ -115,34 +115,34 @@
 
 1. 기본 일치율 검증(트래커 자동 기록)
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --no-telegram
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --no-telegram
 ```
 
 2. 편입일 매수 재현률(과거 1년) 확인
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --replay-entry --lookback-days 365
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --replay-entry --lookback-days 365
 ```
 
 3. 매도 누적 백테스트(최근 30 스냅샷)
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --backtest-sell --sell-lookback-snapshots 30
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --backtest-sell --sell-lookback-snapshots 30
 ```
 
 4. 매수 파라미터 튜닝(모멘텀/벨류)
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-strategy momentum --iterations 500
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-strategy value --iterations 500
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --tune-strategy momentum --iterations 500
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --tune-strategy value --iterations 500
 ```
 
 5. 매도 파라미터 튜닝(peak+momentum)
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-sell --strategy peak --iterations 400 --sell-lookback-snapshots 30
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-sell --strategy momentum --iterations 400 --sell-lookback-snapshots 30
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --tune-sell --strategy peak --iterations 400 --sell-lookback-snapshots 30
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --tune-sell --strategy momentum --iterations 400 --sell-lookback-snapshots 30
 ```
 
 6. 재검증(변경 반영 확인)
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --no-telegram
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --no-telegram
 ```
 
 운영 기준:
@@ -166,28 +166,28 @@ python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --no-telegram
 매일 점검 항목:
 1. 신규 편입 후보 발굴률
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --replay-entry --lookback-days 365
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --replay-entry --lookback-days 365
 ```
 - `hit_rate`가 전일 대비 하락하면 후보 생성 로직 우선 수정
 
 2. 신규 매도 후보 발굴률
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --backtest-sell --sell-lookback-snapshots 30
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --backtest-sell --sell-lookback-snapshots 30
 ```
 - `precision`이 낮으면 과신호 억제(후보 상한, score_cut 상향)
 - `recall`이 낮으면 손절/익절 트리거 완화
 
 3. 전략별 튜닝 반복
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-strategy momentum --iterations 500
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-strategy value --iterations 500
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-sell --strategy peak --iterations 400 --sell-lookback-snapshots 30
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --tune-sell --strategy momentum --iterations 400 --sell-lookback-snapshots 30
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --tune-strategy momentum --iterations 500
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --tune-strategy value --iterations 500
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --tune-sell --strategy peak --iterations 400 --sell-lookback-snapshots 30
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --tune-sell --strategy momentum --iterations 400 --sell-lookback-snapshots 30
 ```
 
 4. 수정 후 재검증
 ```bash
-python3 /Applications/stock_dashboard/stockeasy_logic_validator.py --no-telegram
+python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_validator.py --no-telegram
 ```
 
 운영 규칙:

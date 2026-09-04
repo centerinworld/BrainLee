@@ -30,7 +30,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB_PATH = ROOT / "stock.db"
 PROGRESS_PATH = ROOT / "run" / "dart_report_items_progress.json"
 sys.path.insert(0, str(ROOT))

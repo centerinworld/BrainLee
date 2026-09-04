@@ -31,17 +31,17 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 from collections import Counter
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 from notifier import send as send_telegram
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-DB_PATH      = "/Applications/stock_dashboard/stock.db"
-TRACKER_PATH = "/Applications/stock_dashboard/stockeasy_logic_tracker.md"
-PARAMS_PATH  = "/Applications/stock_dashboard/config/stockeasy_logic_params.json"
-TUNING_LOG_PATH = "/Applications/stock_dashboard/config/stockeasy_logic_tuning_history.json"
+DB_PATH      = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+TRACKER_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_logic_tracker.md"
+PARAMS_PATH  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/stockeasy_logic_params.json"
+TUNING_LOG_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/stockeasy_logic_tuning_history.json"
 
 STRATEGY_LABELS = {
     "peak":     "Peak Easy",
@@ -197,7 +197,27 @@ def _calc_se_momentum_candidates(conn: sqlite3.Connection) -> list[dict]:
     전장(LG이노텍·삼성전기), 로봇(로보티즈), 반도체장비(주성엔지니어링),
     자동차(현대모비스), 철강(현대제철), 정유화학(POSCO·SK이노베이션) 등
     → 공통점: 섹터 주도주 + MA정배열 + 기관/외국인 순매수
+
+    ── v3 (2026-07-11 재설계) ──
+    2026-07 SE 보유 6종목 역산 결과 SE는 "주도섹터 바스켓" 방식으로 확인됨:
+      1) SE 자체 섹터 분류(stockeasy_sector_membership, middle level)로
+         섹터별 평균 ret20 랭킹 → 1위 주도섹터 선정 (화장품 +28.8% 등)
+      2) 섹터 내 필터: MA5>MA20 + 주가>=MA20*0.97 + (기관5일+ or 외인5일+)
+      3) 통과 종목 중 시총 상위 N개 바스켓 편입 (지주/홀딩스 제외)
+    실증: 화장품 섹터에서 이 방식으로 SE 5/5 정확 재현
+    (달바글로벌은 시총 4위지만 MA5<MA20으로 SE도 제외 — 필터 일치 확인).
+    핵심 변화: 기존 v2의 MA20>=MA60 정배열 요구 제거 —
+    SE는 골든크로스 '형성 초기'(MA20<MA60이어도 MA5>MA20 전환)에 진입.
     """
+    # ── SE 자체 섹터 멤버십 로드 (middle level) ──
+    se_sector_map: dict[str, str] = {}
+    try:
+        for r in conn.execute(
+            "SELECT DISTINCT stock_code, sector_name FROM stockeasy_sector_membership WHERE sector_level='middle'"
+        ).fetchall():
+            se_sector_map[r["stock_code"]] = r["sector_name"]
+    except Exception:
+        pass
     # KOSPI/KOSDAQ 20일 수익률 (RS 기준선)
     k_rows = conn.execute(
         "SELECT close FROM price_history WHERE stock_code='^KS11' AND close>0 ORDER BY date DESC LIMIT 25"
@@ -246,23 +266,48 @@ def _calc_se_momentum_candidates(conn: sqlite3.Connection) -> list[dict]:
       AND p.c20 > 0
       AND p.close > 0
       AND p.ma20 > 0 AND p.ma60 > 0
-      AND p.ma20 >= p.ma60 * 0.98      -- MA20 >= MA60 (정배열 필요조건, 2% 여유)
       AND p.close >= p.ma20 * 0.97     -- 주가가 MA20 근방 이상
-      AND ((p.close - p.c20) / p.c20 * 100.0) >= 2.0   -- 20일 수익률 2% 이상
+      -- v3: MA20>=MA60 정배열 요구 제거 (SE는 골든크로스 형성 초기 진입)
+      -- v3: ret20 >= 2% 요구 제거 (주도섹터 후발주는 ret20 낮아도 편입됨, 예: LG생활건강 +1.2%)
     """
     rows = conn.execute(sql).fetchall()
 
-    # 섹터별 강상승 종목 수 집계 (섹터 모멘텀 — ret20 >= 8% 기준)
-    # 섹터에서 강상승 종목이 많을수록 섹터 로테이션 신호
+    # ── v3: SE middle 섹터 기준 섹터 모멘텀 랭킹 (전체 멤버 평균 ret20) ──
+    # 주의: 필터 통과 종목만으로 계산하면 생존자 편향으로 왜곡됨(소수 통과 섹터가 과대평가).
+    # 반드시 섹터 전체 멤버의 ret20으로 랭킹해야 SE와 일치 (화장품 +28.8% 1위 재현).
+    sec_rets: dict[str, list[float]] = {}
+    all_ret20 = conn.execute(
+        """
+        WITH p AS (
+          SELECT stock_code, close, ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY date DESC) rn
+          FROM price_history WHERE close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+        )
+        SELECT a.stock_code, (a.close-b.close)/b.close*100.0 ret20
+        FROM p a JOIN p b ON b.stock_code=a.stock_code AND b.rn=21
+        WHERE a.rn=1 AND b.close>0
+        """
+    ).fetchall()
+    for r0 in all_ret20:
+        sec0 = se_sector_map.get(r0[0])
+        if sec0:
+            sec_rets.setdefault(sec0, []).append(float(r0[1]))
+    sec_avg = {s: sum(v) / len(v) for s, v in sec_rets.items() if len(v) >= 5}
+    hot_ranked = sorted(sec_avg.items(), key=lambda x: -x[1])
+    hot_sectors: dict[str, int] = {}  # 섹터명 → 랭크(1위=1)
+    for i, (s, avg) in enumerate(hot_ranked[:3], start=1):
+        if avg >= 5.0:  # 평균 ret20 5% 이상만 주도섹터로 인정
+            hot_sectors[s] = i
+
+    # (기존 v2 호환) 섹터별 강상승 종목수 집계 — 보조 점수용
     sector_counts: dict[str, int] = {}
     for r in rows:
-        sec = (r["sector_large"] or "").strip()
+        sec = se_sector_map.get(r["stock_code"]) or (r["sector_large"] or "").strip()
         if not sec or sec == "기타":
             continue
         c20 = float(r["c20"] or 0)
         close_v = float(r["close"] or 0)
         ret20_v = (close_v - c20) / c20 * 100 if c20 > 0 else 0.0
-        if ret20_v >= 8.0:   # 강상승 기준 (시장 대비 명백한 아웃퍼폼)
+        if ret20_v >= 8.0:
             sector_counts[sec] = sector_counts.get(sec, 0) + 1
 
     out = []
@@ -280,7 +325,7 @@ def _calc_se_momentum_candidates(conn: sqlite3.Connection) -> list[dict]:
         frn5  = float(r["frn5"]  or 0)
         mktcap    = float(r["mktcap"] or 0)
         mktcap_억 = _normalize_mktcap_억(mktcap)   # 억원 단위로 정규화
-        sec   = (r["sector_large"] or "").strip()
+        sec = se_sector_map.get(r["stock_code"]) or (r["sector_large"] or "").strip()
 
         ret20 = (close - c20) / c20 * 100 if c20 > 0 else 0.0
         vol_ratio = vma5 / vma20 if vma20 > 0 else 0.0  # 5일 평균거래량/20일 평균거래량
@@ -320,6 +365,23 @@ def _calc_se_momentum_candidates(conn: sqlite3.Connection) -> list[dict]:
         elif mktcap_억 >= 10000: size_bonus = 3  # 1조 이상
         elif mktcap_억 >= 3000:  size_bonus = 1  # 3000억 이상
 
+        # ── v3: 주도섹터 바스켓 로직 (핵심) ──
+        # SE 실증: 1위 주도섹터 내에서 [MA5>MA20 + 주가>=MA20 + 수급+] 통과 종목을
+        # 시총 상위 순으로 바스켓 편입. 지주/홀딩스는 제외.
+        hot_rank = hot_sectors.get(sec)            # 1/2/3 or None
+        se_filter_pass = (
+            ma5 > ma20                             # 단기 전환 확인
+            and close >= ma20 * 0.97
+            and (inst5 > 0 or frn5 > 0)            # 수급 유입
+        )
+        is_holding_co = any(k in (r["stock_name"] or "") for k in ("홀딩스", "지주"))
+        hot_bonus = 0.0
+        if hot_rank and se_filter_pass and not is_holding_co:
+            # 랭크1 섹터 압도적 가중 + 시총 순위 보존(log 스케일)
+            import math as _math
+            # 시총 가중 강화: SE는 섹터 내 시총 상위 순으로 편입 (개별 모멘텀 점수보다 우선)
+            hot_bonus = {1: 100.0, 2: 45.0, 3: 25.0}[hot_rank] + _math.log10(max(mktcap_억, 100)) * 20.0
+
         score = (
             align * 3.5
             + supply
@@ -328,6 +390,7 @@ def _calc_se_momentum_candidates(conn: sqlite3.Connection) -> list[dict]:
             + size_bonus
             + (3 if rs_score >= 70 else 0)
             + min(ret20, 25) * 0.3
+            + hot_bonus
         )
 
         out.append({
@@ -850,24 +913,59 @@ def replay_entry_day_inclusion(strategy: str, lookback_days: int = 180, top_n: i
     conn.row_factory = sqlite3.Row
     try:
         cutoff = (date.today() - timedelta(days=max(1, int(lookback_days)))).isoformat()
-        row = conn.execute(
-            """
-            SELECT holdings_json
-            FROM stockeasy_analysis
-            WHERE strategy=?
-            ORDER BY id DESC
-            LIMIT 1
-            """,
+        # v5 (2026-07-11): 최신 스냅샷 보유종목만이 아니라 전체 스냅샷 이력의
+        # 유니크 (종목, entry_date) 편입 이벤트 전수를 재현 검증 (사용자 지시).
+        # 이미 편출된 과거 편입도 포함되어 검증 모수가 크게 확대됨
+        # (peak 6→71건, momentum 6→51건, value 10→14건).
+        all_rows = conn.execute(
+            "SELECT holdings_json FROM stockeasy_analysis WHERE strategy=? ORDER BY id DESC",
             (strategy,),
-        ).fetchone()
-        hs = json.loads((row["holdings_json"] if row else "[]") or "[]")
-        by_name = {(x.get("name") or "").strip(): x for x in hs if (x.get("name") or "").strip()}
+        ).fetchall()
+        seen: set = set()
+        entry_events: list[dict] = []
+        for ar in all_rows:
+            for x in json.loads((ar["holdings_json"] or "[]")):
+                nm = (x.get("name") or "").strip()
+                ed = x.get("entry_date") or x.get("buy_date")
+                if nm and ed and (nm, ed) not in seen:
+                    seen.add((nm, ed))
+                    entry_events.append(x)
+        by_name = {}  # 이벤트 기반이므로 name 단독 매핑은 사용하지 않음
 
         checked = 0
         hit = 0
         misses = []
         hits = []
-        def _stock_signal_ok(code: str, as_of: str) -> tuple[bool, str]:
+        skipped = []
+        def _price_discontinuity(code: str, as_of: str) -> bool:
+            """as_of 직전 6거래일 내 전일대비 ±40% 이상 급변이 있으면 액면분할/병합/
+            장기 거래정지 후 재개 등 데이터 아티팩트로 판단(2026-08-22: 코미코 사례 —
+            거래정지 16거래일 동안 close가 고정되다 재개일에 -49% '폭락'으로 잡혀
+            Peak Easy 미스로 오판정됐던 것을 발견해 추가)."""
+            rows = conn.execute(
+                """
+                WITH p AS (
+                  SELECT date, close,
+                         LAG(close) OVER(ORDER BY date) prev_close
+                  FROM price_history
+                  WHERE stock_code=? AND date<=? AND close>0
+                )
+                SELECT close, prev_close FROM p
+                WHERE prev_close IS NOT NULL AND prev_close > 0
+                ORDER BY date DESC LIMIT 6
+                """,
+                (code, as_of),
+            ).fetchall()
+            for r in rows:
+                prev_close = float(r["prev_close"])
+                close = float(r["close"])
+                if abs((close - prev_close) / prev_close) >= 0.4:
+                    return True
+            return False
+
+        def _stock_signal_ok(code: str, as_of: str) -> tuple[bool | None, str]:
+            if _price_discontinuity(code, as_of):
+                return None, "가격불연속(액면분할/병합/거래정지재개 추정) — 판단제외"
             px = conn.execute(
                 """
                 WITH p AS (
@@ -909,14 +1007,21 @@ def replay_entry_day_inclusion(strategy: str, lookback_days: int = 180, top_n: i
                 fast_ok = trend_ok and ret5 >= 12.0 and vr >= 1.4
                 large_ok = is_large and trend_ok and ((ret20 >= 7.0) or (ret5 >= 5.0 and ret20 >= 3.0))
             elif strategy == "momentum":
-                fast_ok = trend_ok and ret5 >= 8.0 and vr >= 1.2
-                large_ok = is_large and trend_ok and ((ret20 >= 5.0) or (ret5 >= 4.0 and ret20 >= 2.0))
+                # v3 (2026-07-11): SE Momentum은 골든크로스 '형성 초기'(MA20<MA60) 섹터턴에
+                # 진입함이 실증됨(2026-07 화장품 바스켓 5/6이 MA20<MA60 상태에서 편입).
+                # MA20>=MA60 요구를 제거하고 주가의 MA20 회복(3% 여유)만 요구.
+                trend_relaxed = c > 0 and ma20 > 0 and c >= ma20 * 0.97
+                fast_ok = trend_relaxed and ret5 >= 8.0 and vr >= 1.2
+                large_ok = is_large and trend_relaxed and ((ret20 >= 5.0) or (ret5 >= 4.0 and ret20 >= 2.0))
             else:
                 # Value는 "저점 재평가 + 대형주 복원 + 강한 재평가 급등"이 모두 포함될 수 있다.
                 # 기존 상단 캡(<=35%) 때문에 한솔테크닉스형 강한 재평가를 누락해 완화.
                 fast_ok = (
                     (trend_ok and ret20 >= -5.0 and ret20 <= 130.0 and ret5 >= -5.0)
                     or ((not trend_ok) and ret20 >= -20.0 and ret5 >= -10.0 and vr >= 1.2)
+                    # TYM 패턴 시총무관 확장 (2026-07-11): 20일 강상승 중 단기조정 매수
+                    # (TYM 2026-05-21: ret20=+11.6, ret5=-6.3, vr=0.81, 시총<3000억)
+                    or (ret20 >= 8.0 and ret5 >= -8.0)
                 )
                 large_ok = is_large and (
                     (trend_ok and ret20 >= -5.0)
@@ -928,18 +1033,35 @@ def replay_entry_day_inclusion(strategy: str, lookback_days: int = 180, top_n: i
                 return True, f"ret5={ret5:.1f}, ret20={ret20:.1f}, vr={vr:.2f}"
             return False, f"ret5={ret5:.1f}, ret20={ret20:.1f}, vr={vr:.2f}, trend={trend_ok}"
 
-        for h in se_full:
-            name = (h.get("name") or "").strip()
+        today_iso = date.today().isoformat()
+        for target in entry_events:
+            name = (target.get("name") or "").strip()
             if not name:
                 continue
-            target = by_name.get(name)
-            entry_date = (target or {}).get("entry_date") or (target or {}).get("buy_date")
+            entry_date = target.get("entry_date") or target.get("buy_date")
             if not entry_date or entry_date < cutoff:
+                continue
+            if entry_date > today_iso:
+                # SE 데이터 오류(미래 편입일, 예: value SK하이닉스 2026-12-18) 제외
                 continue
 
             checked += 1
-            code = str((target or {}).get("stock_code") or "")
+            code = str(target.get("stock_code") or "")
+            if not code:
+                # 구 스냅샷은 stock_code 필드가 없음 → 종목명으로 보완
+                nr = conn.execute(
+                    "SELECT stock_code FROM stock_universe WHERE stock_name=? "
+                    "AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]' ORDER BY base_date DESC LIMIT 1",
+                    (name,),
+                ).fetchone()
+                code = str(nr["stock_code"]) if nr else ""
             ok, reason = _stock_signal_ok(code, entry_date) if code else (False, "stock_code 없음")
+            if ok is None:
+                # 가격 불연속(감자/분할/거래정지 재개 등) — 판단 자체가 무의미하므로
+                # checked에서도 제외(억지로 hit/miss로 우겨넣지 않음).
+                checked -= 1
+                skipped.append({"name": name, "entry_date": entry_date, "reason": reason})
+                continue
             if ok:
                 hit += 1
                 hits.append({"name": name, "entry_date": entry_date, "reason": reason})
@@ -955,6 +1077,7 @@ def replay_entry_day_inclusion(strategy: str, lookback_days: int = 180, top_n: i
             "top_n": top_n,
             "hits": hits,
             "misses": sorted(misses, key=lambda x: (x["entry_date"], x["name"])),
+            "skipped": sorted(skipped, key=lambda x: (x["entry_date"], x["name"])),
         }
     finally:
         conn.close()
@@ -1166,8 +1289,8 @@ def compare(strategy: str) -> dict:
     hit_names = sorted({m.get("name") for m in hits if m.get("name")})
     hit_rate = round((hit / checked * 100.0), 1) if checked else 0.0
 
-    # 2) 매도 이벤트 재현률 (as_of 기준 누적)
-    sell_bt = backtest_sell(strategy, lookback_snapshots=40)
+    # 2) 매도 이벤트 재현률 (as_of 기준 누적) — v5: 전체 스냅샷 이력 사용 (사용자 지시)
+    sell_bt = backtest_sell(strategy, lookback_snapshots=999)
     sell_precision = float(sell_bt.get("precision", 0.0) or 0.0)
     sell_recall = float(sell_bt.get("recall", 0.0) or 0.0)
     sell_f1 = float(sell_bt.get("f1", 0.0) or 0.0)
@@ -1634,6 +1757,45 @@ def _get_our_sell_candidates(strategy: str, se_holdings: list[dict], as_of: Opti
     if len(krows) >= 63:
         kospi_3m = (float(krows[0][0]), float(krows[62][0]))
 
+    # ── v4: momentum 섹터 로테이션 이탈 감지 준비 ──
+    # SE Momentum 매도는 섹터 바스켓 일괄 편출임이 실증됨 (2026-05-12 2차전지 7종,
+    # 05-14 조선 3종, 06-19 금융 5종 동시 편출). 보유종목의 SE 섹터가
+    # 주도섹터 랭킹에서 밀리면 바스켓 전체 매도 신호.
+    mom_sec_map: dict[str, str] = {}
+    mom_hot_secs: set[str] = set()
+    mom_sec_avg: dict[str, float] = {}
+    if strategy == "momentum":
+        try:
+            for r0 in conn.execute(
+                "SELECT DISTINCT stock_code, sector_name FROM stockeasy_sector_membership WHERE sector_level='middle'"
+            ).fetchall():
+                mom_sec_map[r0["stock_code"]] = r0["sector_name"]
+            df = "AND date<=?" if as_of else ""
+            dp = (as_of,) if as_of else ()
+            _sr = conn.execute(
+                f"""
+                WITH p AS (
+                  SELECT stock_code, close, ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY date DESC) rn
+                  FROM price_history WHERE close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]' {df}
+                )
+                SELECT a.stock_code, (a.close-b.close)/b.close*100.0
+                FROM p a JOIN p b ON b.stock_code=a.stock_code AND b.rn=21
+                WHERE a.rn=1 AND b.close>0
+                """,
+                dp,
+            ).fetchall()
+            _secs: dict[str, list[float]] = {}
+            for r0 in _sr:
+                s0 = mom_sec_map.get(r0[0])
+                if s0:
+                    _secs.setdefault(s0, []).append(float(r0[1]))
+            mom_sec_avg = {s: sum(v) / len(v) for s, v in _secs.items() if len(v) >= 5}
+            for i0, (s0, a0) in enumerate(sorted(mom_sec_avg.items(), key=lambda x: -x[1])[:5]):
+                if a0 >= 3.0:
+                    mom_hot_secs.add(s0)
+        except Exception:
+            pass
+
     try:
         for h in (se_holdings or []):
             name = (h.get("name") or h.get("stock_name") or "").strip()
@@ -1692,6 +1854,12 @@ def _get_our_sell_candidates(strategy: str, se_holdings: list[dict], as_of: Opti
                     primary_signal = True
 
             elif strategy == "momentum":
+                # ⓪ v4: 섹터 로테이션 이탈 — 보유종목의 SE 섹터가 주도섹터 TOP5에서
+                # 탈락하면 바스켓 일괄 편출 (SE 실증 패턴, 최우선 신호)
+                # (실험 기록 2026-07-11) 섹터 로테이션 이탈 신호(보유종목 섹터의 평균
+                # ret20 마이너스 전환 시 매도)를 테스트했으나 F1 43.5→40.6으로 악화
+                # (일일 캡 내 순위를 바꿔 정답 종목을 밀어냄). 신호 비활성 —
+                # mom_sec_map/mom_sec_avg 인프라는 향후 재실험용으로 유지.
                 # ① MA5<MA20: 정배열 붕괴 = Momentum 전략 핵심 이탈 신호
                 if ma5_cross:
                     score += 5
@@ -1722,25 +1890,33 @@ def _get_our_sell_candidates(strategy: str, se_holdings: list[dict], as_of: Opti
                     primary_signal = True
 
             else:  # value
+                # v4: 추세이탈+급락도 primary 승격 제거 — SE는 TYM -20%/클래시스 -15% 등
+                # 추세이탈 손실 종목도 계속 보유함이 실증됨. 점수만 가산.
                 if trend_break and breakdown:
                     score += 4
                     reasons.append("추세이탈+급락")
-                    primary_signal = True
                 if ma20_cross:
                     score += 2
                     reasons.append("MA20<MA60")
                 # 장기보유 + 심각한 손실 = 밸류 이지 "회복 포기" 이탈 (하이브 2026-05-21 패턴)
                 # 120일 이상 보유했는데도 -28% 이상 손실이면 thesis 훼손으로 판단
-                if hold_days >= 120 and profit_pct <= -28.0:
+                # v4 (2026-07-11): 대형주(5000억+) 한정 — SE는 소형 바이오(안트로젠 -57%,
+                # 코오롱티슈진 -21% 등)는 대손실에도 계속 보유함이 실증됨.
+                # 임계 -32%: 하이브 실제 편출 시점 손익 -32.9% 기준 캘리브레이션
+                # (-28%면 편출 5~9일 전부터 조기 발화 → FP 4건. 단일 이벤트 기반이므로
+                #  새 편출 이벤트 축적 시 재검증 필요)
+                if hold_days >= 120 and profit_pct <= -32.0 and feat["mktcap_억"] >= 5000:
                     score += 8
                     reasons.append(f"장기보유대손실({hold_days}일,{profit_pct:.1f}%)")
                     primary_signal = True
 
             # ── 공통 보조 신호 ──────────────────────────────────
+            # v4: value는 공통 신호로 primary 승격 금지 (SE Value는 손절/익절 안 함 실증)
             if hard_loss:
                 score += 4
                 reasons.append(f"손절({profit_pct:.1f}%)")
-                primary_signal = True
+                if strategy != "value":
+                    primary_signal = True
 
             # MA20 < MA60 보조
             if ma20_cross and strategy == "peak":
@@ -1761,7 +1937,8 @@ def _get_our_sell_candidates(strategy: str, se_holdings: list[dict], as_of: Opti
             if parabolic_tp:
                 score += 3
                 reasons.append(f"포물선급등익절(ret5={feat['ret5']:.0f}%)")
-                primary_signal = True
+                if strategy != "value":
+                    primary_signal = True
 
             # 고수익 + 수급 이탈 (비츠로셀 패턴: profit=57%, flow_pct=-0.65%)
             # 큰 수익 실현 후 기관/외국인이 빠지기 시작하면 SE는 회전
@@ -1770,16 +1947,20 @@ def _get_our_sell_candidates(strategy: str, se_holdings: list[dict], as_of: Opti
             if profit_pct >= 40.0 and flow_pct <= _flow_tp_cut and hold_days >= 14:
                 score += 3
                 reasons.append(f"고수익+수급이탈(profit={profit_pct:.0f}%,flow={flow_pct:.1f}%)")
-                primary_signal = True
+                if strategy != "value":
+                    primary_signal = True
 
             # 고수익 + 의미있는 고점 대비 하락
+            # v4 (2026-07-11): 메가수익주(+100%↑)는 SE가 얕은 조정으로 팔지 않음이 실증됨
+            # (LG이노텍 +300% 구간 조정 다수 보유유지 후 6-22 편출) → dd20 임계 1.6배 강화
+            _mega_mult = 1.6 if profit_pct >= 100.0 else 1.0
             if profit_pct >= float(cfg.get("trail_profit_min", 2.0)) and hold_days >= 3:
-                if feat["dd20"] <= float(cfg.get("trail_dd20_cut", -10.0)):
+                if feat["dd20"] <= float(cfg.get("trail_dd20_cut", -10.0)) * _mega_mult:
                     score += 2
                     reasons.append(f"고수익후고점대비{feat['dd20']:.1f}%")
 
             if (profit_pct >= float(cfg.get("profit_hard_take_min", 18.0))
-                    and feat["dd20"] <= float(cfg.get("profit_hard_dd20_cut", -5.0))
+                    and feat["dd20"] <= float(cfg.get("profit_hard_dd20_cut", -5.0)) * _mega_mult
                     and hold_days >= 14):
                 score += 2
                 reasons.append("고수익후되돌림")
@@ -1800,11 +1981,13 @@ def _get_our_sell_candidates(strategy: str, se_holdings: list[dict], as_of: Opti
 
             # ── 통과 조건: primary_signal 존재 + score ≥ score_cut ─
             if strategy == "value":
-                # value: primary_signal도 allow에 반영 (장기보유대손실 등이 누락되던 버그 수정)
-                allow = primary_signal or hard_loss or (trend_break and breakdown)
-                # 손절(hard_loss)은 score_cut과 무관하게 즉시 실행
-                # hard_loss=4점인데 score_cut=14이면 영원히 통과 불가 → 버그 수정
-                score_ok = True if hard_loss else score >= int(cfg.get("score_cut", 14))
+                # v4 (2026-07-11): SE Value는 사실상 '매도하지 않는' 전략임이 실증됨.
+                # 40스냅샷(약 2개월)간 편출 1건(하이브, 장기보유대손실)뿐이며
+                # 안트로젠 -57%/SGC에너지 -29%/SK하이닉스 +298% 모두 계속 보유.
+                # → hard_loss 즉시통과·trend_break&breakdown 우회 통로 제거,
+                #   primary_signal(장기보유대손실 등)만 허용.
+                allow = primary_signal
+                score_ok = score >= int(cfg.get("score_cut", 8))
             else:
                 allow = primary_signal or hard_loss or parabolic_tp
                 score_ok = score >= int(cfg.get("score_cut", 2))

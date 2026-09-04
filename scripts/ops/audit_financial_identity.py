@@ -6,8 +6,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
-OUT_DIR = Path("/Applications/stock_dashboard/scratch")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+OUT_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch")
 
 
 def main() -> int:

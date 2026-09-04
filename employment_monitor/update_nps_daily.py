@@ -12,15 +12,15 @@ import os
 
 logger = logging.getLogger(__name__)
 
-load_dotenv('/Applications/stock_dashboard/.env')
+load_dotenv('/Volumes/Realtek_NVME/stock_dashboard/runtime/.env')
 API_KEY = os.getenv('PUBLIC_DATA_API_KEY')
 
 if not API_KEY:
-    print("❌ Error: PUBLIC_DATA_API_KEY not found in /Applications/stock_dashboard/.env")
+    print("❌ Error: PUBLIC_DATA_API_KEY not found in /Volumes/Realtek_NVME/stock_dashboard/runtime/.env")
     exit(1)
 
-EMP_DB = '/Applications/stock_dashboard/employment_monitor/employment.db'
-STOCK_DB = '/Applications/stock_dashboard/stock.db'
+EMP_DB = '/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db'
+STOCK_DB = '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 
 def get_latest_db_month(conn):
     row = conn.execute("SELECT MAX(ym) FROM nps_workplace_monthly").fetchone()

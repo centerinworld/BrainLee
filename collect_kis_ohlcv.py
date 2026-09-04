@@ -7,7 +7,7 @@ collect_kis_ohlcv.py — KIS API로 전종목 OHLCV 수집
   - 지정 기간 누락 데이터 백필
 
 실행:
-  cd /Applications/stock_dashboard && source venv/bin/activate
+  cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
 
   # 오늘 하루 (기본)
   python3 collect_kis_ohlcv.py
@@ -27,8 +27,8 @@ from threading import Thread, Semaphore, Lock
 import requests
 import json
 
-sys.path.insert(0, '/Applications/stock_dashboard')
-os.chdir('/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
+os.chdir('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,7 +37,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DB_PATH = '/Applications/stock_dashboard/stock.db'
+DB_PATH = '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 
 # ── KIS 설정 ──────────────────────────────────────────
 try:

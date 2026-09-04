@@ -19,9 +19,13 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from services.gemini import is_configured
+from services.gemini_openai_compat import OpenAI
 DB_PATH = ROOT / "stock.db"
 LOG_DIR = ROOT / "logs"
 MODEL = "gpt-4o-mini"
+PDF_CONSENSUS_EXTRACT_DISABLED = True
 
 
 def load_dotenv(path: Path) -> None:
@@ -213,12 +217,14 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    load_dotenv(ROOT / ".env")
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("OPENAI_API_KEY가 없어 중단합니다.", file=sys.stderr)
-        return 2
+    if PDF_CONSENSUS_EXTRACT_DISABLED:
+        print("애널리스트 PDF AI 컨센서스 배치 추출은 비용 절감을 위해 비활성화되었습니다.", file=sys.stderr)
+        return 0
 
-    import openai
+    load_dotenv(ROOT / ".env")
+    if not is_configured():
+        print("GEMINI_API_KEY 또는 GOOGLE_API_KEY가 없어 중단합니다.", file=sys.stderr)
+        return 2
 
     LOG_DIR.mkdir(exist_ok=True)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -246,7 +252,7 @@ def main() -> int:
         conn.close()
         return 0
 
-    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=45.0, max_retries=1)
+    client = OpenAI()
     ok = 0
     failed = 0
     skipped_empty_text = 0

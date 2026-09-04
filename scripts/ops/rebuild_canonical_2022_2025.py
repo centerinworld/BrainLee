@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
 
 from data_write_gate import ensure_canonical_schema, gate_financial_row, gate_cashflow_row, upsert_canonical_financial, upsert_canonical_cashflow
 
-DB='/Applications/stock_dashboard/stock.db'
+DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 Y1,Y2=2022,2025
 
 def qscore_fin(r):

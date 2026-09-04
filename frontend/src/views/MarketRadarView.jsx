@@ -47,6 +47,20 @@ const MarketRadarView = React.memo(() => {
     return () => { alive = false; };
   }, []);
 
+  // 2026-07-29: 미국 섹터 바스켓 오버나잇 방향성 신호 — 워크포워드 검증 완료
+  // (반도체 학습62.7%/검증60.2%, 자동차/헬스케어/금융/소재/산업재도 전부 방향일치 확인,
+  // signal_experiment_ledger 'discovery_tools/us_overnight_sector_leadlag_20260729' 참조).
+  // 미국 장마감(한국시간 새벽) 정보가 한국 개장 전 확정되므로 룩어헤드 없음.
+  const [usSignals, setUsSignals] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    fetch(API('/api/market-radar/sector-us-overnight-signals'))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (alive && d) setUsSignals(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   /* ── 포맷터 ──────────────────────────────────────────────────── */
   /* 시총: 국가별 통화기호 포함 (KR=조원/억원, JP=¥T/B, TW=NT$B, 기타=$T/B) */
   const fmtMktCap = (v_krw) => {
@@ -355,6 +369,37 @@ const MarketRadarView = React.memo(() => {
             </label>
           </div>
         </div>
+
+        {/* 미국 섹터 바스켓 오버나잇 신호 — 워크포워드 검증된 방향성 참고 신호 */}
+        {usSignals && usSignals.sectors && (
+          <div style={{marginBottom:'0.5rem'}}>
+            <div style={{fontSize:'0.7rem', color:'var(--text-secondary)', marginBottom:'0.3rem'}}>
+              🌙 미국 섹터 오버나잇 신호 — 미국장 마감(어제) → 다음 한국거래일 방향성 참고 (워크포워드 검증)
+            </div>
+            <div style={{display:'flex', gap:'0.4rem', overflowX:'auto', scrollbarWidth:'none'}}>
+              {usSignals.sectors.map(s => {
+                if (!s.available) return null;
+                const up = s.us_basket_ret_pct > 0;
+                const color = up ? '#f87171' : (s.us_basket_ret_pct < 0 ? '#60a5fa' : 'rgba(255,255,255,0.5)');
+                return (
+                  <div key={s.key} title={`구성종목 ${s.us_basket_tickers}개 · 학습기 방향일치 ${s.backtested_hit_rate.train_pct}% / 검증기 ${s.backtested_hit_rate.test_pct}%`}
+                    style={{
+                      minWidth:'108px', flex:'0 0 auto', padding:'0.4rem 0.55rem', borderRadius:'8px',
+                      background:'rgba(255,255,255,0.04)', border:`1px solid ${color}55`,
+                    }}>
+                    <div style={{fontSize:'0.68rem', color:'var(--text-secondary)'}}>{s.label}</div>
+                    <div style={{fontSize:'0.92rem', fontWeight:800, color}}>
+                      {s.us_basket_ret_pct >= 0 ? '+' : ''}{s.us_basket_ret_pct}%
+                    </div>
+                    <div style={{fontSize:'0.64rem', color:'rgba(255,255,255,0.55)'}}>
+                      → 동반{s.direction} 예상 (검증{s.backtested_hit_rate.test_pct}%)
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 섹터 탭 — 한 줄 가로 스크롤 */}
         <div style={{

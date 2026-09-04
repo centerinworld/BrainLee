@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 
 
 def ensure_table(conn: sqlite3.Connection) -> None:

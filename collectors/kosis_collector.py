@@ -276,7 +276,7 @@ def _log(records: int, status: str = "ok", msg: str = ""):
 
 if __name__ == "__main__":
     import dotenv
-    dotenv.load_dotenv("/Applications/stock_dashboard/.env")
+    dotenv.load_dotenv("/Volumes/Realtek_NVME/stock_dashboard/runtime/.env")
     logging.basicConfig(level=logging.INFO)
     n = collect_kosis()
     print(f"KOSIS 수집 완료: {n}건")

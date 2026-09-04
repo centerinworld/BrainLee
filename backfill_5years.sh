@@ -1,16 +1,16 @@
 #!/bin/bash
 # ============================================================
 # 5년치 데이터 전체 백필 스크립트
-# 실행: bash /Applications/stock_dashboard/backfill_5years.sh
+# 실행: bash /Volumes/Realtek_NVME/stock_dashboard/runtime/backfill_5years.sh
 # 예상 소요: 3~6시간 (네트워크 속도 따라)
 # ============================================================
 
 set -e
 source ~/.zshrc 2>/dev/null || true
-cd /Applications/stock_dashboard
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime
 source venv/bin/activate
 
-LOG_DIR="/Applications/stock_dashboard/logs"
+LOG_DIR="/Volumes/Realtek_NVME/stock_dashboard/runtime/logs"
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
@@ -32,9 +32,9 @@ echo ""
 echo "[STEP 2/4] DART 수주공시 2024-07~2025-12 백필..."
 python3 -c "
 import sys
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 import asyncio, logging, os
-os.chdir('/Applications/stock_dashboard')
+os.chdir('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 from collectors.dart_contract_collector import collect_dart_contracts
 
@@ -61,7 +61,7 @@ echo ""
 echo "[STEP 3/4] DART 기수집 건 AI 분석 보완 (ai_score=0 건)..."
 python3 -c "
 import sqlite3, sys, os, logging
-os.chdir('/Applications/stock_dashboard')
+os.chdir('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 sys.path.insert(0, '.')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 

@@ -15,8 +15,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-DB = Path('/Applications/stock_dashboard/stock.db')
-ROOT = Path('/Applications/stock_dashboard')
+DB = Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db')
+ROOT = Path('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 
 CANONICAL_RULES = [
     # field, statement, ifrs_basis, quarter_transform, stock_flow, notes

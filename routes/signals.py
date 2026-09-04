@@ -21,6 +21,7 @@ from datetime import date as _date
 
 import screener
 from fastapi import APIRouter, HTTPException
+from db_utils import connect_stock_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -129,35 +130,16 @@ def get_market_signals(refresh: bool = False):
 
 @router.get("/market-regime")
 def get_market_regime():
-    """5단계 시장 국면 점수 + 최신 AI 브리핑 조회."""
-    import threading as _threading
+    """Return the scheduled, saved market briefing; GET requests never generate it."""
     try:
-        from signal_engine import get_market_regime_snapshot, generate_market_ai_briefings
-        conn = _db()
-        # self-heal: 오늘 브리핑이 없으면 백그라운드에서 생성 (블로킹 금지)
-        today = _date.today().isoformat()
-        row = conn.execute(
-            "SELECT COUNT(*) FROM market_signal_briefing WHERE briefing_date=?",
-            (today,),
-        ).fetchone()
-        cnt = int(row[0] or 0) if row else 0
-        if cnt < 2:
-            def _bg_briefing():
-                try:
-                    import sqlite3 as _s3
-                    _c = _s3.connect("stock.db", timeout=10)
-                    generate_market_ai_briefings(_c)
-                    _c.close()
-                except Exception:
-                    logger.exception("[시그널/market-regime] background briefing failed")
-            _threading.Thread(target=_bg_briefing, daemon=True).start()
+        from signal_engine import get_market_regime_snapshot
+        conn = connect_stock_db(timeout=30, row_factory=_sl.Row)
         data = get_market_regime_snapshot(conn)
         conn.close()
         return data
     except Exception as e:
         logger.error(f"[시그널/market-regime] {e}")
         return {"generated_at": "", "markets": [], "briefings": [], "error": str(e)}
-
 
 @router.post("/market-regime/briefing")
 def generate_market_regime_briefing():
@@ -166,7 +148,7 @@ def generate_market_regime_briefing():
         from signal_engine import generate_market_ai_briefings, get_market_regime_snapshot
         conn = _db()
         gen = generate_market_ai_briefings(conn)
-        snap = get_market_regime_snapshot(conn)
+        snap = get_market_regime_snapshot(conn, force_refresh=True)
         conn.close()
         return {"result": gen, "snapshot": snap}
     except Exception as e:

@@ -72,7 +72,23 @@ class RotatingOpenDartReader:
                 continue
             reader = self._readers[idx]
             try:
-                result = getattr(reader, method_name)(*args, **kwargs)
+                # 2026-08-30 발견: OpenDartReader.finstate_all()은 DART가 status!='000'을
+                # 반환해도(쿼터소진 포함) 예외를 던지거나 에러값을 리턴하지 않고 그냥
+                # `print(jo)` 후 빈 DataFrame을 반환한다(venv/.../OpenDartReader/
+                # dart_finstate.py:64-69) — 그 결과 아래 is_quota_error(result)가 빈
+                # DataFrame을 보고도 False를 반환해(DataFrame은 무조건 False 처리) 로테이션이
+                # 전혀 발동하지 않고 있었다(실측: KEY1 쿼터소진 상태에서 계속 KEY1만 재시도).
+                # stdout으로 인쇄되는 원본 에러 JSON을 캡처해 그 텍스트에서 쿼터 마커를
+                # 찾아내는 방식으로 우회 탐지한다.
+                import io, contextlib
+                _buf = io.StringIO()
+                with contextlib.redirect_stdout(_buf):
+                    result = getattr(reader, method_name)(*args, **kwargs)
+                _captured = _buf.getvalue()
+                if _captured and is_quota_error(_captured):
+                    self._exhausted.add(idx)
+                    logger.warning("[DART] %s quota exhausted (stdout capture); trying next key", masked_key_label(idx, self.keys[idx]))
+                    continue
                 if is_quota_error(result):
                     self._exhausted.add(idx)
                     logger.warning("[DART] %s quota exhausted; trying next key", masked_key_label(idx, self.keys[idx]))

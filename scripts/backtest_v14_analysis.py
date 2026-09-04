@@ -22,9 +22,9 @@ from collections import defaultdict, deque
 from datetime import date, timedelta
 from typing import Any
 
-DB = "/Applications/stock_dashboard/stock.db"
-CFG = "/Applications/stock_dashboard/config/v14_meta_config.json"
-WGT = "/Applications/stock_dashboard/config/meta_strategy_weights.json"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+CFG = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/v14_meta_config.json"
+WGT = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/meta_strategy_weights.json"
 
 
 def d(s: str) -> date:
@@ -546,7 +546,7 @@ def main():
 """)
 
     # JSON 저장
-    out_path = "/Applications/stock_dashboard/scratch/v14_analysis_result.json"
+    out_path = "/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/v14_analysis_result.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     print(f"\n결과 저장: {out_path}")

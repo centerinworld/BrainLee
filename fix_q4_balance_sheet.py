@@ -16,7 +16,7 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 SLEEP = 2.5
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",

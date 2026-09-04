@@ -308,9 +308,9 @@ def run(config_path: str, db_path: str, base_weight_path: str, out_path: str) ->
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="/Applications/stock_dashboard/config/v14_meta_config.json")
-    ap.add_argument("--db", default="/Applications/stock_dashboard/stock.db")
-    ap.add_argument("--base-weights", default="/Applications/stock_dashboard/config/meta_strategy_weights.json")
-    ap.add_argument("--out", default="/Applications/stock_dashboard/scratch/v14_continuous_result_2026-05-19.json")
+    ap.add_argument("--config", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/config/v14_meta_config.json")
+    ap.add_argument("--db", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+    ap.add_argument("--base-weights", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/config/meta_strategy_weights.json")
+    ap.add_argument("--out", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/v14_continuous_result_2026-05-19.json")
     args = ap.parse_args()
     run(args.config, args.db, args.base_weights, args.out)

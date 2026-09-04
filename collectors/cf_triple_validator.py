@@ -36,11 +36,11 @@ from typing import Optional
 
 import requests
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 # ── Seibro 설정 (validate_cf_seibro.py 와 동일) ────────────────────────
 SEIBRO_BASE = "https://seibro.or.kr"
@@ -74,9 +74,17 @@ def _conn() -> sqlite3.Connection:
 
 
 def get_recent_dart_rows(conn: sqlite3.Connection, days: int, codes: list[str]) -> list[dict]:
-    """최근 N일 내 수집된 연간 DART CF 행 반환."""
+    """최근 N일 내 수집된 연간 DART CF 행 반환.
+
+    2026-08-24: datetime('now', '-' || ? || ' days')는 오프셋이 파라미터로 바인딩돼
+    db_compat의 정적 정규식 번역이 못 잡는 형태라 PostgreSQL 라우팅 하에서
+    "function datetime(unknown, text) does not exist"로 매일 05:30 CF3중검증이
+    실패하고 있었음. cutoff를 Python에서 미리 계산해 평범한 문자열 비교로 교체.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    cutoff = (_dt.now() - _td(days=int(days))).strftime("%Y-%m-%d %H:%M:%S")
     code_filter = ""
-    params: list = [days]
+    params: list = [cutoff]
     if codes:
         placeholders = ",".join("?" * len(codes))
         code_filter = f"AND stock_code IN ({placeholders})"
@@ -87,7 +95,7 @@ def get_recent_dart_rows(conn: sqlite3.Connection, days: int, codes: list[str]) 
         FROM cash_flow_data
         WHERE is_annual = 1
           AND data_source LIKE 'dart%'
-          AND created_at >= datetime('now', '-' || ? || ' days')
+          AND created_at >= ?
           {code_filter}
         ORDER BY stock_code, year
     """, params).fetchall()

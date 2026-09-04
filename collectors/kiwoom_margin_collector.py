@@ -21,7 +21,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import config
-from db_utils import STOCK_DB_PATH
+from db_utils import connect_stock_db
 from collectors.kiwoom_collector import KiwoomCollector
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ API_CANDIDATES = [
 
 
 def _ensure_table() -> None:
-    conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+    conn = connect_stock_db(timeout=30)
     try:
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute(
@@ -73,12 +73,12 @@ def _ensure_table() -> None:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_kiwoom_margin_date ON kiwoom_margin_daily(base_date DESC)")
-        # 2026-08-23: credit_ratio 컬럼 소급 추가 (기존 테이블에는 없었음 — 아래 버그 참조)
-        try:
+        # Existing deployments may predate this column; only migrate when absent.
+        margin_columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(kiwoom_margin_daily)").fetchall()
+        }
+        if "credit_ratio" not in margin_columns:
             conn.execute("ALTER TABLE kiwoom_margin_daily ADD COLUMN credit_ratio REAL")
-        except Exception as e:
-            if "duplicate column" not in str(e).lower() and "already exists" not in str(e).lower():
-                raise
         # 2026-08-23: 레거시 kiwoom_credit_balance 브리지 대상 — collectors/kiwoom_collector.py의
         # 원본 스키마와 동일(그쪽 컬렉터는 더 이상 스케줄러에서 호출되지 않아 죽은 코드가 됐지만
         # 테이블 스키마 정의 자체는 이쪽에도 복사해둬 이 파일만으로도 자기완결적이게 함).
@@ -206,7 +206,7 @@ def collect_kiwoom_margin_daily(limit: int = 300) -> dict:
     if not kc.is_configured():
         return {"ok": False, "reason": "kiwoom_not_configured"}
 
-    conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+    conn = connect_stock_db(timeout=30)
     conn.execute("PRAGMA busy_timeout=30000")
     try:
         rows = conn.execute(
@@ -224,7 +224,7 @@ def collect_kiwoom_margin_daily(limit: int = 300) -> dict:
         conn.close()
 
     today = datetime.now().strftime("%Y%m%d")
-    conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+    conn = connect_stock_db(timeout=30)
     conn.execute("PRAGMA busy_timeout=30000")
     try:
         saved = 0

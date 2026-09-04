@@ -16,7 +16,7 @@
     <string>/Volumes/Realtek_NVME/stock_dashboard/postgresql16/data</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Applications/stock_dashboard</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -33,8 +33,8 @@
     <string>/opt/homebrew/opt/postgresql@16/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>StandardOutPath</key>
-  <string>/Applications/stock_dashboard/logs/postgresql.launchd.out.log</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/postgresql.launchd.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Applications/stock_dashboard/logs/postgresql.launchd.err.log</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/postgresql.launchd.err.log</string>
 </dict>
 </plist>

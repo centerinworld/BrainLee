@@ -1,11 +1,15 @@
 #!/bin/zsh
 # 새벽 3시 자동 데이터 수집 스크립트
 # 실행 대상: DART 재무, 공시, 공공데이터, 주가 전체
-# crontab 등록: 0 3 * * 1-5 /Applications/stock_dashboard/cron_3am.sh >> /Applications/stock_dashboard/cron_3am.log 2>&1
+# crontab 등록: 0 3 * * 1-5 /Volumes/Realtek_NVME/stock_dashboard/runtime/cron_3am.sh >> /Volumes/Realtek_NVME/stock_dashboard/runtime/cron_3am.log 2>&1
 
-PROJECT_ROOT="/Applications/stock_dashboard"
+PROJECT_ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 PYTHON="$PROJECT_ROOT/venv/bin/python3"
 LOG_DATE=$(date '+%Y-%m-%d %H:%M:%S')
+
+# cron은 launchd와 별도 환경이라 PYTHONPATH가 비어 있음 — stock.db를 여는
+# 하위 파이썬 프로세스가 PostgreSQL로 라우팅되도록 명시적으로 export한다.
+export PYTHONPATH="$PROJECT_ROOT/runtime_pg_bootstrap${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "===== [$LOG_DATE] 새벽 3시 배치 시작 ====="
 

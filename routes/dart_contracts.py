@@ -20,7 +20,7 @@ from fastapi import APIRouter
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 
 def _db():
@@ -174,7 +174,7 @@ def get_contract_detail(rcept_no: str):
         # 수출 데이터 연계 (HS무역)
         try:
             hs_conn = sqlite3.connect(
-                "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db",
+                "/Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab/data/hs_trade_lab.db",
                 timeout=10
             )
             hs_conn.row_factory = sqlite3.Row

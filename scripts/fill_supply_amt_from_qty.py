@@ -18,7 +18,7 @@ import sqlite3
 import time
 from datetime import datetime
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 def run(year_filter=None, dry_run=False):
     conn = sqlite3.connect(DB_PATH, timeout=60)

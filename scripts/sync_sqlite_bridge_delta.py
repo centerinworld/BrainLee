@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from db_utils import STOCK_DB_PATH  # noqa: E402
+from db_compat import _ORIGINAL_SQLITE_CONNECT  # noqa: E402
 from scripts.migrate_operational_postgres import POSTGRES_URL, convert  # noqa: E402
 
 DEFAULT_TABLES = ("backtest_run_specs", "backtest_runs")
@@ -150,7 +151,9 @@ def main() -> None:
     parser.add_argument("--chunk-size", type=int, default=1000)
     args = parser.parse_args()
 
-    sqlite_conn = sqlite3.connect(str(STOCK_DB_PATH))
+    # The global PostgreSQL router intentionally replaces sqlite3.connect for
+    # legacy application jobs. This bridge must open the legacy file directly.
+    sqlite_conn = _ORIGINAL_SQLITE_CONNECT(str(STOCK_DB_PATH))
     pg_conn = psycopg.connect(POSTGRES_URL)
     try:
         for table in args.tables:

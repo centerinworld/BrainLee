@@ -17,9 +17,9 @@ from collections import defaultdict, deque
 from datetime import date, timedelta
 from typing import Any
 
-DB = "/Applications/stock_dashboard/stock.db"
-CFG = "/Applications/stock_dashboard/config/v14_meta_config.json"
-WGT = "/Applications/stock_dashboard/config/meta_strategy_weights.json"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+CFG = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/v14_meta_config.json"
+WGT = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/meta_strategy_weights.json"
 
 # ─── 6번째 소스 윈도우용 AUDIT/rotation run 매핑 ──────────────────────────
 # 2025-06-01~2025-12-31 구간에 대응하는 최신 run 이름 (전략별)
@@ -580,7 +580,7 @@ def main():
 """)
 
     # JSON 저장
-    out = "/Applications/stock_dashboard/scratch/v15_extended_result.json"
+    out = "/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/v15_extended_result.json"
     with open(out, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2, default=str)
     print(f"  결과 저장: {out}")

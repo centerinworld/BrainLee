@@ -30,8 +30,8 @@ from typing import Optional
 import requests
 from bs4 import BeautifulSoup
 
-DB_PATH  = "/Applications/stock_dashboard/stock.db"
-LOG_PATH = "/Applications/stock_dashboard/logs/financial_integrity.log"
+DB_PATH  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+LOG_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/financial_integrity.log"
 SLEEP_FNGUIDE = 2.5
 
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
@@ -103,13 +103,19 @@ def recent_quarters(n: int = 8) -> list[tuple[int, int]]:
 def latest_reported_quarter() -> tuple[int, int]:
     """현재 시점에서 공시 완료된 최신 분기."""
     today = date.today()
-    y, m = today.year, today.month
+    y = today.year
     # 공시 마감: Q4=3/31, Q1=5/15, Q2=8/14, Q3=11/14
-    # 여유 2주 추가
-    if m >= 6:   return y, 1
-    if m >= 10:  return y, 2
-    if m >= 12:  return y, 3
-    return y - 1, 4
+    # 이 함수는 마감 1주 뒤 실행되는 분기 잡에서도 사용되므로 월 단위
+    # 분기 추정 대신 실제 마감일을 순서대로 비교한다.
+    if today >= date(y, 11, 14):
+        return y, 3
+    if today >= date(y, 8, 14):
+        return y, 2
+    if today >= date(y, 5, 15):
+        return y, 1
+    if today >= date(y, 3, 31):
+        return y - 1, 4
+    return y - 1, 3
 
 
 # ─── 무결점 점검 ──────────────────────────────────────────────────────────────
@@ -432,7 +438,7 @@ def dart_refill_cashflow(years: int = 5) -> bool:
             ["venv/bin/python3", "collect_dart_cashflow_batch.py",
              "--fill-missing", "--years", str(years)],
             capture_output=True, text=True, timeout=14400,
-            cwd="/Applications/stock_dashboard",
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
         )
         logger.info(f"[DART CF] 배치 완료 (rc={result.returncode})")
         return result.returncode == 0
@@ -448,7 +454,7 @@ def dart_refill_cashflow_depr() -> bool:
             ["venv/bin/python3", "collect_dart_cashflow_batch.py",
              "--refill-depr", "--years", "5"],
             capture_output=True, text=True, timeout=7200,
-            cwd="/Applications/stock_dashboard",
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
         )
         logger.info(f"[DART CF depr] 완료 (rc={result.returncode})")
         return result.returncode == 0
@@ -741,7 +747,7 @@ def fnguide_fill_depreciation_annual(max_stocks: int = 9999) -> int:
     result = subprocess.run(
         ["venv/bin/python3", "fix_financial_gaps.py", "--step", "dep"],
         capture_output=True, text=True, timeout=7200,
-        cwd="/Applications/stock_dashboard",
+        cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
     )
     logger.info(f"[FnGuide 연간감가] 완료 (rc={result.returncode}, 대상 {len(codes)}종목)")
     return len(codes)
@@ -769,14 +775,8 @@ def send_telegram_report(report: IntegrityReport, trigger: str = "자동"):
             if len(report.gaps) > 5:
                 msg += f"  ...외 {len(report.gaps)-5}종목\n"
 
-        token = getattr(_cfg, "TELEGRAM_BOT_TOKEN", None)
-        chat_id = getattr(_cfg, "TELEGRAM_CHAT_ID", None)
-        if token and chat_id:
-            httpx.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": msg, "parse_mode": ""},
-                timeout=10,
-            )
+        from notifier import send as send_telegram
+        send_telegram(msg, key=f"financial_integrity_{trigger}_{datetime.now().date().isoformat()}")
     except Exception as e:
         logger.warning(f"[Telegram] 리포트 전송 오류: {e}")
 

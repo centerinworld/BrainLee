@@ -15,12 +15,12 @@ API 문서(오픈API 활용자가이드_금융위원회_주식대차정보) 확�
   short_foreign_trade   ← getNatiAndForeLendAndBorrTrad_V2   (이미 2008~)
 
 실행:
-  python3 /Applications/stock_dashboard/collect_short_5years.py            # 전체(rank+svc+sector)
-  python3 /Applications/stock_dashboard/collect_short_5years.py --mode test
-  python3 /Applications/stock_dashboard/collect_short_5years.py --mode rank
-  python3 /Applications/stock_dashboard/collect_short_5years.py --mode svc
-  python3 /Applications/stock_dashboard/collect_short_5years.py --mode sector
-  python3 /Applications/stock_dashboard/collect_short_5years.py --start 20210101 --end 20231231
+  python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_short_5years.py            # 전체(rank+svc+sector)
+  python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_short_5years.py --mode test
+  python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_short_5years.py --mode rank
+  python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_short_5years.py --mode svc
+  python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_short_5years.py --mode sector
+  python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_short_5years.py --start 20210101 --end 20231231
 
 예상 소요: rank+svc 5년치 ~1,250일 × ~2초/일 ≈ 약 40~60분
 """
@@ -449,6 +449,14 @@ async def collect_all_for_date(client: httpx.AsyncClient, bas_dt: str, modes: se
             saved["short_sell_daily"]   = save_svc(result)
         elif name == "sector":
             saved["short_sector_daily"] = save_sector(result)
+    if saved.get("short_rank_daily", 0) > 0 and saved.get("short_sell_daily", 0) > 0:
+        try:
+            from scripts.backfill_short_balance_amount_pct import backfill as _backfill_short_amount_pct
+            repair = _backfill_short_amount_pct(start=bas_dt, end=bas_dt)
+            saved["borrow_bal_amt_filled"] = repair.get("amt_added", 0)
+            saved["borrow_bal_pct_filled"] = repair.get("pct_added", 0)
+        except Exception as exc:
+            log.warning(f"  [{bas_dt}] 대차잔고 금액/비율 보강 실패: {exc}")
     return saved
 
 

@@ -16,16 +16,17 @@ import requests
 from telethon import TelegramClient
 from telethon.tl.functions.messages import CheckChatInviteRequest
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 import config as cfg
+from services.gemini import generate_text, is_configured
 
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-SESSION = os.getenv("TELEGRAM_SESSION_PATH", "/Applications/stock_dashboard/telegram_session_insight")
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+SESSION = os.getenv("TELEGRAM_SESSION_PATH", "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_session_insight")
 INVITE_LINK = "https://t.me/+Sx6sQ6wCwzE5MWM1"
 
 
-def _load_env_file(path: str = "/Applications/stock_dashboard/.env") -> None:
+def _load_env_file(path: str = "/Volumes/Realtek_NVME/stock_dashboard/runtime/.env") -> None:
     p = path
     if not os.path.exists(p):
         return
@@ -49,14 +50,11 @@ class PostRow:
     content_md: str
 
 
-def _deepseek_summarize(stock_name: str, stock_code: str, channel_title: str, msgs: List[Tuple[int, str, str]]) -> str:
-    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
-    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
-    if not api_key:
+def _openai_mini_summarize(stock_name: str, stock_code: str, channel_title: str, msgs: List[Tuple[int, str, str]]) -> str:
+    if not is_configured():
         return (
             f"## 채널 Key Insight ({channel_title})\n\n"
-            "- DEEPSEEK_API_KEY가 없어 자동 생성이 제한되었습니다.\n"
+            "- GEMINI_API_KEY가 없어 자동 생성이 제한되었습니다.\n"
             "- 텔레그램 메시지 수집은 되었으나 요약 생성은 생략되었습니다.\n"
         )
 
@@ -87,26 +85,17 @@ def _deepseek_summarize(stock_name: str, stock_code: str, channel_title: str, ms
 {msg_block}
 """
     try:
-        res = requests.post(
-            base_url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "당신은 숫자/팩트 기반 주식 리서치 애널리스트다."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-            },
+        return generate_text(
+            prompt,
+            system_instruction="당신은 숫자/팩트 기반 주식 리서치 애널리스트다.",
+            temperature=0.2,
+            max_output_tokens=1800,
             timeout=90,
         )
-        res.raise_for_status()
-        data = res.json()
-        return data["choices"][0]["message"]["content"].strip()
     except Exception as e:
         return (
             f"## 채널 Key Insight ({channel_title})\n\n"
-            f"- DeepSeek 요약 생성 실패: {e}\n"
+            f"- Gemini Flash 요약 생성 실패: {e}\n"
             "- 재시도 필요\n"
         )
 
@@ -232,7 +221,7 @@ async def run(target_stock: str = "") -> None:
         msgs = await _collect_stock_messages(channel, p.stock_name, p.stock_code, client)
         if not msgs:
             continue
-        insight_md = _deepseek_summarize(p.stock_name, p.stock_code, channel_title, msgs)
+        insight_md = _openai_mini_summarize(p.stock_name, p.stock_code, channel_title, msgs)
         merged = _sanitize_insight_text(_merge_content(p.content_md, insight_md))
         updated_ok = False
         for _ in range(8):

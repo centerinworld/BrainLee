@@ -1,12 +1,17 @@
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.sqlite import insert
 import models, schemas
-import sqlite3
+from config import IS_POSTGRES
+from db_utils import connect_stock_db
 from data_write_gate import (
     ensure_canonical_schema,
     gate_financial_row,
     upsert_canonical_financial,
 )
+
+if IS_POSTGRES:
+    from sqlalchemy.dialects.postgresql import insert
+else:
+    from sqlalchemy.dialects.sqlite import insert
 
 _FINANCIAL_MODEL_COLUMNS = {
     c.key for c in models.FinancialData.__table__.columns
@@ -149,25 +154,32 @@ def upsert_financial_data(db: Session, financial: schemas.FinancialIngest):
             "roe": getattr(db_financial, "roe", None),
             "data_source": getattr(db_financial, "data_source", None),
         }
-        cconn = sqlite3.connect("/Applications/stock_dashboard/stock.db")
+        cconn = connect_stock_db(timeout=30)
         ensure_canonical_schema(cconn)
         ok, fixed, _ = gate_financial_row(cconn, payload)
         cconn.commit()
         cconn.close()
-        if ok:
-            # 게이트 보정값 반영
-            for k, v in fixed.items():
-                if hasattr(db_financial, k):
-                    setattr(db_financial, k, v)
+        if not ok:
+            # The raw and canonical tables must not diverge: reject the write
+            # before SQLAlchemy commits an unsafe financial statement row.
+            db.rollback()
+            raise ValueError(f"재무 데이터 검증 실패: {_}")
+        # 게이트 보정값 반영
+        for k, v in fixed.items():
+            if hasattr(db_financial, k):
+                setattr(db_financial, k, v)
+    except ValueError:
+        raise
     except Exception:
-        pass
+        # Gate telemetry must not make a valid primary write unavailable.
+        logger.exception("재무 데이터 검증 게이트 실행 오류")
 
     db.commit()
     db.refresh(db_financial)
 
     # canonical 동기화
     try:
-        cconn = sqlite3.connect("/Applications/stock_dashboard/stock.db")
+        cconn = connect_stock_db(timeout=30)
         ensure_canonical_schema(cconn)
         upsert_canonical_financial(cconn, {
             "stock_code": db_financial.stock_code,

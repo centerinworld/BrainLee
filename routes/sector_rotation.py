@@ -13,8 +13,9 @@ router = APIRouter()
 DB = "stock.db"
 
 def _conn():
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(DB, timeout=30)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA busy_timeout=30000")
     return c
 
 
@@ -293,8 +294,9 @@ def _get_sector_breadth(conn, codes, as_of):
 def _get_sector_investor_flow(conn, codes, as_of, days=90):
     """섹터 3개월 기관+외국인 순매수 (억원) — price_history 기반
 
-    kiwoom_investor_daily는 매수금액(buy-only) 버그(trde_tp='1')로 순매수 보완 불가.
-    (CLAUDE.md 알려진이슈 참조 — 기존 4.5M행이 모두 매수금액, 순매수 아님)
+    kiwoom_investor_daily는 매수금액(buy-only) 버그(trde_tp='1')로 순매수 보완 불가했음
+    (2026-07-21 trde_tp='0'으로 수정+재수집 완료 — 소형주 보완용으로 향후 활용 가능,
+    이 함수는 price_history를 1순위 소스로 유지).
     price_history에 실값이 없는 종목은 0으로 집계됨.
     반환: (frn_순매수합_억원, inst_순매수합_억원)
     """
@@ -516,19 +518,39 @@ def _score_sector(conn, sect_key, sector_info, as_of):
     elif vol_ratio > 1.5: score += 10
     elif vol_ratio > 1.2: score += 5
 
-    # ── 5. RS 보조 (5점) — 후행 지표이므로 최소 가중치만 ────────────────
+    # ── 5. RS 보조/위험감점 — 가격 확인 없이는 BUY로 승격하지 않음 ───────
     kospi_4w = _get_price_returns(conn, ['^KS11'],
         (dt - timedelta(weeks=4)).strftime("%Y-%m-%d"), as_of) or 0
+    kospi_12w = _get_price_returns(conn, ['^KS11'],
+        (dt - timedelta(weeks=12)).strftime("%Y-%m-%d"), as_of) or 0
     rs4 = _get_price_returns(conn, codes,
         (dt - timedelta(weeks=4)).strftime("%Y-%m-%d"), as_of)
+    rs12 = _get_price_returns(conn, codes,
+        (dt - timedelta(weeks=12)).strftime("%Y-%m-%d"), as_of)
     if rs4 is not None:
         rs4_ex = rs4 - kospi_4w
         detail["rs4w_excess"] = round(rs4_ex, 1)
         if rs4_ex > 10:   score += 5
         elif rs4_ex > 0:  score += 2
+        elif rs4_ex < -5: score -= 5
+        elif rs4_ex < 0:  score -= 2
+    if rs12 is not None:
+        rs12_ex = rs12 - kospi_12w
+        detail["rs12w_excess"] = round(rs12_ex, 1)
+        if rs12_ex < -20:   score -= 15
+        elif rs12_ex < -10: score -= 10
+        elif rs12_ex < -3:  score -= 5
 
-    # 신호 등급 (BUY 기준 55점으로 완화 — 선행 신호는 가격 전에 오므로)
-    if score >= 55:
+    rs4_risk = detail.get("rs4w_excess")
+    rs12_risk = detail.get("rs12w_excess")
+
+    # 신호 등급: 선행지표가 좋아도 4주/12주 가격 약세가 겹치면 BUY 금지.
+    if (
+        rs4_risk is not None and rs4_risk < 0
+        and rs12_risk is not None and rs12_risk < -20
+    ):
+        signal = "NEUTRAL"
+    elif score >= 55:
         signal = "BUY"
     elif score >= 35:
         signal = "WATCH"
@@ -547,11 +569,23 @@ def _score_sector(conn, sect_key, sector_info, as_of):
 
 
 def _last_trade_date(conn, as_of=None):
-    """데이터가 있는 마지막 거래일."""
+    """전종목 가격이 충분히 적재된 마지막 거래일.
+
+    장중/부분 백필 행이 섞이면 일부 섹터만 당일가를 쓰게 되어 RS와 진입판정이
+    왜곡된다. 최소 2,000종목 이상 유효 종가가 있는 날짜만 기준일로 인정한다.
+    """
     if as_of is None:
         as_of = datetime.now().strftime("%Y-%m-%d")
     row = conn.execute(
-        "SELECT MAX(date) FROM price_history WHERE date <= ? AND close > 0",
+        """
+        SELECT date
+        FROM price_history
+        WHERE date <= ? AND close > 0
+        GROUP BY date
+        HAVING COUNT(DISTINCT stock_code) >= 2000
+        ORDER BY date DESC
+        LIMIT 1
+        """,
         (as_of,)
     ).fetchone()
     return row[0][:10] if row and row[0] else as_of
@@ -584,7 +618,12 @@ def _rotation_phase_for_sector(conn, codes, as_of):
 
 def _entry_reasons(score_row, rotation):
     d = score_row.get("detail") or {}
+    risks = []
     reasons = []
+    if rotation.get("rs12w") is not None and rotation["rs12w"] <= -5:
+        risks.append(f"가격확인 필요: 12주 RS {rotation['rs12w']:.1f}%")
+    if rotation.get("rs4w") is not None and rotation["rs4w"] < 0:
+        risks.append(f"단기 약세: 4주 RS {rotation['rs4w']:.1f}%")
     frn = d.get("frn_3m_억") or 0
     inst = d.get("inst_3m_억") or 0
     if frn >= 500:
@@ -603,16 +642,34 @@ def _entry_reasons(score_row, rotation):
         reasons.append(f"4주 RS +{rotation['rs4w']:.1f}%")
     if not reasons:
         reasons.append("선행 신호 부족")
-    return reasons[:4]
+    return (risks + reasons)[:4]
 
 
 def _entry_stage(score_row, rotation, leaders):
     score = score_row.get("score") or 0
     phase = rotation.get("phase")
+    rs4 = rotation.get("rs4w")
+    rs12 = rotation.get("rs12w")
     top_leader = max((p.get("surge_score") or 0 for p in leaders), default=0)
-    if score >= 65 and phase in ("Improving", "Leading"):
+
+    short_weak = rs4 is not None and rs4 < 0
+    medium_weak = rs12 is not None and rs12 < -5
+    deeply_weak = rs12 is not None and rs12 < -20
+
+    if deeply_weak and short_weak:
+        return {"stage": "AVOID", "label": "회피", "priority": 5}
+    if medium_weak and short_weak:
+        return {"stage": "EARLY_WATCH", "label": "초기 관찰", "priority": 2}
+
+    if score >= 65 and phase == "Leading":
         return {"stage": "ENTRY_NOW", "label": "진입", "priority": 1}
-    if score >= 55 and (phase in ("Improving", "Leading") or top_leader >= 45):
+    if score >= 65 and phase == "Improving" and (rs4 or 0) >= 3 and (rs12 is None or rs12 > -8):
+        return {"stage": "ENTRY_NOW", "label": "진입", "priority": 1}
+    if score >= 55 and phase == "Leading":
+        return {"stage": "ENTRY_NOW", "label": "진입", "priority": 1}
+    if score >= 55 and phase == "Improving" and (rs4 or 0) >= 3 and (rs12 is None or rs12 > -8):
+        return {"stage": "ENTRY_NOW", "label": "진입", "priority": 1}
+    if score >= 60 and top_leader >= 70 and phase in ("Improving", "Leading") and not medium_weak:
         return {"stage": "ENTRY_NOW", "label": "진입", "priority": 1}
     if score >= 45 or phase == "Improving":
         return {"stage": "EARLY_WATCH", "label": "초기 관찰", "priority": 2}
@@ -666,7 +723,8 @@ def _leader_picks_for_sector(conn, sector_key, as_of, top_n=3):
             (code, d_3m, as_of)
         ).fetchone()
         prices_1y = conn.execute(
-            "SELECT high, low FROM price_history WHERE stock_code=? AND date>=? AND date<=? AND close>0",
+            "SELECT high, low FROM price_history WHERE stock_code=? AND date>=? AND date<=? "
+            "AND close>0 AND high IS NOT NULL AND low IS NOT NULL",
             (code, d_1y, as_of)
         ).fetchall()
         cur_price = float(p_now[0]) if p_now else 0
@@ -683,11 +741,21 @@ def _leader_picks_for_sector(conn, sector_key, as_of, top_n=3):
         op_yoy = None
         if latest_year:
             op_cur = conn.execute(
-                "SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1 LIMIT 1",
+                """SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1
+                   ORDER BY (CASE WHEN report_type='CFS' THEN 0 ELSE 1 END),
+                            (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
+                            (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
+                            id DESC
+                   LIMIT 1""",
                 (code, latest_year)
             ).fetchone()
             op_prv = conn.execute(
-                "SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1 LIMIT 1",
+                """SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1
+                   ORDER BY (CASE WHEN report_type='CFS' THEN 0 ELSE 1 END),
+                            (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
+                            (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
+                            id DESC
+                   LIMIT 1""",
                 (code, latest_year - 1)
             ).fetchone()
             if op_cur and op_prv and op_prv[0] and op_prv[0] != 0:
@@ -1023,7 +1091,11 @@ def get_sector_top_picks(sector_key: str, top_n: int = 8):
             # ── 가격 데이터 ──
             p_now = conn.execute("SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1", (code,)).fetchone()
             p_3m = conn.execute("SELECT close FROM price_history WHERE stock_code=? AND date>=? AND close>0 ORDER BY date LIMIT 1", (code, d_3m)).fetchone()
-            prices_1y = conn.execute("SELECT high, low FROM price_history WHERE stock_code=? AND date>=? AND close>0", (code, d_1y)).fetchall()
+            prices_1y = conn.execute(
+                "SELECT high, low FROM price_history WHERE stock_code=? AND date>=? "
+                "AND close>0 AND high IS NOT NULL AND low IS NOT NULL",
+                (code, d_1y)
+            ).fetchall()
 
             cur_price = float(p_now[0]) if p_now else 0
             ret_3m = (cur_price / float(p_3m[0]) - 1) * 100 if p_3m and cur_price else None
@@ -1038,8 +1110,12 @@ def get_sector_top_picks(sector_key: str, top_n: int = 8):
             ).fetchone()[0]
             op_yoy = None
             if latest_year:
-                op_cur = conn.execute("SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1 LIMIT 1", (code, latest_year)).fetchone()
-                op_prv = conn.execute("SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1 LIMIT 1", (code, latest_year-1)).fetchone()
+                _op_order = """ORDER BY (CASE WHEN report_type='CFS' THEN 0 ELSE 1 END),
+                                        (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
+                                        (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
+                                        id DESC LIMIT 1"""
+                op_cur = conn.execute(f"SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1 {_op_order}", (code, latest_year)).fetchone()
+                op_prv = conn.execute(f"SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1 {_op_order}", (code, latest_year-1)).fetchone()
                 if op_cur and op_prv and op_prv[0] and op_prv[0] != 0:
                     op_yoy = (float(op_cur[0]) - float(op_prv[0])) / abs(float(op_prv[0])) * 100
 

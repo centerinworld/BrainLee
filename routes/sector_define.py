@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
-BASE_DIR = "/Applications/stock_dashboard"
+BASE_DIR = "/Volumes/Realtek_NVME/stock_dashboard/runtime"
 DB_PATH = os.path.join(BASE_DIR, "stock.db")
 EMP_DB_PATH = os.path.join(BASE_DIR, "employment_monitor/employment.db")
 TRADE_DB_PATH = os.path.join(BASE_DIR, "hs_trade_lab/data/hs_trade_lab.db")
@@ -56,7 +56,7 @@ class PostDetail(BaseModel):
     stocks: List[StockInfo]
 
 def get_db_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -241,7 +241,7 @@ def get_special_filtered_stocks(
     - 조건3: 최근 emp_months 개월간 인원 증가
     - 조건4: 최근 1개월 수출액 증가
     """
-    conn_stock = sqlite3.connect(DB_PATH)
+    conn_stock = sqlite3.connect(DB_PATH, timeout=30)
     conn_stock.row_factory = sqlite3.Row
     
     try:

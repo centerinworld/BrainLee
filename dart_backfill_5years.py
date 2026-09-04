@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """DART 수주공시 5년치 전체 백필 스크립트 (2021~2024-06)"""
 import sys, os, logging
-sys.path.insert(0, '/Applications/stock_dashboard')
-os.chdir('/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
+os.chdir('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 log = logging.getLogger(__name__)
 

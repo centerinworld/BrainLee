@@ -14,11 +14,11 @@ from bs4 import BeautifulSoup
 
 import sys
 from pathlib import Path as _P
-sys.path.insert(0, str(_P("/Applications/stock_dashboard")))
+sys.path.insert(0, str(_P("/Volumes/Realtek_NVME/stock_dashboard/runtime")))
 from scripts.validate_financial_multi_source import fetch_fnguide_annual_fs, fetch_fnguide_eps_bps
 
-DB_PATH = Path('/Applications/stock_dashboard/stock.db')
-OUT_DIR = Path('/Applications/stock_dashboard/scratch')
+DB_PATH = Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db')
+OUT_DIR = Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch')
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 HEADERS = {

@@ -17,7 +17,7 @@ from __future__ import annotations
 import sqlite3, json, uuid
 from datetime import date, timedelta
 
-DB = "/Applications/stock_dashboard/stock.db"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 TRAILING_STOP = -0.20   # -20%
 MA_WINDOW     = 60      # MA60 (더 안정적, 2022 하락장 진입 방지)

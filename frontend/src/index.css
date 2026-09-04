@@ -129,16 +129,66 @@ body {
   z-index: 100;
 }
 
-/* ── 전역 sticky 테이블 헤더 ──────────────────────────────────────
-   메인 스크롤 영역(#main-scroll) 안의 모든 thead th 에 자동 적용.
-   개별 컴포넌트의 인라인 style(top 값)이 우선순위가 높으므로,
-   MarketRadarView 처럼 top 값이 다른 경우는 인라인 스타일로 덮어씀. */
-#main-scroll table thead tr th {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: rgba(11, 15, 26, 0.97);
+/* ── 전역 Excel식 테이블 틀 고정 ───────────────────────────────────
+   메인 스크롤 영역(#main-scroll) 안의 표는 첫 행 + 첫 열을 함께 고정한다.
+   페이지별 상단 고정바가 있으면 --sticky-table-top 값으로 보정. */
+#main-scroll table {
+  border-collapse: separate !important;
+  border-spacing: 0;
+}
+
+#main-scroll table thead tr th,
+#main-scroll table thead tr td {
+  position: sticky !important;
+  top: var(--sticky-table-top, 0px) !important;
+  z-index: 80;
+  color: var(--sticky-table-head-color, #dbeafe) !important;
+  background-color: var(--sticky-table-bg, #111827) !important;
+  background-image: var(--sticky-table-head-gradient, linear-gradient(180deg, #1e3a5f 0%, #10243f 100%)) !important;
+  background-clip: padding-box;
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 1px 0 rgba(59, 130, 246, 0.28), 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+
+#main-scroll table tbody tr > :first-child,
+#main-scroll table tfoot tr > :first-child {
+  position: sticky !important;
+  left: var(--sticky-table-left, 0px) !important;
+  z-index: 60;
+  color: var(--sticky-row-title-color, #fcd34d) !important;
+  background-color: var(--sticky-row-title-bg, #0f1220) !important;
+  background-image: var(--sticky-row-title-gradient, linear-gradient(180deg, #201a32 0%, #111827 100%)) !important;
+  background-clip: padding-box;
+  box-shadow: 1px 0 0 rgba(59, 130, 246, 0.22), 10px 0 18px rgba(0, 0, 0, 0.18);
+}
+
+#main-scroll table thead tr > :first-child {
+  left: var(--sticky-table-left, 0px) !important;
+  z-index: 110 !important;
+  color: var(--sticky-corner-color, #67e8f9) !important;
+  background-color: var(--sticky-corner-bg, #172033) !important;
+  background-image: var(--sticky-corner-gradient, linear-gradient(180deg, #164e63 0%, #172033 100%)) !important;
+  box-shadow: 1px 0 0 rgba(59, 130, 246, 0.25), 0 1px 0 rgba(59, 130, 246, 0.3), 10px 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+#main-scroll table thead tr th[style*="left"],
+#main-scroll table thead tr td[style*="left"] {
+  z-index: 110 !important;
+}
+
+/* 독립 스크롤이 필요한 대형 표만 .table-scroll을 명시한다.
+   모든 표를 강제로 스크롤 컨테이너로 만들면 표 위 휠/트랙패드가 본문 스크롤을
+   가로채므로, 일반 리서치 페이지의 표는 문서 흐름을 따라 확장되어야 한다. */
+#main-scroll .table-scroll {
+  max-height: var(--table-scroll-max-height, min(72vh, 760px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+#main-scroll .table-scroll > table {
+  min-width: max-content;
 }
 
 /* ── 모바일 바텀 내비게이션 (S25+ 최적화) ─────────────────────── */
@@ -229,4 +279,3 @@ body {
     border-radius: 10px;
   }
 }
-

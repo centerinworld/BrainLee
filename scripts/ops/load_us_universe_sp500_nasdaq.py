@@ -10,7 +10,7 @@ from pathlib import Path
 
 import requests
 
-DB = Path('/Applications/stock_dashboard/stock.db')
+DB = Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db')
 UA = 'StockDashboard AdminContact admin@example.com'
 HEADERS = {
     'User-Agent': UA,
@@ -158,7 +158,7 @@ def main() -> int:
             'db_total': total,
             'db_by_index_name': {r[0]: r[1] for r in counts},
         }
-        out = Path('/Applications/stock_dashboard/scratch') / f"us_universe_load_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        out = Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch') / f"us_universe_load_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
         print(str(out))
         print(json.dumps(payload, ensure_ascii=False))

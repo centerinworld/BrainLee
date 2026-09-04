@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /Applications/stock_dashboard
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime
 
-PY="/Applications/stock_dashboard/venv/bin/python3"
-LOG="/Applications/stock_dashboard/logs/backfill_kiwoom_credit_foreign.screen.log"
+PY="/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3"
+LOG="/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/backfill_kiwoom_credit_foreign.screen.log"
 
 "$PY" -u - <<'PY' >> "$LOG" 2>&1
 import json

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-ROOT="/Applications/stock_dashboard"
+ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 PY="$ROOT/venv/bin/python"
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="$ROOT/run/dart_2020_backfill_$RUN_ID"

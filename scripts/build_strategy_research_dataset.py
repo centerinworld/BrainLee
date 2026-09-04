@@ -11,18 +11,18 @@ from __future__ import annotations
 
 import json
 import math
-import sqlite3
+import re
+import sys
 from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
+from sqlalchemy import text
 
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-OUTPUT_JSON = "/Applications/stock_dashboard/research_outputs/strategy_research_summary.json"
+OUTPUT_JSON = "/Volumes/Realtek_NVME/stock_dashboard/runtime/research_outputs/strategy_research_summary.json"
 SNAPSHOT_TABLE = "strategy_feature_snapshot"
 
 FEATURE_COLUMNS = [
@@ -56,13 +56,17 @@ class LogisticModel:
         return 1.0 / (1.0 + np.exp(-z))
 
 
-def _connect() -> sqlite3.Connection:
-    return sqlite3.connect(DB_PATH, timeout=120)
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from database import engine
 
 
-def _ensure_table(conn: sqlite3.Connection) -> None:
-    conn.execute(f"""
-        CREATE TABLE IF NOT EXISTS {SNAPSHOT_TABLE} (
+def _ensure_table(table_name: str) -> None:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table_name):
+        raise ValueError(f"invalid snapshot table: {table_name}")
+    ddl = f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
             snapshot_date TEXT NOT NULL,
             stock_code TEXT NOT NULL,
             stock_name TEXT,
@@ -84,19 +88,44 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
             heuristic_score REAL,
             forward_max_ret_6m REAL,
             forward_max_ret_12m REAL,
+            forward_max_ret_24m REAL,
+            forward_max_ret_36m REAL,
+            forward_min_ret_24m REAL,
+            pre_peak_min_ret_24m REAL,
+            payoff_to_pain_24m REAL,
+            days_to_3x_24m INTEGER,
+            days_to_5x_24m INTEGER,
+            days_to_10x_24m INTEGER,
             label_2x_6m INTEGER,
             label_3x_6m INTEGER,
             label_2x_12m INTEGER,
             label_3x_12m INTEGER,
+            label_3x_24m INTEGER,
+            label_5x_24m INTEGER,
+            label_10x_24m INTEGER,
+            label_5x_36m INTEGER,
+            label_10x_36m INTEGER,
             model_score_6m REAL,
             model_score_12m REAL,
-            created_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (snapshot_date, stock_code)
         )
-    """)
-    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{SNAPSHOT_TABLE}_date ON {SNAPSHOT_TABLE}(snapshot_date)")
-    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{SNAPSHOT_TABLE}_score12 ON {SNAPSHOT_TABLE}(model_score_12m DESC)")
-    conn.commit()
+    """
+    with engine.begin() as conn:
+        conn.execute(text(ddl))
+        for column, column_type in (
+            ("forward_min_ret_24m", "REAL"),
+            ("pre_peak_min_ret_24m", "REAL"),
+            ("payoff_to_pain_24m", "REAL"),
+            ("days_to_3x_24m", "INTEGER"),
+            ("days_to_5x_24m", "INTEGER"),
+            ("days_to_10x_24m", "INTEGER"),
+        ):
+            conn.execute(text(
+                f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {column_type}"
+            ))
+        conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_date ON {table_name}(snapshot_date)"))
+        conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_score12 ON {table_name}(model_score_12m DESC)"))
 
 
 def _month_end_dates(price: pd.DataFrame, start_date: str) -> list[pd.Timestamp]:
@@ -112,29 +141,41 @@ def _month_end_dates(price: pd.DataFrame, start_date: str) -> list[pd.Timestamp]
 
 
 def _load_source_frames(start_price_date: str = "2018-01-01") -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    conn = _connect()
-    price = pd.read_sql_query("""
+    price = pd.read_sql_query(text("""
         SELECT p.stock_code, p.date, p.close, p.high, p.low, COALESCE(p.volume, 0) AS volume,
                COALESCE(p.inst_net_buy_amt, 0) AS inst_net_buy_amt,
                COALESCE(p.frn_net_buy_amt, 0) AS frn_net_buy_amt,
-               su.stock_name, su.market, su.sector_large, su.market_cap
+               m.stock_name, m.market, su.sector_large
         FROM price_history p
-        JOIN stock_universe su ON su.stock_code = p.stock_code
-        WHERE p.date >= ?
+        JOIN security_master_history m
+          ON m.stock_code = p.stock_code
+         AND p.date >= m.effective_from
+         AND p.date <= COALESCE(m.effective_to, p.date)
+        LEFT JOIN stock_universe su ON su.stock_code = p.stock_code
+        WHERE p.date >= :start_date
           AND p.close > 0
-          AND LENGTH(p.stock_code) = 6
-          AND p.stock_code GLOB '[0-9]*'
-          AND su.market IN ('KOSPI', 'KOSDAQ')
+          AND p.stock_code ~ '^[0-9]{6}$'
+          AND m.market IN ('KOSPI', 'KOSDAQ')
+          AND m.is_tradable=1
+          AND m.is_etf_etn=0
+          AND m.security_type IN ('주권','common_or_unknown')
+          AND m.stock_name NOT LIKE '%스팩%'
         ORDER BY p.stock_code, p.date
-    """, conn, params=(start_price_date,))
-    valuation = pd.read_sql_query("""
+    """), engine, params={"start_date": start_price_date})
+    valuation = pd.read_sql_query(text("""
         SELECT stock_code, period_end, per, pbr, market_cap_억
         FROM valuation_history
         WHERE period_end IS NOT NULL
         ORDER BY stock_code, period_end
-    """, conn)
-    conn.close()
-    return price, valuation, pd.DataFrame()
+    """), engine)
+    shares = pd.read_sql_query(text("""
+        SELECT stock_code, effective_from, effective_to, shares_issued,
+               confidence, quality
+        FROM security_share_history
+        WHERE shares_issued > 0
+        ORDER BY stock_code, effective_from, confidence
+    """), engine)
+    return price, valuation, shares
 
 
 def _heuristic_score(row: pd.Series) -> float:
@@ -258,21 +299,31 @@ def _json_safe(value):
 def build_strategy_research_dataset(
     start_snapshot_date: str = "2020-01-31",
     train_end_date: str = "2024-06-30",
+    snapshot_table: str = SNAPSHOT_TABLE,
 ) -> dict:
-    price, valuation, _ = _load_source_frames()
+    price, valuation, shares = _load_source_frames()
     if price.empty:
         raise RuntimeError("price_history source is empty")
 
     price["date"] = pd.to_datetime(price["date"], format="mixed", errors="coerce")
     valuation["period_end"] = pd.to_datetime(valuation["period_end"], format="mixed", errors="coerce")
+    shares["effective_from"] = pd.to_datetime(shares["effective_from"], format="mixed", errors="coerce")
+    shares["effective_to"] = pd.to_datetime(shares["effective_to"], format="mixed", errors="coerce")
     price = price.dropna(subset=["date"]).copy()
     valuation = valuation.dropna(subset=["period_end"]).copy()
+    shares = shares.dropna(subset=["effective_from", "stock_code", "shares_issued"]).copy()
     month_end_dates = _month_end_dates(price, start_snapshot_date)
 
     records: list[dict] = []
     valuation_groups = {
         code: grp.sort_values("period_end").reset_index(drop=True)
         for code, grp in valuation.groupby("stock_code", sort=False)
+    }
+    share_groups = {
+        code: grp.sort_values(["effective_from", "confidence"]).drop_duplicates(
+            "effective_from", keep="last"
+        ).reset_index(drop=True)
+        for code, grp in shares.groupby("stock_code", sort=False)
     }
 
     for stock_code, grp in price.groupby("stock_code", sort=False):
@@ -299,6 +350,7 @@ def build_strategy_research_dataset(
 
         grp = grp.set_index("date")
         sampled = grp.reindex(month_end_dates, method="ffill")
+        sampled = sampled[sampled.index <= grp.index.max()]
         sampled = sampled.dropna(subset=["close"]).reset_index().rename(
             columns={"index": "snapshot_date", "date": "snapshot_date"}
         )
@@ -317,6 +369,14 @@ def build_strategy_research_dataset(
             val_pbr = val_grp["pbr"].fillna(np.nan).to_list()
             val_per = val_grp["per"].fillna(np.nan).to_list()
             val_mcap = val_grp["market_cap_억"].fillna(np.nan).to_list()
+        share_grp = share_groups.get(stock_code)
+        share_from_dates: list[pd.Timestamp] = []
+        share_to_dates: list[object] = []
+        share_values: list[float] = []
+        if share_grp is not None and not share_grp.empty:
+            share_from_dates = share_grp["effective_from"].to_list()
+            share_to_dates = share_grp["effective_to"].to_list()
+            share_values = share_grp["shares_issued"].astype(float).to_list()
 
         for _, row in sampled.iterrows():
             snapshot_date = pd.Timestamp(row["snapshot_date"])
@@ -326,13 +386,48 @@ def build_strategy_research_dataset(
 
             fwd_6m = None
             fwd_12m = None
+            fwd_24m = None
+            fwd_36m = None
+            min_24m = None
+            pre_peak_min_24m = None
+            payoff_to_pain_24m = None
+            days_to_3x_24m = None
+            days_to_5x_24m = None
+            days_to_10x_24m = None
             if pos + 1 < len(price_values):
                 max_6m = float(np.max(price_values[pos + 1:min(len(price_values), pos + 1 + 126)]))
                 max_12m = float(np.max(price_values[pos + 1:min(len(price_values), pos + 1 + 252)]))
+                # 텐버거는 중위 1.7년 소요 → 12개월 창으로는 구조적으로 관측 불가(2026-08-08)
+                horizon_24m_end = min(len(price_values), pos + 1 + 504)
+                future_24m = price_values[pos + 1:horizon_24m_end]
+                future_24m_dates = price_dates[pos + 1:horizon_24m_end]
+                max_24m = float(np.max(future_24m))
+                max_36m = float(np.max(price_values[pos + 1:min(len(price_values), pos + 1 + 756)]))
                 cur_close = float(row["close"])
                 if cur_close > 0:
                     fwd_6m = max_6m / cur_close - 1.0
                     fwd_12m = max_12m / cur_close - 1.0
+                    fwd_24m = max_24m / cur_close - 1.0
+                    fwd_36m = max_36m / cur_close - 1.0
+                    min_24m = float(np.min(future_24m)) / cur_close - 1.0
+                    peak_pos = int(np.argmax(future_24m))
+                    pre_peak_min_24m = (
+                        float(np.min(future_24m[:peak_pos + 1])) / cur_close - 1.0
+                    )
+                    if pre_peak_min_24m < 0:
+                        payoff_to_pain_24m = fwd_24m / abs(pre_peak_min_24m)
+                    elif fwd_24m >= 0:
+                        payoff_to_pain_24m = 99.0
+
+                    def days_to_multiple(multiple: float) -> int | None:
+                        hits = np.flatnonzero(future_24m >= cur_close * multiple)
+                        if not len(hits):
+                            return None
+                        return int((future_24m_dates[int(hits[0])] - snapshot_date).days)
+
+                    days_to_3x_24m = days_to_multiple(3.0)
+                    days_to_5x_24m = days_to_multiple(5.0)
+                    days_to_10x_24m = days_to_multiple(10.0)
 
             pbr = per = mcap_hist = np.nan
             if val_dates:
@@ -342,7 +437,14 @@ def build_strategy_research_dataset(
                     per = val_per[vpos]
                     mcap_hist = val_mcap[vpos]
 
-            market_cap = mcap_hist if pd.notna(mcap_hist) else row.get("market_cap", np.nan)
+            share_mcap = np.nan
+            if share_from_dates:
+                share_pos = bisect_right(share_from_dates, snapshot_date) - 1
+                if share_pos >= 0:
+                    share_end = share_to_dates[share_pos]
+                    if pd.isna(share_end) or snapshot_date <= share_end:
+                        share_mcap = float(row["close"]) * share_values[share_pos] / 100_000_000.0
+            market_cap = mcap_hist if pd.notna(mcap_hist) else share_mcap
             record = {
                 "snapshot_date": snapshot_date.strftime("%Y-%m-%d"),
                 "stock_code": stock_code,
@@ -364,11 +466,24 @@ def build_strategy_research_dataset(
                 "supply_20d_억": _coerce_record(row.get("supply_20d_억")),
                 "forward_max_ret_6m": _coerce_record(fwd_6m),
                 "forward_max_ret_12m": _coerce_record(fwd_12m),
+                "forward_max_ret_24m": _coerce_record(fwd_24m),
+                "forward_max_ret_36m": _coerce_record(fwd_36m),
+                "forward_min_ret_24m": _coerce_record(min_24m),
+                "pre_peak_min_ret_24m": _coerce_record(pre_peak_min_24m),
+                "payoff_to_pain_24m": _coerce_record(payoff_to_pain_24m),
+                "days_to_3x_24m": days_to_3x_24m,
+                "days_to_5x_24m": days_to_5x_24m,
+                "days_to_10x_24m": days_to_10x_24m,
             }
             record["label_2x_6m"] = int(fwd_6m is not None and fwd_6m >= 1.0)
             record["label_3x_6m"] = int(fwd_6m is not None and fwd_6m >= 2.0)
             record["label_2x_12m"] = int(fwd_12m is not None and fwd_12m >= 1.0)
             record["label_3x_12m"] = int(fwd_12m is not None and fwd_12m >= 2.0)
+            record["label_3x_24m"] = int(fwd_24m is not None and fwd_24m >= 2.0)
+            record["label_5x_24m"] = int(fwd_24m is not None and fwd_24m >= 4.0)
+            record["label_10x_24m"] = int(fwd_24m is not None and fwd_24m >= 9.0)
+            record["label_5x_36m"] = int(fwd_36m is not None and fwd_36m >= 4.0)
+            record["label_10x_36m"] = int(fwd_36m is not None and fwd_36m >= 9.0)
             record["heuristic_score"] = _heuristic_score(pd.Series(record))
             records.append(record)
 
@@ -383,8 +498,16 @@ def build_strategy_research_dataset(
 
     label_12m_ready = frame["snapshot_date"] <= (price["date"].max() - pd.Timedelta(days=365))
     label_6m_ready = frame["snapshot_date"] <= (price["date"].max() - pd.Timedelta(days=183))
+    label_24m_ready = frame["snapshot_date"] <= (price["date"].max() - pd.Timedelta(days=730))
+    label_36m_ready = frame["snapshot_date"] <= (price["date"].max() - pd.Timedelta(days=1095))
     frame.loc[~label_12m_ready, ["forward_max_ret_12m", "label_2x_12m", "label_3x_12m"]] = np.nan
     frame.loc[~label_6m_ready, ["forward_max_ret_6m", "label_2x_6m", "label_3x_6m"]] = np.nan
+    frame.loc[~label_24m_ready, [
+        "forward_max_ret_24m", "forward_min_ret_24m", "pre_peak_min_ret_24m",
+        "payoff_to_pain_24m", "days_to_3x_24m", "days_to_5x_24m",
+        "days_to_10x_24m", "label_3x_24m", "label_5x_24m", "label_10x_24m",
+    ]] = np.nan
+    frame.loc[~label_36m_ready, ["forward_max_ret_36m", "label_5x_36m", "label_10x_36m"]] = np.nan
 
     train_mask = frame["snapshot_date"] <= pd.Timestamp(train_end_date)
     test_mask = label_12m_ready & (frame["snapshot_date"] > pd.Timestamp(train_end_date))
@@ -418,6 +541,8 @@ def build_strategy_research_dataset(
         "generated_at": pd.Timestamp.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "latest_snapshot_date": latest_snapshot_date.strftime("%Y-%m-%d"),
         "dataset": {
+            "snapshot_table": snapshot_table,
+            "point_in_time_universe": True,
             "snapshot_rows": int(len(frame)),
             "snapshot_months": int(frame["snapshot_date"].nunique()),
             "stocks_covered": int(frame["stock_code"].nunique()),
@@ -451,13 +576,10 @@ def build_strategy_research_dataset(
 
     persist = frame.copy()
     persist["snapshot_date"] = persist["snapshot_date"].dt.strftime("%Y-%m-%d")
-    conn = _connect()
-    _ensure_table(conn)
-    conn.execute(f"DELETE FROM {SNAPSHOT_TABLE}")
-    conn.commit()
-    persist.to_sql(SNAPSHOT_TABLE, conn, if_exists="append", index=False)
-    conn.commit()
-    conn.close()
+    _ensure_table(snapshot_table)
+    with engine.begin() as conn:
+        conn.execute(text(f"DELETE FROM {snapshot_table}"))
+        persist.to_sql(snapshot_table, conn, if_exists="append", index=False, chunksize=1000)
 
     safe_report = _json_safe(report)
     Path(OUTPUT_JSON).write_text(json.dumps(safe_report, ensure_ascii=False, indent=2, allow_nan=False))
@@ -465,5 +587,16 @@ def build_strategy_research_dataset(
 
 
 if __name__ == "__main__":
-    out = build_strategy_research_dataset()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--snapshot-table", default=SNAPSHOT_TABLE)
+    parser.add_argument("--start-snapshot-date", default="2020-01-31")
+    parser.add_argument("--train-end-date", default="2024-06-30")
+    args = parser.parse_args()
+    out = build_strategy_research_dataset(
+        start_snapshot_date=args.start_snapshot_date,
+        train_end_date=args.train_end_date,
+        snapshot_table=args.snapshot_table,
+    )
     print(json.dumps(out["dataset"], ensure_ascii=False, indent=2))

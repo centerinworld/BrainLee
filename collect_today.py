@@ -2,7 +2,7 @@
 """
 collect_today.py — 오늘 가격 데이터 즉시 수집 (KRX + Yahoo Finance)
 =====================================================================
-실행: cd /Applications/stock_dashboard && source venv/bin/activate
+실행: cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
       python3 collect_today.py
 
 용도: 서버 다운으로 KRX 18:00 잡이 누락됐을 때 수동 실행
@@ -10,13 +10,13 @@ collect_today.py — 오늘 가격 데이터 즉시 수집 (KRX + Yahoo Finance)
 import sys, os, sqlite3, time, logging
 from datetime import date, datetime, timedelta
 
-sys.path.insert(0, '/Applications/stock_dashboard')
-os.chdir('/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
+os.chdir('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 log = logging.getLogger(__name__)
 
-DB_PATH = '/Applications/stock_dashboard/stock.db'
+DB_PATH = '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 
 def wait_db(max_wait=30):
     """DB 락 해제 대기 (최대 max_wait초)"""

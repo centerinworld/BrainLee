@@ -5,10 +5,10 @@ DartV22Builder 미수집 데이터 배치 수집:
   3. dart_bs_items         — DART fnlttSinglAcntAll BS → 매출채권
 """
 import sqlite3, requests, time, json, sys, os, argparse, re
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 from dart_key_manager import get_dart_api_keys
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 PROGRESS_FILE = "/tmp/collect_ch_extra_progress.json"
 KEYS = get_dart_api_keys()
 _key_idx = [0]

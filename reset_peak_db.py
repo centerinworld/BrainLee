@@ -2,7 +2,7 @@
 reset_peak_db.py — Peak DB 정리 + 재수집
 
 실행:
-  cd /Applications/stock_dashboard && source venv/bin/activate
+  cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
   python3 reset_peak_db.py
 
 처리 내용:
@@ -13,7 +13,7 @@ reset_peak_db.py — Peak DB 정리 + 재수집
 """
 
 import sys, json, os
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 
 import requests
 from bs4 import BeautifulSoup
@@ -50,7 +50,7 @@ s.headers.update({
 })
 
 # 세션 쿠키 로드
-SESSION_FILE = '/Applications/stock_dashboard/stockeasy_session.json'
+SESSION_FILE = '/Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_session.json'
 if os.path.exists(SESSION_FILE):
     with open(SESSION_FILE) as f:
         for k, v in json.load(f).items():

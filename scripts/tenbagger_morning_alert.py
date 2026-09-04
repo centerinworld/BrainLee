@@ -2,12 +2,12 @@
 """
 텐버거 헌터 아침 알림 (07:30)
 
-- tenbagger_results 상위 15종목 + DeepSeek TOP3 심층 분석
+- tenbagger_results 상위 15종목 + OpenAI mini TOP3 심층 분석
 - 텔레그램 발송 + reports/tenbagger_alert_YYYYMMDD.md 저장
 
 실행:
-  /Applications/stock_dashboard/venv/bin/python scripts/tenbagger_morning_alert.py
-  /Applications/stock_dashboard/venv/bin/python scripts/tenbagger_morning_alert.py --top 10 --ai-top 3
+  /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python scripts/tenbagger_morning_alert.py
+  /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python scripts/tenbagger_morning_alert.py --top 10 --ai-top 3
 """
 from __future__ import annotations
 
@@ -23,13 +23,22 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from db_utils import STOCK_DB_PATH, connect_stock_db
 from telegram_stock_dedup import filter_new as _filter_new_alerts, mark_sent as _mark_alert_sent
+from services.gemini import generate_text, is_configured, model_name
+from tenbagger_engine import (
+    _fetch_extra_signals,
+    _fetch_financials,
+    _fetch_price_data,
+    _fetch_supply,
+    _passes_tenbagger_guardrails,
+)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = str(STOCK_DB_PATH)
 ALERT_NAMESPACE = "tenbagger_hunter_candidate"
-REPORT_DIR = Path("/Applications/stock_dashboard/reports")
+REPORT_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/reports")
 REPORT_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -39,8 +48,7 @@ log = logging.getLogger(__name__)
 # ── DB 조회 ──────────────────────────────────────────────────────────
 
 def _load_top_candidates(limit: int) -> list[dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_stock_db(timeout=60, row_factory=sqlite3.Row)
     rows = conn.execute("""
         SELECT tr.stock_code, tr.stock_name, tr.total_score AS score, tr.reasons, tr.run_time,
                su.sector_large, su.market, su.market_cap, su.per, su.pbr, su.roe
@@ -50,15 +58,27 @@ def _load_top_candidates(limit: int) -> list[dict]:
         ORDER BY tr.total_score DESC
         LIMIT ?
     """, (limit,)).fetchall()
+    items = [dict(r) for r in rows]
+    filtered: list[dict] = []
+    for item in items:
+        try:
+            price = _fetch_price_data(conn, item["stock_code"])
+            fin = _fetch_financials(conn, item["stock_code"])
+            supply = _fetch_supply(conn, item["stock_code"])
+            extra = _fetch_extra_signals(conn, item["stock_code"])
+            passed, _ = _passes_tenbagger_guardrails(price, fin, supply, item, extra)
+            if passed:
+                filtered.append(item)
+        except Exception as e:
+            log.warning("[알림필터] %s(%s) 검증 실패: %s", item.get("stock_name"), item.get("stock_code"), e)
     conn.close()
-    return [dict(r) for r in rows]
+    return filtered
 
 
 def _load_realtime_signals(stock_codes: list[str]) -> dict[str, list]:
     if not stock_codes:
         return {}
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_stock_db(timeout=60, row_factory=sqlite3.Row)
     ph = ",".join("?" * len(stock_codes))
     rows = conn.execute(f"""
         SELECT stock_code, signal_type, detected_at
@@ -75,7 +95,7 @@ def _load_realtime_signals(stock_codes: list[str]) -> dict[str, list]:
 
 def _load_supply_snapshot(stock_code: str) -> tuple[float, float]:
     """최근 20일 기관/외국인 순매수 합계 (억원)"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_stock_db(timeout=30)
     rows = conn.execute("""
         SELECT inst_net_buy_amt, frn_net_buy_amt
         FROM price_history WHERE stock_code=? AND close>0
@@ -87,17 +107,15 @@ def _load_supply_snapshot(stock_code: str) -> tuple[float, float]:
     return inst, frn
 
 
-# ── DeepSeek TOP3 심층 분석 ──────────────────────────────────────────
+# ── OpenAI mini TOP3 심층 분석 ───────────────────────────────────────
 
-def _deepseek_tenbagger_brief(stock_code: str, stock_name: str, score: int, reasons: str) -> str:
+def _openai_mini_tenbagger_brief(stock_code: str, stock_name: str, score: int, reasons: str) -> str:
     """간략 버전 — 텔레그램용 200자 요약 분석"""
-    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    if not api_key:
+    if not is_configured():
         return ""
 
     # DB에서 최근 분기 실적
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_stock_db(timeout=60, row_factory=sqlite3.Row)
     fin = conn.execute("""
         SELECT year, quarter, revenue, operating_profit, net_income
         FROM financial_data WHERE stock_code=? AND is_annual=0
@@ -143,24 +161,13 @@ def _deepseek_tenbagger_brief(stock_code: str, stock_name: str, score: int, reas
 ⚠️ 리스크: (가장 큰 위험 1가지)
 """
     try:
-        model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
-        res = requests.post(
-            base_url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "한국 주식 텐버거 발굴 전문 애널리스트. 간결하고 핵심적으로 답변."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.3,
-                "max_tokens": 400,
-            },
+        return generate_text(
+            prompt,
+            system_instruction="한국 주식 텐버거 발굴 전문 애널리스트. 간결하고 핵심적으로 답변.",
+            temperature=0.3,
+            max_output_tokens=400,
             timeout=60,
         )
-        if res.ok:
-            return res.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         log.warning("[AI] %s 분석 실패: %s", stock_name, e)
     return ""
@@ -169,15 +176,9 @@ def _deepseek_tenbagger_brief(stock_code: str, stock_name: str, score: int, reas
 # ── 텔레그램 전송 ────────────────────────────────────────────────────
 
 def _send_telegram(msg: str, parse_mode: str = "HTML") -> bool:
-    if not BOT_TOKEN or not CHAT_ID:
-        log.warning("텔레그램 설정 없음 — 콘솔 출력만")
-        return False
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
-        res = requests.post(url, json={"chat_id": CHAT_ID, "text": msg,
-                                       "parse_mode": parse_mode, "disable_web_page_preview": True},
-                            timeout=15)
-        return res.ok
+        from notifier import send
+        return send(msg)
     except Exception as e:
         log.error("텔레그램 전송 실패: %s", e)
         return False
@@ -278,7 +279,7 @@ def _render_markdown(candidates: list[dict], signals: dict, ai_analyses: dict[st
 
 def _get_prev_codes(today_str: str) -> set[str]:
     """어제(또는 가장 최근) 알림에 포함된 종목코드 반환"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_stock_db(timeout=30)
     rows = conn.execute("""
         SELECT DISTINCT stock_code FROM tenbagger_daily_alerts
         WHERE alert_date < ?
@@ -339,8 +340,7 @@ def _generate_best_reason(c: dict, signals: dict, ai_text: str) -> str:
 def _save_to_db(candidates: list[dict], signals: dict, ai_analyses: dict,
                 today_str: str, prev_codes: set[str]):
     """tenbagger_daily_alerts에 저장"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = connect_stock_db(timeout=120, wal=True)
     saved = 0
     for c in candidates:
         sc = c["stock_code"]
@@ -433,24 +433,24 @@ def main(top: int = 15, ai_top: int = 3, new_only_telegram: bool = True):
     codes = [c["stock_code"] for c in candidates]
     signals = _load_realtime_signals(codes)
 
-    # DeepSeek AI 분석 — TOP N (신규 우선)
+    # OpenAI mini 분석 — TOP N (신규 우선)
     ai_analyses: dict[str, str] = {}
     new_codes = [c for c in candidates if c["stock_code"] not in prev_codes]
     ai_targets = new_codes[:ai_top] if new_codes else ([] if new_only_telegram else candidates[:ai_top])
     for c in ai_targets:
         sc = c["stock_code"]; sn = c["stock_name"]
         log.info("[AI] %s(%s) 분석 중…", sn, sc)
-        ai = _deepseek_tenbagger_brief(sc, sn, c["score"] or 0, c.get("reasons") or "")
+        ai = _openai_mini_tenbagger_brief(sc, sn, c["score"] or 0, c.get("reasons") or "")
         if ai:
             ai_analyses[sc] = ai
             try:
-                conn = sqlite3.connect(DB_PATH)
+                conn = connect_stock_db(timeout=60, wal=True)
                 conn.execute(
                     "INSERT OR REPLACE INTO tenbagger_ai_analysis"
                     "(stock_code, generated_at, score, reasons, ai_analysis, model)"
                     " VALUES(?,?,?,?,?,?)",
                     (sc, datetime.now().isoformat(), c["score"], c.get("reasons",""),
-                     ai, os.getenv("DEEPSEEK_MODEL","deepseek-v4-pro"))
+                     ai, model_name())
                 )
                 conn.commit()
                 conn.close()

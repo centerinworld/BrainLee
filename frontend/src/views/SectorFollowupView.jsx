@@ -227,7 +227,7 @@ const SectorFollowupView = React.memo(() => {
                 "+ 직접 입력"으로 수동 등록할 수 있습니다.
               </p>
               <p style={{fontSize:'0.72rem', color:'rgba(255,200,100,0.7)'}}>
-                ⚠️ 자동파싱은 OpenAI API Key 설정이 필요합니다 (.env → OPENAI_API_KEY)
+                ⚠️ 자동파싱은 Gemini API Key 설정이 필요합니다 (.env → GEMINI_API_KEY)
               </p>
             </div>
           ) : (

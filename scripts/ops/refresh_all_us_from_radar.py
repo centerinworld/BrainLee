@@ -6,12 +6,12 @@ import sqlite3
 from datetime import datetime
 import sys
 
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 import main
 
 
 def main_run():
-    conn = sqlite3.connect('/Applications/stock_dashboard/stock.db')
+    conn = sqlite3.connect('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db')
     try:
         rows = conn.execute(
             """
@@ -46,7 +46,7 @@ def main_run():
         'fail': fail,
         'failed': failed[:50],
     }
-    out = f"/Applications/stock_dashboard/scratch/us_refresh_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    out = f"/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/us_refresh_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(out, 'w', encoding='utf-8') as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     print(out)

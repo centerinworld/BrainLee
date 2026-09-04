@@ -9,8 +9,8 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-DB=Path('/Applications/stock_dashboard/stock.db')
-OUT=Path('/Applications/stock_dashboard/scratch'); OUT.mkdir(exist_ok=True)
+DB=Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db')
+OUT=Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch'); OUT.mkdir(exist_ok=True)
 H={'User-Agent':'Mozilla/5.0','Referer':'https://comp.fnguide.com/'}
 HN={'User-Agent':'Mozilla/5.0','Referer':'https://finance.naver.com/'}
 S=requests.Session()

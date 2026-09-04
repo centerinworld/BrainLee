@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB_PATH = ROOT / "stock.db"
 HS_DB_PATH = ROOT / "hs_trade_lab/data/hs_trade_lab.db"
 OUT_DIR = ROOT / "research_outputs"

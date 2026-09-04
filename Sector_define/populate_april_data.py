@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 # 권한 문제로 인해 Sector_define 폴더 내에 전용 DB 생성
-DB_PATH = "/Applications/stock_dashboard/Sector_define/sector_april.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/Sector_define/sector_april.db"
 
 APRIL_POSTS = [
     {"date": "2026-04-26", "title": "AI 인프라 기업의 독주 흐름", "url": "https://m.blog.naver.com/going_tothe_moon/224265571184", "summary": "AI 수요 폭증으로 인한 전력기기, 액침 냉각, 데이터센터 인프라 관련주들의 강세를 분석. 단순히 칩(GPU)을 넘어 인프라 전반으로 투심이 확산되는 흐름 강조."},

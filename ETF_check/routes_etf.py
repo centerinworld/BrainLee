@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import time
+from datetime import datetime
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Query
 
@@ -9,14 +10,46 @@ router = APIRouter(prefix="/api/etf-check", tags=["etf-check"])
 
 DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(DIR, "etf_check.db")
-STOCK_DB = "/Applications/stock_dashboard/stock.db"
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/139.0.0.0 Safari/537.36"
+)
+ETF_SCOPE_LABEL = os.getenv("ETF_CHECK_SCOPE_LABEL", "K-ETF")
+MIN_USABLE_COVERAGE = float(os.getenv("ETF_CHECK_MIN_USABLE_COVERAGE", "0.30"))
+MAX_BACKFILL_RATIO = float(os.getenv("ETF_CHECK_MAX_BACKFILL_RATIO", "0.05"))
+MIN_COMPARISON_OVERLAP = float(os.getenv("ETF_CHECK_MIN_COMPARISON_OVERLAP", "0.75"))
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    # Attach main DB to filter by market (KOSPI/KOSDAQ)
-    conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS main_db")
     return conn
+
+
+def _safe_parse_dt(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text[:19] if "T" in text else text, fmt)
+        except Exception:
+            continue
+    try:
+        return datetime.fromisoformat(text)
+    except Exception:
+        return None
+
+
+def _tail_log_text(path: str, max_chars: int = 4000) -> str:
+    try:
+        with open(path, "rb") as fp:
+            fp.seek(0, os.SEEK_END)
+            size = fp.tell()
+            fp.seek(max(0, size - max_chars), os.SEEK_SET)
+            return fp.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
 
 def format_row(r):
     d = dict(r)
@@ -82,6 +115,14 @@ def _is_etf_change_anomaly(row: Dict[str, Any]) -> tuple[bool, str | None]:
     ):
         return True, f"시총 대비 편입액 변화 과대 및 ETF검색수 급변({prev_count}→{cur_count})"
 
+    # 범위가 전체↔K-ETF로 바뀌면 종목별 ETF 검색수가 대략 절반/두 배가 된다.
+    # 작은 종목은 절대 검색수 차이가 30 미만이라 위 조건만으로 잡히지 않는다.
+    if market_cap and market_cap > 0 and abs_diff / float(market_cap) * 100.0 >= 2.0:
+        if cur_count is not None and prev_count not in (None, 0):
+            count_ratio = float(cur_count) / float(prev_count)
+            if count_ratio < 0.67 or count_ratio > 1.5:
+                return True, f"시총 대비 편입액 변화 과대 및 ETF검색수 배율 급변({prev_count}→{cur_count})"
+
     return False, None
 
 
@@ -102,18 +143,227 @@ def _filter_etf_change_rows(rows: List[sqlite3.Row], limit: int = 50) -> tuple[L
     return kept, excluded
 
 def get_available_dates(conn) -> List[str]:
-    # etf_amount > 0 인 종목이 실제로 존재하는 날만 유효 날짜로 사용 (수집 실패일 제외)
+    # 너무 적은 테스트/백필 날짜는 제외한다. 부분 수집일은 최신 현황에 사용할 수 있지만,
+    # 아래 비교 품질검사에서 행수와 공통 종목 비율이 같은 날짜끼리만 묶는다.
     rows = conn.execute("""
-        SELECT DISTINCT e.trade_date
-        FROM etf_inclusion_daily e
-        JOIN collection_log l
-          ON l.run_date = e.trade_date
-         AND l.status = 'done'
-        WHERE e.etf_amount > 0
-        ORDER BY e.trade_date DESC
-        LIMIT 6
-    """).fetchall()
+        WITH expected AS (
+            SELECT COALESCE(
+                NULLIF((SELECT COUNT(*) FROM etf_stock_meta), 0),
+                (SELECT total_stocks FROM collection_log WHERE total_stocks >= 1000 ORDER BY id DESC LIMIT 1)
+            ) AS stock_count
+        ), daily AS (
+            SELECT trade_date,
+                   COUNT(*) AS rows_total,
+                   SUM(CASE WHEN etf_amount > 0 THEN 1 ELSE 0 END) AS positive_rows,
+                   SUM(CASE WHEN COALESCE(is_backfilled, 0) = 1 THEN 1 ELSE 0 END) AS backfilled_rows,
+                   COUNT(DISTINCT COALESCE(scope_label, '')) AS scope_count,
+                   MAX(COALESCE(scope_label, '')) AS scope_label
+            FROM etf_inclusion_daily
+            GROUP BY trade_date
+        )
+        SELECT d.trade_date
+        FROM daily d CROSS JOIN expected x
+        WHERE d.positive_rows > 0
+          AND d.rows_total >= x.stock_count * ?
+          AND d.backfilled_rows * 1.0 / d.rows_total <= ?
+          AND d.scope_count = 1
+          AND d.scope_label = ?
+        ORDER BY d.trade_date DESC
+        LIMIT 30
+    """, (MIN_USABLE_COVERAGE, MAX_BACKFILL_RATIO, ETF_SCOPE_LABEL)).fetchall()
     return [row["trade_date"] for row in rows]
+
+
+def _daily_source_profile(conn, trade_date: str) -> Dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS rows_total,
+            SUM(CASE WHEN etf_amount > 0 THEN 1 ELSE 0 END) AS positive_rows,
+            AVG(CASE WHEN etf_amount > 0 THEN etf_count END) AS avg_etf_count,
+            AVG(CASE WHEN etf_amount > 0 THEN mktcap_ratio END) AS avg_mktcap_ratio,
+            SUM(CASE WHEN COALESCE(is_backfilled, 0) = 1 THEN 1 ELSE 0 END) AS backfilled_rows,
+            COUNT(DISTINCT COALESCE(scope_label, '')) AS scope_count,
+            MAX(COALESCE(scope_label, '')) AS scope_label
+        FROM etf_inclusion_daily
+        WHERE trade_date = ?
+        """,
+        (trade_date,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "trade_date": trade_date,
+        "rows_total": int(row["rows_total"] or 0),
+        "positive_rows": int(row["positive_rows"] or 0),
+        "avg_etf_count": float(row["avg_etf_count"] or 0),
+        "avg_mktcap_ratio": float(row["avg_mktcap_ratio"] or 0),
+        "backfilled_rows": int(row["backfilled_rows"] or 0),
+        "scope_count": int(row["scope_count"] or 0),
+        "scope_label": row["scope_label"],
+    }
+
+
+def _find_comparable_previous_date(
+    conn,
+    latest_date: str,
+    candidates: List[str],
+    min_gap_days: int = 1,
+    max_gap_days: int | None = None,
+) -> tuple[str | None, Dict[str, Any] | None]:
+    latest_profile = _daily_source_profile(conn, latest_date)
+    if not latest_profile:
+        return None, None
+    latest_dt = _safe_parse_dt(latest_date)
+    date_gap_rejected = False
+    for prev_date in candidates:
+        if prev_date == latest_date:
+            continue
+        prev_dt = _safe_parse_dt(prev_date)
+        if latest_dt and prev_dt:
+            gap_days = (latest_dt.date() - prev_dt.date()).days
+            if gap_days < min_gap_days or (max_gap_days is not None and gap_days > max_gap_days):
+                date_gap_rejected = True
+                continue
+        prev_profile = _daily_source_profile(conn, prev_date)
+        if not prev_profile:
+            continue
+        if prev_profile["positive_rows"] <= 0 or latest_profile["positive_rows"] <= 0:
+            continue
+        if latest_profile["scope_count"] != 1 or prev_profile["scope_count"] != 1:
+            continue
+        if latest_profile["scope_label"] != prev_profile["scope_label"]:
+            continue
+        row_ratio = latest_profile["positive_rows"] / max(prev_profile["positive_rows"], 1)
+        count_ratio = latest_profile["avg_etf_count"] / max(prev_profile["avg_etf_count"], 1e-9)
+        overlap = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM etf_inclusion_daily a
+            JOIN etf_inclusion_daily b ON b.stock_code = a.stock_code
+            WHERE a.trade_date=? AND b.trade_date=?
+              AND a.etf_amount > 0 AND b.etf_amount > 0
+              AND COALESCE(a.is_backfilled, 0)=0 AND COALESCE(b.is_backfilled, 0)=0
+            """,
+            (latest_date, prev_date),
+        ).fetchone()[0]
+        overlap_ratio = overlap / max(min(latest_profile["positive_rows"], prev_profile["positive_rows"]), 1)
+        # 원천 사이트 집계 체계가 바뀌면 positive_rows·평균 ETF검색수가 전시장 수준에서 함께 점프한다.
+        # 그 전후 날짜를 그대로 비교하면 삼성전자처럼 "증감액 11조" 같은 왜곡값이 나온다.
+        if row_ratio > 1.25 or row_ratio < 0.8:
+            continue
+        if count_ratio > 1.15 or count_ratio < 0.85:
+            continue
+        if overlap_ratio < MIN_COMPARISON_OVERLAP:
+            continue
+        return prev_date, {
+            "latest_profile": latest_profile,
+            "previous_profile": prev_profile,
+            "row_ratio": round(row_ratio, 3),
+            "avg_etf_count_ratio": round(count_ratio, 3),
+            "overlap_ratio": round(overlap_ratio, 3),
+            "regime_break_detected": False,
+        }
+    return None, {
+        "latest_profile": latest_profile,
+        "previous_profile": None,
+        "row_ratio": None,
+        "avg_etf_count_ratio": None,
+        "date_gap_rejected": date_gap_rejected,
+        "regime_break_detected": True,
+    }
+
+
+@router.get("/status")
+def get_etf_status() -> Dict[str, Any]:
+    conn = get_db_connection()
+    try:
+        dates = get_available_dates(conn)
+        latest_trade_date = dates[0] if dates else None
+        latest_log = conn.execute(
+            """
+            SELECT run_date, started_at, finished_at, total_stocks, success, failed, status
+            FROM collection_log
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        latest_success = conn.execute(
+            """
+            SELECT run_date, started_at, finished_at, total_stocks, success, failed, status
+            FROM collection_log
+            WHERE status='done'
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        latest_snapshot = conn.execute(
+            """
+            WITH expected AS (
+                SELECT COALESCE(
+                    NULLIF((SELECT COUNT(*) FROM etf_stock_meta), 0),
+                    (SELECT total_stocks FROM collection_log WHERE total_stocks >= 1000 ORDER BY id DESC LIMIT 1)
+                ) AS stock_count
+            ), latest AS (
+                SELECT MAX(trade_date) AS trade_date
+                FROM etf_inclusion_daily
+                WHERE scope_label = ?
+            )
+            SELECT l.trade_date,
+                   COUNT(e.stock_code) AS rows_collected,
+                   x.stock_count AS rows_expected,
+                   ROUND(COUNT(e.stock_code) * 1.0 / NULLIF(x.stock_count, 0), 3) AS coverage_ratio
+            FROM latest l CROSS JOIN expected x
+            LEFT JOIN etf_inclusion_daily e
+              ON e.trade_date=l.trade_date
+             AND e.scope_label = ?
+            GROUP BY l.trade_date, x.stock_count
+            """
+        , (ETF_SCOPE_LABEL, ETF_SCOPE_LABEL)).fetchone()
+        scheduler_log = _tail_log_text(os.path.join(DIR, "scheduler.log"))
+        etf_log = _tail_log_text(os.path.join(DIR, "etf_check.log"))
+        session_path = os.path.join(DIR, "session_state.json")
+        session_exists = os.path.exists(session_path)
+        session_updated_at = None
+        if session_exists:
+            session_updated_at = datetime.fromtimestamp(os.path.getmtime(session_path)).isoformat()
+
+        latest_run = dict(latest_log) if latest_log else None
+        latest_success_run = dict(latest_success) if latest_success else None
+        issue_code = None
+        issue_message = None
+
+        if "세션 만료" in scheduler_log or "세션 만료" in etf_log:
+            issue_code = "session_expired"
+            issue_message = "ETF Check 로그인 세션이 만료되어 자동수집이 실패 중입니다."
+        elif latest_run and latest_run.get("status") == "error":
+            issue_code = "collection_error"
+            issue_message = "최근 ETF 수집이 오류 상태로 종료되었습니다."
+
+        stale_days = None
+        if latest_trade_date:
+            latest_dt = _safe_parse_dt(latest_trade_date)
+            if latest_dt:
+                stale_days = (datetime.now().date() - latest_dt.date()).days
+                if stale_days >= 3 and issue_code is None:
+                    issue_code = "stale_data"
+                    issue_message = f"ETF 데이터 최신 기준일이 {latest_trade_date}로 오래되었습니다."
+
+        return {
+            "latest_trade_date": latest_trade_date,
+            "stale_days": stale_days,
+            "latest_run": latest_run,
+            "latest_success_run": latest_success_run,
+            "latest_snapshot": dict(latest_snapshot) if latest_snapshot else None,
+            "session_state": {
+                "exists": session_exists,
+                "updated_at": session_updated_at,
+            },
+            "issue_code": issue_code,
+            "issue_message": issue_message,
+        }
+    finally:
+        conn.close()
 
 # stock_universe.market / secugrp_nm 분포:
 #   market='KOSPI'    + secugrp_nm='주권' → 코스피 실제 보통주·우선주 (삼성전자 등)
@@ -144,22 +394,12 @@ def get_tab1() -> Dict[str, Any]:
 
         def fetch_market(market_filter: str):
             query = f"""
-                SELECT e.stock_code, m.stock_name, e.etf_amount,
-                       (SELECT ph.close FROM main_db.price_history ph
-                        WHERE ph.stock_code = e.stock_code AND ph.close > 0
-                        ORDER BY ph.date DESC LIMIT 1) AS current_price,
+                SELECT e.stock_code, COALESCE(m.stock_name, e.stock_name) AS stock_name, e.etf_amount,
+                       e.current_price,
                        e.market_cap, e.mktcap_ratio,
-                       (SELECT ROUND((ph1.close - ph2.close) * 100.0 / ph2.close, 2)
-                        FROM (SELECT close FROM main_db.price_history
-                              WHERE stock_code = e.stock_code AND close > 0
-                              ORDER BY date DESC LIMIT 1) AS ph1,
-                             (SELECT close FROM main_db.price_history
-                              WHERE stock_code = e.stock_code AND close > 0
-                              ORDER BY date DESC LIMIT 1 OFFSET 1) AS ph2
-                        WHERE ph2.close > 0
-                       ) AS price_change_pct
+                       NULL AS price_change_pct
                 FROM etf_inclusion_daily e
-                JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
+                JOIN etf_stock_meta m ON e.stock_code = m.stock_code
                 WHERE e.trade_date = ?
                   AND {market_filter}
                 ORDER BY e.etf_amount DESC NULLS LAST
@@ -185,8 +425,26 @@ def get_tab2() -> Dict[str, Any]:
             return {"1d": [], "5d": [], "dates": dates}
         
         latest_date = dates[0]
-        date_1d = dates[1]
-        date_5d = dates[-1] if len(dates) == 6 else dates[-1] # fallback to oldest available if less than 6
+        date_1d, q1 = _find_comparable_previous_date(
+            conn, latest_date, dates[1:2], max_gap_days=4
+        )
+        date_5d, q5 = _find_comparable_previous_date(
+            conn, latest_date, dates[5:6], min_gap_days=5, max_gap_days=12
+        ) if len(dates) > 5 else (None, None)
+        if not date_1d:
+            return {
+                "1d": [],
+                "5d": [],
+                "1d_dec": [],
+                "5d_dec": [],
+                "dates": {"latest": latest_date, "1d": None, "5d": None},
+                "quality": {
+                    "issue": "comparison_unavailable",
+                    "message": "비교 가능한 직전 거래일 데이터가 없어 증감 비교를 중단했습니다.",
+                    "comparison_1d": q1,
+                    "comparison_5d": q5,
+                },
+            }
         
         def get_change(prev_date, asc: bool = False):
             order = "ASC" if asc else "DESC"
@@ -199,10 +457,11 @@ def get_tab2() -> Dict[str, Any]:
                        t1.etf_count AS prev_etf_count
                 FROM etf_inclusion_daily t0
                 JOIN etf_inclusion_daily t1 ON t0.stock_code = t1.stock_code
-                JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
+                JOIN etf_stock_meta m ON t0.stock_code = m.stock_code
                 WHERE t0.trade_date = ? AND t1.trade_date = ?
                   AND t0.etf_amount IS NOT NULL AND t1.etf_amount IS NOT NULL
                   AND t0.etf_amount > 0 AND t1.etf_amount > 0
+                  AND COALESCE(t0.is_backfilled, 0)=0 AND COALESCE(t1.is_backfilled, 0)=0
                   AND {ALL_MARKET}
                 ORDER BY amount_diff {order}
                 LIMIT 200
@@ -218,10 +477,11 @@ def get_tab2() -> Dict[str, Any]:
                        t1.etf_count AS prev_etf_count
                 FROM etf_inclusion_daily t0
                 JOIN etf_inclusion_daily t1 ON t0.stock_code = t1.stock_code
-                JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
+                JOIN etf_stock_meta m ON t0.stock_code = m.stock_code
                 WHERE t0.trade_date = ? AND t1.trade_date = ?
                   AND t0.etf_amount IS NOT NULL AND t1.etf_amount IS NOT NULL
                   AND t0.etf_amount > 0 AND t1.etf_amount > 0
+                  AND COALESCE(t0.is_backfilled, 0)=0 AND COALESCE(t1.is_backfilled, 0)=0
                   AND {ALL_MARKET}
                 ORDER BY amount_diff DESC
                 LIMIT 200
@@ -235,10 +495,11 @@ def get_tab2() -> Dict[str, Any]:
                        t1.etf_count AS prev_etf_count
                 FROM etf_inclusion_daily t0
                 JOIN etf_inclusion_daily t1 ON t0.stock_code = t1.stock_code
-                JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
+                JOIN etf_stock_meta m ON t0.stock_code = m.stock_code
                 WHERE t0.trade_date = ? AND t1.trade_date = ?
                   AND t0.etf_amount IS NOT NULL AND t1.etf_amount IS NOT NULL
                   AND t0.etf_amount > 0 AND t1.etf_amount > 0
+                  AND COALESCE(t0.is_backfilled, 0)=0 AND COALESCE(t1.is_backfilled, 0)=0
                   AND {ALL_MARKET}
                 ORDER BY amount_diff DESC
                 LIMIT 200
@@ -256,6 +517,8 @@ def get_tab2() -> Dict[str, Any]:
                 "excluded_1d": len(excluded_1d),
                 "excluded_5d": len(excluded_5d),
                 "excluded_examples": (excluded_1d + excluded_5d)[:5],
+                "comparison_1d": q1,
+                "comparison_5d": q5,
             },
         }
     finally:
@@ -271,8 +534,26 @@ def get_tab3() -> Dict[str, Any]:
             return {"1d": [], "5d": [], "dates": dates}
         
         latest_date = dates[0]
-        date_1d = dates[1]
-        date_5d = dates[-1] if len(dates) == 6 else dates[-1]
+        date_1d, q1 = _find_comparable_previous_date(
+            conn, latest_date, dates[1:2], max_gap_days=4
+        )
+        date_5d, q5 = _find_comparable_previous_date(
+            conn, latest_date, dates[5:6], min_gap_days=5, max_gap_days=12
+        ) if len(dates) > 5 else (None, None)
+        if not date_1d:
+            return {
+                "1d": [],
+                "5d": [],
+                "1d_dec": [],
+                "5d_dec": [],
+                "dates": {"latest": latest_date, "1d": None, "5d": None},
+                "quality": {
+                    "issue": "comparison_unavailable",
+                    "message": "비교 가능한 직전 거래일 데이터가 없어 증감 비교를 중단했습니다.",
+                    "comparison_1d": q1,
+                    "comparison_5d": q5,
+                },
+            }
         
         # 시총대비 편입금액 증감 = (현재편입금액 - 과거편입금액) / 현재시가총액 * 100
         def get_ratio_change(prev_date, asc: bool = False):
@@ -286,10 +567,11 @@ def get_tab3() -> Dict[str, Any]:
                        t1.etf_count AS prev_etf_count
                 FROM etf_inclusion_daily t0
                 JOIN etf_inclusion_daily t1 ON t0.stock_code = t1.stock_code
-                JOIN main_db.stock_universe m ON t0.stock_code = m.stock_code
+                JOIN etf_stock_meta m ON t0.stock_code = m.stock_code
                 WHERE t0.trade_date = ? AND t1.trade_date = ?
                   AND t0.etf_amount IS NOT NULL AND t1.etf_amount IS NOT NULL
                   AND t0.etf_amount > 0 AND t1.etf_amount > 0
+                  AND COALESCE(t0.is_backfilled, 0)=0 AND COALESCE(t1.is_backfilled, 0)=0
                   AND t0.market_cap IS NOT NULL AND t0.market_cap > 0
                   AND {ALL_MARKET}
                 ORDER BY ratio_increase {order}
@@ -303,6 +585,10 @@ def get_tab3() -> Dict[str, Any]:
             "1d_dec": get_ratio_change(date_1d, asc=True),
             "5d_dec": get_ratio_change(date_5d, asc=True),
             "dates": {"latest": latest_date, "1d": date_1d, "5d": date_5d},
+            "quality": {
+                "comparison_1d": q1,
+                "comparison_5d": q5,
+            },
         }
     finally:
         conn.close()
@@ -319,23 +605,13 @@ def get_tab4() -> Dict[str, Any]:
         latest_date = dates[0]
         
         query = """
-            SELECT e.stock_code, m.stock_name, e.etf_amount,
-                   (SELECT ph.close FROM main_db.price_history ph
-                    WHERE ph.stock_code = e.stock_code AND ph.close > 0
-                    ORDER BY ph.date DESC LIMIT 1) AS current_price,
+            SELECT e.stock_code, COALESCE(m.stock_name, e.stock_name) AS stock_name, e.etf_amount,
+                   e.current_price,
                    e.market_cap,
                    (e.etf_amount / e.market_cap * 100) as calc_ratio,
-                   (SELECT ROUND((ph1.close - ph2.close) * 100.0 / ph2.close, 2)
-                    FROM (SELECT close FROM main_db.price_history
-                          WHERE stock_code = e.stock_code AND close > 0
-                          ORDER BY date DESC LIMIT 1) AS ph1,
-                         (SELECT close FROM main_db.price_history
-                          WHERE stock_code = e.stock_code AND close > 0
-                          ORDER BY date DESC LIMIT 1 OFFSET 1) AS ph2
-                    WHERE ph2.close > 0
-                   ) AS price_change_pct
+                   NULL AS price_change_pct
             FROM etf_inclusion_daily e
-            LEFT JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
+            LEFT JOIN etf_stock_meta m ON e.stock_code = m.stock_code
             WHERE e.trade_date = ?
               AND e.etf_amount IS NOT NULL AND e.market_cap IS NOT NULL AND e.market_cap > 0
               AND """ + ORDINARY_STOCK_FILTER + """
@@ -358,46 +634,18 @@ def search_stock_etf(q: str = Query(..., min_length=1, max_length=30)) -> Dict[s
             return {"rows": [], "date": None, "compare_date": None, "query": q.strip()}
 
         latest_date = dates[0]
-        compare_date = dates[-1] if len(dates) > 1 else None
+        compare_date = None
+        if len(dates) > 5:
+            compare_date, _ = _find_comparable_previous_date(
+                conn, latest_date, dates[5:6], min_gap_days=5, max_gap_days=12
+            )
         needle = f"%{q.strip()}%"
 
-        # CTE로 종목별 최근 유효일(etf_amount>0)을 먼저 구해 JOIN — 코어 서브쿼리 전체 스캔 방지
         query = """
-            WITH best_dates AS (
-                SELECT stock_code, MAX(trade_date) AS best_date
-                FROM etf_inclusion_daily
-                WHERE etf_amount > 0 AND trade_date <= ?
-                GROUP BY stock_code
-            )
             SELECT e.stock_code,
-                   m.stock_name,
-                   COALESCE(
-                       (SELECT ph.close FROM main_db.price_history ph
-                        WHERE ph.stock_code = e.stock_code AND ph.close > 0
-                        ORDER BY ph.date DESC LIMIT 1),
-                       m.close,
-                       e.current_price) AS current_price,
-                   CASE
-                       WHEN (
-                           SELECT ph.close FROM main_db.price_history ph
-                           WHERE ph.stock_code = e.stock_code AND ph.close > 0
-                           ORDER BY ph.date DESC LIMIT 1 OFFSET 5
-                       ) > 0
-                       THEN ROUND((
-                           (SELECT ph.close FROM main_db.price_history ph
-                            WHERE ph.stock_code = e.stock_code AND ph.close > 0
-                            ORDER BY ph.date DESC LIMIT 1)
-                           -
-                           (SELECT ph.close FROM main_db.price_history ph
-                            WHERE ph.stock_code = e.stock_code AND ph.close > 0
-                            ORDER BY ph.date DESC LIMIT 1 OFFSET 5)
-                       ) * 100.0 / (
-                           SELECT ph.close FROM main_db.price_history ph
-                           WHERE ph.stock_code = e.stock_code AND ph.close > 0
-                           ORDER BY ph.date DESC LIMIT 1 OFFSET 5
-                       ), 2)
-                       ELSE NULL
-                   END AS price_change_pct,
+                   COALESCE(m.stock_name, e.stock_name) AS stock_name,
+                   e.current_price,
+                   NULL AS price_change_pct,
                    e.market_cap,
                    e.etf_amount,
                    CASE
@@ -411,18 +659,20 @@ def search_stock_etf(q: str = Query(..., min_length=1, max_length=30)) -> Dict[s
                        ELSE NULL
                    END AS amount_diff
             FROM etf_inclusion_daily e
-            JOIN best_dates bd ON e.stock_code = bd.stock_code AND e.trade_date = bd.best_date
-            JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
+            JOIN etf_stock_meta m ON e.stock_code = m.stock_code
             LEFT JOIN etf_inclusion_daily prev
                    ON prev.stock_code = e.stock_code AND prev.trade_date = ?
-            WHERE (m.stock_name LIKE ? OR e.stock_code LIKE ?)
+                  AND COALESCE(prev.is_backfilled, 0)=0
+            WHERE e.trade_date = ?
+              AND COALESCE(e.is_backfilled, 0)=0
+              AND (m.stock_name LIKE ? OR e.stock_code LIKE ?)
               AND """ + ORDINARY_STOCK_FILTER + """
             ORDER BY e.etf_amount DESC NULLS LAST
             LIMIT 50
         """
         rows = [format_row(r) for r in conn.execute(
             query,
-            (compare_date or latest_date, latest_date, needle, needle),
+            (compare_date, latest_date, needle, needle),
         ).fetchall()]
         return {
             "rows": rows,
@@ -432,6 +682,26 @@ def search_stock_etf(q: str = Query(..., min_length=1, max_length=30)) -> Dict[s
         }
     finally:
         conn.close()
+
+
+def _is_stock_detail_page(page_url: str, body_text: str, stock_code: str) -> bool:
+    expected_path = f"/mobile/searchPdf/{stock_code}"
+    return (
+        expected_path in str(page_url or "")
+        and stock_code in str(body_text or "")
+        and "현재가" in str(body_text or "")
+        and not ("로그인" in str(body_text or "") and "회원가입" in str(body_text or ""))
+    )
+
+
+def _sanitize_scope_result(result: Dict, scope_label: str) -> Dict:
+    if scope_label != "K-ETF":
+        return result
+
+    top_amount = result.get("top_amount") or {}
+    if "$" in str(top_amount.get("amount") or ""):
+        result["top_amount"] = None
+    return result
 
 
 def _fetch_etf_top_from_web(stock_code: str) -> Dict:
@@ -454,14 +724,37 @@ def _fetch_etf_top_from_web(stock_code: str) -> Dict:
         ctx = browser.new_context(
             viewport={"width": 1280, "height": 900},
             storage_state=state_path,
+            user_agent=BROWSER_USER_AGENT,
+            locale="ko-KR",
         )
         page = ctx.new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=25000)
-            time.sleep(1.5)
+            time.sleep(2.5)
 
-            if "signin" in page.url:
+            body_text = page.locator("body").inner_text(timeout=5000)
+            if "signin" in page.url or not _is_stock_detail_page(
+                page.url, body_text, stock_code
+            ):
                 raise PermissionError("세션 만료 — 재로그인 필요")
+
+            if ETF_SCOPE_LABEL:
+                try:
+                    scope_toggle = page.get_by_text(ETF_SCOPE_LABEL, exact=True).first
+                    scope_toggle.click(timeout=3000)
+                    time.sleep(2.0)
+                    if "inactive" in str(scope_toggle.get_attribute("class") or ""):
+                        scope_toggle.click(timeout=3000)
+                        time.sleep(2.0)
+                except Exception as exc:
+                    raise RuntimeError(f"'{ETF_SCOPE_LABEL}' 범위를 확인하지 못했습니다") from exc
+
+                scoped_body_text = page.locator("body").inner_text(timeout=5000)
+                if (
+                    not _is_stock_detail_page(page.url, scoped_body_text, stock_code)
+                    or "inactive" in str(scope_toggle.get_attribute("class") or "")
+                ):
+                    raise PermissionError("세션 만료 — 재로그인 필요")
 
             result = page.evaluate("""
             () => {
@@ -500,6 +793,9 @@ def _fetch_etf_top_from_web(stock_code: str) -> Dict:
                 return out;
             }
             """)
+            result = _sanitize_scope_result(result, ETF_SCOPE_LABEL)
+            if not result.get("etf_count") or not (result.get("top_ratio") or result.get("top_amount")):
+                raise RuntimeError("K-ETF 상세 영역을 확인하지 못했습니다")
             return result
         finally:
             browser.close()
@@ -522,9 +818,9 @@ def get_etf_list(stock_code: str) -> Dict[str, Any]:
         db_info = None
         if dates:
             row = conn.execute("""
-                SELECT e.etf_count, e.etf_amount, m.stock_name
+                SELECT e.etf_count, e.etf_amount, COALESCE(m.stock_name, e.stock_name) AS stock_name
                 FROM etf_inclusion_daily e
-                JOIN main_db.stock_universe m ON e.stock_code = m.stock_code
+                LEFT JOIN etf_stock_meta m ON e.stock_code = m.stock_code
                 WHERE e.stock_code = ? AND e.trade_date = ?
             """, (stock_code, dates[0])).fetchone()
             if row:
@@ -553,11 +849,13 @@ def get_etf_list(stock_code: str) -> Dict[str, Any]:
         t = parsed["top_amount"]
         etf_list.append({"label": "편입금액 1위", "name": t["name"], "value": t.get("amount"), "type": "amount"})
 
+    displayed_labels = "·".join(item["label"] for item in etf_list)
+
     return {
         "stock_code": stock_code,
         "stock_name": db_info.get("stock_name") if db_info else None,
         "etf_count": etf_count,
         "etf_amount_total": db_info.get("etf_amount") if db_info else None,
         "etf_list": etf_list,
-        "note": f"총 {etf_count or '?'}개 ETF 편입 (비중·금액 1위만 표시, 전체 목록은 etfcheck.co.kr 참조)",
+        "note": f"총 {etf_count or '?'}개 ETF 편입 ({displayed_labels} 표시, 전체 목록은 etfcheck.co.kr 참조)",
     }

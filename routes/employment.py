@@ -75,7 +75,7 @@ def get_nps_monthly(
             "lss": "lss_jnngp_cnt DESC",
             "net": "(nw_acqzr_cnt - lss_jnngp_cnt) DESC",
         }.get(order, "(nw_acqzr_cnt - lss_jnngp_cnt) DESC")
-        conn.execute(f"ATTACH DATABASE '/Applications/stock_dashboard/stock.db' AS main_db")
+        conn.execute(f"ATTACH DATABASE '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db' AS main_db")
         rows = conn.execute(
             f"""SELECT n.ym, n.stock_code, n.stock_name,
                        n.nw_acqzr_cnt, n.lss_jnngp_cnt,

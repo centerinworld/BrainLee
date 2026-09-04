@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config  # noqa: E402
 from collectors.kiwoom_collector import KiwoomCollector  # noqa: E402
+from db_utils import stock_db_write_lock  # noqa: E402
 from kis_client import kis_client  # noqa: E402
 
 DB_PATH = Path(__file__).resolve().parent.parent / "stock.db"
@@ -62,9 +63,9 @@ def _parse_day(value: str) -> date:
 
 
 def _conn() -> sqlite3.Connection:
-    con = sqlite3.connect(str(DB_PATH), timeout=30)
+    con = sqlite3.connect(str(DB_PATH), timeout=90)
     con.row_factory = sqlite3.Row
-    con.execute("PRAGMA busy_timeout=30000")
+    con.execute("PRAGMA busy_timeout=90000")
     return con
 
 
@@ -309,6 +310,7 @@ def collect_kis(
     stocks: list[str],
     market_only: bool,
     save_all_returned: bool = False,
+    request_sleep: float = 0.25,
 ) -> dict[str, int]:
     base = config.KIS_URL.rstrip()
     stats = {"market": 0, "stock": 0}
@@ -328,7 +330,8 @@ def collect_kis(
         if data.get("rt_cd") == "0" and data.get("output"):
             upsert_market(con, dt, market, data["output"][0], "kis")
             stats["market"] += 1
-        time.sleep(0.25)
+        if request_sleep > 0:
+            time.sleep(request_sleep)
     if market_only:
         return stats
     for stock_code in stocks:
@@ -348,7 +351,8 @@ def collect_kis(
         if stats["stock"] and stats["stock"] % 1000 == 0:
             con.commit()
             print(f"    KIS stock rows saved={stats['stock']} latest={stock_code}", flush=True)
-        time.sleep(0.25)
+        if request_sleep > 0:
+            time.sleep(request_sleep)
     return stats
 
 
@@ -358,6 +362,7 @@ def collect_kiwoom(
     stocks: list[str],
     market_only: bool,
     save_all_returned: bool = False,
+    request_sleep: float = 0.25,
 ) -> dict[str, int]:
     kw = KiwoomCollector()
     if not kw.ensure_token():
@@ -375,7 +380,8 @@ def collect_kiwoom(
             row = data["prm_trde_trnsn"][0]
             upsert_market(con, dt, market, row, "kiwoom")
             stats["market"] += 1
-        time.sleep(0.25)
+        if request_sleep > 0:
+            time.sleep(request_sleep)
     if market_only:
         return stats
     for stock_code in stocks:
@@ -399,7 +405,8 @@ def collect_kiwoom(
         if stats["stock"] and stats["stock"] % 1000 == 0:
             con.commit()
             print(f"    KIWOOM stock rows saved={stats['stock']} latest={stock_code}", flush=True)
-        time.sleep(0.25)
+        if request_sleep > 0:
+            time.sleep(request_sleep)
     return stats
 
 
@@ -442,7 +449,7 @@ def collect_range(
                 market_done = market_done_by_source.get("kis", set())
                 market_missing = (dt, "KOSPI") not in market_done or (dt, "KOSDAQ") not in market_done
                 if not skip_existing or market_missing or kis_stocks:
-                    stats = collect_kis(con, dt, kis_stocks, market_only, save_all_returned)
+                    stats = collect_kis(con, dt, kis_stocks, market_only, save_all_returned, sleep_sec)
                     print(f"  KIS {stats}", flush=True)
                     total["market"] += stats["market"]
                     total["stock"] += stats["stock"]
@@ -457,7 +464,7 @@ def collect_range(
                 market_done = market_done_by_source.get("kiwoom", set())
                 market_missing = (dt, "KOSPI") not in market_done or (dt, "KOSDAQ") not in market_done
                 if not skip_existing or market_missing or kiwoom_stocks:
-                    stats = collect_kiwoom(con, dt, kiwoom_stocks, market_only, save_all_returned)
+                    stats = collect_kiwoom(con, dt, kiwoom_stocks, market_only, save_all_returned, sleep_sec)
                     print(f"  KIWOOM {stats}", flush=True)
                     total["market"] += stats["market"]
                     total["stock"] += stats["stock"]
@@ -490,40 +497,43 @@ def main() -> None:
     p.add_argument("--save-all-returned", action="store_true", help="For stock endpoints, store every daily row returned by the broker.")
     args = p.parse_args()
 
-    con = _conn()
-    ensure_tables(con)
-    try:
-        stocks = [x.strip().zfill(6) for x in args.stocks.split(",") if x.strip()]
-        if args.all_stocks:
-            stocks = load_stock_codes(con, args.limit_stocks or None)
-        if args.start or args.end:
-            if not args.start:
-                raise SystemExit("--start is required when using --end/range mode")
-            end = args.end or date.today().strftime("%Y%m%d")
-            dates = iter_weekdays(args.start, end)
-            total = collect_range(
-                con,
-                dates,
-                stocks,
-                args.source,
-                args.market_only,
-                args.skip_existing,
-                args.sleep,
-                args.commit_every,
-                args.save_all_returned,
-            )
-            print("TOTAL", total)
-        else:
-            if not args.date:
-                raise SystemExit("--date or --start is required")
-            if args.source in {"kis", "both"}:
-                print("KIS", collect_kis(con, args.date, stocks, args.market_only, args.save_all_returned))
-                con.commit()
-            if args.source in {"kiwoom", "both"}:
-                print("KIWOOM", collect_kiwoom(con, args.date, stocks, args.market_only, args.save_all_returned))
-                con.commit()
-    finally:
-        con.close()
+    with stock_db_write_lock("collect_broker_program_trading", timeout=600) as acquired:
+        if not acquired:
+            raise SystemExit("stock.db writer lock timeout")
+        con = _conn()
+        ensure_tables(con)
+        try:
+            stocks = [x.strip().zfill(6) for x in args.stocks.split(",") if x.strip()]
+            if args.all_stocks:
+                stocks = load_stock_codes(con, args.limit_stocks or None)
+            if args.start or args.end:
+                if not args.start:
+                    raise SystemExit("--start is required when using --end/range mode")
+                end = args.end or date.today().strftime("%Y%m%d")
+                dates = iter_weekdays(args.start, end)
+                total = collect_range(
+                    con,
+                    dates,
+                    stocks,
+                    args.source,
+                    args.market_only,
+                    args.skip_existing,
+                    args.sleep,
+                    args.commit_every,
+                    args.save_all_returned,
+                )
+                print("TOTAL", total)
+            else:
+                if not args.date:
+                    raise SystemExit("--date or --start is required")
+                if args.source in {"kis", "both"}:
+                    print("KIS", collect_kis(con, args.date, stocks, args.market_only, args.save_all_returned, args.sleep))
+                    con.commit()
+                if args.source in {"kiwoom", "both"}:
+                    print("KIWOOM", collect_kiwoom(con, args.date, stocks, args.market_only, args.save_all_returned, args.sleep))
+                    con.commit()
+        finally:
+            con.close()
 
 
 if __name__ == "__main__":

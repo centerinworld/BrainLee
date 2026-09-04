@@ -16,7 +16,7 @@ import sqlite3, json, uuid
 from datetime import date, timedelta
 from typing import Any
 
-DB = "/Applications/stock_dashboard/stock.db"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 PERIOD_START = "2025-06-01"
 PERIOD_END   = "2025-12-31"

@@ -1,0 +1,16 @@
+{
+  "065350": {
+    "stock_name": "신성델타테크",
+    "primary_cause": "theme_event",
+    "confidence": "high",
+    "sample_decision": "non_operating_excluded",
+    "evidence": {
+      "type": "external_theme_verification",
+      "date": "2023-08-02",
+      "phase": "ignition",
+      "detail": "LK-99 상온초전도체 주장과 퀀텀에너지연구소 투자 연관성으로 형성된 테마 급등",
+      "source": "https://www.sisamirae.com/news/article.html?no=189436",
+      "verification_source": "https://super.or.kr/config/download.php?file_name=%28%EB%B3%B4%EB%8F%84%EC%9E%90%EB%A3%8C%29%ED%95%9C%EA%B5%AD%EC%B4%88%EC%A0%84%EB%8F%84%EC%A0%80%EC%98%A8%ED%95%99%ED%9A%8C%EC%9E%85%EC%9E%A5%EB%AC%B8.pdf&file_url=..%2Fupload_board_files%2Fcode_1%2F20230802145651-b76260ef2f.pdf"
+    }
+  }
+}

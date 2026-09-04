@@ -40,7 +40,7 @@ const IMPL_PLAN = [
         date: '6/3 (화)',
         status: 'done',
         items: [
-          'dilution_events 테이블 신설 — CB/BW/유상증자 이력 316건 수집, 스코어링에 악재 패널티 연동',
+          'dilution_events 테이블 신설 — 현재 누적 17,706건 / 1,448종목, 스코어링에 악재 패널티 연동',
           '공매도잔고 급감 (숏커버) 신호 tenbagger_engine 스코어링 연동 (short_sell_daily 302만행)',
           'margin_balance_daily 테이블 신설 — 신용잔고 221건 수집',
         ],
@@ -77,7 +77,7 @@ const IMPL_PLAN = [
           '임원매매 수집 완료 — dart_insider_holdings 26,796행 / 1,797종목 (DART elestock API)',
           '외국인 지분율 수집 완료 — kiwoom_foreign_flow 112,134행 / 2,198종목 (Kiwoom ka10008)',
           '신용잔고 수집 완료 — kiwoom_credit_balance 219,626행 / 2,198종목 (Kiwoom ka10013)',
-          'dilution_events 보강 — CB 5,341건 + 유상증자 2,594건 + BW 15건 (DART 공시 파싱)',
+          'dilution_events 보강 — CB 8,310건 + 유상증자/무상증자 계열 8,538건 + BW 417건 + EB 441건 (DART 공시 파싱)',
           '스케줄러 자동화 — 외국인지분율(매일 19:15) · 신용잔고(매일 18:45) · 임원매매(매주 일/매일 증분)',
           '원가구조(cost_structure) 연간 수집 완료 — 9,601행 / 2,175종목 (DART API)',
         ],
@@ -94,12 +94,12 @@ const IMPL_PLAN = [
       },
       {
         date: '6/11 – 6/14',
-        status: 'in_progress',
+        status: 'done',
         items: [
           '✅ v2 스크리너 백테스트 API 구현 — /api/tenbagger/score-performance (구간별 수익률 분석)',
           '✅ 점수 가중치 최적화 — 자사주(+2~3점)/PBR백분위(+2~3점)/고정비레버리지(+2~3점) 연동',
           '✅ FP/FN 탭 UI 개선 — 평균수익률 배너 + PENDING 카운트 추가',
-          '✅ AI 비즈니스 스토리 평가 프롬프트 개발 (DeepSeek 배치 확장) — /api/tenbagger/ai-analysis-batch',
+          '✅ AI 비즈니스 스토리 평가 프롬프트 개발 (OpenAI mini 배치 확장) — /api/tenbagger/ai-analysis-batch',
         ],
       },
     ],
@@ -124,12 +124,12 @@ const IMPL_PLAN = [
       },
       {
         date: '6/10 – 6/14',
-        status: 'in_progress',
+        status: 'done',
         items: [
-          '✅ DeepSeek 심층 분석 — 24h 캐시, tenbagger_ai_analysis 테이블, 아침 알림 TOP3 포함',
+          '✅ OpenAI mini 심층 분석 — 24h 캐시, tenbagger_ai_analysis 테이블, 아침 알림 TOP3 포함',
           '✅ BigQuery 파이프라인 스케줄러 자동화 — scheduler.py 18:30 BQ3배파이프라인 잡',
           '✅ 스크리너 v2 정식 배포 완료 — /api/tenbagger/screener-v2 (필터/정렬/페이지네이션)',
-          '스코어 성능 분석 탭 — /api/tenbagger/score-performance 신규, 구간별 수익률 시각화',
+          '✅ 스코어 성능 분석 탭 — /api/tenbagger/score-performance 신규, 구간별 수익률 시각화(📈 점수 성능 분석 탭)',
         ],
       },
     ],
@@ -285,7 +285,7 @@ const DATA_MATRIX_STATIC = [
       { name: '거래량 비율(평균대비)', status: 'ok', source: 'price_history', note: '실시간 계산' },
       { name: '기술적 지표(MA/RSI/볼린저)', status: 'partial', source: '실시간 계산', note: 'DB 저장 없음 — API 호출 시 계산' },
       { name: 'PBR/PER 히스토리', status: 'ok', source: 'valuation_history', note: '63K행 / 2,640종목 — 분기별 역사적 밸류에이션 ✅' },
-      { name: '상장 이후 전체 주가 이력', status: 'partial', source: 'KRX', note: '2010년 이전 일부 누락' },
+      { name: '상장 이후 전체 주가 이력', status: 'partial', source: 'KRX', note: '2010-01-04부터 전종목 수집(정책상 하한) — 2010년 이전은 미수집' },
     ],
   },
   {
@@ -298,9 +298,9 @@ const DATA_MATRIX_STATIC = [
       { name: 'TTM 흑자전환/고성장 신호', status: 'ok', source: 'earnings_signals', note: '344건 / 268종목' },
       { name: '수주잔고(Order Backlog)', status: 'ok', source: 'DART API', note: '5,005행 / 544종목 — 건설/방산/조선/IT 수집 완료 ✅' },
       { name: '매입재료비 비율(원가율)', status: 'ok', source: 'DART API', note: '27K행 / 2,213종목 — cost_structure 연간+분기 완료 ✅' },
-      { name: '고정비/변동비 구조', status: 'partial', source: 'DART API', note: 'cost_breakdown — 재료비/노무비/감가상각 세부' },
+      { name: '고정비/변동비 구조', status: 'ok', source: 'DART API', note: '23,678행 / 2,177종목(81%) — cost_breakdown 재료비/노무비/감가상각 완료 ✅' },
       { name: '분기별 EPS/BPS 히스토리', status: 'ok', source: 'valuation_history', note: '63K행 / 2,640종목 — financial_data 기반 ✅' },
-      { name: '세그먼트별 매출(사업부문)', status: 'partial', source: 'DART 주석', note: 'segment_revenue 수집 중 — DART fnlttSinglIndx' },
+      { name: '세그먼트별 매출(사업부문)', status: 'ok', source: 'DART fnlttSinglAcntAll', note: '18,365행 / 2,561종목(95.1%) — 활성 2,693종목 중 잔여 132종목 미연결', statusKey: 'segment_revenue' },
     ],
   },
   {
@@ -312,7 +312,7 @@ const DATA_MATRIX_STATIC = [
       { name: '신용잔고(ka10013)', status: 'ok', source: 'Kiwoom ka10013', note: '224K행 / 2,198종목 — 5년치 ✅' },
       { name: 'ETF 편입금액/종목 비중', status: 'ok', source: 'etfcheck.co.kr', note: '72K행 — ETF_check/etf_check.db' },
       { name: '외국인 지분율 추이', status: 'ok', source: 'Kiwoom ka10008', note: '2,198종목 ✅' },
-      { name: '기관 누적 매수 N일 연속', status: 'partial', source: 'kiwoom_investor_daily', note: '계산 가능, 알림 미구현' },
+      { name: '기관 누적 매수 N일 연속', status: 'ok', source: 'tenbagger_trigger_alert.py', note: 'check_inst_consecutive() 평일 18:00 자동 감지+텔레그램 알림 ✅' },
       { name: '프로그램 매매(시장)', status: 'partial', source: 'KIS/Kiwoom/KRX', note: '실시간 집계 확인 중', statusKey: 'broker_program_market_daily' },
       { name: '프로그램 매매(종목별)', status: 'partial', source: 'Kiwoom', note: '실시간 집계 확인 중', statusKey: 'broker_program_stock_daily' },
     ],
@@ -322,7 +322,7 @@ const DATA_MATRIX_STATIC = [
     items: [
       { name: '전체 DART 공시', status: 'ok', source: 'DART', note: '263K행 / 1,734종목' },
       { name: '수주공시(계약체결)', status: 'ok', source: 'DART', note: 'AI 분석 포함' },
-      { name: 'CB/BW/유상증자 이력', status: 'ok', source: 'DART', note: '8,688건 / 655종목 — dilution_events ✅' },
+      { name: 'CB/BW/EB/유무상증자 이력', status: 'partial', source: 'DART', note: '건수 기반 리스크 17,722건 / 1,448종목 OK · 금액 기반 issue_amount 12,015건(67.8%)은 부분완료' },
       { name: '애널리스트 목표주가', status: 'ok', source: '한경 컨센서스', note: '11,534행 / 794종목' },
       { name: '최대주주/임원 지분 매매', status: 'ok', source: 'DART elestock', note: '26,956행 / 1,800종목 ✅' },
       { name: '자사주 매입/소각 이력', status: 'ok', source: 'DART dart_disclosures', note: '5,637건 / 778종목 — treasury_buyback ✅ 텐버거 엔진 연동' },
@@ -347,12 +347,12 @@ const DATA_MATRIX_STATIC = [
   {
     category: 'AI 분석 / BigQuery',
     items: [
-      { name: 'DeepSeek 텐버거 심층 분석', status: 'ok', source: 'DeepSeek API', note: '24h 캐시, tenbagger_ai_analysis' },
+      { name: 'OpenAI mini 텐버거 심층 분석', status: 'ok', source: 'OpenAI API', note: '24h 캐시, tenbagger_ai_analysis' },
       { name: 'BigQuery 3배주 패턴(stock.db 동기화)', status: 'ok', source: 'BQ triple_pipeline', note: 'triple_pattern_daily stock.db 동기화 완료 ✅' },
       { name: 'BigQuery 복합신호 뷰', status: 'ok', source: 'BQ v_tenbagger_composite_week2', note: '실시간 조회 가능' },
       { name: '텐버거 발굴 결과', status: 'ok', source: 'tenbagger_engine', note: '6축 스코어링 + 스케줄러 자동화' },
       { name: 'TTM/QoQ 실시간 신호', status: 'ok', source: 'earnings_signals', note: '344건 / 268종목' },
-      { name: '아침 알림(07:30 텔레그램)', status: 'ok', source: 'tenbagger_morning_alert.py', note: '상위15 + DeepSeek TOP3' },
+      { name: '아침 알림(07:30 텔레그램)', status: 'ok', source: 'tenbagger_morning_alert.py', note: '상위15 + OpenAI mini TOP3' },
     ],
   },
   {
@@ -566,6 +566,10 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
   const [scorePerf, setScorePerf] = useState(null);
   const [scorePerfLoading, setScorePerfLoading] = useState(false);
   const [scorePerfDays, setScorePerfDays] = useState(7);
+  const [empiricalBoard, setEmpiricalBoard] = useState(null);
+  const [empiricalAudit, setEmpiricalAudit] = useState(null);
+  const [historicalCauses, setHistoricalCauses] = useState(null);
+  const [historicalSignals, setHistoricalSignals] = useState(null);
 
   // 매매신호 state
   const [actionData, setActionData] = useState(null);
@@ -725,8 +729,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
   const loadScorePerf = async (days = scorePerfDays) => {
     setScorePerfLoading(true);
     try {
-      const r = await fetch(API(`/api/tenbagger/score-performance?days_after=${days}&limit=500`));
-      if (r.ok) setScorePerf(await r.json());
+      const [perfRes, boardRes, auditRes, causesRes, signalsRes] = await Promise.all([
+        fetch(API(`/api/tenbagger/score-performance?days_after=${days}&limit=500`)),
+        fetch(API('/api/tenbagger/historical-scoreboard-v2')),
+        fetch(API('/api/tenbagger/historical-tenbagger-audit?horizon=24m&multiple=10&analysis_focus=earnings&start_date=2020-01-01&end_date=2024-08-08&min_score=55&min_turnover_%EC%96%B5=3&max_mktcap_%EC%96%B5=3000&sample_limit=12')),
+        fetch(API('/api/tenbagger/historical-causes')),
+        fetch(API('/api/tenbagger/historical-signal-discovery')),
+      ]);
+      if (perfRes.ok) setScorePerf(await perfRes.json());
+      if (boardRes.ok) setEmpiricalBoard(await boardRes.json());
+      if (auditRes.ok) setEmpiricalAudit(await auditRes.json());
+      if (causesRes.ok) setHistoricalCauses(await causesRes.json());
+      if (signalsRes.ok) setHistoricalSignals(await signalsRes.json());
     } catch (e) { console.error(e); }
     setScorePerfLoading(false);
   };
@@ -924,6 +938,19 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             </div>
           </div>
 
+          {actionData?.strategy_note && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.8rem' }}>
+              <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.28)', borderRadius: '0.75rem', padding: '0.9rem 1rem' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#86efac', marginBottom: '0.35rem' }}>💎 장기 텐버거 후보</div>
+                <div style={{ fontSize: '0.76rem', color: '#cbd5e1', lineHeight: 1.6 }}>{actionData.strategy_note.tenbagger}</div>
+              </div>
+              <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.28)', borderRadius: '0.75rem', padding: '0.9rem 1rem' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24', marginBottom: '0.35rem' }}>⚡ 단기 반등 후보</div>
+                <div style={{ fontSize: '0.76rem', color: '#cbd5e1', lineHeight: 1.6 }}>{actionData.strategy_note.rebound}</div>
+              </div>
+            </div>
+          )}
+
           {/* 새로고침 버튼 */}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={loadActionSignals} disabled={actionLoading}
@@ -974,6 +1001,46 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   </div>
                 )}
               </div>
+
+              {/* 단기 반등 후보 */}
+              {(actionData.rebound_candidates || []).length > 0 && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0.75rem', padding: '1rem' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fbbf24', marginBottom: '0.35rem' }}>
+                    ⚡ 단기 반등 후보 ({(actionData.rebound_candidates || []).length}건)
+                  </div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.75rem', marginBottom: '0.8rem', lineHeight: 1.6 }}>
+                    텐버거 장기 후보와 분리한 별도 바구니입니다. 급락 후 5~20거래일 반등 스윙 관점으로만 해석해야 합니다.
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                          {['종목명', '반등점수', '최근하락%', '시총(억)', '보유힌트', '핵심사유'].map(h => (
+                            <th key={h} style={{ padding: '0.4rem 0.6rem', textAlign: 'left', fontWeight: 500 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(actionData.rebound_candidates || []).map((r, i) => (
+                          <tr key={`${r.stock_code}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#e2e8f0', fontWeight: 600 }}>
+                              {r.stock_name || r.stock_code}
+                              <div style={{ color: '#94a3b8', fontSize: '0.68rem', marginTop: '0.1rem' }}>{r.strategy_label}</div>
+                            </td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#fbbf24', fontWeight: 700 }}>
+                              {r.risk_adjusted_score ?? r.score}
+                            </td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#f87171' }}>{r.pct_change != null ? r.pct_change.toFixed(1) : '-'}%</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8' }}>{r.market_cap != null ? r.market_cap.toLocaleString() : '-'}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#fde68a', fontSize: '0.76rem' }}>{r.holding_hint}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#64748b', fontSize: '0.78rem', maxWidth: '220px' }}>{(r.reasons || []).join(' · ')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* 관망 종목 */}
               {(actionData.watch_signals || []).length > 0 && (
@@ -2086,7 +2153,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               🚨 추가 수집 우선순위 (투자 판단 핵심 누락 데이터)
             </div>
             {[
-              { priority: 'P1', name: '세그먼트별 매출 (사업부문 분해)', why: '사업부문별 성장률 파악 → 어떤 사업이 견인하는지 확인 필수', how: '✅ 9,320건 / 476종목 수집 완료 (segment_revenue)', done: true },
+              { priority: 'P1', name: '세그먼트별 매출 (사업부문 분해)', why: '사업부문별 성장률 파악 → 어떤 사업이 견인하는지 확인 필수', how: '✅ 18,365행 / 2,561종목(활성 2,693종목 중 95.1%) 수집 완료 (segment_revenue)', done: true },
               { priority: 'P1', name: 'PBR/PER 역사적 이력', why: '현재 밸류에이션이 역사적으로 어느 위치인지 확인', how: '✅ 63,451건 / 2,640종목 — valuation_history, 엔진 연동 완료', done: true },
               { priority: 'P1', name: '자사주 매입/소각 이력', why: '경영진 자신감 = 저평가 확인 신호', how: '✅ 5,637건 / 778종목 — treasury_buyback, 텐버거 엔진 연동 완료', done: true },
               { priority: 'P1', name: 'DRAM/반도체 가격 지수', why: '반도체 섹터 사이클 선행지표', how: '✅ 125개월 관세청 HS8542 수출단가 proxy — 퀀트지표 페이지 연동', done: true },
@@ -2181,7 +2248,8 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   {candidates.map((s, i) => {
                     const mc = s.market_cap;
                     const mcLabel = mc == null ? '-' : mc >= 10000 ? (mc/10000).toFixed(1)+'조' : mc+'억';
-                    const scoreColor = s.total_score >= 75 ? '#34d399' : s.total_score >= 65 ? '#fbbf24' : '#a5b4fc';
+                    const displayScore = s.risk_adjusted_score ?? s.total_score;
+                    const scoreColor = displayScore >= 75 ? '#34d399' : displayScore >= 65 ? '#fbbf24' : '#a5b4fc';
                     const revG = s.revenue_growth != null ? `${s.revenue_growth > 0 ? '+' : ''}${s.revenue_growth.toFixed(0)}%` : '-';
                     const opG  = s.op_growth    != null ? `${s.op_growth > 0 ? '+' : ''}${s.op_growth.toFixed(0)}%` : '-';
                     const opM  = s.op_margin    != null ? `${s.op_margin.toFixed(1)}%` : '-';
@@ -2198,8 +2266,24 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         <td style={{ padding: '0.4rem 0.55rem' }}>
                           <span style={{ background: `${scoreColor}22`, borderRadius: '4px',
                               padding: '0.15rem 0.45rem', color: scoreColor, fontWeight: 700, fontSize: '0.72rem' }}>
-                            {s.total_score}
+                            {displayScore}
                           </span>
+                          {s.risk_adjusted_score != null && s.risk_adjusted_score !== s.total_score && (
+                            <div style={{ marginTop: '0.15rem', color: '#94a3b8', fontSize: '0.64rem' }}>
+                              원 {s.total_score}
+                            </div>
+                          )}
+                          {s.price_risk && s.price_risk !== 'OK' && (
+                            <div style={{
+                              marginTop: '0.18rem', display: 'inline-block', borderRadius: '999px',
+                              padding: '0.1rem 0.35rem', fontSize: '0.62rem', fontWeight: 700,
+                              color: s.price_risk === 'AVOID' ? '#fecaca' : '#fde68a',
+                              background: s.price_risk === 'AVOID' ? 'rgba(239,68,68,0.16)' : 'rgba(245,158,11,0.16)',
+                              border: `1px solid ${s.price_risk === 'AVOID' ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.35)'}`
+                            }}>
+                              {s.price_risk_label}{s.price_return_3m != null ? ` ${s.price_return_3m}%` : ''}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '0.4rem 0.55rem',
                             color: s.revenue_growth > 0 ? '#34d399' : s.revenue_growth < 0 ? '#f87171' : '#94a3b8' }}>
@@ -2651,7 +2735,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             {aiLoading ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
                 <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>🤖</div>
-                <div>DeepSeek 분석 중…</div>
+                <div>OpenAI mini 분석 중…</div>
                 <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '0.5rem' }}>
                   재무/수급/공시 데이터를 종합 분석하는 중입니다 (최대 90초)
                 </div>
@@ -2756,7 +2840,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 </thead>
                 <tbody>
                   {sv2Results.map((r, i) => {
-                    const score = r.total_score;
+                    const score = r.risk_adjusted_score ?? r.total_score;
                     const sc = score >= 70 ? '#4ade80' : score >= 55 ? '#fbbf24' : '#f87171';
                     const offset = (sv2Page - 1) * 30;
                     return (
@@ -2766,7 +2850,17 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         <td style={{ padding: '0.5rem 0.7rem', color: '#f1f5f9', fontWeight: 600 }}>
                           {r.stock_name}<div style={{ color: '#64748b', fontSize: '0.7rem' }}>{r.stock_code}</div>
                         </td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: sc, fontWeight: 700 }}>{score}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: sc, fontWeight: 700 }}>
+                          {score}
+                          {r.risk_adjusted_score != null && r.risk_adjusted_score !== r.total_score && (
+                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 500 }}>원 {r.total_score}</div>
+                          )}
+                          {r.price_risk && r.price_risk !== 'OK' && (
+                            <div style={{ color: r.price_risk === 'AVOID' ? '#fca5a5' : '#fbbf24', fontSize: '0.65rem', fontWeight: 700 }}>
+                              {r.price_risk_label}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8', fontSize: '0.75rem' }}>{r.market}</td>
                         <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8', fontSize: '0.75rem', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sector_large || '-'}</td>
                         <td style={{ padding: '0.5rem 0.7rem', color: '#cbd5e1' }}>{r.market_cap ? r.market_cap.toLocaleString() : '-'}</td>
@@ -3112,6 +3206,463 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             <div style={{ color: '#94a3b8', textAlign: 'center', padding: '2rem' }}>분석 중…</div>
           ) : scorePerf ? (
             <>
+              {empiricalBoard?.stable_finalists?.length > 0 && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.08)', padding: '1rem' }}>
+                  <div style={{ fontWeight: 700, color: '#f1f5f9', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                    지속형 텐버거 검증 스코어보드
+                  </div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.76rem', lineHeight: 1.6, marginBottom: '0.8rem' }}>
+                    2020~2022년 자료에서만 규칙을 선택하고 2023~2024년 완결 표본으로 검증했습니다.
+                    10배 도달 후 연매출 15% 이상 성장과 영업이익 개선, 3배 가격 3개월 이상 유지가 확인된 사례만 지속형 승자로 계산합니다.
+                  </div>
+
+                  {empiricalBoard?.decision?.current_score === 'rejected' && (
+                    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: '10px', padding: '0.75rem 0.9rem', marginBottom: '0.8rem', color: '#fecaca', fontSize: '0.75rem', lineHeight: 1.55 }}>
+                      기존 텐버거 점수는 기각되었습니다. 학습·검증 구간 모두 기준 대비 lift 1 미만이며, 아래 규칙도 연구 검증용일 뿐 현재 추천이나 자동매매에 사용할 수 없습니다.
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(135px,1fr))', gap: '0.6rem', marginBottom: '0.9rem' }}>
+                    {[
+                      { label: '전체 평가행', val: empiricalBoard.data_quality?.rows?.toLocaleString(), color: '#94a3b8' },
+                      { label: '원시 10배 사례', val: empiricalBoard.data_quality?.raw_10x_rows?.toLocaleString(), color: '#fbbf24' },
+                      { label: '지속형 10배 사례', val: empiricalBoard.data_quality?.validated_10x_rows?.toLocaleString(), color: '#4ade80' },
+                      { label: '이슈형 분리 사례', val: empiricalBoard.data_quality?.issue_only_proxy_rows?.toLocaleString(), color: '#f87171' },
+                      { label: '가격오류 10배 제외', val: empiricalBoard.data_quality?.price_artifact_10x_rows?.toLocaleString(), color: '#fb7185' },
+                    ].map(k => (
+                      <div key={k.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
+                          padding: '0.75rem 0.9rem', border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center' }}>
+                        <div style={{ color: k.color, fontSize: '1.15rem', fontWeight: 800 }}>{k.val}</div>
+                        <div style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.15rem' }}>{k.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {historicalCauses?.summary && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(145px,1fr))', gap: '0.6rem', marginBottom: '0.9rem' }}>
+                      {[
+                        { label: '원인 분석 종목', val: historicalCauses.summary.stocks, color: '#cbd5e1' },
+                        { label: '사업 원인 확정', val: historicalCauses.summary.business_training_eligible_stocks, color: '#4ade80' },
+                        { label: '비영업 원인 제외', val: historicalCauses.summary.non_operating_excluded_stocks, color: '#f87171' },
+                        { label: '수동 검토 필요', val: historicalCauses.summary.manual_review_required_stocks, color: '#fbbf24' },
+                      ].map(k => (
+                        <div key={k.label} style={{ background: 'rgba(15,23,42,0.55)', borderRadius: '10px', padding: '0.7rem 0.8rem', border: '1px solid rgba(255,255,255,0.07)', textAlign: 'center' }}>
+                          <div style={{ color: k.color, fontSize: '1.05rem', fontWeight: 800 }}>{k.val}</div>
+                          <div style={{ color: '#64748b', fontSize: '0.68rem', marginTop: '0.15rem' }}>{k.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {historicalSignals?.precision_tier && (() => {
+                    const tier = historicalSignals.precision_tier;
+                    const alert = tier.holdout?.first_alert_metrics || {};
+                    const row = tier.holdout?.row_metrics || {};
+                    return (
+                      <div style={{
+                        marginBottom: '0.9rem', padding: '0.85rem 0.95rem', borderRadius: '12px',
+                        background: 'linear-gradient(135deg, rgba(127,29,29,0.28), rgba(120,53,15,0.2))',
+                        border: '1px solid rgba(251,146,60,0.28)',
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ color: '#fdba74', fontSize: '0.8rem', fontWeight: 800 }}>고정밀 연구 티어 · 아직 실전 기준 미달</div>
+                            <div style={{ color: '#cbd5e1', fontSize: '0.7rem', marginTop: '0.2rem' }}>
+                              수주 2건 이상 + 거래대금 10억원 이상 + 영업이익 50% 이상 증가
+                            </div>
+                          </div>
+                          <div style={{ color: '#fb923c', fontSize: '1.15rem', fontWeight: 900 }}>
+                            최초 알림 적중 {alert.precision_pct || 0}%
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: '0.45rem', marginTop: '0.7rem' }}>
+                          {[
+                            ['알림/텐버거', `${alert.alerts || 0}/${alert.winner_stocks || 0}`],
+                            ['95% 신뢰구간', `${alert.precision_95ci_pct?.[0] || 0}~${alert.precision_95ci_pct?.[1] || 0}%`],
+                            ['3배 도달', `${alert.hit_3x_pct || 0}%`],
+                            ['5배 도달', `${alert.hit_5x_pct || 0}%`],
+                            ['행 기준 lift', `${row.lift || 0}x`],
+                          ].map(([label, value]) => (
+                            <div key={label} style={{ background: 'rgba(15,23,42,0.48)', borderRadius: '8px', padding: '0.55rem 0.65rem' }}>
+                              <div style={{ color: '#f8fafc', fontSize: '0.78rem', fontWeight: 800 }}>{value}</div>
+                              <div style={{ color: '#94a3b8', fontSize: '0.64rem', marginTop: '0.12rem' }}>{label}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ color: '#fca5a5', fontSize: '0.67rem', marginTop: '0.55rem', lineHeight: 1.45 }}>
+                          목표 적중률 15%를 통과하지 못해 추천·자동매매에 사용하지 않습니다. 복잡한 로지스틱 모델도 홀드아웃에서 개선되지 않아 채택하지 않았습니다.
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {historicalSignals?.recommended_signal_families && (
+                    <div style={{ marginBottom: '0.9rem' }}>
+                      <div style={{ color: '#e2e8f0', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.55rem' }}>
+                        2024 홀드아웃 통과 선행 시그널
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: '0.6rem' }}>
+                        {Object.entries(historicalSignals.recommended_signal_families).map(([key, signal]) => {
+                          const metric = signal.holdout || {};
+                          const labels = {
+                            core_business: '수주 반복 + 실적 개선',
+                            core_liquidity: '수주 반복 + 거래대금',
+                            earnings_acceleration: '영업이익 가속',
+                            demand_confirmation: '매출 성장 + 수급',
+                            turnaround_attention: '흑자전환 + 거래량',
+                          };
+                          return (
+                            <div key={key} style={{ background: 'rgba(20,83,45,0.18)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: '10px', padding: '0.75rem 0.85rem' }}>
+                              <div style={{ color: '#86efac', fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.35rem' }}>{labels[key] || key}</div>
+                              <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', color: '#cbd5e1', fontSize: '0.7rem' }}>
+                                <span>lift <strong style={{ color: '#4ade80' }}>{metric.lift}x</strong></span>
+                                <span>3배 <strong>{metric.hit_3x_pct}%</strong></span>
+                                <span>승자재현 <strong>{metric.winner_stock_recall_pct}%</strong></span>
+                                <span>중앙최대 <strong>{metric.median_peak_return_pct}%</strong></span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: '0.68rem', marginTop: '0.5rem' }}>
+                        과거 연구 결과이며 현재 추천·자동매매에는 연결되지 않습니다.
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                      <thead>
+                        <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                          {['학습 선택 규칙', '검증 표본', '지속형 적중', '검증 밀도', '기준 대비', '승자 재현율', '원시 10배율', '3배율'].map(h => (
+                            <th key={h} style={{ padding: '0.45rem 0.6rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {empiricalBoard.stable_finalists.map((row, i) => {
+                          const v = row.validation || {};
+                          return (
+                            <tr key={row.name} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#e2e8f0', fontWeight: 600 }}>
+                                <span style={{ color: row.tier === 'precision_core' ? '#4ade80' : '#38bdf8', marginRight: '0.35rem' }}>
+                                  {row.tier === 'precision_core' ? '정밀 코어' : '커버리지'}
+                                </span>
+                                점수 {row.rule?.score}+ · 거래 {row.rule?.turnover}억+ · 시총 {row.rule?.mcap}억 이하
+                                <div style={{ color: '#94a3b8', fontSize: '0.68rem', marginTop: '0.12rem', maxWidth: '260px' }}>
+                                  고점대비 {Math.round((row.rule?.drawdown || 0) * 100)}% 이하 · 실적 {row.rule?.earnings ? '필수' : '선택'} · 희석 {row.rule?.dilution == null ? '제한없음' : `${row.rule.dilution}회 이하`}
+                                </div>
+                              </td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#94a3b8' }}>{v.rows || 0}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#4ade80', fontWeight: 800 }}>{v.validated_tenbagger_rows || 0}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#4ade80', fontWeight: 700 }}>{v.validated_precision_pct || 0}%</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#fbbf24', fontWeight: 800 }}>{v.validated_lift || 0}x</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{v.winner_stock_recall_pct || 0}%</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{v.raw_10x_precision_pct || 0}%</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{v.hit_3x_pct || 0}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ color: '#64748b', fontSize: '0.7rem', lineHeight: 1.55, marginTop: '0.7rem' }}>
+                    현재 상장 종목 기반이라 상장폐지 종목 생존편향 가능성이 있습니다. 이 표는 과거 로직 검증용이며 현재 종목 추천이나 자동매매 신호가 아닙니다.
+                  </div>
+                </div>
+              )}
+
+              {empiricalAudit?.summary && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.08)', padding: '1rem' }}>
+                  <div style={{ fontWeight: 700, color: '#f1f5f9', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                    🧪 과거 10배주 미포착 감사
+                  </div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.76rem', lineHeight: 1.6, marginBottom: '0.8rem' }}>
+                    2020년 1월 1일부터 2024년 8월 8일까지의 실제 24개월 10배주를 기준으로,
+                    현재 컷이 어떤 승자를 잘라냈는지 바로 보여줍니다.
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.6rem', marginBottom: '0.9rem' }}>
+                    {[
+                      { label: '실제 승자', val: empiricalAudit.summary.winners_total, color: '#94a3b8' },
+                      { label: '포착', val: empiricalAudit.summary.captured, color: '#4ade80' },
+                      { label: '미포착', val: empiricalAudit.summary.missed, color: '#f87171' },
+                      { label: '캡처율', val: `${empiricalAudit.summary.capture_rate_pct}%`, color: '#fbbf24' },
+                    ].map(k => (
+                      <div key={k.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
+                          padding: '0.75rem 0.9rem', border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center' }}>
+                        <div style={{ color: k.color, fontSize: '1.15rem', fontWeight: 800 }}>{k.val}</div>
+                        <div style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.15rem' }}>{k.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {(empiricalAudit.miss_reason_rank || []).length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '0.9rem', marginBottom: '0.9rem' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>승자 손실 컷 랭킹</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {empiricalAudit.miss_reason_rank.map((row) => (
+                            <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                              <div style={{ width: '84px', color: '#cbd5e1', fontSize: '0.76rem', flexShrink: 0 }}>{row.name}</div>
+                              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(row.pct_of_missed, 100)}%`, height: '100%', background: row.name === '점수컷' ? '#f87171' : row.name === '거래대금컷' ? '#fbbf24' : '#60a5fa' }} />
+                              </div>
+                              <div style={{ width: '74px', textAlign: 'right', color: '#94a3b8', fontSize: '0.74rem', flexShrink: 0 }}>
+                                {row.count}건 · {row.pct_of_missed}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>컷 중첩 구조</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.75rem' }}>
+                          {[
+                            ['score_only', '점수만'],
+                            ['turnover_only', '거래대금만'],
+                            ['mktcap_only', '시총만'],
+                            ['score_and_turnover', '점수+거래대금'],
+                            ['score_and_mktcap', '점수+시총'],
+                            ['turnover_and_mktcap', '거래대금+시총'],
+                            ['all_three', '세 컷 모두'],
+                          ].map(([key, label]) => {
+                            const item = empiricalAudit.constraint_overlap?.[key];
+                            return (
+                              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
+                                <span>{label}</span>
+                                <span style={{ color: '#94a3b8' }}>{item?.count || 0}건 · {item?.pct_of_missed || 0}%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {(empiricalAudit.capture_sensitivity || []).length > 0 && (
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem', marginBottom: '0.9rem' }}>
+                      <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>컷 완화 민감도</div>
+                      <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
+                        어떤 컷을 풀었을 때 실적형 과거 승자 포착률이 가장 많이 회복되는지 바로 비교합니다.
+                      </div>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
+                          <thead>
+                            <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                              {['시나리오', '점수', '거래대금', '시총', '포착', '캡처율', '기준대비', '실적형 비중'].map(h => (
+                                <th key={h} style={{ padding: '0.45rem 0.55rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(empiricalAudit.capture_sensitivity || []).map((row, i) => (
+                              <tr key={`${row.name}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i === 0 ? 'rgba(74,222,128,0.06)' : i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#e2e8f0', fontWeight: 600 }}>{row.name}</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{row.min_score}</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{row.min_turnover_억}억</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{row.max_mktcap_억}억</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#f8fafc', fontWeight: 700 }}>{row.captured}</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#fbbf24' }}>{row.capture_rate_pct}%</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: row.incremental_vs_base > 0 ? '#4ade80' : '#94a3b8', fontWeight: 600 }}>
+                                  {row.incremental_vs_base > 0 ? `+${row.incremental_vs_base}` : row.incremental_vs_base}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#60a5fa' }}>{row.earnings_backed_share}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {empiricalAudit.score_cut_archetypes?.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem', marginBottom: '0.9rem' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수컷 승자 유형</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {empiricalAudit.score_cut_archetypes.map((row) => (
+                            <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                              <div style={{ width: '190px', color: '#cbd5e1', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
+                              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(row.pct_of_score_cut, 100)}%`, height: '100%', background: '#f87171' }} />
+                              </div>
+                              <div style={{ width: '72px', textAlign: 'right', color: '#94a3b8', fontSize: '0.74rem', flexShrink: 0 }}>
+                                {row.count}건 · {row.pct_of_score_cut}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수 부족 폭</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginBottom: '0.7rem', fontSize: '0.75rem' }}>
+                          {Object.entries(empiricalAudit.score_gap_bands || {}).map(([label, item]) => (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
+                              <span>{label}</span>
+                              <span style={{ color: '#94a3b8' }}>{item?.count || 0}건 · {item?.pct_of_score_cut || 0}%</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6 }}>
+                          점수컷으로 놓친 승자의 절반 가까이가 `20점 이상` 부족합니다.
+                          단순 임계값 미세조정보다 점수 구조 자체가 특정 승자군을 과소평가하고 있을 가능성이 큽니다.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {(empiricalAudit.score_cut_feature_gap || []).length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem', marginBottom: '0.9rem' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>캡처군 vs 점수컷 특성 격차</div>
+                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
+                          점수컷 전체에는 시총컷 중첩 종목도 섞여 있어, 현재 점수 구조가 어떤 승자군을 낮게 평가하는지 넓게 보여줍니다.
+                        </div>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
+                            <thead>
+                              <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                                {['지표', '캡처군', '점수컷', '격차'].map(h => (
+                                  <th key={h} style={{ padding: '0.45rem 0.55rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(empiricalAudit.score_cut_feature_gap || []).map((row, i) => {
+                                const fmt = (v) => v == null ? '-' : `${v}${row.unit || ''}`;
+                                const gapColor = (row.gap || 0) > 0 ? '#4ade80' : (row.gap || 0) < 0 ? '#f87171' : '#94a3b8';
+                                return (
+                                  <tr key={`${row.metric}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#e2e8f0', fontWeight: 600 }}>{row.label}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{fmt(row.captured_avg)}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{fmt(row.score_cut_avg)}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: gapColor, fontWeight: 600 }}>
+                                      {row.gap == null ? '-' : `${row.gap > 0 ? '+' : ''}${row.gap}${row.unit || ''}`}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>순수 점수 탈락군 격차</div>
+                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
+                          유동성과 시총은 통과했는데 점수만 부족했던 승자군만 따로 뽑아, 휴리스틱이 놓친 핵심 패턴을 더 정확히 보여줍니다.
+                        </div>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
+                            <thead>
+                              <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                                {['지표', '캡처군', '점수만 탈락', '격차'].map(h => (
+                                  <th key={h} style={{ padding: '0.45rem 0.55rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(empiricalAudit.score_only_feature_gap || []).map((row, i) => {
+                                const fmt = (v) => v == null ? '-' : `${v}${row.unit || ''}`;
+                                const gapColor = (row.gap || 0) > 0 ? '#4ade80' : (row.gap || 0) < 0 ? '#f87171' : '#94a3b8';
+                                return (
+                                  <tr key={`${row.metric}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#e2e8f0', fontWeight: 600 }}>{row.label}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{fmt(row.captured_avg)}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{fmt(row.score_only_avg)}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: gapColor, fontWeight: 600 }}>
+                                      {row.gap == null ? '-' : `${row.gap > 0 ? '+' : ''}${row.gap}${row.unit || ''}`}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {(empiricalAudit.score_cut_earnings_patterns?.length > 0 || empiricalAudit.mktcap_cut_breakdown?.length > 0) && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem', marginBottom: '0.9rem' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수컷 내부 실적 패턴</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {(empiricalAudit.score_cut_earnings_patterns || []).map((row) => (
+                            <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                              <div style={{ width: '220px', color: '#cbd5e1', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
+                              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(row.pct_of_score_cut, 100)}%`, height: '100%', background: '#fb7185' }} />
+                              </div>
+                              <div style={{ width: '72px', textAlign: 'right', color: '#94a3b8', fontSize: '0.74rem', flexShrink: 0 }}>
+                                {row.count}건 · {row.pct_of_score_cut}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginTop: '0.7rem' }}>
+                          `매출 YoY 상승 + 영업흑자` 실적형 승자도 현재 휴리스틱 점수에서 충분히 점수를 못 받는 사례가 많습니다.
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>시총컷 내부 승자 구조</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {(empiricalAudit.mktcap_cut_breakdown || []).map((row) => (
+                            <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                              <div style={{ width: '190px', color: '#cbd5e1', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
+                              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(row.pct_of_mktcap_cut, 100)}%`, height: '100%', background: '#60a5fa' }} />
+                              </div>
+                              <div style={{ width: '72px', textAlign: 'right', color: '#94a3b8', fontSize: '0.74rem', flexShrink: 0 }}>
+                                {row.count}건 · {row.pct_of_mktcap_cut}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginTop: '0.7rem' }}>
+                          실적형 10배주 중에서도 `3000억~1조` 이상으로 시작한 승자군이 적지 않아, 현재 시총 상한이 본질적으로 큰 승자를 잘라내고 있습니다.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {(empiricalAudit.top_missed_examples || []).length > 0 && (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            {['놓친 종목', '당시점수', '거래대금(억)', '시총(억)', '24M 최고수익', '미포착 사유'].map(h => (
+                              <th key={h} style={{ padding: '0.45rem 0.6rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(empiricalAudit.top_missed_examples || []).map((row, i) => (
+                            <tr key={`${row.stock_code}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#e2e8f0', fontWeight: 600 }}>
+                                {row.stock_name}
+                                <div style={{ color: '#94a3b8', fontSize: '0.68rem', marginTop: '0.1rem' }}>{row.stock_code} · {row.snapshot_date}</div>
+                              </td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{row.heuristic_score?.toFixed?.(1) ?? row.heuristic_score}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{row.avg_turnover_20d_억?.toFixed?.(1) ?? row.avg_turnover_20d_억}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{row.market_cap_억?.toFixed?.(0) ?? row.market_cap_억}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#fbbf24', fontWeight: 700 }}>{row.forward_peak_pct != null ? `+${row.forward_peak_pct.toFixed(1)}%` : '-'}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#94a3b8', fontSize: '0.75rem' }}>{(row.miss_reasons || []).join(' · ')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 전체 요약 */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.6rem' }}>
                 {[
@@ -3222,10 +3773,10 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             <div style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
                 borderRadius: '12px', padding: '1rem 1.2rem' }}>
               <div style={{ fontWeight: 700, color: '#a78bfa', marginBottom: '0.6rem' }}>
-                🧠 DeepSeek 배치 심층 분석
+                🧠 OpenAI mini 배치 심층 분석
               </div>
               <div style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                텐버거 상위 종목들에 대해 DeepSeek AI가 8섹션 비즈니스 스토리를 분석합니다. 종목당 약 10~20초 소요됩니다.
+                텐버거 상위 종목들에 대해 OpenAI mini가 8섹션 비즈니스 스토리를 분석합니다. 종목당 약 10~20초 소요됩니다.
               </div>
               <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text)' }}>

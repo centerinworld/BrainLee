@@ -26,134 +26,33 @@ _backfill_running = False
 
 
 def _conn():
-    c = sqlite3.connect(DB_PATH)
+    c = sqlite3.connect(DB_PATH, timeout=30)
     c.row_factory = sqlite3.Row
     return c
 
 
 def _dedupe_key_sql() -> str:
     return """
-        COALESCE(
-            CAST(report_idx AS TEXT),
-            stock_code || '|' || report_date || '|' ||
-            COALESCE(securities_firm, '') || '|' ||
-            COALESCE(analyst, '') || '|' ||
-            COALESCE(report_title, '') || '|' ||
-            COALESCE(CAST(target_price AS TEXT), '')
-        )
+        stock_code || '|' || report_date || '|' ||
+        TRIM(COALESCE(securities_firm, '')) || '|' ||
+        TRIM(COALESCE(analyst, '')) || '|' ||
+        COALESCE(CAST(target_price AS TEXT), '')
     """
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GET /api/consensus/{stock_code}  — 종목별 컨센서스 이력
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.get("/{stock_code}")
-def get_consensus(
-    stock_code: str,
-    months:     int = Query(24, ge=1, le=36, description="조회 개월수"),
-    limit:      int = Query(200, ge=1, le=500),
-):
-    """
-    특정 종목의 컨센서스 이력을 최신순으로 반환.
-    {
-      stock_code, stock_name, summary: {...}, records: [...]
-    }
-    """
-    since = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m-%d")
-    conn  = _conn()
-    try:
-        dedupe_key = _dedupe_key_sql()
-        rows = conn.execute(
-            f"""
-            WITH ranked AS (
-            SELECT id, report_date, securities_firm, analyst, opinion,
-                   target_price, prev_target_price, skin_type, report_title, report_idx,
-                   stock_name,
-                   ROW_NUMBER() OVER (PARTITION BY {dedupe_key} ORDER BY id DESC) AS rn
-            FROM   consensus_targets
-            WHERE  stock_code = ?
-              AND  report_date >= ?
-              AND  target_price > 0
-            )
-            SELECT id, report_date, securities_firm, analyst, opinion,
-                   target_price, prev_target_price, skin_type, report_title, report_idx,
-                   stock_name
-            FROM ranked
-            WHERE rn = 1
-            ORDER  BY report_date DESC, id DESC
-            LIMIT  ?
-            """,
-            (stock_code, since, limit),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    if not rows:
-        return {
-            "stock_code": stock_code,
-            "stock_name": "",
-            "summary":    _empty_summary(),
-            "records":    [],
-        }
-
-    records    = [dict(r) for r in rows]
-    stock_name = records[0].get("stock_name", "") or ""
-    summary    = _calc_summary(records)
-
-    return {
-        "stock_code": stock_code,
-        "stock_name": stock_name,
-        "summary":    summary,
-        "records":    records,
-    }
+def _clean_report_title(title: str, stock_name: str, stock_code: str) -> str:
+    """Remove collector artifacts that concatenate the same report title repeatedly."""
+    value = " ".join(str(title or "").split())
+    prefix = f"{stock_name}({stock_code})" if stock_name else ""
+    if prefix and value.startswith(prefix):
+        repeated_at = value.find(prefix, len(prefix))
+        if repeated_at > 0:
+            value = value[:repeated_at].strip()
+    return value
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /api/consensus/{stock_code}/summary  — 요약만
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.get("/{stock_code}/summary")
-def get_consensus_summary(
-    stock_code: str,
-    months:     int = Query(3, ge=1, le=24),
-):
-    since = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m-%d")
-    conn  = _conn()
-    try:
-        dedupe_key = _dedupe_key_sql()
-        rows = conn.execute(
-            f"""
-            WITH deduped AS (
-              SELECT *,
-                     ROW_NUMBER() OVER (PARTITION BY {dedupe_key} ORDER BY rowid DESC) AS rn
-              FROM consensus_targets
-              WHERE stock_code = ?
-                AND report_date >= ?
-                AND target_price > 0
-            )
-            SELECT report_date, securities_firm, opinion, target_price, stock_name
-            FROM deduped
-            WHERE rn = 1
-            ORDER  BY report_date DESC
-            """,
-            (stock_code, since),
-        ).fetchall()
-    finally:
-        conn.close()
-
-    records    = [dict(r) for r in rows]
-    stock_name = records[0].get("stock_name", "") if records else ""
-    return {
-        "stock_code": stock_code,
-        "stock_name": stock_name,
-        "months":     months,
-        **_calc_summary(records),
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# GET /api/consensus/recent  — 최근 목록 (전체 종목)
+# GET /api/consensus/recent  — 최근 목록 (정적 경로는 종목코드 경로보다 먼저 등록)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/recent")
@@ -213,6 +112,120 @@ def get_recent_consensus(
         "limit":   limit,
         "offset":  offset,
         "records": [dict(r) for r in rows],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /api/consensus/{stock_code}  — 종목별 컨센서스 이력
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/{stock_code}")
+def get_consensus(
+    stock_code: str,
+    months:     int = Query(24, ge=1, le=36, description="조회 개월수"),
+    limit:      int = Query(200, ge=1, le=500),
+):
+    """
+    특정 종목의 컨센서스 이력을 최신순으로 반환.
+    {
+      stock_code, stock_name, summary: {...}, records: [...]
+    }
+    """
+    since = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m-%d")
+    conn  = _conn()
+    try:
+        dedupe_key = _dedupe_key_sql()
+        rows = conn.execute(
+            f"""
+            WITH ranked AS (
+            SELECT id, report_date, securities_firm, analyst, opinion,
+                   target_price, prev_target_price, skin_type, report_title, report_idx,
+                   stock_name,
+                   ROW_NUMBER() OVER (PARTITION BY {dedupe_key} ORDER BY id DESC) AS rn
+            FROM   consensus_targets
+            WHERE  stock_code = ?
+              AND  report_date >= ?
+              AND  target_price > 0
+            )
+            SELECT id, report_date, securities_firm, analyst, opinion,
+                   target_price, prev_target_price, skin_type, report_title, report_idx,
+                   stock_name
+            FROM ranked
+            WHERE rn = 1
+            ORDER  BY report_date DESC, id DESC
+            LIMIT  ?
+            """,
+            (stock_code, since, limit),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return {
+            "stock_code": stock_code,
+            "stock_name": "",
+            "summary":    _empty_summary(),
+            "records":    [],
+        }
+
+    records    = [dict(r) for r in rows]
+    stock_name = records[0].get("stock_name", "") or ""
+    for record in records:
+        record["report_title"] = _clean_report_title(
+            record.get("report_title", ""),
+            record.get("stock_name", "") or stock_name,
+            stock_code,
+        )
+    summary    = _calc_summary(records)
+
+    return {
+        "stock_code": stock_code,
+        "stock_name": stock_name,
+        "summary":    summary,
+        "records":    records,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /api/consensus/{stock_code}/summary  — 요약만
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/{stock_code}/summary")
+def get_consensus_summary(
+    stock_code: str,
+    months:     int = Query(3, ge=1, le=24),
+):
+    since = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m-%d")
+    conn  = _conn()
+    try:
+        dedupe_key = _dedupe_key_sql()
+        rows = conn.execute(
+            f"""
+            WITH deduped AS (
+              SELECT *,
+                     ROW_NUMBER() OVER (PARTITION BY {dedupe_key} ORDER BY id DESC) AS rn
+              FROM consensus_targets
+              WHERE stock_code = ?
+                AND report_date >= ?
+                AND target_price > 0
+            )
+            SELECT report_date, securities_firm, opinion, target_price, stock_name
+            FROM deduped
+            WHERE rn = 1
+            ORDER  BY report_date DESC
+            """,
+            (stock_code, since),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    records    = [dict(r) for r in rows]
+    stock_name = records[0].get("stock_name", "") if records else ""
+    return {
+        "stock_code": stock_code,
+        "stock_name": stock_name,
+        "months":     months,
+        **_calc_summary(records),
     }
 
 

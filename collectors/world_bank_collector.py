@@ -14,6 +14,8 @@ WORLD_BANK_INDICATORS = [
     # ── 글로벌 ────────────────────────────────────────────────
     ("WLD", "NY.GDP.MKTP.KD.ZG", "GLOBAL_GDP_GROWTH"),
     ("WLD", "FP.CPI.TOTL.ZG",    "GLOBAL_INFLATION"),
+    ("WLD", "NE.EXP.GNFS.KD.ZG", "GLOBAL_EXPORT_VOL"),
+    ("WLD", "NE.IMP.GNFS.KD.ZG", "GLOBAL_IMPORT_VOL"),
     # ── 한국 ──────────────────────────────────────────────────
     ("KOR", "NY.GDP.MKTP.KD.ZG", "KR_GDP_GROWTH"),
     ("KOR", "FP.CPI.TOTL.ZG",    "KR_CPI"),
@@ -61,7 +63,15 @@ def _upsert(conn: sqlite3.Connection, code: str, date: str, value: float | None)
 
 def collect_world_bank() -> int:
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT OR IGNORE INTO global_macro_categories
+        (code,name,name_en,category,subcategory,unit,source,source_code,frequency,importance)
+        VALUES
+        ('GLOBAL_EXPORT_VOL','세계 수출물량 증가율','World Exports Volume Growth','GLOBAL','TRADE','%','WORLD_BANK','NE.EXP.GNFS.KD.ZG','ANNUAL',2),
+        ('GLOBAL_IMPORT_VOL','세계 수입물량 증가율','World Imports Volume Growth','GLOBAL','TRADE','%','WORLD_BANK','NE.IMP.GNFS.KD.ZG','ANNUAL',2)
+    """)
     total = 0
+    trade_components: dict[str, dict[str, float]] = {}
     for country, wb_ind, our_code in WORLD_BANK_INDICATORS:
         rows = _fetch_indicator(country, wb_ind, per_page=15)
         values = []
@@ -83,8 +93,26 @@ def collect_world_bank() -> int:
                 ON CONFLICT(indicator_code, date) DO UPDATE SET
                     value=excluded.value, prev_value=excluded.prev_value, change_pct=excluded.change_pct
             """, (our_code, date_str, val, prev, chg))
+            if our_code in ("GLOBAL_EXPORT_VOL", "GLOBAL_IMPORT_VOL"):
+                trade_components.setdefault(date_str, {})[our_code] = val
             total += 1
         time.sleep(0.3)  # rate limit
+
+    trade_values = []
+    for date_str, parts in trade_components.items():
+        if "GLOBAL_EXPORT_VOL" in parts and "GLOBAL_IMPORT_VOL" in parts:
+            trade_values.append((date_str, (parts["GLOBAL_EXPORT_VOL"] + parts["GLOBAL_IMPORT_VOL"]) / 2.0))
+    trade_values.sort(key=lambda x: x[0])
+    for i, (date_str, val) in enumerate(trade_values):
+        prev = trade_values[i - 1][1] if i > 0 else None
+        chg = ((val - prev) / abs(prev) * 100) if prev else None
+        conn.execute("""
+            INSERT INTO global_macro_data (indicator_code, date, value, prev_value, change_pct)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(indicator_code, date) DO UPDATE SET
+                value=excluded.value, prev_value=excluded.prev_value, change_pct=excluded.change_pct
+        """, ("GLOBAL_TRADE_VOL", date_str, val, prev, chg))
+        total += 1
     conn.commit()
     conn.close()
     _log(total)

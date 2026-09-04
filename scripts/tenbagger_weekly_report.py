@@ -7,11 +7,11 @@ import sqlite3, sys, os, json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 from telegram_stock_dedup import filter_new as _filter_new_alerts, mark_sent as _mark_alert_sent
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-REPORT_DIR = Path("/Applications/stock_dashboard/reports")
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+REPORT_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/reports")
 REPORT_DIR.mkdir(exist_ok=True)
 ALERT_NAMESPACE = "tenbagger_hunter_candidate"
 
@@ -24,14 +24,11 @@ def _db():
 
 def _send_telegram(msg: str):
     try:
-        from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-        import requests
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        for chunk in [msg[i:i+4000] for i in range(0, len(msg), 4000)]:
-            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk,
-                                      "parse_mode": "HTML"}, timeout=10)
+        from notifier import send
+        return send(msg, key=f"tenbagger_weekly_{datetime.now().date().isoformat()}")
     except Exception as e:
         print(f"텔레그램 발송 실패: {e}")
+        return False
 
 
 def build_weekly_report() -> tuple[str, list[dict]]:
@@ -77,7 +74,12 @@ def build_weekly_report() -> tuple[str, list[dict]]:
         JOIN stock_universe u ON u.stock_code = h.stock_code
         WHERE h.rcept_dt >= ?
         GROUP BY h.stock_code, u.stock_name
-        HAVING buy_qty > sell_qty AND buy_qty > 5000
+        HAVING SUM(CASE WHEN COALESCE(h.change_amount, h.sp_stock_lmp_irds_cnt, 0) > 0
+                        THEN COALESCE(h.change_amount, h.sp_stock_lmp_irds_cnt, 0) ELSE 0 END)
+               > ABS(SUM(CASE WHEN COALESCE(h.change_amount, h.sp_stock_lmp_irds_cnt, 0) < 0
+                        THEN COALESCE(h.change_amount, h.sp_stock_lmp_irds_cnt, 0) ELSE 0 END))
+           AND SUM(CASE WHEN COALESCE(h.change_amount, h.sp_stock_lmp_irds_cnt, 0) > 0
+                        THEN COALESCE(h.change_amount, h.sp_stock_lmp_irds_cnt, 0) ELSE 0 END) > 5000
         ORDER BY buy_qty DESC LIMIT 10
     """, (week_ago,)).fetchall()
 

@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 from collectors.fnguide_financial_collector import fetch_fnguide_all, upsert_cashflow, _conn
 
-DB = "/Applications/stock_dashboard/stock.db"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 TARGETS = ["096770", "178320", "268280"]  # SK이노베이션, 서진시스템, 미원에스씨
 YEARS = [2022, 2023, 2024, 2025]
 

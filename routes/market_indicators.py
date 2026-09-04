@@ -26,7 +26,8 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from database import get_db
 from db_utils import STOCK_DB_PATH, connect_stock_db
 from trading_calendar import is_kr_trading_day as _tc_is_kr_trading_day
@@ -69,6 +70,138 @@ def _db():
     conn = connect_stock_db(timeout=30)
     conn.row_factory = _sl.Row
     return conn
+
+
+class AttentionEventIn(BaseModel):
+    """Aggregated attention metadata from an approved/licensed connector.
+
+    This intentionally stores no discussion-board post bodies.  Attention is a
+    context/risk input, never a standalone trading signal.
+    """
+
+    source: str = Field(min_length=2, max_length=80)
+    source_url: str = Field(min_length=8, max_length=1000)
+    source_event_id: str = Field(min_length=1, max_length=160)
+    observed_at: str = Field(min_length=10, max_length=40)
+    event_type: str = Field(pattern="^(forum_rank|news_rank|sector_news|channel_attention)$")
+    stock_code: str | None = Field(default=None, max_length=20)
+    stock_name: str | None = Field(default=None, max_length=100)
+    sector_name: str | None = Field(default=None, max_length=120)
+    rank: int | None = Field(default=None, ge=1, le=10000)
+    previous_rank: int | None = Field(default=None, ge=1, le=10000)
+    mention_count: int | None = Field(default=None, ge=0)
+    sentiment_score: float | None = Field(default=None, ge=-1, le=1)
+    headline: str | None = Field(default=None, max_length=500)
+
+
+class AttentionEventsIn(BaseModel):
+    items: list[AttentionEventIn] = Field(min_length=1, max_length=1000)
+
+
+def _ensure_attention_event_table(conn) -> None:
+    """Create the source-attributed, aggregate-only attention event store."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_attention_event (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            source_event_id TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            stock_code TEXT,
+            stock_name TEXT,
+            sector_name TEXT,
+            rank INTEGER,
+            previous_rank INTEGER,
+            mention_count INTEGER,
+            sentiment_score REAL,
+            headline TEXT,
+            ingested_at TEXT NOT NULL,
+            UNIQUE(source, source_event_id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_market_attention_event_observed "
+        "ON market_attention_event(observed_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_market_attention_event_stock "
+        "ON market_attention_event(stock_code, observed_at DESC)"
+    )
+    conn.commit()
+
+
+def _materialize_channel_attention(conn, days: int = 7, limit: int = 100) -> int:
+    """Turn existing curated Telegram mention aggregates into attributed events.
+
+    This is not social sentiment.  It only preserves the already-collected
+    channel-level aggregate and lets the confirmation endpoint decide whether
+    market data supports it.
+    """
+    _ensure_attention_event_table(conn)
+    cutoff = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    try:
+        rows = conn.execute(
+            """
+            WITH ranked_mentions AS (
+                SELECT stock_name,
+                       SUM(mention_count) AS mention_count,
+                       MAX(mention_date) AS latest_date,
+                       ROW_NUMBER() OVER (ORDER BY SUM(mention_count) DESC, stock_name) AS rank_no
+                FROM tg_daily_mentions
+                WHERE mention_date >= ?
+                GROUP BY stock_name
+            ), latest_universe AS (
+                SELECT stock_code, stock_name, sector_large,
+                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY updated_at DESC) AS rn
+                FROM stock_universe
+            )
+            SELECT rm.stock_name, rm.mention_count, rm.latest_date, rm.rank_no,
+                   lu.stock_code, lu.sector_large
+            FROM ranked_mentions rm
+            LEFT JOIN latest_universe lu ON lu.stock_name=rm.stock_name AND lu.rn=1
+            ORDER BY rm.rank_no
+            LIMIT ?
+            """,
+            (cutoff, limit),
+        ).fetchall()
+    except Exception as exc:
+        logger.info("[시장관심도] 채널 관심도 원천 미준비: %s", exc)
+        return 0
+
+    now = datetime.now().isoformat(timespec="seconds")
+    for row in rows:
+        item = dict(row)
+        name = str(item.get("stock_name") or "").strip()
+        latest_date = str(item.get("latest_date") or "")
+        if not name or not latest_date:
+            continue
+        conn.execute(
+            """
+            INSERT INTO market_attention_event (
+                source, source_url, source_event_id, observed_at, event_type,
+                stock_code, stock_name, sector_name, rank, mention_count, headline, ingested_at
+            ) VALUES (?, ?, ?, ?, 'channel_attention', ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source, source_event_id) DO UPDATE SET
+                observed_at=excluded.observed_at,
+                stock_code=excluded.stock_code,
+                sector_name=excluded.sector_name,
+                rank=excluded.rank,
+                mention_count=excluded.mention_count,
+                headline=excluded.headline,
+                ingested_at=excluded.ingested_at
+            """,
+            (
+                "curated_telegram_channels", "/api/telegram/mentions/weekly",
+                f"telegram-mentions:{name}:{latest_date}", f"{latest_date}T23:59:59",
+                item.get("stock_code"), name, item.get("sector_large"), item.get("rank_no"),
+                item.get("mention_count"), f"최근 {days}일 채널 언급 집계", now,
+            ),
+        )
+    conn.commit()
+    return len(rows)
 
 
 def _ensure_turnover_signal_tables(conn: _sl.Connection) -> None:
@@ -136,7 +269,7 @@ def _fetch_market_cash_3y() -> dict:
         # 사용자가 전달한 기본 키 파일 fallback
         for p in [
             "/Users/brainlee/Downloads/한국은행ECOS.txt",
-            "/Applications/stock_dashboard/한국은행ECOS.txt",
+            "/Volumes/Realtek_NVME/stock_dashboard/runtime/한국은행ECOS.txt",
         ]:
             try:
                 if os.path.exists(p):
@@ -239,13 +372,17 @@ def _fetch_market_cash_3y_naver() -> dict:
         page_rows = []
         for tr in table.select("tr"):
             tds = [td.get_text(strip=True) for td in tr.select("td")]
-            if len(tds) < 3:
+            # 네이버 sise_deposit 테이블 컬럼 구조:
+            #   td[0]=날짜 / td[1]=고객예탁금(잔액) / td[2]=고객예탁금(증감)
+            #   td[3]=신용잔고(잔액) / td[4]=신용잔고(증감) / ...
+            # 고객예탁금·신용잔고 각각 colspan=2이므로 신용잔고는 index 3
+            if len(tds) < 4:
                 continue
             d = _parse_yy_mm_dd(tds[0])
             if not d:
                 continue
             dep_krw_100m = _to_num(tds[1])
-            cred_krw_100m = _to_num(tds[2])
+            cred_krw_100m = _to_num(tds[3])  # index 2 → 3 (고객예탁금 증감 컬럼 skip)
             page_rows.append(
                 {
                     "date": d,
@@ -280,26 +417,56 @@ def _fetch_market_cash_3y_naver() -> dict:
     return payload
 
 
-def _latest_trade_date(conn: _sl.Connection) -> str:
-    """가장 최근 거래일 찾기 (데이터가 충분히 있는 날을 선호)"""
-    # 1. 수급 데이터가 50건 이상 있는 가장 최근 날짜 (주말 제외)
-    sql = """
-        SELECT substr(date, 1, 10) as dt
-        FROM price_history
-        WHERE (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0)
-        GROUP BY dt
-        HAVING COUNT(*) >= 1
-        ORDER BY dt DESC
-        LIMIT 1
-    """
-    row = conn.execute(sql).fetchone()
-    if row:
-        return row[0]
+_LATEST_TRADE_DATE_CACHE: dict = {"date": None, "at": 0.0}
+_LATEST_TRADE_DATE_TTL = 300  # 5분 — 하루 중 여러 번 호출되므로 짧은 캐시로 재계산 방지
 
-    # 2. 데이터가 부족한 경우 단순 최근 날짜
-    sql = "SELECT MAX(substr(date, 1, 10)) FROM price_history"
-    row = conn.execute(sql).fetchone()
-    return row[0] if row and row[0] else datetime.now().strftime("%Y-%m-%d")
+
+def _count_codes_on_day(conn: _sl.Connection, day: str) -> int:
+    """day(YYYY-MM-DD) 하루치 종목수. date 컬럼에 드물게 섞인 타임스탬프 행도
+    범위 비교(>=day AND <next_day)로 포함하되 date 인덱스 탐색만 사용한다."""
+    next_day = (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    row = conn.execute(
+        "SELECT COUNT(DISTINCT stock_code) FROM price_history "
+        "WHERE date>=? AND date<? AND close>0",
+        (day, next_day),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def _latest_trade_date(conn: _sl.Connection) -> str:
+    """가장 최근 거래일 찾기 (데이터가 충분히 있는 날을 선호).
+
+    2026-07-17 최적화: 기존 구현은 price_history(8.1M행) 전체를
+    substr(date,1,10) 기준 GROUP BY + COUNT(DISTINCT)로 스캔해 호출 1회에
+    ~2.6초(TEMP B-TREE 2회) 소요했다. date 컬럼에 드물게(7건) 순수 날짜가
+    아닌 타임스탬프 행이 섞여 있어 substr()이 필요했던 것인데, 그 이유만으로
+    전체스캔을 감수할 필요는 없다 — MAX(date)에서 시작해 인덱스 범위탐색으로
+    하루씩 역방향 이동하면 통상 1~2회 만에 해결되고(실측 0.02초),
+    타임스탬프 오염 행도 범위비교(>=day AND <next_day)로 그대로 포함된다.
+    """
+    now = time.time()
+    cached = _LATEST_TRADE_DATE_CACHE
+    if cached["date"] and (now - cached["at"]) < _LATEST_TRADE_DATE_TTL:
+        return cached["date"]
+
+    def _walk_back(min_codes: int, max_hops: int) -> Optional[str]:
+        row = conn.execute("SELECT MAX(date) FROM price_history WHERE close>0").fetchone()
+        d = row[0][:10] if row and row[0] else None
+        for _ in range(max_hops):
+            if not d:
+                return None
+            if _count_codes_on_day(conn, d) >= min_codes:
+                return d
+            prev = conn.execute(
+                "SELECT MAX(date) FROM price_history WHERE close>0 AND date<?", (d,)
+            ).fetchone()
+            d = prev[0][:10] if prev and prev[0] else None
+        return None
+
+    result = _walk_back(2000, 30) or _walk_back(500, 60) or datetime.now().strftime("%Y-%m-%d")
+    _LATEST_TRADE_DATE_CACHE["date"] = result
+    _LATEST_TRADE_DATE_CACHE["at"] = now
+    return result
 
 
 # ── GET /api/market-indicators/investor-top ────────────────────
@@ -337,15 +504,18 @@ def get_investor_top(
                     ELSE (SELECT close FROM price_history WHERE stock_code=ph.stock_code AND close > 0 ORDER BY date DESC LIMIT 1)
                 END AS close,
                 ph.volume,
-                ROUND(ph.inst_net_buy_amt / 100.0, 1) AS inst_amt,   -- 백만원→억원
-                ROUND(ph.frn_net_buy_amt  / 100.0, 1) AS frn_amt,
-                ROUND(ph.ind_net_buy_amt  / 100.0, 1) AS ind_amt,
-                ROUND((COALESCE(ph.inst_net_buy_amt, 0) + COALESCE(ph.frn_net_buy_amt, 0)) / 100.0, 1) AS both_amt,
+                ROUND(CAST(ph.inst_net_buy_amt / 100.0 AS NUMERIC), 1) AS inst_amt,   -- 백만원→억원
+                ROUND(CAST(ph.frn_net_buy_amt  / 100.0 AS NUMERIC), 1) AS frn_amt,
+                ROUND(CAST(ph.ind_net_buy_amt  / 100.0 AS NUMERIC), 1) AS ind_amt,
+                ROUND(CAST((COALESCE(ph.inst_net_buy_amt, 0) + COALESCE(ph.frn_net_buy_amt, 0)) / 100.0 AS NUMERIC), 1) AS both_amt,
                 ROUND(COALESCE(ph.inst_net_buy, (ph.inst_net_buy_amt * 1000000.0 / NULLIF(ph.close, 0)))) AS inst_qty,
                 ROUND(COALESCE(ph.frn_net_buy, (ph.frn_net_buy_amt * 1000000.0 / NULLIF(ph.close, 0))))   AS frn_qty,
                 ROUND(COALESCE(ph.ind_net_buy, (ph.ind_net_buy_amt * 1000000.0 / NULLIF(ph.close, 0))))   AS ind_qty,
                 ROUND((COALESCE(ph.inst_net_buy, 0) + COALESCE(ph.frn_net_buy, 0))) AS both_qty,
-                ph.date
+                ph.date,
+                ROW_NUMBER() OVER (
+                    PARTITION BY ph.stock_code ORDER BY ph.date DESC, ph.id DESC
+                ) AS dedup_rn
               FROM price_history ph
               LEFT JOIN (
                   SELECT stock_code, stock_name, market, shares_issued, stock_type,
@@ -376,9 +546,8 @@ def get_investor_top(
                 AND ph.stock_code NOT LIKE 'CL%'
                 AND ph.stock_code NOT LIKE 'ES%'
                 AND ph.stock_code NOT LIKE 'NQ%'
-              GROUP BY ph.stock_code
             )
-            SELECT * FROM ranked
+            SELECT * FROM ranked WHERE dedup_rn=1
         """
         rows = conn.execute(sql, (trade_date,)).fetchall()
 
@@ -388,15 +557,18 @@ def get_investor_top(
         if rows and market_open:
             codes_in = ",".join(f"'{dict(r)['stock_code']}'" for r in rows)
             today_rows = conn.execute(f"""
-                SELECT stock_code,
-                       close AS today_close,
-                       substr(date,1,10) AS today_date
-                FROM price_history
-                WHERE stock_code IN ({codes_in})
-                  AND close > 0
-                  AND substr(date,1,10) = ?
-                GROUP BY stock_code
-                HAVING date = MAX(date)
+                SELECT stock_code, close AS today_close, substr(date,1,10) AS today_date
+                FROM (
+                    SELECT stock_code, close, date,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY stock_code ORDER BY date DESC
+                           ) AS rn
+                    FROM price_history
+                    WHERE stock_code IN ({codes_in})
+                      AND close > 0
+                      AND substr(date,1,10) = ?
+                ) latest
+                WHERE rn=1
             """, (datetime.now().strftime("%Y-%m-%d"),)).fetchall()
             for tr in today_rows:
                 today_price_map[tr["stock_code"]] = {
@@ -500,6 +672,9 @@ def get_turnover_top(
     limit: int = Query(default=20, ge=5, le=50),
 ):
     """회전율 상위 종목. 회전율 = 거래량 / 상장주식수 × 100"""
+    date_str = date_str if isinstance(date_str, str) else ""
+    market = market if isinstance(market, str) else "ALL"
+    limit = limit if isinstance(limit, int) else 20
     conn = _db()
     try:
         trade_date = date_str if date_str else _latest_trade_date(conn)
@@ -512,7 +687,8 @@ def get_turnover_top(
             mkt_filter = "AND (su.market LIKE '%코스닥%' OR su.market LIKE '%KOSDAQ%')"
 
         sql = f"""
-            SELECT
+            SELECT * FROM (
+            SELECT DISTINCT ON (ph.stock_code)
               ph.stock_code,
               COALESCE(su.stock_name, ph.stock_code) AS stock_name,
               COALESCE(su.market, '') AS market,
@@ -522,13 +698,13 @@ def get_turnover_top(
               ph.close,
               ph.volume,
               su.shares_issued,
-              CASE WHEN su.shares_issued > 0 THEN ROUND(ph.volume * 100.0 / su.shares_issued, 4) ELSE 0 END AS turnover_pct,
+              CASE WHEN su.shares_issued > 0 THEN ROUND(CAST(ph.volume * 100.0 / su.shares_issued AS NUMERIC), 4) ELSE 0 END AS turnover_pct,
               ROUND(ph.inst_net_buy_amt / 100.0) AS inst_net_buy_amt,  -- 백만원→억원
               ROUND(ph.frn_net_buy_amt  / 100.0) AS frn_net_buy_amt,
               COALESCE(su.sector_large, '') AS sector,
               ph.date,
-              CASE WHEN ph.trade_amount > 0 THEN ROUND(ph.trade_amount / 1e8, 1)
-                   ELSE ROUND(ph.volume * ph.close / 1e8, 1) END AS trade_amount_억,
+              CASE WHEN ph.trade_amount > 0 THEN ROUND(CAST(ph.trade_amount / 1e8 AS NUMERIC), 1)
+                   ELSE ROUND(CAST(ph.volume * ph.close / 1e8 AS NUMERIC), 1) END AS trade_amount_억,
               COALESCE(su.sector_type, '') AS sector_type
             FROM price_history ph
             LEFT JOIN (
@@ -556,7 +732,8 @@ def get_turnover_top(
                   COALESCE(su.stock_name, '') NOT LIKE '%2X%'
               )
               {mkt_filter}
-            GROUP BY ph.stock_code
+            ORDER BY ph.stock_code, ph.date DESC, ph.id DESC
+            ) ranked
             ORDER BY turnover_pct DESC
             LIMIT ?
         """
@@ -568,7 +745,7 @@ def get_turnover_top(
             codes = [r["stock_code"] for r in rows]
             codes_ph = ','.join('?' * len(codes))
             prev_rows = conn.execute(
-                f"""SELECT ph.stock_code, ph.close AS prev_close
+                f"""SELECT DISTINCT ON (ph.stock_code) ph.stock_code, ph.close AS prev_close
                     FROM price_history ph
                     WHERE ph.stock_code IN ({codes_ph})
                       AND ph.close > 0
@@ -579,7 +756,7 @@ def get_turnover_top(
                             AND ph2.close > 0
                             AND substr(ph2.date, 1, 10) < ?
                       )
-                    GROUP BY ph.stock_code""",
+                    ORDER BY ph.stock_code, ph.id DESC""",
                 codes + [trade_date, trade_date],
             ).fetchall()
             prev_map = {r["stock_code"]: r["prev_close"] for r in prev_rows}
@@ -606,6 +783,291 @@ def get_turnover_top(
         conn.close()
 
 
+@router.get("/rank-events")
+def get_rank_events(
+    date_str: str = Query(default="", alias="date"),
+    limit: int = Query(default=15, ge=5, le=30),
+):
+    """Unified, date-addressable market ranking events for the supply dashboard.
+
+    Rankings are derived from the same point-in-time daily snapshots used by the
+    dashboard.  This avoids presenting a later recalculation as if it had been
+    available during the selected session.
+    """
+    conn = _db()
+    try:
+        trade_date = date_str or _latest_trade_date(conn)
+    finally:
+        conn.close()
+
+    events: list[dict] = []
+    turnover = get_turnover_top(date_str=trade_date, market="ALL", limit=limit).get("data", [])
+    for rank, row in enumerate(turnover, 1):
+        events.append({
+            "event_type": "turnover",
+            "label": "회전율 상위",
+            "rank": rank,
+            "stock_code": row.get("stock_code"),
+            "stock_name": row.get("stock_name"),
+            "market": row.get("market"),
+            "sector": row.get("sector"),
+            "metric": row.get("turnover_pct"),
+            "metric_label": "회전율(%)",
+            "date": trade_date,
+        })
+
+    investor = get_investor_top(date_str=trade_date, limit=limit)
+    for market_key, market_label in (("kospi", "KOSPI"), ("kosdaq", "KOSDAQ")):
+        for rank, row in enumerate((investor.get(market_key, {}).get("both_buy") or []), 1):
+            events.append({
+                "event_type": "supply",
+                "label": f"{market_label} 기관·외국인 순매수",
+                "rank": rank,
+                "stock_code": row.get("stock_code"),
+                "stock_name": row.get("stock_name"),
+                "market": row.get("market"),
+                "sector": None,
+                "metric": row.get("both_amt"),
+                "metric_label": "순매수(억원)",
+                "date": trade_date,
+            })
+
+    try:
+        short = get_short_rank(date=trade_date.replace("-", ""), limit=limit)
+        for rank, row in enumerate(short.get("rows") or [], 1):
+            events.append({
+                "event_type": "borrow",
+                "label": "대차잔고 상위",
+                "rank": rank,
+                "stock_code": row.get("stock_code"),
+                "stock_name": row.get("stock_name"),
+                "market": row.get("market"),
+                "sector": row.get("sector"),
+                "metric": row.get("lnb_bal"),
+                "metric_label": "대차잔액(원)",
+                "date": trade_date,
+            })
+    except Exception:
+        # Public short data can be published after price/supply snapshots.
+        pass
+
+    return {
+        "date": trade_date,
+        "events": events,
+        "notice": "선택 기준일 당시의 거래회전·기관/외국인 수급·대차 상위 이벤트입니다. 단독 매수 신호가 아닙니다.",
+    }
+
+
+@router.post("/attention-events")
+def ingest_attention_events(payload: AttentionEventsIn):
+    """Persist source-attributed aggregate news/forum attention observations.
+
+    A licensed connector may submit ranking/count metadata here.  Raw forum
+    bodies are deliberately excluded, and these records cannot create an order
+    or alter a live-trading strategy.
+    """
+    conn = _db()
+    try:
+        _ensure_attention_event_table(conn)
+        now = datetime.now().isoformat(timespec="seconds")
+        for item in payload.items:
+            conn.execute(
+                """
+                INSERT INTO market_attention_event (
+                    source, source_url, source_event_id, observed_at, event_type,
+                    stock_code, stock_name, sector_name, rank, previous_rank,
+                    mention_count, sentiment_score, headline, ingested_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source, source_event_id) DO UPDATE SET
+                    source_url=excluded.source_url,
+                    observed_at=excluded.observed_at,
+                    event_type=excluded.event_type,
+                    stock_code=excluded.stock_code,
+                    stock_name=excluded.stock_name,
+                    sector_name=excluded.sector_name,
+                    rank=excluded.rank,
+                    previous_rank=excluded.previous_rank,
+                    mention_count=excluded.mention_count,
+                    sentiment_score=excluded.sentiment_score,
+                    headline=excluded.headline,
+                    ingested_at=excluded.ingested_at
+                """,
+                (
+                    item.source.strip(), item.source_url.strip(), item.source_event_id.strip(),
+                    item.observed_at, item.event_type, (item.stock_code or "").strip() or None,
+                    (item.stock_name or "").strip() or None, (item.sector_name or "").strip() or None,
+                    item.rank, item.previous_rank, item.mention_count, item.sentiment_score,
+                    (item.headline or "").strip() or None, now,
+                ),
+            )
+        conn.commit()
+        return {
+            "ok": True,
+            "saved": len(payload.items),
+            "decision_mode": "research_paper_only",
+            "notice": "관심도는 수급·섹터·공시 교차검증용입니다. 단독 매수·주문 신호로 사용되지 않습니다.",
+        }
+    except Exception as exc:
+        conn.rollback()
+        logger.exception("[시장관심도] 적재 실패")
+        raise HTTPException(status_code=500, detail="관심도 이벤트 저장에 실패했습니다.") from exc
+    finally:
+        conn.close()
+
+
+@router.post("/attention-events/materialize-channel")
+def materialize_channel_attention(days: int = Query(default=7, ge=2, le=30)):
+    """Refresh the existing curated-channel attention feed without scraping."""
+    conn = _db()
+    try:
+        saved = _materialize_channel_attention(conn, days=days)
+        return {
+            "ok": True,
+            "saved": saved,
+            "source": "curated_telegram_channels",
+            "decision_mode": "research_paper_only",
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/attention-confirmation")
+def get_attention_confirmation(limit: int = Query(default=50, ge=5, le=200)):
+    """Cross-check external attention against point-in-time market evidence.
+
+    Attention adds no positive alpha by itself.  A row is only marked
+    ``confirmed_for_paper_review`` when it has independent flow confirmation
+    plus a sector-breadth or official-disclosure catalyst confirmation.
+    """
+    conn = _db()
+    try:
+        _ensure_attention_event_table(conn)
+        rows = conn.execute(
+            """
+            SELECT * FROM market_attention_event
+            WHERE observed_at >= ?
+            ORDER BY observed_at DESC, id DESC
+            LIMIT ?
+            """,
+            ((datetime.now() - timedelta(days=7)).isoformat(timespec="seconds"), limit),
+        ).fetchall()
+        events = [dict(row) for row in rows]
+        codes = sorted({str(row["stock_code"]) for row in events if row.get("stock_code")})
+        if not events:
+            return {
+                "items": [],
+                "decision_mode": "research_paper_only",
+                "notice": "키움·KIS·KRX 구조화 시장 데이터가 우선입니다. 뉴스·토론·채널 관심도는 명시적으로 적재한 출처·링크 기반 집계만 후순위 보조 문맥으로 표시합니다.",
+            }
+
+        flow_by_code: dict[str, float] = {}
+        if codes:
+            marks = ",".join("?" for _ in codes)
+            flow_rows = conn.execute(
+                f"""
+                WITH recent_dates AS (
+                    SELECT DISTINCT substr(date, 1, 10) AS trade_date
+                    FROM price_history
+                    WHERE close > 0
+                    ORDER BY trade_date DESC
+                    LIMIT 5
+                )
+                SELECT stock_code,
+                       ROUND(SUM(COALESCE(inst_net_buy_amt, 0) + COALESCE(frn_net_buy_amt, 0)) / 100.0, 1) AS flow_5d_억
+                FROM price_history
+                WHERE stock_code IN ({marks})
+                  AND substr(date, 1, 10) IN (SELECT trade_date FROM recent_dates)
+                GROUP BY stock_code
+                """,
+                codes,
+            ).fetchall()
+            flow_by_code = {str(row["stock_code"]): float(row["flow_5d_억"] or 0) for row in flow_rows}
+
+        # A sector must attract at least two independently ranked/mentioned names
+        # before it can count as breadth confirmation.
+        sector_codes: dict[str, set[str]] = {}
+        sector_news: set[str] = set()
+        for event in events:
+            sector = (event.get("sector_name") or "").strip()
+            if sector and event.get("stock_code"):
+                sector_codes.setdefault(sector, set()).add(str(event["stock_code"]))
+            if sector and event.get("event_type") == "sector_news":
+                sector_news.add(sector)
+
+        disclosure_codes: set[str] = set()
+        if codes:
+            try:
+                marks = ",".join("?" for _ in codes)
+                disclosure_rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT stock_code
+                    FROM dart_rd_patent_signals
+                    WHERE stock_code IN ({marks})
+                      AND rcept_dt >= ?
+                    """,
+                    codes + [(datetime.now() - timedelta(days=45)).strftime("%Y%m%d")],
+                ).fetchall()
+                disclosure_codes = {str(row["stock_code"]) for row in disclosure_rows}
+            except Exception:
+                # Optional table: a missing DART enrichment must not invalidate
+                # verified flow or sector data.
+                pass
+
+        items = []
+        for event in events:
+            code = str(event.get("stock_code") or "")
+            sector = (event.get("sector_name") or "").strip()
+            flow_5d = flow_by_code.get(code)
+            flow_confirmed = flow_5d is not None and flow_5d >= 10.0
+            breadth_confirmed = bool(sector and len(sector_codes.get(sector, set())) >= 2)
+            catalyst_confirmed = bool(code and code in disclosure_codes) or bool(sector and sector in sector_news)
+            rank_improving = bool(
+                event.get("rank") is not None
+                and event.get("previous_rank") is not None
+                and event["rank"] < event["previous_rank"]
+            )
+            confirmations = sum((flow_confirmed, breadth_confirmed, catalyst_confirmed))
+            confirmed = flow_confirmed and (breadth_confirmed or catalyst_confirmed)
+            warnings = []
+            if event.get("event_type") == "forum_rank":
+                warnings.append("토론 순위는 관심·과열 지표이며 매수 근거가 아닙니다.")
+            if event.get("event_type") == "channel_attention":
+                warnings.append("채널 언급량은 분석 우선순위용이며 매수 근거가 아닙니다.")
+            if event.get("rank") and event["rank"] <= 10 and not flow_confirmed:
+                warnings.append("상위 관심도 대비 기관·외국인 5일 수급 확인이 없어 과열 가능성을 점검하세요.")
+            if not code:
+                warnings.append("종목 코드가 없는 섹터 이벤트는 개별 종목 후보로 승격하지 않습니다.")
+            reasons = []
+            if flow_confirmed:
+                reasons.append(f"기관·외국인 5일 합산 순매수 {flow_5d:,.1f}억원")
+            if breadth_confirmed:
+                reasons.append(f"같은 섹터 관심 종목 {len(sector_codes[sector])}개")
+            if catalyst_confirmed:
+                reasons.append("최근 공시 또는 출처가 명시된 섹터 촉매")
+            if rank_improving:
+                reasons.append("관심도 순위 개선(참고용)")
+            items.append({
+                **event,
+                "flow_5d_억": flow_5d,
+                "flow_confirmed": flow_confirmed,
+                "sector_breadth_confirmed": breadth_confirmed,
+                "catalyst_confirmed": catalyst_confirmed,
+                "confirmation_count": confirmations,
+                "status": "confirmed_for_paper_review" if confirmed else "context_or_risk_only",
+                "strategy_eligibility": "research_paper_only",
+                "reasons": reasons,
+                "warnings": warnings,
+            })
+        items.sort(key=lambda item: (item["status"] != "confirmed_for_paper_review", -item["confirmation_count"], item.get("rank") or 99999))
+        return {
+            "items": items,
+            "decision_mode": "research_paper_only",
+            "notice": "뉴스·토론 관심도는 단독 알파가 아닙니다. 기관·외국인 수급과 섹터 확산 또는 공시 촉매가 함께 확인된 경우만 가상매매 검토 대상으로 표시합니다.",
+        }
+    finally:
+        conn.close()
+
+
 @router.get("/turnover-breakout-signals")
 def get_turnover_breakout_signals(
     date_str: str = Query(default="", alias="date"),
@@ -626,6 +1088,14 @@ def get_turnover_breakout_signals(
     - (선택) 기관/외국인 동반 순매수 필터 적용
     - 기본 리스크룰: 익절 +10%, 손절 -5%
     """
+    date_str = date_str if isinstance(date_str, str) else ""
+    market = market if isinstance(market, str) else "ALL"
+    scan_limit = scan_limit if isinstance(scan_limit, int) else 200
+    top_n = top_n if isinstance(top_n, int) else 30
+    min_turnover_pct = min_turnover_pct if isinstance(min_turnover_pct, (int, float)) else 8.0
+    min_body_pct = min_body_pct if isinstance(min_body_pct, (int, float)) else 5.0
+    min_vol_ratio = min_vol_ratio if isinstance(min_vol_ratio, (int, float)) else 1.8
+    require_dual_flow = require_dual_flow if isinstance(require_dual_flow, bool) else True
     conn = _db()
     try:
         trade_date = date_str if date_str else _latest_trade_date(conn)
@@ -838,8 +1308,8 @@ def get_turnover_breakout_live(
         flow_rows = conn.execute(
             """
             SELECT stock_code,
-                   ROUND(SUM(COALESCE(inst_net_buy_amt,0))/100.0,1) AS inst_amt,
-                   ROUND(SUM(COALESCE(frn_net_buy_amt,0))/100.0,1)  AS frn_amt
+                   ROUND(CAST(SUM(COALESCE(inst_net_buy_amt,0))/100.0 AS NUMERIC),1) AS inst_amt,
+                   ROUND(CAST(SUM(COALESCE(frn_net_buy_amt,0))/100.0 AS NUMERIC),1)  AS frn_amt
             FROM price_history
             WHERE substr(date,1,10)=?
             GROUP BY stock_code
@@ -1104,7 +1574,7 @@ def get_investor_trend(
                         inst_net_buy, frn_net_buy, ind_net_buy,
                         ROW_NUMBER() OVER (
                           PARTITION BY stock_code, substr(date,1,10)
-                          ORDER BY date DESC, rowid DESC
+                          ORDER BY date DESC, id DESC
                         ) AS rn
                  FROM price_history
                  WHERE date >= ?
@@ -1281,7 +1751,7 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
                  AND (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0)
                  AND strftime('%w', date) NOT IN ('0', '6')
                GROUP BY d
-               HAVING cnt >= 20
+               HAVING count(*) >= 20
                ORDER BY d DESC LIMIT ?""",
             (limit,),
         ).fetchall()
@@ -1294,7 +1764,7 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
                      AND (COALESCE(inst_net_buy_amt, 0) != 0 OR COALESCE(frn_net_buy_amt, 0) != 0)
                      AND strftime('%w', date) NOT IN ('0', '6')
                    GROUP BY d
-                   HAVING cnt >= 1
+                   HAVING count(*) >= 1
                    ORDER BY d DESC LIMIT ?""",
                 (limit,),
             ).fetchall()
@@ -1313,7 +1783,7 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
 @router.get("/short-dates")
 def get_short_dates(limit: int = 30):
     """대차종목순위 수집된 날짜 목록."""
-    conn = _sl.connect(DB_PATH)
+    conn = _sl.connect(DB_PATH, timeout=30)
     try:
         rows = conn.execute(
             "SELECT DISTINCT bas_dt FROM short_rank_daily ORDER BY bas_dt DESC LIMIT ?",
@@ -1330,7 +1800,7 @@ def get_short_rank(date: str = "", limit: int = 50, sort_by: str = "lnb_rman_stc
 
     sort_by: lnb_rman_stck_cnt(잔여주식수) | lnb_bal(잔액) | lnb_ccl_stck_cnt(체결주식수)
     """
-    conn = _sl.connect(DB_PATH)
+    conn = _sl.connect(DB_PATH, timeout=30)
     conn.row_factory = _sl.Row
     try:
         # 날짜 결정
@@ -1364,7 +1834,7 @@ def get_short_rank(date: str = "", limit: int = 50, sort_by: str = "lnb_rman_stc
 @router.get("/short-history")
 def get_short_history(code: str = "", name: str = "", days: int = 60):
     """종목별 대차거래현황 추이 (short_sell_daily 기반)."""
-    conn = _sl.connect(DB_PATH)
+    conn = _sl.connect(DB_PATH, timeout=30)
     conn.row_factory = _sl.Row
     try:
         # 종목코드/이름 해결
@@ -1403,7 +1873,7 @@ def get_short_history(code: str = "", name: str = "", days: int = 60):
 @router.get("/short-foreign")
 def get_short_foreign(days: int = 120):
     """내외국인 대차잔고비교 + 거래량 추이 (최근 N일)."""
-    conn = _sl.connect(DB_PATH)
+    conn = _sl.connect(DB_PATH, timeout=30)
     conn.row_factory = _sl.Row
     try:
         cutoff = (datetime.today() - timedelta(days=days)).strftime("%Y%m%d")
@@ -1437,7 +1907,7 @@ def get_short_foreign(days: int = 120):
 @router.get("/short-monthly")
 def get_short_monthly(months: int = 24):
     """월별 대차거래현황 집계 (최근 N개월)."""
-    conn = _sl.connect(DB_PATH)
+    conn = _sl.connect(DB_PATH, timeout=30)
     conn.row_factory = _sl.Row
     try:
         rows = conn.execute("""

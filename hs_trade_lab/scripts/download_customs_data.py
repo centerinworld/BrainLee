@@ -89,8 +89,10 @@ ENDPOINTS = {
     ),
     "newtempertrade": EndpointSpec(
         key="newtempertrade",
-        base_url="https://apis.data.go.kr/1220000/newtempertrade",
-        operation="getNewtempertradeList",
+        # Official public-data gateway path is `ntempertrade/getNtempertradeList`.
+        # Keep the local key name for backward compatibility with existing jobs/docs.
+        base_url="https://apis.data.go.kr/1220000/ntempertrade",
+        operation="getNtempertradeList",
         required_params=("strtYymm", "endYymm", "imexTpcd"),
         optional_filters=("imexTmprUnfcClsfCd",),
         strategy="year_window_by_imex",
@@ -129,6 +131,20 @@ def parse_xml_items(xml_text: str) -> tuple[str, str, list[dict[str, str]]]:
             row[child.tag] = child.text or ""
         items.append(row)
     return result_code, result_msg, items
+
+
+def parse_openapi_service_error(xml_text: str) -> dict[str, str] | None:
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return None
+    if root.tag != "OpenAPI_ServiceResponse":
+        return None
+    return {
+        "err_msg": root.findtext(".//errMsg", default=""),
+        "auth_msg": root.findtext(".//returnAuthMsg", default=""),
+        "reason_code": root.findtext(".//returnReasonCode", default=""),
+    }
 
 
 def safe_slug(value: str) -> str:
@@ -209,6 +225,18 @@ def fetch_endpoint(
     for attempt in range(4):
         try:
             response = client.get(url, params=query)
+            if response.status_code == 403:
+                error_info = parse_openapi_service_error(response.text)
+                if error_info:
+                    return {
+                        "status": "approval_required",
+                        "path": str(output_path),
+                        "count": 0,
+                        "params": params,
+                        "http_status": response.status_code,
+                        "error_code": error_info.get("reason_code", ""),
+                        "error_message": error_info.get("auth_msg", "") or error_info.get("err_msg", ""),
+                    }
             if response.status_code < 500:
                 response.raise_for_status()
                 break

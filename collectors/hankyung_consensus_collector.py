@@ -78,6 +78,25 @@ def _try_parsers(html: str) -> BeautifulSoup:
     return BeautifulSoup(html, "html.parser")
 
 
+def _title_from_cell(cell) -> str:
+    """Prefer one report link over concatenated duplicate text from the whole cell."""
+    candidates = [
+        " ".join(a.get_text(" ", strip=True).split())
+        for a in cell.find_all("a")
+        if a.get_text(" ", strip=True)
+    ]
+    title = next((value for value in candidates if _CODE_RE.search(value)), "")
+    if not title:
+        title = " ".join(cell.get_text(" ", strip=True).split())
+    code_match = _CODE_RE.search(title)
+    if code_match:
+        prefix = title[:code_match.end()].strip()
+        repeated_at = title.find(prefix, len(prefix))
+        if repeated_at > 0:
+            title = title[:repeated_at].strip()
+    return title
+
+
 def _last_page(soup: BeautifulSoup) -> int:
     """'끝으로' 링크에서 마지막 페이지 번호 추출."""
     # <a href="?...now_page=91...">끝으로</a>
@@ -129,7 +148,7 @@ def _parse_rows(soup: BeautifulSoup, skin_type: str) -> list[dict]:
             if skin_type in ("stock_good", "stock_bad"):
                 # 6열: 날짜(0) | 제목(1) | 애널리스트(2) | 증권사(3) | 신규목표(4) | 이전목표(5)
                 date_txt     = tds[0].get_text(strip=True)
-                title_txt    = tds[1].get_text(strip=True)
+                title_txt    = _title_from_cell(tds[1])
                 analyst      = tds[2].get_text(strip=True)
                 firm         = tds[3].get_text(strip=True)
                 target_price = _parse_price(tds[4].get_text(strip=True)) if len(tds) > 4 else None
@@ -138,7 +157,7 @@ def _parse_rows(soup: BeautifulSoup, skin_type: str) -> list[dict]:
             else:
                 # 9열: 날짜(0) | 제목(1) | 목표주가(2) | 투자의견(3) | 애널리스트(4) | 증권사(5) | ...
                 date_txt     = tds[0].get_text(strip=True)
-                title_txt    = tds[1].get_text(strip=True)
+                title_txt    = _title_from_cell(tds[1])
                 target_price = _parse_price(tds[2].get_text(strip=True))
                 prev_target  = None
                 opinion      = tds[3].get_text(strip=True) if len(tds) > 3 else ""
@@ -286,20 +305,62 @@ def _collect_skin(
 
 
 def _upsert_rows(conn: sqlite3.Connection, rows: list[dict]) -> int:
-    """INSERT OR IGNORE — report_idx UNIQUE 기준 중복 방지."""
+    """Upsert by report_idx or the stable natural report key.
+
+    2026-08-23: `:name` 형태 named placeholder는 SQLite에선 정상 동작하지만
+    db_compat.py의 PostgreSQL 변환 레이어가 이를 인식하지 못해
+    "the query has 0 placeholders but 11 parameters were passed" 예외를 매번
+    발생시키고 있었음 — 아래 except Exception이 이를 조용히 삼켜(logger.debug만)
+    8/7 이후 16일간 컨센서스 신규 저장이 0건으로 정지된 근본원인. 표준 `?`
+    포지셔널 플레이스홀더로 교체.
+    """
     sql = """
         INSERT OR IGNORE INTO consensus_targets
           (report_idx, stock_code, stock_name, report_date, securities_firm,
            analyst, opinion, target_price, prev_target_price, skin_type, report_title)
         VALUES
-          (:report_idx, :stock_code, :stock_name, :report_date, :securities_firm,
-           :analyst, :opinion, :target_price, :prev_target_price, :skin_type, :report_title)
+          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     cursor = conn.cursor()
     count  = 0
     for row in rows:
         try:
-            cursor.execute(sql, row)
+            existing = cursor.execute(
+                """
+                SELECT id FROM consensus_targets
+                WHERE stock_code=? AND report_date=?
+                  AND TRIM(COALESCE(securities_firm,''))=TRIM(COALESCE(?,''))
+                  AND TRIM(COALESCE(analyst,''))=TRIM(COALESCE(?,''))
+                  AND COALESCE(target_price,-1)=COALESCE(?,-1)
+                ORDER BY id DESC LIMIT 1
+                """,
+                (
+                    row.get("stock_code"), row.get("report_date"),
+                    row.get("securities_firm"), row.get("analyst"),
+                    row.get("target_price"),
+                ),
+            ).fetchone()
+            if existing:
+                cursor.execute(
+                    """
+                    UPDATE consensus_targets
+                    SET report_idx=COALESCE(?,report_idx), stock_name=?, opinion=?,
+                        prev_target_price=?, skin_type=?, report_title=?
+                    WHERE id=?
+                    """,
+                    (
+                        row.get("report_idx"), row.get("stock_name"), row.get("opinion"),
+                        row.get("prev_target_price"), row.get("skin_type"),
+                        row.get("report_title"), existing[0],
+                    ),
+                )
+                continue
+            cursor.execute(sql, (
+                row.get("report_idx"), row.get("stock_code"), row.get("stock_name"),
+                row.get("report_date"), row.get("securities_firm"), row.get("analyst"),
+                row.get("opinion"), row.get("target_price"), row.get("prev_target_price"),
+                row.get("skin_type"), row.get("report_title"),
+            ))
             if cursor.rowcount > 0:
                 count += 1
         except Exception as e:

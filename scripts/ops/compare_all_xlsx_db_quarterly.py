@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 from collections import defaultdict
 
-DB='/Applications/stock_dashboard/stock.db'
-OUT=Path('/Applications/stock_dashboard/scratch')
+DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
+OUT=Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch')
 OUT.mkdir(parents=True, exist_ok=True)
 
 q_re = re.compile(r'(?:20)?(\d{2})\s*[-./년]?\s*([1-4])\s*[Qq]')

@@ -28,12 +28,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── 설정 ──────────────────────────────────────────────────────────────
-PROJECT_ID  = "project-d8a62269-8156-4f96-870"
-DATASET_ID  = "stock_dashboard"
-DB_PATH     = "/Applications/stock_dashboard/stock.db"
+PROJECT_ID  = os.getenv("BQ_PROJECT_ID", "project-d8a62269-8156-4f96-870")
+DATASET_ID  = os.getenv("BQ_DATASET_ID", "stock_dashboard")
+DB_PATH     = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+LOW_COST_MAX_BYTES_BILLED = int(os.getenv("BQ_MAX_BYTES_BILLED", str(20 * 1024**3)))  # 20GiB/query guard
 EXTERNAL_DB_SOURCES = {
     "hs_trade": {
-        "path": "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db",
+        "path": "/Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab/data/hs_trade_lab.db",
         "prefix": "hs_trade",
         "tables": [
             "customs_monthly_record",
@@ -53,7 +54,7 @@ EXTERNAL_DB_SOURCES = {
         ],
     },
     "employment": {
-        "path": "/Applications/stock_dashboard/employment_monitor/employment.db",
+        "path": "/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db",
         "prefix": "employment",
         "tables": [
             "employment_company",
@@ -125,6 +126,28 @@ EXCLUDE_TABLE_CONTAINS = (
 
 # ── price_history는 증분 처리 (전체는 너무 큼) ───────────────────────
 INCREMENTAL_TABLES = {"price_history", "us_price_history"}  # daily 모드에서 최근 N일만
+
+# ── 저비용 BigQuery 실험 모드: 핵심 테이블만 적재 ─────────────────────
+LOW_COST_DAILY_TABLES = [
+    "stock_universe",
+    "strategy_feature_snapshot",
+    "quant_major_indicator_catalog",
+    "quant_major_indicator_series",
+    "cafe_quant_indicator_mappings",
+    "cafe_stock_indicator_mappings",
+    "indicator_sector_direction_rules",
+    "order_contracts",
+    "dart_backlog_quarterly",
+    "dilution_events",
+    "broker_program_stock_daily",
+    "program_trading_daily",
+    "short_foreign_balance",
+    "stockeasy_sector_rs_daily",
+    "sector_rotation_cache",
+    "trigger_discovery_events",
+    "trigger_discovery_stock_links",
+    "trigger_discovery_forward_returns",
+]
 
 # ── BigQuery 테이블별 파티셔닝/클러스터링 설정 ───────────────────────
 TABLE_OPTIONS = {
@@ -230,6 +253,15 @@ TABLE_OPTIONS = {
     },
     "employment_wlb_monthly": {
         "clustering_fields": ["stock_code"],
+    },
+    "trigger_discovery_events": {
+        "clustering_fields": ["trigger_key", "available_date", "stock_code"],
+    },
+    "trigger_discovery_stock_links": {
+        "clustering_fields": ["stock_code", "event_id"],
+    },
+    "trigger_discovery_forward_returns": {
+        "clustering_fields": ["stock_code", "horizon_days", "event_id"],
     },
 }
 
@@ -490,6 +522,79 @@ def sync_daily(days_back: int = 7):
 
     conn.close()
     logger.info("=== 일별 동기화 완료 ===")
+
+
+def sync_daily_lite(days_back: int = 7, rebuild_trigger_lab: bool = True):
+    """저비용 일별 동기화.
+
+    목적:
+    - price_history는 최근 N일만 증분 적재
+    - Trigger Discovery/전략 실험 핵심 테이블만 full refresh
+    - 기존 daily처럼 모든 운영 테이블을 훑지 않아 BigQuery 저장/조회 대상을 작게 유지
+    """
+    if rebuild_trigger_lab:
+        import subprocess
+        logger.info("[trigger_discovery_lab] 로컬 Lab 테이블 재생성...")
+        proc = subprocess.run(
+            [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/build_trigger_discovery_lab.py", "--start", "2020-01-01"],
+            capture_output=True,
+            text=True,
+            timeout=900,
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+        )
+        if proc.returncode != 0:
+            logger.error("[trigger_discovery_lab] ❌ %s", (proc.stderr or "")[-2000:])
+        else:
+            logger.info("[trigger_discovery_lab] ✅ %s", (proc.stdout or "").strip()[-1000:])
+
+    client = get_bq_client()
+    ensure_dataset(client)
+    cutoff = (datetime.now() - timedelta(days=max(days_back, 7))).strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+
+    logger.info(f"[price_history] lite 증분 로드 ({cutoff} 이후)...")
+    try:
+        df = pd.read_sql_query(
+            "SELECT * FROM price_history WHERE date >= ? AND stock_code NOT LIKE '%^%' "
+            "AND stock_code NOT LIKE 'GC%' AND stock_code NOT LIKE 'CL%' "
+            "AND stock_code NOT LIKE '%-F' AND stock_code NOT LIKE '%=%' "
+            "AND stock_code NOT LIKE 'NQ%' AND stock_code NOT LIKE 'ES%'",
+            conn,
+            params=(cutoff,),
+        )
+        df = sanitize_df(df)
+        table_ref = f"{PROJECT_ID}.{DATASET_ID}.price_history"
+        try:
+            client.query(
+                f"DELETE FROM `{table_ref}` WHERE date >= '{cutoff}'",
+                job_config=_query_job_config(),
+            ).result()
+        except Exception:
+            pass
+        upload_table(client, "price_history", df, write_mode="WRITE_APPEND")
+    except Exception as e:
+        logger.error("  [price_history] ❌ %s", e)
+
+    existing = set(get_sqlite_tables())
+    for tname in LOW_COST_DAILY_TABLES:
+        if tname not in existing:
+            logger.warning("[daily-lite] 테이블 없음 — 스킵: %s", tname)
+            continue
+        try:
+            logger.info("[daily-lite:%s] 로드 시작...", tname)
+            df = pd.read_sql_query(f'SELECT * FROM "{tname}"', conn)
+            df = sanitize_df(df)
+            upload_table(client, tname, df, write_mode="WRITE_TRUNCATE")
+        except Exception as e:
+            logger.error("  [daily-lite:%s] ❌ %s", tname, e)
+    conn.close()
+    logger.info("=== 저비용 일별 동기화 완료 ===")
+
+
+def _query_job_config():
+    """BigQuery query cost guard."""
+    from google.cloud import bigquery
+    return bigquery.QueryJobConfig(maximum_bytes_billed=LOW_COST_MAX_BYTES_BILLED)
 
 
 def sync_external_sources(source: str | None = None, tables: list[str] | None = None):
@@ -1082,7 +1187,9 @@ def create_analysis_views(client):
 
     views.update({
         # 12. Week2 수급 추세 — [BUG FIX 2026-07-07]
-        #     kiwoom_investor_daily는 매수(buy-only) 데이터라 순매수로 사용 불가.
+        #     kiwoom_investor_daily는 매수(buy-only) 데이터라 순매수로 사용 불가했음
+        #     (2026-07-21 trde_tp='0' 수정으로 근본 해결, 재수집 완료 — 이 뷰는
+        #     price_history가 이미 KIS 5분 수집 기반 신뢰 소스라 유지).
         #     price_history.frn_net_buy_amt / inst_net_buy_amt (백만원, 순매수)로 교체.
         "v_supply_trend_week2": f"""
             WITH supply AS (
@@ -1928,15 +2035,148 @@ def create_analysis_views(client):
             logger.error(f"  뷰 [{view_name}] 오류: {e}")
 
 
+def create_trigger_discovery_views(client):
+    """Trigger Discovery Lab용 저비용 분석 뷰 생성."""
+    from google.cloud import bigquery
+
+    views = {
+        "v_trigger_discovery_scorecard": f"""
+            SELECT
+              e.trigger_key,
+              ANY_VALUE(e.trigger_name) AS trigger_name,
+              e.source,
+              r.horizon_days,
+              COUNT(*) AS sample_count,
+              COUNT(DISTINCT r.stock_code) AS stock_count,
+              ROUND(AVG(r.return_pct), 2) AS avg_return_pct,
+              ROUND(APPROX_QUANTILES(r.return_pct, 101)[OFFSET(50)], 2) AS median_return_pct,
+              ROUND(AVG(IF(r.return_pct > 0, 1, 0)) * 100, 2) AS positive_rate_pct,
+              ROUND(AVG(IF(r.return_pct >= 50, 1, 0)) * 100, 2) AS gain50_rate_pct,
+              ROUND(AVG(IF(r.return_pct >= 100, 1, 0)) * 100, 2) AS double_rate_pct,
+              ROUND(AVG(IF(r.return_pct <= -30, 1, 0)) * 100, 2) AS loss30_rate_pct,
+              ROUND(AVG(r.max_drawdown_pct), 2) AS avg_mdd_pct,
+              ROUND(SAFE_DIVIDE(
+                SUM(IF(r.return_pct > 0, r.return_pct, 0)),
+                ABS(SUM(IF(r.return_pct < 0, r.return_pct, 0)))
+              ), 2) AS profit_factor
+            FROM `{PROJECT_ID}.{DATASET_ID}.trigger_discovery_events` e
+            JOIN `{PROJECT_ID}.{DATASET_ID}.trigger_discovery_forward_returns` r
+              USING(event_id)
+            GROUP BY e.trigger_key, e.source, r.horizon_days
+            HAVING sample_count >= 30
+            ORDER BY horizon_days, profit_factor DESC, avg_return_pct DESC
+        """,
+        "v_trigger_sector_scorecard": f"""
+            SELECT
+              COALESCE(l.sector_name, e.sector_name, '미분류') AS sector_name,
+              e.trigger_key,
+              ANY_VALUE(e.trigger_name) AS trigger_name,
+              r.horizon_days,
+              COUNT(*) AS sample_count,
+              COUNT(DISTINCT r.stock_code) AS stock_count,
+              ROUND(AVG(r.return_pct), 2) AS avg_return_pct,
+              ROUND(APPROX_QUANTILES(r.return_pct, 101)[OFFSET(50)], 2) AS median_return_pct,
+              ROUND(AVG(IF(r.return_pct > 0, 1, 0)) * 100, 2) AS positive_rate_pct,
+              ROUND(AVG(IF(r.return_pct >= 50, 1, 0)) * 100, 2) AS gain50_rate_pct,
+              ROUND(AVG(IF(r.return_pct <= -30, 1, 0)) * 100, 2) AS loss30_rate_pct,
+              ROUND(SAFE_DIVIDE(
+                SUM(IF(r.return_pct > 0, r.return_pct, 0)),
+                ABS(SUM(IF(r.return_pct < 0, r.return_pct, 0)))
+              ), 2) AS profit_factor
+            FROM `{PROJECT_ID}.{DATASET_ID}.trigger_discovery_events` e
+            JOIN `{PROJECT_ID}.{DATASET_ID}.trigger_discovery_forward_returns` r USING(event_id)
+            LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.trigger_discovery_stock_links` l
+              ON l.event_id=e.event_id AND l.stock_code=r.stock_code
+            GROUP BY sector_name, e.trigger_key, r.horizon_days
+            HAVING sample_count >= 20
+            ORDER BY horizon_days, profit_factor DESC, avg_return_pct DESC
+        """,
+        "v_trigger_recent_candidates": f"""
+            WITH trigger_stats AS (
+              SELECT
+                trigger_key,
+                horizon_days,
+                sample_count,
+                avg_return_pct,
+                positive_rate_pct,
+                loss30_rate_pct,
+                profit_factor
+              FROM `{PROJECT_ID}.{DATASET_ID}.v_trigger_discovery_scorecard`
+              WHERE horizon_days = 60
+                AND sample_count >= 30
+                AND positive_rate_pct >= 52
+                AND loss30_rate_pct <= 35
+            ),
+            latest_price AS (
+              SELECT
+                stock_code,
+                ARRAY_AGG(close ORDER BY date DESC LIMIT 1)[OFFSET(0)] AS latest_close,
+                ARRAY_AGG(date ORDER BY date DESC LIMIT 1)[OFFSET(0)] AS latest_date
+              FROM `{PROJECT_ID}.{DATASET_ID}.price_history`
+              WHERE close > 0
+              GROUP BY stock_code
+            )
+            SELECT
+              e.available_date,
+              e.trigger_key,
+              e.trigger_name,
+              COALESCE(l.stock_code, e.stock_code) AS stock_code,
+              COALESCE(l.stock_name, u.stock_name) AS stock_name,
+              COALESCE(l.sector_name, u.sector_large, e.sector_name) AS sector_name,
+              e.direction,
+              ROUND(e.strength, 2) AS event_strength,
+              ROUND(e.value, 2) AS event_value,
+              ts.sample_count,
+              ts.avg_return_pct AS historical_avg_60d,
+              ts.positive_rate_pct AS historical_positive_60d,
+              ts.loss30_rate_pct AS historical_loss30_60d,
+              ts.profit_factor AS historical_profit_factor,
+              lp.latest_close,
+              lp.latest_date,
+              ROUND(
+                COALESCE(e.strength, 0)
+                + COALESCE(ts.profit_factor, 0)
+                + COALESCE(ts.positive_rate_pct, 0) / 20
+                - COALESCE(ts.loss30_rate_pct, 0) / 25
+                + COALESCE(l.confidence, 0),
+                2
+              ) AS discovery_score
+            FROM `{PROJECT_ID}.{DATASET_ID}.trigger_discovery_events` e
+            JOIN trigger_stats ts ON ts.trigger_key=e.trigger_key
+            LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.trigger_discovery_stock_links` l USING(event_id)
+            LEFT JOIN `{PROJECT_ID}.{DATASET_ID}.stock_universe` u
+              ON u.stock_code = COALESCE(l.stock_code, e.stock_code)
+            LEFT JOIN latest_price lp
+              ON lp.stock_code = COALESCE(l.stock_code, e.stock_code)
+            WHERE DATE(e.available_date) >= DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL 45 DAY)
+              AND COALESCE(l.stock_code, e.stock_code) IS NOT NULL
+            ORDER BY discovery_score DESC, e.available_date DESC
+        """,
+    }
+
+    for view_name, query in views.items():
+        try:
+            table_ref = f"{PROJECT_ID}.{DATASET_ID}.{view_name}"
+            view = bigquery.Table(table_ref)
+            view.view_query = query.strip()
+            client.delete_table(table_ref, not_found_ok=True)
+            client.create_table(view)
+            logger.info("  Trigger Lab 뷰 재생성: %s", view_name)
+        except Exception as e:
+            logger.error("  Trigger Lab 뷰 [%s] 오류: %s", view_name, e)
+
+
 def main():
     parser = argparse.ArgumentParser(description="stock.db → BigQuery 동기화")
-    parser.add_argument("--mode", choices=["full", "daily", "table", "views", "external"],
+    parser.add_argument("--mode", choices=["full", "daily", "daily-lite", "table", "views", "trigger-views", "external"],
                         default="daily", help="동기화 모드")
     parser.add_argument("--table", help="특정 테이블만 업로드 (--mode table 시)")
     parser.add_argument("--source", choices=sorted(EXTERNAL_DB_SOURCES.keys()),
                         help="external 모드에서 특정 외부 DB만 업로드")
     parser.add_argument("--days", type=int, default=7,
                         help="daily 모드에서 price_history 최근 N일 (기본: 7)")
+    parser.add_argument("--skip-trigger-lab-build", action="store_true",
+                        help="daily-lite에서 로컬 trigger_discovery 테이블 재생성을 건너뜀")
     args = parser.parse_args()
 
     logger.info(f"=== BigQuery 동기화 시작 [mode={args.mode}] ===")
@@ -1953,6 +2193,11 @@ def main():
         logger.info("분석 뷰 갱신 중...")
         create_analysis_views(client)
 
+    elif args.mode == "daily-lite":
+        sync_daily_lite(days_back=args.days, rebuild_trigger_lab=not args.skip_trigger_lab_build)
+        logger.info("Trigger Discovery Lab 뷰 갱신 중...")
+        create_trigger_discovery_views(client)
+
     elif args.mode == "table":
         if not args.table:
             logger.error("--table 옵션이 필요합니다")
@@ -1961,6 +2206,9 @@ def main():
 
     elif args.mode == "views":
         create_analysis_views(client)
+
+    elif args.mode == "trigger-views":
+        create_trigger_discovery_views(client)
 
     elif args.mode == "external":
         tables = [args.table] if args.table else None

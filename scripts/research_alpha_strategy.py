@@ -19,8 +19,8 @@ import numpy as np
 import pandas as pd
 
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
-OUT_DIR = Path("/Applications/stock_dashboard/research_outputs")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+OUT_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/research_outputs")
 START = "2020-01-01"
 SIGNAL_START = "2021-06-01"
 TEST_START = "2025-01-01"

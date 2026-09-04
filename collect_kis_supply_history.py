@@ -18,12 +18,11 @@ KIS FHKST01010900: 1회 호출 시 최근 30거래일치 기관/외국인/개인
 """
 
 import argparse
-import sqlite3
 import time
 import os
 import sys
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 
 def get_universe_codes(conn, limit=None):
@@ -79,7 +78,7 @@ def collect_one(kis_client, conn, stock_code: str) -> int:
             continue  # 수급 없는 행(휴장 등) 스킵
 
         # 기존에 수급 데이터가 없는 날짜만 업데이트 (기존 데이터 불변)
-        conn.execute("""
+        cursor = conn.execute("""
             UPDATE price_history
             SET inst_net_buy     = ?,
                 frn_net_buy      = ?,
@@ -91,7 +90,7 @@ def collect_one(kis_client, conn, stock_code: str) -> int:
               AND (inst_net_buy IS NULL OR inst_net_buy = 0)
               AND (frn_net_buy  IS NULL OR frn_net_buy  = 0)
         """, (iq, fq, dq, ia, fa, da, stock_code, d))
-        saved += conn.execute("SELECT changes()").fetchone()[0]
+        saved += max(cursor.rowcount, 0)
 
     return saved
 
@@ -103,13 +102,13 @@ def main():
     parser.add_argument("--sleep", type=float, default=1.05, help="요청 간격(초)")
     args = parser.parse_args()
 
-    sys.path.insert(0, "/Applications/stock_dashboard")
-    os.chdir("/Applications/stock_dashboard")
+    sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+    os.chdir("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
     from kis_client import kis_client
+    from db_utils import connect_stock_db
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = connect_stock_db(timeout=60)
 
     if args.codes:
         codes = [c.strip() for c in args.codes.split(",") if c.strip()]

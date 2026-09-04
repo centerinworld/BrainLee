@@ -13,13 +13,13 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
     handlers=[
-        logging.FileHandler("/Applications/stock_dashboard/logs/backfill_depr_2016_2018.log"),
+        logging.FileHandler("/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/backfill_depr_2016_2018.log"),
         logging.StreamHandler(),
     ],
 )
 log = logging.getLogger(__name__)
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 def main():
     conn = sqlite3.connect(DB_PATH)

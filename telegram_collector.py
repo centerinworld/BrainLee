@@ -9,7 +9,7 @@ telegram_collector.py — 텔레그램 채널 보고서 자동 수집
   - 매일 08:30 자동 실행 (cron)
 
 실행:
-  cd /Applications/stock_dashboard && source venv/bin/activate
+  cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
   pip install telethon
 
   # 최초 1회 인증 (전화번호 인증)
@@ -25,11 +25,11 @@ telegram_collector.py — 텔레그램 채널 보고서 자동 수집
   python3 telegram_collector.py --channel @채널명
 """
 
-import sys, os, asyncio, sqlite3, logging, logging.handlers, argparse, re, time
+import sys, os, asyncio, sqlite3, logging, logging.handlers, argparse, re, time, unicodedata
 from pathlib import Path
 from datetime import datetime, timedelta
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,7 +37,7 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(),
         logging.handlers.RotatingFileHandler(
-            "/Applications/stock_dashboard/telegram_collector.log",
+            "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_collector.log",
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=2,
             encoding="utf-8",
@@ -46,8 +46,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DB_PATH      = Path("/Applications/stock_dashboard/stock.db")
-REPORT_DIR   = Path("/Applications/stock_dashboard/reports")
+DB_PATH      = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+REPORT_DIR   = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/reports")
 REPORT_DIR.mkdir(exist_ok=True)
 
 
@@ -61,14 +61,14 @@ def get_config():
             "api_id":   getattr(_cfg, "TELEGRAM_API_ID",   os.getenv("TELEGRAM_API_ID", "")),
             "api_hash": getattr(_cfg, "TELEGRAM_API_HASH", os.getenv("TELEGRAM_API_HASH", "")),
             "phone":    os.getenv("TELEGRAM_PHONE") or getattr(_cfg, "TELEGRAM_PHONE", ""),
-            "session":  os.getenv("TELEGRAM_SESSION_PATH", "/Applications/stock_dashboard/telegram_session"),
+            "session":  os.getenv("TELEGRAM_SESSION_PATH", "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_session"),
         }
     except Exception:
         return {
             "api_id":   os.getenv("TELEGRAM_API_ID", ""),
             "api_hash": os.getenv("TELEGRAM_API_HASH", ""),
             "phone":    os.getenv("TELEGRAM_PHONE", ""),
-            "session":  os.getenv("TELEGRAM_SESSION_PATH", "/Applications/stock_dashboard/telegram_session"),
+            "session":  os.getenv("TELEGRAM_SESSION_PATH", "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_session"),
         }
 
 
@@ -158,7 +158,8 @@ def classify_sector(text: str) -> str:
 
 
 def _normalize_kor_alnum(text: str) -> str:
-    return re.sub(r"[^0-9A-Za-z가-힣]", "", (text or "")).upper()
+    normalized = unicodedata.normalize("NFC", text or "")
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", normalized).upper()
 
 
 def _load_stock_name_candidates(conn) -> list[tuple[str, str, str]]:
@@ -311,18 +312,35 @@ def make_safe_filename(date_str: str, original: str, caption: str = "") -> str:
 # 채널 관리
 # ══════════════════════════════════════════════════════════════════
 def get_channels(conn) -> list:
+    _ensure_entity_hint_column(conn)
     rows = conn.execute(
-        "SELECT channel_id, channel_name, last_sync FROM telegram_channels WHERE is_active=1"
+        "SELECT channel_id, channel_name, last_sync, entity_hint FROM telegram_channels WHERE is_active=1"
     ).fetchall()
-    return [{"channel_id": r[0], "channel_name": r[1], "last_sync": r[2]} for r in rows]
+    return [{"channel_id": r[0], "channel_name": r[1], "last_sync": r[2], "entity_hint": r[3]} for r in rows]
 
 
-def add_channel(conn, channel_id: str, name: str = ""):
+def _ensure_entity_hint_column(conn):
+    """channel_id가 Telethon get_entity()로 직접 resolve 안 되는 비공개 채널(제목 문자열이
+    채널_id로 저장된 레거시 데이터 등)을 위해 실제 접속용 numeric ID를 별도 저장하는 컬럼.
+    channel_id는 report_files와의 연결키로 그대로 유지하고, entity_hint만 접속에 사용한다."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(telegram_channels)").fetchall()]
+    if "entity_hint" not in cols:
+        conn.execute("ALTER TABLE telegram_channels ADD COLUMN entity_hint TEXT")
+        conn.commit()
+
+
+def add_channel(conn, channel_id: str, name: str = "", entity_hint: str = None):
+    _ensure_entity_hint_column(conn)
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO telegram_channels (channel_id, channel_name) VALUES (?,?)",
-            (channel_id, name or channel_id)
+            "INSERT OR IGNORE INTO telegram_channels (channel_id, channel_name, entity_hint) VALUES (?,?,?)",
+            (channel_id, name or channel_id, entity_hint)
         )
+        if entity_hint:
+            conn.execute(
+                "UPDATE telegram_channels SET entity_hint=?, is_active=1 WHERE channel_id=?",
+                (entity_hint, channel_id)
+            )
         conn.commit()
         print(f"✅ 채널 추가: {channel_id}")
     except Exception as e:
@@ -352,8 +370,14 @@ def list_channels(conn):
 # 텔레그램 수집 (Telethon)
 # ══════════════════════════════════════════════════════════════════
 async def collect_channel(client, conn, channel_id: str, limit: int = 500,
-                          since_days: int = None) -> int:
-    """채널에서 파일 메시지 수집."""
+                          since_days: int = None, entity_hint: str = None) -> int:
+    """채널에서 파일 메시지 수집.
+
+    entity_hint: channel_id 문자열이 Telethon get_entity()로 바로 resolve 안 되는
+    경우(예: 채널 제목 문자열이 report_files 연결키로 저장된 레거시 채널)에 실제
+    접속용 식별자(numeric ID 등)를 별도로 지정. DB 저장(report_files.channel_id)은
+    항상 channel_id 그대로 사용해 기존 레코드와의 dedup/연속성을 유지한다.
+    """
     from telethon.tl.types import DocumentAttributeFilename
     saved = 0
     skipped = 0
@@ -368,7 +392,10 @@ async def collect_channel(client, conn, channel_id: str, limit: int = 500,
         min_date = datetime.now(timezone.utc) - timedelta(days=since_days)
 
     try:
-        entity = await client.get_entity(channel_id)
+        lookup = entity_hint or channel_id
+        if isinstance(lookup, str) and lookup.lstrip("-").isdigit():
+            lookup = int(lookup)
+        entity = await client.get_entity(lookup)
         logger.info(f"[{channel_id}] 채널 접속: {getattr(entity, 'title', channel_id)}")
         if offset_date:
             logger.info(f"[{channel_id}] {since_days}일치 수집 (since {offset_date.strftime('%Y-%m-%d')})")
@@ -380,14 +407,19 @@ async def collect_channel(client, conn, channel_id: str, limit: int = 500,
             if not message.document:
                 continue
 
-            # 중복 확인
-            exists = conn.execute(
-                "SELECT 1 FROM report_files WHERE channel_id=? AND message_id=?",
+            # 중복 확인 — DB 행이 있어도 실제 파일이 디스크에 없으면(과거 다운로드
+            # 실패로 생긴 유령 레코드) 재시도할 수 있도록 file_path까지 함께 확인한다.
+            existing_row = conn.execute(
+                "SELECT file_path FROM report_files WHERE channel_id=? AND message_id=?",
                 (channel_id, message.id)
             ).fetchone()
-            if exists:
-                skipped += 1
-                continue
+            if existing_row:
+                ep = existing_row[0]
+                if ep and Path(ep).exists() and Path(ep).stat().st_size > 0:
+                    skipped += 1
+                    continue
+                else:
+                    logger.info(f"  유령 레코드 재시도: message_id={message.id} (파일 없음)")
 
             # 파일 정보 추출
             mime = message.document.mime_type or ""
@@ -429,29 +461,63 @@ async def collect_channel(client, conn, channel_id: str, limit: int = 500,
             # 파일 다운로드
             if not file_path.exists():
                 logger.info(f"  다운로드: {saved_name} ({message.document.size:,} bytes)")
-                await client.download_media(message, str(file_path))
+                try:
+                    await client.download_media(message, str(file_path))
+                except Exception as e:
+                    logger.warning(f"  다운로드 실패(스킵, DB 미저장): message_id={message.id} {e}")
+                    skipped += 1
+                    continue
                 await asyncio.sleep(1.5)  # FloodWait 방지
             else:
                 logger.debug(f"  이미 존재: {saved_name}")
 
-            # DB 저장
-            try:
-                conn.execute("""
-                    INSERT OR IGNORE INTO report_files
+            # ⚠️ 재발방지: download_media()가 예외 없이 조용히 실패(빈 파일 또는
+            # 미생성)하는 경우가 있어, 실제 파일이 생성됐는지 검증 후에만 DB에 저장한다.
+            # 검증 없이 무조건 저장하면 클릭해도 다운로드 안 되는 "유령 레코드"가 생긴다.
+            if not file_path.exists() or file_path.stat().st_size == 0:
+                logger.warning(f"  다운로드 실패(파일 미생성/0바이트, DB 미저장): {saved_name}")
+                skipped += 1
+                continue
+
+            # DB 저장. 기존 유령 레코드는 안전 파일명 경로로 반드시 갱신한다.
+            for attempt in range(6):
+                try:
+                    conn.execute("""
+                    INSERT INTO report_files
                     (channel_id, message_id, stock_code, stock_name, sector,
                      report_date, file_name, saved_name, file_path,
                      file_size, mime_type, caption)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(channel_id, message_id) DO UPDATE SET
+                      stock_code=excluded.stock_code,
+                      stock_name=excluded.stock_name,
+                      sector=excluded.sector,
+                      report_date=excluded.report_date,
+                      file_name=excluded.file_name,
+                      saved_name=excluded.saved_name,
+                      file_path=excluded.file_path,
+                      file_size=excluded.file_size,
+                      mime_type=excluded.mime_type,
+                      caption=excluded.caption
                 """, (
                     channel_id, message.id, code, name, sector,
                     msg_date_iso, orig_name, saved_name, str(file_path),
                     message.document.size, mime, caption[:500] if caption else ""
-                ))
-                conn.commit()
-                saved += 1
-                logger.info(f"  저장: {saved_name} [종목: {code or '미추출'}]")
-            except Exception as e:
-                logger.warning(f"  DB 저장 오류: {e}")
+                    ))
+                    conn.commit()
+                    saved += 1
+                    logger.info(f"  저장: {saved_name} [종목: {code or '미추출'}]")
+                    break
+                except sqlite3.OperationalError as e:
+                    conn.rollback()
+                    if "locked" not in str(e).lower() or attempt == 5:
+                        logger.warning(f"  DB 저장 오류: {e}")
+                        break
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                except Exception as e:
+                    conn.rollback()
+                    logger.warning(f"  DB 저장 오류: {e}")
+                    break
 
         # 마지막 동기화 시간 업데이트
         conn.execute(
@@ -476,17 +542,25 @@ async def run_collect(channels: list, limit: int = 500, since_days: int = None):
         logger.error("TELEGRAM_API_ID / TELEGRAM_API_HASH 없음 — .env 확인")
         return
 
-    session_path = cfg.get("session") or "/Applications/stock_dashboard/telegram_session"
+    session_path = cfg.get("session") or "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_session"
     client = TelegramClient(session_path, int(cfg["api_id"]), cfg["api_hash"])
 
     await client.start(phone=cfg["phone"] or None)
     logger.info("텔레그램 로그인 완료")
 
-    conn = sqlite3.connect(str(DB_PATH))
+    # entity_hint(numeric channel ID)로 채널을 찾으려면 세션의 entity 캐시에
+    # 해당 채널이 먼저 채워져 있어야 한다(그렇지 않으면 get_entity가
+    # "Cannot find any entity" 오류를 낸다) — dialog 목록을 한번 훑어 캐시를 채운다.
+    if any(ch.get("entity_hint") for ch in channels):
+        await client.get_dialogs()
+
+    conn = sqlite3.connect(str(DB_PATH), timeout=120)
+    conn.execute("PRAGMA busy_timeout=120000")
     total = 0
     for ch in channels:
         n = await collect_channel(client, conn, ch["channel_id"],
-                                  limit=limit, since_days=since_days)
+                                  limit=limit, since_days=since_days,
+                                  entity_hint=ch.get("entity_hint"))
         total += n
         if len(channels) > 1:
             await asyncio.sleep(2)  # 채널 간 딜레이
@@ -501,10 +575,10 @@ async def run_collect(channels: list, limit: int = 500, since_days: int = None):
 # ══════════════════════════════════════════════════════════════════
 def setup_cron():
     import subprocess
-    py  = "/Applications/stock_dashboard/venv/bin/python3"
-    scr = "/Applications/stock_dashboard/telegram_collector.py"
-    log = "/Applications/stock_dashboard/telegram_collector.log"
-    line = f"30 8 * * 1-5 cd /Applications/stock_dashboard && {py} {scr} >> {log} 2>&1"
+    py  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3"
+    scr = "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_collector.py"
+    log = "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_collector.log"
+    line = f"30 8 * * 1-5 cd /Volumes/Realtek_NVME/stock_dashboard/runtime && {py} {scr} >> {log} 2>&1"
 
     res = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     existing = res.stdout if res.returncode == 0 else ""
@@ -538,7 +612,8 @@ def main():
     if args.setup_cron:
         setup_cron(); return
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    conn.execute("PRAGMA busy_timeout=30000")
     init_db(conn)
 
     if args.list:
@@ -554,7 +629,7 @@ def main():
         total = conn.execute("SELECT COUNT(*) FROM report_files").fetchone()[0]
         today = conn.execute("SELECT COUNT(*) FROM report_files WHERE report_date=date('now')").fetchone()[0]
         by_ch = conn.execute("""
-            SELECT c.channel_name, COUNT(r.id), MAX(r.report_date)
+            SELECT MAX(c.channel_name), COUNT(r.id), MAX(r.report_date)
             FROM telegram_channels c
             LEFT JOIN report_files r ON c.channel_id=r.channel_id
             GROUP BY c.channel_id ORDER BY COUNT(r.id) DESC

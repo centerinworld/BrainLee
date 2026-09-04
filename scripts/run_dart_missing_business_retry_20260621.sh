@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-ROOT="/Applications/stock_dashboard"
+ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 PY="$ROOT/venv/bin/python"
 RUN_DIR="$ROOT/run/dart_missing_business_retry_20260621"
 DONE_FILE="$RUN_DIR/.done"

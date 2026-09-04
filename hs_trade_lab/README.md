@@ -1,6 +1,6 @@
 # HS Trade Lab
 
-기존 `/Applications/stock_dashboard` 시스템과 분리된 독립 HS Code 분석 실험용 앱입니다.
+기존 `/Volumes/Realtek_NVME/stock_dashboard/runtime` 시스템과 분리된 독립 HS Code 분석 실험용 앱입니다.
 
 ## 목적
 
@@ -21,7 +21,7 @@
 ## 실행
 
 ```bash
-uvicorn app.main:app --app-dir /Applications/stock_dashboard/hs_trade_lab --reload --port 8011
+uvicorn app.main:app --app-dir /Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab --reload --port 8011
 ```
 
 브라우저:
@@ -37,7 +37,7 @@ uvicorn app.main:app --app-dir /Applications/stock_dashboard/hs_trade_lab --relo
 ## 관세청 API 키 입력
 
 ```bash
-cd /Applications/stock_dashboard/hs_trade_lab
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab
 chmod +x bin/set_customs_key.sh bin/download_customs_all.sh
 ./bin/set_customs_key.sh
 ```
@@ -48,7 +48,7 @@ chmod +x bin/set_customs_key.sh bin/download_customs_all.sh
 ## 관세청 전체 다운로드
 
 ```bash
-cd /Applications/stock_dashboard/hs_trade_lab
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab
 ./bin/download_customs_all.sh --start-year 2016 --end-year 2026
 ```
 
@@ -68,7 +68,7 @@ cd /Applications/stock_dashboard/hs_trade_lab
 ## 적재와 일일 갱신
 
 ```bash
-cd /Applications/stock_dashboard/hs_trade_lab
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab
 ./bin/download_customs_all.sh --start-year 2016 --end-year 2026
 ../venv/bin/python scripts/ingest_customs_data.py
 ./bin/daily_refresh.sh
@@ -82,7 +82,7 @@ cd /Applications/stock_dashboard/hs_trade_lab
 ## 대시보드
 
 ```bash
-uvicorn app.main:app --app-dir /Applications/stock_dashboard/hs_trade_lab --reload --port 8011
+uvicorn app.main:app --app-dir /Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab --reload --port 8011
 ```
 
 - 주요 화면

@@ -11,13 +11,14 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import config
+from services.gemini_openai_compat import OpenAI
 from ticker_utils import ticker_mapper
 from notifier import send as send_telegram
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 def get_current_price(stock_code):
     """stock.db에서 최신 종가 가져오기"""
@@ -150,13 +151,12 @@ def parse_blog_post_local(title: str, content: str) -> tuple:
 
 def parse_blog_post_with_ai(title, content, image_urls):
     """AI를 사용하여 블로그 내용 파싱"""
-    api_key = getattr(config, "OPENAI_API_KEY", "")
+    api_key = getattr(config, "GEMINI_API_KEY", "")
     if not api_key:
-        return None, "OpenAI API Key is missing"
+        return None, "Gemini API Key is missing"
 
     try:
-        import openai
-        client = openai.OpenAI(api_key=api_key)
+        client = OpenAI()
         
         messages = [
             {
@@ -288,7 +288,7 @@ def get_post_detail(post_link):
 
 def _parse_post(title: str, content: str, image_urls: list) -> tuple:
     """OpenAI 우선 → 없으면 로컬 매칭으로 폴백."""
-    api_key = getattr(config, "OPENAI_API_KEY", "")
+    api_key = getattr(config, "GEMINI_API_KEY", "")
     if api_key:
         result, err = parse_blog_post_with_ai(title, content, image_urls)
         if result:

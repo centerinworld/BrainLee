@@ -363,7 +363,7 @@ def collect_cogs_from_dart_api(
     """
     import sqlite3 as _sl, time as _t, requests as _rq
     from dart_key_manager import get_dart_api_keys
-    DB = "/Applications/stock_dashboard/stock.db"
+    DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
     DART_BASE = "https://opendart.fss.or.kr/api"
     KEYS = get_dart_api_keys()
     _exhausted: set = set()
@@ -536,7 +536,7 @@ def collect_cogs_quarters(
     import sqlite3 as _sl, time as _t, requests as _rq
     from dart_key_manager import get_dart_api_keys
     import xml.etree.ElementTree as _ET, zipfile as _zf
-    DB = "/Applications/stock_dashboard/stock.db"
+    DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
     DART_BASE = "https://opendart.fss.or.kr/api"
     KEYS = get_dart_api_keys()
     _exhausted: set = set()
@@ -683,7 +683,7 @@ def collect_order_backlog_api(
     import sqlite3 as _sl, time as _t, requests as _rq
     from dart_key_manager import get_dart_api_keys
     import xml.etree.ElementTree as _ET, zipfile as _zf
-    DB = "/Applications/stock_dashboard/stock.db"
+    DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
     DART_BASE = "https://opendart.fss.or.kr/api"
     KEYS = get_dart_api_keys()
     _exhausted: set = set()

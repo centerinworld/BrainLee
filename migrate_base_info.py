@@ -9,7 +9,7 @@ migrate_base_info.py — A안용 스키마 추가
   3. stock_base_info_changes 테이블 생성 (변동 이벤트)
 
 실행 방법:
-    cd /Applications/stock_dashboard
+    cd /Volumes/Realtek_NVME/stock_dashboard/runtime
     python3 migrate_base_info.py
 """
 

@@ -142,7 +142,7 @@ class AIInsightResponse(BaseModel):
 class HSCodeSuggestRequest(BaseModel):
     product_name: str
     api_key: str | None = None
-    model: str = "gemini-2.5-flash"
+    model: str = "deepseek-v4-flash"
 
 
 class HSCodeSuggestResponse(BaseModel):

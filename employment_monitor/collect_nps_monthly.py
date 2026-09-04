@@ -446,9 +446,9 @@ def collect_monthly(target_ym: str = None):
         conn = sqlite3.connect(EMP_DB)
         conn.execute("""
             INSERT OR REPLACE INTO nps_monthly
-                (stock_code, data_ym, new_hires, terminations, net_change)
-            VALUES (?,?,?,?,?)
-        """, (sc, target_ym, new_hires, terminations, net_change))
+                (stock_code, data_ym, new_hires, terminations, net_change, wkpl_count)
+            VALUES (?,?,?,?,?,?)
+        """, (sc, target_ym, new_hires, terminations, net_change, 1))
         conn.commit()
         conn.close()
         saved += 1
@@ -477,8 +477,9 @@ def get_nps_bonus_map(months: int = 3) -> dict:
             SELECT stock_code, SUM(net_change) as net_sum, COUNT(*) as months_cnt
             FROM nps_monthly
             WHERE data_ym >= (
-                SELECT data_ym FROM nps_monthly
-                ORDER BY data_ym DESC LIMIT 1 OFFSET ?
+                SELECT data_ym
+                FROM (SELECT DISTINCT data_ym FROM nps_monthly ORDER BY data_ym DESC)
+                LIMIT 1 OFFSET ?
             )
             GROUP BY stock_code
             HAVING months_cnt >= 1
@@ -723,9 +724,9 @@ def build_historical_data(months_back: int | None = 36, from_ym: str | None = No
             conn = sqlite3.connect(EMP_DB)
             conn.execute("""
                 INSERT OR IGNORE INTO nps_monthly
-                    (stock_code, data_ym, new_hires, terminations, net_change)
-                VALUES (?,?,?,?,?)
-            """, (sc, data_ym, new_hires, terminations, net_change))
+                    (stock_code, data_ym, new_hires, terminations, net_change, wkpl_count)
+                VALUES (?,?,?,?,?,?)
+            """, (sc, data_ym, new_hires, terminations, net_change, 1))
             conn.commit()
             conn.close()
             company_saved += 1

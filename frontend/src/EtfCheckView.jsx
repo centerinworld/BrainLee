@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
+const STALE_WARNING_DAYS = 3;
+const MOBILE_BREAKPOINT = 768;
+
 const EtfCheckView = () => {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BREAKPOINT);
   const [activeTab, setActiveTab] = useState(1);
   const [subTab1, setSubTab1] = useState('kospi');
   const [subTab2, setSubTab2] = useState('1d');
@@ -14,6 +18,8 @@ const EtfCheckView = () => {
   const [etfListData, setEtfListData] = useState(null);
   const [etfListLoading, setEtfListLoading] = useState(false);
   const [etfListCode, setEtfListCode] = useState(null);
+  const [statusInfo, setStatusInfo] = useState(null);
+  const [tabLoading, setTabLoading] = useState(false);
 
   const [data, setData] = useState({
     tab1: null, tab2: null, tab3: null, tab4: null, loading: true,
@@ -22,13 +28,12 @@ const EtfCheckView = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [res1, res2, res3, res4] = await Promise.all([
+        const [res1, statusRes] = await Promise.all([
           fetch('/api/etf-check/tab1').then(r => r.json()),
-          fetch('/api/etf-check/tab2').then(r => r.json()),
-          fetch('/api/etf-check/tab3').then(r => r.json()),
-          fetch('/api/etf-check/tab4').then(r => r.json())
+          fetch('/api/etf-check/status').then(r => r.ok ? r.json() : null).catch(() => null),
         ]);
-        setData({ tab1: res1, tab2: res2, tab3: res3, tab4: res4, loading: false });
+        setData(prev => ({ ...prev, tab1: res1, loading: false }));
+        setStatusInfo(statusRes);
       } catch (err) {
         console.error("ETF Check 데이터 로드 실패", err);
         setData(prev => ({ ...prev, loading: false }));
@@ -37,10 +42,37 @@ const EtfCheckView = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const key = activeTab >= 2 && activeTab <= 4 ? `tab${activeTab}` : null;
+    if (!key || data[key] !== null) return undefined;
+
+    let cancelled = false;
+    setTabLoading(true);
+    fetch(`/api/etf-check/${key}`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(payload => {
+        if (!cancelled) setData(prev => ({ ...prev, [key]: payload }));
+      })
+      .catch(err => console.error(`ETF Check ${key} 로드 실패`, err))
+      .finally(() => {
+        if (!cancelled) setTabLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, data]);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const containerStyle = {
-    padding: '1rem',
+    padding: isMobile ? '0.8rem' : '1rem',
     background: 'rgba(255,255,255,0.02)',
-    borderRadius: '16px',
+    borderRadius: isMobile ? '12px' : '16px',
     border: '1px solid rgba(255,255,255,0.08)',
     color: '#fff',
     fontFamily: 'inherit',
@@ -48,12 +80,12 @@ const EtfCheckView = () => {
   };
   const mainTabContainerStyle = {
     display: 'flex', gap: '0.8rem', overflowX: 'auto',
-    paddingBottom: '1rem', marginBottom: '1rem',
+    paddingBottom: '0.8rem', marginBottom: '1rem',
     borderBottom: '1px solid rgba(255,255,255,0.1)', scrollbarWidth: 'thin'
   };
-  const subTabContainerStyle = { display: 'flex', gap: '0.5rem', marginBottom: '1rem' };
+  const subTabContainerStyle = { display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' };
   const tabStyle = (isActive) => ({
-    padding: '0.6rem 1.2rem', borderRadius: '8px', fontSize: '0.9rem',
+    padding: isMobile ? '0.55rem 0.9rem' : '0.6rem 1.2rem', borderRadius: '8px', fontSize: isMobile ? '0.82rem' : '0.9rem',
     fontWeight: isActive ? 600 : 400, whiteSpace: 'nowrap', cursor: 'pointer',
     transition: 'all 0.2s',
     background: isActive ? 'rgba(45,212,191,0.15)' : 'rgba(255,255,255,0.04)',
@@ -61,7 +93,7 @@ const EtfCheckView = () => {
     color: isActive ? '#2dd4bf' : 'rgba(255,255,255,0.6)',
   });
   const subTabStyle = (isActive) => ({
-    padding: '0.4rem 0.9rem', borderRadius: '6px', fontSize: '0.82rem',
+    padding: isMobile ? '0.4rem 0.7rem' : '0.4rem 0.9rem', borderRadius: '6px', fontSize: isMobile ? '0.76rem' : '0.82rem',
     cursor: 'pointer', fontWeight: isActive ? 600 : 400,
     background: isActive ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
     border: isActive ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(255,255,255,0.1)',
@@ -107,6 +139,36 @@ const EtfCheckView = () => {
     color: 'rgba(255,255,255,0.72)',
     fontSize: '0.78rem',
   };
+  const mobileCardStyle = {
+    padding: '0.85rem 0.9rem',
+    borderRadius: '12px',
+    background: 'rgba(255,255,255,0.045)',
+    border: '1px solid rgba(255,255,255,0.08)',
+  };
+  const mobileMetaGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '0.55rem 0.8rem',
+    marginTop: '0.7rem',
+  };
+  const mobileMetricStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.12rem',
+    minWidth: 0,
+  };
+
+  const latestCollectedDate = data.tab1?.date || null;
+  const staleInfo = (() => {
+    if (!latestCollectedDate) return null;
+    const latestMs = Date.parse(`${latestCollectedDate}T00:00:00`);
+    if (Number.isNaN(latestMs)) return null;
+    const today = new Date();
+    const todayMs = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const diffDays = Math.floor((todayMs - latestMs) / 86400000);
+    if (diffDays < STALE_WARNING_DAYS) return null;
+    return { diffDays };
+  })();
 
   const DirToggle = ({ dir, onToggle }) => (
     <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -148,9 +210,11 @@ const EtfCheckView = () => {
     setEtfListData(null);
     try {
       const res = await fetch(`/api/etf-check/etf-list/${stockCode}`);
-      setEtfListData(await res.json());
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
+      setEtfListData(payload);
     } catch (e) {
-      setEtfListData({ error: '조회 실패', etf_list: [] });
+      setEtfListData({ error: e.message || '조회 실패', etf_list: [] });
     } finally { setEtfListLoading(false); }
   };
 
@@ -159,23 +223,95 @@ const EtfCheckView = () => {
   // tab2 데이터 키 선택
   const tab2Key = subTab2 + (tab2Dir === 'dec' ? '_dec' : '');
   const tab3Key = subTab3 + (tab3Dir === 'dec' ? '_dec' : '');
+  const mobileLabelStyle = { fontSize:'0.7rem', color:'rgba(255,255,255,0.42)' };
+  const mobileValueStyle = { fontSize:'0.84rem', color:'#fff', fontWeight:600, wordBreak:'keep-all' };
+
+  const renderMetric = (label, value, valueStyle = mobileValueStyle) => (
+    <div style={mobileMetricStyle}>
+      <span style={mobileLabelStyle}>{label}</span>
+      <span style={valueStyle}>{value}</span>
+    </div>
+  );
+
+  const renderMobileList = (rows, renderRow, emptyMessage) => (
+    (rows || []).length > 0 ? (
+      <div style={{ display:'grid', gap:'0.75rem' }}>
+        {(rows || []).map(renderRow)}
+      </div>
+    ) : (
+      <div style={{ padding:'1.3rem 0.5rem', textAlign:'center', color:'rgba(255,255,255,0.4)', fontSize:'0.85rem' }}>
+        {emptyMessage}
+      </div>
+    )
+  );
 
   return (
     <div style={containerStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>📊 ETF Check 대시보드</h2>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: '0.45rem', marginBottom: '1rem' }}>
+        <h2 style={{ margin: 0, fontSize: isMobile ? '1.05rem' : '1.2rem', fontWeight: 700, color: '#fff' }}>📊 ETF Check 대시보드</h2>
         <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)' }}>
           최근 수집일: {data.tab1?.date || '-'}
         </span>
       </div>
 
+      {statusInfo?.issue_code === 'session_expired' && (
+        <div style={{
+          margin: '0 0 1rem 0',
+          padding: '0.85rem 0.95rem',
+          borderRadius: '10px',
+          background: 'rgba(239,68,68,0.10)',
+          border: '1px solid rgba(239,68,68,0.28)',
+          color: '#fecaca',
+          fontSize: '0.83rem',
+          lineHeight: 1.55,
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: '0.2rem' }}>자동수집 세션 만료</div>
+          <div>
+            {statusInfo.issue_message}
+            {statusInfo.latest_run?.run_date ? ` 최근 실패일은 ${statusInfo.latest_run.run_date}입니다.` : ''}
+            {statusInfo.session_state?.updated_at
+              ? ` 마지막 세션 저장 시각은 ${String(statusInfo.session_state.updated_at).slice(0, 16).replace('T', ' ')}입니다.`
+              : ''}
+          </div>
+          <div style={{ marginTop: '0.35rem', color: 'rgba(255,255,255,0.72)' }}>
+            조치: 터미널에서 `python ETF_check/test_single.py --login`으로 재로그인 후 다음 영업일 수집을 다시 돌려야 합니다.
+          </div>
+        </div>
+      )}
+
+      {staleInfo && (
+        <div style={{
+          margin: '0 0 1rem 0',
+          padding: '0.8rem 0.95rem',
+          borderRadius: '10px',
+          background: 'rgba(255,107,107,0.08)',
+          border: '1px solid rgba(255,107,107,0.28)',
+          color: '#fecaca',
+          fontSize: '0.83rem',
+          lineHeight: 1.5,
+        }}>
+          ETF 데이터가 최근 {staleInfo.diffDays}일 동안 갱신되지 않았습니다.
+          현재 표시는 {latestCollectedDate} 기준이며, 자동수집 세션 만료나 원천 사이트 이슈를 점검해야 합니다.
+        </div>
+      )}
+
+      {statusInfo?.latest_snapshot?.coverage_ratio < 0.9 && (
+        <div style={qualityNoteStyle}>
+          최신 {statusInfo.latest_snapshot.trade_date} 자료는 전체 {formatNumber(statusInfo.latest_snapshot.rows_expected)}종목 중
+          {' '}{formatNumber(statusInfo.latest_snapshot.rows_collected)}종목 수집분입니다. 순위는 수집된 종목 범위 안에서만 유효하며,
+          증감 비교는 같은 수집 범위의 날짜끼리만 제공합니다.
+        </div>
+      )}
+
       <div style={mainTabContainerStyle}>
         <div style={tabStyle(activeTab === 1)} onClick={() => setActiveTab(1)}>ETF 편입액 기준</div>
         <div style={tabStyle(activeTab === 2)} onClick={() => setActiveTab(2)}>ETF 편입액 증감</div>
-        <div style={tabStyle(activeTab === 3)} onClick={() => setActiveTab(3)}>시총대비 증감%</div>
+        <div style={tabStyle(activeTab === 3)} onClick={() => setActiveTab(3)}>편입 증감 / 시총</div>
         <div style={tabStyle(activeTab === 4)} onClick={() => setActiveTab(4)}>시총대비 비중%</div>
         <div style={tabStyle(activeTab === 5)} onClick={() => setActiveTab(5)}>종목 검색</div>
       </div>
+
+      {tabLoading && <div style={{ padding:'1.2rem', color:'rgba(255,255,255,0.55)' }}>선택한 데이터를 불러오는 중입니다...</div>}
 
       {/* 탭 1 — ETF 편입액 기준 */}
       {activeTab === 1 && (
@@ -184,6 +320,30 @@ const EtfCheckView = () => {
             <div style={subTabStyle(subTab1 === 'kospi')} onClick={() => setSubTab1('kospi')}>코스피</div>
             <div style={subTabStyle(subTab1 === 'kosdaq')} onClick={() => setSubTab1('kosdaq')}>코스닥</div>
           </div>
+          {isMobile ? renderMobileList(
+            data.tab1?.[subTab1] || [],
+            (row) => (
+              <div key={row.stock_code} style={mobileCardStyle}>
+                <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
+                  <div>
+                    <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ color:'#2dd4bf', fontWeight:700 }}>{formatNumber(row.etf_amount)}억</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.5)' }}>{formatRatio(row.mktcap_ratio)}</div>
+                  </div>
+                </div>
+                <div style={mobileMetaGridStyle}>
+                  {renderMetric('현재가', formatNumber(row.current_price))}
+                  {renderMetric('등락률', formatPct(row.price_change_pct))}
+                  {renderMetric('시가총액', `${formatNumber(row.market_cap)}억`)}
+                  {renderMetric('시총대비', formatRatio(row.mktcap_ratio))}
+                </div>
+              </div>
+            ),
+            '데이터가 없습니다.'
+          ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={tableStyle}>
               <thead>
@@ -216,12 +376,19 @@ const EtfCheckView = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
       {/* 탭 2 — ETF 편입액 증감 */}
       {activeTab === 2 && (
         <div className="fade-in">
+          {data.tab2?.quality?.issue === 'source_regime_break' && (
+            <div style={qualityNoteStyle}>
+              원천 사이트의 ETF 집계 기준이 최근 변경된 것으로 보여 과거 날짜와 직접 비교를 잠시 중단했습니다.
+              최신 기준일 {data.tab2?.dates?.latest || '-'}와 이전 데이터는 같은 분모가 아닐 수 있습니다.
+            </div>
+          )}
           <div style={{ display:'flex', alignItems:'center', gap:'0.8rem', marginBottom:'1rem', flexWrap:'wrap' }}>
             <div style={{ display:'flex', gap:'0.5rem' }}>
               <div style={subTabStyle(subTab2 === '1d')} onClick={() => setSubTab2('1d')}>1일 전 대비</div>
@@ -242,6 +409,32 @@ const EtfCheckView = () => {
                 : ''}
             </div>
           )}
+          {isMobile ? renderMobileList(
+            data.tab2?.[tab2Key] || [],
+            (row) => {
+              const chgPct = row.prev_amount > 0 ? (row.amount_diff / row.prev_amount * 100) : null;
+              const mktPct = row.market_cap > 0 ? (row.amount_diff / row.market_cap * 100) : null;
+              const diffColor = row.amount_diff > 0 ? '#ff4d4f' : row.amount_diff < 0 ? '#60a5fa' : 'rgba(255,255,255,0.72)';
+              return (
+                <div key={row.stock_code} style={mobileCardStyle}>
+                  <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
+                    <div>
+                      <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
+                      <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                    </div>
+                    <div style={{ color:diffColor, fontWeight:700 }}>{formatSignedNumber(row.amount_diff)}억</div>
+                  </div>
+                  <div style={mobileMetaGridStyle}>
+                    {renderMetric('과거', `${formatNumber(row.prev_amount)}억`)}
+                    {renderMetric('현재', `${formatNumber(row.current_amount)}억`)}
+                    {renderMetric('증감률', chgPct != null ? formatPct(chgPct) : '-')}
+                    {renderMetric('시총대비', mktPct != null ? formatPct(mktPct) : '-')}
+                  </div>
+                </div>
+              );
+            },
+            '과거 데이터가 부족하여 증감분을 계산할 수 없습니다. (최소 2일치 수집 필요)'
+          ) : (
           <div style={{ overflowX:'auto' }}>
             <table style={tableStyle}>
               <thead>
@@ -289,12 +482,22 @@ const EtfCheckView = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
       {/* 탭 3 — 시총대비 증감% */}
       {activeTab === 3 && (
         <div className="fade-in">
+          <div style={qualityNoteStyle}>
+            이 값은 시가총액 증가율이 아닙니다. ETF 편입액 증감분을 현재 시가총액으로 나눈 참고 비율입니다.
+          </div>
+          {data.tab3?.quality?.issue === 'source_regime_break' && (
+            <div style={qualityNoteStyle}>
+              원천 사이트 ETF 집계 기준 변경 가능성이 커서 시총대비 증감 비교를 잠시 중단했습니다.
+              같은 체계로 다시 쌓인 날짜들끼리만 비교하도록 보수적으로 처리했습니다.
+            </div>
+          )}
           <div style={{ display:'flex', alignItems:'center', gap:'0.8rem', marginBottom:'1rem', flexWrap:'wrap' }}>
             <div style={{ display:'flex', gap:'0.5rem' }}>
               <div style={subTabStyle(subTab3 === '1d')} onClick={() => setSubTab3('1d')}>1일 전 대비</div>
@@ -307,6 +510,25 @@ const EtfCheckView = () => {
               </span>
             )}
           </div>
+          {isMobile ? renderMobileList(
+            data.tab3?.[tab3Key] || [],
+            (row) => (
+              <div key={row.stock_code} style={mobileCardStyle}>
+                <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
+                  <div>
+                    <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                  </div>
+                  <div style={{ fontWeight:700 }}>{formatPct(row.ratio_increase)}</div>
+                </div>
+                <div style={mobileMetaGridStyle}>
+                  {renderMetric('시가총액', `${formatNumber(row.market_cap)}억`)}
+                  {renderMetric('편입 증감액', `${row.amount_diff > 0 ? '+' : ''}${formatNumber(row.amount_diff)}억`)}
+                </div>
+              </div>
+            ),
+            '과거 데이터가 부족하여 증감분을 계산할 수 없습니다. (최소 2일치 수집 필요)'
+          ) : (
           <div style={{ overflowX:'auto' }}>
             <table style={tableStyle}>
               <thead>
@@ -314,7 +536,7 @@ const EtfCheckView = () => {
                   <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(59,130,246,0.3)'}}>종목명</th>
                   <th style={thStyle}>시가총액(억)</th>
                   <th style={thStyle}>편입금액 증감액(억)</th>
-                  <th style={thStyle}>시총대비 증감율</th>
+                  <th style={thStyle}>편입 증감액 / 시총</th>
                 </tr>
               </thead>
               <tbody>
@@ -343,12 +565,37 @@ const EtfCheckView = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
       {/* 탭 4 — 시총대비 비중% */}
       {activeTab === 4 && (
         <div className="fade-in">
+          {isMobile ? renderMobileList(
+            data.tab4?.top || [],
+            (row) => (
+              <div key={row.stock_code} style={mobileCardStyle}>
+                <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
+                  <div>
+                    <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ color:'#2dd4bf', fontWeight:700 }}>{formatRatio(row.calc_ratio)}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.5)' }}>{formatNumber(row.etf_amount)}억</div>
+                  </div>
+                </div>
+                <div style={mobileMetaGridStyle}>
+                  {renderMetric('현재가', formatNumber(row.current_price))}
+                  {renderMetric('등락률', formatPct(row.price_change_pct))}
+                  {renderMetric('시가총액', `${formatNumber(row.market_cap)}억`)}
+                  {renderMetric('ETF 편입금액', `${formatNumber(row.etf_amount)}억`)}
+                </div>
+              </div>
+            ),
+            '데이터가 없습니다.'
+          ) : (
           <div style={{ overflowX:'auto', marginTop:'1rem' }}>
             <table style={tableStyle}>
               <thead>
@@ -381,19 +628,20 @@ const EtfCheckView = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
       {/* 탭 5 — 종목 검색 */}
       {activeTab === 5 && (
         <div className="fade-in">
-          <form onSubmit={handleSearch} style={{ display:'flex', gap:'0.5rem', marginBottom:'1rem', alignItems:'center' }}>
+          <form onSubmit={handleSearch} style={{ display:'flex', gap:'0.5rem', marginBottom:'1rem', alignItems:isMobile?'stretch':'center', flexDirection:isMobile?'column':'row' }}>
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="종목명/코드 검색"
               style={{
-                width:'220px', padding:'0.55rem 0.7rem', borderRadius:'8px',
+                width:isMobile?'100%':'220px', padding:'0.55rem 0.7rem', borderRadius:'8px',
                 border:'1px solid rgba(255,255,255,0.16)', background:'rgba(15,23,42,0.9)',
                 color:'#fff', outline:'none'
               }}
@@ -406,7 +654,8 @@ const EtfCheckView = () => {
                 border:'1px solid rgba(45,212,191,0.55)',
                 background: searchLoading ? 'rgba(45,212,191,0.12)' : 'rgba(45,212,191,0.85)',
                 color: searchLoading ? '#94a3b8' : '#071014',
-                fontWeight:700, cursor: searchLoading ? 'default' : 'pointer'
+                fontWeight:700, cursor: searchLoading ? 'default' : 'pointer',
+                width:isMobile?'100%':'auto'
               }}
             >조회</button>
             <span style={{ fontSize:'0.8rem', color:'rgba(255,255,255,0.45)' }}>
@@ -414,6 +663,38 @@ const EtfCheckView = () => {
             </span>
           </form>
           {searchError && <div style={{ marginBottom:'0.8rem', color:'#ff6b6b', fontSize:'0.85rem' }}>{searchError}</div>}
+          {isMobile ? renderMobileList(
+            searchData.rows || [],
+            (row) => (
+              <div key={row.stock_code} style={{ ...mobileCardStyle, background: etfListCode === row.stock_code ? 'rgba(45,212,191,0.08)' : mobileCardStyle.background }}>
+                <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
+                  <div>
+                    <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                  </div>
+                  <button
+                    onClick={() => handleFetchEtfList(row.stock_code)}
+                    disabled={etfListLoading && etfListCode === row.stock_code}
+                    style={{
+                      padding:'0.3rem 0.65rem', borderRadius:'999px', border:'none',
+                      background: etfListCode === row.stock_code ? '#2dd4bf' : 'rgba(45,212,191,0.18)',
+                      color: etfListCode === row.stock_code ? '#071014' : '#2dd4bf',
+                      fontSize:'0.76rem', cursor:'pointer', fontWeight:700, whiteSpace:'nowrap'
+                    }}
+                  >
+                    {etfListLoading && etfListCode === row.stock_code ? '조회 중...' : 'ETF 보기'}
+                  </button>
+                </div>
+                <div style={mobileMetaGridStyle}>
+                  {renderMetric('주가', formatPriceCell(row.current_price, row.price_change_pct))}
+                  {renderMetric('시가총액', formatNumber(row.market_cap))}
+                  {renderMetric('편입액', `${formatNumber(row.etf_amount)}억`, { ...mobileValueStyle, color:'#2dd4bf' })}
+                  {renderMetric('5일 차이', formatSignedNumber(row.amount_diff))}
+                </div>
+              </div>
+            ),
+            searchLoading ? '검색 중입니다...' : '검색 결과가 없습니다.'
+          ) : (
           <div style={{ overflowX:'auto' }}>
             <table style={tableStyle}>
               <thead>
@@ -466,6 +747,7 @@ const EtfCheckView = () => {
               </tbody>
             </table>
           </div>
+          )}
 
           {/* ETF TOP 패널 */}
           {etfListData && (

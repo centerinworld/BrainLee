@@ -25,9 +25,9 @@ from collections import defaultdict, deque
 from datetime import date, timedelta
 from typing import Any
 
-DB  = "/Applications/stock_dashboard/stock.db"
-CFG = "/Applications/stock_dashboard/config/v14_meta_config.json"
-WGT = "/Applications/stock_dashboard/config/meta_strategy_weights.json"
+DB  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+CFG = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/v14_meta_config.json"
+WGT = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/meta_strategy_weights.json"
 
 # ─── 6th 윈도우 소스 런 매핑 ─────────────────────────────────────────────
 # V16: rotation 런 + v_largetrend 사용 (AUDIT 런보다 범위 넓고 대형주 포함)

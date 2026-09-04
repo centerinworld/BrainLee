@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 
-DB = "/Applications/stock_dashboard/employment_monitor/employment.db"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db"
 
 
 def main():

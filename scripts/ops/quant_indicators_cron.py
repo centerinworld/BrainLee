@@ -54,10 +54,10 @@ crontab에서 호출하며 --mode 인수로 수집 주기를 분리.
   python3 scripts/ops/quant_indicators_cron.py --mode all
 
 crontab 등록 (crontab -e):
-  30 19 * * 1-5  cd /Applications/stock_dashboard && python3 scripts/ops/quant_indicators_cron.py --mode daily  >> logs/quant_daily.log 2>&1
-  0  8  * * 1    cd /Applications/stock_dashboard && python3 scripts/ops/quant_indicators_cron.py --mode weekly >> logs/quant_weekly.log 2>&1
-  0  5  12 * *   cd /Applications/stock_dashboard && python3 scripts/ops/quant_indicators_cron.py --mode monthly >> logs/quant_monthly.log 2>&1
-  0  5  20 1 *   cd /Applications/stock_dashboard && python3 scripts/ops/quant_indicators_cron.py --mode annual  >> logs/quant_annual.log 2>&1
+  30 19 * * 1-5  cd /Volumes/Realtek_NVME/stock_dashboard/runtime && python3 scripts/ops/quant_indicators_cron.py --mode daily  >> logs/quant_daily.log 2>&1
+  0  8  * * 1    cd /Volumes/Realtek_NVME/stock_dashboard/runtime && python3 scripts/ops/quant_indicators_cron.py --mode weekly >> logs/quant_weekly.log 2>&1
+  0  5  12 * *   cd /Volumes/Realtek_NVME/stock_dashboard/runtime && python3 scripts/ops/quant_indicators_cron.py --mode monthly >> logs/quant_monthly.log 2>&1
+  0  5  20 1 *   cd /Volumes/Realtek_NVME/stock_dashboard/runtime && python3 scripts/ops/quant_indicators_cron.py --mode annual  >> logs/quant_annual.log 2>&1
 """
 from __future__ import annotations
 
@@ -74,6 +74,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
+
+from config import IS_POSTGRES  # noqa: E402
+from db_compat import connect_primary_db  # noqa: E402
 
 DB_PATH = str(ROOT / "stock.db")
 LOG_DIR = ROOT / "logs"
@@ -108,6 +111,8 @@ log = logging.getLogger("quant_cron")
 
 
 def _open_db() -> sqlite3.Connection:
+    if IS_POSTGRES:
+        return connect_primary_db(timeout=300)
     conn = sqlite3.connect(DB_PATH, timeout=300)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -178,6 +183,15 @@ def run_daily():
         for k in ["public:21:1", "public:21:2", "public:21:3", "public:21:4"]:
             counts[k] = 0
 
+    # 1b. 52주 신고가/신저가 비율 (price_history 파생, 국면 판단용)
+    breadth_52w_rows = _safe("52주 신고/신저 비율", S.derive_52w_breadth_from_price_history, conn)
+    if breadth_52w_rows:
+        for k in ["public:21:7", "public:21:8"]:
+            counts[k] = _upsert(conn, S, k, breadth_52w_rows.get(k, []))
+    else:
+        for k in ["public:21:7", "public:21:8"]:
+            counts[k] = 0
+
     # 2. 대차잔고 (short_sell_daily → 월별 집계)
     short_rows = _safe("대차잔고", S.collect_monthly_short_balance, conn)
     counts["epic:20:22"] = _upsert(conn, S, "epic:20:22", short_rows)
@@ -185,6 +199,13 @@ def run_daily():
     # 3. 한국은행 기준금리 (ECOS, 빠름)
     rate_rows = _safe("기준금리", S.collect_bok_base_rate)
     counts["epic:20:1"] = _upsert(conn, S, "epic:20:1", rate_rows)
+
+    # 3b. global_macro_data → 퀀트 주요지표 메뉴 역방향 브릿지
+    # 전날/당일 06:45 글로벌매크로수집 결과를 퀀트 메뉴와 신호 엔진에 노출한다.
+    global_macro_rows = _safe("글로벌 거시지표 브릿지", S.collect_global_macro_quant_bridge, conn)
+    if global_macro_rows:
+        for key, rows in global_macro_rows.items():
+            counts[key] = _upsert(conn, S, key, rows)
 
     # 4. DART 카지노 공시 (최신 공시만 갱신)
     casino_rows = _safe("DART 카지노", S.collect_dart_casino_monthly, conn)
@@ -412,8 +433,11 @@ def run_monthly():
                                 monthly[period].append(v)
                         except Exception:
                             pass
-                    rows = [{"period": p, "series_name": sname, "value": sum(vs)/len(vs),
-                             "unit": "원/1엔" if sname == "jpy_krw" else "원",
+                    # period 'YYYY-MM' 정규화 (2026-07-11): 'YYYYMM' 저장 시 기존 'YYYY-MM' 행과
+                    # 이중 저장 + 문자열 정렬 붕괴 발생 (usd/eur/jpy 396행 중복 실측 후 정리됨)
+                    rows = [{"period": f"{p[:4]}-{p[4:6]}", "series_name": sname, "value": sum(vs)/len(vs),
+                             "unit": ("원/1엔" if sname == "jpy_krw" else
+                                      "원/유로" if sname == "eur_krw" else "원/달러"),
                              "source_name": "ECOS_731Y001",
                              "source_detail": f"731Y001/{symbol_code}",
                              "quality": "official_exact"}

@@ -69,13 +69,21 @@ def _load_corp_map() -> dict[str, str]:
 
 
 def _report_code(quarter: int) -> list[str]:
-    # quarter=4 → 사업보고서, quarter=2 → 반기, quarter=1/3 → 분기
+    # quarter=4 → 사업보고서, quarter=2 → 반기, quarter=1 → 1분기, quarter=3 → 3분기
+    # 2026-09 수정: 기존 코드는 quarter=1과 quarter=3이 동일하게 ["11013","11014"]를
+    # 반환했는데, _fetch_inventory가 리스트 순서대로 첫 성공값을 채택하는 구조라
+    # quarter=3 요청도 항상 11013(1분기보고서)이 먼저 매칭돼 quarter=1 데이터를
+    # 그대로 재사용하는 결과가 됨 — 실제로 다수 종목에서 Q1==Q3 값이 여러 해에
+    # 걸쳐 완전히 동일하게 저장돼 있던 근본 원인.
     if quarter == 4:
         return ["11011"]
     elif quarter == 2:
         return ["11012"]
-    else:
-        return ["11013", "11014"]
+    elif quarter == 1:
+        return ["11013"]
+    elif quarter == 3:
+        return ["11014"]
+    return []
 
 
 def _fetch_inventory(corp_code: str, year: int, quarter: int) -> float | None:

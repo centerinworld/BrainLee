@@ -196,7 +196,12 @@ def translate_sqlite_sql(sql: str) -> str:
         re.search(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", sql, flags=re.IGNORECASE)
     )
     translated = _YMD_DATE_COMPARISON_RE.sub(
-        lambda m: f"{m.group(1)} >= TO_CHAR(CURRENT_DATE - INTERVAL '{m.group(2)} days', 'YYYYMMDD')",
+        lambda m: (
+            "REPLACE(SUBSTR("
+            f"{m.group(1)}::text, 1, 10"
+            "), '-', '') >= "
+            f"TO_CHAR(CURRENT_DATE - INTERVAL '{m.group(2)} days', 'YYYYMMDD')"
+        ),
         sql,
     )
     translated = _STRFTIME_NOW_RE.sub(
@@ -219,6 +224,12 @@ def translate_sqlite_sql(sql: str) -> str:
             f"{'+' if m.group(1) == '+' else '-'} INTERVAL '{m.group(2)} {m.group(3)}', "
             "'YYYY-MM-DD')"
         ),
+        translated,
+        flags=re.IGNORECASE,
+    )
+    translated = re.sub(
+        r"date\(\s*'now'\s*,\s*\?\s*\)",
+        "TO_CHAR(CURRENT_DATE + (%s)::interval, 'YYYY-MM-DD')",
         translated,
         flags=re.IGNORECASE,
     )
@@ -358,8 +369,20 @@ def translate_sqlite_sql(sql: str) -> str:
         flags=re.IGNORECASE,
     )
     translated = re.sub(
+        r"([A-Za-z_][A-Za-z0-9_.]*)\s+NOT\s+GLOB\s+'\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]'",
+        r"\1 !~ '^[0-9]{6}$'",
+        translated,
+        flags=re.IGNORECASE,
+    )
+    translated = re.sub(
         r"([A-Za-z_][A-Za-z0-9_.]*)\s+GLOB\s+'\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]\[0-9\]'",
         r"\1 ~ '^[0-9]{6}$'",
+        translated,
+        flags=re.IGNORECASE,
+    )
+    translated = re.sub(
+        r"([A-Za-z_][A-Za-z0-9_.]*)\s+NOT\s+GLOB\s+'\[0-9\]\*'",
+        r"\1 !~ '^[0-9]'",
         translated,
         flags=re.IGNORECASE,
     )

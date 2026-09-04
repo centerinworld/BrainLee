@@ -5,13 +5,14 @@ routes/reports.py — 보고서 파일 API
   GET  /api/reports/download/{report_id}        # 파일 다운로드
   GET  /api/reports/sectors                     # 섹터 목록 (통계)
   GET  /api/reports/sector/{sector}             # 섹터별 보고서
-  POST /api/reports/extract/{report_id}         # PDF → AI 컨센서스 추출
+  POST /api/reports/extract/{report_id}         # PDF → AI 컨센서스 추출 (비활성화)
   GET  /api/reports/extracts/{stock_code}       # 종목별 추출 결과 목록
 """
 
 import json
 import os
 import sqlite3 as _sl
+from services.gemini_openai_compat import OpenAI
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
@@ -19,11 +20,12 @@ from pathlib import Path
 
 router = APIRouter()
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+PDF_CONSENSUS_EXTRACT_DISABLED = True
 
 # ── analyst_pdf_extracts 테이블 자동 생성 ─────────────────────────
 def _ensure_extracts_table():
-    c = _sl.connect(DB_PATH)
+    c = _sl.connect(DB_PATH, timeout=30)
     c.execute("""
         CREATE TABLE IF NOT EXISTS analyst_pdf_extracts (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,9 +192,10 @@ def _extract_pdf_text(file_path: str, max_pages: int = 4) -> str:
 
 def _call_gpt_extract(text: str, stock_name: str) -> dict:
     """gpt-4o-mini로 애널리스트 보고서에서 컨센서스 지표 추출."""
+    if PDF_CONSENSUS_EXTRACT_DISABLED:
+        return {}
     try:
-        import openai
-        client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        client = OpenAI()
         prompt = (
             f"다음은 한국 주식 애널리스트 보고서 텍스트입니다 (종목: {stock_name}).\n"
             "아래 JSON 형식으로 핵심 컨센서스 지표를 추출하세요. 없으면 null.\n\n"
@@ -220,6 +223,8 @@ def _call_gpt_extract(text: str, stock_name: str) -> dict:
 @router.post("/extract/{report_id}")
 def extract_report(report_id: int):
     """PDF 보고서에서 AI로 컨센서스 지표 추출. 기존 결과가 있으면 반환."""
+    if PDF_CONSENSUS_EXTRACT_DISABLED:
+        raise HTTPException(status_code=410, detail="애널리스트 PDF AI 컨센서스 추출은 비용 절감을 위해 비활성화되었습니다.")
     conn = _db()
     try:
         existing = conn.execute(

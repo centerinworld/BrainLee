@@ -4,7 +4,7 @@ migrate_db.py — 기존 DB를 안전하게 마이그레이션합니다.
 ★ 서버 실행 전에 반드시 1회 실행하세요 ★
 
 실행 방법:
-    cd /Applications/stock_dashboard
+    cd /Volumes/Realtek_NVME/stock_dashboard/runtime
     source venv/bin/activate
     python3 migrate_db.py
 

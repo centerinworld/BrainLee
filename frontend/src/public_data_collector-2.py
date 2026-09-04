@@ -20,7 +20,7 @@ public_data_collector.py — 공공데이터포털 + DART 일괄 수집기
 실행 방법
 ═══════════════════════════════════════════════════════════════
 
-  cd /Applications/stock_dashboard && source venv/bin/activate
+  cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
 
   # 오늘 데이터 전체 수집
   python3 public_data_collector.py
@@ -45,19 +45,19 @@ import sys, os, sqlite3, time, logging, argparse, requests, json, zipfile, io
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("/Applications/stock_dashboard/public_data.log", encoding="utf-8"),
+        logging.FileHandler("/Volumes/Realtek_NVME/stock_dashboard/runtime/public_data.log", encoding="utf-8"),
     ],
 )
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 
 # ── API 설정 ──────────────────────────────────────────────────────
 BASE_URL    = "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService"
@@ -1007,14 +1007,14 @@ def collect_all_for_date(conn, bas_dt: str, skip_existing: bool = True) -> dict:
 def setup_cron():
     """매일 18:30 자동 실행 cron 등록."""
     import subprocess
-    py  = "/Applications/stock_dashboard/venv/bin/python3"
-    scr = "/Applications/stock_dashboard/public_data_collector.py"
-    log = "/Applications/stock_dashboard/public_data.log"
+    py  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3"
+    scr = "/Volumes/Realtek_NVME/stock_dashboard/runtime/public_data_collector.py"
+    log = "/Volumes/Realtek_NVME/stock_dashboard/runtime/public_data.log"
 
     # 기업정보는 주 1회(월요일 07:00)
     lines = [
-        f"30 18 * * 1-5 cd /Applications/stock_dashboard && {py} {scr} >> {log} 2>&1",
-        f"0 7 * * 1 cd /Applications/stock_dashboard && {py} {scr} --company-only >> {log} 2>&1",
+        f"30 18 * * 1-5 cd /Volumes/Realtek_NVME/stock_dashboard/runtime && {py} {scr} >> {log} 2>&1",
+        f"0 7 * * 1 cd /Volumes/Realtek_NVME/stock_dashboard/runtime && {py} {scr} --company-only >> {log} 2>&1",
     ]
 
     res = subprocess.run(["crontab", "-l"], capture_output=True, text=True)

@@ -21,7 +21,7 @@ STOOQ_MAP = {
 start_date = "20260501"
 end_date   = datetime.now().strftime("%Y%m%d")
 
-conn = sqlite3.connect("/Applications/stock_dashboard/stock.db")
+conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 total_inserted = 0
 
 for yf_sym, (stooq_sym, name) in STOOQ_MAP.items():
@@ -82,7 +82,7 @@ conn.close()
 print(f"\n=== 완료: 총 {total_inserted}건 저장 ===")
 
 # 결과 확인
-conn = sqlite3.connect("/Applications/stock_dashboard/stock.db")
+conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 print("\n[DB 최신 상태]")
 rows = conn.execute("""
     SELECT stock_code, date, close FROM price_history

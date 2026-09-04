@@ -2,7 +2,7 @@
 """
 refresh_today.py — 오늘 데이터 즉시 갱신 스크립트
 =====================================================
-실행: python3 /Applications/stock_dashboard/refresh_today.py
+실행: python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/refresh_today.py
 
 작업:
   1. 오늘 price_history에 있는 May4 복사본 데이터 삭제
@@ -12,10 +12,10 @@ refresh_today.py — 오늘 데이터 즉시 갱신 스크립트
 import sys, os, sqlite3, time
 from datetime import date, datetime, timedelta
 
-sys.path.insert(0, '/Applications/stock_dashboard')
-os.chdir('/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
+os.chdir('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 
-DB_PATH = '/Applications/stock_dashboard/stock.db'
+DB_PATH = '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH, timeout=60)
@@ -229,7 +229,7 @@ def step3_summary():
 
     print("\n======================================================")
     print("  완료! 서버를 재시작하면 변경사항이 반영됩니다:")
-    print("  bash /Applications/stock_dashboard/fix_db_and_restart.sh")
+    print("  bash /Volumes/Realtek_NVME/stock_dashboard/runtime/fix_db_and_restart.sh")
     print("======================================================")
 
 if __name__ == '__main__':

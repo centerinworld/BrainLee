@@ -7,8 +7,8 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-OUT_PATH = Path("/Applications/stock_dashboard/scratch/meta_portfolio_optimization_2026-05-19.json")
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+OUT_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/meta_portfolio_optimization_2026-05-19.json")
 
 # 전략 후보 (v12/combo는 기본 제외)
 STRATS = ["v_trend", "v11", "v5", "v1_value", "v2", "v10", "v8"]

@@ -1284,17 +1284,31 @@ def get_ch_data(code: str):
         result["has_ofs_quarter"] = len(q_ofs) > 0
 
         # ── 8. 현금흐름 (연간 최근 5년) ──────────────────────────────
-        cf_rows = conn.execute("""
+        # 연도당 data_source가 여러 개(dart/dart_ofs_backfill/fnguide/...) 존재할 수
+        # 있어 단순 GROUP BY cf.year는 PostgreSQL에서 UngroupedColumn 오류이자,
+        # SQLite에서도 어느 소스값이 섞일지 비결정적이었음(get_cashflow_table의
+        # 기존 우선순위 규칙 — dart > fnguide > 그 외 id DESC — 을 그대로 재사용).
+        cf_raw_rows = conn.execute("""
             SELECT cf.year,
                    ROUND(cf.operating_cf/1e8,1) as ocf_억,
                    ROUND(cf.investing_cf/1e8,1) as icf_억,
                    ROUND(ABS(cf.capex)/1e8,1) as capex_억,
                    ROUND(cf.depreciation/1e8,1) as dep_억
             FROM cash_flow_data cf WHERE cf.stock_code=? AND cf.is_annual=1
-            GROUP BY cf.year
-            ORDER BY cf.year DESC LIMIT 5
+            ORDER BY cf.year DESC,
+                CASE WHEN cf.data_source='dart' THEN 0 WHEN cf.data_source='fnguide' THEN 1 ELSE 2 END,
+                cf.id DESC
         """, (code,)).fetchall()
-        result["cashflow"] = [dict(r) for r in cf_rows]
+        cf_seen_years = set()
+        cf_rows = []
+        for r in cf_raw_rows:
+            if r["year"] in cf_seen_years:
+                continue
+            cf_seen_years.add(r["year"])
+            cf_rows.append(dict(r))
+            if len(cf_rows) >= 5:
+                break
+        result["cashflow"] = cf_rows
 
         # ── 9. 매출채권 ─────────────────────────────────────────────
         ar_rows = []
@@ -1329,7 +1343,12 @@ def get_ch_data(code: str):
             if has_data:
                 return None
             if not sector_match:
-                return f"{data_name} 해당없음 (금융·서비스업종)"
+                # ⚠️ 2026-08-23: "금융·서비스업종"으로 고정 표기했으나
+                # 이 조건은 backlog_sectors/inv_sectors/material_sectors
+                # 화이트리스트에 없는 모든 업종(IT/반도체 등도 포함)에서
+                # 발생 — 실제 업종을 그대로 보여줘 오인을 방지한다.
+                sector_label = sector or "해당 업종"
+                return f"{data_name} 해당없음 ({sector_label} 업종 특성상 공시 대상 아님)"
             return f"{data_name} 사업보고서 미제공 또는 미수집"
 
         result["availability"] = {

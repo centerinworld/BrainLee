@@ -19,12 +19,12 @@
 - 엑셀 원본
   - `/Users/brainlee/Downloads/반도체 업종 Value Stream의 사본.xlsx`
 - 읽기 전용 기존 주가/실적 DB
-  - `/Applications/stock_dashboard/stock.db`
+  - `/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db`
 
 ## 실행 순서
 
 ```bash
-cd /Applications/stock_dashboard/hs_trade_lab/semiconductor_value_lab
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab/semiconductor_value_lab
 python3 scripts/rebuild_cache.py
 python3 server.py
 ```

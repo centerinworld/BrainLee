@@ -31,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 from notifier import send as send_telegram, load_history as _load_sent_history, purge_old_keys as _clear_old_sent_keys
 
 # ──────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(),
         logging.handlers.RotatingFileHandler(
-            "/Applications/stock_dashboard/peak_monitor.log",
+            "/Volumes/Realtek_NVME/stock_dashboard/runtime/peak_monitor.log",
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=3,
             encoding="utf-8",
@@ -90,7 +90,7 @@ STRATEGY_NAMES = {
 }
 
 LOGIN_URL    = "https://stockeasy.intellio.kr/api/auth/login"
-SESSION_FILE = "/Applications/stock_dashboard/stockeasy_session.json"
+SESSION_FILE = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_session.json"
 
 # 편출 오탐 방지: 1회 누락으로 즉시 편출 확정하지 않음
 _EXIT_MISS_COUNTS: dict[tuple[str, str], int] = {}
@@ -728,7 +728,7 @@ def main() -> None:
 def _acquire_daemon_lock() -> None:
     """중복 실행 방지. 이미 실행 중이면 즉시 종료."""
     import atexit
-    pid_path = "/Applications/stock_dashboard/logs/peak_monitor.pid"
+    pid_path = "/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/peak_monitor.pid"
     os.makedirs(os.path.dirname(pid_path), exist_ok=True)
 
     if os.path.exists(pid_path):

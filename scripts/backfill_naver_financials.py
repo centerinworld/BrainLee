@@ -20,7 +20,7 @@ if ROOT_DIR not in sys.path:
 
 from api_rate_limiter import api_limiter
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 
 @dataclass

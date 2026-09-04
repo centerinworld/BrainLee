@@ -1,7 +1,7 @@
 import sqlite3
 import os
 
-DB_PATH = "/Applications/stock_dashboard/Sector_define/sector_followup.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/Sector_define/sector_followup.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)

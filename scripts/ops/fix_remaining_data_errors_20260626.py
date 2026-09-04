@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 
 
-DB = Path("/Applications/stock_dashboard/stock.db")
-OUT = Path("/Applications/stock_dashboard/research_outputs/remaining_data_error_fix_20260626")
+DB = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+OUT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/research_outputs/remaining_data_error_fix_20260626")
 
 
 def conn() -> sqlite3.Connection:

@@ -7,7 +7,7 @@
 # 사용: bash run_fnguide_resume.sh
 
 set -e
-cd /Applications/stock_dashboard
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime
 
 LOGDIR="logs"
 VERIFY_DIR="verification"
@@ -65,8 +65,8 @@ echo "--- Step 5: After-snapshot 저장 ---"
 python3 - << 'PYEOF'
 import sqlite3, json, datetime, os
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-VERIFY_DIR = "/Applications/stock_dashboard/verification"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+VERIFY_DIR = "/Volumes/Realtek_NVME/stock_dashboard/runtime/verification"
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 conn = sqlite3.connect(DB_PATH)
@@ -108,7 +108,7 @@ snap['fnguide_null_check'] = {
 # profiles
 import json as _json
 import os
-profiles_path = "/Applications/stock_dashboard/config/financial_profiles.json"
+profiles_path = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/financial_profiles.json"
 if os.path.exists(profiles_path):
     with open(profiles_path) as f:
         profiles = _json.load(f)

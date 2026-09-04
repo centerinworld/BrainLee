@@ -8,6 +8,7 @@ import sqlite3 as _sl
 import json, time, logging, asyncio
 from datetime import datetime, timedelta
 from bisect import bisect_right
+from config import IS_POSTGRES
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -19,6 +20,10 @@ _init_done = False
 def _init_tables():
     global _init_done
     if _init_done:
+        return
+    if IS_POSTGRES:
+        _seed_categories()
+        _init_done = True
         return
     conn = _sl.connect(DB_PATH, timeout=30)
     conn.executescript("""
@@ -63,6 +68,8 @@ def _init_tables():
             created_at     TEXT DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_gme_date ON global_macro_events(event_date);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_gme_unique_event
+            ON global_macro_events(event_date, COALESCE(country,''), COALESCE(indicator_code,''), event_name);
         CREATE TABLE IF NOT EXISTS global_macro_collection_log (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             source       TEXT,
@@ -71,7 +78,49 @@ def _init_tables():
             message      TEXT,
             run_at       TEXT DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS global_macro_event_reactions (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id       INTEGER NOT NULL,
+            event_date     TEXT NOT NULL,
+            country        TEXT,
+            indicator_code TEXT,
+            event_name     TEXT,
+            surprise_value REAL,
+            surprise_pct   REAL,
+            asset_code     TEXT NOT NULL,
+            asset_name     TEXT,
+            asset_group    TEXT,
+            "window"       TEXT NOT NULL,
+            base_date      TEXT,
+            end_date       TEXT,
+            base_close     REAL,
+            end_close      REAL,
+            return_pct     REAL,
+            direction      TEXT,
+            impact_score   REAL,
+            created_at     TEXT DEFAULT (datetime('now')),
+            UNIQUE(event_id, asset_code, "window")
+        );
+        CREATE INDEX IF NOT EXISTS idx_gmer_event ON global_macro_event_reactions(event_id);
+        CREATE INDEX IF NOT EXISTS idx_gmer_asset ON global_macro_event_reactions(asset_code, "window");
     """)
+    for ddl in [
+        "ALTER TABLE global_macro_events ADD COLUMN surprise_value REAL",
+        "ALTER TABLE global_macro_events ADD COLUMN surprise_pct REAL",
+        "ALTER TABLE global_macro_events ADD COLUMN surprise_basis TEXT",
+        "ALTER TABLE global_macro_events ADD COLUMN status TEXT DEFAULT 'scheduled'",
+        "ALTER TABLE global_macro_events ADD COLUMN source TEXT",
+        "ALTER TABLE global_macro_events ADD COLUMN updated_at TEXT",
+    ]:
+        try:
+            conn.execute(ddl)
+        except Exception as exc:
+            # 2026-08-14: PostgreSQL은 "column ... already exists"를 반환하며
+            # db_compat.py가 psycopg 원본 예외를 그대로 재전파 — _sl.OperationalError
+            # (SQLite 전용)만 잡던 기존 코드는 PostgreSQL 라우팅 상태에서 매번 실패.
+            msg = str(exc).lower()
+            if "duplicate column" not in msg and "already exists" not in msg:
+                raise
     conn.commit()
     conn.close()
     _seed_categories()
@@ -148,11 +197,19 @@ def _seed_categories():
         ("COMM_GOLD",         "금 가격",               "Gold Price",                   "COMMODITY","METAL",  "달러/온스","YAHOO",     "GC=F",            "DAILY",    3),
         ("COMM_COPPER",       "구리 가격",              "Copper Price",                 "COMMODITY","METAL",  "달러/파운드","YAHOO",   "HG=F",            "DAILY",    2),
         ("COMM_NATURAL_GAS",  "천연가스 가격",          "Natural Gas Price",            "COMMODITY","ENERGY", "달러/MMBtu","YAHOO",   "NG=F",            "DAILY",    2),
+        ("COMM_WHEAT",        "소맥 가격",              "Wheat Futures Price",          "COMMODITY","AGRI",   "센트/부셸","YAHOO",    "ZW=F",            "DAILY",    2),
+        ("OIL_STOCKS_EX_SPR", "미국 원유재고(SPR 제외)", "US Crude Stocks excl. SPR",    "COMMODITY","ENERGY", "천배럴",  "EIA",        "WCESTUS1",        "WEEKLY",   2),
+        ("OIL_STOCKS_TOTAL",  "미국 원유재고(총계)",     "US Crude Stocks Total",        "COMMODITY","ENERGY", "천배럴",  "EIA",        "WCRSTUS1",        "WEEKLY",   1),
         # ── 글로벌 ────────────────────────────────────────────────────
         ("GLOBAL_TRADE_VOL",  "세계 무역량 증가율",     "World Trade Volume Growth",    "GLOBAL","TRADE",    "%",       "WORLD_BANK", "TM.VAL.MRCH.WL.CD","ANNUAL",  2),
         ("GLOBAL_GDP_GROWTH", "세계 실질GDP 성장률",    "World Real GDP Growth",        "GLOBAL","GROWTH",   "%",       "WORLD_BANK", "NY.GDP.MKTP.KD.ZG","ANNUAL",  3),
         ("GLOBAL_INFLATION",  "세계 평균 인플레이션",   "World Average Inflation",      "GLOBAL","INFLATION","%",       "WORLD_BANK", "FP.CPI.TOTL.ZG",  "ANNUAL",   2),
         ("GLOBAL_FOOD_PRICE", "FAO 식품가격지수",       "FAO Food Price Index",         "GLOBAL","FOOD",     "지수",    "FAO",        "",                "MONTHLY",  2),
+        ("GLOBAL_FOOD_MEAT",  "FAO 육류가격지수",       "FAO Meat Price Index",         "GLOBAL","FOOD",     "지수",    "FAO",        "",                "MONTHLY",  1),
+        ("GLOBAL_FOOD_DAIRY", "FAO 유제품가격지수",     "FAO Dairy Price Index",        "GLOBAL","FOOD",     "지수",    "FAO",        "",                "MONTHLY",  1),
+        ("GLOBAL_FOOD_CEREALS","FAO 곡물가격지수",      "FAO Cereals Price Index",      "GLOBAL","FOOD",     "지수",    "FAO",        "",                "MONTHLY",  1),
+        ("GLOBAL_FOOD_OILS",  "FAO 유지류가격지수",     "FAO Oils Price Index",         "GLOBAL","FOOD",     "지수",    "FAO",        "",                "MONTHLY",  1),
+        ("GLOBAL_FOOD_SUGAR", "FAO 설탕가격지수",       "FAO Sugar Price Index",        "GLOBAL","FOOD",     "지수",    "FAO",        "",                "MONTHLY",  1),
     ]
     conn = _sl.connect(DB_PATH, timeout=30)
     conn.executemany("""
@@ -262,6 +319,33 @@ _WEEK4_REGION_CODES = {
     "cn": ["CN_GDP_GROWTH", "CN_CPI", "CN_USD_CNY", "CN_CLI_OECD", "CN_GDP_GROWTH_WEO"],
     "jp": ["JP_CPI", "JP_USD_JPY", "JP_NIKKEI", "JP_CLI_OECD", "JP_GDP_GROWTH_WEO"],
 }
+_WEEK6_COMMODITY_CODES = [
+    "COMM_OIL_WTI",
+    "COMM_OIL_BRENT",
+    "COMM_GOLD",
+    "COMM_COPPER",
+    "COMM_NATURAL_GAS",
+    "COMM_WHEAT",
+]
+_WEEK6_FX_CODES = [
+    "KR_USD_KRW",
+    "JP_USD_JPY",
+    "CN_USD_CNY",
+    "EU_EUR_USD",
+    "US_DXY",
+]
+_WEEK6_OIL_SUPPLY_CODES = [
+    "OIL_STOCKS_EX_SPR",
+    "OIL_STOCKS_TOTAL",
+]
+_WEEK6_FOOD_CODES = [
+    "GLOBAL_FOOD_PRICE",
+    "GLOBAL_FOOD_MEAT",
+    "GLOBAL_FOOD_DAIRY",
+    "GLOBAL_FOOD_CEREALS",
+    "GLOBAL_FOOD_OILS",
+    "GLOBAL_FOOD_SUGAR",
+]
 
 
 def _cached(key: str, fn):
@@ -464,10 +548,17 @@ def _week3_progress(conn):
     has_2y = latest_map.get("US_2Y_YIELD", {}).get("value") is not None
     yield_curve_ready = has_10y
     spread_ready = has_10y and has_2y
+    fomc_ready = conn.execute("""
+        SELECT COUNT(*)
+        FROM global_macro_events
+        WHERE country = 'US'
+          AND source = 'official_fed_fomc'
+          AND event_name LIKE '%FOMC%'
+    """).fetchone()[0] > 0
     done_flags = [
         fred_ready == len(_WEEK3_FRED_CODES),
         yield_curve_ready,
-        False,
+        fomc_ready,
         True,
         spread_ready,
     ]
@@ -485,6 +576,7 @@ def _week3_progress(conn):
         "fred_ready": fred_ready,
         "fred_total": len(_WEEK3_FRED_CODES),
         "yield_curve_ready": yield_curve_ready,
+        "fomc_ready": fomc_ready,
         "spread_ready": spread_ready,
     }
 
@@ -580,6 +672,103 @@ def _week4_progress(conn):
     }
 
 
+def _week5_progress(conn):
+    now = datetime.now()
+    start = (now - timedelta(days=14)).strftime("%Y-%m-%d")
+    end = (now + timedelta(days=45)).strftime("%Y-%m-%d")
+    total_events = conn.execute("""
+        SELECT COUNT(*) FROM global_macro_events
+        WHERE event_date BETWEEN ? AND ?
+    """, (start, end)).fetchone()[0]
+    actual_events = conn.execute("""
+        SELECT COUNT(*) FROM global_macro_events
+        WHERE actual IS NOT NULL
+    """).fetchone()[0]
+    surprise_events = conn.execute("""
+        SELECT COUNT(*) FROM global_macro_events
+        WHERE (forecast IS NOT NULL AND actual IS NOT NULL)
+           OR (previous IS NOT NULL AND actual IS NOT NULL)
+    """).fetchone()[0]
+    upcoming_events = conn.execute("""
+        SELECT COUNT(*) FROM global_macro_events
+        WHERE event_date >= ?
+    """, (now.strftime("%Y-%m-%d"),)).fetchone()[0]
+    reaction_links = conn.execute("""
+        SELECT COUNT(*) FROM global_macro_event_reactions
+    """).fetchone()[0]
+    done_flags = [
+        total_events > 0,
+        True,
+        surprise_events > 0,
+        upcoming_events > 0,
+        reaction_links > 0,
+    ]
+    done_count = sum(1 for x in done_flags if x)
+    if done_count == len(done_flags):
+        status = "done"
+    elif done_count > 0:
+        status = "in_progress"
+    else:
+        status = "planned"
+    return {
+        "status": status,
+        "done_count": done_count,
+        "total_count": len(done_flags),
+        "events_window_count": total_events,
+        "actual_events": actual_events,
+        "surprise_events": surprise_events,
+        "upcoming_events": upcoming_events,
+        "reaction_links": reaction_links,
+    }
+
+
+def _count_ready_codes(conn, codes: list[str]) -> int:
+    if not codes:
+        return 0
+    placeholders = ",".join("?" for _ in codes)
+    return conn.execute(f"""
+        SELECT COUNT(DISTINCT indicator_code)
+        FROM global_macro_data
+        WHERE value IS NOT NULL AND indicator_code IN ({placeholders})
+    """, codes).fetchone()[0]
+
+
+def _week6_progress(conn):
+    commodity_ready = _count_ready_codes(conn, _WEEK6_COMMODITY_CODES)
+    fx_ready = _count_ready_codes(conn, _WEEK6_FX_CODES)
+    oil_supply_ready = _count_ready_codes(conn, _WEEK6_OIL_SUPPLY_CODES)
+    food_ready = _count_ready_codes(conn, ["GLOBAL_FOOD_PRICE"])
+    sector_rows = conn.execute("SELECT COUNT(*) FROM sector_index_daily WHERE close IS NOT NULL AND close > 0").fetchone()[0]
+    correlation_ready = commodity_ready > 0 and sector_rows > 0
+    done_flags = [
+        commodity_ready >= 5,
+        fx_ready >= 5,
+        correlation_ready,
+        oil_supply_ready >= 1,
+        food_ready > 0,
+    ]
+    done_count = sum(1 for x in done_flags if x)
+    if done_count == len(done_flags):
+        status = "done"
+    elif done_count > 0:
+        status = "in_progress"
+    else:
+        status = "planned"
+    return {
+        "status": status,
+        "done_count": done_count,
+        "total_count": len(done_flags),
+        "commodity_ready": commodity_ready,
+        "commodity_total": len(_WEEK6_COMMODITY_CODES),
+        "fx_ready": fx_ready,
+        "fx_total": len(_WEEK6_FX_CODES),
+        "correlation_ready": correlation_ready,
+        "oil_supply_ready": oil_supply_ready,
+        "oil_supply_total": len(_WEEK6_OIL_SUPPLY_CODES),
+        "food_ready": food_ready > 0,
+    }
+
+
 def _build_week4_regions(conn) -> list[dict]:
     region_specs = [
         ("EU", "유럽", _EU_FOCUS_CODES),
@@ -598,6 +787,427 @@ def _build_week4_regions(conn) -> list[dict]:
             "highlights": available[:3],
         })
     return items
+
+
+def _pearson(xs: list[float], ys: list[float]) -> float | None:
+    n = len(xs)
+    if n < 20 or n != len(ys):
+        return None
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    den_x = sum((x - mx) ** 2 for x in xs) ** 0.5
+    den_y = sum((y - my) ** 2 for y in ys) ** 0.5
+    if not den_x or not den_y:
+        return None
+    return num / (den_x * den_y)
+
+
+def _series_returns(rows: list[dict]) -> dict[str, float]:
+    result = {}
+    prev = None
+    for row in rows:
+        val = row.get("value")
+        if val is not None and prev not in (None, 0):
+            result[row["date"]] = ((float(val) / float(prev)) - 1.0) * 100.0
+        if val is not None:
+            prev = float(val)
+    return result
+
+
+def _sector_returns(rows: list[_sl.Row]) -> dict[str, float]:
+    result = {}
+    prev = None
+    for row in rows:
+        val = row["close"]
+        if val is not None and prev not in (None, 0):
+            result[row["date"]] = ((float(val) / float(prev)) - 1.0) * 100.0
+        if val is not None:
+            prev = float(val)
+    return result
+
+
+def _commodity_sector_correlations(conn, days: int = 365, limit: int = 20) -> list[dict]:
+    days = max(days, 1095)
+    sector_max = conn.execute("""
+        SELECT MAX(date) FROM sector_index_daily
+        WHERE close IS NOT NULL AND close > 0
+    """).fetchone()[0]
+    anchor = _parse_dt(sector_max) or datetime.now()
+    since = (anchor - timedelta(days=days)).strftime("%Y-%m-%d")
+    series_map = _load_series_map(conn, _WEEK6_COMMODITY_CODES)
+    meta_map = _latest_code_map(conn, _WEEK6_COMMODITY_CODES)
+    source_map = {
+        row["code"]: row["source_code"]
+        for row in conn.execute("""
+            SELECT code, source_code
+            FROM global_macro_categories
+            WHERE code IN ({})
+        """.format(",".join("?" for _ in _WEEK6_COMMODITY_CODES)), _WEEK6_COMMODITY_CODES).fetchall()
+        if row["source_code"]
+    }
+    sector_rows = conn.execute("""
+        SELECT market, sector, date, close
+        FROM sector_index_daily
+        WHERE date >= ? AND close IS NOT NULL AND close > 0
+        ORDER BY market, sector, date
+    """, (since,)).fetchall()
+    grouped_sectors: dict[tuple[str, str], list[_sl.Row]] = {}
+    for row in sector_rows:
+        grouped_sectors.setdefault((row["market"], row["sector"]), []).append(row)
+
+    rows = []
+    for code in _WEEK6_COMMODITY_CODES:
+        points = series_map.get(code, [])
+        comm_returns = {}
+        if source_map.get(code):
+            price_rows = conn.execute("""
+                SELECT date, close AS value
+                FROM price_history
+                WHERE stock_code = ?
+                  AND date >= ?
+                  AND close IS NOT NULL
+                  AND close > 0
+                ORDER BY date
+            """, (source_map[code], since)).fetchall()
+            comm_returns = _series_returns([dict(r) for r in price_rows])
+        if len(comm_returns) < 20:
+            comm_returns = _series_returns([p for p in points if p["date"] >= since])
+        if len(comm_returns) < 20:
+            continue
+        for (market, sector), srows in grouped_sectors.items():
+            sec_returns = _sector_returns(srows)
+            dates = sorted(set(comm_returns) & set(sec_returns))
+            if len(dates) < 20:
+                continue
+            corr = _pearson([comm_returns[d] for d in dates], [sec_returns[d] for d in dates])
+            if corr is None:
+                continue
+            rows.append({
+                "commodity_code": code,
+                "commodity_name": meta_map.get(code, {}).get("name", code),
+                "market": market,
+                "sector": sector,
+                "correlation": round(corr, 4),
+                "abs_correlation": round(abs(corr), 4),
+                "sample_size": len(dates),
+                "start_date": dates[0],
+                "end_date": dates[-1],
+            })
+    rows.sort(key=lambda r: r["abs_correlation"], reverse=True)
+    return rows[:limit]
+
+
+def _severity_from_abs(value: float, medium: float, high: float) -> str:
+    value = abs(value)
+    if value >= high:
+        return "high"
+    if value >= medium:
+        return "medium"
+    return "low"
+
+
+def _recent_zscore(points: list[dict]) -> tuple[float | None, float | None]:
+    values = [float(p["value"]) for p in points if p.get("value") is not None]
+    if len(values) < 30:
+        return None, None
+    latest = values[-1]
+    baseline = values[-252:] if len(values) >= 252 else values
+    mean = sum(baseline) / len(baseline)
+    variance = sum((v - mean) ** 2 for v in baseline) / len(baseline)
+    stdev = variance ** 0.5
+    if not stdev:
+        return None, latest
+    return (latest - mean) / stdev, latest
+
+
+def _build_macro_insights(conn, limit: int = 30) -> dict:
+    codes = sorted(set(
+        _WEEK6_COMMODITY_CODES
+        + _WEEK6_FX_CODES
+        + _WEEK6_FOOD_CODES
+        + _WEEK6_OIL_SUPPLY_CODES
+        + ["US_SP500", "US_VIX", "KR_KOSPI", "US_10Y_YIELD", "US_2Y_YIELD", "US_10Y_YIELD_YH"]
+    ))
+    latest_map = _latest_code_map(conn, codes)
+    series_map = _load_series_map(conn, codes)
+    insights: list[dict] = []
+
+    movers = []
+    for code, item in latest_map.items():
+        change = item.get("change_pct")
+        if change is None:
+            continue
+        movers.append((abs(float(change)), code, item))
+    for abs_change, code, item in sorted(movers, reverse=True)[:8]:
+        change = float(item.get("change_pct") or 0)
+        insights.append({
+            "type": "mover",
+            "severity": _severity_from_abs(change, 1.5, 4.0),
+            "title": f"{item.get('name', code)} {change:+.2f}%",
+            "summary": f"{item.get('date', '')} 기준 {item.get('name', code)}가 {_change_basis(item.get('frequency'))} 대비 {change:+.2f}% 변했습니다.",
+            "code": code,
+            "date": item.get("date"),
+            "value": item.get("value"),
+            "unit": item.get("unit"),
+            "change_pct": change,
+        })
+
+    anomalies = []
+    for code, points in series_map.items():
+        z, latest = _recent_zscore(points)
+        if z is None or abs(z) < 1.5:
+            continue
+        item = latest_map.get(code, {})
+        anomalies.append((abs(z), code, z, latest, item))
+    for _, code, z, latest, item in sorted(anomalies, reverse=True)[:8]:
+        insights.append({
+            "type": "anomaly",
+            "severity": _severity_from_abs(z, 1.5, 2.5),
+            "title": f"{item.get('name', code)} 분포 이탈 {z:+.1f}σ",
+            "summary": f"최근 관측값이 최근 표본 평균 대비 {z:+.1f} 표준편차 위치입니다.",
+            "code": code,
+            "date": item.get("date"),
+            "value": latest,
+            "unit": item.get("unit"),
+            "zscore": round(z, 2),
+        })
+
+    def _chg(code: str) -> float | None:
+        val = latest_map.get(code, {}).get("change_pct")
+        return float(val) if val is not None else None
+
+    combo_specs = [
+        (
+            "inflation_pressure",
+            "원자재·달러 동반 상승 압력",
+            ["COMM_OIL_WTI", "COMM_COPPER", "US_DXY"],
+            lambda vals: sum(v for v in vals if v and v > 0),
+            2.0,
+            "원유·구리·달러 중 여러 축이 동시에 상승하면 비용/수입물가 압력이 커질 수 있습니다.",
+        ),
+        (
+            "risk_off",
+            "안전자산/변동성 동반 신호",
+            ["COMM_GOLD", "US_VIX", "KR_USD_KRW"],
+            lambda vals: sum(v for v in vals if v and v > 0),
+            2.0,
+            "금·VIX·원달러가 함께 강하면 위험회피 흐름을 의심할 수 있습니다.",
+        ),
+        (
+            "korea_pressure",
+            "한국 증시 부담 조합",
+            ["KR_USD_KRW", "US_DXY", "KR_KOSPI"],
+            lambda vals: (vals[0] or 0) + (vals[1] or 0) - (vals[2] or 0),
+            1.5,
+            "원달러/달러인덱스 상승과 KOSPI 약세가 겹치면 국내 위험프리미엄 확대 신호입니다.",
+        ),
+    ]
+    for insight_type, title, combo_codes, scorer, threshold, summary in combo_specs:
+        vals = [_chg(code) for code in combo_codes]
+        if any(v is None for v in vals):
+            continue
+        score = scorer(vals)
+        if abs(score) < threshold:
+            continue
+        insights.append({
+            "type": insight_type,
+            "severity": _severity_from_abs(score, threshold, threshold * 2.5),
+            "title": title,
+            "summary": summary,
+            "codes": combo_codes,
+            "score": round(score, 2),
+            "components": [
+                {
+                    "code": code,
+                    "name": latest_map.get(code, {}).get("name", code),
+                    "change_pct": _chg(code),
+                }
+                for code in combo_codes
+            ],
+        })
+
+    reaction_rows = conn.execute("""
+        SELECT event_date, event_name, asset_name, "window", return_pct, impact_score
+        FROM global_macro_event_reactions
+        ORDER BY ABS(COALESCE(impact_score, return_pct, 0)) DESC
+        LIMIT 5
+    """).fetchall()
+    for row in reaction_rows:
+        ret = float(row["return_pct"] or 0)
+        insights.append({
+            "type": "event_reaction",
+            "severity": _severity_from_abs(row["impact_score"] or ret, 3.0, 8.0),
+            "title": f"{row['event_name']} 이후 {row['asset_name']} {ret:+.2f}%",
+            "summary": f"{row['event_date']} 발표 후 {row['window']} 기준 시장 반응입니다.",
+            "date": row["event_date"],
+            "return_pct": ret,
+            "impact_score": row["impact_score"],
+        })
+
+    for row in _commodity_sector_correlations(conn, days=365, limit=5):
+        corr = float(row["correlation"])
+        insights.append({
+            "type": "correlation",
+            "severity": _severity_from_abs(corr, 0.08, 0.15),
+            "title": f"{row['commodity_name']} ↔ {row['market']} {row['sector']}",
+            "summary": f"최근 가용 표본 {row['sample_size']}개 기준 상관계수 {corr:+.2f}입니다.",
+            "correlation": corr,
+            "sample_size": row["sample_size"],
+            "start_date": row["start_date"],
+            "end_date": row["end_date"],
+        })
+
+    priority = {"high": 3, "medium": 2, "low": 1}
+    insights.sort(key=lambda x: (priority.get(x.get("severity"), 0), abs(float(x.get("score") or x.get("zscore") or x.get("impact_score") or x.get("change_pct") or x.get("correlation") or 0))), reverse=True)
+    return {
+        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "count": min(len(insights), limit),
+        "insights": insights[:limit],
+    }
+
+
+def _series_latest_return(conn, code: str, periods: int = 20) -> dict:
+    rows = conn.execute("""
+        SELECT date, value
+        FROM global_macro_data
+        WHERE indicator_code = ? AND value IS NOT NULL
+        ORDER BY date DESC
+        LIMIT ?
+    """, (code, periods + 1)).fetchall()
+    points = [dict(r) for r in reversed(rows)]
+    if len(points) < 2:
+        return {"code": code, "return_pct": None}
+    first = points[0]["value"]
+    last = points[-1]["value"]
+    return {
+        "code": code,
+        "start_date": points[0]["date"],
+        "end_date": points[-1]["date"],
+        "start_value": first,
+        "end_value": last,
+        "return_pct": _pct_change(last, first),
+    }
+
+
+def _build_market_regime(conn) -> dict:
+    latest = _latest_code_map(conn, [
+        "US_VIX", "US_DXY", "KR_USD_KRW", "KR_KOSPI",
+        "US_SP500", "COMM_OIL_WTI", "COMM_GOLD", "US_10Y_YIELD",
+        "US_2Y_YIELD", "US_10Y_YIELD_YH",
+    ])
+    series = _load_series_map(conn, list(latest.keys()))
+
+    def zscore(code: str) -> float | None:
+        z, _ = _recent_zscore(series.get(code, []))
+        return z
+
+    kospi_20d = _series_latest_return(conn, "KR_KOSPI", 20)
+    sp500_20d = _series_latest_return(conn, "US_SP500", 20)
+    oil_20d = _series_latest_return(conn, "COMM_OIL_WTI", 20)
+    dxy_20d = _series_latest_return(conn, "US_DXY", 20)
+    krw_20d = _series_latest_return(conn, "KR_USD_KRW", 20)
+    gold_20d = _series_latest_return(conn, "COMM_GOLD", 20)
+
+    ten = latest.get("US_10Y_YIELD") or latest.get("US_10Y_YIELD_YH") or {}
+    two = latest.get("US_2Y_YIELD") or {}
+    spread = None
+    if ten.get("value") is not None and two.get("value") is not None:
+        spread = float(ten["value"]) - float(two["value"])
+
+    components = []
+
+    def add_component(name: str, value: float | None, weight: float, risk_when: str, note: str):
+        if value is None:
+            return
+        if risk_when == "positive":
+            score = max(0.0, min(1.0, value))
+        elif risk_when == "negative":
+            score = max(0.0, min(1.0, -value))
+        else:
+            score = max(0.0, min(1.0, abs(value)))
+        components.append({"name": name, "raw": round(value, 4), "weight": weight, "score": round(score, 4), "note": note})
+
+    add_component("VIX 분포", zscore("US_VIX") / 2.5 if zscore("US_VIX") is not None else None, 20, "positive", "VIX가 평소보다 높을수록 위험회피 점수 상승")
+    add_component("달러 강세", (dxy_20d["return_pct"] or 0) / 3.0 if dxy_20d["return_pct"] is not None else None, 15, "positive", "달러인덱스 20거래일 변화")
+    add_component("원화 약세", (krw_20d["return_pct"] or 0) / 3.0 if krw_20d["return_pct"] is not None else None, 15, "positive", "원달러 20거래일 변화")
+    add_component("KOSPI 모멘텀", (kospi_20d["return_pct"] or 0) / 5.0 if kospi_20d["return_pct"] is not None else None, 15, "negative", "KOSPI 20거래일 수익률 약세")
+    add_component("S&P500 모멘텀", (sp500_20d["return_pct"] or 0) / 5.0 if sp500_20d["return_pct"] is not None else None, 10, "negative", "S&P500 20거래일 수익률 약세")
+    add_component("유가 압력", (oil_20d["return_pct"] or 0) / 8.0 if oil_20d["return_pct"] is not None else None, 10, "positive", "WTI 20거래일 상승률")
+    add_component("금 선호", (gold_20d["return_pct"] or 0) / 6.0 if gold_20d["return_pct"] is not None else None, 5, "positive", "금 20거래일 상승률")
+    add_component("수익률곡선", (-(spread or 0) / 1.0) if spread is not None else None, 10, "positive", "2Y-10Y 역전 시 경기 리스크 점수 상승")
+
+    total_weight = sum(c["weight"] for c in components) or 1
+    risk_score = sum(c["score"] * c["weight"] for c in components) / total_weight * 100.0
+    if risk_score >= 70:
+        regime = "risk_off"
+        label = "위험회피 우위"
+    elif risk_score >= 45:
+        regime = "caution"
+        label = "중립·주의"
+    else:
+        regime = "risk_on"
+        label = "위험선호 우위"
+
+    watch = []
+    for c in sorted(components, key=lambda x: x["score"] * x["weight"], reverse=True)[:4]:
+        watch.append({"name": c["name"], "note": c["note"], "contribution": round(c["score"] * c["weight"], 2)})
+
+    return {
+        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "regime": regime,
+        "label": label,
+        "risk_score": round(risk_score, 1),
+        "spread_10y_2y": round(spread, 3) if spread is not None else None,
+        "components": components,
+        "watch": watch,
+    }
+
+
+def _lead_lag_correlations(conn, target_code: str = "KR_KOSPI", days: int = 730, limit: int = 12) -> list[dict]:
+    codes = ["US_SP500", "US_VIX", "US_DXY", "KR_USD_KRW", "COMM_OIL_WTI", "COMM_GOLD", "COMM_COPPER", "US_10Y_YIELD_YH"]
+    since = (datetime.now() - timedelta(days=max(days, 365))).strftime("%Y-%m-%d")
+    series_map = _load_series_map(conn, [target_code] + codes)
+    meta_map = _latest_code_map(conn, [target_code] + codes)
+    target_returns = _series_returns([p for p in series_map.get(target_code, []) if p["date"] >= since])
+    rows = []
+    lags = [-20, -10, -5, 0, 5, 10, 20]
+    for code in codes:
+        source_returns = _series_returns([p for p in series_map.get(code, []) if p["date"] >= since])
+        if len(source_returns) < 40 or len(target_returns) < 40:
+            continue
+        source_dates = sorted(source_returns)
+        source_idx = {date: i for i, date in enumerate(source_dates)}
+        best = None
+        for lag in lags:
+            xs, ys = [], []
+            for date, target_ret in target_returns.items():
+                idx = source_idx.get(date)
+                if idx is None:
+                    continue
+                source_pos = idx - lag
+                if source_pos < 0 or source_pos >= len(source_dates):
+                    continue
+                source_date = source_dates[source_pos]
+                xs.append(source_returns[source_date])
+                ys.append(target_ret)
+            corr = _pearson(xs, ys)
+            if corr is None:
+                continue
+            item = {"lag_days": lag, "correlation": round(corr, 4), "sample_size": len(xs)}
+            if best is None or abs(item["correlation"]) > abs(best["correlation"]):
+                best = item
+        if best:
+            rows.append({
+                "source_code": code,
+                "source_name": meta_map.get(code, {}).get("name", code),
+                "target_code": target_code,
+                "target_name": meta_map.get(target_code, {}).get("name", target_code),
+                **best,
+                "interpretation": "선행" if best["lag_days"] > 0 else "후행" if best["lag_days"] < 0 else "동행",
+            })
+    rows.sort(key=lambda r: abs(r["correlation"]), reverse=True)
+    return rows[:limit]
 
 
 def _infer_orphan_meta(code: str) -> dict:
@@ -789,6 +1399,16 @@ def get_dashboard():
         result["__signals"] = {
             "us": _build_us_signal(conn),
             "week4_regions": _build_week4_regions(conn),
+            "week6_commodities": {
+                "commodities": list(_latest_code_map(conn, _WEEK6_COMMODITY_CODES).values()),
+                "fx": list(_latest_code_map(conn, _WEEK6_FX_CODES).values()),
+                "oil_supply": list(_latest_code_map(conn, _WEEK6_OIL_SUPPLY_CODES).values()),
+                "food": list(_latest_code_map(conn, _WEEK6_FOOD_CODES).values()),
+                "correlations": _commodity_sector_correlations(conn, days=365, limit=8),
+            },
+            "insights": _build_macro_insights(conn, limit=12),
+            "regime": _build_market_regime(conn),
+            "lead_lag": _lead_lag_correlations(conn, limit=8),
         }
         conn.close()
         return result
@@ -813,16 +1433,132 @@ def get_events(days_ahead: int = Query(30), days_behind: int = Query(7)):
 @router.post("/events")
 def upsert_event(body: dict):
     """이벤트 수동 등록/수정"""
+    for key in [
+        "event_time", "country", "indicator_code", "forecast", "previous",
+        "actual", "unit", "surprise_value", "surprise_pct", "surprise_basis",
+        "status", "source",
+    ]:
+        body.setdefault(key, None)
+    body.setdefault("importance", 1)
     conn = _conn()
     conn.execute("""
         INSERT INTO global_macro_events
-        (event_date,event_time,country,indicator_code,event_name,importance,forecast,previous,actual,unit)
+        (event_date,event_time,country,indicator_code,event_name,importance,forecast,previous,actual,unit,
+         surprise_value,surprise_pct,surprise_basis,status,source,updated_at)
         VALUES (:event_date,:event_time,:country,:indicator_code,:event_name,
-                :importance,:forecast,:previous,:actual,:unit)
+                :importance,:forecast,:previous,:actual,:unit,
+                :surprise_value,:surprise_pct,:surprise_basis,
+                COALESCE(:status,'manual'),COALESCE(:source,'manual'),datetime('now'))
+        ON CONFLICT(event_date, COALESCE(country,''), COALESCE(indicator_code,''), event_name)
+        DO UPDATE SET
+            event_time=excluded.event_time,
+            importance=excluded.importance,
+            forecast=excluded.forecast,
+            previous=excluded.previous,
+            actual=excluded.actual,
+            unit=excluded.unit,
+            surprise_value=excluded.surprise_value,
+            surprise_pct=excluded.surprise_pct,
+            surprise_basis=excluded.surprise_basis,
+            status=excluded.status,
+            source=excluded.source,
+            updated_at=excluded.updated_at
     """, body)
     conn.commit()
     conn.close()
+    _cache.clear()
     return {"ok": True}
+
+
+@router.get("/events/surprises")
+def get_event_surprises(days: int = Query(90)):
+    """최근 이벤트 서프라이즈 요약"""
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    conn = _conn()
+    rows = conn.execute("""
+        SELECT event_date, country, indicator_code, event_name, importance,
+               forecast, previous, actual, unit, surprise_value, surprise_pct,
+               surprise_basis, status, source
+        FROM global_macro_events
+        WHERE event_date >= ?
+          AND actual IS NOT NULL
+          AND (surprise_value IS NOT NULL OR surprise_pct IS NOT NULL)
+        ORDER BY ABS(COALESCE(surprise_pct, surprise_value, 0)) DESC, event_date DESC
+        LIMIT 100
+    """, (since,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.get("/events/reactions")
+def get_event_reactions(days: int = Query(365), limit: int = Query(200)):
+    """경제 이벤트 이후 주요 시장/팩터 반응"""
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    conn = _conn()
+    rows = conn.execute("""
+        SELECT event_id, event_date, country, indicator_code, event_name,
+               surprise_value, surprise_pct, asset_code, asset_name, asset_group,
+               "window", base_date, end_date, base_close, end_close, return_pct,
+               direction, impact_score, created_at
+        FROM global_macro_event_reactions
+        WHERE event_date >= ?
+        ORDER BY event_date DESC, ABS(COALESCE(impact_score, return_pct, 0)) DESC
+        LIMIT ?
+    """, (since, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.get("/commodities")
+def get_commodities():
+    """Week6 원자재·환율 핵심 지표 최신값"""
+    conn = _conn()
+    result = {
+        "commodities": list(_latest_code_map(conn, _WEEK6_COMMODITY_CODES).values()),
+        "fx": list(_latest_code_map(conn, _WEEK6_FX_CODES).values()),
+        "oil_supply": list(_latest_code_map(conn, _WEEK6_OIL_SUPPLY_CODES).values()),
+        "food": list(_latest_code_map(conn, _WEEK6_FOOD_CODES).values()),
+    }
+    conn.close()
+    return result
+
+
+@router.get("/commodities/correlations")
+def get_commodity_correlations(days: int = Query(365), limit: int = Query(30)):
+    """원자재 일간 수익률과 국내 섹터지수 일간 수익률 상관관계"""
+    conn = _conn()
+    rows = _commodity_sector_correlations(conn, days=days, limit=limit)
+    conn.close()
+    return rows
+
+
+@router.get("/insights")
+def get_macro_insights(limit: int = Query(30)):
+    """매크로 데이터에서 자동 추출한 파생 인사이트"""
+    conn = _conn()
+    result = _build_macro_insights(conn, limit=limit)
+    result["regime"] = _build_market_regime(conn)
+    result["lead_lag"] = _lead_lag_correlations(conn, limit=8)
+    conn.close()
+    return result
+
+
+@router.get("/insights/regime")
+def get_market_regime():
+    """매크로 기반 현재 시장 국면 점수"""
+    conn = _conn()
+    result = _build_market_regime(conn)
+    conn.close()
+    return result
+
+
+@router.get("/insights/lead-lag")
+def get_lead_lag(target_code: str = Query("KR_KOSPI"), days: int = Query(730), limit: int = Query(12)):
+    """주요 매크로 지표와 목표 지수의 리드-래그 상관관계"""
+    conn = _conn()
+    rows = _lead_lag_correlations(conn, target_code=target_code.upper(), days=days, limit=limit)
+    conn.close()
+    return rows
 
 
 @router.post("/collect")
@@ -833,7 +1569,7 @@ def trigger_collect(background_tasks: BackgroundTasks, source: str = Query("all"
 
 
 def _collect_task(source: str):
-    sources = ["world_bank", "fred", "ecos", "yahoo", "kosis", "oecd_cli", "imf_weo"] if source == "all" else [source]
+    sources = ["world_bank", "fred", "ecos", "yahoo", "kosis", "reb_housing", "global_financial", "dram_spot", "market_quant", "oecd_cli", "imf_weo", "events", "event_reactions", "fao_food", "eia_oil"] if source == "all" else [source]
     for s in sources:
         try:
             if s == "world_bank":
@@ -851,12 +1587,36 @@ def _collect_task(source: str):
             elif s == "kosis":
                 from collectors.kosis_collector import collect_kosis
                 collect_kosis()
+            elif s == "reb_housing":
+                from collectors.reb_housing_collector import collect_reb_housing
+                collect_reb_housing()
+            elif s == "global_financial":
+                from collectors.global_financial_conditions_collector import collect_global_financial_conditions
+                collect_global_financial_conditions()
+            elif s == "dram_spot":
+                from collectors.dram_spot_collector import collect_dram_spot
+                collect_dram_spot()
+            elif s == "market_quant":
+                from collectors.market_quant_bridge_collector import collect_market_quant_bridge
+                collect_market_quant_bridge()
             elif s == "oecd_cli":
                 from collectors.oecd_cli_collector import collect_oecd_cli
                 collect_oecd_cli()
             elif s == "imf_weo":
                 from collectors.imf_weo_collector import collect_imf_weo
                 collect_imf_weo()
+            elif s == "events":
+                from collectors.global_macro_event_collector import collect_global_macro_events
+                collect_global_macro_events()
+            elif s == "event_reactions":
+                from collectors.global_macro_event_reaction_collector import collect_global_macro_event_reactions
+                collect_global_macro_event_reactions()
+            elif s == "fao_food":
+                from collectors.fao_food_price_collector import collect_fao_food_prices
+                collect_fao_food_prices()
+            elif s == "eia_oil":
+                from collectors.eia_oil_supply_collector import collect_eia_oil_supply
+                collect_eia_oil_supply()
         except Exception as e:
             logger.error(f"collect_task [{s}] error: {e}")
             _log_collection(s, "error", 0, str(e))
@@ -865,7 +1625,7 @@ def _collect_task(source: str):
 
 def _log_collection(source: str, status: str, records: int, message: str = ""):
     try:
-        conn = _sl.connect(DB_PATH)
+        conn = _sl.connect(DB_PATH, timeout=30)
         conn.execute("""
             INSERT INTO global_macro_collection_log (source,status,records,message)
             VALUES (?,?,?,?)
@@ -895,6 +1655,8 @@ def get_roadmap():
     week2 = _week2_progress(conn)
     week3 = _week3_progress(conn)
     week4 = _week4_progress(conn)
+    week5 = _week5_progress(conn)
+    week6 = _week6_progress(conn)
     conn.close()
     roadmap = [
         {
@@ -974,26 +1736,26 @@ def get_roadmap():
             "week": 5,
             "title": "경제 이벤트 캘린더",
             "description": "주요 경제지표 발표 일정, 예상치 vs 실제치 추적, 서프라이즈 분석",
-            "status": "planned",
+            "status": week5["status"],
             "tasks": [
-                {"done": False, "text": "경제 이벤트 캘린더 UI (주간/월간 뷰)"},
-                {"done": False, "text": "예상치(Forecast) vs 실제치(Actual) 비교"},
-                {"done": False, "text": "경제 서프라이즈 지수 계산"},
-                {"done": False, "text": "발표 전 알림 시스템"},
-                {"done": False, "text": "투자에스팩터 링크 (어닝서프라이즈→주가영향)"},
+                {"done": week5["events_window_count"] > 0, "text": f"경제 이벤트 캘린더 UI/API (최근 2주~45일) — {week5['events_window_count']}건"},
+                {"done": True, "text": "예상치(Forecast) vs 실제치(Actual) 비교 필드/수동 upsert"},
+                {"done": week5["surprise_events"] > 0, "text": f"경제 서프라이즈 계산(actual-forecast/actual-previous) — {week5['surprise_events']}건"},
+                {"done": week5["upcoming_events"] > 0, "text": f"발표 전 일정 추적 — 향후 {week5['upcoming_events']}건"},
+                {"done": week5["reaction_links"] > 0, "text": f"투자에스팩터 링크 (이벤트→주요 지수/팩터 반응) — {week5['reaction_links']}건"},
             ]
         },
         {
             "week": 6,
             "title": "원자재 & 환율 심층 분석",
             "description": "원자재 가격 추세, 환율 변동 분석, 원자재-주가 상관관계",
-            "status": "planned",
+            "status": week6["status"],
             "tasks": [
-                {"done": False, "text": "원자재 가격 시계열 대시보드 (유가/금/구리/천연가스/소맥 등)"},
-                {"done": False, "text": "주요 환율 실시간 추적 (USD/KRW/JPY/CNY/EUR)"},
-                {"done": False, "text": "원자재-섹터 상관관계 분석"},
-                {"done": False, "text": "원유 수급(재고/생산) 지표"},
-                {"done": False, "text": "FAO 식품가격지수 수집"},
+                {"done": week6["commodity_ready"] >= 5, "text": f"원자재 가격 시계열 대시보드 (유가/금/구리/천연가스/소맥 등) — {week6['commodity_ready']}/{week6['commodity_total']}"},
+                {"done": week6["fx_ready"] >= 5, "text": f"주요 환율 실시간 추적 (USD/KRW/JPY/CNY/EUR) — {week6['fx_ready']}/{week6['fx_total']}"},
+                {"done": week6["correlation_ready"], "text": "원자재-섹터 상관관계 분석"},
+                {"done": week6["oil_supply_ready"] >= 1, "text": f"원유 수급(재고/생산) 지표 — {week6['oil_supply_ready']}/{week6['oil_supply_total']}"},
+                {"done": week6["food_ready"], "text": "FAO 식품가격지수 수집"},
             ]
         },
         {
@@ -1070,7 +1832,7 @@ def get_roadmap():
             ]
         },
     ]
-    return {"roadmap": roadmap, "total_weeks": 12, "current_week": 4}
+    return {"roadmap": roadmap, "total_weeks": 12, "current_week": 6}
 
 
 @router.get("/stats")
@@ -1113,6 +1875,8 @@ def get_stats():
     week2 = _week2_progress(conn)
     week3 = _week3_progress(conn)
     week4 = _week4_progress(conn)
+    week5 = _week5_progress(conn)
+    week6 = _week6_progress(conn)
     conn.close()
     by_category = [dict(r) for r in by_cat]
     by_cat_idx = {r["category"]: r for r in by_category}
@@ -1131,4 +1895,6 @@ def get_stats():
         "week2_progress": week2,
         "week3_progress": week3,
         "week4_progress": week4,
+        "week5_progress": week5,
+        "week6_progress": week6,
     }

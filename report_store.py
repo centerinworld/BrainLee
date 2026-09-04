@@ -12,9 +12,9 @@ import os
 import sqlite3
 from pathlib import Path
 
-STOCK_DB_PATH = Path("/Applications/stock_dashboard/stock.db")
-REPORTS_DB_PATH = Path(os.getenv("REPORTS_DB_PATH", "/Applications/stock_dashboard/data/reports_catalog.db"))
-REPORTS_DIR = Path(os.getenv("REPORTS_DIR", "/Applications/stock_dashboard/reports"))
+STOCK_DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+REPORTS_DB_PATH = Path(os.getenv("REPORTS_DB_PATH", "/Volumes/Realtek_NVME/stock_dashboard/runtime/data/reports_catalog.db"))
+REPORTS_DIR = Path(os.getenv("REPORTS_DIR", "/Volumes/Realtek_NVME/stock_dashboard/runtime/reports"))
 
 
 def connect_reports_db() -> sqlite3.Connection:

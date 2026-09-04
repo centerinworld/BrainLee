@@ -17,14 +17,14 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import collect_krx_history as krx
 
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 INDEX_SYMBOLS = ("^KS11", "^KQ11", "^KS200", "^KQ150")
 INDEX_PATHS = ("idx/kospi_dd_trd", "idx/kosdaq_dd_trd")
 INDEX_EXACT_MAP = {

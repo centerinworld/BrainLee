@@ -3,7 +3,8 @@
 # launchd restart this script.
 set -euo pipefail
 
-PROJECT_ROOT="/Applications/stock_dashboard"
+PROJECT_ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
+PG_BOOTSTRAP="$PROJECT_ROOT/runtime_pg_bootstrap"
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 LOG_DIR="$PROJECT_ROOT/logs"
@@ -13,12 +14,18 @@ PEAK_LOG="$LOG_DIR/peak_monitor.launchd.log"
 
 mkdir -p "$LOG_DIR"
 
+# Every Python process launched by this service (backend, monitors, scheduled
+# collectors) routes only the canonical stock.db path to PostgreSQL. Separate
+# application databases such as employment.db and hs_trade_lab.db stay SQLite.
+export PYTHONPATH="$PG_BOOTSTRAP${PYTHONPATH:+:$PYTHONPATH}"
+
 cleanup() {
   trap - INT TERM EXIT
   [ -n "${BACKEND_PID:-}" ] && kill -TERM "$BACKEND_PID" 2>/dev/null || true
   [ -n "${FRONTEND_PID:-}" ] && kill -TERM "$FRONTEND_PID" 2>/dev/null || true
   [ -n "${PEAK_PID:-}" ] && kill -TERM "$PEAK_PID" 2>/dev/null || true
-  "$PROJECT_ROOT/stop.sh" --processes-only >/dev/null 2>&1 || true
+  # Do not call stop.sh here. During launchd reload the old supervisor can
+  # otherwise kill the replacement supervisor after it has already started.
 }
 
 trap cleanup INT TERM EXIT
@@ -26,6 +33,14 @@ trap cleanup INT TERM EXIT
 "$PROJECT_ROOT/stop.sh" --processes-only
 
 cd "$PROJECT_ROOT"
+for _ in {1..90}; do
+  "$PROJECT_ROOT/venv/bin/python" "$PROJECT_ROOT/scripts/check_postgres_ready.py" \
+    >> "$BACKEND_LOG" 2>&1 && break
+  sleep 2
+done
+"$PROJECT_ROOT/venv/bin/python" "$PROJECT_ROOT/scripts/check_postgres_ready.py" \
+  >> "$BACKEND_LOG" 2>&1
+
 # 50MB 초과 시 기존 로그 교체 (rotate)
 if [ -f "$BACKEND_LOG" ] && [ "$(stat -f%z "$BACKEND_LOG" 2>/dev/null || echo 0)" -gt 52428800 ]; then
   mv "$BACKEND_LOG" "${BACKEND_LOG%.log}.1.log"

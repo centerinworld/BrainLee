@@ -394,7 +394,7 @@ def main():
     print("데이터 파싱 및 HTML 생성 중...")
     html_content = parse_xml_to_html(xml_data)
     
-    output_file = "/Applications/stock_dashboard/jinju_apt.html"
+    output_file = "/Volumes/Realtek_NVME/stock_dashboard/runtime/jinju_apt.html"
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html_content)
     print(f"✅ HTML 파일이 성공적으로 생성되었습니다: {output_file}")

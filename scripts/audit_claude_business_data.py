@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB = ROOT / "stock.db"
 OUT = ROOT / "research_outputs" / "claude_business_data_audit.json"
 

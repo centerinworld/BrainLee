@@ -91,7 +91,7 @@ def classify_quality(float_shares: float | None, issued: float | None, holder_na
     if not issued:
         quality = "missing_issued" if quality == "ok" else quality
         notes.append("발행주식수 없음")
-    if float_shares and issued and float_shares > issued * 1.02:
+    if float_shares and issued and float_shares > issued:
         quality = "review"
         notes.append("유통주식수가 발행주식수보다 큼")
     if not holder_name:
@@ -101,7 +101,7 @@ def classify_quality(float_shares: float | None, issued: float | None, holder_na
 
 
 def rebuild(limit: int = 0) -> dict[str, object]:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=60)
     conn.row_factory = sqlite3.Row
     ensure_table(conn)
     rows = conn.execute(

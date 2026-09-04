@@ -4,7 +4,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-DB = "/Applications/stock_dashboard/stock.db"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 TARGETS = ["096770", "178320", "268280"]
 YEARS = [2022, 2023, 2024, 2025]
 

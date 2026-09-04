@@ -6,13 +6,13 @@
 """
 import sqlite3, time, requests, os, logging, sys
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 from dart_key_manager import get_dart_api_keys
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger(__name__)
 
-DB = "/Applications/stock_dashboard/stock.db"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 DART_BASE = "https://opendart.fss.or.kr/api"
 KEYS = get_dart_api_keys()
 BACKLOG_KW = ["수주잔고", "미완성공사금액", "잔여수주", "수주액잔액", "수주잔액", "미청구공사"]

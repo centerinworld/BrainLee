@@ -21,13 +21,13 @@ from fastapi import APIRouter, HTTPException
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH    = "/Applications/stock_dashboard/stock.db"
-COLLECTOR  = "/Applications/stock_dashboard/telegram_collector.py"
-PYTHON     = "/Applications/stock_dashboard/venv/bin/python3"
+DB_PATH    = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+COLLECTOR  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_collector.py"
+PYTHON     = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3"
 
 
 def _db():
-    return _sl.connect(DB_PATH)
+    return _sl.connect(DB_PATH, timeout=30)
 
 
 # ── 채널 관리 ────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ def get_daily_mentions():
         (dates[0],)
     ).fetchall()
     # stock_code 조인 (stock_universe)
-    su_conn = _sl.connect("/Applications/stock_dashboard/stock.db")
+    su_conn = _sl.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
     su_conn.row_factory = _sl.Row
     code_map = {r["stock_name"]: r["stock_code"] for r in su_conn.execute(
         "SELECT stock_name, stock_code FROM stock_universe"
@@ -124,11 +124,11 @@ def get_weekly_mentions():
     since = (date.today() - timedelta(days=5)).isoformat()
     conn  = _db()
     rows  = conn.execute(
-        "SELECT stock_name, market, SUM(mention_count) FROM tg_daily_mentions "
+        "SELECT stock_name, MAX(market), SUM(mention_count) FROM tg_daily_mentions "
         "WHERE mention_date >= ? GROUP BY stock_name ORDER BY 3 DESC LIMIT 20",
         (since,)
     ).fetchall()
-    su_conn = _sl.connect("/Applications/stock_dashboard/stock.db")
+    su_conn = _sl.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
     su_conn.row_factory = _sl.Row
     code_map = {r["stock_name"]: r["stock_code"] for r in su_conn.execute(
         "SELECT stock_name, stock_code FROM stock_universe"
@@ -144,11 +144,11 @@ def get_monthly_mentions():
     since = date.today().replace(day=1).isoformat()
     conn  = _db()
     rows  = conn.execute(
-        "SELECT stock_name, market, SUM(mention_count) FROM tg_daily_mentions "
+        "SELECT stock_name, MAX(market), SUM(mention_count) FROM tg_daily_mentions "
         "WHERE mention_date >= ? GROUP BY stock_name ORDER BY 3 DESC LIMIT 20",
         (since,)
     ).fetchall()
-    su_conn = _sl.connect("/Applications/stock_dashboard/stock.db")
+    su_conn = _sl.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
     su_conn.row_factory = _sl.Row
     code_map = {r["stock_name"]: r["stock_code"] for r in su_conn.execute(
         "SELECT stock_name, stock_code FROM stock_universe"

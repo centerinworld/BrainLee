@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB = ROOT / "stock.db"
 OUT = ROOT / "research_outputs"
 
@@ -248,7 +248,7 @@ def tb_hybrid_quality(dd, fund, val, sup, fh):
         return False, 0
     if sup < -3 and fund < 18:
         return False, 0
-    return total, total
+    return True, total
 
 
 def tb_core_balance(dd, fund, val, sup, fh):

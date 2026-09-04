@@ -20,7 +20,7 @@ import requests
 
 import config
 from collectors.base import BaseCollector
-from db_utils import STOCK_DB_PATH
+from db_utils import connect_stock_db
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class KiwoomCollector(BaseCollector):
     def _ensure_tables(self) -> None:
         last_err = None
         for _ in range(6):
-            conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+            conn = connect_stock_db(timeout=30)
             try:
                 conn.execute("PRAGMA busy_timeout=30000")
                 conn.execute(
@@ -229,7 +229,7 @@ class KiwoomCollector(BaseCollector):
             if not isinstance(rows, list):
                 rows = []
 
-            conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+            conn = connect_stock_db(timeout=30)
             try:
                 saved = 0
                 for row in rows:
@@ -270,24 +270,151 @@ class KiwoomCollector(BaseCollector):
         except Exception as e:
             return {"ok": False, "reason": f"예외: {e}"}
 
+    # ── ka00190: 대량체결상위 (키움 순위정보) ─────────────────────────────
+    def _ensure_large_trade_rank_table(self) -> None:
+        """Raw-first storage for the Kiwoom large-trade ranking response."""
+        conn = connect_stock_db(timeout=30)
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS kiwoom_large_trade_rank (
+                    snapshot_at TEXT NOT NULL,
+                    rank_type TEXT NOT NULL,
+                    market_type TEXT NOT NULL,
+                    rank_no INTEGER NOT NULL,
+                    stock_code TEXT,
+                    stock_name TEXT,
+                    raw_json TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (snapshot_at, rank_type, market_type, rank_no)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kiwoom_large_trade_latest "
+                "ON kiwoom_large_trade_rank(snapshot_at DESC, rank_type, market_type)"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _first_list_payload(data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return the first list-shaped response field without assuming its name."""
+        for value in data.values():
+            if isinstance(value, list):
+                return [row for row in value if isinstance(row, dict)]
+        return []
+
+    def fetch_large_trade_rank(
+        self,
+        market_type: str = "000",
+        rank_type: str = "buy",
+        min_case_amount: str = "10",
+        min_turnover: str = "0",
+        stock_filter: str = "20",
+    ) -> dict[str, Any]:
+        """Collect ``ka00190`` as a Kiwoom-only attention input.
+
+        The raw row is retained so a Kiwoom field-name change cannot silently
+        create a misleading numeric strategy feature.
+        """
+        if market_type not in {"000", "001", "101"}:
+            return {"ok": False, "reason": "market_type must be 000, 001, or 101"}
+        if rank_type not in {"buy", "sell"}:
+            return {"ok": False, "reason": "rank_type must be buy or sell"}
+        if not self.ensure_token():
+            return {"ok": False, "reason": "token_fail"}
+
+        self._ensure_large_trade_rank_table()
+        body = {
+            "mrkt_tp": market_type,
+            "sort_tp": "1" if rank_type == "buy" else "2",
+            "case_pric_tp": str(min_case_amount),
+            # The live ka00190 contract requires both filters. Omitting either
+            # field returns 1511 and leaves the ranking table empty.
+            "trde_qty_tp": str(min_turnover),
+            "trde_prica_tp": str(min_turnover),
+            "stk_tp": str(stock_filter),
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/dostk/rkinfo",
+                headers=self._auth_headers(api_id="ka00190"),
+                json=body,
+                timeout=12,
+            )
+            data = response.json() if response.content else {}
+        except Exception as exc:
+            return {"ok": False, "reason": f"HTTP 오류: {exc}"}
+        if response.status_code >= 400:
+            return {"ok": False, "reason": f"HTTP {response.status_code}", "raw": str(data)[:500]}
+        if not isinstance(data, dict):
+            return {"ok": False, "reason": "unexpected_response", "raw": str(data)[:500]}
+        if str(data.get("return_code", "0")) not in {"0", "", "None"}:
+            return {
+                "ok": False,
+                "reason": str(data.get("return_msg") or "Kiwoom ranking request rejected"),
+                "return_code": data.get("return_code"),
+            }
+
+        rows = self._first_list_payload(data)
+        snapshot_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = connect_stock_db(timeout=30)
+        try:
+            for rank_no, row in enumerate(rows, 1):
+                code = str(row.get("stk_cd") or row.get("stock_code") or row.get("code") or "").strip() or None
+                name = str(row.get("stk_nm") or row.get("stock_name") or row.get("name") or "").strip() or None
+                conn.execute(
+                    """
+                    INSERT INTO kiwoom_large_trade_rank
+                    (snapshot_at, rank_type, market_type, rank_no, stock_code, stock_name, raw_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (snapshot_at, rank_type, market_type, rank_no, code, name, json.dumps(row, ensure_ascii=False)),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return {
+            "ok": True,
+            "api_id": "ka00190",
+            "snapshot_at": snapshot_at,
+            "rank_type": rank_type,
+            "market_type": market_type,
+            "saved": len(rows),
+            "request": body,
+            "response_keys": list(data.keys()),
+            "return_code": data.get("return_code"),
+            "return_msg": data.get("return_msg"),
+            "notice": "키움 대량체결 원본 순위입니다. 단독 매수 신호가 아니며 KIS/공식 수급 대조 후 연구·가상매매에만 사용합니다.",
+        }
+
     def _extract_realtime_fields(self, payload: dict[str, Any]) -> dict[str, float]:
         # 키움 실시간 타입별 필드명이 다를 수 있어 다중 alias를 허용
+        values = payload.get("values") if isinstance(payload.get("values"), dict) else {}
+
         def _pick(*keys: str) -> float:
             for k in keys:
                 if k in payload and payload.get(k) not in (None, ""):
                     return self._to_num(payload.get(k))
+                if k in values and values.get(k) not in (None, ""):
+                    return self._to_num(values.get(k))
             return 0.0
 
+        def _abs_pick(*keys: str) -> float:
+            return abs(_pick(*keys))
+
         return {
-            "last_price": _pick("cur_prc", "current_price", "price", "close_pric"),
-            "change_price": _pick("pred_pre", "change_price"),
-            "change_rate": _pick("flu_rt", "change_rate"),
-            "trade_volume": _pick("trde_qty", "acml_trde_qty", "trade_volume"),
-            "trade_strength": _pick("cntr_str", "trade_strength", "chegyeol_strength"),
-            "bid1": _pick("bid_pric1", "buy_hoga1", "bid1"),
-            "ask1": _pick("ask_pric1", "sell_hoga1", "ask1"),
-            "bid_qty1": _pick("bid_qty1", "buy_qty1"),
-            "ask_qty1": _pick("ask_qty1", "sell_qty1"),
+            "last_price": _abs_pick("cur_prc", "current_price", "price", "close_pric", "10"),
+            "change_price": _pick("pred_pre", "change_price", "11"),
+            "change_rate": _pick("flu_rt", "change_rate", "12"),
+            "trade_volume": _pick("trde_qty", "acml_trde_qty", "trade_volume", "13"),
+            "trade_strength": _pick("cntr_str", "trade_strength", "chegyeol_strength", "228"),
+            "bid1": _abs_pick("bid_pric1", "buy_hoga1", "bid1", "27"),
+            "ask1": _abs_pick("ask_pric1", "sell_hoga1", "ask1", "28"),
+            "bid_qty1": _pick("bid_qty1", "buy_qty1", "41", "61"),
+            "ask_qty1": _pick("ask_qty1", "sell_qty1", "51", "71"),
         }
 
     def _save_realtime_snapshot(self, stock_code: str, source_type: str, payload: dict[str, Any]) -> None:
@@ -299,7 +426,7 @@ class KiwoomCollector(BaseCollector):
         spread = 0.0
         if fields["ask1"] and fields["bid1"]:
             spread = fields["ask1"] - fields["bid1"]
-        conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+        conn = connect_stock_db(timeout=30)
         try:
             # 최신 스냅샷(종목당 1행) 유지
             conn.execute(
@@ -309,14 +436,14 @@ class KiwoomCollector(BaseCollector):
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
                 ON CONFLICT(stock_code) DO UPDATE SET
                     last_price=CASE WHEN excluded.last_price!=0 THEN excluded.last_price ELSE kiwoom_realtime_quote.last_price END,
-                    change_price=excluded.change_price,
-                    change_rate=excluded.change_rate,
-                    trade_volume=excluded.trade_volume,
+                    change_price=CASE WHEN excluded.change_price!=0 THEN excluded.change_price ELSE kiwoom_realtime_quote.change_price END,
+                    change_rate=CASE WHEN excluded.change_rate!=0 THEN excluded.change_rate ELSE kiwoom_realtime_quote.change_rate END,
+                    trade_volume=CASE WHEN excluded.trade_volume!=0 THEN excluded.trade_volume ELSE kiwoom_realtime_quote.trade_volume END,
                     trade_strength=CASE WHEN excluded.trade_strength!=0 THEN excluded.trade_strength ELSE kiwoom_realtime_quote.trade_strength END,
                     bid1=CASE WHEN excluded.bid1!=0 THEN excluded.bid1 ELSE kiwoom_realtime_quote.bid1 END,
                     ask1=CASE WHEN excluded.ask1!=0 THEN excluded.ask1 ELSE kiwoom_realtime_quote.ask1 END,
-                    bid_qty1=excluded.bid_qty1,
-                    ask_qty1=excluded.ask_qty1,
+                    bid_qty1=CASE WHEN excluded.bid_qty1!=0 THEN excluded.bid_qty1 ELSE kiwoom_realtime_quote.bid_qty1 END,
+                    ask_qty1=CASE WHEN excluded.ask_qty1!=0 THEN excluded.ask_qty1 ELSE kiwoom_realtime_quote.ask_qty1 END,
                     source_type=excluded.source_type,
                     raw_json=excluded.raw_json,
                     updated_at=CURRENT_TIMESTAMP
@@ -429,6 +556,7 @@ class KiwoomCollector(BaseCollector):
         saved_count = 0
         started = time.time()
 
+        close_reason = ""
         async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=20) as ws:
             await ws.send(json.dumps({"trnm": "LOGIN", "token": self._token}, ensure_ascii=False))
 
@@ -454,6 +582,12 @@ class KiwoomCollector(BaseCollector):
                     raw = await asyncio.wait_for(ws.recv(), timeout=2)
                 except asyncio.TimeoutError:
                     continue
+                except websockets.ConnectionClosedOK as e:
+                    close_reason = f"closed_ok:{e.code}:{e.reason}"
+                    break
+                except websockets.ConnectionClosed as e:
+                    close_reason = f"closed:{e.code}:{e.reason}"
+                    break
                 try:
                     msg = json.loads(raw)
                 except Exception:
@@ -463,7 +597,12 @@ class KiwoomCollector(BaseCollector):
                 if trnm == "PING":
                     await ws.send(json.dumps(msg, ensure_ascii=False))
                     continue
-                if trnm in ("REG", "LOGIN"):
+                if trnm == "REG":
+                    if int(msg.get("return_code", 0) or 0) != 0:
+                        close_reason = f"reg_fail:{msg.get('return_msg') or msg.get('return_code')}"
+                        break
+                    continue
+                if trnm == "LOGIN":
                     continue
 
                 data_rows = msg.get("data") or []
@@ -477,7 +616,10 @@ class KiwoomCollector(BaseCollector):
                     self._save_realtime_snapshot(code, source_type=trnm or "WS", payload=row)
                     saved_count += 1
 
-        return {"ok": True, "saved": saved_count, "duration_sec": duration_sec, "codes": stock_codes, "types": types}
+        result = {"ok": True, "saved": saved_count, "duration_sec": duration_sec, "codes": stock_codes, "types": types}
+        if close_reason:
+            result["close_reason"] = close_reason
+        return result
 
     def collect_realtime_snapshot(self, stock_codes: list[str], types: list[str] | None = None, duration_sec: int = 15) -> dict[str, Any]:
         if not stock_codes:
@@ -498,7 +640,7 @@ class KiwoomCollector(BaseCollector):
     # ── ka10059: 종목별 투자자 매매 동향 ─────────────────────────────────
     def _ensure_investor_tables(self) -> None:
         """kiwoom_investor_daily 테이블 생성."""
-        conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=60)
+        conn = connect_stock_db(timeout=60)
         try:
             conn.execute("PRAGMA busy_timeout=60000")
             conn.execute("""
@@ -530,12 +672,362 @@ class KiwoomCollector(BaseCollector):
         finally:
             conn.close()
 
+    def _ensure_condition_membership_table(self) -> None:
+        """Persist account-owned Hero4 condition state in the primary database."""
+        conn = connect_stock_db(timeout=30)
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kiwoom_condition_membership (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    stock_code TEXT NOT NULL,
+                    condition_id TEXT NOT NULL,
+                    condition_name TEXT,
+                    event_type TEXT NOT NULL,
+                    event_at TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'kiwoom_hero4',
+                    captured_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    raw_json TEXT,
+                    UNIQUE(stock_code, condition_id, event_type, event_at)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_kiwoom_condition_code_ts ON kiwoom_condition_membership(stock_code, event_at DESC)")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kiwoom_condition_definition (
+                    condition_id TEXT PRIMARY KEY,
+                    condition_name TEXT,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kiwoom_condition_current (
+                    stock_code TEXT NOT NULL,
+                    condition_id TEXT NOT NULL,
+                    condition_name TEXT,
+                    detected_at TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'kiwoom_condition_snapshot',
+                    PRIMARY KEY (stock_code, condition_id)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_kiwoom_condition_current_code ON kiwoom_condition_current(stock_code)")
+            conn.commit()
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _condition_stock_code(value: Any) -> str:
+        """Normalize Kiwoom condition result codes such as A005930 to 005930."""
+        code = str(value or "").strip().upper()
+        if code.startswith("A"):
+            code = code[1:]
+        return code if len(code) == 6 and code.isdigit() else ""
+
+    def _upsert_condition_definition(self, condition_id: str, condition_name: str | None) -> None:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = connect_stock_db(timeout=30)
+        try:
+            conn.execute(
+                """
+                INSERT INTO kiwoom_condition_definition
+                (condition_id, condition_name, first_seen_at, last_seen_at, active)
+                VALUES (?, ?, ?, ?, 1)
+                ON CONFLICT(condition_id) DO UPDATE SET
+                    condition_name=COALESCE(excluded.condition_name, kiwoom_condition_definition.condition_name),
+                    last_seen_at=excluded.last_seen_at,
+                    active=1
+                """,
+                (condition_id, condition_name, now, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _reconcile_condition_snapshot(
+        self,
+        condition_id: str,
+        condition_name: str | None,
+        stock_codes: set[str],
+    ) -> dict[str, int]:
+        """Turn a full condition result into durable IN/OUT events."""
+        self._ensure_condition_membership_table()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = connect_stock_db(timeout=30)
+        try:
+            existing = {
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT stock_code FROM kiwoom_condition_current WHERE condition_id=?",
+                    (condition_id,),
+                ).fetchall()
+            }
+            entered = stock_codes - existing
+            exited = existing - stock_codes
+            for code, event_type in [(code, "IN") for code in entered] + [(code, "OUT") for code in exited]:
+                conn.execute(
+                    """
+                    INSERT INTO kiwoom_condition_membership
+                    (stock_code, condition_id, condition_name, event_type, event_at, source, raw_json)
+                    VALUES (?, ?, ?, ?, ?, 'kiwoom_condition_snapshot', ?)
+                    ON CONFLICT(stock_code, condition_id, event_type, event_at) DO NOTHING
+                    """,
+                    (
+                        code, condition_id, condition_name, event_type, now,
+                        json.dumps({"snapshot_size": len(stock_codes)}, ensure_ascii=False),
+                    ),
+                )
+            for code in stock_codes:
+                conn.execute(
+                    """
+                    INSERT INTO kiwoom_condition_current
+                    (stock_code, condition_id, condition_name, detected_at, source)
+                    VALUES (?, ?, ?, ?, 'kiwoom_condition_snapshot')
+                    ON CONFLICT(stock_code, condition_id) DO UPDATE SET
+                        condition_name=excluded.condition_name,
+                        detected_at=excluded.detected_at,
+                        source=excluded.source
+                    """,
+                    (code, condition_id, condition_name, now),
+                )
+            if exited:
+                conn.execute(
+                    "DELETE FROM kiwoom_condition_current WHERE condition_id=? AND stock_code IN ({})".format(
+                        ",".join("?" for _ in exited)
+                    ),
+                    (condition_id, *sorted(exited)),
+                )
+            conn.commit()
+            return {"entered": len(entered), "exited": len(exited), "current": len(stock_codes)}
+        finally:
+            conn.close()
+
+    async def _ws_condition_snapshot(self, max_conditions: int) -> dict[str, Any]:
+        if not self.ensure_token():
+            return {"ok": False, "reason": "token_fail"}
+        try:
+            import websockets
+        except Exception as exc:
+            return {"ok": False, "reason": f"websockets module unavailable: {exc}"}
+
+        async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=20) as ws:
+            await ws.send(json.dumps({"trnm": "LOGIN", "token": self._token}, ensure_ascii=False))
+            while True:
+                login = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                if login.get("trnm") == "PING":
+                    await ws.send(json.dumps(login, ensure_ascii=False))
+                    continue
+                if login.get("trnm") == "LOGIN":
+                    if int(login.get("return_code", -1)) != 0:
+                        return {"ok": False, "reason": f"ws_login_fail: {login.get('return_msg')}"}
+                    break
+
+            await ws.send(json.dumps({"trnm": "CNSRLST"}, ensure_ascii=False))
+            while True:
+                response = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                if response.get("trnm") == "PING":
+                    await ws.send(json.dumps(response, ensure_ascii=False))
+                    continue
+                if response.get("trnm") == "CNSRLST":
+                    if int(response.get("return_code", -1)) != 0:
+                        return {"ok": False, "reason": f"condition_list_fail: {response.get('return_msg')}"}
+                    raw_conditions = response.get("data") or []
+                    break
+
+            conditions: list[tuple[str, str | None]] = []
+            for item in raw_conditions:
+                if isinstance(item, (list, tuple)) and item:
+                    condition_id = str(item[0]).strip()
+                    name = str(item[1]).strip() if len(item) > 1 and item[1] else None
+                elif isinstance(item, dict):
+                    condition_id = str(item.get("seq") or item.get("condition_id") or "").strip()
+                    name = item.get("name") or item.get("condition_name")
+                else:
+                    continue
+                if condition_id:
+                    conditions.append((condition_id, name))
+            conditions = conditions[:max(1, max_conditions)]
+            totals = {"entered": 0, "exited": 0, "current": 0}
+            for condition_id, condition_name in conditions:
+                self._upsert_condition_definition(condition_id, condition_name)
+                codes: set[str] = set()
+                cont_yn, next_key = "N", ""
+                while True:
+                    await ws.send(json.dumps({
+                        "trnm": "CNSRREQ", "seq": condition_id, "search_type": "0",
+                        "stex_tp": "K", "cont_yn": cont_yn, "next_key": next_key,
+                    }, ensure_ascii=False))
+                    while True:
+                        result = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+                        if result.get("trnm") == "PING":
+                            await ws.send(json.dumps(result, ensure_ascii=False))
+                            continue
+                        if result.get("trnm") == "CNSRREQ" and str(result.get("seq") or "").strip() == condition_id:
+                            break
+                    if int(result.get("return_code", 0) or 0) != 0:
+                        logger.warning("[키움조건검색] %s 조회 실패: %s", condition_id, result.get("return_msg"))
+                        break
+                    for row in result.get("data") or []:
+                        raw_code = row.get("9001") if isinstance(row, dict) else row
+                        code = self._condition_stock_code(raw_code)
+                        if code:
+                            codes.add(code)
+                    cont_yn = str(result.get("cont_yn") or "N").upper()
+                    next_key = str(result.get("next_key") or "")
+                    if cont_yn != "Y" or not next_key:
+                        break
+                changes = self._reconcile_condition_snapshot(condition_id, condition_name, codes)
+                for key in totals:
+                    totals[key] += changes[key]
+                # Kiwoom documents a 5 requests/sec limit for domestic lookup TRs.
+                await asyncio.sleep(0.22)
+            return {"ok": True, "condition_count": len(conditions), **totals}
+
+    def collect_condition_snapshot(self, max_conditions: int | None = None) -> dict[str, Any]:
+        """Collect all configured Hero4 conditions and record current hits plus changes."""
+        self._ensure_condition_membership_table()
+        limit = max_conditions if max_conditions is not None else int(
+            getattr(config, "KIWOOM_CONDITION_SCAN_LIMIT", 100)
+        )
+        try:
+            return asyncio.run(self._ws_condition_snapshot(max(1, limit)))
+        except Exception as exc:
+            logger.warning("[키움조건검색] 스냅샷 수집 오류: %s", exc)
+            return {"ok": False, "reason": str(exc)}
+
+    def _ensure_us_realtime_table(self) -> None:
+        """Raw-first storage for Kiwoom US F5/FE/FT realtime messages."""
+        conn = connect_stock_db(timeout=30)
+        try:
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kiwoom_us_realtime_quote (
+                    ticker TEXT PRIMARY KEY,
+                    exchange_code TEXT,
+                    source_types TEXT,
+                    raw_json TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _save_us_realtime_message(self, ticker: str, exchange_code: str, source_type: str, payload: dict[str, Any]) -> None:
+        if not ticker:
+            return
+        self._ensure_us_realtime_table()
+        conn = connect_stock_db(timeout=30)
+        try:
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("""
+                INSERT INTO kiwoom_us_realtime_quote (ticker, exchange_code, source_types, raw_json, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(ticker) DO UPDATE SET
+                    exchange_code=excluded.exchange_code,
+                    source_types=excluded.source_types,
+                    raw_json=excluded.raw_json,
+                    updated_at=CURRENT_TIMESTAMP
+            """, (ticker.upper(), exchange_code, source_type, json.dumps(payload, ensure_ascii=False)))
+            conn.commit()
+        finally:
+            conn.close()
+
+    async def _ws_collect_us_once(self, stock_items: list[dict[str, str]], types: list[str], duration_sec: int) -> dict[str, Any]:
+        if not self.ensure_token():
+            return {"ok": False, "reason": "token_fail"}
+        try:
+            import websockets
+        except Exception as e:
+            return {"ok": False, "reason": f"websockets 모듈 없음: {e}"}
+
+        exchange_by_ticker = {str(row.get("jmcode") or "").upper(): str(row.get("stex_tp") or "") for row in stock_items}
+        saved = 0
+        started = time.time()
+        async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=20) as ws:
+            await ws.send(json.dumps({"trnm": "LOGIN", "token": self._token}, ensure_ascii=False))
+            while time.time() < started + 5:
+                response = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+                if response.get("trnm") == "LOGIN":
+                    if int(response.get("return_code", -1)) != 0:
+                        return {"ok": False, "reason": f"ws_login_fail: {response.get('return_msg')}"}
+                    break
+            await ws.send(json.dumps({
+                "trnm": "REG", "grp_no": "us_quotes", "refresh": "1",
+                "data": [{"item": stock_items, "type": types}],
+            }, ensure_ascii=False))
+            while time.time() - started < duration_sec:
+                try:
+                    message = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
+                except asyncio.TimeoutError:
+                    continue
+                if message.get("trnm") == "PING":
+                    await ws.send(json.dumps(message, ensure_ascii=False))
+                    continue
+                if message.get("trnm") in {"LOGIN", "REG"}:
+                    continue
+                source_type = str(message.get("trnm") or "REAL")
+                rows = message.get("data") or []
+                if isinstance(rows, dict):
+                    rows = [rows]
+                for row in rows:
+                    item = row.get("item") or row.get("jmcode") or row.get("ticker") or ""
+                    ticker = str(item.get("jmcode") if isinstance(item, dict) else item).upper()
+                    if ticker:
+                        self._save_us_realtime_message(ticker, exchange_by_ticker.get(ticker, ""), source_type, row)
+                        saved += 1
+        return {"ok": True, "saved": saved, "types": types, "items": stock_items}
+
+    def collect_us_realtime_snapshot(self, stock_items: list[dict[str, str]], types: list[str] | None = None, duration_sec: int = 12) -> dict[str, Any]:
+        """Collect US candidates/positions only; never subscribe the full universe."""
+        valid = [
+            {"jmcode": str(row.get("jmcode") or "").upper(), "stex_tp": str(row.get("stex_tp") or "").upper()}
+            for row in stock_items
+            if row.get("jmcode") and row.get("stex_tp")
+        ]
+        if not valid:
+            return {"ok": False, "reason": "US ticker and exchange code are required"}
+        try:
+            return asyncio.run(self._ws_collect_us_once(valid, types or ["F5", "FE", "FT"], duration_sec))
+        except Exception as e:
+            return {"ok": False, "reason": f"예외: {e}"}
+
+    def record_condition_membership_events(self, events: list[dict[str, Any]]) -> dict[str, Any]:
+        """Store normalized inclusion/removal events emitted by a Kiwoom condition feed."""
+        self._ensure_condition_membership_table()
+        saved = skipped = 0
+        conn = connect_stock_db(timeout=30)
+        try:
+            for event in events:
+                code = str(event.get("stock_code") or event.get("stk_cd") or "").strip()
+                condition_id = str(event.get("condition_id") or event.get("seq") or "").strip()
+                raw_type = str(event.get("event_type") or event.get("type") or "").upper().strip()
+                event_type = "IN" if raw_type in {"IN", "I", "1", "ENTER", "편입"} else "OUT" if raw_type in {"OUT", "O", "0", "EXIT", "편출"} else ""
+                event_at = str(event.get("event_at") or event.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                if not (len(code) == 6 and code.isdigit() and condition_id and event_type):
+                    skipped += 1
+                    continue
+                conn.execute("""
+                    INSERT INTO kiwoom_condition_membership
+                    (stock_code, condition_id, condition_name, event_type, event_at, source, raw_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(stock_code, condition_id, event_type, event_at) DO NOTHING
+                """, (
+                    code, condition_id, event.get("condition_name") or event.get("name"),
+                    event_type, event_at, event.get("source") or "kiwoom_hero4",
+                    json.dumps(event, ensure_ascii=False),
+                ))
+                saved += 1
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True, "saved": saved, "skipped": skipped}
+
     def fetch_investor_by_stock(
         self,
         stock_code: str,
         base_dt: str | None = None,
         max_pages: int = 10,
-        also_fill_price_history: bool = True,
+        also_fill_price_history: bool = False,
     ) -> dict[str, Any]:
         """ka10059: 종목별 투자자 일별 매매 수집 (기관/외국인/개인 + 세부 기관 분류).
 
@@ -552,16 +1044,17 @@ class KiwoomCollector(BaseCollector):
         url = f"{self.base_url}/api/dostk/stkinfo"
         if not base_dt:
             base_dt = datetime.now().strftime("%Y%m%d")
-        # ⚠️ 파라미터 버그 확인됨 (2026-06-21):
-        # amt_qty_tp="1" → 실제 반환값: 금액(백만원). 수량(주) 아님.
-        # trde_tp="1"    → 실제 반환값: 매수(buy-only). 순매수(net) 아님.
-        # 근거: ind+frgn+orgn+natfor+etc_corp = acc_trde_prica(총거래대금백만원) 완전일치.
-        # 기존 4.5M행은 매수금액 저장 상태 → investor-trend fallback 사용 불가.
-        # 순매수 수집 시 올바른 trde_tp 값을 API 문서에서 확인 후 수정 및 재수집 필요.
+        # ⚠️ 2026-06-21 버그 발견 → 2026-07-21 근본원인 확정+수정:
+        # trde_tp="1"이 매수(buy-only)였던 것이 원인 확정. 005930 2026-07-20 KIS 검증값(price_history:
+        # inst_net_buy_amt=-359076, frn_net_buy_amt=283920, ind_net_buy_amt=54386, 단위 백만원)과
+        # trde_tp별 실측 대조 결과 trde_tp="0"(순매수)이 KIS와 거의 완전 일치(ind=54386 정확 일치,
+        # orgn=-359076 정확 일치, frgnr=285162≈283920)로 확정. trde_tp="1"은 ind=1462450처럼 배수로
+        # 커진 매수전용(buy-only) 값이었음. amt_qty_tp="1"=금액(백만원)/"2"=수량(주) 구분도 실측 확인.
+        # 기존 4.5M행(trde_tp=1)은 재수집으로 덮어써야 함(scratch/backfill_kiwoom_investor_netbuy_20260721.py).
         body: dict[str, Any] = {
             "stk_cd": stock_code,
-            "amt_qty_tp": "1",   # 실제: 금액(백만원) — 주석 오기재(수량 아님)
-            "trde_tp": "1",      # 실제: 매수(buy-only) — 주석 오기재(순매수 아님)
+            "amt_qty_tp": "1",   # 금액(백만원) — price_history *_amt 컬럼과 동일 단위로 유지
+            "trde_tp": "0",      # 순매수(net buy) — 2026-07-21 수정 (구 "1"=매수전용 버그)
             "unit_tp": "1",      # 1=주(shares)
             "dt": base_dt,
         }
@@ -588,13 +1081,14 @@ class KiwoomCollector(BaseCollector):
             next_key = resp.headers.get("next-key", "")
             if cont_yn != "Y" or not next_key:
                 break
-            time.sleep(0.3)  # rate limit
+            if page < max_pages - 1:
+                time.sleep(0.3)  # rate limit
 
         # DB 저장 (locked 시 최대 5회 재시도, 10초 간격)
         saved = 0
         for _attempt in range(5):
             try:
-                conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=90)
+                conn = connect_stock_db(timeout=90)
                 conn.execute("PRAGMA busy_timeout=90000")
                 for row in all_rows:
                     dt_raw = str(row.get("dt") or "")
@@ -637,20 +1131,6 @@ class KiwoomCollector(BaseCollector):
                         n(row.get("samo_fund")), n(row.get("natn")), n(row.get("etc_corp")),
                         n(row.get("natfor")),
                     ))
-
-                    # investor_trading_daily 동기화 (net 값만)
-                    ind_net = n(row.get("ind_invsr"))
-                    frgn_net = n(row.get("frgnr_invsr"))
-                    inst_net = n(row.get("orgn"))
-                    conn.execute("""
-                        INSERT INTO investor_trading_daily
-                        (bas_dt, stock_code, indv_net, inst_net, frgn_net)
-                        VALUES (?,?,?,?,?)
-                        ON CONFLICT(bas_dt, stock_code) DO UPDATE SET
-                            indv_net=excluded.indv_net,
-                            inst_net=excluded.inst_net,
-                            frgn_net=excluded.frgn_net
-                    """, (dt_iso, stock_code, ind_net, inst_net, frgn_net))
 
                     saved += 1
 
@@ -705,7 +1185,7 @@ class KiwoomCollector(BaseCollector):
         oper = n(data.get("bus_pro"))    # 영업이익 (억원)
         neti = n(data.get("cup_nga"))    # 당기순이익 (억원)
 
-        conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=60)
+        conn = connect_stock_db(timeout=60)
         try:
             conn.execute("PRAGMA busy_timeout=60000")
             # stock_universe PER/PBR/ROE 업데이트 (0값은 NULL로)
@@ -721,13 +1201,28 @@ class KiwoomCollector(BaseCollector):
             """, (per,per, pbr,pbr, roe,roe, mac,mac, stock_code))
 
             # stock_meta 유동주식수 업데이트 (flo_stk is in 천주 → *1000 for actual shares)
+            # 2026-08-25: 2026-04-08 배치에서 flo_stk 단위 가정(천주)이 일부 응답에서
+            # 틀려 최대 1000배 오염된 사고가 있었음(89건 NULL 처리로 정리, CLAUDE.md 참조).
+            # stock_universe.shares_issued(신뢰 가능한 발행주식총수) 대비 1.2배 넘게
+            # 크면 유동주식수가 발행주식수를 초과하는 논리모순이므로 저장을 스킵한다.
             if flo > 0:
-                conn.execute("""
-                    INSERT INTO stock_meta (stock_code, float_shares, shares_outstanding)
-                    VALUES (?, ?, NULL)
-                    ON CONFLICT(stock_code) DO UPDATE SET
-                        float_shares=excluded.float_shares
-                """, (stock_code, int(flo * 1000)))
+                float_shares_candidate = int(flo * 1000)
+                shares_issued_row = conn.execute(
+                    "SELECT shares_issued FROM stock_universe WHERE stock_code=?", (stock_code,)
+                ).fetchone()
+                shares_issued = shares_issued_row[0] if shares_issued_row else None
+                if shares_issued and shares_issued > 0 and float_shares_candidate > shares_issued * 1.2:
+                    logger.warning(
+                        "[ka10001] %s 유동주식수 이상치 스킵: flo_stk*1000=%s > shares_issued*1.2=%s",
+                        stock_code, float_shares_candidate, shares_issued * 1.2,
+                    )
+                else:
+                    conn.execute("""
+                        INSERT INTO stock_meta (stock_code, float_shares, shares_outstanding)
+                        VALUES (?, ?, NULL)
+                        ON CONFLICT(stock_code) DO UPDATE SET
+                            float_shares=excluded.float_shares
+                    """, (stock_code, float_shares_candidate))
 
             conn.commit()
         finally:
@@ -746,6 +1241,7 @@ class KiwoomCollector(BaseCollector):
         limit: int = 1000,
         max_pages: int = 3,
         sleep_secs: float = 0.4,
+        skip_existing_latest: bool = False,
     ) -> dict[str, Any]:
         """ka10059 배치: 전종목 투자자 일별 수급 수집.
 
@@ -754,22 +1250,63 @@ class KiwoomCollector(BaseCollector):
             limit: 최대 종목수
             max_pages: 페이지수 per 종목 (1page=100거래일)
             sleep_secs: 요청 간 대기
+            skip_existing_latest: 최신 정상 가격일에 이미 수집된 종목 제외
         """
         if not self.ensure_token():
             return {"ok": False, "reason": "token_fail"}
 
+        target_dt: str | None = None
+        skipped_existing = 0
         if stock_codes is None:
-            conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+            conn = connect_stock_db(timeout=30)
             try:
                 rows = conn.execute(
-                    """SELECT stock_code FROM stock_universe
-                       WHERE stock_code NOT LIKE '%^%'
+                    """SELECT stock_code
+                       FROM stock_universe
+                       WHERE stock_code IS NOT NULL
+                         AND LENGTH(stock_code) = 6
+                         AND stock_code NOT LIKE '%^%'
                          AND stock_code NOT LIKE '%-F'
-                       ORDER BY market_cap DESC NULLS LAST
+                         AND (
+                           market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
+                           OR market IS NULL
+                         )
+                         AND COALESCE(stock_type, '') NOT IN ('ETF', 'ETN')
+                         AND COALESCE(secugrp_nm, '') NOT IN ('ETF', 'ETN')
+                         AND COALESCE(stock_name, '') NOT LIKE '%ETF%'
+                         AND COALESCE(stock_name, '') NOT LIKE '%ETN%'
+                       GROUP BY stock_code
+                       ORDER BY MAX(market_cap) DESC NULLS LAST
                        LIMIT ?""",
                     (limit,)
                 ).fetchall()
                 stock_codes = [r[0] for r in rows]
+
+                if skip_existing_latest:
+                    target = conn.execute(
+                        """
+                        SELECT date
+                        FROM price_history
+                        GROUP BY date
+                        HAVING COUNT(DISTINCT stock_code) >= 2000
+                        ORDER BY date DESC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+                    if target and target[0]:
+                        target_dt = str(target[0])[:10]
+                        existing_rows = conn.execute(
+                            """
+                            SELECT stock_code
+                            FROM kiwoom_investor_daily
+                            WHERE dt = ?
+                            """,
+                            (target_dt,),
+                        ).fetchall()
+                        existing = {str(r[0]).zfill(6) for r in existing_rows}
+                        before = len(stock_codes)
+                        stock_codes = [code for code in stock_codes if str(code).zfill(6) not in existing]
+                        skipped_existing = before - len(stock_codes)
             finally:
                 conn.close()
 
@@ -785,7 +1322,14 @@ class KiwoomCollector(BaseCollector):
                 failed += 1
             time.sleep(sleep_secs)
 
-        return {"ok": True, "updated": updated, "failed": failed, "total_saved": total_saved}
+        return {
+            "ok": True,
+            "updated": updated,
+            "failed": failed,
+            "total_saved": total_saved,
+            "target_dt": target_dt,
+            "skipped_existing": skipped_existing,
+        }
 
     def bulk_update_stock_universe(
         self,
@@ -804,7 +1348,7 @@ class KiwoomCollector(BaseCollector):
             return {"ok": False, "reason": "token_fail"}
 
         if stock_codes is None:
-            conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+            conn = connect_stock_db(timeout=30)
             try:
                 rows = conn.execute(
                     "SELECT stock_code FROM stock_universe ORDER BY market_cap DESC LIMIT ?",
@@ -875,7 +1419,7 @@ class KiwoomCollector(BaseCollector):
             return {"ok": True, "saved": 0, "count": 0}
 
         try:
-            conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=60)
+            conn = connect_stock_db(timeout=60)
             conn.execute("PRAGMA busy_timeout=30000")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS kiwoom_credit_balance (
@@ -933,7 +1477,7 @@ class KiwoomCollector(BaseCollector):
         if not self.ensure_token():
             return {"ok": False, "reason": "token_fail"}
         if stock_codes is None:
-            conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+            conn = connect_stock_db(timeout=30)
             stock_codes = [r[0] for r in conn.execute("""
                 SELECT stock_code FROM stock_universe
                 WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
@@ -963,7 +1507,7 @@ class KiwoomCollector(BaseCollector):
         if not self.ensure_token():
             return {"ok": False, "reason": "token_fail"}
         if stock_codes is None:
-            conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+            conn = connect_stock_db(timeout=30)
             stock_codes = [r[0] for r in conn.execute("""
                 SELECT stock_code FROM stock_universe
                 WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ')

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Iterable
@@ -137,39 +138,18 @@ def fetch_trade_series(
 
 
 async def suggest_hs_code(product_name: str, api_key: str, model: str) -> dict[str, Any]:
-    if not api_key:
-        raise ValueError("Gemini API 키가 필요합니다.")
-
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent?key={api_key}"
-    )
+    """Use the shared DeepSeek Flash path; legacy source API fields are ignored."""
+    from services.gemini import generate_text, is_configured
+    if not is_configured():
+        raise ValueError("DEEPSEEK_API_KEY가 필요합니다.")
     prompt = (
         "다음 상품명에 대해 한국 수출입 분석용 참고 HS Code를 추정해 주세요. "
         "응답 형식은 반드시 JSON 하나만 사용하고 키는 hs_code, description, reason 으로 제한하세요. "
         f"상품명: {product_name}"
     )
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt},
-                ]
-            }
-        ]
-    }
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-
-    text = ""
-    for candidate in data.get("candidates", []):
-        content = candidate.get("content", {})
-        for part in content.get("parts", []):
-            if "text" in part:
-                text += part["text"]
-
+    text = await asyncio.to_thread(
+        generate_text, prompt, response_mime_type="application/json", max_output_tokens=300, timeout=30,
+    )
     cleaned = text.strip().removeprefix("```json").removesuffix("```").strip()
     try:
         parsed = json.loads(cleaned)

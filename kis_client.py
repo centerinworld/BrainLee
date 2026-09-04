@@ -101,11 +101,35 @@ class KISClient:
             return ""
 
     def get_token(self):
+        """2026-08-13(3차) 수정(docs/codex_handoff_live_trading_gaps_20260813.md #3):
+        기존엔 _issue_token() 실패 시 self.access_token을 그대로 둬서(만료된 토큰이라도)
+        get_token()이 그 값을 돌려줬음 — 호출부는 "토큰을 받았다"고 착각하고 KIS에
+        요청을 보내지만 매번 인증거부만 당하고(get_current_price 등은 rt_cd!=0을
+        그냥 None으로 뭉개버림), 원인이 토큰 갱신 실패라는 게 로그를 뒤지지 않는 한
+        전혀 드러나지 않았음. 갱신 실패 시 access_token을 명시적으로 비워 호출부가
+        "토큰 없음"을 정상적으로 인지하게 하고, 장중(09:00~15:30) 실패는 텔레그램으로
+        1일 1회 한도 알림(notifier의 key dedup 재사용, 스팸 방지)."""
         if not self.access_token or time.time() > self.token_expiry:
             if self._load_token_from_file():
                 return self.access_token
-            self._issue_token()
+            if not self._issue_token():
+                self.access_token = None
+                self._alert_token_failure()
         return self.access_token
+
+    def _alert_token_failure(self) -> None:
+        try:
+            now = datetime.now()
+            if not (9 <= now.hour < 16):
+                return
+            import notifier
+            notifier.send(
+                f"⚠️ KIS 토큰 갱신 실패 — 장중 시세/주문 API가 인증 거부될 수 있습니다 "
+                f"({now.strftime('%H:%M')})",
+                key=f"kis_token_fail_{now.strftime('%Y-%m-%d')}",
+            )
+        except Exception as e:
+            logger.error(f"KIS 토큰 실패 알림 오류: {e}")
 
     def _call_investor_api(self, stock_code: str) -> list:
         """KIS inquire-investor API 호출 → output 배열 반환 (최근 30거래일)."""
@@ -207,6 +231,18 @@ class KISClient:
 
     def get_current_price(self, stock_code: str):
         """국내 주식 현재가 조회 (Strict Throttling 적용)"""
+        # ⚠️ 2026-08-23: KIS "현재가 조회"(inquire-price) 응답은 휴장일에도
+        # 항상 200으로 직전 거래일의 최종 시세를 반환하는데, 아래 코드가
+        # 그 값을 datetime.now()로 라벨링해 저장하면 price_history에 실제로는
+        # 없었던 거래일(휴장일)의 "가짜 거래" 행이 생긴다(실증: 172670이
+        # 2026-08-17(광복절 대체휴일) 휴장일에 8/14 종가와 완전히 동일한
+        # OHLCV로 중복 저장됨 — 스케줄러 루프는 is_kr_trading_day()로 막혀
+        # 있었으나 이 함수 자체엔 방어가 없어 수동/온디맨드 호출 경로가 뚫림).
+        # 실시간 현재가는 휴장일에 의미가 없으므로 원천에서 차단한다.
+        from trading_calendar import is_kr_trading_day
+        if not is_kr_trading_day():
+            return None
+
         token = self.get_token()
         if not token:
             return None
@@ -245,11 +281,58 @@ class KISClient:
                         "high": float(price_info["stck_hgpr"]),
                         "low": float(price_info["stck_lwpr"]),
                         "volume": float(price_info["acml_vol"]),
-                        "date": datetime.now().strftime("%Y-%m-%d")
+                        "trade_amount": float(price_info.get("acml_tr_pbmn", 0) or 0),
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                        "observed_at": datetime.now().isoformat(timespec="seconds"),
+                        "raw": price_info,
                     }
                 return None
             except Exception as e:
                 logger.error(f"KIS API 조회 오류: {e}")
+                return None
+
+    def get_orderbook(self, stock_code: str) -> dict | None:
+        """Return KIS top-of-book data used by the live-order data contract."""
+        token = self.get_token()
+        if not token:
+            return None
+        with self.lock:
+            if _USE_RL:
+                if not _rl.wait("KIS"):
+                    return None
+            else:
+                elapsed = time.time() - self.last_call_time
+                if elapsed < 1.0:
+                    time.sleep(1.0 - elapsed)
+            self.last_call_time = time.time()
+            url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn"
+            headers = {
+                "Content-Type": "application/json",
+                "authorization": f"Bearer {token}",
+                "appkey": self.app_key,
+                "appsecret": self.app_secret,
+                "tr_id": "FHKST01010200",
+            }
+            params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": stock_code}
+            try:
+                response = requests.get(url, headers=headers, params=params, timeout=10)
+                data = response.json()
+                if data.get("rt_cd") != "0" or not data.get("output1"):
+                    logger.warning("KIS 호가 조회 실패 [%s]: %s", stock_code, data.get("msg1", ""))
+                    return None
+                row = data["output1"]
+                return {
+                    "bid1": float(row.get("bidp1", 0) or 0),
+                    "ask1": float(row.get("askp1", 0) or 0),
+                    "bid_qty1": float(row.get("bidp_rsqn1", 0) or 0),
+                    "ask_qty1": float(row.get("askp_rsqn1", 0) or 0),
+                    "total_bid_qty": float(row.get("total_bidp_rsqn", 0) or 0),
+                    "total_ask_qty": float(row.get("total_askp_rsqn", 0) or 0),
+                    "observed_at": datetime.now().isoformat(timespec="seconds"),
+                    "raw": row,
+                }
+            except Exception as exc:
+                logger.error("KIS 호가 조회 오류 [%s]: %s", stock_code, exc)
                 return None
 
 
@@ -420,12 +503,15 @@ class KISClient:
                         continue
                     sll_buy = row.get("sll_buy_dvsn_cd", "")  # "01"=매도, "02"=매수
                     result.append({
+                        "order_no": row.get("odno", ""),
                         "stock_code": row.get("pdno", ""),
                         "stock_name": row.get("prdt_name", ""),
                         "tx_type":    "sell" if sll_buy == "01" else "buy",
                         "quantity":   qty,
                         "price":      price,
                         "tx_time":    row.get("ord_tmd", ""),
+                        "broker_status": row.get("ord_dvsn_name", "filled") or "filled",
+                        "raw": row,
                     })
                 logger.info(f"[KIS체결] {len(result)}건 조회")
                 return result
@@ -569,9 +655,19 @@ class KISClient:
                     })
 
                 s = (data.get("output2") or [{}])[0]
+                cash_deposit = _f(s.get("dnca_tot_amt"))
+                cash_orderable = _f(s.get("ord_psbl_cash"))
+                cash_d2 = _f(s.get("nxdy_excc_amt") or s.get("d2_auto_rdpt_amt"))
+                strict_candidates = [v for v in (cash_deposit, cash_orderable, cash_d2) if v > 0]
+                strict_cash = min(strict_candidates) if strict_candidates else 0.0
                 summary = {
-                    "cash_available": _f(s.get("dnca_tot_amt") or s.get("ord_psbl_cash")),
-                    "cash_d2": _f(s.get("nxdy_excc_amt") or s.get("d2_auto_rdpt_amt")),
+                    # cash_available kept for backward compatibility. New live-order guards should use
+                    # strict_cash_available to avoid accidental margin/receivable-funded buys.
+                    "cash_available": cash_orderable or cash_deposit,
+                    "strict_cash_available": strict_cash,
+                    "cash_deposit": cash_deposit,
+                    "cash_orderable": cash_orderable,
+                    "cash_d2": cash_d2,
                     "total_eval": _f(s.get("tot_evlu_amt")),
                     "total_buy": _f(s.get("pchs_amt_smtl_amt")),
                     "total_profit": _f(s.get("evlu_pfls_smtl_amt")),
@@ -595,6 +691,36 @@ class KISClient:
             return {"ok": False, "error": "invalid_side"}
         if qty <= 0:
             return {"ok": False, "error": "invalid_qty"}
+
+        if side == "buy" and os.getenv("KIS_STRICT_CASH_BUY_ONLY", "true").lower() == "true":
+            estimate_price = float(price or 0.0)
+            if estimate_price <= 0:
+                quote = self.get_current_price(stock_code) or {}
+                estimate_price = float(quote.get("close") or 0.0)
+            if estimate_price <= 0:
+                return {"ok": False, "error": "strict_cash_guard_price_missing"}
+
+            snapshot = self.get_account_snapshot() or {"summary": {}}
+            summary = snapshot.get("summary") or {}
+            strict_cash = float(summary.get("strict_cash_available") or 0.0)
+            buffer_pct = float(os.getenv("KIS_STRICT_CASH_BUY_BUFFER_PCT", "1.02"))
+            required_cash = float(qty) * estimate_price * buffer_pct
+            if strict_cash <= 0:
+                return {
+                    "ok": False,
+                    "error": "strict_cash_guard_no_cash",
+                    "strict_cash_available": strict_cash,
+                    "required_cash": round(required_cash, 0),
+                }
+            if strict_cash < required_cash:
+                return {
+                    "ok": False,
+                    "error": "strict_cash_guard_cash_short",
+                    "strict_cash_available": round(strict_cash, 0),
+                    "required_cash": round(required_cash, 0),
+                    "estimated_price": estimate_price,
+                    "qty": qty,
+                }
 
         with self.lock:
             elapsed = time.time() - self.last_call_time

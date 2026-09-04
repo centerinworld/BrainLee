@@ -33,8 +33,9 @@ from datetime import datetime, date, timedelta
 
 import requests
 from bs4 import BeautifulSoup
+from db_utils import connect_stock_db
 
-DB_PATH   = "/Applications/stock_dashboard/stock.db"
+DB_PATH   = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 BASE_URL  = "https://finance.naver.com/item/frgn.naver"
 SLEEP_PAGE = 0.25   # 페이지 요청 간격 (초)
 SLEEP_STOCK = 0.5   # 종목 전환 간격 (초)
@@ -147,14 +148,14 @@ def collect_stock(session: requests.Session, conn: sqlite3.Connection,
             else:
                 consecutive_existing = 0
 
-            conn.execute("""
+            cursor = conn.execute("""
                 UPDATE price_history
                 SET inst_net_buy = ?,
                     frn_net_buy  = ?
                 WHERE stock_code = ? AND date = ?
                   AND (? OR inst_net_buy IS NULL OR inst_net_buy = 0)
             """, (inst, frn, stock_code, d, force))
-            saved += conn.execute("SELECT changes()").fetchone()[0]
+            saved += max(cursor.rowcount, 0)
 
         time.sleep(SLEEP_PAGE)
 
@@ -202,11 +203,10 @@ def main():
     _self.SLEEP_STOCK = sleep_stock
     max_pages = args.pages if args.pages > 0 else years_to_pages(args.years)
 
-    sys.path.insert(0, "/Applications/stock_dashboard")
-    os.chdir("/Applications/stock_dashboard")
+    sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+    os.chdir("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = connect_stock_db(timeout=60, wal=True)
 
     if args.codes:
         codes = [c.strip() for c in args.codes.split(",") if c.strip()]

@@ -6,8 +6,8 @@ migrate_datasource.py — financial_data / cash_flow_data에 data_source 컬럼 
 """
 import sqlite3, json, datetime, os, sys
 
-DB_PATH     = "/Applications/stock_dashboard/stock.db"
-VERIFY_DIR  = "/Applications/stock_dashboard/verification"
+DB_PATH     = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+VERIFY_DIR  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/verification"
 os.makedirs(VERIFY_DIR, exist_ok=True)
 
 TIMESTAMP   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

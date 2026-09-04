@@ -16,12 +16,16 @@ signal_engine.py — 시그널 보드 계산 엔진 (v2 — 퀀트/추세추종 
 import json, sqlite3, logging, time as _time, math as _math
 import numpy as _np
 import os as _os
+from services.gemini import is_configured
+from services.gemini_openai_compat import OpenAI
 from collections import defaultdict as _defaultdict
 from datetime import date, timedelta, datetime
 from pathlib import Path
 
 # ── 모듈 레벨 캐시 (섹터 활성화 맵 — 3개 함수에서 중복 호출 방지) ──────
 _sector_activation_cache: dict = {"data": None, "at": 0.0}
+from db_utils import connect_stock_db
+
 from signal_logic import (
     TREND_MKTCAP_MIN, TREND_TVOL_MIN_KRW, TREND_TVOL_MIN_SUOKU,
     TREND_HIGH52_PCT, TREND_VOL_RATIO_MIN, TREND_RSI_MIN,
@@ -40,14 +44,14 @@ from signal_logic import (
 )
 
 logger = logging.getLogger(__name__)
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 
 # ══════════════════════════════════════════════════════════════════
 # DB 초기화
 # ══════════════════════════════════════════════════════════════════
 def init_signal_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.executescript("""
     CREATE TABLE IF NOT EXISTS signal_config (
         id          INTEGER PRIMARY KEY,
@@ -218,12 +222,20 @@ def _ensure_new_signals(conn):
 
 _contract_bonus_cache: dict = {}
 _contract_bonus_at: float = 0.0
+_ORDER_SURGE_BONUS_CACHE: dict = {}
+_ORDER_SURGE_BONUS_AT: float = 0.0
+_CONTRACT_ADVANCE_BONUS_CACHE: dict[int, dict[str, dict]] = {}
+_CONTRACT_ADVANCE_BONUS_AT: float = 0.0
+_INVENTORY_SALES_BONUS_CACHE: dict = {}
+_INVENTORY_SALES_BONUS_AT: float = 0.0
+_CASH_CONVERSION_BONUS_CACHE: dict = {}
+_CASH_CONVERSION_BONUS_AT: float = 0.0
 _HS_BONUS_CACHE: dict = {}
 _HS_BONUS_AT: float = 0.0
 _NPS_BONUS_CACHE: dict = {}
 _NPS_BONUS_AT: float = 0.0
-_HS_DB_PATH = "/Applications/stock_dashboard/hs_trade_lab/data/hs_trade_lab.db"
-_EMP_DB_PATH = "/Applications/stock_dashboard/employment_monitor/employment.db"
+_HS_DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/hs_trade_lab/data/hs_trade_lab.db"
+_EMP_DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db"
 
 
 def _load_contract_bonus_map(days: int = 90) -> dict[str, dict]:
@@ -287,6 +299,316 @@ def _load_contract_bonus_map(days: int = 90) -> dict[str, dict]:
 
     except Exception as e:
         logging.warning(f"[보너스] DART수주 로드 실패: {e}")
+        return {}
+
+
+def _load_order_contract_surge_bonus_map(window_months: int = 3) -> dict[str, dict]:
+    """
+    order_contracts proxy → 최근 수주급증 보너스 맵.
+
+    dart_contracts는 개별 공시 강도(별점)를 보고, 이 함수는 "최근 N개월 신규계약
+    합계가 직전 N개월 대비 얼마나 늘었는지"와 "최근 계약합계가 매출 대비
+    얼마나 큰지"를 본다. DART 개별 공시 파싱 특성상 verified=0도 많으므로
+    label에 검증 필요 여부를 함께 남긴다.
+    """
+    global _ORDER_SURGE_BONUS_CACHE, _ORDER_SURGE_BONUS_AT
+    if _time.time() - _ORDER_SURGE_BONUS_AT < 3600 and _ORDER_SURGE_BONUS_CACHE:
+        return _ORDER_SURGE_BONUS_CACHE
+
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        recent_since = (date.today() - timedelta(days=window_months * 30)).strftime("%Y-%m-%d")
+        prev_since = (date.today() - timedelta(days=window_months * 60)).strftime("%Y-%m-%d")
+
+        rows = conn.execute("""
+            WITH oc AS (
+                SELECT stock_code,
+                       MAX(stock_name) AS stock_name,
+                       SUM(CASE WHEN is_termination=0 AND rcept_dt>=?
+                                THEN COALESCE(contract_amount,0) ELSE 0 END) AS recent_sum,
+                       SUM(CASE WHEN is_termination=0 AND rcept_dt>=? AND rcept_dt<?
+                                THEN COALESCE(contract_amount,0) ELSE 0 END) AS prev_sum,
+                       SUM(CASE WHEN is_termination=0 AND rcept_dt>=? THEN 1 ELSE 0 END) AS recent_cnt,
+                       SUM(CASE WHEN is_termination=0 AND rcept_dt>=? AND verified=1 THEN 1 ELSE 0 END) AS verified_cnt,
+                       MAX(CASE WHEN rcept_dt>=? THEN rcept_dt ELSE NULL END) AS latest_dt
+                FROM order_contracts
+                WHERE contract_amount IS NOT NULL
+                  AND length(stock_code)=6
+                  AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+                GROUP BY stock_code
+                HAVING SUM(CASE WHEN is_termination=0 AND rcept_dt>=?
+                                THEN COALESCE(contract_amount,0) ELSE 0 END) > 0
+            ),
+            rev AS (
+                SELECT fd.stock_code, fd.revenue
+                FROM financial_data fd
+                JOIN (
+                    SELECT stock_code, MAX(year) AS year
+                    FROM financial_data
+                    WHERE is_annual=1 AND revenue IS NOT NULL AND revenue > 0
+                    GROUP BY stock_code
+                ) latest ON latest.stock_code=fd.stock_code AND latest.year=fd.year
+                WHERE fd.is_annual=1
+            )
+            SELECT oc.*, rev.revenue
+            FROM oc
+            LEFT JOIN rev ON rev.stock_code=oc.stock_code
+        """, (recent_since, prev_since, recent_since, recent_since, recent_since, recent_since, recent_since)).fetchall()
+        conn.close()
+
+        result: dict[str, dict] = {}
+        for r in rows:
+            recent_sum = float(r["recent_sum"] or 0)
+            prev_sum = float(r["prev_sum"] or 0)
+            revenue = float(r["revenue"] or 0)
+            if recent_sum <= 0:
+                continue
+            growth_pct = None
+            if prev_sum > 0:
+                growth_pct = (recent_sum - prev_sum) / prev_sum * 100.0
+                if growth_pct < 50:
+                    continue
+            recent_to_revenue = recent_sum / revenue * 100.0 if revenue > 0 else None
+
+            bonus = 1
+            if growth_pct is None:
+                bonus += 1  # 직전 동기간 0 → 신규 수주 모멘텀
+            elif growth_pct >= 500:
+                bonus += 3
+            elif growth_pct >= 200:
+                bonus += 2
+            elif growth_pct >= 50:
+                bonus += 1
+
+            if recent_to_revenue is not None:
+                if recent_to_revenue >= 100:
+                    bonus += 3
+                elif recent_to_revenue >= 50:
+                    bonus += 2
+                elif recent_to_revenue >= 20:
+                    bonus += 1
+            if (r["recent_cnt"] or 0) >= 2:
+                bonus += 1
+            bonus = min(bonus, 6)
+
+            labels = []
+            if growth_pct is None:
+                labels.append("신규수주")
+            else:
+                labels.append(f"수주+{growth_pct:.0f}%")
+            if recent_to_revenue is not None:
+                labels.append(f"매출대비{recent_to_revenue:.0f}%")
+            if (r["recent_cnt"] or 0) >= 2:
+                labels.append(f"{r['recent_cnt']}건")
+            if not r["verified_cnt"]:
+                labels.append("검증필요")
+
+            result[r["stock_code"]] = {
+                "bonus": bonus,
+                "label": " ".join(labels),
+                "growth_pct": round(growth_pct, 1) if growth_pct is not None else None,
+                "recent_to_revenue_pct": round(recent_to_revenue, 2) if recent_to_revenue is not None else None,
+                "recent_sum": recent_sum,
+                "prev_sum": prev_sum,
+                "recent_count": r["recent_cnt"] or 0,
+                "verified_count": r["verified_cnt"] or 0,
+                "latest_date": r["latest_dt"],
+            }
+
+        _ORDER_SURGE_BONUS_CACHE = result
+        _ORDER_SURGE_BONUS_AT = _time.time()
+        return result
+
+    except Exception as e:
+        logging.warning(f"[보너스] 수주급증 proxy 로드 실패: {e}")
+        return {}
+
+
+def _load_contract_advance_bonus_map(min_score: int = 4) -> dict[str, dict]:
+    """
+    계약부채/선수금 급증 파생 테이블 → stock_code별 선행 실적 보너스.
+
+    CFS 최신값을 우선 사용하고, CFS가 없으면 OFS 최신값을 사용한다.
+    금융/보험성 계약부채는 build 단계에서 score=0/quality_flag로 제외된다.
+    """
+    global _CONTRACT_ADVANCE_BONUS_CACHE, _CONTRACT_ADVANCE_BONUS_AT
+    cached = _CONTRACT_ADVANCE_BONUS_CACHE.get(min_score)
+    if _time.time() - _CONTRACT_ADVANCE_BONUS_AT < 3600 and cached is not None:
+        return cached
+
+    try:
+        conn = connect_stock_db(timeout=10, row_factory=sqlite3.Row)
+        rows = conn.execute(
+            """
+            WITH ranked AS (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY stock_code
+                         ORDER BY fiscal_year DESC, fiscal_quarter DESC,
+                                  CASE WHEN fs_div='CFS' THEN 0 ELSE 1 END
+                       ) AS rn
+                FROM contract_advance_signals
+                WHERE quality_flag='ok'
+                  AND length(stock_code)=6
+                  AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn=1
+              AND signal_score >= ?
+            """,
+            (min_score,),
+        ).fetchall()
+        conn.close()
+
+        result = {}
+        for r in rows:
+            score = int(r["signal_score"] or 0)
+            bonus = min(max(score // 2, 1), 5)
+            result[r["stock_code"]] = {
+                "bonus": bonus,
+                "label": f"선수성부채 {r['signal_label']}",
+                "signal_score": score,
+                "gross_to_revenue_pct": r["gross_to_revenue_pct"],
+                "gross_qoq_pct": r["gross_qoq_pct"],
+                "gross_yoy_pct": r["gross_yoy_pct"],
+                "period": f"{r['fiscal_year']}Q{r['fiscal_quarter']}",
+                "fs_div": r["fs_div"],
+            }
+
+        _CONTRACT_ADVANCE_BONUS_CACHE[min_score] = result
+        _CONTRACT_ADVANCE_BONUS_AT = _time.time()
+        return result
+
+    except Exception as e:
+        logging.warning(f"[보너스] 계약부채/선수금 신호 로드 실패: {e}")
+        return {}
+
+
+def _load_inventory_sales_bonus_map(min_score: int = 4) -> dict[str, dict]:
+    """
+    재고·매출·수주 동시 변화 테이블 → stock_code별 생산/수요 확인 보너스.
+
+    build_up은 재고 증가가 수요 확인과 같이 나타나는 경우, digestion은 재고가
+    줄면서 매출이 오르는 경우다. risk_score가 높은 최신 행은 보너스 대신
+    risk_penalty로 반환해 텐버거 엔진에서 감점할 수 있게 한다.
+    """
+    global _INVENTORY_SALES_BONUS_CACHE, _INVENTORY_SALES_BONUS_AT
+    if _time.time() - _INVENTORY_SALES_BONUS_AT < 3600 and _INVENTORY_SALES_BONUS_CACHE:
+        return _INVENTORY_SALES_BONUS_CACHE
+
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            WITH ranked AS (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY stock_code
+                         ORDER BY fiscal_year DESC, fiscal_quarter DESC,
+                                  CASE WHEN fs_div='CFS' THEN 0 ELSE 1 END
+                       ) AS rn
+                FROM inventory_sales_signals
+                WHERE quality_flag='ok'
+                  AND length(stock_code)=6
+                  AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn=1
+              AND (signal_score >= ? OR risk_score >= ?)
+            """,
+            (min_score, min_score),
+        ).fetchall()
+        conn.close()
+
+        result: dict[str, dict] = {}
+        for r in rows:
+            score = int(r["signal_score"] or 0)
+            risk = int(r["risk_score"] or 0)
+            bonus = min(max(score // 2, 1), 4) if score >= min_score else 0
+            penalty = min(max(risk // 2, 1), 4) if risk >= min_score else 0
+            result[r["stock_code"]] = {
+                "bonus": bonus,
+                "risk_penalty": penalty,
+                "label": r["signal_label"],
+                "signal_type": r["signal_type"],
+                "signal_score": score,
+                "risk_score": risk,
+                "inventory_to_revenue_pct": r["inventory_to_revenue_pct"],
+                "inventory_qoq_pct": r["inventory_qoq_pct"],
+                "revenue_qoq_pct": r["revenue_qoq_pct"],
+                "period": f"{r['fiscal_year']}Q{r['fiscal_quarter']}",
+                "fs_div": r["fs_div"],
+            }
+
+        _INVENTORY_SALES_BONUS_CACHE = result
+        _INVENTORY_SALES_BONUS_AT = _time.time()
+        return result
+
+    except Exception as e:
+        logging.warning(f"[보너스] 재고·매출·수주 신호 로드 실패: {e}")
+        return {}
+
+
+def _load_cash_conversion_bonus_map(min_score: int = 4) -> dict[str, dict]:
+    """현금전환 품질 테이블 → stock_code별 보너스/감점 맵."""
+    global _CASH_CONVERSION_BONUS_CACHE, _CASH_CONVERSION_BONUS_AT
+    if _time.time() - _CASH_CONVERSION_BONUS_AT < 3600 and _CASH_CONVERSION_BONUS_CACHE:
+        return _CASH_CONVERSION_BONUS_CACHE
+
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            WITH ranked AS (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY stock_code
+                         ORDER BY fiscal_year DESC, fiscal_quarter DESC,
+                                  CASE WHEN fs_div='CFS' THEN 0 ELSE 1 END
+                       ) AS rn
+                FROM cash_conversion_signals
+                WHERE length(stock_code)=6
+                  AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn=1
+              AND (signal_score >= ? OR risk_score >= ?)
+            """,
+            (min_score, min_score),
+        ).fetchall()
+        conn.close()
+
+        result: dict[str, dict] = {}
+        for r in rows:
+            score = int(r["signal_score"] or 0)
+            risk = int(r["risk_score"] or 0)
+            result[r["stock_code"]] = {
+                "bonus": min(max(score // 2, 1), 4) if score >= min_score else 0,
+                "risk_penalty": min(max(risk // 2, 1), 4) if risk >= min_score else 0,
+                "label": r["signal_label"],
+                "signal_type": r["signal_type"],
+                "signal_score": score,
+                "risk_score": risk,
+                "ocf_margin_pct": r["ocf_margin_pct"],
+                "fcf_margin_pct": r["fcf_margin_pct"],
+                "rolling4_ocf_margin_pct": r["rolling4_ocf_margin_pct"] if "rolling4_ocf_margin_pct" in r.keys() else None,
+                "rolling4_fcf_margin_pct": r["rolling4_fcf_margin_pct"] if "rolling4_fcf_margin_pct" in r.keys() else None,
+                "receivable_to_revenue_pct": r["receivable_to_revenue_pct"],
+                "period": f"{r['fiscal_year']}Q{r['fiscal_quarter']}",
+                "fs_div": r["fs_div"],
+            }
+
+        _CASH_CONVERSION_BONUS_CACHE = result
+        _CASH_CONVERSION_BONUS_AT = _time.time()
+        return result
+    except Exception as e:
+        logging.warning(f"[보너스] 현금전환 신호 로드 실패: {e}")
         return {}
 
 
@@ -487,7 +809,7 @@ def _load_nps_monthly_bonus_map() -> dict:
         return _NPS_MONTHLY_BONUS_CACHE
     try:
         import sys as _sys
-        _emp_dir = "/Applications/stock_dashboard/employment_monitor"
+        _emp_dir = "/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor"
         if _emp_dir not in _sys.path:
             _sys.path.insert(0, _emp_dir)
         from collect_nps_monthly import get_nps_bonus_map
@@ -504,7 +826,7 @@ def _load_nps_monthly_bonus_map() -> dict:
 # 시그널 계산 메인
 # ══════════════════════════════════════════════════════════════════
 def calc_market_signals(db_conn=None) -> list:
-    conn  = db_conn or sqlite3.connect(DB_PATH)
+    conn  = db_conn or sqlite3.connect(DB_PATH, timeout=30)
     today = date.today().isoformat()
     cfgs  = conn.execute(
         "SELECT id,name,label,description,logic_type,params FROM signal_config "
@@ -740,7 +1062,7 @@ def _compute_market_regime_one(conn: sqlite3.Connection, market_label: str) -> d
 
     # ---- 2) US rates ----
     y10_raw, y10_sym = _get_latest_close(conn, ["^TNX", "10Y=F"])
-    y30_raw, y30_sym = _get_latest_close(conn, ["^TYX", "30Y=F"])
+    y30_raw, y30_sym = _get_latest_close(conn, ["^TYX"])
     y10 = _norm_us_yield(y10_sym, y10_raw)
     y30 = _norm_us_yield(y30_sym, y30_raw)
     y10_20_raw = _get_nth_close(conn, ["^TNX", "10Y=F"], 21)
@@ -876,7 +1198,7 @@ def _compute_market_regime_one(conn: sqlite3.Connection, market_label: str) -> d
             WHERE su.market LIKE ?
               AND COALESCE(su.stock_type,'') IN ('보통주','우선주')
               AND ph.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
-              AND substr(ph.date,1,10) >= date(?, '-3 days')
+              AND substr(ph.date,1,10) >= date(?, '-10 days')
         )
         SELECT
           AVG(CASE WHEN close > prev_close THEN 1.0 ELSE 0.0 END) * 100.0 as up_ratio,
@@ -1052,8 +1374,34 @@ def _compute_market_regime_one(conn: sqlite3.Connection, market_label: str) -> d
     }
 
 
-def get_market_regime_snapshot(db_conn=None) -> dict:
-    conn = db_conn or sqlite3.connect(DB_PATH)
+# ── 5단계 시장 국면 캐시 (장중 60초 / 장외 600초 TTL) ──────────────
+_market_regime_cache = {"data": None, "ts": 0.0, "last_date": ""}
+
+
+def invalidate_market_regime_cache():
+    """시장 국면 캐시 강제 무효화"""
+    _market_regime_cache["data"] = None
+    _market_regime_cache["ts"] = 0.0
+
+
+def _is_kr_market_open_now() -> bool:
+    """한국 정규장(평일 09:00~15:30) 운영 여부 확인"""
+    now = datetime.now()
+    if now.weekday() >= 5:  # 토, 일
+        return False
+    t = now.time()
+    return (t.hour == 9 and t.minute >= 0) or (9 < t.hour < 15) or (t.hour == 15 and t.minute <= 30)
+
+
+def get_market_regime_snapshot(db_conn=None, force_refresh: bool = False) -> dict:
+    now_ts = _time.time()
+    ttl = 60.0 if _is_kr_market_open_now() else 600.0  # 장중 1분, 장외 10분
+
+    if not force_refresh and _market_regime_cache["data"] is not None:
+        if (now_ts - _market_regime_cache["ts"]) < ttl:
+            return _market_regime_cache["data"]
+
+    conn = db_conn or connect_stock_db(timeout=30, row_factory=sqlite3.Row)
     try:
         _ensure_market_regime_tables(conn)
         kospi = _compute_market_regime_one(conn, "KOSPI")
@@ -1076,24 +1424,27 @@ def get_market_regime_snapshot(db_conn=None) -> dict:
                     "buy_allowed": bool(row[4]), "defense_needed": bool(row[5]),
                     "forced_level": row[6], "summary": row[7], "created_at": row[8],
                 })
-        return {
+        result = {
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "principle": "MA200 위는 매수 허가가 아니라 최소 조건. 금리·밸류·수급 악화 시 매수 제한.",
             "markets": [kospi, kosdaq],
             "briefings": briefings,
         }
+        _market_regime_cache["data"] = result
+        _market_regime_cache["ts"] = now_ts
+        return result
     finally:
         if not db_conn:
             conn.close()
 
 
 def generate_market_ai_briefings(db_conn=None) -> dict:
-    conn = db_conn or sqlite3.connect(DB_PATH)
+    conn = db_conn or connect_stock_db(timeout=30, row_factory=sqlite3.Row)
     try:
         _ensure_market_regime_tables(conn)
         snap = get_market_regime_snapshot(conn)
-        api_key = (_os.getenv("OPENAI_API_KEY") or "").strip()
-        model = (_os.getenv("MARKET_BRIEF_MODEL") or "gpt-4o-mini").strip()
+        api_key = is_configured()
+        model = "deepseek-v4-flash"
         today = date.today().isoformat()
 
         for m in snap.get("markets", []):
@@ -1159,16 +1510,26 @@ def generate_market_ai_briefings(db_conn=None) -> dict:
                 {"up_ratio_alt": up_ratio_alt, "up_ratio_main": up_ratio_now},
             )
             # frn20은 규모 단위가 달라 부호만 검증
+            # 2026-07-29 발견: investor_trading_daily(공공데이터포털 getInvstByTrdrStkInfo,
+            # 서비스 폐지됨)의 frgn_net이 2018~2026 전체 452만행 중 음수가 단 한 건도 없는
+            # 것으로 확인(항상 0 이상) — 원천 API 자체가 죽어있어 이 alt 계산은 구조적으로
+            # "외국인 순매도(음수)"를 절대 표현할 수 없음. 그 결과 실제 frn20_now(가격 순매수,
+            # 신뢰 가능한 KIS 소스)가 진짜로 음수(외국인 매도세)인 정상적인 날마다 이 교차체크가
+            # 항상 불일치로 걸려 block_save=True로 저장을 막고 있었음 — 실측: 최근 로그
+            # 114건 critical(차단) vs 84건 info(통과), 즉 절반 이상의 날에 시장 시그널 브리핑
+            # 저장이 이 죽은 데이터 때문에 막히고 있었음(하필 외국인이 실제로 매도하는,
+            # 가장 중요한 하락장 국면에서 더 자주 발생). 원천 재수집이 불가능하므로(API 폐지)
+            # 이 교차체크는 차단 사유에서 제외하고 정보성 로그로만 유지.
             sign_main = 1 if frn20_now > 0 else (-1 if frn20_now < 0 else 0)
             sign_alt = 1 if frn20_alt > 0 else (-1 if frn20_alt < 0 else 0)
             if sign_main != sign_alt:
                 _qa_log(
                     conn, today, market, trade_date,
-                    "crosscheck_frn20_sign", "critical", float(sign_alt), float(sign_main), float(sign_main - sign_alt),
-                    "외국인 20일 수급 부호 불일치 - 저장 보류",
+                    "crosscheck_frn20_sign", "info", float(sign_alt), float(sign_main), float(sign_main - sign_alt),
+                    "외국인 20일 수급 부호 불일치(alt 소스 investor_trading_daily가 폐지된 공공API 기반이라 "
+                    "항상 비음수 — 저장 차단하지 않음, 참고용)",
                     {"frn20_main_억": frn20_now, "frn20_alt_raw": frn20_alt},
                 )
-                block_save = True
             else:
                 _qa_log(
                     conn, today, market, trade_date,
@@ -1178,8 +1539,7 @@ def generate_market_ai_briefings(db_conn=None) -> dict:
                 )
             if api_key:
                 try:
-                    import openai
-                    client = openai.OpenAI(api_key=api_key, timeout=18.0, max_retries=0)
+                    client = OpenAI()
                     prompt = (
                         "아래 시장 국면 데이터를 바탕으로 한국어 5줄 이내 아침 브리핑을 작성하세요.\n"
                         f"- 시장: {m['market']}, 단계: {m['stage']}, 점수: {m['score']}\n"
@@ -1202,7 +1562,9 @@ def generate_market_ai_briefings(db_conn=None) -> dict:
                     )
                     summary = (res.choices[0].message.content or "").strip()
                 except Exception as e:
-                    summary = f"• AI 요약 생성 실패: {e}"
+                    # API 오류는 사용자 화면에 저장하지 않고, 검증된 시장 지표 요약으로 대체한다.
+                    logger.warning("[시장시그널브리핑] %s AI 요약 실패: %s", m["market"], e)
+                    summary = ""
             if not summary:
                 summary = (
                     f"• {m['market']} 단계 {m['stage']} / 점수 {m['score']}\n"
@@ -1262,7 +1624,7 @@ def generate_market_ai_briefings(db_conn=None) -> dict:
 
 
 def get_market_regime_qa_summary(db_conn=None, qa_date: str | None = None, limit: int = 100) -> dict:
-    conn = db_conn or sqlite3.connect(DB_PATH)
+    conn = db_conn or sqlite3.connect(DB_PATH, timeout=30)
     try:
         _ensure_market_regime_tables(conn)
         d = qa_date or date.today().isoformat()
@@ -1301,7 +1663,7 @@ def get_market_regime_qa_summary(db_conn=None, qa_date: str | None = None, limit
 
 
 def calc_stock_signals(stock_code: str, db_conn=None) -> list:
-    conn  = db_conn or sqlite3.connect(DB_PATH)
+    conn  = db_conn or sqlite3.connect(DB_PATH, timeout=30)
     today = date.today().isoformat()
     cfgs  = conn.execute(
         "SELECT id,name,label,description,logic_type,params FROM signal_config "
@@ -1632,11 +1994,12 @@ def _load_universe_maps(conn) -> dict:
     sector: dict = {}; sector_mid: dict = {}
     tvol:   dict = {}; name:   dict = {}
     for sc, sl, sm, nm, mc, mkt, tv in conn.execute("""
-        SELECT stock_code, sector_large, sector_mid, stock_name,
-               MAX(market_cap), MAX(market), MAX(trading_value)
+        SELECT DISTINCT ON (stock_code)
+               stock_code, sector_large, sector_mid, stock_name,
+               market_cap, market, trading_value
         FROM stock_universe
         WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
-        GROUP BY stock_code
+        ORDER BY stock_code, updated_at DESC, id DESC
     """).fetchall():
         mktcap[sc]     = mc or 0
         market[sc]     = mkt or ''
@@ -1926,14 +2289,14 @@ def _calc_adr(conn, params):
 
     # price_history에서 일별 등락 계산
     rows = conn.execute("""
-        SELECT p1.date, p1.close, p2.close as prev_close
+        SELECT DISTINCT ON (p1.date, p1.stock_code)
+               p1.date, p1.close, p2.close as prev_close
         FROM price_history p1
         JOIN price_history p2 ON p1.stock_code = p2.stock_code
             AND DATE(p2.date) = DATE(p1.date, '-1 day')
         WHERE p1.date >= ? AND p1.close > 0 AND p2.close > 0
             AND LENGTH(p1.stock_code) = 6 AND p1.stock_code GLOB '[0-9]*'
-        GROUP BY p1.date, p1.stock_code
-        ORDER BY p1.date DESC
+        ORDER BY p1.date DESC, p1.stock_code, p1.id DESC, p2.id DESC
     """, (cutoff,)).fetchall()
 
     if not rows:
@@ -2605,41 +2968,84 @@ def _calc_technical(conn, params, stock_code):
 # ══════════════════════════════════════════════════════════════════
 
 def _get_graham_data(conn, stock_code: str) -> dict:
-    """Graham 계산에 필요한 재무 데이터 조회."""
-    # 최근 5개 레코드 조회 후 ROE 기준 합리적인 레코드 선택
-    rows = conn.execute("""
-        SELECT eps, bps, roe, total_equity, total_assets, total_liabilities,
-               net_income, revenue, operating_profit
-        FROM financial_data
-        WHERE stock_code=? AND eps IS NOT NULL AND eps > 0
-          AND is_annual = 0
+    """Graham 계산에 필요한 재무 데이터 조회.
+
+    ⚠️ 2026-08-23 수정: 기존엔 "eps>0인 최근 분기 1개"를 그대로 채택해
+    변동성 큰 단일분기 EPS(예: 흑자전환 직후 소폭 흑자분기)를 연간치처럼
+    써서 Graham 내재가치를 극단적으로 과소평가하는 버그가 있었다
+    (CLAUDE.md 섹션8 TTM 규칙과 불일치). 최근 4개 분기 EPS 합산(TTM,
+    stock_collection_config.preferred_report_type 우선 · 기본 CFS)으로
+    변경 — main.py _calc_ttm_fundamentals()와 동일한 방법론.
+    """
+    import math
+
+    # 종목별 선호 report_type (없으면 CFS 기본값 — 기존 확립 관행)
+    cfg_row = conn.execute(
+        "SELECT config_value FROM stock_collection_config "
+        "WHERE stock_code=? AND config_key='preferred_report_type'",
+        (stock_code,),
+    ).fetchone()
+    preferred_rt = cfg_row[0] if cfg_row and cfg_row[0] else "CFS"
+    rt_sql = "report_type = 'OFS'" if preferred_rt == "OFS" else "(report_type = 'CFS' OR report_type IS NULL)"
+
+    # 최근 8개 분기 중 (year,quarter)별로 선호 report_type을 우선 채택해 중복 제거
+    q_rows = conn.execute(f"""
+        WITH ranked AS (
+            SELECT year, quarter, eps, bps, net_income, total_equity, roe,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY year, quarter
+                       ORDER BY CASE WHEN {rt_sql} THEN 0 ELSE 1 END,
+                                CASE WHEN data_source='fnguide' THEN 0 ELSE 1 END,
+                                id DESC
+                   ) rn
+            FROM financial_data
+            WHERE stock_code=? AND is_annual=0 AND quarter BETWEEN 1 AND 4
+        )
+        SELECT * FROM ranked WHERE rn=1
         ORDER BY year DESC, quarter DESC
-        LIMIT 5
+        LIMIT 8
     """, (stock_code,)).fetchall()
-    if not rows:
+    if len(q_rows) < 4:
         return {}
 
-    # 합리적인 레코드 선택: BPS 직접 보유 우선, 없으면 ROE<300% 기준 equity 관산 가능한 것
-    row = None
-    for r in rows:
-        _eps, _bps, _roe, _eq, _ast, _liab, _ni, _rev, _op = r
-        if not _eps or _eps <= 0:
-            continue
-        if _bps and _bps > 0:
-            row = r; break  # BPS 직접 존재
-        if _eq and _eq > 0 and _ni and _ni > 0 and _eq >= _ni / 3:
-            row = r; break  # ROE < 300% — equity 관산 가능
-    if not row:
-        row = rows[0]
+    latest4 = q_rows[:4]
 
-    eps, bps, roe, equity, assets, liab, net_inc, rev, op = row
+    # shares_issued — 개별분기 eps==0.0 플레이스홀더(순이익은 실존하는데
+    # eps만 결측 대체된 케이스) 보정용
+    su = conn.execute(
+        "SELECT shares_issued FROM stock_universe WHERE stock_code=?", (stock_code,)
+    ).fetchone()
+    shares_issued = float(su[0]) if su and su[0] else None
 
-    # BPS가 0이면 total_equity × eps / net_income 으로 관산
-    if (not bps or bps == 0) and equity and equity > 0 and net_inc and net_inc > 0 and eps > 0:
-        if equity >= net_inc / 3:  # ROE < 300% 기본 검증
-            shares_approx = net_inc / eps
-            if shares_approx > 0:
-                bps = equity / shares_approx
+    # 튜플 인덱스(row_factory에 의존하지 않기 위함):
+    # 0=year 1=quarter 2=eps 3=bps 4=net_income 5=total_equity 6=roe 7=rn
+    eps_ttm = 0.0
+    eps_valid = True
+    for r in latest4:
+        q_eps, q_ni = r[2], r[4]
+        if (q_eps is None or q_eps == 0.0) and q_ni is not None and q_ni != 0 and shares_issued:
+            q_eps = q_ni / shares_issued  # 0.0 플레이스홀더 보정
+        if q_eps is None:
+            eps_valid = False
+            break
+        eps_ttm += q_eps
+    if not eps_valid:
+        return {}
+
+    # BPS는 최신 분기(latest4[0]) 값 사용 — 없으면 다음 최신 분기로 폴백
+    bps = None
+    equity = None
+    roe = None
+    for r in latest4:
+        if r[3] and r[3] > 0:
+            bps, equity, roe = r[3], r[5], r[6]
+            break
+    if not bps and latest4[0][5] and shares_issued and shares_issued > 0:
+        bps = float(latest4[0][5]) / shares_issued
+        equity, roe = latest4[0][5], latest4[0][6]
+
+    if eps_ttm <= 0 or not bps or bps <= 0:
+        return {}
 
     # 현재 주가
     price_row = conn.execute("""
@@ -2651,19 +3057,15 @@ def _get_graham_data(conn, stock_code: str) -> dict:
 
     price = price_row[0]
 
-    # Graham 내재가치 = sqrt(22.5 × EPS × BPS)
-    # EPS, BPS 모두 양수여야 의미 있음
-    graham_iv = None
-    import math
-    if eps > 0 and bps and bps > 0:
-        graham_iv = math.sqrt(22.5 * eps * bps)
+    # Graham 내재가치 = sqrt(22.5 × EPS_TTM × BPS)
+    graham_iv = math.sqrt(22.5 * eps_ttm * bps)
 
-    per = round(price / eps, 1) if eps and eps > 0 else None
-    pbr = round(price / bps, 2) if bps and bps > 0 else None
-    discount = round((graham_iv - price) / graham_iv * 100, 1) if graham_iv and graham_iv > 0 else None
+    per = round(price / eps_ttm, 1) if eps_ttm > 0 else None
+    pbr = round(price / bps, 2) if bps > 0 else None
+    discount = round((graham_iv - price) / graham_iv * 100, 1) if graham_iv > 0 else None
 
     return {
-        'price': price, 'eps': eps, 'bps': bps,
+        'price': price, 'eps': round(eps_ttm, 2), 'bps': bps,
         'graham_iv': graham_iv, 'per': per, 'pbr': pbr,
         'discount': discount,  # 양수 = 저평가, 음수 = 고평가
         'roe': roe,
@@ -3052,7 +3454,7 @@ def calc_trend_candidates(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
 
     try:
         # ── 섹터 활성화 맵 ─────────────────────────────────────────
@@ -3096,7 +3498,7 @@ def calc_trend_candidates(conn=None) -> list:
             ) su ON p.stock_code = su.stock_code
             WHERE p.close > 0
             GROUP BY p.stock_code
-            HAVING cnt >= 120
+            HAVING COUNT(*) >= 120
         """, (_trend_mktcap_억,)).fetchall()
 
         candidates = []
@@ -3391,7 +3793,7 @@ def calc_stockeasy_trend_candidates(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
 
     try:
         sector_map = _build_sector_activation_map(conn)
@@ -3463,7 +3865,7 @@ def calc_stockeasy_trend_candidates(conn=None) -> list:
             ) su ON p.stock_code = su.stock_code
             WHERE p.close > 0
             GROUP BY p.stock_code
-            HAVING cnt >= 160
+            HAVING COUNT(*) >= 160
         """, (300,)).fetchall()  # 300억원 (억원 단위)
 
         candidates = []
@@ -3778,7 +4180,7 @@ def calc_value_candidates(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
 
     try:
         # EPS가 있는 종목 목록 (BPS는 equity/shares로 관산 가능)
@@ -3788,8 +4190,10 @@ def calc_value_candidates(conn=None) -> list:
             FROM financial_data fd
             LEFT JOIN stock_meta sm ON fd.stock_code = sm.stock_code
             LEFT JOIN (
-                SELECT stock_code, stock_name FROM stock_universe
-                WHERE stock_name IS NOT NULL GROUP BY stock_code
+                SELECT stock_code, MAX(stock_name) AS stock_name
+                FROM stock_universe
+                WHERE stock_name IS NOT NULL
+                GROUP BY stock_code
             ) su ON fd.stock_code = su.stock_code
             WHERE fd.eps IS NOT NULL AND fd.eps > 0
               AND LENGTH(fd.stock_code) = 6
@@ -3808,44 +4212,60 @@ def calc_value_candidates(conn=None) -> list:
             market_map[sc] = mkt or ''
 
         # ★ Graham 데이터 벌크 로드 (기존: 종목당 2 쿼리 × ~1000종목 → 2 쿼리로 통합)
-        # 1) 재무 데이터: stock_code당 최신 분기 행 선택 (최대 5행 로드 후 Python에서 최적 행 선택)
+        # 1) 재무 데이터: 최근 8분기 로드 후 Python에서 CFS/OFS 중복제거 + TTM 4분기 합산
+        #    (2026-07-24 버그수정: 기존엔 "eps>0인 가장 최근 분기 1개"만 골라 그 분기 EPS를
+        #     그대로 PER 계산에 사용 — 예: 에이엘티가 2025Q4 반짝 흑자분기(EPS+2779원) 앞뒤로
+        #     전부 적자인데도 "PER 3.0 강력 가치매수"로 오탐. CLAUDE.md 8절에 이미 문서화된
+        #     정식 규칙(EPS_TTM=최근4분기 합산, BPS_TTM=최근1분기)대로 재계산하도록 수정.
+        #     또한 CFS/OFS 중복 로우가 섞이면 "4개 로우"가 실제로는 2개 분기만 반복 카운트되는
+        #     문제가 있어(routes/tenbagger.py 기존 검증패턴과 동일하게) 종목별 override
+        #     (stock_collection_config.preferred_report_type, 기본 CFS) 기준으로 분기당 1행만
+        #     선택 후 합산.
+        _report_type_overrides = {r[0]: r[1] for r in conn.execute(
+            "SELECT stock_code, config_value FROM stock_collection_config "
+            "WHERE config_key='preferred_report_type'"
+        ).fetchall()}
         _fin_rows_bulk = conn.execute("""
-            SELECT stock_code, eps, bps, roe, total_equity, net_income
+            SELECT stock_code, year, quarter, report_type, eps, bps, roe, total_equity, net_income
             FROM financial_data
-            WHERE eps IS NOT NULL AND eps > 0
+            WHERE eps IS NOT NULL
               AND is_annual = 0
               AND LENGTH(stock_code) = 6 AND stock_code GLOB '[0-9]*'
             ORDER BY stock_code, year DESC, quarter DESC
         """).fetchall()
 
-        # stock_code별로 최적 행 선택 (_get_graham_data 내부 로직 재현)
-        _rows_by_sc: dict = _defaultdict(list)
-        for row in _fin_rows_bulk:
-            sc = row[0]
-            if len(_rows_by_sc[sc]) < 5:
-                _rows_by_sc[sc].append(row[1:])  # (eps, bps, roe, equity, net_inc)
+        # (stock_code, year, quarter) 단위로 report_type 후보를 모은 뒤 종목별 선호타입 선택
+        _variants_by_key: dict = _defaultdict(dict)
+        for sc, y, q, rt, eps, bps, roe, equity, net_inc in _fin_rows_bulk:
+            _variants_by_key[(sc, y, q)][rt] = (eps, bps, roe, equity, net_inc)
 
-        _graham_fin: dict = {}  # sc → (eps, bps_resolved, roe)
+        _rows_by_sc: dict = _defaultdict(list)
+        for (sc, y, q), variants in _variants_by_key.items():
+            pref = _report_type_overrides.get(sc, "CFS")
+            chosen_row = variants.get(pref) or next(iter(variants.values()))
+            _rows_by_sc[sc].append((y, q, *chosen_row))
+        for sc in _rows_by_sc:
+            _rows_by_sc[sc].sort(key=lambda r: (r[0], r[1]), reverse=True)
+
+        _graham_fin: dict = {}  # sc → (eps_ttm, bps_resolved, roe)
         for sc, rows in _rows_by_sc.items():
-            chosen = None
-            for eps, bps, roe, equity, net_inc in rows:
-                if not eps or eps <= 0:
-                    continue
-                if bps and bps > 0:
-                    chosen = (eps, bps, roe, equity, net_inc); break
-                if equity and equity > 0 and net_inc and net_inc > 0 and equity >= net_inc / 3:
-                    chosen = (eps, bps, roe, equity, net_inc); break
-            if not chosen and rows:
-                chosen = rows[0]
-            if chosen:
-                eps, bps, roe, equity, net_inc = chosen
-                # BPS 관산 (bps=0 이면 equity/shares로 계산)
-                if (not bps or bps == 0) and equity and equity > 0 and net_inc and net_inc > 0 and eps > 0:
-                    if equity >= net_inc / 3:
-                        shares = net_inc / eps
-                        if shares > 0:
-                            bps = equity / shares
-                _graham_fin[sc] = (eps, bps or 0, roe)
+            recent4 = rows[:4]
+            eps_vals = [r[2] for r in recent4 if r[2] is not None]
+            if len(eps_vals) < 4:
+                continue  # 최근 4분기 EPS가 모두 갖춰지지 않으면 TTM 계산 불가(관대한 단일분기 대체 금지)
+            ttm_eps = sum(eps_vals)
+            if ttm_eps <= 0:
+                continue  # 여전히 TTM 적자 — Graham 가치평가 대상 아님
+
+            # BPS/ROE/equity/net_income은 최근 1분기(직전 established 규칙) 기준
+            _, _, latest_eps, bps, roe, equity, net_inc = recent4[0]
+            # BPS 관산 (bps=0 이면 equity/shares로 계산, 최근분기 값 기준)
+            if (not bps or bps == 0) and equity and equity > 0 and net_inc and net_inc > 0 and latest_eps and latest_eps > 0:
+                if equity >= net_inc / 3:
+                    shares = net_inc / latest_eps
+                    if shares > 0:
+                        bps = equity / shares
+            _graham_fin[sc] = (ttm_eps, bps or 0, roe)
 
         # 2) 최신 종가 벌크 로드
         _price_map: dict = {}
@@ -3990,7 +4410,7 @@ def calc_top20_candidates(conn=None) -> list:
 
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
 
     try:
         # ── 섹터 활성화 맵 ─────────────────────────────────────────
@@ -4056,7 +4476,7 @@ def calc_top20_candidates(conn=None) -> list:
             ) su ON p.stock_code = su.stock_code
             WHERE p.close > 0
             GROUP BY p.stock_code
-            HAVING cnt >= 60
+            HAVING COUNT(*) >= 60
         """, (_mktcap_min_억,)).fetchall()
 
         candidates = []
@@ -4411,7 +4831,7 @@ def calc_combo_v2(conn=None) -> list:
 
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
 
     try:
         # ── 시장 환경: KOSPI 추세 확인 ─────────────────────────────
@@ -4450,11 +4870,19 @@ def calc_combo_v2(conn=None) -> list:
         # 최신 분기 영업이익이 양수인 종목만 대상
         profitable_codes = set()
         _fin_rows = conn.execute("""
-            SELECT stock_code FROM financial_data
-            WHERE is_annual=0 AND operating_profit > 0
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
-            GROUP BY stock_code
-            HAVING MAX(year*10+quarter)
+            SELECT stock_code
+            FROM (
+                SELECT stock_code, operating_profit,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY stock_code
+                           ORDER BY year DESC, quarter DESC,
+                                    CASE WHEN report_type='CFS' THEN 0 ELSE 1 END
+                       ) AS rn
+                FROM financial_data
+                WHERE is_annual=0
+                  AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+            ) latest
+            WHERE rn=1 AND operating_profit > 0
         """).fetchall()
         profitable_codes = {r[0] for r in _fin_rows}
 
@@ -4472,7 +4900,7 @@ def calc_combo_v2(conn=None) -> list:
             ) su ON p.stock_code = su.stock_code
             WHERE p.close > 0
             GROUP BY p.stock_code
-            HAVING cnt >= 120
+            HAVING COUNT(*) >= 120
         """, (_v2_mktcap_억,)).fetchall()
 
         candidates = []
@@ -4791,7 +5219,7 @@ def calc_earnings_explosion(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
 
     try:
@@ -4822,8 +5250,10 @@ def calc_earnings_explosion(conn=None) -> list:
                 MAX(CASE WHEN q.rn=5 THEN q.operating_profit END) as op_ya,
                 MAX(CASE WHEN q.rn=5 THEN q.revenue END)          as rev_ya
             FROM q GROUP BY q.stock_code
-            HAVING op0 IS NOT NULL AND rev0 IS NOT NULL
-               AND op_ya IS NOT NULL AND rev_ya IS NOT NULL
+            HAVING MAX(CASE WHEN q.rn=1 THEN q.operating_profit END) IS NOT NULL
+               AND MAX(CASE WHEN q.rn=1 THEN q.revenue END) IS NOT NULL
+               AND MAX(CASE WHEN q.rn=5 THEN q.operating_profit END) IS NOT NULL
+               AND MAX(CASE WHEN q.rn=5 THEN q.revenue END) IS NOT NULL
         """).fetchall()
 
         # ── 2. 종목 마스터 일괄 조회 ────────────────────────────────────
@@ -4958,7 +5388,7 @@ def calc_turnaround_momentum(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
 
     try:
@@ -4980,8 +5410,10 @@ def calc_turnaround_momentum(conn=None) -> list:
                 MAX(CASE WHEN rn=1 THEN revenue END)          as rev0,
                 MAX(CASE WHEN rn=5 THEN revenue END)          as rev_ya
             FROM q GROUP BY stock_code
-            HAVING op0 IS NOT NULL AND op1 IS NOT NULL
-               AND op2 IS NOT NULL AND op3 IS NOT NULL
+            HAVING MAX(CASE WHEN rn=1 THEN operating_profit END) IS NOT NULL
+               AND MAX(CASE WHEN rn=2 THEN operating_profit END) IS NOT NULL
+               AND MAX(CASE WHEN rn=3 THEN operating_profit END) IS NOT NULL
+               AND MAX(CASE WHEN rn=4 THEN operating_profit END) IS NOT NULL
         """).fetchall()
 
         su = {r["stock_code"]: r for r in conn.execute(
@@ -5117,7 +5549,7 @@ def calc_sector_megatrend(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
 
     try:
@@ -5307,7 +5739,7 @@ def calc_kiwoom_conditions(conn=None, strategy: str = "all") -> dict:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
 
     try:
@@ -5755,7 +6187,7 @@ def calc_kiwoom_conditions(conn=None, strategy: str = "all") -> dict:
 if __name__ == "__main__":
     init_signal_db()
     print("시그널 DB 초기화 완료")
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     print("\n[시장 시그널]")
     for r in calc_market_signals(conn):
         e = {'green':'🟢','yellow':'🟡','red':'🔴','gray':'⚪'}.get(r['signal'],'⚪')

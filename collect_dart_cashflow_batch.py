@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import logging
 import os
+import re
 import sqlite3
 import time
 from datetime import date
@@ -28,7 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DB_PATH  = "/Applications/stock_dashboard/stock.db"
+DB_PATH  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 RATE_SEC = 0.8   # DART API rate limit
 
 
@@ -97,6 +98,7 @@ def collect_one(
     refill_sparse: bool = False,
     refill_depr: bool = False,
     refill_cash: bool = False,
+    refill_capex: bool = False,
 ) -> int:
     """단일 종목 현금흐름표 수집. 반환: 저장 건수."""
     latest_y, latest_q = _latest_quarter()
@@ -125,6 +127,13 @@ def collect_one(
                     skip = False   # depreciation 재시도
                 elif refill_sparse and _is_sparse_cashflow_row(exists):
                     skip = False
+                elif refill_cash and exists[4] is None:
+                    skip = False   # cash_end 재시도 (2026-07-21: 이 게이트가 refill_cash/
+                                   # refill_capex를 아예 체크 안 해 항상 skip=True로 빠지던
+                                   # 버그 수정 — exists가 있으면 API호출 전에 무조건 건너뛰고
+                                   # 있었음)
+                elif refill_capex and exists[3] is None:
+                    skip = False   # capex 재시도 (2026-07-21 신규)
                 else:
                     skip = True
             if skip:
@@ -169,7 +178,13 @@ def collect_one(
                         m["investing_cf"] = val
                     elif acc in ("재무활동현금흐름", "재무활동으로인한현금흐름"):
                         m["financing_cf"] = val
-                    elif any(k in acc for k in ["유형자산의취득", "유형자산취득"]):
+                    elif any(k in acc for k in [
+                        "유형자산의취득", "유형자산취득", "유형자산의증가", "유형자산증가",
+                        "유무형자산의취득", "유무형자산취득", "유무형자산의증가", "유무형자산증가",
+                    ]):
+                        # 2026-07-21: "증가" 계열 라벨 추가 — scratch/claude_handoff_capex_depr_
+                        # material_20260516.md에서 이미 확인된 실사용 라벨 변형(취득 vs 증가)이
+                        # 이 DART 수집기엔 반영 안 돼 있었음(capex_q 잔여 커버리지 갭의 원인 중 하나).
                         if m["capex"] is None:
                             m["capex"] = abs(val)
                     elif any(k in acc for k in [
@@ -226,6 +241,25 @@ def collect_one(
                                 time.sleep(2 ** _attempt)
                                 continue
                             logger.warning(f"[{code}] {year}Q{qnum} depr 업데이트 실패: {e}")
+                            break
+                continue
+
+            # refill_capex 모드: capex만 업데이트 (2026-07-21 신규, "증가" 계열 라벨 추가 후 재수집용)
+            if refill_capex and exists and not _is_sparse_cashflow_row(exists):
+                if m["capex"] is not None:
+                    for _attempt in range(5):
+                        try:
+                            conn.execute("""
+                                UPDATE cash_flow_data SET capex=?
+                                WHERE stock_code=? AND year=? AND quarter=? AND is_annual=?
+                            """, (m["capex"], code, year, qnum, is_annual))
+                            saved += 1
+                            break
+                        except Exception as e:
+                            if "locked" in str(e).lower() and _attempt < 4:
+                                time.sleep(2 ** _attempt)
+                                continue
+                            logger.warning(f"[{code}] {year}Q{qnum} capex 업데이트 실패: {e}")
                             break
                 continue
 
@@ -309,7 +343,15 @@ def _codes_with_missing_periods(conn: sqlite3.Connection, codes: list[str], year
     return sparse_codes
 
 
+_PREFERRED_NAME_PAT = re.compile(r"\d?우[A-Z]?$")
+
+
 def _eligible_stock_codes(conn: sqlite3.Connection) -> list[str]:
+    """2026-07-20 수정: stock_meta 경유 종목은 stock_universe.stock_type 필터를 안 거쳐 우선주가
+    섞여 들어옴(실측: 대상 350종목 중 48%가 우선주 — 하이트진로2우B/유한양행우 등). 우선주는
+    DART corp_code가 보통주와 같아 financial_data(매출/영업이익)는 정상 채워지지만, 이 수집기의
+    현금흐름 조회는 항상 0건 반환 — 대상에서 제외해야 실제 채워질 종목만 재수집 대상이 됨.
+    stock_type이 NULL인 경우가 많아 신뢰 불가 → 종목명 접미사 패턴(우선주 명명 규칙)으로 판별."""
     rows = conn.execute("""
         WITH market_codes AS (
             SELECT stock_code
@@ -321,13 +363,14 @@ def _eligible_stock_codes(conn: sqlite3.Connection) -> list[str]:
             WHERE market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
               AND COALESCE(stock_type, '보통주') = '보통주'
         )
-        SELECT DISTINCT f.stock_code
+        SELECT DISTINCT f.stock_code, su.stock_name
         FROM financial_data f
         JOIN market_codes m ON m.stock_code = f.stock_code
+        LEFT JOIN stock_universe su ON su.stock_code = f.stock_code
         WHERE LENGTH(f.stock_code)=6 AND f.stock_code GLOB '[0-9]*'
         ORDER BY f.stock_code
     """).fetchall()
-    return [r[0] for r in rows]
+    return [code for code, name in rows if not (name and _PREFERRED_NAME_PAT.search(name))]
 
 
 def _codes_with_null_depreciation(conn: sqlite3.Connection, codes: list[str], years: int) -> list[str]:
@@ -368,12 +411,30 @@ def _codes_with_null_cash_end(conn: sqlite3.Connection, codes: list[str], years:
     return result
 
 
+def _codes_with_null_capex(conn: sqlite3.Connection, codes: list[str], years: int) -> list[str]:
+    """capex=NULL인 분기 행이 존재하는 종목 목록 (2026-07-21 신규, '증가' 라벨 추가 후 재수집용)."""
+    periods = _expected_periods(years)
+    result = []
+    for code in codes:
+        rows = conn.execute(
+            "SELECT year, quarter, is_annual, capex FROM cash_flow_data WHERE stock_code=?",
+            (code,)
+        ).fetchall()
+        existing_map = {(r[0], r[1], r[2]): r[3] for r in rows}
+        for (y, q, ia) in periods:
+            if (y, q, ia) in existing_map and existing_map[(y, q, ia)] is None:
+                result.append(code)
+                break
+    return result
+
+
 def run(
     years: int = 5,
     missing_only: bool = False,
     fill_missing: bool = False,
     refill_depr: bool = False,
     refill_cash: bool = False,
+    refill_capex: bool = False,
     limit: int | None = None,
 ):
     conn = sqlite3.connect(DB_PATH, timeout=60)
@@ -394,6 +455,8 @@ def run(
         codes = _codes_with_null_depreciation(conn, codes, years)
     elif refill_cash:
         codes = _codes_with_null_cash_end(conn, codes, years)
+    elif refill_capex:
+        codes = _codes_with_null_capex(conn, codes, years)
 
     if limit:
         codes = codes[:limit]
@@ -415,6 +478,7 @@ def run(
                 refill_sparse=fill_missing,
                 refill_depr=refill_depr,
                 refill_cash=refill_cash,
+                refill_capex=refill_capex,
             )
             ok += n
             if n:
@@ -439,6 +503,7 @@ if __name__ == "__main__":
     ap.add_argument("--fill-missing", action="store_true",      help="최근 N년 중 누락 기간이 있는 종목 보강")
     ap.add_argument("--refill-depr",  action="store_true",      help="depreciation=NULL인 행만 재수집/추정")
     ap.add_argument("--refill-cash",  action="store_true",      help="cash_end=NULL인 연간 행만 재수집")
+    ap.add_argument("--refill-capex", action="store_true",      help="capex=NULL인 분기 행만 재수집 (2026-07-21 신규, '증가' 라벨 추가 후)")
     ap.add_argument("--limit",        type=int,  default=None,  help="최대 종목수")
     args = ap.parse_args()
     run(
@@ -447,5 +512,6 @@ if __name__ == "__main__":
         fill_missing=args.fill_missing,
         refill_depr=args.refill_depr,
         refill_cash=args.refill_cash,
+        refill_capex=args.refill_capex,
         limit=args.limit,
     )

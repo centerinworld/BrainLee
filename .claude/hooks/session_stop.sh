@@ -5,7 +5,7 @@
 INPUT=$(cat)
 
 # 현재 시간 기록 (로그용)
-echo "$(date '+%Y-%m-%d %H:%M:%S') — session stop" >> /Applications/stock_dashboard/.claude/session.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') — session stop" >> /Volumes/Realtek_NVME/stock_dashboard/runtime/.claude/session.log
 
 cat <<'EOF'
 {

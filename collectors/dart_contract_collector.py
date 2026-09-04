@@ -20,11 +20,14 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 import requests
+from services import gemini_openai_compat as openai
+from services.gemini import is_configured
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-DART_API_KEY = None  # config에서 주입
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+DART_API_KEY = None  # 기본 계약공시 키
+DART_API_KEYS: list[str] | None = None
 DART_CONTRACT_AI_ENABLED = os.getenv("DART_CONTRACT_AI_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
 DART_CONTRACT_TELEGRAM_ENABLED = os.getenv("DART_CONTRACT_TELEGRAM_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
 
@@ -37,9 +40,14 @@ CONTRACT_KEYWORDS = [
 ]
 
 # 제외 키워드 (재무공시 오분류 방지)
+# 2026-09 수정: "정정"은 더 이상 일괄 제외하지 않는다. "[기재정정]단일판매·공급계약체결"처럼
+# 원 계약공시가 금액/기간을 정정하는 경우, CONTRACT_KEYWORDS 매칭 + _detect_correction()으로
+# 정정후 값을 추출해 원본 행을 갱신하는 것이 목적 — 무조건 버리면 계약금액 축소/기간연장 등
+# 실제 변경사항이 화면에 반영되지 않는 문제가 있었다(단, CONTRACT_KEYWORDS 자체가 없는
+# 정정공시는 여전히 아래 for문에서 걸러진다).
 EXCLUDE_KEYWORDS = [
-    "정정", "합병", "분할", "전환사채", "유상증자",
-    "자기주식", "감자", "청산",
+    "합병", "분할", "전환사채", "유상증자",
+    "자기주식", "감자", "청산", "거래정지",
 ]
 
 # ───────── 단위 정규화 ─────────
@@ -72,37 +80,66 @@ SIGNAL_RULES = {
 }
 
 
+def _krw_amount_from_text(text: str) -> Optional[float]:
+    """텍스트에서 원화 환산/표기 금액을 보조 추출한다."""
+    unit_re = r"(백\s*만원|천\s*만원|억\s*원|천\s*원|원)"
+    patterns = [
+        rf"약\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*{unit_re}",
+        rf"\(\s*약?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*{unit_re}\s*\)",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if not m:
+            continue
+        raw = float(m.group(1).replace(",", ""))
+        unit = m.group(2).replace(" ", "")
+        if unit == "억원":
+            unit = "억원"
+        return raw * UNIT_MAP.get(unit, 1)
+    return None
+
+
 # ══════════════════════════════════════════════
 #  DART API 호출 유틸
 # ══════════════════════════════════════════════
 
-def _get_api_key():
-    """수주공시 등 공시정보 → DART_API_KEY2 (KEY2) 사용."""
-    global DART_API_KEY
-    if DART_API_KEY:
-        return DART_API_KEY
+def _get_api_keys() -> list[str]:
+    """계약공시용 DART 키 목록을 우선순위대로 반환한다."""
+    global DART_API_KEY, DART_API_KEYS
+    if DART_API_KEYS:
+        return DART_API_KEYS
     import os, sys
     # 프로젝트 루트를 sys.path에 추가 (collectors/ 하위에서 실행 시 대비)
     _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if _root not in sys.path:
         sys.path.insert(0, _root)
     try:
-        from config import DART_API_KEY2 as _k  # 공시정보 → KEY2
-        DART_API_KEY = _k
+        from config import DART_API_KEY, DART_API_KEY2, DART_API_KEY3
+        keys = [DART_API_KEY2, DART_API_KEY, DART_API_KEY3]
     except Exception:
+        keys: list[str] = []
         # .env 파일 직접 읽기 (fallback)
         env_path = os.path.join(_root, ".env")
         if os.path.exists(env_path):
             for line in open(env_path):
                 line = line.strip()
                 if line.startswith("DART_API_KEY2="):
-                    DART_API_KEY = line.split("=", 1)[1].strip().strip('"\'')
-                    break
-                if line.startswith("DART_API_KEY=") and not DART_API_KEY:
-                    DART_API_KEY = line.split("=", 1)[1].strip().strip('"\'')
-        if not DART_API_KEY:
-            DART_API_KEY = os.getenv("DART_API_KEY2", os.getenv("DART_API_KEY", ""))
-    return DART_API_KEY
+                    keys.append(line.split("=", 1)[1].strip().strip('"\''))
+                elif line.startswith("DART_API_KEY="):
+                    keys.append(line.split("=", 1)[1].strip().strip('"\''))
+                elif line.startswith("DART_API_KEY3="):
+                    keys.append(line.split("=", 1)[1].strip().strip('"\''))
+        if not keys:
+            keys = [
+                os.getenv("DART_API_KEY2", ""),
+                os.getenv("DART_API_KEY", ""),
+                os.getenv("DART_API_KEY3", ""),
+            ]
+
+    deduped = [key for key in dict.fromkeys(key.strip() for key in keys if key and key.strip())]
+    DART_API_KEYS = deduped
+    DART_API_KEY = deduped[0] if deduped else ""
+    return deduped
 
 
 def _fetch_dart_list(bgn_de: str, end_de: str) -> list[dict]:
@@ -112,51 +149,69 @@ def _fetch_dart_list(bgn_de: str, end_de: str) -> list[dict]:
     "단일판매·공급계약"은 pblntf_ty가 없는 전체 공시에 포함됨.
     단기간(1~3일) 조회 시 총 1,000~3,000건 내외 — 전체 순회.
     """
-    key = _get_api_key()
-    if not key:
+    keys = _get_api_keys()
+    if not keys:
         logger.warning("[DART수주] API 키 없음")
         return []
     url = "https://opendart.fss.or.kr/api/list.json"
-    all_items: list[dict] = []
-    page_no = 1
-    page_count = 100
+    last_message = None
 
-    try:
-        while True:
-            resp = requests.get(url, params={
-                "crtfc_key": key,
-                "bgn_de": bgn_de,
-                "end_de": end_de,
-                "page_no": page_no,
-                "page_count": page_count,
-            }, timeout=20)
-            data = resp.json()
+    for key_idx, key in enumerate(keys, start=1):
+        all_items: list[dict] = []
+        page_no = 1
+        page_count = 100
+        try:
+            while True:
+                resp = requests.get(url, params={
+                    "crtfc_key": key,
+                    "bgn_de": bgn_de,
+                    "end_de": end_de,
+                    "page_no": page_no,
+                    "page_count": page_count,
+                }, timeout=20)
+                data = resp.json()
 
-            if data.get("status") not in ("000", "013"):
-                logger.warning(f"[DART수주] API 오류: {data.get('message')}")
-                break
+                status = str(data.get("status", ""))
+                if status not in ("000", "013"):
+                    last_message = data.get("message")
+                    logger.warning(f"[DART수주] API 오류: {last_message}")
+                    # 키별 한도/일시 오류면 다음 키로 재시도
+                    if key_idx < len(keys):
+                        logger.info("[DART수주] 보조 API 키로 재시도합니다 (%s/%s)", key_idx + 1, len(keys))
+                    all_items = []
+                    break
 
-            items = data.get("list", [])
-            all_items.extend(items)
+                items = data.get("list", [])
+                all_items.extend(items)
 
-            total = int(data.get("total_count", 0))
-            fetched = page_no * page_count
-            logger.debug(f"[DART수주] 페이지 {page_no}: {len(items)}건 (누적 {len(all_items)}/{total})")
+                total = int(data.get("total_count", 0))
+                fetched = page_no * page_count
+                logger.debug(f"[DART수주] 페이지 {page_no}: {len(items)}건 (누적 {len(all_items)}/{total})")
 
-            if fetched >= total or len(items) < page_count:
-                break
-            page_no += 1
-            time.sleep(0.1)
+                if fetched >= total or len(items) < page_count:
+                    logger.info(f"[DART수주] 총 {len(all_items)}건 공시 수집")
+                    return all_items
+                page_no += 1
+                time.sleep(0.1)
 
-            # 안전 장치: 일별 조회는 최대 5000건 (50페이지)
-            if page_no > 50:
-                logger.warning("[DART수주] 페이지 한도 초과 — 종료")
-                break
+                # 안전 장치: 일별 조회는 최대 5000건 (50페이지)
+                if page_no > 50:
+                    logger.warning("[DART수주] 페이지 한도 초과 — 종료")
+                    logger.info(f"[DART수주] 총 {len(all_items)}건 공시 수집")
+                    return all_items
 
-    except Exception as e:
-        logger.error(f"[DART수주] 목록 조회 실패: {e}")
+        except Exception as e:
+            last_message = str(e)
+            logger.error(f"[DART수주] 목록 조회 실패: {e}")
 
-    logger.info(f"[DART수주] 총 {len(all_items)}건 공시 수집")
+        if all_items:
+            logger.info(f"[DART수주] 총 {len(all_items)}건 공시 수집")
+            return all_items
+
+    if last_message:
+        logger.warning(f"[DART수주] 모든 API 키 시도 실패: {last_message}")
+    logger.info("[DART수주] 총 0건 공시 수집")
+    all_items = []
     return all_items
 
 
@@ -167,47 +222,52 @@ def _fetch_dart_document(rcept_no: str) -> str:
     DART는 ZIP 형식으로 응답. 압축 해제 후 HTML/XML 파싱.
     """
     import io, zipfile
-    key = _get_api_key()
     url = "https://opendart.fss.or.kr/api/document.xml"
-    try:
-        resp = requests.get(url, params={
-            "crtfc_key": key,
-            "rcept_no": rcept_no,
-        }, timeout=20)
-
-        content_type = resp.headers.get("Content-Type", "")
-        raw = resp.content
-
-        # ZIP 형식 처리 (대부분)
-        if raw[:2] == b"PK":
-            try:
-                zf = zipfile.ZipFile(io.BytesIO(raw))
-                texts = []
-                for name in zf.namelist():
-                    with zf.open(name) as f:
-                        try:
-                            content = f.read().decode("utf-8", errors="ignore")
-                        except Exception:
-                            content = f.read().decode("euc-kr", errors="ignore")
-                        # HTML/XML 태그 제거
-                        content = re.sub(r"<[^>]+>", " ", content)
-                        content = re.sub(r"&[a-z]+;", " ", content)
-                        content = re.sub(r"\s+", " ", content).strip()
-                        texts.append(content)
-                return " ".join(texts)[:8000]
-            except Exception as e:
-                logger.warning(f"[DART수주] ZIP 압축 해제 실패 {rcept_no}: {e}")
-
-        # XML/HTML 직접 처리
-        text = resp.text
-        text = re.sub(r"<[^>]+>", " ", text)
-        text = re.sub(r"&[a-z]+;", " ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text[:8000]
-
-    except Exception as e:
-        logger.error(f"[DART수주] 문서 조회 실패 {rcept_no}: {e}")
+    keys = _get_api_keys()
+    if not keys:
         return ""
+    for key_idx, key in enumerate(keys, start=1):
+        try:
+            resp = requests.get(url, params={
+                "crtfc_key": key,
+                "rcept_no": rcept_no,
+            }, timeout=20)
+
+            raw = resp.content
+
+            # ZIP 형식 처리 (대부분)
+            if raw[:2] == b"PK":
+                try:
+                    zf = zipfile.ZipFile(io.BytesIO(raw))
+                    texts = []
+                    for name in zf.namelist():
+                        with zf.open(name) as f:
+                            try:
+                                content = f.read().decode("utf-8", errors="ignore")
+                            except Exception:
+                                content = f.read().decode("euc-kr", errors="ignore")
+                            content = re.sub(r"<[^>]+>", " ", content)
+                            content = re.sub(r"&[a-z]+;", " ", content)
+                            content = re.sub(r"\s+", " ", content).strip()
+                            texts.append(content)
+                    return " ".join(texts)[:8000]
+                except Exception as e:
+                    logger.warning(f"[DART수주] ZIP 압축 해제 실패 {rcept_no}: {e}")
+
+            text = resp.text
+            if "status" in text and "message" in text and "사용한도를 초과" in text and key_idx < len(keys):
+                logger.warning(f"[DART수주] 문서 API 오류: 사용한도를 초과하였습니다.")
+                logger.info("[DART수주] 문서 조회 보조 API 키로 재시도합니다 (%s/%s)", key_idx + 1, len(keys))
+                continue
+
+            text = re.sub(r"<[^>]+>", " ", text)
+            text = re.sub(r"&[a-z]+;", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text[:8000]
+
+        except Exception as e:
+            logger.error(f"[DART수주] 문서 조회 실패 {rcept_no}: {e}")
+    return ""
 
 
 # ══════════════════════════════════════════════
@@ -240,6 +300,62 @@ def _classify_contract_type(text: str, report_nm: str) -> str:
 #  금액/비율 파싱
 # ══════════════════════════════════════════════
 
+_CORRECTION_DATE_RE = re.compile(
+    r"정정관련\s*공시서류제출일\s*([0-9]{4}[-.][0-9]{1,2}[-.][0-9]{1,2})"
+)
+_CORRECTION_TABLE_AMOUNT_RE = re.compile(
+    r"계약금액\s*\(?원?\)?[:\s]*([0-9][0-9,]*(?:\.[0-9]+)?)\s+([0-9][0-9,]*(?:\.[0-9]+)?)"
+)
+_CORRECTION_TABLE_END_RE = re.compile(
+    r"종료일\s*[:\s]*([0-9]{4}[-.][0-9]{1,2}[-.][0-9]{1,2})\s+([0-9]{4}[-.][0-9]{1,2}[-.][0-9]{1,2})"
+)
+_CORRECTION_TABLE_RATIO_RE = re.compile(
+    r"매출액\s*대비\s*\(?%?\)?[:\s]*([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)"
+)
+
+
+def _detect_correction(text: str) -> dict:
+    """정정신고(보고) 공시에서 원 공시 제출일과 정정전/정정후 값을 추출한다.
+
+    DART "[기재정정]" 공시는 본문 상단에 "정정전/정정후" 비교표를 먼저 제시하고
+    그 뒤에 정정 반영된 계약 전체 내역을 재수록하는 구조다(실제 사례 확인:
+    아시아나IDT 20260903800538). 문제는 이 비교표가 "계약금액(원) 13,344,100,000
+    13,501,400,000" 처럼 정정전 값을 먼저 적기 때문에, 일반 _extract_amounts()의
+    첫 매칭(re.search) 패턴이 이 정정전(구) 값을 잘못 채택할 위험이 있다 —
+    여기서 정정후 값을 먼저 확정해두면 이후 파싱 단계가 그 값을 우선하도록 만들 수 있다.
+    """
+    result = {
+        "is_correction": False,
+        "corrects_disclosed_at": None,  # YYYY-MM-DD, 원 공시 제출일
+        "correction_amount_before": None,
+        "correction_amount_after": None,
+        "correction_end_before": None,
+        "correction_end_after": None,
+        "correction_ratio_before": None,
+        "correction_ratio_after": None,
+    }
+    if "정정관련" not in text and "정정신고" not in text:
+        return result
+    m = _CORRECTION_DATE_RE.search(text)
+    if not m:
+        return result
+    result["is_correction"] = True
+    result["corrects_disclosed_at"] = m.group(1).replace(".", "-")
+    amt = _CORRECTION_TABLE_AMOUNT_RE.search(text)
+    if amt:
+        result["correction_amount_before"] = float(amt.group(1).replace(",", ""))
+        result["correction_amount_after"] = float(amt.group(2).replace(",", ""))
+    end = _CORRECTION_TABLE_END_RE.search(text)
+    if end:
+        result["correction_end_before"] = end.group(1).replace(".", "-")
+        result["correction_end_after"] = end.group(2).replace(".", "-")
+    ratio = _CORRECTION_TABLE_RATIO_RE.search(text)
+    if ratio:
+        result["correction_ratio_before"] = float(ratio.group(1))
+        result["correction_ratio_after"] = float(ratio.group(2))
+    return result
+
+
 def _extract_amounts(text: str) -> dict:
     """공시 원문에서 계약금액, 매출액, 비율 추출."""
     result = {
@@ -254,46 +370,111 @@ def _extract_amounts(text: str) -> dict:
         "contract_start": None,
         "contract_end": None,
     }
+    result.update(_detect_correction(text))
 
     # 계약금액 추출
-    patterns = [
-        r"계약금액[:\s]*([0-9,]+(?:\.[0-9]+)?)\s*(백만원|천만원|억원|천원|원|USD|EUR)",
-        r"공급금액[:\s]*([0-9,]+(?:\.[0-9]+)?)\s*(백만원|천만원|억원|원)",
-        r"수주금액[:\s]*([0-9,]+(?:\.[0-9]+)?)\s*(백만원|천만원|억원|원)",
-        r"계약\s*총액[:\s]*([0-9,]+(?:\.[0-9]+)?)\s*(백만원|천만원|억원|원)",
-    ]
+    # 2026-07-21 수정: 실제 DART 표준양식은 "계약금액(원) 32,352,000,000"처럼 단위가
+    # 라벨 직후 괄호 안에 오고 숫자 자체엔 단위가 안 붙는 형태가 대부분이었음(기존 규칙은
+    # 숫자 뒤에 단위가 붙는 형태만 가정해 대부분 매칭 실패). "확정 계약금액 -"처럼 값이
+    # "-"(미공시/조건부)인 라벨은 자연히 건너뛰고 다음 라벨(계약금액 총액 등)에서 재시도한다.
+    # 2026-09 수정: 정정공시는 위에서 이미 "정정후" 금액을 확정했으므로, 그 값이 있으면
+    # 아래 일반 패턴 루프를 건너뛰고 바로 채택한다(정정전/정정후 비교표의 첫 숫자가
+    # 구 값이라 일반 re.search 패턴이 오채택할 위험을 원천 차단).
+    NUM_RE = r"(?P<num>[0-9][0-9,]*(?:\.[0-9]+)?)"
+    UNIT_RE = r"(?P<unit>백만원|천만원|억원|천원|원|USD|EUR)"
+    POST_UNIT_RE = r"(?P<post_unit>백만원|천만원|억원|천원|원)"
+    if result.get("correction_amount_after") is not None:
+        # 정정공시는 위에서 이미 "정정후" 금액을 확정했으므로 일반 패턴 루프(아래)를
+        # 건너뛰고 바로 채택 — 정정전/정정후 비교표의 첫 숫자(구 값)를 일반
+        # re.search 패턴이 오채택할 위험을 원천 차단. 계약상대방/계약기간 등
+        # 나머지 필드는 아래 로직이 계속 이어서 정상 채운다.
+        result["contract_amount"] = result["correction_amount_after"]
+        result["contract_unit"] = "원"
+        result["contract_amount_krw"] = result["correction_amount_after"]
+        if result.get("correction_end_after"):
+            result["contract_end"] = result["correction_end_after"]
+        patterns = []
+    else:
+        patterns = [
+            rf"해지금액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+            rf"확정\s*계약금액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+            rf"계약금액\s*총액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+            rf"총\s*계약금액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+            rf"계약금액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+            rf"계약\s*금액[\s\S]{{0,80}}?(?P<unit>USD|EUR)\s*{NUM_RE}",
+            rf"계약\s*금액[\s\S]{{0,40}}?{NUM_RE}\s*{POST_UNIT_RE}",
+            rf"공급금액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+            rf"수주금액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+            rf"계약\s*총액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+        ]
     for pat in patterns:
         m = re.search(pat, text)
-        if m:
-            raw_val = float(m.group(1).replace(",", ""))
-            unit = m.group(2).strip()
-            multiplier = UNIT_MAP.get(unit, 1)
-            result["contract_amount"] = raw_val
-            result["contract_unit"] = unit
+        if not m:
+            continue
+        unit = (m.groupdict().get("unit") or m.groupdict().get("post_unit") or "원").strip()
+        raw_val = float(m.group("num").replace(",", ""))
+        # 2026-09 수정: "계약금액 1) 총계약금액 : USD 19,500,000..."처럼 단위·괄호가
+        # 전부 optional인 패턴("계약금액\s*(unit)?[:\s]*숫자")이 항목 나열번호("1)", "2)"
+        # 등)를 계약금액으로 오인식하는 사례가 다수 발견됨(기술이전/바이오 자유서식
+        # 공시에서 흔함). 단위가 명시 안 됐는데(기본값 '원') 값이 만원 미만이거나,
+        # 숫자 바로 뒤가 ')' 또는 '.'로 끝나는(목록번호로 보이는) 경우는 실제 계약금액일
+        # 수 없으므로 이 패턴을 버리고 다음(더 구체적인) 패턴으로 넘어간다.
+        raw_digits = m.group("num").replace(",", "")
+        looks_like_list_marker = (
+            len(raw_digits) <= 2
+            and text[m.end():m.end() + 1] in (")", ".")
+        )
+        implausibly_small = unit == "원" and raw_val < 10000
+        if looks_like_list_marker or implausibly_small:
+            continue
+        multiplier = UNIT_MAP.get(unit, 1)
+        result["contract_amount"] = raw_val
+        result["contract_unit"] = unit
+        if unit in {"USD", "EUR"}:
+            nearby = text[max(0, m.start() - 40):min(len(text), m.end() + 240)]
+            result["contract_amount_krw"] = _krw_amount_from_text(nearby) or _krw_amount_from_text(text)
+        else:
             result["contract_amount_krw"] = raw_val * multiplier
-            break
+        break
 
-    # 매출액 대비 비율 추출
-    ratio_patterns = [
-        r"최근\s*사업연도\s*매출액\s*대비[:\s]*([0-9]+(?:\.[0-9]+)?)\s*%",
-        r"매출액\s*대비[:\s]*([0-9]+(?:\.[0-9]+)?)\s*%",
-        r"([0-9]+(?:\.[0-9]+)?)\s*%.*?(?:매출|수주)",
-    ]
-    for pat in ratio_patterns:
-        m = re.search(pat, text)
-        if m:
-            result["contract_ratio_pct"] = float(m.group(1))
-            break
+    # 매출액 대비 비율 추출 (2026-07-21: "매출액대비(%) 48.7"처럼 공백/괄호 없는 변형 추가)
+    # ⚠️ 기존 3번째 폴백 패턴("N%...매출|수주" 근처 아무 숫자나 매칭)은 "선급금 30%" 같은
+    # 무관한 문구를 오탐하는 사례를 발견해 제거 — 값이 없으면 None을 유지하고, 아래 739행
+    # 근처의 DB 기반 재계산(contract_amount_krw/매출액)이 대신 처리하도록 함(정확도 우선).
+    if result.get("correction_ratio_after") is not None:
+        # 계약금액과 동일한 이유(정정전 값이 먼저 나오는 비교표 구조)로 정정후
+        # 매출액대비 비율을 우선 채택.
+        result["contract_ratio_pct"] = result["correction_ratio_after"]
+    else:
+        ratio_patterns = [
+            r"최근\s*사업연도\s*매출액\s*대비\s*\(?%?\)?[:\s]*([0-9]+(?:\.[0-9]+)?)\s*%?",
+            r"매출액\s*대비\s*\(?%?\)?[:\s]*([0-9]+(?:\.[0-9]+)?)\s*%?",
+        ]
+        for pat in ratio_patterns:
+            m = re.search(pat, text)
+            if m:
+                result["contract_ratio_pct"] = float(m.group(1))
+                break
 
-    # 매출 기준값 (비율 없으면 나중에 DB에서 계산)
+    # 매출 기준값 (2026-07-21 수정: "최근 매출액(원)"처럼 "사업연도"가 없는 표기와
+    # "최근매출액"(공백없음) 변형 추가, 단위도 라벨 직후 괄호 형태로 재작성)
     rev_patterns = [
-        r"최근\s*사업연도\s*매출액[:\s]*([0-9,]+(?:\.[0-9]+)?)\s*(백만원|억원|원)",
+        rf"최근\s*사업연도\s*매출액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+        rf"최근\s*매출액\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
+        rf"최근\s*사업년도말[\s\S]{{0,80}}?매출액(?:은)?\s*\(?{UNIT_RE}?\)?[:\s]*{NUM_RE}",
     ]
     for pat in rev_patterns:
         m = re.search(pat, text)
         if m:
-            raw = float(m.group(1).replace(",", ""))
-            unit = m.group(2).strip()
+            # The optional unit appears before the value, so positional capture
+            # groups can turn `원` into the numeric input. Use stable named groups.
+            unit = (m.groupdict().get("unit") or "원").strip()
+            raw_text = m.groupdict().get("num") or ""
+            try:
+                raw = float(raw_text.replace(",", ""))
+            except (TypeError, ValueError):
+                logger.warning("[DART수주] 매출 기준값 숫자 파싱 생략: %r", raw_text)
+                continue
             result["revenue_base"] = raw * UNIT_MAP.get(unit, 1)
             break
 
@@ -344,7 +525,12 @@ def _extract_amounts(text: str) -> dict:
             break
 
     # 계약 기간 추출
+    # 2026-07-21 수정: 실제 DART 표준양식 다수가 "계약기간 시작일 2026-07-20 종료일
+    # 2031-12-31" 형태(시작일/종료일 라벨 분리)인데 기존 규칙은 "DATE~DATE" 인접 표기만
+    # 가정해 거의 매칭되지 않았음 — 시작일/종료일 라벨 패턴을 우선 시도.
     date_patterns = [
+        r"계약기간\s*시작일\s*(\d{4}[.\-]\d{1,2}[.\-]\d{1,2})\s*종료일\s*(\d{4}[.\-]\d{1,2}[.\-]\d{1,2})",
+        r"시작일\s*(\d{4}[.\-]\d{1,2}[.\-]\d{1,2})\s*종료일\s*(\d{4}[.\-]\d{1,2}[.\-]\d{1,2})",
         r"계약기간[:\s]*(\d{4}[.\-]\d{1,2}[.\-]\d{1,2})\s*[~\-]\s*(\d{4}[.\-]\d{1,2}[.\-]\d{1,2})",
         r"납품기한[:\s]*(\d{4}[.\-]\d{1,2}[.\-]\d{1,2})",
     ]
@@ -367,10 +553,8 @@ def _ai_analyze_contract(stock_name: str, report_nm: str, parsed: dict,
                           raw_text: str) -> dict:
     """OpenAI로 공시 내용 분석 → 매수 시그널 평가."""
     try:
-        import openai
         import os
-        openai.api_key = os.getenv("OPENAI_API_KEY", "")
-        if not openai.api_key:
+        if not is_configured():
             return _rule_based_signal(parsed)
 
         ratio_str = (f"{parsed['contract_ratio_pct']:.1f}%"
@@ -528,13 +712,72 @@ def _stock_code_from_dart(corp_code: str, corp_name: str) -> Optional[str]:
     return None
 
 
+def _ensure_correction_columns(conn) -> None:
+    """dart_contracts에 정정공시 매칭용 컬럼이 없으면 추가한다."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(dart_contracts)").fetchall()}
+    for col, typ in {
+        "is_correction": "INTEGER DEFAULT 0",
+        "corrects_rcept_no": "TEXT",
+        "corrected_by_rcept_no": "TEXT",
+    }.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE dart_contracts ADD COLUMN {col} {typ}")
+    conn.commit()
+
+
+def _find_original_contract(conn, stock_code: str, corrects_disclosed_at: str) -> Optional[str]:
+    """정정공시가 가리키는 원 공시(rcept_no)를 stock_code+공시일로 찾는다.
+    disclosed_at은 DART list.json 원본 그대로(YYYYMMDD)라 대시 포맷과 둘 다 비교한다."""
+    if not stock_code or not corrects_disclosed_at:
+        return None
+    compact = corrects_disclosed_at.replace("-", "")
+    row = conn.execute(
+        """
+        SELECT rcept_no FROM dart_contracts
+        WHERE stock_code=? AND COALESCE(is_correction,0)=0
+          AND (disclosed_at=? OR disclosed_at=? OR substr(disclosed_at,1,10)=?)
+        ORDER BY rcept_no DESC LIMIT 1
+        """,
+        (stock_code, compact, corrects_disclosed_at, corrects_disclosed_at),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _apply_correction_to_original(conn, original_rcept_no: str, correction_rcept_no: str, parsed: dict) -> None:
+    """정정후 값을 원 공시 행에 반영(supersede)하고 상호참조를 남긴다."""
+    conn.execute(
+        """
+        UPDATE dart_contracts SET
+            contract_amount=?, contract_unit=?, contract_amount_krw=?,
+            contract_end=?, corrected_by_rcept_no=?
+        WHERE rcept_no=?
+        """,
+        (
+            parsed.get("contract_amount"), parsed.get("contract_unit"), parsed.get("contract_amount_krw"),
+            parsed.get("contract_end"), correction_rcept_no, original_rcept_no,
+        ),
+    )
+    conn.commit()
+
+
 def _save_contract(data: dict, max_retries: int = 6):
     """dart_contracts DB 저장. DB 잠금 시 지수 백오프 재시도."""
+    columns = (
+        "rcept_no", "stock_code", "stock_name", "disclosed_at", "report_nm",
+        "contract_amount", "contract_unit", "contract_amount_krw",
+        "revenue_base", "contract_ratio_pct", "counterparty",
+        "counterparty_country", "is_overseas", "contract_start",
+        "contract_end", "contract_type", "ai_score", "ai_summary",
+        "ai_signal", "signal_strength", "raw_text", "created_at",
+        "is_correction", "corrects_rcept_no",
+    )
+    values = tuple(data.get(column) for column in columns)
     for attempt in range(max_retries):
         try:
             conn = sqlite3.connect(DB_PATH, timeout=60)
             conn.execute("PRAGMA busy_timeout = 60000")  # 60초
             try:
+                _ensure_correction_columns(conn)
                 conn.execute("""
                     INSERT OR IGNORE INTO dart_contracts
                     (rcept_no, stock_code, stock_name, disclosed_at, report_nm,
@@ -543,17 +786,18 @@ def _save_contract(data: dict, max_retries: int = 6):
                      counterparty, counterparty_country, is_overseas,
                      contract_start, contract_end, contract_type,
                      ai_score, ai_summary, ai_signal, signal_strength,
-                     raw_text, created_at)
+                     raw_text, created_at, is_correction, corrects_rcept_no)
                     VALUES
-                    (:rcept_no,:stock_code,:stock_name,:disclosed_at,:report_nm,
-                     :contract_amount,:contract_unit,:contract_amount_krw,
-                     :revenue_base,:contract_ratio_pct,
-                     :counterparty,:counterparty_country,:is_overseas,
-                     :contract_start,:contract_end,:contract_type,
-                     :ai_score,:ai_summary,:ai_signal,:signal_strength,
-                     :raw_text,:created_at)
-                """, data)
+                    (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, values)
                 conn.commit()
+                # 정정공시면 원 공시 행을 정정후 값으로 갱신(supersede)한다.
+                # 2026-09 신규: 이전에는 "정정" 자체를 EXCLUDE_KEYWORDS로 걸러 정정된
+                # 값(계약금액 축소/기간연장 등)이 화면에 전혀 반영되지 않았음.
+                if data.get("is_correction") and data.get("corrects_rcept_no"):
+                    _apply_correction_to_original(
+                        conn, data["corrects_rcept_no"], data["rcept_no"], data
+                    )
                 return  # 성공
             finally:
                 conn.close()
@@ -721,12 +965,21 @@ def collect_dart_contracts(days: int = 1, min_signal: int = 2,
         parsed["contract_type"] = _classify_contract_type(raw_text, report_nm)
 
         # 매출액 대비 비율 계산 (DB에서 보완)
+        # 2026-09 수정: 기존엔 CFS/OFS·quarter·data_source tiebreak가 전혀 없어
+        # 동일 종목이라도 요청마다 다른 report_type 매출이 임의로 선택될 수
+        # 있었음 — routes/order_contracts.py의 검증된 tiebreak 순서(CFS 우선 >
+        # quarter=4/0 우선 > DART 소스 우선 > id DESC) 재사용.
         if not parsed["contract_ratio_pct"] and parsed.get("contract_amount_krw") and stock_code:
             conn = sqlite3.connect(DB_PATH, timeout=30)
             row = conn.execute("""
                 SELECT revenue FROM financial_data
-                WHERE stock_code=? AND is_annual=1
-                ORDER BY year DESC LIMIT 1
+                WHERE stock_code=? AND is_annual=1 AND revenue IS NOT NULL AND revenue > 0
+                ORDER BY year DESC,
+                         (CASE WHEN report_type='CFS' THEN 0 ELSE 1 END),
+                         (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
+                         (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
+                         id DESC
+                LIMIT 1
             """, (stock_code,)).fetchone()
             conn.close()
             if row and row[0] and row[0] > 0:
@@ -742,6 +995,19 @@ def collect_dart_contracts(days: int = 1, min_signal: int = 2,
             ai_result = _ai_analyze_contract(corp_name, report_nm, parsed, raw_text)
         ai_score = ai_result.get("score", 30)
         signal_strength = _calc_signal_strength(parsed, ai_score)
+
+        # 정정공시("[기재정정]...")면 원 공시 rcept_no를 찾아 상호참조를 남긴다.
+        # 못 찾으면(원 공시가 아직 미수집 등) 신규 행으로 저장(감사기록 목적).
+        corrects_rcept_no = None
+        if parsed.get("is_correction") and stock_code:
+            conn = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                _ensure_correction_columns(conn)
+                corrects_rcept_no = _find_original_contract(
+                    conn, stock_code, parsed.get("corrects_disclosed_at") or ""
+                )
+            finally:
+                conn.close()
 
         # 저장
         record = {
@@ -767,6 +1033,8 @@ def collect_dart_contracts(days: int = 1, min_signal: int = 2,
             "signal_strength": signal_strength,
             "raw_text": raw_text[:4000],
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "is_correction": 1 if parsed.get("is_correction") else 0,
+            "corrects_rcept_no": corrects_rcept_no,
         }
         _save_contract(record)
 
@@ -789,6 +1057,57 @@ def collect_dart_contracts(days: int = 1, min_signal: int = 2,
 
     logger.info(f"[DART수주] 총 {len(results)}건 처리 완료")
     return results
+
+
+def collect_dart_contracts_catchup(
+    *,
+    max_backfill_days: int = 14,
+    min_signal: int = 2,
+    skip_ai: bool = False,
+) -> dict:
+    """Backfill recent gaps from the latest saved row up to today."""
+    end_dt = date.today()
+    fallback_start = end_dt - timedelta(days=max_backfill_days)
+
+    latest_raw = None
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        row = conn.execute("SELECT MAX(disclosed_at) FROM dart_contracts").fetchone()
+        latest_raw = row[0] if row else None
+    finally:
+        conn.close()
+
+    start_dt = fallback_start
+    if latest_raw:
+        try:
+            latest_dt = datetime.strptime(str(latest_raw), "%Y%m%d").date()
+            start_dt = max(fallback_start, latest_dt + timedelta(days=1))
+        except ValueError:
+            logger.warning(f"[DART수주] latest disclosed_at 파싱 실패: {latest_raw}")
+
+    if start_dt > end_dt:
+        start_dt = end_dt
+
+    bgn_str = start_dt.strftime("%Y%m%d")
+    end_str = end_dt.strftime("%Y%m%d")
+    results: list[dict] = []
+    cursor = start_dt
+    while cursor <= end_dt:
+        day_str = cursor.strftime("%Y%m%d")
+        results.extend(
+            collect_dart_contracts(
+                min_signal=min_signal,
+                skip_ai=skip_ai,
+                bgn_str=day_str,
+                end_str=day_str,
+            )
+        )
+        cursor += timedelta(days=1)
+    return {
+        "start_date": bgn_str,
+        "end_date": end_str,
+        "saved_count": len(results),
+    }
 
 
 def backfill_dart_contracts(days: int = 30, skip_ai: bool = True,

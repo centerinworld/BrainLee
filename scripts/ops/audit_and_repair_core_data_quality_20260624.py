@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB = ROOT / "stock.db"
 OUT_ROOT = ROOT / "research_outputs" / "core_data_quality_20260624"
 TODAY = date.today()
@@ -653,7 +653,7 @@ def write_report(path: Path, before: dict[str, Any], after: dict[str, Any], repa
         "",
         "## Scope",
         "",
-        "- SQLite DB: `/Applications/stock_dashboard/stock.db`",
+        "- SQLite DB: `/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db`",
         "- Dynamic audit: all non-system tables, row counts, bad stock codes, future-dated rows",
         "- Core audit: price, daily KRX-like prices, stock universe, financial/cashflow keys, investor flow consistency, Kiwoom market fields, repaired KRX index rows",
         "",

@@ -2,7 +2,7 @@ import sqlite3
 import pandas as pd
 import numpy as np
 
-conn = sqlite3.connect('/Applications/stock_dashboard/employment_monitor/employment.db')
+conn = sqlite3.connect('/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db')
 df = pd.read_sql("SELECT * FROM employment_company", conn)
 
 # Pivot to have one row per stock_code, columns are ym

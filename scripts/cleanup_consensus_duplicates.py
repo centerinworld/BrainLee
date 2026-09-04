@@ -9,19 +9,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "stock.db"
-OUT = ROOT / "research_outputs" / "consensus_duplicate_cleanup_20260620.json"
-BACKUP_TABLE = "consensus_targets_duplicate_backup_20260620"
+OUT = ROOT / "research_outputs" / "consensus_duplicate_cleanup_20260714.json"
+BACKUP_TABLE = "consensus_targets_duplicate_backup_20260714"
 
 
 DEDUP_KEY = """
-COALESCE(
-    CAST(report_idx AS TEXT),
-    stock_code || '|' || report_date || '|' ||
-    COALESCE(securities_firm, '') || '|' ||
-    COALESCE(analyst, '') || '|' ||
-    COALESCE(report_title, '') || '|' ||
-    COALESCE(CAST(target_price AS TEXT), '')
-)
+stock_code || '|' || report_date || '|' ||
+TRIM(COALESCE(securities_firm, '')) || '|' ||
+TRIM(COALESCE(analyst, '')) || '|' ||
+COALESCE(CAST(target_price AS TEXT), '')
 """
 
 
@@ -62,6 +58,18 @@ def main() -> int:
                 FROM consensus_targets
               )
               SELECT id FROM ranked WHERE rn > 1
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_consensus_targets_natural
+            ON consensus_targets (
+              stock_code,
+              report_date,
+              TRIM(COALESCE(securities_firm, '')),
+              TRIM(COALESCE(analyst, '')),
+              COALESCE(target_price, -1)
             )
             """
         )

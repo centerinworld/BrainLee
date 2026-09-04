@@ -4,7 +4,18 @@ tenbagger_engine.py — 텐버거 종목 발굴 엔진
 DB에 저장된 재무·가격·수급 데이터를 분석해 10배 성장 가능성이 있는
 종목을 자동으로 발굴하고, OpenAI 분석 의견과 함께 텔레그램으로 알림.
 
-발굴 기준 (6축 스코어링, 데이터 기반 2026-06-18 재설계 + 백테스트 검증):
+⚠️ 점수 신뢰도 경고 (2026-07-12 실증 검증 — CLAUDE.md 변경이력 참조):
+  strategy_feature_snapshot 15.5만 라벨행(12개월 3배, 학습/검증 시기분리) 실측 결과
+  아래 6축 가중치는 손으로 정한 값이며 대부분의 축이 단독 예측력 없음이 확인됨.
+  - 낙폭 -30~-70%: 3x율 7.4%/6.4% vs 기준율 8.2%/6.3% → 무효
+    ("3배 종목의 70.5%가 낙폭 출발"은 P(낙폭|3배)이지 P(3배|낙폭)이 아님 — 조건부확률 방향 오류)
+  - PBR<0.6/소형/수급/거래량 축: 검증기 lift 소멸 → 무효
+  - 원시 라벨의 초낙폭 효과도 가격 아티팩트·비영업 급등을 제거한 지속형
+    라벨에서는 검증 lift 1 미만으로 소멸(2026-08-10 재감사).
+  → total_score는 "관심 후보 필터"로만 사용, 점수 크기를 확신도로 해석 금지.
+  → tenbagger_results 실측 승률도 점수 상하위 무차별(37%).
+
+발굴 기준 (6축 스코어링 — 가중치는 휴리스틱, 위 경고 참조):
   1. 낙폭과대   (25점) — 52주 고가 대비 -30~-85% 구간 (실제 3배 종목 70.5%)
   2. 펀더멘털   (25점) — 흑자전환(+15)/매출50%+(+12)/매출30%+(+9)
   3. 저평가     (20점) — PBR≤0.5(+10)/PBR≤1.0(+8)/소형주(+5)
@@ -31,20 +42,25 @@ from __future__ import annotations
 
 import json
 import logging
+from services.gemini_openai_compat import OpenAI
 import sqlite3
 import time
 from datetime import datetime, date
 from typing import Optional
 
 import config
+from db_compat import connect_primary_db
+from db_utils import STOCK_DB_PATH
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "stock.db"
+DB_PATH = str(STOCK_DB_PATH)
 # 백테스트 검증: 52 이상에서 최적 리스크/리턴 균형
 # (이전 55 → 52로 낮춤: 회복장 기회 증가 +94.8% 반영)
 SCORE_THRESHOLD = 52       # 선정 최소 점수
 MAX_RESULTS     = 20       # 회차당 최대 결과 수
+TENBAGGER_MIN_AVG_TVOL5_억 = 3.0   # 자동 추천/알림 유동성 hard cut
+TENBAGGER_MAX_DILUTION_PCT = 30.0  # 최근 1년 누적 잠재 희석 상한
 
 # 품질 게이트: 아래 조건 중 하나라도 충족해야 최종 선정
 # (tb_combo 연구 결과: 낙폭 단독은 AI랠리에서 -14% — 펀더멘털 OR 가치 필수)
@@ -87,7 +103,27 @@ REGIME_SELL_PARAMS = {
 # ──────────────────────────────────────────────
 
 def init_tenbagger_tables():
-    conn = sqlite3.connect(DB_PATH)
+    if config.IS_POSTGRES:
+        conn = connect_primary_db(timeout=60)
+        try:
+            conn.execute(
+                "ALTER TABLE tenbagger_results ALTER COLUMN telegram_sent SET DEFAULT 0"
+            )
+            conn.execute(
+                "ALTER TABLE tenbagger_results ALTER COLUMN created_at "
+                "SET DEFAULT TO_CHAR(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS')"
+            )
+            conn.execute(
+                "UPDATE tenbagger_results SET telegram_sent=0 WHERE telegram_sent IS NULL"
+            )
+            conn.execute(
+                "UPDATE tenbagger_results SET created_at=run_time WHERE created_at IS NULL"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return
+    conn = connect_primary_db(timeout=60, wal=True)
     try:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tenbagger_results (
@@ -134,7 +170,15 @@ def _fetch_candidates(conn) -> list[dict]:
         FROM   stock_universe su
         WHERE  su.market IN ('KOSPI','KOSDAQ')
           AND  su.market_cap IS NOT NULL
-          AND  su.market_cap BETWEEN 500 AND 30000   -- 500억~3조 (억원)
+          -- 하한 500억 → 100억 (2026-08-08). label_10x_24m walk-forward 실측:
+          --   시총 500억~3조   lift 0.98x(학습)→0.82x(검증) = 기준율 '이하'
+          --   시총 <500억      lift 1.39x      →2.02x
+          --   시총 <300억      lift 1.42x      →3.34x (검증에서 오히려 강화)
+          -- 구 하한이 확률 높은 구간을 통째로 배제해, 3년내 10배 종목 251개 중
+          -- 41.8%가 저점 시점에 후보 목록에 오르지도 못했음. 100억은 기존
+          -- scripts/build_strategy_research_dataset.py _filter_liquid_rankings와 같은 기준.
+          -- 상한 3조 유지: 초과 구간은 10배 종목의 1.7%뿐이고 megatrend/earnings_conviction이 커버.
+          AND  su.market_cap BETWEEN 100 AND 30000   -- 100억~3조 (억원)
           AND  su.stock_code NOT LIKE '%^%'
           AND  su.stock_code NOT LIKE 'GC%'
           AND  su.stock_code NOT LIKE 'CL%'
@@ -237,6 +281,19 @@ def _fetch_financials(conn, stock_code: str) -> dict:
     if r0["net_income"] and r0["total_equity"] and r0["total_equity"] > 0:
         roe_calc = r0["net_income"] / r0["total_equity"] * 100
 
+    cf_row = conn.execute("""
+        SELECT year, quarter, operating_cf_q, capex_q
+        FROM cash_flow_data
+        WHERE stock_code = ?
+          AND is_annual = 0
+          AND report_type = 'CFS'
+          AND operating_cf_q IS NOT NULL
+        ORDER BY year DESC, quarter DESC
+        LIMIT 1
+    """, (stock_code,)).fetchone()
+    latest_q_ocf = cf_row[2] if cf_row else None
+    latest_q_capex = cf_row[3] if cf_row else None
+
     return {
         "revenue_growth": revenue_growth,
         "op_growth": op_growth,
@@ -246,6 +303,8 @@ def _fetch_financials(conn, stock_code: str) -> dict:
         "latest_op": r0["operating_profit"],
         "op_profit": r0["operating_profit"],       # 흑자전환 감지용
         "op_profit_prev": r1["operating_profit"],  # 흑자전환 감지용
+        "latest_q_operating_cf": latest_q_ocf,
+        "latest_q_capex": latest_q_capex,
     }
 
 
@@ -399,10 +458,15 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
     """수주잔고, CB/BW 희석 이력 + 원가구조 개선 조회."""
     # 수주잔고 (최신 분기)
     backlog = conn.execute("""
-        SELECT backlog_amount, backlog_to_rev, year, quarter
-        FROM   order_backlog
-        WHERE  stock_code = ? AND backlog_amount > 0
-        ORDER  BY year DESC, quarter DESC
+        SELECT ob.backlog_amount, ob.backlog_to_rev, ob.year, ob.quarter
+        FROM order_backlog ob
+        JOIN dart_backlog_quarterly dbq
+          ON dbq.stock_code=ob.stock_code
+         AND dbq.fiscal_year=ob.year
+         AND dbq.fiscal_quarter=ob.quarter
+        WHERE ob.stock_code = ? AND ob.backlog_amount > 0
+          AND dbq.backlog_confidence >= 0.95
+        ORDER BY ob.year DESC, ob.quarter DESC
         LIMIT  1
     """, (stock_code,)).fetchone()
 
@@ -412,15 +476,21 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
         FROM   dilution_events
         WHERE  stock_code = ?
           AND  disclosed_at >= date('now', '-365 days')
-          AND  event_type IN ('CB', 'BW', '유상증자')
+          AND  event_type IN ('CB', 'BW', 'EB', 'RIGHTS', 'RIGHTS_BONUS', '유상증자')
+          AND  COALESCE(report_nm, '') NOT LIKE '%정정%'
     """, (stock_code,)).fetchone()
 
     # 수주잔고 추이 분석 (최근 6분기)
     backlog_rows = conn.execute("""
-        SELECT year, quarter, backlog_to_rev, backlog_normalized
-        FROM order_backlog
-        WHERE stock_code = ? AND backlog_amount > 0
-        ORDER BY year DESC, quarter DESC
+        SELECT ob.year, ob.quarter, ob.backlog_to_rev, ob.backlog_normalized
+        FROM order_backlog ob
+        JOIN dart_backlog_quarterly dbq
+          ON dbq.stock_code=ob.stock_code
+         AND dbq.fiscal_year=ob.year
+         AND dbq.fiscal_quarter=ob.quarter
+        WHERE ob.stock_code = ? AND ob.backlog_amount > 0
+          AND dbq.backlog_confidence >= 0.95
+        ORDER BY ob.year DESC, ob.quarter DESC
         LIMIT 6
     """, (stock_code,)).fetchall()
 
@@ -447,6 +517,84 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
     if dilution and dilution[0] > 0:
         dilution_risk = True
         dilution_pct  = dilution[1] or 0.0
+
+    dilution_count_1y = 0
+    dilution_count_3y = 0
+    repeat_dilution_risk = False
+    repeat_dilution_level = None
+    future_put_liquidity_risk = None
+    try:
+        dilution_count_1y = int(conn.execute("""
+            SELECT COUNT(*)
+            FROM dilution_events
+            WHERE stock_code=?
+              AND disclosed_at >= date('now', '-365 days')
+              AND event_type IN ('CB', 'BW', 'EB', 'RIGHTS', 'RIGHTS_BONUS')
+              AND COALESCE(risk_amount_status, 'amount_confirmed') != 'not_amount_applicable'
+              AND COALESCE(report_nm, '') NOT LIKE '%정정%'
+        """, (stock_code,)).fetchone()[0] or 0)
+        dilution_count_3y = int(conn.execute("""
+            SELECT COUNT(*)
+            FROM dilution_events
+            WHERE stock_code=?
+              AND disclosed_at >= date('now', '-1095 days')
+              AND event_type IN ('CB', 'BW', 'EB', 'RIGHTS', 'RIGHTS_BONUS')
+              AND COALESCE(risk_amount_status, 'amount_confirmed') != 'not_amount_applicable'
+              AND COALESCE(report_nm, '') NOT LIKE '%정정%'
+        """, (stock_code,)).fetchone()[0] or 0)
+        if dilution_count_1y >= 5 or dilution_count_3y >= 10:
+            repeat_dilution_risk = True
+            repeat_dilution_level = "severe"
+        elif dilution_count_1y >= 3 or dilution_count_3y >= 6:
+            repeat_dilution_risk = True
+            repeat_dilution_level = "high"
+
+        cash_row = conn.execute("""
+            SELECT cash_end
+            FROM cash_flow_data
+            WHERE stock_code=? AND cash_end IS NOT NULL
+            ORDER BY year DESC, quarter DESC, (report_type='CFS') DESC
+            LIMIT 1
+        """, (stock_code,)).fetchone()
+        latest_cash = float(cash_row[0]) if cash_row and cash_row[0] is not None else None
+        put_rows = conn.execute("""
+            SELECT put_option_date, issue_amount, event_type, report_nm
+            FROM dilution_events
+            WHERE stock_code=?
+              AND put_option_date IS NOT NULL
+              AND issue_amount IS NOT NULL
+              AND put_option_date >= date('now')
+              AND COALESCE(report_nm, '') NOT LIKE '%정정%'
+            ORDER BY put_option_date ASC
+            LIMIT 5
+        """, (stock_code,)).fetchall()
+        for row in put_rows:
+            issue_amount = float(row[1] or 0)
+            shortfall = (issue_amount - latest_cash) if latest_cash is not None else None
+            if shortfall is not None and shortfall > 0:
+                future_put_liquidity_risk = {
+                    "put_option_date": row[0],
+                    "issue_amount_억": round(issue_amount / 1e8, 1),
+                    "current_cash_억": round(latest_cash / 1e8, 1) if latest_cash is not None else None,
+                    "shortfall_억": round(shortfall / 1e8, 1),
+                    "event_type": row[2],
+                    "report_nm": row[3],
+                }
+                break
+    except Exception:
+        pass
+
+    original_contract_count_1y = 0
+    try:
+        original_contract_count_1y = int(conn.execute("""
+            SELECT COUNT(*)
+            FROM dart_contracts
+            WHERE stock_code=?
+              AND disclosed_at >= date('now', '-365 days')
+              AND COALESCE(report_nm, '') NOT LIKE '%정정%'
+        """, (stock_code,)).fetchone()[0] or 0)
+    except Exception:
+        pass
 
     # 원가구조 개선 신호 (cost_structure) — cogs_ratio YoY 감소 = 마진 개선 선행 신호
     cost_improvement = None
@@ -651,11 +799,15 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
     try:
         # 1) 수주잔고 QoQ
         bl_rows = conn.execute("""
-            SELECT year, quarter, backlog_amount
-            FROM order_backlog
-            WHERE stock_code=? AND backlog_amount > 0
-              AND backlog_confidence >= 0.8
-            ORDER BY year DESC, quarter DESC LIMIT 2
+            SELECT ob.year, ob.quarter, ob.backlog_amount
+            FROM order_backlog ob
+            JOIN dart_backlog_quarterly dbq
+              ON dbq.stock_code=ob.stock_code
+             AND dbq.fiscal_year=ob.year
+             AND dbq.fiscal_quarter=ob.quarter
+            WHERE ob.stock_code=? AND ob.backlog_amount > 0
+              AND dbq.backlog_confidence >= 0.95
+            ORDER BY ob.year DESC, ob.quarter DESC LIMIT 2
         """, (stock_code,)).fetchall()
         if len(bl_rows) >= 2:
             bl_cur, bl_prev = bl_rows[0][2], bl_rows[1][2]
@@ -740,6 +892,12 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
         "backlog": backlog_data,
         "dilution_risk": dilution_risk,
         "dilution_pct": dilution_pct,
+        "dilution_count_1y": dilution_count_1y,
+        "dilution_count_3y": dilution_count_3y,
+        "repeat_dilution_risk": repeat_dilution_risk,
+        "repeat_dilution_level": repeat_dilution_level,
+        "future_put_liquidity_risk": future_put_liquidity_risk,
+        "original_contract_count_1y": original_contract_count_1y,
         "cost_improvement": cost_improvement,
         "buyback_signal": buyback_signal,
         "pbr_percentile": pbr_percentile,
@@ -749,6 +907,53 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
         "material_composite": material_composite,
         "qoq_signals": qoq_signals,
     }
+
+
+def _passes_tenbagger_guardrails(price: dict, fin: dict, supply: dict, uni: dict,
+                                 extra: dict) -> tuple[bool, list[str]]:
+    failures: list[str] = []
+
+    tvol5 = float(price.get("avg_tvol5_억") or 0)
+    if tvol5 < TENBAGGER_MIN_AVG_TVOL5_억:
+        failures.append(f"5일 평균 거래대금 {tvol5:.1f}억 < {TENBAGGER_MIN_AVG_TVOL5_억:.0f}억")
+
+    dilution_pct = float(extra.get("dilution_pct") or 0)
+    if dilution_pct >= TENBAGGER_MAX_DILUTION_PCT:
+        failures.append(f"최근 1년 누적 희석 {dilution_pct:.1f}% >= {TENBAGGER_MAX_DILUTION_PCT:.0f}%")
+
+    repeat_level = extra.get("repeat_dilution_level")
+    if repeat_level == "severe":
+        failures.append(
+            f"반복 희석 위험 과다 (1년 {int(extra.get('dilution_count_1y') or 0)}건 / 3년 {int(extra.get('dilution_count_3y') or 0)}건)"
+        )
+
+    put_risk = extra.get("future_put_liquidity_risk") or {}
+    if put_risk.get("shortfall_억", 0) and float(put_risk["shortfall_억"]) > 0:
+        failures.append(
+            f"향후 풋옵션 상환 부족 {float(put_risk['shortfall_억']):.1f}억 ({put_risk.get('put_option_date')})"
+        )
+
+    rev_g = fin.get("revenue_growth")
+    op_g = fin.get("op_growth")
+    op_m = fin.get("op_margin")
+    op_cur = fin.get("op_profit")
+    op_prev = fin.get("op_profit_prev")
+    latest_q_ocf = fin.get("latest_q_operating_cf")
+
+    if rev_g is not None and rev_g >= 30:
+        if (op_m is None or op_m <= 0) and (op_g is None or op_g < -50):
+            failures.append(
+                f"매출은 +{rev_g:.0f}% 성장했지만 수익성 방어 미충족"
+            )
+
+    if op_g is not None and op_g < -200:
+        failures.append(f"영업이익 성장률 {op_g:.0f}% < -200%")
+
+    if op_prev is not None and op_cur is not None and op_prev < 0 < op_cur:
+        if latest_q_ocf is None or latest_q_ocf <= 0:
+            failures.append("영업이익 흑자전환이지만 최근 분기 영업현금흐름이 양수가 아님")
+
+    return (len(failures) == 0), failures
 
 
 # ──────────────────────────────────────────────
@@ -817,7 +1022,7 @@ def _score_stock(price: dict, fin: dict, supply: dict, uni: dict,
                 reasons.append(f"🔻 52주 저점 +{from_low_pct:.0f}% (저점 근접)")
 
         # 거래대금 최소 유동성 체크
-        if tvol < 3:
+        if tvol < TENBAGGER_MIN_AVG_TVOL5_억:
             dd_score = max(0, dd_score - 5)  # 유동성 부족 패널티
 
         scores["drawdown"] = max(0, min(25, dd_score))
@@ -1049,16 +1254,50 @@ def _score_stock(price: dict, fin: dict, supply: dict, uni: dict,
         if _root not in _sys.path:
             _sys.path.insert(0, _root)
         from signal_engine import (_load_contract_bonus_map,
+                                   _load_order_contract_surge_bonus_map,
+                                   _load_contract_advance_bonus_map,
+                                   _load_inventory_sales_bonus_map,
+                                   _load_cash_conversion_bonus_map,
                                    _load_hs_export_bonus_map)
         sc = price.get("stock_code", "")
         bonus_total = 0
         if sc:
             cb = _load_contract_bonus_map(days=90).get(sc)
+            ob = _load_order_contract_surge_bonus_map(window_months=3).get(sc)
+            ab = _load_contract_advance_bonus_map(min_score=4).get(sc)
+            ib = _load_inventory_sales_bonus_map(min_score=4).get(sc)
+            qb = _load_cash_conversion_bonus_map(min_score=4).get(sc)
             hb = _load_hs_export_bonus_map(months=6).get(sc)
             if cb:
                 b = min(cb["bonus"], 5)
                 bonus_total += b
                 reasons.append(f'📋 수주공시 {cb["label"]} (+{b}점)')
+            if ob:
+                b = min(ob["bonus"], 6)
+                bonus_total += b
+                reasons.append(f'📈 수주급증 {ob["label"]} (+{b}점)')
+            if ab:
+                b = min(ab["bonus"], 5)
+                bonus_total += b
+                reasons.append(f'💰 {ab["label"]} ({ab["period"]}, +{b}점)')
+            if ib:
+                b = min(ib.get("bonus") or 0, 4)
+                p = min(ib.get("risk_penalty") or 0, 4)
+                if b > 0:
+                    bonus_total += b
+                    reasons.append(f'📦 {ib["label"]} ({ib["period"]}, +{b}점)')
+                if p > 0:
+                    bonus_total -= p
+                    reasons.append(f'⚠️ {ib["label"]} ({ib["period"]}, -{p}점)')
+            if qb:
+                b = min(qb.get("bonus") or 0, 4)
+                p = min(qb.get("risk_penalty") or 0, 4)
+                if b > 0:
+                    bonus_total += b
+                    reasons.append(f'💵 {qb["label"]} ({qb["period"]}, +{b}점)')
+                if p > 0:
+                    bonus_total -= p
+                    reasons.append(f'⚠️ {qb["label"]} ({qb["period"]}, -{p}점)')
             if hb:
                 b = min(hb["bonus"], 5)
                 bonus_total += b
@@ -1111,7 +1350,7 @@ def _score_stock(price: dict, fin: dict, supply: dict, uni: dict,
         # 임원 매수 신호 — CEO/임원 순매수 = 내부자 확신 신호
         insider_sig = supply.get("insider_signal")
         if insider_sig and insider_sig.get("type") == "매수":
-            if insider_sig.get("ceo_buy"):
+            if insider_sig.get("ceo_buy") and (price.get("avg_tvol5_억") or 0) >= TENBAGGER_MIN_AVG_TVOL5_억:
                 bonus_total += 4
                 reasons.append(f"👔 CEO 직접 매수 (최근 90일, +4점)")
             elif insider_sig.get("net_qty", 0) > 50000:
@@ -1127,10 +1366,7 @@ def _score_stock(price: dict, fin: dict, supply: dict, uni: dict,
         # 프로그램 매매 순매수 신호 (broker_program_stock_daily, 최근 5거래일)
         if sc:
             try:
-                import sqlite3 as _sqlite3
-                _db_prog = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "stock.db")
-                _conn_prog = _sqlite3.connect(_db_prog, timeout=5)
-                _conn_prog.row_factory = _sqlite3.Row
+                _conn_prog = connect_primary_db(timeout=5, row_factory=sqlite3.Row)
                 prog_row = _conn_prog.execute(
                     "SELECT SUM(net_buy_amt_krw) AS net_amt"
                     " FROM broker_program_stock_daily"
@@ -1261,6 +1497,48 @@ def _score_stock(price: dict, fin: dict, supply: dict, uni: dict,
             scores["value"] = max(0, scores["value"] - 2)
             reasons.append(f"⚠️ CB/BW 희석 {dpct:.0f}% (패널티)")
 
+    repeat_level = extra.get("repeat_dilution_level")
+    if repeat_level == "high":
+        scores["value"] = max(0, scores["value"] - 3)
+        scores["catalyst"] = max(0, scores["catalyst"] - 1)
+        reasons.append(
+            f"⚠️ 반복 희석 위험 1년 {int(extra.get('dilution_count_1y') or 0)}건 / 3년 {int(extra.get('dilution_count_3y') or 0)}건"
+        )
+    elif repeat_level == "severe":
+        scores["value"] = max(0, scores["value"] - 6)
+        scores["catalyst"] = max(0, scores["catalyst"] - 2)
+        reasons.append(
+            f"🚫 반복 희석 과다 1년 {int(extra.get('dilution_count_1y') or 0)}건 / 3년 {int(extra.get('dilution_count_3y') or 0)}건"
+        )
+
+    put_risk = extra.get("future_put_liquidity_risk")
+    if put_risk:
+        scores["value"] = max(0, scores["value"] - 6)
+        scores["catalyst"] = max(0, scores["catalyst"] - 2)
+        reasons.append(
+            f"🚫 풋옵션 현금부족 {float(put_risk.get('shortfall_억') or 0):.1f}억 ({put_risk.get('put_option_date')})"
+        )
+
+    # 실적형 초낙폭 회복주 보완 — 과거 실증 감사에서 순수 점수 탈락군은
+    # 캡처군보다 52주 고점 대비 낙폭이 훨씬 깊고(평균 -82.6%), 모델점수는 오히려 더 높았다.
+    # 즉 "실적은 살아났지만 주가가 아직 처참한" 회복형 승자를 기존 휴리스틱이 과소평가.
+    if extra:
+        latest_q_ocf = fin.get("latest_q_operating_cf")
+        rev_g = fin.get("revenue_growth")
+        op_g = fin.get("op_growth")
+        op_prev = fin.get("op_profit_prev")
+        op_cur = fin.get("op_profit")
+        fh = price.get("from_high_pct") or 0
+        tvol = price.get("avg_tvol5_억") or 0
+        earnings_recovery = False
+        if rev_g is not None and rev_g >= 15 and latest_q_ocf is not None and latest_q_ocf > 0:
+            if (op_g is not None and op_g >= 30) or (op_prev is not None and op_cur is not None and op_prev < 0 < op_cur):
+                earnings_recovery = True
+        if earnings_recovery and fh <= -75 and tvol >= TENBAGGER_MIN_AVG_TVOL5_억:
+            scores["fundamental"] = min(25, scores["fundamental"] + 4)
+            scores["drawdown"] = min(25, scores["drawdown"] + 2)
+            reasons.append("🧪 실적형 초낙폭 회복 패턴 (실증 보정 +6점)")
+
     # ── 콤보 시너지 보너스 ─────────────────────────────────────────────────────
     # 백테스트 결과: tb_combo(낙폭+흑자전환)이 6년 누적 +254.3%로 최고
     # → 두 신호의 교집합에 추가 가중치 부여
@@ -1307,13 +1585,12 @@ def _score_stock(price: dict, fin: dict, supply: dict, uni: dict,
 
 def _ai_analyze(stock_name: str, stock_code: str, score: float,
                 reasons: list[str], fin: dict, uni: dict, price: dict) -> str:
-    api_key = getattr(config, "OPENAI_API_KEY", "")
+    api_key = getattr(config, "GEMINI_API_KEY", "")
     if not api_key:
-        return "OpenAI API 키 미설정 — 자동 분석 불가"
+        return "DeepSeek API 키 미설정 — 자동 분석 불가"
 
     try:
-        import openai
-        client = openai.OpenAI(api_key=api_key)
+        client = OpenAI()
 
         context_parts = [f"종목명: {stock_name} ({stock_code})"]
         context_parts.append(f"시가총액: {uni.get('market_cap', 'N/A')}억원")
@@ -1345,7 +1622,7 @@ def _ai_analyze(stock_name: str, stock_code: str, score: float,
         return res.choices[0].message.content.strip()
     except Exception as e:
         logger.warning(f"[AI분석] {stock_name}: {e}")
-        return f"AI 분석 실패: {e}"
+        return "AI 분석 실패: DeepSeek API 응답 오류"
 
 
 # ──────────────────────────────────────────────
@@ -1426,12 +1703,19 @@ def _send_telegram_alert(candidates: list[dict], run_type: str):
 # 메인 발굴 함수
 # ──────────────────────────────────────────────
 
-def run_discovery(run_type: str = "auto") -> list[dict]:
+def run_discovery(
+    run_type: str = "auto",
+    *,
+    send_telegram: bool = True,
+    generate_ai: bool = True,
+) -> list[dict]:
     """
     텐버거 후보 발굴 실행.
 
     Args:
         run_type: 'morning' | 'noon' | 'afternoon' | 'manual'
+        send_telegram: 텔레그램 신규 후보 알림 발송 여부
+        generate_ai: OpenAI 심층 분석 생성 여부
 
     Returns:
         선정된 종목 list[dict]
@@ -1441,8 +1725,7 @@ def run_discovery(run_type: str = "auto") -> list[dict]:
     run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info(f"[텐버거] 발굴 시작 ({run_type}) — {run_time}")
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=120, row_factory=sqlite3.Row, wal=True)
 
     try:
         candidates = _fetch_candidates(conn)
@@ -1453,17 +1736,43 @@ def run_discovery(run_type: str = "auto") -> list[dict]:
             code = uni["stock_code"]
             try:
                 price  = _fetch_price_data(conn, code)
-                if not price or price.get("avg_tvol5_억", 0) < 3:
+                if not price:
                     continue  # 유동성 최소 기준 미달
 
                 fin    = _fetch_financials(conn, code)
                 supply = _fetch_supply(conn, code)
                 extra  = _fetch_extra_signals(conn, code)
+                passed_guardrails, guardrail_failures = _passes_tenbagger_guardrails(price, fin, supply, uni, extra)
+                if not passed_guardrails:
+                    logger.info("[텐버거] 제외 %s(%s): %s", uni["stock_name"], code, " / ".join(guardrail_failures))
+                    continue
 
                 total, detail, reasons = _score_stock(price, fin, supply, uni, extra)
 
+                # Raw 10x labels made deep-drawdown grades look strong, but the
+                # effect disappears after price artifacts and non-operating
+                # spikes are removed. Keep only the independently validated
+                # business-signal intersection as a non-trading research tag.
+                contract_count = int(extra.get("original_contract_count_1y") or 0)
+                op_growth = fin.get("op_growth")
+                tvol = float(price.get("avg_tvol5_억") or 0)
+                clean_signal_match = bool(
+                    contract_count >= 2
+                    and op_growth is not None
+                    and op_growth >= 50
+                    and tvol >= 10
+                )
+                grade = "R" if clean_signal_match else "-"
+                if clean_signal_match:
+                    reasons.insert(
+                        0,
+                        "🧪 지속형 연구신호 R — 원공시 수주 2건+·영업이익 50%+·거래대금 10억+ "
+                        "(정밀도 목표 미달, 추천/자동매매 근거로 사용 금지)",
+                    )
+
                 if total >= SCORE_THRESHOLD:
                     results.append({
+                        "evidence_grade": grade,
                         "stock_code":     code,
                         "stock_name":     uni["stock_name"],
                         "total_score":    total,
@@ -1486,7 +1795,7 @@ def run_discovery(run_type: str = "auto") -> list[dict]:
             except Exception as e:
                 logger.debug(f"[텐버거] {code} 처리 오류: {e}")
 
-        # 점수 내림차순 정렬, 상위 MAX_RESULTS
+        # The clean research tag is intentionally not a production ranking key.
         results.sort(key=lambda x: x["total_score"], reverse=True)
         results = results[:MAX_RESULTS]
 
@@ -1500,7 +1809,7 @@ def run_discovery(run_type: str = "auto") -> list[dict]:
         # OpenAI 분석 및 DB 저장
         saved = []
         for r in results:
-            if r["stock_code"] in already_alerted_codes:
+            if not generate_ai or r["stock_code"] in already_alerted_codes:
                 ai_text = ""
             else:
                 ai_text = _ai_analyze(
@@ -1540,7 +1849,7 @@ def run_discovery(run_type: str = "auto") -> list[dict]:
         conn.commit()
 
         # 텔레그램 전송 (결과 있을 때만)
-        if saved:
+        if saved and send_telegram:
             _send_telegram_alert(saved, run_type)
             # 전송 완료 표시
             codes = [s["stock_code"] for s in saved]
@@ -1550,6 +1859,8 @@ def run_discovery(run_type: str = "auto") -> list[dict]:
                 [run_time] + codes
             )
             conn.commit()
+        elif saved:
+            logger.info("[텐버거] 알림 비활성화 모드 — 결과만 저장 (%d종목)", len(saved))
         else:
             logger.info("[텐버거] 선정 종목 없음 — 텔레그램 스킵")
 
@@ -1637,7 +1948,7 @@ def get_market_regime() -> str:
     판단 기준: KOSPI vs MA60/MA120 + 최근 20일/60일 수익률
     """
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=30)
         rows = conn.execute(
             "SELECT date, close FROM price_history "
             "WHERE stock_code='^KS11' AND close>0 ORDER BY date DESC LIMIT 130"
@@ -1742,14 +2053,30 @@ def check_sell_signal(entry_price: float, current_price: float,
     }
 
 
+_ACTION_SIGNALS_CACHE: dict = {}
+
+
+def _action_signals_ttl_secs() -> float:
+    now = datetime.now()
+    if now.weekday() < 5 and 9 <= now.hour < 15 or (now.hour == 15 and now.minute <= 30):
+        return 300.0  # 장중 5분
+    return 1800.0  # 장외 30분
+
+
 def get_action_signals(limit: int = 30) -> list[dict]:
     """현재 시점 매수 신호 종목 반환 (백테스트 검증 파라미터 적용).
 
     tenbagger_results 최신 런에서 score ≥ 50인 종목 중
     buy_signal 조건을 추가로 충족하는 종목만 반환.
+
+    종목당 가격/재무/수급/특수신호를 개별 재조회하는 구조라(N+1) 100종목 기준
+    수십 초가 걸릴 수 있어 캐싱한다(장중 5분/장외 30분 TTL).
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    cached = _ACTION_SIGNALS_CACHE.get(limit)
+    if cached and (time.time() - cached["at"]) < _action_signals_ttl_secs():
+        return cached["data"]
+
+    conn = connect_primary_db(timeout=60, row_factory=sqlite3.Row)
     try:
         # 최신 run_time 가져오기
         row = conn.execute(
@@ -1779,6 +2106,14 @@ def get_action_signals(limit: int = 30) -> list[dict]:
             price = _fetch_price_data(conn, code)
             if not price:
                 continue
+            fin = _fetch_financials(conn, code)
+            supply = _fetch_supply(conn, code)
+            extra = _fetch_extra_signals(conn, code)
+            passed_guardrails, guardrail_failures = _passes_tenbagger_guardrails(
+                price, fin, supply, uni, extra
+            )
+            if not passed_guardrails:
+                continue
 
             total = r["total_score"]
             buy   = check_buy_signal(total, price, uni)
@@ -1799,13 +2134,16 @@ def get_action_signals(limit: int = 30) -> list[dict]:
                 "buy_reasons":   buy.get("reasons", []),
                 "buy_conditions": buy.get("conditions", {}),
                 "buy_failed":    buy.get("failed_conditions", []),
+                "guardrail_failures": guardrail_failures,
                 "reasons":       r["reasons"],
                 "run_time":      run_time,
             })
 
         # 매수신호 종목 우선 정렬
         results.sort(key=lambda x: (x["buy_signal"], x["total_score"]), reverse=True)
-        return results[:limit]
+        final = results[:limit]
+        _ACTION_SIGNALS_CACHE[limit] = {"data": final, "at": time.time()}
+        return final
 
     finally:
         conn.close()

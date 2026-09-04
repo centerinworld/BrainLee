@@ -1,7 +1,7 @@
 #!/bin/bash
 # insider(41490 -> 42397) 및 credit(45190) 완료 대기 후 BQ 동기화
 set -e
-cd /Applications/stock_dashboard
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime
 
 INSIDER_PID=42397
 CREDIT_PID=45190

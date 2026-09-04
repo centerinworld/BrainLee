@@ -3,7 +3,7 @@
 collect_naver_ohlcv_today.py — Naver Finance로 오늘 전종목 OHLCV 수집
 =====================================================================
 용도: KRX API 차단 환경에서 당일 종가 수집 (장 마감 후 실행)
-실행: cd /Applications/stock_dashboard && source venv/bin/activate
+실행: cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
       python3 collect_naver_ohlcv_today.py
 
 Naver Finance fchart API 사용:
@@ -14,13 +14,13 @@ import sys, os, sqlite3, time, logging, re
 from datetime import date, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-sys.path.insert(0, '/Applications/stock_dashboard')
-os.chdir('/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
+os.chdir('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 log = logging.getLogger(__name__)
 
-DB_PATH = '/Applications/stock_dashboard/stock.db'
+DB_PATH = '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 NAVER_URL = 'https://fchart.stock.naver.com/sise.nhn'
 SLEEP_PER_REQ = 0.05   # 요청 간격 (초) — 너무 빠르면 차단
 MAX_WORKERS = 8         # 병렬 스레드 수

@@ -10,9 +10,9 @@ from typing import Optional
 
 import OpenDartReader as odr
 
-DB = "/Applications/stock_dashboard/stock.db"
-ENV_PATH = "/Applications/stock_dashboard/.env"
-OUT_DIR = Path("/Applications/stock_dashboard/scratch")
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+ENV_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/.env"
+OUT_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch")
 
 
 @dataclass
@@ -175,15 +175,19 @@ def collect_targets(conn: sqlite3.Connection, years_from: int, years_to: int, li
           LEFT JOIN cash_flow_data a
             ON a.stock_code=g.stock_code AND a.year=g.year AND COALESCE(a.report_type,'CFS')=g.report_type AND a.is_annual=1
           GROUP BY 1,2,3
+        ),
+        scored AS (
+          SELECT stock_code, year, report_type,
+                 CASE
+                   WHEN has_q1=0 OR has_q2=0 OR has_q3=0 THEN 'MISSING_Q123'
+                   WHEN q1_dep_ok=0 OR q2_dep_ok=0 OR q3_dep_ok=0 THEN 'NULL_Q123_DEPR'
+                   WHEN LOWER(COALESCE(q3_src,'')) != LOWER(COALESCE(ann_src,'')) THEN 'MIXED_SOURCE_ANNUAL_Q'
+                   ELSE 'OK'
+                 END AS cause
+          FROM c
         )
-        SELECT stock_code, year, report_type,
-               CASE
-                 WHEN has_q1=0 OR has_q2=0 OR has_q3=0 THEN 'MISSING_Q123'
-                 WHEN q1_dep_ok=0 OR q2_dep_ok=0 OR q3_dep_ok=0 THEN 'NULL_Q123_DEPR'
-                 WHEN LOWER(COALESCE(q3_src,'')) != LOWER(COALESCE(ann_src,'')) THEN 'MIXED_SOURCE_ANNUAL_Q'
-                 ELSE 'OK'
-               END cause
-        FROM c
+        SELECT stock_code, year, report_type, cause
+        FROM scored
         WHERE cause <> 'OK'
         ORDER BY year DESC, stock_code
         """,
@@ -204,7 +208,7 @@ def upsert_cf_row(conn: sqlite3.Connection, stock_code: str, year: int, quarter:
         WHERE stock_code=? AND year=? AND quarter=? AND is_annual=? AND COALESCE(report_type,'CFS')=?
         ORDER BY id DESC LIMIT 1
         """,
-        (stock_code, year, quarter, is_annual, report_type),
+        (stock_code, year, quarter, bool(is_annual), report_type),
     ).fetchone()
 
     if existing:
@@ -239,7 +243,7 @@ def upsert_cf_row(conn: sqlite3.Connection, stock_code: str, year: int, quarter:
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
-            stock_code, year, quarter, is_annual, report_type,
+            stock_code, year, quarter, bool(is_annual), report_type,
             vals.get("operating_cf"), vals.get("investing_cf"), vals.get("financing_cf"),
             vals.get("capex"), vals.get("cash_end"), vals.get("depreciation"),
             "cumulative", "dart_api_unified",

@@ -238,6 +238,41 @@ def step_3_convert(conn, year_from: int, year_to: int, dry_run: bool) -> dict:
     }
 
 
+def step_3b_convert_q1_standalone(conn, year_from: int, year_to: int, dry_run: bool) -> dict:
+    """Q1 단독 분기값 변환 (2026-07-21 신규).
+
+    Q1은 그 해의 첫 분기라 정의상 Q1누적 = Q1분기값 — Q2/Q3/연간이 아직 공시되지
+    않은 최신 연도(예: 2026 Q1만 존재)라도 검증 없이 즉시 확정 가능하다. 기존
+    step_3_convert()는 q1~yr 4개 모두 존재해야만 처리하므로 아직 연간이 나오지
+    않은 최신 분기는 영구히 스킵되던 구조적 공백을 메운다.
+    """
+    cur = conn.cursor()
+    rows = cur.execute("""
+        SELECT id, operating_cf, investing_cf, financing_cf, capex
+        FROM cash_flow_data
+        WHERE year BETWEEN ? AND ? AND quarter=1 AND is_annual=0
+          AND operating_cf IS NOT NULL AND operating_cf_q IS NULL
+    """, (year_from, year_to)).fetchall()
+
+    converted = 0
+    for row_id, op, inv, fin, cap in rows:
+        if dry_run:
+            converted += 1
+            continue
+        cur.execute("""
+            UPDATE cash_flow_data SET
+                operating_cf_q = ?, investing_cf_q = ?,
+                financing_cf_q = ?, capex_q = ?,
+                value_type = COALESCE(value_type, 'q1_standalone')
+            WHERE id = ?
+        """, (op, inv, fin, cap, row_id))
+        converted += 1
+
+    if not dry_run:
+        conn.commit()
+    return {"q1_standalone_converted": converted}
+
+
 def step_4_validate(conn) -> dict:
     """변환 결과 검증."""
     cur = conn.cursor()
@@ -282,6 +317,10 @@ def main():
     logger.info(f"[3단계] 변환 시작: {yf}~{yt} ({'DRY-RUN' if args.dry_run else 'APPLY'})")
     res = step_3_convert(conn, yf, yt, args.dry_run)
     logger.info(f"[3단계] 결과: {res}")
+
+    logger.info(f"[3b단계] Q1 단독 변환 시작: {yf}~{yt}")
+    res_q1 = step_3b_convert_q1_standalone(conn, yf, yt, args.dry_run)
+    logger.info(f"[3b단계] 결과: {res_q1}")
 
     if not args.dry_run:
         val = step_4_validate(conn)

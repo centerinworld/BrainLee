@@ -13,7 +13,6 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
-  CheckCircle2,
   Clock3,
   Database,
   Layers3,
@@ -22,6 +21,7 @@ import {
   Target,
 } from 'lucide-react';
 import { API } from '../utils.js';
+import { QuantCafeSignalsPanel } from './CafeSignalsView.jsx';
 
 const CATEGORY_LABELS = {
   0: '자동차/모빌리티',
@@ -45,6 +45,8 @@ const CATEGORY_LABELS = {
   21: '시장폭/거래량',
   22: '교통/대중교통',
   23: '수출입/섹터',
+  24: '글로벌 매크로/원자재',
+  34: '카페 지표 후보',
 };
 
 const STATUS_META = {
@@ -56,6 +58,13 @@ const STATUS_META = {
     border: 'rgba(52,211,153,0.28)',
   },
   ready_existing_partial: {
+    label: '부분연결',
+    shortLabel: '부분',
+    color: '#fbbf24',
+    bg: 'rgba(251,191,36,0.14)',
+    border: 'rgba(251,191,36,0.28)',
+  },
+  partial_existing: {
     label: '부분연결',
     shortLabel: '부분',
     color: '#fbbf24',
@@ -76,6 +85,13 @@ const STATUS_META = {
     bg: 'rgba(248,113,113,0.14)',
     border: 'rgba(248,113,113,0.28)',
   },
+  source_discontinued: {
+    label: '원천중단',
+    shortLabel: '중단',
+    color: '#94a3b8',
+    bg: 'rgba(148,163,184,0.14)',
+    border: 'rgba(148,163,184,0.28)',
+  },
 };
 
 const PRIORITY_META = {
@@ -84,7 +100,7 @@ const PRIORITY_META = {
   p3: { label: '3순위', color: '#c084fc' },
 };
 
-const STATUS_ORDER = ['ready_existing', 'ready_existing_partial', 'derivable_after_new_collector', 'new_collector_needed'];
+const STATUS_ORDER = ['ready_existing', 'ready_existing_partial', 'partial_existing', 'derivable_after_new_collector', 'new_collector_needed', 'source_discontinued'];
 const SERIES_COLORS = ['#2dd4bf', '#60a5fa', '#f59e0b', '#f472b6', '#a78bfa', '#34d399'];
 
 const QUANT_EXTENSION_PLAN = [
@@ -148,6 +164,19 @@ const QUANT_EXTENSION_PLAN = [
       { name: 'Global peer confirmation', formula: '미국/대만/중국 동종 기업 RS와 실적 방향', source: 'US stock DB + Yahoo/SEC', readiness: '부분 보유', priority: 'P3' },
     ],
   },
+  {
+    group: '6. 카페 주요글 반영 확장',
+    tone: '#f472b6',
+    why: '지표상회 카페 주요글과 지표 제안 게시판에서 반복 등장한 업종을 수출입·매크로 지표와 연결합니다.',
+    items: [
+      { name: 'Construction cycle', formula: '주택착공/건설기성/건설수주 + 건설기계·철강재 수출입', source: 'ECOS/KOSIS 후보 + public:23:38/39', readiness: '부분 보유', priority: 'P1' },
+      { name: 'Semiconductor special gases', formula: '네온/제논/크립톤/특수가스 수출입과 반도체 사이클', source: 'public:23:32 + HS company map', readiness: '보유/확장', priority: 'P1' },
+      { name: 'Power equipment cycle', formula: '변압기/차단기/배전반/전력선 수출입 + 전력기기 종목 매핑', source: 'public:23:36 + HS company map', readiness: '보유/확장', priority: 'P1' },
+      { name: 'Aerospace / defense flow', formula: '항공기 부분품·무인기·전차·레이더·탄약 HS 수출입', source: 'public:23:37', readiness: '보유/확장', priority: 'P1' },
+      { name: 'Alcohol / media / game demand', formula: '맥주·소주 수출입, 영화관/IPTV/게임은 신규 수집 후보', source: 'public:23:31 + 신규 수집 후보', readiness: '부분 보유', priority: 'P2' },
+      { name: 'Materials spread', formula: '스테인리스/타이어코드/윤활기유/비료·칼륨 원재료 사이클', source: 'public:23:33/34/35/28', readiness: '보유/확장', priority: 'P2' },
+    ],
+  },
 ];
 
 const PLAN_STATUS_META = {
@@ -202,6 +231,8 @@ const countStatuses = (items) => {
   return counts;
 };
 
+const isConnectedStatus = (status) => ['ready_existing', 'ready_existing_partial', 'partial_existing'].includes(status);
+
 const MiniStatusBar = ({ counts }) => {
   const total = Math.max(counts.total || 0, 1);
   const segments = [
@@ -224,16 +255,17 @@ const MiniStatusBar = ({ counts }) => {
 };
 
 const QuantExpansionPlan = () => {
+  const groups = React.useMemo(() => QUANT_EXTENSION_PLAN.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !['보유', '대부분 보유', '계산 가능'].includes(item.readiness)),
+  })).filter((group) => group.items.length), []);
   const summary = React.useMemo(() => {
-    const flat = QUANT_EXTENSION_PLAN.flatMap((group) => group.items);
+    const flat = groups.flatMap((group) => group.items);
     return {
       total: flat.length,
-      p1: flat.filter((item) => item.priority === 'P1').length,
-      p2: flat.filter((item) => item.priority === 'P2').length,
-      p3: flat.filter((item) => item.priority === 'P3').length,
       needsWork: flat.filter((item) => !['보유', '대부분 보유', '계산 가능'].includes(item.readiness)).length,
     };
-  }, []);
+  }, [groups]);
 
   return (
     <div style={{ display: 'grid', gap: '1rem' }}>
@@ -249,12 +281,9 @@ const QuantExpansionPlan = () => {
               값이 이미 있는 지표와 새로 정비해야 할 지표를 분리해, 무리한 프록시 적재 없이 단계적으로 붙입니다.
             </p>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '0.55rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.55rem' }}>
             {[
-              { label: '후보', value: summary.total, color: '#2dd4bf' },
-              { label: 'P1', value: summary.p1, color: '#34d399' },
-              { label: 'P2', value: summary.p2, color: '#60a5fa' },
-              { label: 'P3', value: summary.p3, color: '#c084fc' },
+              { label: '미완료', value: summary.total, color: '#fbbf24' },
               { label: '정비', value: summary.needsWork, color: '#fbbf24' },
             ].map((card) => (
               <div key={card.label} style={{
@@ -300,7 +329,7 @@ const QuantExpansionPlan = () => {
         </div>
       </div>
 
-      {QUANT_EXTENSION_PLAN.map((group) => (
+      {groups.map((group) => (
         <div key={group.group} className="glass-panel" style={{ padding: '1rem 1.1rem', border: `1px solid ${group.tone}30` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
             <div>
@@ -315,7 +344,7 @@ const QuantExpansionPlan = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', minWidth: 960 }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.045)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                  {['지표', '계산/정의', '원천 후보', '준비상태', '순위'].map((head) => (
+                  {['지표', '계산/정의', '원천 후보', '준비상태'].map((head) => (
                     <th key={head} style={{ padding: '0.55rem 0.6rem', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 800 }}>{head}</th>
                   ))}
                 </tr>
@@ -333,7 +362,6 @@ const QuantExpansionPlan = () => {
                           {item.readiness}
                         </span>
                       </td>
-                      <td style={{ padding: '0.58rem 0.6rem', fontWeight: 850, color: item.priority === 'P1' ? '#34d399' : item.priority === 'P2' ? '#60a5fa' : '#c084fc' }}>{item.priority}</td>
                     </tr>
                   );
                 })}
@@ -349,12 +377,12 @@ const QuantExpansionPlan = () => {
 const QuantMajorIndicatorsView = React.memo(() => {
   const [viewMode, setViewMode] = React.useState('indicators');
   const [catalog, setCatalog] = React.useState([]);
-  const [priorityFilter, setPriorityFilter] = React.useState('all');
   const [statusFilter, setStatusFilter] = React.useState('all');
   const [searchText, setSearchText] = React.useState('');
   const [selectedCategory, setSelectedCategory] = React.useState('all');
   const [selectedIndicator, setSelectedIndicator] = React.useState(null);
   const [seriesDetail, setSeriesDetail] = React.useState(null);
+  const [crossContext, setCrossContext] = React.useState(null);
   const [loadingCatalog, setLoadingCatalog] = React.useState(false);
   const [loadingSeries, setLoadingSeries] = React.useState(false);
 
@@ -377,11 +405,17 @@ const QuantMajorIndicatorsView = React.memo(() => {
   }, []);
 
   const totalCounts = React.useMemo(() => countStatuses(catalog), [catalog]);
+  const unresolvedCatalog = React.useMemo(
+    () => catalog.filter((item) => !isConnectedStatus(item.status)),
+    [catalog],
+  );
+  const unresolvedCounts = React.useMemo(() => countStatuses(unresolvedCatalog), [unresolvedCatalog]);
+  const connectedCount = totalCounts.ready + totalCounts.partial;
+  const connectedPct = totalCounts.total ? Math.round((connectedCount / totalCounts.total) * 1000) / 10 : 0;
 
   const filteredCatalog = React.useMemo(() => {
     const q = searchText.trim().toLowerCase();
     return catalog.filter((item) => {
-      if (priorityFilter !== 'all' && normalizePriority(item.priority) !== priorityFilter) return false;
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
       if (!q) return true;
       return [
@@ -392,7 +426,7 @@ const QuantMajorIndicatorsView = React.memo(() => {
         item.notes,
       ].some((value) => String(value || '').toLowerCase().includes(q));
     });
-  }, [catalog, priorityFilter, searchText, statusFilter]);
+  }, [catalog, searchText, statusFilter]);
 
   const categoryTabs = React.useMemo(() => {
     const grouped = new Map();
@@ -461,6 +495,19 @@ const QuantMajorIndicatorsView = React.memo(() => {
     };
   }, [selectedIndicator]);
 
+  React.useEffect(() => {
+    if (!selectedIndicator) {
+      setCrossContext(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(API(`/api/quant-major-indicators/cross-context/${encodeURIComponent(selectedIndicator)}?limit=60`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => { if (!cancelled) setCrossContext(payload); })
+      .catch(() => { if (!cancelled) setCrossContext(null); });
+    return () => { cancelled = true; };
+  }, [selectedIndicator]);
+
   const selectedMeta = React.useMemo(
     () => categoryIndicators.find((item) => item.indicator_key === selectedIndicator) || null,
     [categoryIndicators, selectedIndicator],
@@ -480,7 +527,6 @@ const QuantMajorIndicatorsView = React.memo(() => {
   const extraSeriesCount = Math.max(0, latestRows.length - MAX_CHART_SERIES);
 
   const selectedStatusMeta = STATUS_META[selectedMeta?.status] || STATUS_META.new_collector_needed;
-  const selectedPriorityMeta = PRIORITY_META[normalizePriority(selectedMeta?.priority)] || PRIORITY_META.p1;
   const hasSeries = !!seriesDetail?.items?.length && selectedMeta?.status !== 'new_collector_needed';
 
   return (
@@ -493,13 +539,13 @@ const QuantMajorIndicatorsView = React.memo(() => {
               EPIC식 메뉴 구조를 우리 대시보드 스타일로 재정리했습니다. 산업별 카테고리에서 지표를 바로 고르고, 연결 상태와 수집대기 항목을 한 화면에서 확인합니다.
             </p>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '0.55rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '0.55rem' }}>
             {[
-              { label: '연결', value: totalCounts.ready, icon: <CheckCircle2 size={14} />, color: '#34d399' },
+              { label: '전체', value: totalCounts.total, icon: <Database size={14} />, color: '#93c5fd' },
+              { label: `연결 ${connectedPct}%`, value: connectedCount, icon: <ShieldCheck size={14} />, color: '#34d399' },
               { label: '부분', value: totalCounts.partial, icon: <Layers3 size={14} />, color: '#fbbf24' },
-              { label: '계산', value: totalCounts.derivable, icon: <Clock3 size={14} />, color: '#60a5fa' },
-              { label: '대기', value: totalCounts.waiting, icon: <AlertTriangle size={14} />, color: '#f87171' },
-            ].map((card) => (
+              { label: '미연결', value: unresolvedCounts.waiting, icon: <AlertTriangle size={14} />, color: '#f87171' },
+            ].filter((card) => card.value > 0).map((card) => (
               <div key={card.label} style={{
                 padding: '0.68rem 0.72rem',
                 borderRadius: 12,
@@ -515,7 +561,7 @@ const QuantMajorIndicatorsView = React.memo(() => {
           </div>
         </div>
 
-        <div style={{ marginTop: '0.95rem', display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto auto', gap: '0.7rem', alignItems: 'center' }}>
+        <div style={{ marginTop: '0.95rem', display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) minmax(150px, 220px)', gap: '0.7rem', alignItems: 'center' }}>
           <label style={{
             display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.58rem 0.75rem',
             borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
@@ -528,26 +574,6 @@ const QuantMajorIndicatorsView = React.memo(() => {
               style={{ flex: 1, minWidth: 120, border: 0, outline: 0, background: 'transparent', color: 'var(--text-primary)', fontSize: '0.82rem' }}
             />
           </label>
-          <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {['all', 'p1', 'p2', 'p3'].map((key) => {
-              const active = priorityFilter === key;
-              const meta = key === 'all' ? { label: '전체순위', color: '#2dd4bf' } : PRIORITY_META[key];
-              return (
-                <button
-                  key={key}
-                  onClick={() => setPriorityFilter(key)}
-                  style={{
-                    padding: '0.42rem 0.72rem', borderRadius: 999, cursor: 'pointer', fontSize: '0.74rem', fontWeight: 750,
-                    border: `1px solid ${active ? meta.color : 'rgba(255,255,255,0.11)'}`,
-                    background: active ? `${meta.color}22` : 'rgba(255,255,255,0.03)',
-                    color: active ? meta.color : 'var(--text-secondary)',
-                  }}
-                >
-                  {meta.label}
-                </button>
-              );
-            })}
-          </div>
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
@@ -565,8 +591,10 @@ const QuantMajorIndicatorsView = React.memo(() => {
 
       <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
         {[
-          { key: 'indicators', label: '현재 지표', icon: <Database size={14} /> },
-          { key: 'plan', label: '확장계획', icon: <Target size={14} /> },
+          { key: 'indicators', label: '지표별', icon: <Database size={14} /> },
+          { key: 'sectors', label: '섹터별', icon: <Layers3 size={14} /> },
+          { key: 'stocks', label: '종목별', icon: <BarChart3 size={14} /> },
+          { key: 'plan', label: '확장계획·미수집', icon: <Target size={14} /> },
         ].map((tab) => {
           const active = viewMode === tab.key;
           return (
@@ -596,99 +624,54 @@ const QuantMajorIndicatorsView = React.memo(() => {
 
       {viewMode === 'plan' ? (
         <QuantExpansionPlan />
+      ) : viewMode === 'sectors' ? (
+        <QuantCafeSignalsPanel mode="sector" />
+      ) : viewMode === 'stocks' ? (
+        <QuantCafeSignalsPanel mode="stock" />
       ) : (
         <>
-      <div className="glass-panel" style={{ padding: '0.9rem 1rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: '0.55rem' }}>
-          {categoryTabs.map((category) => {
-            const active = category.code === selectedCategory;
-            return (
-              <button
-                key={category.code}
-                onClick={() => setSelectedCategory(category.code)}
-                style={{
-                  textAlign: 'left', padding: '0.66rem 0.72rem', borderRadius: 12, cursor: 'pointer',
-                  border: active ? '1px solid rgba(45,212,191,0.52)' : '1px solid rgba(255,255,255,0.1)',
-                  background: active ? 'rgba(45,212,191,0.13)' : 'rgba(255,255,255,0.03)',
-                  color: 'var(--text-primary)', minHeight: 74,
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.45rem', alignItems: 'center', marginBottom: '0.38rem' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{category.label}</span>
-                  <span style={{ fontSize: '0.68rem', color: active ? '#2dd4bf' : 'var(--text-secondary)', fontWeight: 800 }}>{category.total}</span>
-                </div>
-                <MiniStatusBar counts={category} />
-                <div style={{ marginTop: '0.38rem', display: 'flex', gap: '0.38rem', color: 'var(--text-secondary)', fontSize: '0.64rem' }}>
-                  <span style={{ color: '#34d399' }}>{category.ready}</span>
-                  <span style={{ color: '#fbbf24' }}>{category.partial}</span>
-                  <span style={{ color: '#60a5fa' }}>{category.derivable}</span>
-                  <span style={{ color: '#f87171' }}>{category.waiting}</span>
-                </div>
-              </button>
-            );
-          })}
+      <div className="glass-panel" style={{ padding:'0.9rem 1rem', overflowX:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', gap:'0.7rem', alignItems:'center', flexWrap:'wrap', marginBottom:'0.65rem' }}>
+          <div style={{ fontWeight:850 }}>분류별 전체 지표 현황</div>
+          <div style={{ color:'var(--text-secondary)', fontSize:'0.74rem' }}>
+            전체 {totalCounts.total.toLocaleString('ko-KR')}개 · 연결 {connectedCount.toLocaleString('ko-KR')}개 · 미연결 {unresolvedCounts.waiting.toLocaleString('ko-KR')}개
+          </div>
         </div>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.78rem', minWidth:620 }}>
+          <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(255,255,255,0.1)' }}>
+            {['분류','전체','연결완료','부분연결','계산대기','수집·원천대기'].map((head) => <th key={head} style={{ padding:'0.5rem', textAlign:head === '분류' ? 'left' : 'right' }}>{head}</th>)}
+          </tr></thead>
+          <tbody>{categoryTabs.filter((category) => category.code !== 'all').map((category) => (
+            <tr key={category.code} onClick={() => setSelectedCategory(category.code)} style={{ borderBottom:'1px solid rgba(255,255,255,0.05)', cursor:'pointer', background:selectedCategory === category.code ? 'rgba(45,212,191,0.08)' : 'transparent' }}>
+              <td style={{ padding:'0.52rem', fontWeight:800, color:selectedCategory === category.code ? '#2dd4bf' : 'inherit' }}>{category.label}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right' }}>{category.total}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right', color:'#34d399' }}>{category.ready}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right', color:'#fbbf24' }}>{category.partial}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right', color:'#60a5fa' }}>{category.derivable}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right', color:'#f87171' }}>{category.waiting}</td>
+            </tr>
+          ))}</tbody>
+        </table>
       </div>
-
       <div className="glass-panel" style={{ padding: '0.95rem 1rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 850 }}>{categoryTabs.find((c) => c.code === selectedCategory)?.label || '전체 지표'}</div>
-            <div style={{ marginTop: '0.22rem', color: 'var(--text-secondary)', fontSize: '0.76rem' }}>
-              {categoryIndicators.length.toLocaleString('ko-KR')}개 지표 · 카드를 누르면 아래 상세 차트와 최근 값이 바뀝니다.
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-            {STATUS_ORDER.map((key) => (
-              <span key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 7, height: 7, borderRadius: 999, background: STATUS_META[key].color }} />
-                {STATUS_META[key].label}
-              </span>
-            ))}
-          </div>
-        </div>
-
         {loadingCatalog && <div style={{ color: 'var(--text-secondary)', padding: '1rem 0.2rem' }}>지표 목록 불러오는 중...</div>}
         {!loadingCatalog && !categoryIndicators.length && (
           <div style={{ color: 'var(--text-secondary)', padding: '1rem 0.2rem' }}>조건에 맞는 지표가 없습니다.</div>
         )}
         {!loadingCatalog && !!categoryIndicators.length && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '0.62rem' }}>
-            {categoryIndicators.map((item) => {
-              const active = item.indicator_key === selectedIndicator;
-              const status = STATUS_META[item.status] || STATUS_META.new_collector_needed;
-              const priority = PRIORITY_META[normalizePriority(item.priority)] || PRIORITY_META.p1;
-              return (
-                <button
-                  key={item.indicator_key}
-                  onClick={() => setSelectedIndicator(item.indicator_key)}
-                  style={{
-                    textAlign: 'left', padding: '0.78rem 0.82rem', borderRadius: 13, cursor: 'pointer', minHeight: 118,
-                    border: active ? '1px solid rgba(96,165,250,0.58)' : '1px solid rgba(255,255,255,0.08)',
-                    background: active ? 'linear-gradient(135deg, rgba(45,212,191,0.12), rgba(96,165,250,0.09))' : 'rgba(255,255,255,0.025)',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.55rem', alignItems: 'flex-start', marginBottom: '0.55rem' }}>
-                    <div style={{ fontSize: '0.83rem', fontWeight: 850, lineHeight: 1.38 }}>{item.epic_indicator_name}</div>
-                    <span style={{
-                      fontSize: '0.65rem', padding: '0.13rem 0.38rem', borderRadius: 999, flexShrink: 0,
-                      border: `1px solid ${priority.color}55`, background: `${priority.color}1f`, color: priority.color, fontWeight: 800,
-                    }}>{priority.label}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{
-                      fontSize: '0.68rem', padding: '0.16rem 0.44rem', borderRadius: 999,
-                      border: `1px solid ${status.border}`, background: status.bg, color: status.color, fontWeight: 800,
-                    }}>{status.label}</span>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{item.frequency || '-'} · {item.base_unit || '-'}</span>
-                  </div>
-                  <div style={{ marginTop: '0.55rem', color: 'var(--text-secondary)', fontSize: '0.7rem', lineHeight: 1.45, minHeight: 30 }}>
-                    {item.source_system || item.replacement_family || '소스 미정'}
-                  </div>
-                </button>
-              );
-            })}
+          <div style={{ display:'grid', gridTemplateColumns:'minmax(180px, 0.45fr) minmax(280px, 1fr)', gap:'0.75rem' }}>
+            <label style={{ display:'grid', gap:'0.35rem' }}>
+              <span style={{ color:'var(--text-secondary)', fontSize:'0.74rem' }}>분류</span>
+              <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ padding:'0.62rem 0.72rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}>
+                {categoryTabs.map((category) => <option key={category.code} value={category.code}>{category.label} ({category.total})</option>)}
+              </select>
+            </label>
+            <label style={{ display:'grid', gap:'0.35rem' }}>
+              <span style={{ color:'var(--text-secondary)', fontSize:'0.74rem' }}>세부 지표</span>
+              <select value={selectedIndicator || ''} onChange={(e) => setSelectedIndicator(e.target.value)} style={{ padding:'0.62rem 0.72rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}>
+                {categoryIndicators.map((item) => <option key={item.indicator_key} value={item.indicator_key}>{item.epic_indicator_name} · {(STATUS_META[item.status] || STATUS_META.new_collector_needed).label}</option>)}
+              </select>
+            </label>
           </div>
         )}
       </div>
@@ -701,18 +684,11 @@ const QuantMajorIndicatorsView = React.memo(() => {
               <div>
                 <div style={{ display: 'flex', gap: '0.55rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.45rem' }}>
                   <h3 style={{ fontSize: '1.05rem' }}>{selectedMeta.epic_indicator_name}</h3>
-                  <span style={{ fontSize: '0.68rem', padding: '0.18rem 0.48rem', borderRadius: 999, background: `${selectedPriorityMeta.color}20`, border: `1px solid ${selectedPriorityMeta.color}55`, color: selectedPriorityMeta.color, fontWeight: 800 }}>{selectedPriorityMeta.label}</span>
                   <span style={{ fontSize: '0.68rem', padding: '0.18rem 0.48rem', borderRadius: 999, background: selectedStatusMeta.bg, border: `1px solid ${selectedStatusMeta.border}`, color: selectedStatusMeta.color, fontWeight: 800 }}>{selectedStatusMeta.label}</span>
                 </div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                   {CATEGORY_LABELS[selectedMeta.epic_category_code] || `카테고리 ${selectedMeta.epic_category_code}`} · {selectedMeta.source_system || '-'}
                 </div>
-              </div>
-              <div style={{ display: 'grid', gap: '0.35rem', minWidth: 220 }}>
-                <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                  <Database size={14} /> 수집기
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>{selectedMeta.collector_path || '-'}</div>
               </div>
             </div>
 
@@ -731,6 +707,40 @@ const QuantMajorIndicatorsView = React.memo(() => {
               </div>
             </div>
 
+            {crossContext && (
+              <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', borderBottom:'1px solid rgba(255,255,255,0.08)', padding:'0.8rem 0', marginBottom:'1rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.55rem', flexWrap:'wrap', marginBottom:'0.65rem' }}>
+                  <ShieldCheck size={16} color="#2dd4bf" />
+                  <strong style={{ fontSize:'0.84rem' }}>HS Trade 교차검증</strong>
+                  <span style={{ fontSize:'0.7rem', color:'#2dd4bf' }}>양쪽 확인 {crossContext.summary?.cross_confirmed || 0}종목</span>
+                  {!!crossContext.summary?.quant_only && <span style={{ fontSize:'0.7rem', color:'#fbbf24' }}>퀀트만 {crossContext.summary.quant_only}종목</span>}
+                  {crossContext.latest_signal && (
+                    <span style={{ marginLeft:'auto', fontSize:'0.7rem', color:['positive','green','buy','spike_up'].includes(crossContext.latest_signal.signal_type) ? '#34d399' : ['negative','red','sell','spike_down'].includes(crossContext.latest_signal.signal_type) ? '#f87171' : '#fbbf24' }}>
+                      최근 신호 {crossContext.latest_signal.signal_type} · {crossContext.latest_signal.period}
+                    </span>
+                  )}
+                </div>
+                {crossContext.items?.length ? (
+                  <div style={{ overflowX:'auto', maxHeight:230, overflowY:'auto' }}>
+                    <table style={{ width:'100%', minWidth:760, borderCollapse:'collapse', fontSize:'0.75rem' }}>
+                      <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
+                        {['종목','퀀트 섹터','검증','관련 HS 품목','매출/이익 비중'].map((h) => <th key={h} style={{ padding:'0.42rem', textAlign:'left' }}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>{crossContext.items.map((item) => (
+                        <tr key={item.stock_code} style={{ borderBottom:'1px solid rgba(255,255,255,0.045)' }}>
+                          <td style={{ padding:'0.45rem', fontWeight:800 }}>{item.stock_name} <span style={{ color:'var(--text-secondary)' }}>({item.stock_code})</span></td>
+                          <td style={{ padding:'0.45rem' }}>{item.sector_name || '-'}</td>
+                          <td style={{ padding:'0.45rem', color:item.cross_validation === 'cross_confirmed' ? '#34d399' : '#fbbf24' }}>{item.cross_validation === 'cross_confirmed' ? '교차확인' : 'HS 미확인'}</td>
+                          <td style={{ padding:'0.45rem', maxWidth:320 }}>{(item.hs_mappings || []).slice(0,3).map((h) => `${h.hs_code} ${h.display_name || h.hs_name}`).join(' · ') || '-'}</td>
+                          <td style={{ padding:'0.45rem' }}>{item.revenue_exposure_pct != null ? `매출 ${item.revenue_exposure_pct}%` : item.profit_exposure_pct != null ? `이익 ${item.profit_exposure_pct}%` : '미확정'}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                ) : <div style={{ color:'var(--text-secondary)', fontSize:'0.76rem' }}>이 지표에 확정된 종목 매핑이 아직 없습니다.</div>}
+              </div>
+            )}
+
             {loadingSeries && <div style={{ color: 'var(--text-secondary)', padding: '1rem 0.2rem' }}>시계열 불러오는 중...</div>}
 
             {!loadingSeries && !hasSeries && (
@@ -739,7 +749,7 @@ const QuantMajorIndicatorsView = React.memo(() => {
                   <AlertTriangle size={16} /> 수집대기중
                 </div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', lineHeight: 1.65 }}>
-                  {selectedMeta.notes || '아직 자동 수집기가 연결되지 않았습니다.'}
+                  {selectedMeta.notes || '아직 데이터 원천이 연결되지 않았습니다.'}
                 </div>
                 <div style={{ marginTop: '0.8rem', display: 'grid', gap: '0.35rem', fontSize: '0.8rem' }}>
                   <div><span style={{ color: 'var(--text-secondary)' }}>필요 소스:</span> <span>{selectedMeta.source_system || '-'}</span></div>

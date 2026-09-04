@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 SLEEP = 2.0   # FnGuide 요청 간격(초) — 2초로 늘려 60초 penalty box 방지
 
 # requests.Session → TCP 연결 재사용 (SSL handshake 오버헤드 감소)

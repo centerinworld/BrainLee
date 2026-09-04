@@ -33,7 +33,8 @@ _HERE = Path(__file__).resolve().parent.parent
 DB_PATH    = str(_HERE / "stock.db")
 ETF_DB_PATH = str(_HERE / "ETF_check" / "etf_check.db")
 # 해외 종목 가격 DB — 국내 종목은 stock.db, 해외 종목은 us_market.db
-US_DB_PATH = str(_HERE.parent / "us_market_dashboard" / "us_market.db")
+# us_market_dashboard는 Realtek_NVME 외장 SSD로 이전됨(2026-07-11)
+US_DB_PATH = "/Volumes/Realtek_NVME/us_market_dashboard/us_market.db"
 
 SECTOR_KEY_MAP: Dict[str, str] = {
     "semiconductor": "반도체",
@@ -80,7 +81,7 @@ SEMICONDUCTOR_COMPANIES: List[Dict] = [
     # ── 소재/부품 ──────────────────────────────────
     {"sort_order": 20, "lv1": "소재/부품",     "lv2": "기판(Substrate)",      "company_name": "Ibiden",            "ticker": "4062.T",  "country_raw": "JAPAN",  "country_flag": "🇯🇵"},
     {"sort_order": 21, "lv1": "소재/부품",     "lv2": "서비스시스템",          "company_name": "MKS Instruments",   "ticker": "MKSI",    "country_raw": "US",     "country_flag": "🇺🇸"},
-    {"sort_order": 22, "lv1": "소재/부품",     "lv2": "실리콘 웨이퍼",        "company_name": "GlobalWafers",      "ticker": "6488.TW", "country_raw": "TAIWAN", "country_flag": "🇹🇼"},
+    {"sort_order": 22, "lv1": "소재/부품",     "lv2": "실리콘 웨이퍼",        "company_name": "GlobalWafers",      "ticker": "6488.TWO", "country_raw": "TAIWAN", "country_flag": "🇹🇼"},
     {"sort_order": 23, "lv1": "소재/부품",     "lv2": "케미칼/필터",          "company_name": "Entegris",          "ticker": "ENTG",    "country_raw": "US",     "country_flag": "🇺🇸"},
     {"sort_order": 24, "lv1": "소재/부품",     "lv2": "케미칼/필터",          "company_name": "CMC Materials",     "ticker": "CCMP",    "country_raw": "US",     "country_flag": "🇺🇸"},
     {"sort_order": 25, "lv1": "소재/부품",     "lv2": "실리콘 웨이퍼",        "company_name": "Shin-Etsu Chemical","ticker": "4063.T",  "country_raw": "JAPAN",  "country_flag": "🇯🇵"},
@@ -108,8 +109,13 @@ SEMICONDUCTOR_COMPANIES: List[Dict] = [
 
 _TICKER_ALIASES: Dict[str, str] = {
     "KCRA.HE": "KCR.HE",
+    "6236.TW": "6257.TW",  # Sigurd Microelectronics (TWSE)
+    "3529.TW": "3529.TWO",  # eMemory (TPEx)
+    "6488.TW": "6488.TWO",  # GlobalWafers (TPEx)
+    "8299.TW": "8299.TWO",  # Phison (TPEx)
 }
-_DELISTED_TICKERS = {"CTLT", "SGEN", "6236.TW", "6967.T"}
+_DELISTED_TICKERS = {"CTLT", "SGEN", "CCMP", "EA", "6967.T", "9613.T"}
+_NON_MARKET_TICKERS = {"UNLISTED", "비상장", "비상장사", "PRIVATE"}
 _cache: Dict[str, tuple] = {}
 _CACHE_TTL = 300
 
@@ -127,9 +133,11 @@ def _now():
 
 def _norm_ticker(ticker: str | None) -> str:
     t = (ticker or "").strip()
-    if not t or t.upper() == "UNLISTED":
+    if not t or t.upper() in _NON_MARKET_TICKERS:
         return ""
     t = _TICKER_ALIASES.get(t.upper(), t)
+    if t.upper() in _DELISTED_TICKERS:
+        return ""
     if re.match(r"^\d{6}(\.(KS|KQ))?$", t, re.I):
         return t[:6]
     return t.upper()
@@ -885,7 +893,8 @@ async def _do_refresh_cache():
             SELECT ticker FROM radar_sector_override       WHERE ticker IS NOT NULL AND ticker != ''
         """).fetchall()
         raw_tickers = [row["ticker"] for row in rows]
-        tickers = list({_norm_ticker(t) for t in raw_tickers if _norm_ticker(t)})
+        tickers = list({_norm_ticker(t) for t in raw_tickers
+                        if _norm_ticker(t) and not _is_korean_ticker(_norm_ticker(t))})
 
         async def fetch_one(t: str):
             try:
@@ -1128,7 +1137,30 @@ def get_semiconductor_valuestream(
         codes = [r[1] for r in rows if r[1]]
         ph    = ",".join("?" * len(codes))
 
-        # 2. 현재가 + 전일가 — 최근 30일만 스캔 후 ROW_NUMBER (window 제한으로 빠름)
+        latest_full_row = conn.execute(
+            """
+            SELECT date
+            FROM price_history
+            WHERE close IS NOT NULL AND close > 0
+            GROUP BY date
+            HAVING COUNT(DISTINCT stock_code) >= 2000
+            ORDER BY date DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        latest_full_date = latest_full_row["date"] if latest_full_row else None
+
+        # 2026-08-23: date(COALESCE(?, 'now'), '-30 days')는 SQLite 전용 2-arg date() —
+        # PostgreSQL 라우팅 하에서 "function date(text, unknown) does not exist"로
+        # 실패하던 버그. 기준일 -30일을 Python에서 미리 계산.
+        _base_dt = (
+            datetime.datetime.strptime(str(latest_full_date)[:10], "%Y-%m-%d")
+            if latest_full_date else datetime.datetime.now()
+        )
+        cutoff_30d = (_base_dt - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+        price_upper_date = latest_full_date or datetime.datetime.now().strftime("%Y-%m-%d")
+
+        # 2. 현재가 + 전일가 — 부분 장중 행은 제외하고 최신 완전 거래일 기준으로 계산
         price_map: Dict[str, float] = {}
         day_change_map: Dict[str, Optional[float]] = {}
         for r in conn.execute(
@@ -1140,11 +1172,12 @@ def get_semiconductor_valuestream(
                            ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
                     FROM price_history
                     WHERE stock_code IN ({ph}) AND close > 0
-                      AND date >= date('now', '-30 days')
+                      AND date >= ?
+                      AND date <= ?
                 )
                 WHERE rn <= 2
                 GROUP BY stock_code""",
-            codes,
+            codes + [cutoff_30d, price_upper_date],
         ):
             cur_c  = r["cur_close"]
             prev_c = r["prev_close"]
@@ -1154,6 +1187,32 @@ def get_semiconductor_valuestream(
                     round((float(cur_c) - float(prev_c)) / float(prev_c) * 100.0, 2)
                     if prev_c and float(prev_c) > 0 else None
                 )
+
+        realtime_price_count = 0
+        realtime_latest_at = None
+        today_start = datetime.datetime.now().strftime("%Y-%m-%d 00:00:00")
+        try:
+            for r in conn.execute(
+                f"""SELECT stock_code, last_price, change_rate, updated_at
+                    FROM kiwoom_realtime_quote
+                    WHERE stock_code IN ({ph})
+                      AND last_price IS NOT NULL
+                      AND last_price > 0
+                      AND updated_at >= ?""",
+                codes + [today_start],
+            ):
+                code = r["stock_code"]
+                price_map[code] = float(r["last_price"])
+                day_change_map[code] = (
+                    round(float(r["change_rate"]), 2)
+                    if r["change_rate"] is not None else day_change_map.get(code)
+                )
+                realtime_price_count += 1
+                updated_at = r["updated_at"]
+                if updated_at and (realtime_latest_at is None or str(updated_at) > str(realtime_latest_at)):
+                    realtime_latest_at = updated_at
+        except Exception as e:
+            logger.debug(f"[market-radar] kiwoom realtime price overlay error: {e}")
 
         # 3. stock_universe (시총·PBR·PER·섹터)
         universe_map: Dict[str, dict] = {}
@@ -1186,10 +1245,13 @@ def get_semiconductor_valuestream(
             ttm_map[r[0]] = round(r[1] / 1e8) if r[1] else None
 
         # 5. 기준일 3개 가격 — JOIN 방식 (각 ref_date별 MAX(date) → close 조회)
+        #    액면병합/분할처럼 주가 단위가 바뀐 종목은 기준일 이후의 확인된 이벤트 배율을
+        #    기준일 가격에 반영해 현재 주식 단위와 맞춰 비교한다.
         ref_price_map: Dict[str, Dict[str, Optional[float]]] = {c: {} for c in codes}
+        ref_price_date_map: Dict[str, Dict[str, Optional[str]]] = {c: {} for c in codes}
         for ref_date in ref_dates:
             for r in conn.execute(
-                f"""SELECT p.stock_code, p.close
+                f"""SELECT p.stock_code, p.date, p.close
                     FROM price_history p
                     JOIN (
                         SELECT stock_code, MAX(date) AS max_date
@@ -1200,6 +1262,49 @@ def get_semiconductor_valuestream(
                 codes + [ref_date],
             ):
                 ref_price_map[r["stock_code"]][ref_date] = r["close"]
+                ref_price_date_map[r["stock_code"]][ref_date] = r["date"]
+
+        adjustment_events: Dict[str, list] = {c: [] for c in codes}
+        try:
+            for r in conn.execute(
+                f"""SELECT stock_code, event_date, price_ratio AS factor, matched_event_type AS event_type
+                    FROM price_jump_audit
+                    WHERE stock_code IN ({ph})
+                      AND return_usable = 1
+                      AND price_ratio IS NOT NULL
+                      AND price_ratio > 0
+                      AND matched_event_type IS NOT NULL
+                      AND event_date <= ?
+                    UNION ALL
+                    SELECT stock_code, event_date, backward_price_factor AS factor, event_type
+                    FROM corporate_action_events
+                    WHERE stock_code IN ({ph})
+                      AND adjustment_status = 'factor_confirmed'
+                      AND backward_price_factor IS NOT NULL
+                      AND backward_price_factor > 0
+                      AND event_date <= ?""",
+                codes + [price_upper_date] + codes + [price_upper_date],
+            ):
+                factor = float(r["factor"] or 0)
+                if factor > 0:
+                    adjustment_events.setdefault(r["stock_code"], []).append({
+                        "event_date": r["event_date"],
+                        "factor": factor,
+                        "event_type": r["event_type"],
+                    })
+        except Exception as _e:
+            logger.debug(f"[market-radar] price adjustment event map error: {_e}")
+
+        def _adjust_ref_price(code: str, ref_date: str, raw_price: Optional[float]) -> tuple:
+            if not raw_price or raw_price <= 0:
+                return raw_price, 1.0
+            actual_date = ref_price_date_map.get(code, {}).get(ref_date) or ref_date
+            factor = 1.0
+            for event in adjustment_events.get(code, []):
+                event_date = event.get("event_date")
+                if event_date and actual_date < event_date <= (latest_full_date or event_date):
+                    factor *= float(event.get("factor") or 1.0)
+            return round(float(raw_price) * factor, 4), round(factor, 6)
 
         # 6. ETF 편입금액 — 별도 DB (캐시된 연결)
         etf_amount_map: Dict[str, Optional[float]] = {}
@@ -1236,9 +1341,12 @@ def get_semiconductor_valuestream(
 
             ref_prices: Dict[str, Optional[float]] = {}
             ref_chgs:   Dict[str, Optional[float]] = {}
+            ref_adjustment_factors: Dict[str, float] = {}
             for rd in ref_dates:
-                rp = ref_price_map.get(code, {}).get(rd)
+                raw_rp = ref_price_map.get(code, {}).get(rd)
+                rp, adj_factor = _adjust_ref_price(code, rd, raw_rp)
                 ref_prices[rd] = rp
+                ref_adjustment_factors[rd] = adj_factor
                 ref_chgs[rd] = (
                     round((cur - rp) / rp * 100, 2)
                     if (cur and rp and rp > 0) else None
@@ -1273,9 +1381,18 @@ def get_semiconductor_valuestream(
                 "psr":           psr,
                 "ref_prices":    ref_prices,
                 "ref_chgs":      ref_chgs,
+                "ref_adjustment_factors": ref_adjustment_factors,
             })
 
-        payload = {"rows": result, "ref_dates": ref_dates}
+        price_basis = "realtime" if realtime_price_count > 0 else "latest_full_day"
+        payload = {
+            "rows": result,
+            "ref_dates": ref_dates,
+            "as_of_date": latest_full_date,
+            "price_basis": price_basis,
+            "realtime_price_count": realtime_price_count,
+            "realtime_latest_at": realtime_latest_at,
+        }
         _vs_cache[cache_key] = (time.time(), payload)
         return payload
     finally:
@@ -1285,7 +1402,330 @@ def get_semiconductor_valuestream(
 @router.post("/semiconductor/valuestream/refresh")
 def refresh_semiconductor_valuestream():
     """semiconductor_valuestream 테이블 기준일 가격 재계산 (별도 저장 없이 API 호출 시 자동 최신화)."""
+    _vs_cache.clear()
     return {"status": "ok", "note": "API 호출 시마다 price_history에서 실시간 계산됩니다."}
+
+
+@router.get("/semiconductor/megatrend")
+def get_semiconductor_megatrend():
+    """반도체 섹터 '메가트렌드' 탐지 — 6개월 수익률 +100%↑ & 52주 고점 대비 -15% 이내.
+
+    2026-07-20 신규(사용자 지시: "25.04 이후 500%+ 상승 종목을 우리 로직이 탐지해야 한다").
+    walk-forward 검증(scratch/megatrend_sector_confirm_test.py, scratch/megatrend_fundamental_confirm_test.py,
+    n=232건, 2020-06~2025-06 월별 체크포인트): 섹터 동반강세·매출/영업이익 YoY 가속 모두 개별
+    적중률을 높이지 못함(중앙값 여전히 마이너스, -30%↓ 비율 30~50%) — "이미 급등"만으로는
+    승자를 골라낼 수 없음이 반복 확인됨(기존 avoid_overheat 근거와 일치).
+    단, -20% 손절 + 승자 무제한 보유를 가정하면 건당 기대값은 학습(+12.1%)·검증(+6.9%) 양쪽에서
+    플러스로 재현됨 — 개별 종목 승률(19~31%)은 낮지만 "전부 담고 손실은 작게, 승자는 크게" 식의
+    바스켓 접근에서만 통계적으로 유효. 이 탭은 예측이 아니라 현재 이 조건에 해당하는 종목을
+    빠짐없이 노출하는 스크리너다 — 개별 종목 추천이 아님을 반드시 함께 표기할 것.
+    """
+    conn = _db()
+    conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        rows = conn.execute("""
+            SELECT DISTINCT sv.stock_code, sv.company_name, sv.lv1
+            FROM semiconductor_valuestream sv WHERE sv.stock_code IS NOT NULL
+        """).fetchall()
+
+        results = []
+        for stock_code, company_name, lv1 in rows:
+            prices = conn.execute(
+                "SELECT date, close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 260",
+                (stock_code,),
+            ).fetchall()
+            if len(prices) < 127:
+                continue
+            prices = list(reversed(prices))  # 오름차순
+            dates = [p[0] for p in prices]
+            closes = [p[1] for p in prices]
+            i = len(closes) - 1
+            ret6m = closes[i] / closes[i - 126] - 1
+            if ret6m < 1.0:
+                continue
+            hi252 = max(closes)
+            dist_from_high = closes[i] / hi252 - 1
+            if dist_from_high < -0.15:
+                continue
+            results.append({
+                "stock_code": stock_code,
+                "stock_name": company_name,
+                "lv1": lv1,
+                "ret_6m_pct": round(ret6m * 100, 1),
+                "dist_from_52w_high_pct": round(dist_from_high * 100, 1),
+                "current_price": closes[i],
+                "as_of_date": dates[i],
+            })
+
+        results.sort(key=lambda x: -x["ret_6m_pct"])
+
+        # 카테고리별 동시 발생 건수(참고용 — 필터 조건 아님, walk-forward에서 개선 효과 없음이 이미 확인됨)
+        lv1_counts: Dict[str, int] = {}
+        for r in results:
+            lv1_counts[r["lv1"]] = lv1_counts.get(r["lv1"], 0) + 1
+        for r in results:
+            r["lv1_concurrent_count"] = lv1_counts.get(r["lv1"], 0)
+
+        return {
+            "results": results,
+            "count": len(results),
+            "research_note": {
+                "status": "검증 완료(2026-07-20) — 스크리너로만 사용, 개별종목 매수신호 아님",
+                "criteria": "6개월 수익률 >=100% AND 52주 고점 대비 -15% 이내",
+                "finding": (
+                    "개별 종목 승률 19~31%, 중앙값 forward 12개월 수익률 마이너스(-16~-20%) — "
+                    "섹터 동반강세·매출/영업이익 YoY 가속을 추가해도 개선 없음(walk-forward 학습/검증 "
+                    "모두 확인). '이미 급등'만으로는 다음 승자를 못 고른다는 기존 avoid_overheat 근거와 일치."
+                ),
+                "caveat": (
+                    "단, -20% 손절 + 승자 무제한 보유를 가정한 바스켓 접근은 건당 기대값이 "
+                    "학습(+12.1%)·검증(+6.9%) 양쪽에서 플러스(n=232, 2020-06~2025-06 월별 체크포인트) — "
+                    "여기 노출된 종목을 개별로 확신하고 매수하지 말고, 분산된 바스켓+엄격한 손절 규율 "
+                    "전제하에서만 통계적 근거가 있음."
+                ),
+            },
+        }
+    finally:
+        conn.close()
+
+
+_US_SEMI_BASKET = ["NVDA","AVGO","MU","AMD","ASML","INTC","LRCX","AMAT","TXN","QCOM","KLAC","ADI","MRVL","NXPI"]
+
+# 2026-07-29(2차): 반도체 검증 이후 사용자 지시로 자동차/헬스케어/금융/소재/산업재 5개 섹터
+# 확장 검증(scratch/us_sector_lead_kr_sector_test_20260729.py) — 전부 학습/검증 방향일치
+# 확인됨(반도체가 가장 강하지만 일반적 현상). 섹터별 hit_rate는 그 검증 결과 그대로 하드코딩
+# (섹터마다 표본/구성이 달라 반도체처럼 세분화 등급까지는 만들지 않고 전체표본 hit만 사용).
+_SECTOR_LEADLAG_DEFS = {
+    "semiconductor": {
+        "label": "반도체", "us_industry_like": "%Semiconductor%",
+        "kr_source": "valuestream", "hit_train": 62.7, "hit_test": 60.2,
+    },
+    "auto_ev": {
+        "label": "자동차/전기차", "us_sector": "Consumer Cyclical",
+        "kr_sector_large": ["경기소비재"], "hit_train": 63.2, "hit_test": 59.1,
+    },
+    "healthcare": {
+        "label": "바이오/헬스케어", "us_sector": "Healthcare",
+        "kr_sector_large": ["의료"], "hit_train": 59.5, "hit_test": 56.2,
+    },
+    "financials": {
+        "label": "금융", "us_sector": "Financial Services",
+        "kr_sector_large": ["금융"], "hit_train": 64.4, "hit_test": 61.3,
+    },
+    "materials": {
+        "label": "소재/화학", "us_sector": "Basic Materials",
+        "kr_sector_large": ["소재"], "hit_train": 63.3, "hit_test": 62.6,
+    },
+    "industrials": {
+        "label": "산업재", "us_sector": "Industrials",
+        "kr_sector_large": ["산업재"], "hit_train": 63.8, "hit_test": 61.3,
+    },
+}
+
+
+def _us_basket_latest_return(conn, us_sector: str | None = None, us_industry_like: str | None = None,
+                              tickers: list[str] | None = None, top_n: int = 25):
+    """미국 섹터/업종 바스켓의 최신 등락률(동일가중)과 구성종목별 등락률."""
+    if tickers:
+        ticker_list = tickers
+    elif us_industry_like:
+        ticker_list = [r[0] for r in conn.execute(
+            "SELECT ticker FROM us_stock_meta WHERE industry LIKE ? ORDER BY market_cap DESC LIMIT ?",
+            (us_industry_like, top_n),
+        ).fetchall()]
+    else:
+        ticker_list = [r[0] for r in conn.execute(
+            "SELECT ticker FROM us_stock_meta WHERE sector=? ORDER BY market_cap DESC LIMIT ?",
+            (us_sector, top_n),
+        ).fetchall()]
+    if not ticker_list:
+        return None
+    placeholders = ",".join("?" for _ in ticker_list)
+    rows = conn.execute(
+        f"""SELECT ticker, date, close FROM us_price_history
+            WHERE ticker IN ({placeholders}) AND close > 0
+            ORDER BY ticker, date DESC""",
+        ticker_list,
+    ).fetchall()
+    by_ticker: dict[str, list[tuple[str, float]]] = {}
+    for ticker, d, close in rows:
+        lst = by_ticker.setdefault(ticker, [])
+        if len(lst) < 2:
+            lst.append((d[:10], close))
+    rets, latest_date, per_ticker = [], None, []
+    for ticker, series in by_ticker.items():
+        if len(series) < 2:
+            continue
+        (d1, p1), (d0, p0) = series[0], series[1]
+        if p0 and p0 > 0:
+            r = (p1 - p0) / p0
+            rets.append(r)
+            per_ticker.append({"ticker": ticker, "date": d1, "ret_pct": round(r * 100, 2)})
+            if latest_date is None or d1 > latest_date:
+                latest_date = d1
+    if not rets:
+        return None
+    basket_ret = sum(rets) / len(rets)
+    return {
+        "basket_ret": basket_ret, "basket_date": latest_date,
+        "components": sorted(per_ticker, key=lambda x: -abs(x["ret_pct"]))[:10],
+        "n_tickers": len(rets),
+    }
+
+
+@router.get("/sector-us-overnight-signals")
+def get_sector_us_overnight_signals():
+    """6개 섹터(반도체/자동차·전기차/헬스케어/금융/소재/산업재) 미국 바스켓 오버나잇 신호 일괄 조회.
+
+    2026-07-29(2차): 반도체 단독검증 이후 사용자 지시("할수 있는건 계속 하세요")로 5개 섹터
+    추가 확장. 전부 워크포워드(학습<2024/검증>=2024) 방향일치 확인됨 — 반도체만의 특수현상이
+    아니라 미국장마감(한국시간 새벽) 정보가 다음 한국거래일에 전방위로 반영되는 일반적 현상.
+    단, 전체시장(나스닥 전체→KOSPI 전체지수) 비교로는 IC가 학습+0.368→검증-0.113으로 불안정
+    했던 반면 섹터별로 쪼갠 이 신호들은 전부 안정적이었음 — 섹터 세분화가 통짜 지수보다 유효.
+    """
+    conn = _db()
+    conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        out = []
+        for key, cfg in _SECTOR_LEADLAG_DEFS.items():
+            if cfg.get("kr_source") == "valuestream":
+                basket = _us_basket_latest_return(conn, us_industry_like=cfg["us_industry_like"], tickers=_US_SEMI_BASKET)
+                kr_rows = conn.execute("""
+                    SELECT sv.stock_code, sv.company_name, MAX(su.market_cap) AS market_cap
+                    FROM semiconductor_valuestream sv JOIN stock_universe su ON su.stock_code=sv.stock_code
+                    WHERE su.market_cap IS NOT NULL GROUP BY sv.stock_code, sv.company_name ORDER BY market_cap DESC LIMIT 10
+                """).fetchall()
+            else:
+                basket = _us_basket_latest_return(conn, us_sector=cfg["us_sector"])
+                placeholders = ",".join("?" for _ in cfg["kr_sector_large"])
+                kr_rows = conn.execute(f"""
+                    SELECT stock_code, stock_name, market_cap FROM stock_universe
+                    WHERE sector_large IN ({placeholders}) AND market_cap IS NOT NULL
+                    ORDER BY market_cap DESC LIMIT 10
+                """, cfg["kr_sector_large"]).fetchall()
+
+            if not basket:
+                out.append({"key": key, "label": cfg["label"], "available": False})
+                continue
+
+            basket_ret = basket["basket_ret"]
+            direction = "상승" if basket_ret > 0 else ("하락" if basket_ret < 0 else "보합")
+            expected = "동반 상승" if basket_ret > 0 else ("동반 하락" if basket_ret < 0 else "방향성 약함")
+            out.append({
+                "key": key, "label": cfg["label"], "available": True,
+                "us_basket_date": basket["basket_date"],
+                "us_basket_ret_pct": round(basket_ret * 100, 2),
+                "us_basket_tickers": basket["n_tickers"],
+                "direction": direction,
+                "expected_kr_move": expected,
+                "backtested_hit_rate": {"train_pct": cfg["hit_train"], "test_pct": cfg["hit_test"]},
+                "us_basket_top_movers": basket["components"][:5],
+                "kr_top_stocks": [{"stock_code": r[0], "company_name": r[1], "market_cap_억": r[2]} for r in kr_rows],
+            })
+        return {
+            "sectors": out,
+            "caveat": (
+                "섹터 바스켓 단위 방향성 참고 신호이며 개별종목 매매지시 아님. 미국 장마감(한국시간 새벽) "
+                "정보가 한국 개장 전 확정되므로 룩어헤드 없음. hit_rate는 학습(~2023)/검증(2024~) "
+                "워크포워드 방향일치율."
+            ),
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/semiconductor/us-overnight-signal")
+def get_semiconductor_us_overnight_signal():
+    """미국 반도체 대형주 바스켓의 최근 등락률 → 다음 한국 거래일 반도체 섹터 방향성 신호.
+
+    2026-07-29 신규(사용자 지시: "미국주식이 한국주식 선행지표 아니냐, 특히 반도체" — 검증 요청).
+    scratch/us_semi_lead_kr_semi_test_20260729.py로 워크포워드 검증(학습 <2024/검증 2024~):
+    미국 반도체 14종(NVDA/AVGO/MU/AMD/ASML/INTC/LRCX/AMAT 등) 동일가중 바스켓 등락률과 다음
+    한국거래일 반도체 149종목(semiconductor_valuestream) 바스켓 등락률의 방향일치율 —
+    전체표본 학습62.7%/검증60.2%, |미국바스켓|>=1.0%일 때 학습69.6%/검증66.2%,
+    >=2.0%일 때 학습76.2%/검증71.0% — 검증기에도 방향 유지+변동폭이 클수록 단조 강화되는
+    깨끗한 신호(이 세션에서 검증한 신호 중 가장 강함). 미국 장마감(한국시간 새벽)이 한국
+    개장 전에 완전히 끝나므로 룩어헤드 없음.
+    """
+    conn = _db()
+    conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        placeholders = ",".join("?" for _ in _US_SEMI_BASKET)
+        rows = conn.execute(
+            f"""SELECT ticker, date, close FROM us_price_history
+                WHERE ticker IN ({placeholders}) AND close > 0
+                ORDER BY ticker, date DESC""",
+            _US_SEMI_BASKET,
+        ).fetchall()
+        by_ticker: dict[str, list[tuple[str, float]]] = {}
+        for ticker, d, close in rows:
+            lst = by_ticker.setdefault(ticker, [])
+            if len(lst) < 2:
+                lst.append((d[:10], close))
+
+        rets = []
+        latest_date = None
+        per_ticker = []
+        for ticker, series in by_ticker.items():
+            if len(series) < 2:
+                continue
+            (d1, p1), (d0, p0) = series[0], series[1]
+            if p0 and p0 > 0:
+                r = (p1 - p0) / p0
+                rets.append(r)
+                per_ticker.append({"ticker": ticker, "date": d1, "ret_pct": round(r * 100, 2)})
+                if latest_date is None or d1 > latest_date:
+                    latest_date = d1
+
+        if not rets:
+            return {"available": False, "reason": "미국 반도체 바스켓 가격 데이터 없음"}
+
+        basket_ret = sum(rets) / len(rets)
+        abs_ret = abs(basket_ret)
+        if abs_ret >= 0.02:
+            tier, train_hit, test_hit = "강한신호(>=2.0%)", 76.2, 71.0
+        elif abs_ret >= 0.01:
+            tier, train_hit, test_hit = "중간신호(>=1.0%)", 69.6, 66.2
+        elif abs_ret >= 0.005:
+            tier, train_hit, test_hit = "약한신호(>=0.5%)", 66.5, 62.5
+        else:
+            tier, train_hit, test_hit = "미미(<0.5%)", 62.7, 60.2
+
+        direction = "상승" if basket_ret > 0 else ("하락" if basket_ret < 0 else "보합")
+        expected = "동반 상승" if basket_ret > 0 else ("동반 하락" if basket_ret < 0 else "방향성 약함")
+
+        # 한국 반도체 시총 상위 종목(참고용 종목 리스트)
+        kr_top = conn.execute("""
+            SELECT sv.stock_code, MAX(sv.company_name) AS company_name, MAX(su.market_cap) AS market_cap
+            FROM semiconductor_valuestream sv
+            JOIN stock_universe su ON su.stock_code = sv.stock_code
+            WHERE su.market_cap IS NOT NULL
+            GROUP BY sv.stock_code
+            ORDER BY MAX(su.market_cap) DESC LIMIT 15
+        """).fetchall()
+
+        return {
+            "available": True,
+            "us_basket_date": latest_date,
+            "us_basket_ret_pct": round(basket_ret * 100, 2),
+            "direction": direction,
+            "signal_tier": tier,
+            "expected_kr_semiconductor_move": expected,
+            "backtested_hit_rate": {
+                "train_pct": train_hit, "test_pct": test_hit,
+                "note": "학습(~2023)/검증(2024~) 워크포워드 방향일치율 — 개별종목 아닌 반도체 섹터 바스켓 기준",
+            },
+            "us_basket_components": sorted(per_ticker, key=lambda x: -abs(x["ret_pct"]))[:14],
+            "kr_top_semiconductor_stocks": [
+                {"stock_code": r[0], "company_name": r[1], "market_cap_억": r[2]} for r in kr_top
+            ],
+            "caveat": (
+                "섹터 바스켓 단위 방향성 참고 신호이며 개별종목 매매지시 아님. "
+                "미국 장마감(한국시간 새벽) 정보가 한국 개장 전 확정되므로 룩어헤드 없음."
+            ),
+        }
+    finally:
+        conn.close()
 
 
 @router.get("/semiconductor/summary")
@@ -1770,14 +2210,23 @@ def get_semiconductor_financial_history(stock_code: str = Query(...)):
             SELECT year, revenue, operating_profit, net_income, eps
             FROM financial_data
             WHERE stock_code=? AND is_annual=1 AND report_type='CFS'
-            ORDER BY year DESC LIMIT 8
+            ORDER BY year DESC,
+                     (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
+                     (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
+                     id DESC
+            LIMIT 8
         """, (sc,)).fetchall()
         if not ann_fin:
             ann_fin = conn.execute("""
                 SELECT year, revenue, operating_profit, net_income, eps
                 FROM financial_data
                 WHERE stock_code=? AND is_annual=1
-                ORDER BY year DESC LIMIT 8
+                ORDER BY year DESC,
+                         (CASE WHEN report_type='CFS' THEN 0 ELSE 1 END),
+                         (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
+                         (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
+                         id DESC
+                LIMIT 8
             """, (sc,)).fetchall()
 
         # ── 연간 P&L 중복 제거 (같은 연도에 복수 행 가능) ──────────────
@@ -1794,14 +2243,23 @@ def get_semiconductor_financial_history(stock_code: str = Query(...)):
             SELECT year, operating_cf, capex, depreciation
             FROM cash_flow_data
             WHERE stock_code=? AND is_annual=1 AND report_type='CFS'
-            ORDER BY year DESC LIMIT 8
+            ORDER BY year DESC,
+                     (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
+                     (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
+                     id DESC
+            LIMIT 8
         """, (sc,)).fetchall()
         if not ann_cf:
             ann_cf = conn.execute("""
                 SELECT year, operating_cf, capex, depreciation
                 FROM cash_flow_data
                 WHERE stock_code=? AND is_annual=1
-                ORDER BY year DESC LIMIT 8
+                ORDER BY year DESC,
+                         (CASE WHEN report_type='CFS' THEN 0 ELSE 1 END),
+                         (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
+                         (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
+                         id DESC
+                LIMIT 8
             """, (sc,)).fetchall()
         # CF 중복 제거
         _seen_cf: set = set()

@@ -14,6 +14,7 @@ stock_data.db
 
 # Logs
 *.log
+*.log.[0-9]*
 nohup.out
 backend.log
 server.log
@@ -24,6 +25,7 @@ env
 kis_token.json
 telegram_sent.json
 *.session
+ETF_check/session_state.json
 
 # OS
 .DS_Store
@@ -51,6 +53,7 @@ reports/
 *.bak
 *.bak2
 *.bak3
+*.bak_window
 
 # Scratch / temp
 scratch/
@@ -61,6 +64,13 @@ config/
 # hs_trade_lab 관세청 다운로드 캐시 (대용량 바이너리)
 hs_trade_lab/data/customs_downloads/
 hs_trade_lab/data/daily_refresh_summary.json
+hs_trade_lab/tmp/
+hs_trade_lab/tmp_*
+
+# research_outputs: 자동 생성 리서치/백테스트 산출물 (JSON 덤프·일별 감사 리포트,
+# 재실행으로 재생성 가능) — 커밋 대상 아님. 예외: 지속 갱신되는 요약 파일만 추적.
+research_outputs/*
+!research_outputs/strategy_research_summary.json
 
 # 압축/바이너리 (git status 오염 방지)
 *.gz
@@ -72,4 +82,11 @@ hs_trade_lab/data/daily_refresh_summary.json
 
 # 아카이브 (로컬 보관용, 커밋 불필요)
 archives/
+backups/
+
+# 캐시/생성 데이터 산출물 (재실행으로 재생성 가능, 커밋 불필요)
+data/us_13f_cache.json
+data/strict_generic_matrix_20260712.json
 .env
+.naver_cafe_cookie.tmp
+.naver_cafe_browser_profile*/

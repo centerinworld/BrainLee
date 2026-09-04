@@ -16,8 +16,8 @@ import requests
 
 router = APIRouter()
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-CACHE_PATH = "/Applications/stock_dashboard/scratch/stock_analysis_rs_cache.json"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+CACHE_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/stock_analysis_rs_cache.json"
 KST = timezone(timedelta(hours=9))
 STOCKEASY_API_BASE = "https://stockeasy.intellio.kr/stockdata"
 OPEN_SLOT_MINUTES = 10
@@ -50,6 +50,22 @@ def _pct(a: float | None, b: float | None) -> float | None:
     if a is None or b is None or b == 0:
         return None
     return (a - b) / b * 100.0
+
+
+def _latest_full_price_date(conn: sqlite3.Connection, min_coverage: int = 2000) -> str | None:
+    row = conn.execute(
+        """
+        SELECT date
+        FROM price_history
+        WHERE close > 0
+        GROUP BY date
+        HAVING COUNT(DISTINCT stock_code) >= ?
+        ORDER BY date DESC
+        LIMIT 1
+        """,
+        (min_coverage,),
+    ).fetchone()
+    return row["date"] if row else None
 
 
 def _percentile_scores(values: list[float]) -> list[int]:
@@ -196,6 +212,50 @@ def _fetch_sector_maps(conn: sqlite3.Connection) -> tuple[dict[str, list[str]], 
     return dict(major), dict(middle)
 
 
+def _ensure_theme_membership_snapshot(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS theme_membership_snapshot (
+            snapshot_date TEXT NOT NULL,
+            stock_code TEXT NOT NULL,
+            stock_name TEXT,
+            theme TEXT NOT NULL,
+            taxonomy TEXT NOT NULL,
+            source TEXT NOT NULL,
+            captured_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (snapshot_date, stock_code, theme, taxonomy, source)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_theme_snapshot_date ON theme_membership_snapshot(snapshot_date, taxonomy)")
+
+
+def capture_theme_membership_snapshot(snapshot_date: str | None = None) -> dict:
+    """Capture the exact tag taxonomy consumed by the RS engine once per day."""
+    conn = _conn()
+    try:
+        _ensure_theme_membership_snapshot(conn)
+        as_of = snapshot_date or datetime.now(KST).date().isoformat()
+        rows = conn.execute("""
+            SELECT t.stock_code, COALESCE(u.stock_name, t.stock_code) AS stock_name,
+                   t.sector AS theme, COALESCE(NULLIF(t.strategy, ''), 'middle') AS taxonomy,
+                   t.source
+            FROM stock_sector_tags t
+            LEFT JOIN stock_universe u ON u.stock_code=t.stock_code
+            WHERE t.source IN ('stockeasy_stock_analysis', 'manual_multi')
+              AND t.sector IS NOT NULL AND TRIM(t.sector) <> ''
+            GROUP BY t.stock_code, u.stock_name, t.sector, t.strategy, t.source
+        """).fetchall()
+        for row in rows:
+            conn.execute("""
+                INSERT OR REPLACE INTO theme_membership_snapshot
+                (snapshot_date, stock_code, stock_name, theme, taxonomy, source, captured_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (as_of, row["stock_code"], row["stock_name"], row["theme"], row["taxonomy"], row["source"]))
+        conn.commit()
+        return {"ok": True, "snapshot_date": as_of, "saved": len(rows)}
+    finally:
+        conn.close()
+
+
 def _latest_universe(conn: sqlite3.Connection) -> dict[str, dict]:
     rows = conn.execute(
         """
@@ -222,10 +282,15 @@ def _latest_universe(conn: sqlite3.Connection) -> dict[str, dict]:
     }
 
 
-def _fetch_recent_prices(conn: sqlite3.Connection, code_meta: dict[str, dict], n: int = 260) -> dict[str, list[sqlite3.Row]]:
+def _fetch_recent_prices(conn: sqlite3.Connection, code_meta: dict[str, dict], n: int = 260, as_of: str | None = None) -> dict[str, list[sqlite3.Row]]:
     if not code_meta:
         return {}
     placeholders = ",".join("?" * len(code_meta))
+    date_filter = "AND p.date <= ?" if as_of else ""
+    params = list(code_meta.keys())
+    if as_of:
+        params.append(as_of)
+    params.append(n)
     rows = conn.execute(
         f"""
         WITH ranked AS (
@@ -234,13 +299,14 @@ def _fetch_recent_prices(conn: sqlite3.Connection, code_meta: dict[str, dict], n
           FROM price_history p
           WHERE p.stock_code IN ({placeholders})
             AND p.close > 0
+            {date_filter}
         )
         SELECT stock_code, date, close, volume, trade_amount
         FROM ranked
         WHERE rn <= ?
         ORDER BY stock_code, date DESC
         """,
-        list(code_meta.keys()) + [n],
+        params,
     ).fetchall()
     by_code: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for r in rows:
@@ -248,18 +314,22 @@ def _fetch_recent_prices(conn: sqlite3.Connection, code_meta: dict[str, dict], n
     return by_code
 
 
-def _fetch_bench_series(conn: sqlite3.Connection) -> dict[str, list[float]]:
+def _fetch_bench_series(conn: sqlite3.Connection, as_of: str | None = None) -> dict[str, list[float]]:
+    date_filter = "AND date <= ?" if as_of else ""
+    params = [as_of] if as_of else []
     rows = conn.execute(
-        """
+        f"""
         WITH ranked AS (
           SELECT stock_code, date, close,
                  ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) rn
           FROM price_history
           WHERE stock_code IN ('KOSPI','KOSDAQ','^KS11','^KQ11')
             AND close > 0
+            {date_filter}
         )
         SELECT stock_code, close FROM ranked WHERE rn <= 260 ORDER BY stock_code, rn
-        """
+        """,
+        params,
     ).fetchall()
     m: dict[str, list[float]] = defaultdict(list)
     for r in rows:
@@ -321,10 +391,11 @@ def _fetch_stockeasy_sector_rs(sector_level: str = "major", top_n: int = 10) -> 
 def _compute_rs_dashboard() -> dict:
     conn = _conn()
     try:
+        as_of = _latest_full_price_date(conn)
         code_meta = _latest_universe(conn)
         major_map, middle_map = _fetch_sector_maps(conn)
-        by_code = _fetch_recent_prices(conn, code_meta, 260)
-        bench = _fetch_bench_series(conn)
+        by_code = _fetch_recent_prices(conn, code_meta, 260, as_of=as_of)
+        bench = _fetch_bench_series(conn, as_of=as_of)
 
         def bench_ret(market: str, n: int) -> float:
             arr = bench["KOSPI"] if market == "KOSPI" else bench["KOSDAQ"]
@@ -347,9 +418,21 @@ def _compute_rs_dashboard() -> dict:
             if not meta:
                 continue
 
+            # 1. 시가총액 100억 미만 초소형/한계기업 제외 (억원 기준)
+            if meta.get("market_cap", 0) < 100.0:
+                continue
+
             closes = [_safe_num(r["close"]) for r in rows]
             vols = [_safe_num(r["volume"]) for r in rows]
             tvals = [_safe_num(r["trade_amount"]) for r in rows]
+
+            # 2. 거래정지 상태이거나 일평균 거래량이 극도로 저조한 휴면 종목 제외
+            if len(vols) > 0 and vols[0] == 0:
+                continue
+            avg_vol_10d = sum(vols[:10]) / len(vols[:10]) if len(vols) >= 10 else 0
+            if avg_vol_10d < 10:
+                continue
+
             for i in range(min(len(closes), len(tvals))):
                 if tvals[i] <= 0:
                     tvals[i] = vols[i] * closes[i]
@@ -395,7 +478,7 @@ def _compute_rs_dashboard() -> dict:
                 "rs_3m_raw": round(rs_3m_raw, 4),
                 "rs_6m_raw": round(rs_6m_raw, 4),
                 "rs_12m_raw": round(rs_12m_raw, 4),
-                "market_cap": round(meta["market_cap"] / 100_000_000.0, 2) if meta["market_cap"] else 0.0,
+                "market_cap": round(meta["market_cap"], 2) if meta["market_cap"] else 0.0,
                 "current_price": round(current, 2),
                 "change_rate": round(change_rate, 2),
             }
@@ -421,45 +504,76 @@ def _compute_rs_dashboard() -> dict:
             mmt_raw_list.append(mmt_raw)
 
         pm = _percentile_scores(mmt_raw_list)
+        # 각 기간별 메이저/미들 버킷 선언
+        major_buckets = {
+            "1m": defaultdict(list),
+            "3m": defaultdict(list),
+            "6m": defaultdict(list),
+            "12m": defaultdict(list)
+        }
+        middle_buckets = {
+            "1m": defaultdict(list),
+            "3m": defaultdict(list),
+            "6m": defaultdict(list),
+            "12m": defaultdict(list)
+        }
+
         for i, row in enumerate(rs_list):
             row["mmt"] = pm[i]
-            row["rs"] = p12[i]  # 12M 탭 기본 RS는 12M 상대강도 점수
+            row["rs"] = p12[i]  # 12M 기본 RS
             mcap = max(float(row.get("market_cap") or 0.0), 1.0)
-            for s in row.get("major_names") or ["미분류"]:
-                major_bucket[s].append((row["rs"], mcap))
-            for s in row.get("mid_names") or []:
-                middle_bucket[s].append((row["rs"], mcap))
+            
+            p_map = {
+                "1m": p1[i],
+                "3m": p3[i],
+                "6m": p6[i],
+                "12m": p12[i]
+            }
+            
+            for period_key in ("1m", "3m", "6m", "12m"):
+                val = p_map[period_key]
+                for s in row.get("major_names") or ["미분류"]:
+                    major_buckets[period_key][s].append((val, mcap))
+                for s in row.get("mid_names") or []:
+                    middle_buckets[period_key][s].append((val, mcap))
 
-        sector_rs = []
-        for k, pairs in major_bucket.items():
-            if not pairs:
-                continue
-            wsum = sum((w for _, w in pairs))
-            weighted = (sum((rs * w for rs, w in pairs)) / wsum) if wsum > 0 else (sum(rs for rs, _ in pairs) / len(pairs))
-            sector_rs.append({"sector": k, "avg_rs": round(weighted, 2), "count": len(pairs)})
-        sector_rs.sort(key=lambda x: (x["avg_rs"], x["count"]), reverse=True)
+        sector_rs_map = {}
+        sector_rs_mid_map = {}
+        
+        for period_key in ("1m", "3m", "6m", "12m"):
+            m_list = []
+            for k, pairs in major_buckets[period_key].items():
+                import math as _math
+                wsum = sum(_math.log(mcap) for _, mcap in pairs)
+                weighted = (sum(rs * _math.log(mcap) for rs, mcap in pairs) / wsum) if wsum > 0 else 0.0
+                m_list.append({"sector": k, "avg_rs": round(weighted, 2), "count": len(pairs)})
+            m_list.sort(key=lambda x: (x["avg_rs"], x["count"]), reverse=True)
+            sector_rs_map[period_key] = m_list
+            
+            mid_list = []
+            for k, pairs in middle_buckets[period_key].items():
+                import math as _math
+                wsum = sum(_math.log(mcap) for _, mcap in pairs)
+                weighted = (sum(rs * _math.log(mcap) for rs, mcap in pairs) / wsum) if wsum > 0 else 0.0
+                mid_list.append({"sector": k, "avg_rs": round(weighted, 2), "count": len(pairs)})
+            mid_list.sort(key=lambda x: (x["avg_rs"], x["count"]), reverse=True)
+            sector_rs_mid_map[period_key] = mid_list
 
-        sector_rs_mid = []
-        for k, pairs in middle_bucket.items():
-            if not pairs:
-                continue
-            wsum = sum((w for _, w in pairs))
-            weighted = (sum((rs * w for rs, w in pairs)) / wsum) if wsum > 0 else (sum(rs for rs, _ in pairs) / len(pairs))
-            sector_rs_mid.append({"sector": k, "avg_rs": round(weighted, 2), "count": len(pairs)})
-        sector_rs_mid.sort(key=lambda x: (x["avg_rs"], x["count"]), reverse=True)
+        sector_rs = sector_rs_map["12m"]
+        sector_rs_mid = sector_rs_mid_map["12m"]
 
         # StockEasy 종합 RS 로직 역추적:
         # 섹터 RS는 StockEasy API의 weighted_avg_rs를 우선 사용해 화면 정합성을 맞춘다.
         sector_rs_source_major = "local"
         sector_rs_source_mid = "local"
-        se_major = _fetch_stockeasy_sector_rs("major", top_n=10)
-        if se_major:
-            sector_rs = se_major
-            sector_rs_source_major = "stockeasy"
-        se_mid = _fetch_stockeasy_sector_rs("middle", top_n=20)
-        if se_mid:
-            sector_rs_mid = se_mid
-            sector_rs_source_mid = "stockeasy"
+        # se_major = _fetch_stockeasy_sector_rs("major", top_n=10)
+        # if se_major:
+        #     sector_rs = se_major
+        #     sector_rs_source_major = "stockeasy"
+        # se_mid = _fetch_stockeasy_sector_rs("middle", top_n=20)
+        # if se_mid:
+        #     sector_rs_mid = se_mid
+        #     sector_rs_source_mid = "stockeasy"
 
         rs_list.sort(key=lambda x: (x["rs"], x["mmt"]), reverse=True)
 
@@ -473,13 +587,14 @@ def _compute_rs_dashboard() -> dict:
         kosdaq_cur = bench["KOSDAQ"][0] if bench.get("KOSDAQ") else None
         kosdaq_prev = bench["KOSDAQ"][1] if bench.get("KOSDAQ") and len(bench["KOSDAQ"]) > 1 else kosdaq_cur
 
-        latest_date = conn.execute("SELECT MAX(date) FROM price_history WHERE close > 0").fetchone()
         return {
             "success": True,
             "data": {
                 "rs_list": rs_list,
                 "sector_rs": sector_rs,
                 "sector_rs_mid": sector_rs_mid,
+                "sector_rs_map": sector_rs_map,
+                "sector_rs_mid_map": sector_rs_mid_map,
                 "benchmarks": {
                     "kospi": {
                         "label": "코스피",
@@ -501,7 +616,7 @@ def _compute_rs_dashboard() -> dict:
                     },
                 },
                 "metadata": {
-                    "target_date": latest_date[0] if latest_date else None,
+                    "target_date": as_of,
                     "updated_at": datetime.now(KST).isoformat(timespec="seconds"),
                     "count": len(rs_list),
                     "sector_rs_source_major": sector_rs_source_major,
@@ -516,8 +631,9 @@ def _compute_rs_dashboard() -> dict:
 def _compute_52w_high_dashboard() -> dict:
     conn = _conn()
     try:
+        as_of = _latest_full_price_date(conn)
         code_meta = _latest_universe(conn)
-        by_code = _fetch_recent_prices(conn, code_meta, 260)
+        by_code = _fetch_recent_prices(conn, code_meta, 260, as_of=as_of)
         major_map, middle_map = _fetch_sector_maps(conn)
 
         out = []
@@ -558,18 +674,16 @@ def _compute_52w_high_dashboard() -> dict:
                 "is_new_high": is_new_high,
                 "is_near_high": near_high,
                 "breakout_score": round(breakout_score, 2),
-                "market_cap": round(meta["market_cap"] / 100_000_000.0, 2) if meta["market_cap"] else 0.0,
+                "market_cap": round(meta["market_cap"], 2) if meta["market_cap"] else 0.0,
             })
 
         out.sort(key=lambda x: (x["is_new_high"], x["is_near_high"], x["breakout_score"], x["high_gap_pct"]), reverse=True)
-        latest_date = conn.execute("SELECT MAX(date) FROM price_history WHERE close > 0").fetchone()
-
         return {
             "success": True,
             "data": {
                 "high52_list": out,
                 "metadata": {
-                    "target_date": latest_date[0] if latest_date else None,
+                    "target_date": as_of,
                     "updated_at": datetime.now(KST).isoformat(timespec="seconds"),
                     "count": len(out),
                     "new_high_count": sum(1 for x in out if x["is_new_high"]),
@@ -695,12 +809,154 @@ def get_rs_dashboard_data():
             "data": {
                 "sector_rs": data.get("sector_rs") or [],
                 "sector_rs_mid": data.get("sector_rs_mid") or [],
+                "sector_rs_map": data.get("sector_rs_map") or {},
+                "sector_rs_mid_map": data.get("sector_rs_mid_map") or {},
                 "benchmarks": data.get("benchmarks") or {},
                 "metadata": {**(data.get("metadata") or {}), "total_count": len(rs_list)},
             },
         }
     except Exception as e:
         return {"success": False, "reason": str(e), "data": {"sector_rs": [], "benchmarks": {}, "metadata": {}}}
+
+
+@router.get("/theme-composition")
+def get_theme_composition():
+    """Compare the two latest security-master snapshots without rewriting RS.
+
+    Sector RS remains price-led.  Classification changes are exposed separately
+    so a renamed or newly mapped theme cannot be mistaken for RS momentum.
+    """
+    conn = _conn()
+    try:
+        # A partial refresh can contain only a few hundred symbols and a
+        # different taxonomy source.  It is not a valid "theme rotation"
+        # observation, so compare only broadly covered master snapshots.
+        snapshots = conn.execute("""
+            SELECT base_date, COUNT(DISTINCT stock_code) AS coverage
+            FROM stock_universe
+            WHERE base_date IS NOT NULL
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+            GROUP BY base_date
+            HAVING COUNT(DISTINCT stock_code) >= 2000
+            ORDER BY base_date DESC
+            LIMIT 2
+        """).fetchall()
+        if len(snapshots) < 2:
+            return {"success": True, "data": {
+                "current_date": str(snapshots[0]["base_date"]) if snapshots else None,
+                "previous_date": None,
+                "themes": [], "moves": [],
+                "notice": "전종목 커버리지 2,000개 이상인 비교용 분류 스냅샷이 아직 충분하지 않습니다.",
+            }}
+        current_date, previous_date = str(snapshots[0]["base_date"]), str(snapshots[1]["base_date"])
+        current_coverage, previous_coverage = int(snapshots[0]["coverage"]), int(snapshots[1]["coverage"])
+        theme_expr = "COALESCE(NULLIF(sector_mid, ''), NULLIF(sector_small, ''), NULLIF(sector_large, ''), '미분류')"
+        current_rows = conn.execute(f"""
+            SELECT {theme_expr} AS theme, COUNT(*) AS count
+            FROM stock_universe
+            WHERE base_date=? AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+            GROUP BY {theme_expr}
+        """, (current_date,)).fetchall()
+        previous_rows = conn.execute(f"""
+            SELECT {theme_expr} AS theme, COUNT(*) AS count
+            FROM stock_universe
+            WHERE base_date=? AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+            GROUP BY {theme_expr}
+        """, (previous_date,)).fetchall()
+        previous_map = {str(r["theme"]): int(r["count"] or 0) for r in previous_rows}
+        themes = []
+        for row in current_rows:
+            theme, current_count = str(row["theme"]), int(row["count"] or 0)
+            prior_count = previous_map.pop(theme, 0)
+            themes.append({"theme": theme, "count": current_count, "previous_count": prior_count, "change": current_count - prior_count})
+        themes.extend({"theme": theme, "count": 0, "previous_count": count, "change": -count} for theme, count in previous_map.items())
+        themes.sort(key=lambda row: (abs(row["change"]), row["count"]), reverse=True)
+
+        moves = conn.execute(f"""
+            SELECT cur.stock_code, cur.stock_name,
+                   {theme_expr.replace('sector_', 'cur.sector_')} AS current_theme,
+                   {theme_expr.replace('sector_', 'prev.sector_')} AS previous_theme
+            FROM stock_universe cur
+            JOIN stock_universe prev ON prev.stock_code=cur.stock_code AND prev.base_date=?
+            WHERE cur.base_date=?
+              AND cur.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND {theme_expr.replace('sector_', 'cur.sector_')} <> {theme_expr.replace('sector_', 'prev.sector_')}
+            ORDER BY cur.stock_name
+            LIMIT 200
+        """, (previous_date, current_date)).fetchall()
+        return {"success": True, "data": {
+            "current_date": current_date, "previous_date": previous_date,
+            "current_coverage": current_coverage, "previous_coverage": previous_coverage,
+            "themes": themes, "moves": [dict(row) for row in moves],
+            "notice": "전종목 기준 분류 변화입니다. RS 점수와 분리해 표시하며, 종목 편입·편출 자체는 매수 신호가 아닙니다.",
+        }}
+    except Exception as e:
+        return {"success": False, "reason": str(e), "data": {"themes": [], "moves": []}}
+    finally:
+        conn.close()
+
+
+@router.post("/theme-composition/capture")
+def capture_theme_composition():
+    return capture_theme_membership_snapshot()
+
+
+@router.get("/theme-composition/tags")
+def get_tag_theme_composition():
+    """Compare only like-for-like daily snapshots of the RS tag taxonomy."""
+    conn = _conn()
+    try:
+        _ensure_theme_membership_snapshot(conn)
+        dates = conn.execute("""
+            SELECT snapshot_date, COUNT(DISTINCT stock_code) AS coverage
+            FROM theme_membership_snapshot
+            GROUP BY snapshot_date
+            HAVING COUNT(DISTINCT stock_code) >= 1000
+            ORDER BY snapshot_date DESC LIMIT 2
+        """).fetchall()
+        if len(dates) < 2:
+            return {"success": True, "data": {"current_date": str(dates[0]["snapshot_date"]) if dates else None,
+                "previous_date": None, "themes": [], "moves": [],
+                "notice": "RS 태그 분류 스냅샷을 누적 중입니다. 다음 영업일 스냅샷부터 편입·편출을 비교합니다."}}
+        current, previous = str(dates[0]["snapshot_date"]), str(dates[1]["snapshot_date"])
+        current_rows = conn.execute("""
+            SELECT taxonomy, theme, COUNT(DISTINCT stock_code) AS count
+            FROM theme_membership_snapshot WHERE snapshot_date=?
+            GROUP BY taxonomy, theme
+        """, (current,)).fetchall()
+        prior_rows = conn.execute("""
+            SELECT taxonomy, theme, COUNT(DISTINCT stock_code) AS count
+            FROM theme_membership_snapshot WHERE snapshot_date=?
+            GROUP BY taxonomy, theme
+        """, (previous,)).fetchall()
+        prior = {(str(row["taxonomy"]), str(row["theme"])): int(row["count"] or 0) for row in prior_rows}
+        themes = []
+        for row in current_rows:
+            key = (str(row["taxonomy"]), str(row["theme"]))
+            count = int(row["count"] or 0)
+            before = prior.pop(key, 0)
+            themes.append({"taxonomy": key[0], "theme": key[1], "count": count, "previous_count": before, "change": count - before})
+        themes.extend({"taxonomy": key[0], "theme": key[1], "count": 0, "previous_count": value, "change": -value} for key, value in prior.items())
+        themes.sort(key=lambda row: (abs(row["change"]), row["count"]), reverse=True)
+        moves = conn.execute("""
+            SELECT c.stock_code, MAX(c.stock_name) AS stock_name,
+                   GROUP_CONCAT(DISTINCT p.theme) AS previous_theme,
+                   GROUP_CONCAT(DISTINCT c.theme) AS current_theme
+            FROM theme_membership_snapshot c
+            LEFT JOIN theme_membership_snapshot p
+              ON p.snapshot_date=? AND p.stock_code=c.stock_code AND p.taxonomy=c.taxonomy
+            WHERE c.snapshot_date=?
+            GROUP BY c.stock_code, c.taxonomy
+            HAVING COALESCE(GROUP_CONCAT(DISTINCT p.theme), '') <> GROUP_CONCAT(DISTINCT c.theme)
+            ORDER BY stock_name LIMIT 200
+        """, (previous, current)).fetchall()
+        return {"success": True, "data": {"current_date": current, "previous_date": previous,
+            "themes": themes, "moves": [dict(row) for row in moves],
+            "notice": "RS가 사용하는 동일 태그 체계의 일별 구성 변화입니다. RS 점수와는 별도 정보입니다."}}
+    except Exception as e:
+        return {"success": False, "reason": str(e), "data": {"themes": [], "moves": []}}
+    finally:
+        conn.close()
 
 
 @router.get("/dashboard-rows")

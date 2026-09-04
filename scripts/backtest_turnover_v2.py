@@ -6,7 +6,7 @@ from typing import Dict, List
 import pandas as pd
 import numpy as np
 
-DB = "/Applications/stock_dashboard/stock.db"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 START = "2024-01-01"
 END = "2026-05-29"
 

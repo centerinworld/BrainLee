@@ -1,0 +1,21 @@
+{
+  "base_date": "20260901",
+  "status": "incomplete_or_invalid",
+  "published": false,
+  "snapshots": 1168,
+  "successes": 1167,
+  "empty": 1,
+  "errors": 0,
+  "components": 76059,
+  "missing_raw_metadata": 1,
+  "invalid_hash": 1,
+  "invalid_success": 0,
+  "duplicate_rows": 0,
+  "raw_missing_on_disk": 0,
+  "publication_dates": [
+    "20260826"
+  ],
+  "changes": null,
+  "reason": "Two healthy complete publications are required for a diff",
+  "audited_at": "2026-09-01T21:12:12"
+}

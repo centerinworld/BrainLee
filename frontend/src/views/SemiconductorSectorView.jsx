@@ -21,6 +21,8 @@ const SECTOR_ORDER = [
 ];
 
 const DEFAULT_DATES = ['2026-01-02', '2025-08-01', '2025-04-02'];
+const SECTOR_REF_DATES_STORAGE_KEY = 'sd_semiconductor_sector_ref_dates';
+const isRefDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 
 const fmtNum = (v, digits = 0) => {
   if (v == null || Number.isNaN(Number(v))) return '';
@@ -109,8 +111,22 @@ const PctCell = ({ value }) => (
 
 const SemiconductorSectorView = () => {
   const [activeTab, setActiveTab] = React.useState('overview');
-  const [dates, setDates] = React.useState(DEFAULT_DATES);
-  const [pendingDates, setPendingDates] = React.useState(DEFAULT_DATES);
+  const initialDates = React.useMemo(() => {
+    if (typeof window === 'undefined') return DEFAULT_DATES;
+    try {
+      const url = new URL(window.location.href);
+      const urlDates = [1, 2, 3].map((idx) => url.searchParams.get(`semi_sector_ref${idx}`));
+      if (urlDates.every(isRefDate)) return urlDates;
+      const saved = JSON.parse(window.localStorage.getItem(SECTOR_REF_DATES_STORAGE_KEY) || '[]');
+      return Array.isArray(saved) && saved.length === 3 && saved.every(isRefDate)
+        ? saved
+        : DEFAULT_DATES;
+    } catch {
+      return DEFAULT_DATES;
+    }
+  }, []);
+  const [dates, setDates] = React.useState(() => initialDates);
+  const [pendingDates, setPendingDates] = React.useState(() => initialDates);
   const [stocks, setStocks] = React.useState([]);
   const [labStocks, setLabStocks] = React.useState([]);
   const [annualRows, setAnnualRows] = React.useState([]);
@@ -207,7 +223,26 @@ const SemiconductorSectorView = () => {
     return SECTOR_ORDER.filter(k => by.has(k)).map(k => [k, by.get(k)]);
   }, [mergedStocks]);
 
-  const applyDates = () => setDates(pendingDates.map(d => d.trim()).filter(Boolean).slice(0, 3));
+  const saveDates = React.useCallback((nextDates) => {
+    if (typeof window === 'undefined' || !Array.isArray(nextDates) || !nextDates.every(isRefDate)) return;
+    try {
+      window.localStorage.setItem(SECTOR_REF_DATES_STORAGE_KEY, JSON.stringify(nextDates));
+      const url = new URL(window.location.href);
+      nextDates.forEach((date, idx) => url.searchParams.set(`semi_sector_ref${idx + 1}`, date));
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    saveDates(pendingDates);
+  }, [pendingDates, saveDates]);
+
+  const applyDates = () => {
+    const nextDates = pendingDates.map(d => d.trim()).filter(Boolean).slice(0, 3);
+    if (nextDates.length !== 3 || !nextDates.every(isRefDate)) return;
+    saveDates(nextDates);
+    setDates(nextDates);
+  };
 
   const tabs = [
     ['overview', '반도체 종합현황'],
@@ -255,8 +290,8 @@ const SemiconductorSectorView = () => {
         .semi-tab.active { background:var(--accent-mint); color:#00110f; }
         .semi-card { background:var(--bg-card); border:1px solid var(--glass-border); border-radius:8px; padding:0.8rem; }
         .semi-title { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; }
-        .semi-table-wrap { overflow:auto; -webkit-overflow-scrolling:touch; border-radius:6px; }
-        .semi-excel-table { border-collapse:collapse; min-width:920px; color:#0f172a; background:#f8fafc; font-size:0.75rem; width:100%; }
+        .semi-table-wrap { overflow:auto; -webkit-overflow-scrolling:touch; border-radius:6px; max-height:calc(100vh - 230px); position:relative; --sticky-table-top:0px; --table-scroll-max-height:calc(100vh - 230px); scrollbar-gutter:stable; }
+        .semi-excel-table { border-collapse:separate; border-spacing:0; min-width:920px; color:#0f172a; background:#f8fafc; font-size:0.75rem; width:100%; }
         .semi-excel-table td, .semi-excel-table th { line-height:1.15; }
         .semi-excel-table tbody tr:hover td { filter:brightness(0.95); }
         .semi-name { color:#064e3b; font-weight:800; cursor:help; }

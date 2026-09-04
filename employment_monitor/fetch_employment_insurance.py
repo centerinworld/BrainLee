@@ -25,7 +25,7 @@ from urllib.parse import unquote
 
 import requests
 
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 try:
     from config import PUBLIC_DATA_API_KEY
     from dart_key_manager import DartKeyRotator, RotatingOpenDartReader, get_dart_api_keys
@@ -42,8 +42,8 @@ if not get_dart_api_keys():
     print("❌ DART_API_KEY not found")
     sys.exit(1)
 
-EMP_DB  = '/Applications/stock_dashboard/employment_monitor/employment.db'
-STOCK_DB = '/Applications/stock_dashboard/stock.db'
+EMP_DB  = '/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db'
+STOCK_DB = '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 EMP_INS_URL = 'http://apis.data.go.kr/B490001/gySjbPstateInfoService/getGySjBoheomBsshItem'
 DART_COMPANY_URL = 'https://opendart.fss.or.kr/api/company.json'
 

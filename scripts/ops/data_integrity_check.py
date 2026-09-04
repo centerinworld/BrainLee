@@ -15,7 +15,7 @@ data_integrity_check.py — 4중 검증 체계가 놓치는 영역 전수 검사
 import sqlite3, json, os, sys
 from datetime import datetime
 
-ROOT = "/Applications/stock_dashboard"
+ROOT = "/Volumes/Realtek_NVME/stock_dashboard/runtime"
 DB   = f"{ROOT}/stock.db"
 
 
@@ -369,7 +369,7 @@ def run_all(conn) -> dict:
         WHERE is_annual=1 AND report_type='CFS' AND year >= 2022
           AND revenue IS NOT NULL
         GROUP BY stock_code, year
-        HAVING cnt > 2
+        HAVING COUNT(*) > 2
         ORDER BY cnt DESC LIMIT 10
     """).fetchall()
     results["I8_duplicate_annual"] = {
@@ -432,7 +432,7 @@ def main():
     # 최신 링크
     for ext in ["json", "txt"]:
         link = f"{out_dir}/latest_integrity.{ext}"
-        src  = f"{out_dir}/integrity_{ts}.{ext}"
+        src  = f"integrity_{ts}.{ext}"
         if os.path.islink(link) or os.path.exists(link):
             os.remove(link)
         os.symlink(src, link)

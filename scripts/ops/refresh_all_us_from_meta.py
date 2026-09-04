@@ -6,10 +6,10 @@ import sqlite3
 import sys
 from datetime import datetime
 
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 import main
 
-DB='/Applications/stock_dashboard/stock.db'
+DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 
 
 def main_run():
@@ -51,7 +51,7 @@ def main_run():
         'fail': fail,
         'failed_sample': failed,
     }
-    out = f"/Applications/stock_dashboard/scratch/us_refresh_all_meta_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    out = f"/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/us_refresh_all_meta_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(out, 'w', encoding='utf-8') as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     print(out, flush=True)

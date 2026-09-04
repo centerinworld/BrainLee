@@ -12,8 +12,8 @@ from typing import Optional
 import pandas as pd
 import OpenDartReader as odr
 
-DB = "/Applications/stock_dashboard/stock.db"
-ENV_PATH = "/Applications/stock_dashboard/.env"
+DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+ENV_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/.env"
 
 REV_KW = ["매출액", "영업수익", "매출"]
 OP_KW = ["영업이익"]

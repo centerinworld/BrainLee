@@ -7,14 +7,14 @@
 
 ## 프로젝트 기본 정보
 
-- **경로**: `/Applications/stock_dashboard/`
+- **경로**: `/Volumes/Realtek_NVME/stock_dashboard/runtime/`
 - **백엔드**: FastAPI (Python 3.11), SQLite (`stock.db`)
 - **프론트엔드**: React + Vite (`frontend/src/App.jsx`)
 - **venv**: Python 3.11 기반 ← **반드시 3.11 사용. Python 3.14는 오류 발생**
 
 ## 서버 실행
 ```bash
-cd /Applications/stock_dashboard && source venv/bin/activate
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
 pkill -f uvicorn && sleep 2
 nohup uvicorn main:app --host 0.0.0.0 --port 8000 >> server.log 2>&1 &
 sleep 3 && tail -5 server.log
@@ -124,7 +124,7 @@ rows = conn.execute("""
 ```bash
 # ★★★ 모든 cron에 source ~/.zshrc && 필수 ★★★
 # 없으면 OPENAI_API_KEY 등 환경변수 누락으로 오류 발생
-0 9,21 * * * source ~/.zshrc && cd /Applications/stock_dashboard && ...
+0 9,21 * * * source ~/.zshrc && cd /Volumes/Realtek_NVME/stock_dashboard/runtime && ...
 ```
 
 ### 원칙 7. signal_engine DB 초기화
@@ -220,17 +220,17 @@ report_files, telegram_messages, listed_company_info (현재 비어있음)
 crontab -l
 
 # 확정된 cron 목록
-5 0 * * * cd /Applications/stock_dashboard && /Applications/stock_dashboard/venv/bin/python3 /Applications/stock_dashboard/backfill_financials.py >> /Applications/stock_dashboard/backfill_financials.log 2>&1
+5 0 * * * cd /Volumes/Realtek_NVME/stock_dashboard/runtime && /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/backfill_financials.py >> /Volumes/Realtek_NVME/stock_dashboard/runtime/backfill_financials.log 2>&1
 
-30 8 * * * source ~/.zshrc && cd /Applications/stock_dashboard && /Applications/stock_dashboard/venv/bin/python3 /Applications/stock_dashboard/telegram_collector.py >> /Applications/stock_dashboard/telegram_collector.log 2>&1
+30 8 * * * source ~/.zshrc && cd /Volumes/Realtek_NVME/stock_dashboard/runtime && /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_collector.py >> /Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_collector.log 2>&1
 
-0 9,21 * * * source ~/.zshrc && cd /Applications/stock_dashboard && /Applications/stock_dashboard/venv/bin/python3 /Applications/stock_dashboard/telegram_monitor.py >> /Applications/stock_dashboard/telegram_monitor.log 2>&1
+0 9,21 * * * source ~/.zshrc && cd /Volumes/Realtek_NVME/stock_dashboard/runtime && /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_monitor.py >> /Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_monitor.log 2>&1
 
-30 18 * * 1-5 cd /Applications/stock_dashboard && /Applications/stock_dashboard/venv/bin/python3 /Applications/stock_dashboard/public_data_collector.py >> /Applications/stock_dashboard/public_data.log 2>&1
+30 18 * * 1-5 cd /Volumes/Realtek_NVME/stock_dashboard/runtime && /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/public_data_collector.py >> /Volumes/Realtek_NVME/stock_dashboard/runtime/public_data.log 2>&1
 
-0 7 * * 1 cd /Applications/stock_dashboard && /Applications/stock_dashboard/venv/bin/python3 /Applications/stock_dashboard/public_data_collector.py --company-only >> /Applications/stock_dashboard/public_data.log 2>&1
+0 7 * * 1 cd /Volumes/Realtek_NVME/stock_dashboard/runtime && /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/public_data_collector.py --company-only >> /Volumes/Realtek_NVME/stock_dashboard/runtime/public_data.log 2>&1
 
-0 8 * * 6 source ~/.zshrc && cd /Applications/stock_dashboard && /Applications/stock_dashboard/venv/bin/python3 /Applications/stock_dashboard/weekly_price_collect.py >> /Applications/stock_dashboard/weekly_collect.log 2>&1
+0 8 * * 6 source ~/.zshrc && cd /Volumes/Realtek_NVME/stock_dashboard/runtime && /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/weekly_price_collect.py >> /Volumes/Realtek_NVME/stock_dashboard/runtime/weekly_collect.log 2>&1
 ```
 
 ---
@@ -295,7 +295,7 @@ crontab -l
 import config as _cfg
 TELEGRAM_API_ID   = int(getattr(_cfg, "TELEGRAM_API_ID",  0))
 TELEGRAM_API_HASH = getattr(_cfg, "TELEGRAM_API_HASH", "")
-TELEGRAM_SESSION  = "/Applications/stock_dashboard/telegram_session"
+TELEGRAM_SESSION  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/telegram_session"
 TELEGRAM_PHONE    = getattr(_cfg, "TELEGRAM_PHONE",    "")
 OPENAI_API_KEY    = getattr(_cfg, "OPENAI_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
 BOT_TOKEN         = getattr(_cfg, "TELEGRAM_BOT_TOKEN","")
@@ -344,10 +344,10 @@ conn.close()
 sqlite3 stock.db "SELECT COUNT(DISTINCT stock_code) FROM price_history WHERE date >= '2024-01-01';"
 
 # 전종목 일괄 수집 (1회성, 약 1~2시간)
-nohup python3 /Applications/stock_dashboard/collect_all_prices.py > /Applications/stock_dashboard/collect_prices.log 2>&1 &
+nohup python3 /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_all_prices.py > /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_prices.log 2>&1 &
 
 # 진행 확인
-tail -f /Applications/stock_dashboard/collect_prices.log
+tail -f /Volumes/Realtek_NVME/stock_dashboard/runtime/collect_prices.log
 
 # 매주 토요일 자동 업데이트 (cron 등록 완료)
 # 이미 60일 이상 데이터 있는 종목만 최신 1개월 업데이트

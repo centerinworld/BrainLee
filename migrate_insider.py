@@ -6,7 +6,7 @@ migrate_insider.py — C안용 스키마 추가
   2. dart_insider_holdings 테이블 생성 (임원·주요주주 특정증권 소유)
 
 실행 방법:
-    cd /Applications/stock_dashboard
+    cd /Volumes/Realtek_NVME/stock_dashboard/runtime
     python3 migrate_insider.py
 """
 

@@ -584,6 +584,12 @@ def find_matches(
             or compact_alias in compact_core_title
         ):
             alias_names.update(mapped_names)
+
+    def _candidate_variants(name: str) -> tuple[str, str]:
+        simplified = simplify_label(name)
+        compact = simplified.replace(" ", "")
+        return simplified, compact
+
     title_matches = sorted(
         {
             name
@@ -591,16 +597,20 @@ def find_matches(
             if name
             and (
                 name in alias_names
+                or any(_candidate_variants(name))
+            )
+            and (
+                name in alias_names
                 or
                 name in post.title
                 or name in post.text
                 or post.title in name
-                or simplify_label(name) in simplified_text
-                or simplify_label(name) in simplified_title
-                or simplify_label(name) in core_title
-                or simplify_label(name).replace(" ", "") in compact_text
-                or simplify_label(name).replace(" ", "") in compact_title
-                or simplify_label(name).replace(" ", "") in compact_core_title
+                or (_candidate_variants(name)[0] and _candidate_variants(name)[0] in simplified_text)
+                or (_candidate_variants(name)[0] and _candidate_variants(name)[0] in simplified_title)
+                or (_candidate_variants(name)[0] and _candidate_variants(name)[0] in core_title)
+                or (_candidate_variants(name)[1] and _candidate_variants(name)[1] in compact_text)
+                or (_candidate_variants(name)[1] and _candidate_variants(name)[1] in compact_title)
+                or (_candidate_variants(name)[1] and _candidate_variants(name)[1] in compact_core_title)
             )
         }
     )

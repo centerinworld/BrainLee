@@ -4,7 +4,7 @@ import json
 import os
 from typing import Any
 
-_OVERRIDE_PATH = "/Applications/stock_dashboard/config/dart_account_overrides.json"
+_OVERRIDE_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/config/dart_account_overrides.json"
 _cache: dict[str, Any] = {"mtime": 0.0, "data": {}}
 
 # DART account_id → DB 필드 매핑

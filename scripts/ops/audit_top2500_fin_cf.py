@@ -3,8 +3,8 @@ from __future__ import annotations
 import csv, json, sqlite3, time
 from pathlib import Path
 
-DB=Path('/Applications/stock_dashboard/stock.db')
-OUT=Path('/Applications/stock_dashboard/scratch/audit_top2500')
+DB=Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db')
+OUT=Path('/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/audit_top2500')
 OUT.mkdir(parents=True, exist_ok=True)
 
 YEARS=(2023,2024,2025)

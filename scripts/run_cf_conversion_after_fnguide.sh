@@ -1,7 +1,7 @@
 #!/bin/bash
 # FnGuide 프로세스 종료 대기 후 현금흐름 누적→증분 변환 실행
-LOG=/Applications/stock_dashboard/logs/cf_conversion_$(date +%Y%m%d_%H%M%S).log
-cd /Applications/stock_dashboard
+LOG=/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/cf_conversion_$(date +%Y%m%d_%H%M%S).log
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime
 
 echo "$(date): FnGuide 프로세스 종료 대기 중..." | tee $LOG
 

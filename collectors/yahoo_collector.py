@@ -26,11 +26,9 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MACRO: dict[str, str] = {
     "^VIX":     "VIX",
     "2YY=F":    "US2Y",
-    "^UST2Y":   "US2Y_ALT",
     "^TNX":     "US10Y",
     "10Y=F":    "US10Y_ALT",
     "^TYX":     "US30Y",
-    "30Y=F":    "US30Y_ALT",
     "GC=F":     "GOLD",
     "CL=F":     "OIL",
     "USDKRW=X": "USD/KRW",
@@ -98,6 +96,32 @@ def _download_sync(symbol: str, period: str, interval: str = "1d") -> list[dict]
     return _df_to_price_rows(df)
 
 
+def _filter_broad_index_rows(symbol: str, rows: list[dict]) -> list[dict]:
+    if symbol not in {"^IXIC", "^GSPC", "^KS11", "^KQ11", "^KS200", "^KQ150"}:
+        return rows
+    out: list[dict] = []
+    prev_close: float | None = None
+    for row in sorted(rows, key=lambda x: x.get("date") or ""):
+        close = float(row.get("close") or 0)
+        if close <= 0:
+            continue
+        if prev_close and prev_close > 0:
+            diff_pct = abs((close - prev_close) / prev_close * 100.0)
+            if diff_pct >= 20.0:
+                logger.warning(
+                    "[Yahoo] %s broad-index outlier skipped %s diff=%.2f%% prev=%.4f close=%.4f",
+                    symbol,
+                    row.get("date"),
+                    diff_pct,
+                    prev_close,
+                    close,
+                )
+                continue
+        out.append(row)
+        prev_close = close
+    return out
+
+
 class YahooCollector(BaseCollector):
     """Yahoo Finance 수집기."""
 
@@ -134,7 +158,12 @@ class YahooCollector(BaseCollector):
             else:
                 # 데이터 무결성: 합성(today 복제) 행을 만들지 않고
                 # 실제 거래일 데이터만 저장한다.
-                output[symbol] = result or []
+                rows = _filter_broad_index_rows(symbol, result or [])
+                from macro_data_quality import filter_plausible_price_rows
+
+                output[symbol], rejected = filter_plausible_price_rows(symbol, rows)
+                if rejected:
+                    logger.warning("[Yahoo] %s 범위 이탈 %s건 차단", symbol, rejected)
 
         return output
 

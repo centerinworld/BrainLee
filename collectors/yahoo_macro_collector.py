@@ -22,6 +22,7 @@ YAHOO_MACRO = [
     ("GC=F",      "COMM_GOLD"),
     ("HG=F",      "COMM_COPPER"),
     ("NG=F",      "COMM_NATURAL_GAS"),
+    ("ZW=F",      "COMM_WHEAT"),
     # ── 주요 지수 ─────────────────────────────────────────
     ("^GSPC",     "US_SP500"),
     ("^VIX",      "US_VIX"),

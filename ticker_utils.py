@@ -43,7 +43,7 @@ class TickerMapper:
         try:
             import sqlite3
             db_paths = [
-                "/Applications/stock_dashboard/stock.db",
+                "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db",
                 "stock.db",
             ]
             for db_path in db_paths:

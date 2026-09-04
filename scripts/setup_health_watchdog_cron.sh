@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-ROOT="/Applications/stock_dashboard"
+ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 SCRIPT="$ROOT/scripts/health_watchdog.sh"
 CRON_LINE="*/10 * * * * $SCRIPT >/dev/null 2>&1"
 

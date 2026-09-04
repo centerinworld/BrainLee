@@ -18,7 +18,7 @@ from check_financial_integrity import (
     _parse_unit,
 )
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 
 def get_targets(conn: sqlite3.Connection, limit_stocks: int) -> list[tuple[str, str]]:
@@ -44,7 +44,7 @@ def get_targets(conn: sqlite3.Connection, limit_stocks: int) -> list[tuple[str, 
 def main() -> None:
     ap = argparse.ArgumentParser(description="FnGuide 현금흐름 대조검증")
     ap.add_argument("--limit-stocks", type=int, default=120)
-    ap.add_argument("--out", default="/Applications/stock_dashboard/scratch/validation_cashflow_fnguide.json")
+    ap.add_argument("--out", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/validation_cashflow_fnguide.json")
     args = ap.parse_args()
 
     conn = sqlite3.connect(DB_PATH)

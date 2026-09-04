@@ -286,7 +286,8 @@ def _score_stock(conn, code: str, kospi_ret3m: float, sector_act: dict) -> dict 
         SELECT sector_large, sector_mid, market_cap, per, pbr, roe, stock_name, market
         FROM stock_universe
         WHERE stock_code=? AND market_cap > 0
-        ORDER BY rowid DESC LIMIT 1
+        ORDER BY COALESCE(base_info_updated_at, updated_at, base_date) DESC NULLS LAST
+        LIMIT 1
     """, (code,)).fetchone()
 
     sector_large = su['sector_large'] if su else None
@@ -883,7 +884,20 @@ def high_profit_compound_screening(
     contract_days: int = 365,
     backlog_months: int = 18,
 ) -> list:
-    """High-profit concentrated screen from the 2021+ profit-objective research."""
+    """High-profit concentrated screen from the 2021+ profit-objective research.
+
+    2026-08-23: strftime('%Y%m%d','now',?) / date(printf(...), ?)는 SQLite 전용이라
+    PostgreSQL 라우팅 하에서 "function strftime(...) does not exist" 등으로 항상
+    실패하고 있었음(this 스크리너는 매 호출마다 예외로 빈 결과만 반환). 오프셋을
+    Python에서 미리 계산한 리터럴/정수로 바꿔 두 엔진 모두에서 동작하도록 수정.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+
+    insider_cutoff_ymd = (_dt.now() - _td(days=int(insider_days))).strftime("%Y%m%d")
+    contract_cutoff_ymd = (_dt.now() - _td(days=int(contract_days))).strftime("%Y%m%d")
+    backlog_cutoff_dt = _dt.now() - _td(days=int(backlog_months) * 31)
+    backlog_cutoff_yyyymm = backlog_cutoff_dt.year * 12 + backlog_cutoff_dt.month
+
     conn = _conn()
     try:
         rows = conn.execute(
@@ -936,7 +950,7 @@ def high_profit_compound_screening(
                        MAX(rcept_dt) AS insider_latest_dt,
                        MAX(CASE WHEN is_ceo = 1 THEN 1 ELSE 0 END) AS has_ceo_buy
                 FROM dart_insider_holdings
-                WHERE replace(substr(rcept_dt,1,10), '-', '') >= strftime('%Y%m%d', 'now', ?)
+                WHERE replace(substr(rcept_dt,1,10), '-', '') >= ?
                   AND COALESCE(change_amount, sp_stock_lmp_irds_cnt, 0) > 0
                 GROUP BY stock_code
             ),
@@ -952,7 +966,7 @@ def high_profit_compound_screening(
                 WHERE (COALESCE(backlog_amount, 0) > 0
                     OR COALESCE(new_order_amount, 0) > 0
                     OR COALESCE(new_orders, 0) > 0)
-                  AND date(printf('%04d-%02d-01', year, quarter * 3)) >= date('now', ?)
+                  AND (year * 12 + quarter * 3) >= ?
                 GROUP BY stock_code
             ),
             contracts AS (
@@ -963,9 +977,10 @@ def high_profit_compound_screening(
                        MAX(disclosed_at) AS latest_contract_dt,
                        MAX(signal_strength) AS max_signal_strength
                 FROM dart_contracts
-                WHERE replace(substr(disclosed_at,1,10), '-', '') >= strftime('%Y%m%d', 'now', ?)
+                WHERE replace(substr(disclosed_at,1,10), '-', '') >= ?
                   AND COALESCE(signal_strength, 0) >= 2
                   AND COALESCE(report_nm, '') NOT LIKE '%해지%'
+                  AND COALESCE(is_correction, 0) = 0
                 GROUP BY stock_code
             ),
             fin AS (
@@ -999,9 +1014,9 @@ def high_profit_compound_screening(
               AND COALESCE(f.total_equity, 1) > 0
             """,
             (
-                f"-{int(insider_days)} days",
-                f"-{int(backlog_months * 31)} days",
-                f"-{int(contract_days)} days",
+                insider_cutoff_ymd,
+                backlog_cutoff_yyyymm,
+                contract_cutoff_ymd,
             ),
         ).fetchall()
 

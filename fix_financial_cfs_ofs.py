@@ -8,7 +8,7 @@ import sqlite3, time, sys, traceback
 import pandas as pd
 from dart_key_manager import RotatingOpenDartReader
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 dart = RotatingOpenDartReader()
 
 # 재수집 대상 (stock_code, year) 목록

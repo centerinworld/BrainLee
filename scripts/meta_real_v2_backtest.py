@@ -413,8 +413,8 @@ def run_all(db_path: str, weight_path: str, out_path: str):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default="/Applications/stock_dashboard/stock.db")
-    ap.add_argument("--weights", default="/Applications/stock_dashboard/config/meta_strategy_weights.json")
-    ap.add_argument("--out", default="/Applications/stock_dashboard/scratch/meta_real_v2_result_2026-05-19.json")
+    ap.add_argument("--db", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+    ap.add_argument("--weights", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/config/meta_strategy_weights.json")
+    ap.add_argument("--out", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/meta_real_v2_result_2026-05-19.json")
     args = ap.parse_args()
     run_all(args.db, args.weights, args.out)

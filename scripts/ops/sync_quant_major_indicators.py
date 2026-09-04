@@ -22,6 +22,18 @@ ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = ROOT / "stock.db"
 HS_TRADE_DB_PATH = ROOT / "hs_trade_lab" / "data" / "hs_trade_lab.db"
 
+import sys
+
+sys.path.insert(0, str(ROOT))
+from config import IS_POSTGRES  # noqa: E402
+from db_compat import connect_primary_db  # noqa: E402
+
+
+def open_primary_db(*, timeout: float = 30):
+    if IS_POSTGRES:
+        return connect_primary_db(timeout=timeout)
+    return sqlite3.connect(DB_PATH, timeout=timeout)
+
 
 CUSTOMS_SECTOR_QUANT_SPECS = [
     ("public:23:1", 1, "자동차 완성차 수출입", "자동차_완성차", ["8703"], "관세청 HS 8703 월별 합산. 완성차 수출액·수입액·무역수지·단가를 섹터 총량으로 제공."),
@@ -54,7 +66,42 @@ CUSTOMS_SECTOR_QUANT_SPECS = [
     ("public:23:28", 28, "비료 수출입", "화학_비료", ["3102", "3103", "3104", "3105"], "관세청 HS 3102~3105 월별 합산. 비료 수출입과 원가 사이클 보조 지표."),
     ("public:23:29", 29, "의류 수출입", "소비재_의류", ["61", "62"], "관세청 HS 61+62류 월별 합산. 의류 수출입 업황 보조 지표."),
     ("public:23:30", 30, "식품 가공품 수출입", "소비재_식품가공", ["1905", "2106"], "관세청 HS 1905+2106 월별 합산. 가공식품 수출입 보조 지표."),
+    ("public:23:31", 31, "맥주/소주 수출입", "주류_맥주소주", ["2203", "2208904000"], "지표상회 카페 주요글 반영. 맥주 HS 2203과 소주 HS 2208904000을 묶어 주류 업황 보조 지표로 제공."),
+    ("public:23:32", 32, "반도체 특수가스/희귀가스 수출입", "반도체_특수가스", ["280421", "280429", "281122"], "지표상회 카페 주요글 반영. 네온/제논/크립톤 등 희귀가스와 특수가스 proxy를 HS 기준으로 집계."),
+    ("public:23:33", 33, "타이어코드 수출입", "타이어_타이어코드", ["5902"], "지표상회 카페 주요글 반영. 타이어코드 섬유류 HS 5902 월별 수출입 보조 지표."),
+    ("public:23:34", 34, "스테인리스 판재 수출입", "철강_스테인리스", ["7219", "7220"], "지표상회 카페 주요글 반영. 스테인리스 평판압연제품 HS 7219/7220 월별 수출입 보조 지표."),
+    ("public:23:35", 35, "윤활기유/윤활유 수출입", "정유_윤활기유", ["271019"], "지표상회 카페 주요글 반영. 석유제품 중 윤활기유/윤활유 후보 HS 271019 월별 수출입 보조 지표."),
+    ("public:23:36", 36, "전력기기 수출입", "전력기기", ["850421", "850422", "850423", "850431", "850432", "850433", "850434", "850440", "853620", "853649", "853710", "854449"], "지표상회 카페 업종분석 반영. 변압기/정지형 변환기/차단기/계전기/배전반/전력선 HS 묶음."),
+    ("public:23:37", 37, "항공/방산 수출입", "항공방산", ["880730", "880622", "871000", "930120", "930690", "852610"], "지표상회 카페 업종분석 반영. 항공기·헬기 부분품, 무인기, 전차/장갑차, 유도무기·탄약, 레이더 HS 묶음."),
+    ("public:23:38", 38, "건설기계 수출입", "건설기계", ["842952", "8408909090"], "지표상회 카페 건설/건자재 지표글 반영. 굴착기 및 건설기계 엔진 후보 HS 월별 수출입 보조 지표."),
+    ("public:23:39", 39, "건설 철강재 수출입", "건설_철강재", ["7214", "7216", "721633"], "지표상회 카페 건설/건자재 지표글 반영. 철근·형강·H형강 관련 건설 철강재 월별 수출입 보조 지표."),
+    ("public:23:40", 40, "반도체 기판/PCB 수출입", "반도체_기판PCB", ["8534"], "지표상회 카페 업종분석 반영. 반도체 기판/PCB 월별 수출입 지표를 카페 테마명으로 노출."),
+    ("public:23:41", 41, "칼륨 화학제품 수출입", "화학_칼륨", ["2815200000", "2836400000"], "지표상회 카페 비료/칼륨 지표글 반영. 가성칼륨과 탄산칼륨 HS 월별 수출입 보조 지표."),
+    ("public:23:42", 42, "에폭시/NB라텍스 화학소재 수출입", "화학_에폭시_NB라텍스", ["390730", "400251"], "지표상회 카페 국도화학/TKG휴켐스 및 화학소재 지표 활용글 반영. 에폭시와 NB라텍스 HS 월별 수출입 보조 지표."),
+    ("public:23:43", 43, "산업용 피팅/밸브 수출입", "기계_피팅밸브", ["7307", "848180"], "지표상회 카페 성광벤드/태광 지표 활용글 반영. 산업용 피팅과 밸브 HS 월별 수출입 보조 지표."),
+    ("public:23:44", 44, "제지/펄프 수출입", "소재_제지펄프", ["4703", "4802", "4804"], "지표상회 카페 한솔제지/무림페이퍼 지표 활용글 반영. 펄프와 인쇄·포장용지 HS 월별 수출입 보조 지표."),
 ]
+
+
+GLOBAL_MACRO_QUANT_CATEGORY_CODE = 24
+
+
+GLOBAL_MACRO_QUANT_CATEGORY_NOTES = {
+    "KOREA": "국내 매크로 지표. 국내 경기/수급/원화 민감 업종의 레짐 필터로 사용.",
+    "US": "미국 매크로 지표. 글로벌 할인율, 위험선호, 성장주/수출주 멀티플 환경 판단에 사용.",
+    "CN": "중국 매크로 지표. 소재, 화학, 철강, 소비재, 중국향 수출 업종의 외부 수요 필터로 사용.",
+    "JP": "일본 매크로 지표. 엔화/일본 경기와 경쟁 구도, 여행/소비재 민감도 판단에 사용.",
+    "EU": "유럽 매크로 지표. 자동차, 기계, 조선, 화학 등 유럽 수요 민감 업종 보조 필터로 사용.",
+    "GLOBAL": "글로벌 경기/교역 지표. 수출주와 원자재 사이클의 상위 레짐 필터로 사용.",
+    "COMMODITY": "원자재 지표. 원가/판가 스프레드와 관련 업종 마진 방향성 판단에 사용.",
+}
+
+
+def _macro_quant_note(category: str, subcategory: str, source: str, source_code: str) -> str:
+    root = (category or "").split()[0].strip().upper()
+    base = GLOBAL_MACRO_QUANT_CATEGORY_NOTES.get(root, "글로벌 매크로 원천에서 가져온 보조 지표.")
+    details = " / ".join(part for part in [category, subcategory, source, source_code] if part)
+    return f"{base} 원천: {details}."
 
 
 def now_kst() -> str:
@@ -81,7 +128,7 @@ def get_ecos_key() -> str:
         return key
     for p in [
         "/Users/brainlee/Downloads/한국은행ECOS.txt",
-        "/Applications/stock_dashboard/한국은행ECOS.txt",
+        "/Volumes/Realtek_NVME/stock_dashboard/runtime/한국은행ECOS.txt",
     ]:
         try:
             if os.path.exists(p):
@@ -103,6 +150,8 @@ def ecos_fetch_series(key: str, stat_code: str, cycle: str, start_t: str, end_t:
 
 
 def init_tables(conn: sqlite3.Connection) -> None:
+    if IS_POSTGRES:
+        return
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS quant_major_indicator_catalog (
@@ -334,6 +383,85 @@ def upsert_custom_catalog(
     conn.commit()
 
 
+def collect_global_macro_quant_bridge(conn: sqlite3.Connection, min_rows: int = 12) -> dict[str, list[dict]]:
+    """Expose independently collected macro/commodity indicators in Quant Major.
+
+    Direction matters: collectors/market_quant_bridge_collector.py already sends
+    selected quant indicators to global_macro_data. This function does the
+    reverse only for non-MARKET_QUANT macro sources, so we do not duplicate
+    DRAM/HS-trade items that are already native quant indicators.
+    """
+    category_rows = conn.execute(
+        """
+        SELECT g.code, g.name, g.name_en, g.category, g.subcategory, g.unit,
+               g.source, g.source_code, g.frequency, g.importance,
+               COUNT(d.id) AS row_count, MAX(d.date) AS latest
+        FROM global_macro_categories g
+        JOIN global_macro_data d ON d.indicator_code = g.code
+        WHERE COALESCE(g.is_active, 1) = 1
+          AND COALESCE(g.category, '') <> 'MARKET_QUANT'
+        GROUP BY g.code, g.name, g.name_en, g.category, g.subcategory, g.unit,
+                 g.source, g.source_code, g.frequency, g.importance
+        HAVING COUNT(d.id) >= ?
+        ORDER BY g.importance DESC, row_count DESC, g.code
+        """,
+        (min_rows,),
+    ).fetchall()
+
+    bridged: dict[str, list[dict]] = {}
+    for idx, cat in enumerate(category_rows, start=1):
+        indicator_key = f"macro:{cat['code']}"
+        category = cat["category"] or ""
+        subcategory = cat["subcategory"] or ""
+        source = cat["source"] or "global_macro_data"
+        source_code = cat["source_code"] or cat["code"]
+        name = cat["name"] or cat["code"]
+        unit = cat["unit"] or "value"
+        frequency = (cat["frequency"] or "Daily").title()
+        rows = [
+            {
+                "period": r["date"],
+                "series_name": name,
+                "value": r["value"],
+                "unit": unit,
+                "source_name": source,
+                "source_detail": f"global_macro_data:{cat['code']} source_code={source_code}",
+                "quality": "official_or_market_raw",
+            }
+            for r in conn.execute(
+                """
+                SELECT date, value
+                FROM global_macro_data
+                WHERE indicator_code = ?
+                  AND value IS NOT NULL
+                ORDER BY date
+                """,
+                (cat["code"],),
+            ).fetchall()
+        ]
+        if not rows:
+            continue
+
+        upsert_custom_catalog(
+            conn,
+            indicator_key=indicator_key,
+            epic_category_code=GLOBAL_MACRO_QUANT_CATEGORY_CODE,
+            epic_sub_code=idx,
+            epic_indicator_name=name,
+            frequency=frequency,
+            base_unit=unit,
+            status="ready_existing",
+            replacement_family="global_macro_reverse_bridge",
+            source_system=source,
+            collector_path="scripts/ops/sync_quant_major_indicators.py",
+            exactness="global_macro_existing_source",
+            priority="p1" if int(cat["importance"] or 1) >= 3 else "p2",
+            notes=_macro_quant_note(category, subcategory, source, source_code),
+        )
+        bridged[indicator_key] = rows
+    return bridged
+
+
 def derive_market_breadth_from_price_history(conn: sqlite3.Connection, start_date: str = "2021-01-01") -> dict[str, list[dict]]:
     """Derive market breadth and volume expansion indicators from local daily prices.
 
@@ -341,6 +469,43 @@ def derive_market_breadth_from_price_history(conn: sqlite3.Connection, start_dat
     downstream users can distinguish price-history-based breadth from exchange
     published advance/decline counts.
     """
+    reuse_keys = ["public:21:1", "public:21:2", "public:21:3", "public:21:4"]
+    reuse_cutoff = (date.today() - timedelta(days=14)).strftime("%Y-%m-%d")
+    latest_rows = conn.execute(
+        f"""
+        SELECT indicator_key, COUNT(*) rows, MAX(period) latest
+        FROM quant_major_indicator_series
+        WHERE indicator_key IN ({','.join('?' for _ in reuse_keys)})
+        GROUP BY indicator_key
+        """,
+        reuse_keys,
+    ).fetchall()
+    coverage = {r["indicator_key"]: {"rows": int(r["rows"] or 0), "latest": r["latest"]} for r in latest_rows}
+    if all((coverage.get(k, {}).get("rows") or 0) > 0 for k in reuse_keys) and min(str(coverage[k]["latest"]) for k in reuse_keys) >= reuse_cutoff:
+        result = {key: [] for key in reuse_keys}
+        for key in reuse_keys:
+            result[key] = [
+                {
+                    "period": r["period"],
+                    "series_name": r["series_name"],
+                    "value": r["value"],
+                    "unit": r["unit"],
+                    "source_name": r["source_name"],
+                    "source_detail": r["source_detail"],
+                    "quality": r["quality"],
+                }
+                for r in conn.execute(
+                    """
+                    SELECT period, series_name, value, unit, source_name, source_detail, quality
+                    FROM quant_major_indicator_series
+                    WHERE indicator_key=?
+                    """,
+                    (key,),
+                ).fetchall()
+            ]
+        print("[MarketBreadth] 기존 히스토리 재사용: " + ", ".join(f"{k}:{coverage[k]['latest']}" for k in reuse_keys))
+        return result
+
     query = """
         WITH latest_universe AS (
             SELECT stock_code, MAX(base_date) AS base_date
@@ -417,7 +582,7 @@ def derive_market_breadth_from_price_history(conn: sqlite3.Connection, start_dat
         breadth_key = "public:21:1" if market == "KOSPI" else "public:21:2"
         volume_key = "public:21:3" if market == "KOSPI" else "public:21:4"
         common = {
-            "period": period,
+            "period": period.strftime("%Y-%m-%d"),
             "source_name": "local_price_history",
             "source_detail": "price_history + latest stock_universe common-stock universe",
             "quality": "derived_market_breadth",
@@ -442,6 +607,126 @@ def derive_market_breadth_from_price_history(conn: sqlite3.Connection, start_dat
 
     for key, rows in result.items():
         print(f"[MarketBreadth] {key}: {len(rows)}행")
+    return result
+
+
+def derive_52w_breadth_from_price_history(conn: sqlite3.Connection, start_date: str = "2022-01-01") -> dict[str, list[dict]]:
+    """Derive 52-week new-high / new-low breadth ratios from local daily prices.
+
+    Classic market-regime breadth indicator: % of stocks trading at a 52-week
+    high vs. a 52-week low. Distinct from the existing 20-day breadth series
+    (public:21:1~4), which reacts too fast for regime-level reads.
+    Needs ~1 extra year of history before start_date to seed the 252-day window,
+    so we pull price_history from one year earlier and only emit rows from
+    start_date onward.
+    """
+    reuse_keys = ["public:21:7", "public:21:8"]
+    reuse_cutoff = (date.today() - timedelta(days=14)).strftime("%Y-%m-%d")
+    latest_rows = conn.execute(
+        f"""
+        SELECT indicator_key, COUNT(*) rows, MAX(period) latest
+        FROM quant_major_indicator_series
+        WHERE indicator_key IN ({','.join('?' for _ in reuse_keys)})
+        GROUP BY indicator_key
+        """,
+        reuse_keys,
+    ).fetchall()
+    coverage = {r["indicator_key"]: {"rows": int(r["rows"] or 0), "latest": r["latest"]} for r in latest_rows}
+    if all((coverage.get(k, {}).get("rows") or 0) > 0 for k in reuse_keys) and min(str(coverage[k]["latest"]) for k in reuse_keys) >= reuse_cutoff:
+        result = {key: [] for key in reuse_keys}
+        for key in reuse_keys:
+            result[key] = [
+                {
+                    "period": r["period"],
+                    "series_name": r["series_name"],
+                    "value": r["value"],
+                    "unit": r["unit"],
+                    "source_name": r["source_name"],
+                    "source_detail": r["source_detail"],
+                    "quality": r["quality"],
+                }
+                for r in conn.execute(
+                    """
+                    SELECT period, series_name, value, unit, source_name, source_detail, quality
+                    FROM quant_major_indicator_series
+                    WHERE indicator_key=?
+                    """,
+                    (key,),
+                ).fetchall()
+            ]
+        print("[52wBreadth] 기존 히스토리 재사용: " + ", ".join(f"{k}:{coverage[k]['latest']}" for k in reuse_keys))
+        return result
+
+    seed_start = (pd.Timestamp(start_date) - pd.Timedelta(days=380)).strftime("%Y-%m-%d")
+    query = """
+        WITH latest_universe AS (
+            SELECT stock_code, MAX(base_date) AS base_date
+              FROM stock_universe
+             GROUP BY stock_code
+        ),
+        universe AS (
+            SELECT u.stock_code, u.market, COALESCE(u.stock_type, '') AS stock_type
+              FROM stock_universe u
+              JOIN latest_universe lu
+                ON u.stock_code = lu.stock_code
+               AND u.base_date = lu.base_date
+             WHERE u.market IN ('KOSPI', 'KOSDAQ')
+               AND COALESCE(u.stock_type, '보통주') IN ('', '보통주')
+        )
+        SELECT p.stock_code,
+               DATE(p.date) AS period,
+               u.market,
+               p.close
+          FROM price_history p
+          JOIN universe u ON p.stock_code = u.stock_code
+         WHERE DATE(p.date) >= ?
+           AND p.close > 0
+         ORDER BY p.stock_code, DATE(p.date)
+    """
+    df = pd.read_sql_query(query, conn, params=(seed_start,))
+    if df.empty:
+        return {}
+
+    # PostgreSQL DATE columns are returned as ``datetime.date`` while SQLite
+    # returns strings. Normalize before rolling and comparing with start_date.
+    df["period"] = pd.to_datetime(df["period"], errors="coerce")
+    df["close"] = pd.to_numeric(df["close"], errors="coerce")
+    df = df.dropna(subset=["close", "period"]).sort_values(["stock_code", "period"])
+
+    grouped = df.groupby("stock_code", sort=False)
+    df["high_252d"] = grouped["close"].transform(lambda s: s.rolling(252, min_periods=200).max())
+    df["low_252d"] = grouped["close"].transform(lambda s: s.rolling(252, min_periods=200).min())
+    df["is_new_high_52w"] = df["close"] >= df["high_252d"]
+    df["is_new_low_52w"] = df["close"] <= df["low_252d"]
+
+    df = df[df["period"] >= pd.Timestamp(start_date)]
+
+    result: dict[str, list[dict]] = {"public:21:7": [], "public:21:8": []}
+    for (market, period), g in df.groupby(["market", "period"], sort=True):
+        valid = g.dropna(subset=["high_252d", "low_252d"])
+        total = int(len(valid))
+        if total < 500:
+            continue
+        new_high_count = int(valid["is_new_high_52w"].sum())
+        new_low_count = int(valid["is_new_low_52w"].sum())
+        key = "public:21:7" if market == "KOSPI" else "public:21:8"
+        common = {
+            "period": period.strftime("%Y-%m-%d"),
+            "source_name": "local_price_history",
+            "source_detail": "price_history 252거래일 롤링 최고/최저 + latest stock_universe common-stock universe",
+            "quality": "derived_52w_breadth",
+        }
+        result[key].extend([
+            {**common, "series_name": "52주신고가종목수", "value": new_high_count, "unit": "종목"},
+            {**common, "series_name": "52주신저가종목수", "value": new_low_count, "unit": "종목"},
+            {**common, "series_name": "52주신고가비율", "value": round(new_high_count / total * 100.0, 2), "unit": "%"},
+            {**common, "series_name": "52주신저가비율", "value": round(new_low_count / total * 100.0, 2), "unit": "%"},
+            {**common, "series_name": "신고신저스프레드", "value": round((new_high_count - new_low_count) / total * 100.0, 2), "unit": "%"},
+            {**common, "series_name": "커버종목수", "value": total, "unit": "종목"},
+        ])
+
+    for key, rows in result.items():
+        print(f"[52wBreadth] {key}: {len(rows)}행")
     return result
 
 
@@ -2500,6 +2785,52 @@ def collect_dart_casino_monthly(conn: sqlite3.Connection) -> dict[str, list[dict
 
 def collect_seoul_subway_monthly() -> dict[str, list[dict]]:
     """Collect Seoul subway monthly passengers by line from Seoul Open Data CSV files."""
+    reuse_keys = ["epic:22:9", "epic:22:10"]
+    reuse_cutoff = (date.today().replace(day=1) - timedelta(days=90)).strftime("%Y-%m")
+    try:
+        existing_conn = open_primary_db(timeout=20)
+        existing_conn.row_factory = sqlite3.Row
+        coverage = {
+            r["indicator_key"]: {"rows": int(r["rows"] or 0), "latest": r["latest"]}
+            for r in existing_conn.execute(
+                f"""
+                SELECT indicator_key, COUNT(*) rows, MAX(period) latest
+                FROM quant_major_indicator_series
+                WHERE indicator_key IN ({','.join('?' for _ in reuse_keys)})
+                GROUP BY indicator_key
+                """,
+                reuse_keys,
+            ).fetchall()
+        }
+        if all((coverage.get(k, {}).get("rows") or 0) > 0 for k in reuse_keys) and min(str(coverage[k]["latest"]) for k in reuse_keys) >= reuse_cutoff:
+            result = {key: [] for key in reuse_keys}
+            for key in reuse_keys:
+                result[key] = [
+                    {
+                        "period": r["period"],
+                        "series_name": r["series_name"],
+                        "value": r["value"],
+                        "unit": r["unit"],
+                        "source_name": r["source_name"],
+                        "source_detail": r["source_detail"],
+                        "quality": r["quality"],
+                    }
+                    for r in existing_conn.execute(
+                        """
+                        SELECT period, series_name, value, unit, source_name, source_detail, quality
+                        FROM quant_major_indicator_series
+                        WHERE indicator_key=?
+                        """,
+                        (key,),
+                    ).fetchall()
+                ]
+            print("[SeoulSubway] 기존 히스토리 재사용: " + ", ".join(f"{k}:{coverage[k]['latest']}" for k in reuse_keys))
+            existing_conn.close()
+            return result
+        existing_conn.close()
+    except Exception as exc:
+        print(f"[SeoulSubway] 기존 히스토리 확인 실패 — 네트워크 수집 시도: {exc}")
+
     page_url = "https://data.seoul.go.kr/dataList/OA-12914/S/1/datasetView.do"
     download_url = "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do?&useCache=false"
     session = requests.Session()
@@ -2595,6 +2926,39 @@ def collect_kric_rail_line_passenger_monthly(start_year: int = 2022) -> list[dic
     every urban/private rail service. Keep catalog status partial and label the
     source precisely so this is not mistaken for all-rail national coverage.
     """
+    reuse_cutoff = (date.today().replace(day=1) - timedelta(days=90)).strftime("%Y-%m")
+    try:
+        existing_conn = open_primary_db(timeout=20)
+        existing_conn.row_factory = sqlite3.Row
+        latest = existing_conn.execute(
+            "SELECT MAX(period) FROM quant_major_indicator_series WHERE indicator_key='epic:7:36'"
+        ).fetchone()[0]
+        if latest and str(latest) >= reuse_cutoff:
+            rows = [
+                {
+                    "period": r["period"],
+                    "series_name": r["series_name"],
+                    "value": r["value"],
+                    "unit": r["unit"],
+                    "source_name": r["source_name"],
+                    "source_detail": r["source_detail"],
+                    "quality": r["quality"],
+                }
+                for r in existing_conn.execute(
+                    """
+                    SELECT period, series_name, value, unit, source_name, source_detail, quality
+                    FROM quant_major_indicator_series
+                    WHERE indicator_key='epic:7:36'
+                    """
+                ).fetchall()
+            ]
+            print(f"[KRIC] 기존 철도 히스토리 재사용: latest={latest}, rows={len(rows)}")
+            existing_conn.close()
+            return rows
+        existing_conn.close()
+    except Exception as exc:
+        print(f"[KRIC] 기존 히스토리 확인 실패 — 네트워크 수집 시도: {exc}")
+
     url = "https://www.kric.go.kr/jsp/industry/rss/raillinepassmonList.jsp"
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0", "Referer": url})
@@ -3202,11 +3566,16 @@ def collect_local_market_structure_indicators(conn: sqlite3.Connection) -> dict[
             }
             result["public:20:108"].extend([
                 {**common, "series_name": "short_sell_qty_sum", "value": float(row["short_qty_sum"] or 0), "unit": "주"},
-                {**common, "series_name": "short_sell_amt_100m", "value": round(float(row["short_amt_100m"] or 0), 4), "unit": "억원"},
                 {**common, "series_name": "borrow_balance_qty_sum", "value": float(row["borrow_bal_qty_sum"] or 0), "unit": "주"},
-                {**common, "series_name": "borrow_balance_amt_100m", "value": round(float(row["borrow_bal_amt_100m"] or 0), 4), "unit": "억원"},
                 {**common, "series_name": "short_sell_cover_count", "value": int(row["cover_count"] or 0), "unit": "종목"},
             ])
+            # amt 시리즈는 short_sell_daily 금액 컬럼이 원천 미제공(전부 0)이라 항상 0으로
+            # 저장되던 죽은 시리즈 → 값이 실제 존재할 때만 저장 (2026-07-11, 3,124행 정리)
+            for _amt_name, _amt_val in (("short_sell_amt_100m", row["short_amt_100m"]),
+                                        ("borrow_balance_amt_100m", row["borrow_bal_amt_100m"])):
+                if _amt_val and float(_amt_val) > 0:
+                    result["public:20:108"].append(
+                        {**common, "series_name": _amt_name, "value": round(float(_amt_val), 4), "unit": "억원"})
 
     if has_table("short_rank_daily"):
         rows = conn.execute(
@@ -3352,6 +3721,52 @@ def collect_customs_sector_quant_extensions() -> dict[str, list[dict]]:
     if not HS_TRADE_DB_PATH.exists():
         return {}
 
+    reuse_keys = [spec[0] for spec in CUSTOMS_SECTOR_QUANT_SPECS]
+    reuse_cutoff = (date.today().replace(day=1) - timedelta(days=90)).strftime("%Y-%m")
+    try:
+        existing_conn = open_primary_db(timeout=20)
+        existing_conn.row_factory = sqlite3.Row
+        coverage = {
+            r["indicator_key"]: {"rows": int(r["rows"] or 0), "latest": r["latest"]}
+            for r in existing_conn.execute(
+                f"""
+                SELECT indicator_key, COUNT(*) rows, MAX(period) latest
+                FROM quant_major_indicator_series
+                WHERE indicator_key IN ({','.join('?' for _ in reuse_keys)})
+                GROUP BY indicator_key
+                """,
+                reuse_keys,
+            ).fetchall()
+        }
+        if all((coverage.get(k, {}).get("rows") or 0) > 0 for k in reuse_keys) and min(str(coverage[k]["latest"]) for k in reuse_keys) >= reuse_cutoff:
+            result = {key: [] for key in reuse_keys}
+            for key in reuse_keys:
+                result[key] = [
+                    {
+                        "period": r["period"],
+                        "series_name": r["series_name"],
+                        "value": r["value"],
+                        "unit": r["unit"],
+                        "source_name": r["source_name"],
+                        "source_detail": r["source_detail"],
+                        "quality": r["quality"],
+                    }
+                    for r in existing_conn.execute(
+                        """
+                        SELECT period, series_name, value, unit, source_name, source_detail, quality
+                        FROM quant_major_indicator_series
+                        WHERE indicator_key=?
+                        """,
+                        (key,),
+                    ).fetchall()
+                ]
+            print(f"[CustomsSector] 기존 public:23 히스토리 재사용: keys={len(reuse_keys)}, latest_min={min(str(coverage[k]['latest']) for k in reuse_keys)}")
+            existing_conn.close()
+            return result
+        existing_conn.close()
+    except Exception as exc:
+        print(f"[CustomsSector] 기존 히스토리 확인 실패 — 로컬 HS 집계 시도: {exc}")
+
     result: dict[str, list[dict]] = {}
     hs_conn = sqlite3.connect(HS_TRADE_DB_PATH)
     hs_conn.row_factory = sqlite3.Row
@@ -3396,9 +3811,13 @@ def collect_customs_sector_quant_extensions() -> dict[str, list[dict]]:
                     {**common, "series_name": f"{label}_수입액", "value": round(import_value / 1_000_000.0, 3), "unit": "백만달러"},
                     {**common, "series_name": f"{label}_무역수지", "value": round(trade_balance / 1_000_000.0, 3), "unit": "백만달러"},
                 ])
-                if export_weight > 0:
+                # 단가 노이즈 가드 (2026-07-11): 수출/수입액이 미미한 달(예: 원유 재수출)은
+                # 소량 샘플로 단가가 수백 USD/kg까지 왜곡됨 (원유 273, LNG 4,199 실측).
+                # 금액 10만달러 미만이면 단가 시리즈 생략.
+                _MIN_VALUE_FOR_UNIT_PRICE = 100_000  # USD
+                if export_weight > 0 and export_value >= _MIN_VALUE_FOR_UNIT_PRICE:
                     series.append({**common, "series_name": f"{label}_수출단가", "value": round(export_value / export_weight, 4), "unit": "USD/kg"})
-                if import_weight > 0:
+                if import_weight > 0 and import_value >= _MIN_VALUE_FOR_UNIT_PRICE:
                     series.append({**common, "series_name": f"{label}_수입단가", "value": round(import_value / import_weight, 4), "unit": "USD/kg"})
             result[indicator_key] = series
             print(f"[CustomsSector] {indicator_key} {label}: {len(series)}행")
@@ -4111,6 +4530,57 @@ def parse_kama_global_country_rows(df: pd.DataFrame, max_year: int | None = None
 
 
 def collect_kama_auto_company_indicators(start_year: int = 2016) -> tuple[list[dict], list[dict], dict[str, list[dict]], dict[str, list[dict]], list[dict]]:
+    reuse_keys = ["epic:0:1", "epic:0:2", "epic:0:4", "epic:0:17", "epic:0:19", "epic:0:20", "epic:0:21", "epic:0:112", "epic:0:113"]
+    reuse_cutoff = (date.today().replace(day=1) - timedelta(days=210)).strftime("%Y-%m")
+    try:
+        existing_conn = open_primary_db(timeout=20)
+        existing_conn.row_factory = sqlite3.Row
+        coverage = {
+            r["indicator_key"]: {"rows": int(r["rows"] or 0), "latest": r["latest"]}
+            for r in existing_conn.execute(
+                f"""
+                SELECT indicator_key, COUNT(*) rows, MAX(period) latest
+                FROM quant_major_indicator_series
+                WHERE indicator_key IN ({','.join('?' for _ in reuse_keys)})
+                GROUP BY indicator_key
+                """,
+                reuse_keys,
+            ).fetchall()
+        }
+        if all((coverage.get(k, {}).get("rows") or 0) > 0 for k in reuse_keys) and min(str(coverage[k]["latest"]) for k in reuse_keys) >= reuse_cutoff:
+            def rows_for(key: str) -> list[dict]:
+                return [
+                    {
+                        "period": r["period"],
+                        "series_name": r["series_name"],
+                        "value": r["value"],
+                        "unit": r["unit"],
+                        "source_name": r["source_name"],
+                        "source_detail": r["source_detail"],
+                        "quality": r["quality"],
+                    }
+                    for r in existing_conn.execute(
+                        """
+                        SELECT period, series_name, value, unit, source_name, source_detail, quality
+                        FROM quant_major_indicator_series
+                        WHERE indicator_key=?
+                        """,
+                        (key,),
+                    ).fetchall()
+                ]
+            company_sales_rows = rows_for("epic:0:2")
+            market_share_rows = rows_for("epic:0:4")
+            specific_rows = {key: rows_for(key) for key in ("epic:0:19", "epic:0:20", "epic:0:21")}
+            model_rows = {key: rows_for(key) for key in ("epic:0:17", "epic:0:112", "epic:0:113")}
+            global_country_rows = rows_for("epic:0:1")
+            latest_summary = ", ".join(f"{k}:{coverage[k]['latest']}" for k in reuse_keys)
+            print(f"[KAMA] 기존 자동차 히스토리 재사용: {latest_summary}")
+            existing_conn.close()
+            return company_sales_rows, market_share_rows, specific_rows, model_rows, global_country_rows
+        existing_conn.close()
+    except Exception as exc:
+        print(f"[KAMA] 기존 히스토리 확인 실패 — 네트워크 수집 시도: {exc}")
+
     files = fetch_kama_monthly_file_index(start_year=start_year)
     company_sales_rows: list[dict] = []
     market_share_rows: list[dict] = []
@@ -4366,7 +4836,41 @@ def collect_hyundai_domestic_company_sales(conn: sqlite3.Connection) -> list[dic
 
 def collect_kia_us_model_sales() -> list[dict]:
     today = date.today()
+    prev_month = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    try:
+        existing_conn = open_primary_db(timeout=20)
+        existing_conn.row_factory = sqlite3.Row
+        latest = existing_conn.execute(
+            "SELECT MAX(period) FROM quant_major_indicator_series WHERE indicator_key='epic:0:57'"
+        ).fetchone()[0]
+        if latest and str(latest) >= prev_month:
+            rows = [
+                {
+                    "period": r["period"],
+                    "series_name": r["series_name"],
+                    "value": r["value"],
+                    "unit": r["unit"],
+                    "source_name": r["source_name"],
+                    "source_detail": r["source_detail"],
+                    "quality": r["quality"],
+                }
+                for r in existing_conn.execute(
+                    """
+                    SELECT period, series_name, value, unit, source_name, source_detail, quality
+                    FROM quant_major_indicator_series
+                    WHERE indicator_key='epic:0:57'
+                    """
+                ).fetchall()
+            ]
+            print(f"[KIA-US] 기존 히스토리 재사용: latest={latest}, rows={len(rows)}")
+            existing_conn.close()
+            return rows
+        existing_conn.close()
+    except Exception as exc:
+        print(f"[KIA-US] 기존 히스토리 확인 실패 — 네트워크 수집 시도: {exc}")
+
     out: list[dict] = []
+    failures = 0
     for year in range(2017, today.year + 1):
         max_month = today.month if year == today.year else 12
         compare_year = year - 1 if year > 2017 else year
@@ -4375,11 +4879,16 @@ def collect_kia_us_model_sales() -> list[dict]:
                 "https://www.kiamedia.com/us/en/sales/"
                 f"salesbymonthexport?month={month}&year={year}&yeartocompare={compare_year}"
             )
-            r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-            r.raise_for_status()
-            wb = openpyxl.load_workbook(BytesIO(r.content), data_only=True)
-            ws = wb[wb.sheetnames[0]]
             period = f"{year:04d}-{month:02d}"
+            try:
+                r = requests.get(url, timeout=(8, 12), headers={"User-Agent": "Mozilla/5.0"})
+                r.raise_for_status()
+                wb = openpyxl.load_workbook(BytesIO(r.content), data_only=True)
+            except Exception as exc:
+                failures += 1
+                print(f"[KIA-US] {period} 모델별 판매 수집 실패 — 기존 히스토리 보존: {exc}")
+                continue
+            ws = wb[wb.sheetnames[0]]
             for row in ws.iter_rows(min_row=3, values_only=True):
                 model = row[0]
                 if not model:
@@ -4401,6 +4910,8 @@ def collect_kia_us_model_sales() -> list[dict]:
                         "quality": "official",
                     }
                 )
+    if failures:
+        print(f"[KIA-US] 실패 월 {failures}개 스킵")
     return out
 
 
@@ -4685,6 +5196,8 @@ def collect_ecos_agricultural_ppi() -> dict:
                     val = float(val_str)
                 except ValueError:
                     continue
+                if len(period) == 6 and period.isdigit():
+                    period = f"{period[:4]}-{period[4:6]}"  # YYYY-MM 정규화 (2026-07-11)
                 result.setdefault(indicator_key, []).append({
                     "period": period,
                     "series_name": series_name,
@@ -5027,7 +5540,7 @@ def collect_dreamtower_visitors_from_ir_excel() -> list[dict]:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = open_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA busy_timeout=60000")
@@ -5071,6 +5584,7 @@ def main() -> None:
         agri_ppi_rows = collect_ecos_agricultural_ppi()
         hira_medical_proxy_rows = collect_hira_medical_subject_annual_proxy()
         market_breadth_rows = derive_market_breadth_from_price_history(conn)
+        breadth_52w_rows = derive_52w_breadth_from_price_history(conn)
         ecos_macro_extension_rows = collect_ecos_macro_quant_extensions()
         customs_sector_rows = collect_customs_sector_quant_extensions()
         local_market_structure_rows = collect_local_market_structure_indicators(conn)
@@ -5078,10 +5592,12 @@ def main() -> None:
         gkl_visitor_rows = collect_gkl_visitors_from_publicdata()
         paradise_segment_drop_rows = collect_paradise_segment_drop_from_ir_excel()
         dreamtower_visitor_rows = collect_dreamtower_visitors_from_ir_excel()
+        global_macro_bridge_rows = collect_global_macro_quant_bridge(conn)
 
-        conn.execute("DELETE FROM quant_major_indicator_series WHERE indicator_key IN ('epic:0:1', 'epic:0:14', 'epic:0:55', 'epic:0:57', 'epic:0:2', 'epic:0:4', 'epic:0:17', 'epic:0:19', 'epic:0:20', 'epic:0:21', 'epic:0:112', 'epic:0:113', 'epic:6:18', 'epic:2:98', 'epic:2:22', 'epic:2:23', 'epic:2:93', 'epic:2:94', 'epic:2:95', 'epic:2:96', 'epic:2:97', 'epic:16:113', 'epic:8:14', 'epic:8:15', 'epic:12:5', 'epic:12:6', 'epic:12:10', 'epic:15:11', 'epic:11:155', 'epic:11:156', 'epic:13:20', 'epic:13:21', 'epic:13:22', 'epic:9:13', 'epic:3:70', 'epic:3:71', 'epic:3:97', 'epic:3:98', 'epic:3:36', 'epic:10:11', 'epic:19:50', 'epic:1:37', 'epic:1:25', 'epic:1:26', 'epic:1:27', 'epic:1:28', 'epic:1:29', 'epic:1:30', 'epic:7:14', 'epic:7:15', 'epic:7:16', 'epic:7:17', 'epic:22:9', 'epic:22:10', 'epic:7:36', 'epic:11:105', 'epic:11:69', 'epic:3:2', 'epic:3:20', 'epic:3:21', 'epic:9:24', 'epic:9:37', 'epic:11:90', 'epic:11:91', 'epic:11:92', 'public:21:1', 'public:21:2', 'public:21:3', 'public:21:4', 'public:20:101', 'public:20:102', 'public:20:103', 'public:20:104', 'public:20:105')")
+        conn.execute("DELETE FROM quant_major_indicator_series WHERE indicator_key IN ('epic:0:1', 'epic:0:14', 'epic:0:55', 'epic:0:57', 'epic:0:2', 'epic:0:4', 'epic:0:17', 'epic:0:19', 'epic:0:20', 'epic:0:21', 'epic:0:112', 'epic:0:113', 'epic:6:18', 'epic:2:98', 'epic:2:22', 'epic:2:23', 'epic:2:93', 'epic:2:94', 'epic:2:95', 'epic:2:96', 'epic:2:97', 'epic:16:113', 'epic:8:14', 'epic:8:15', 'epic:12:5', 'epic:12:6', 'epic:12:10', 'epic:15:11', 'epic:11:155', 'epic:11:156', 'epic:13:20', 'epic:13:21', 'epic:13:22', 'epic:9:13', 'epic:3:70', 'epic:3:71', 'epic:3:97', 'epic:3:98', 'epic:3:36', 'epic:10:11', 'epic:19:50', 'epic:1:37', 'epic:1:25', 'epic:1:26', 'epic:1:27', 'epic:1:28', 'epic:1:29', 'epic:1:30', 'epic:7:14', 'epic:7:15', 'epic:7:16', 'epic:7:17', 'epic:22:9', 'epic:22:10', 'epic:7:36', 'epic:11:105', 'epic:11:69', 'epic:3:2', 'epic:3:20', 'epic:3:21', 'epic:9:24', 'epic:9:37', 'epic:11:90', 'epic:11:91', 'epic:11:92', 'public:21:1', 'public:21:2', 'public:21:3', 'public:21:4', 'public:21:7', 'public:21:8', 'public:20:101', 'public:20:102', 'public:20:103', 'public:20:104', 'public:20:105')")
         conn.execute("DELETE FROM quant_major_indicator_series WHERE indicator_key IN ('public:21:5', 'public:21:6', 'public:20:106', 'public:20:107', 'public:20:108')")
         conn.execute("DELETE FROM quant_major_indicator_series WHERE indicator_key LIKE 'public:23:%'")
+        conn.execute("DELETE FROM quant_major_indicator_series WHERE indicator_key LIKE 'macro:%'")
         conn.commit()
 
         counts = {
@@ -5170,6 +5686,8 @@ def main() -> None:
             "market_breadth_kosdaq_rows": upsert_series(conn, "public:21:2", market_breadth_rows.get("public:21:2", [])) if market_breadth_rows.get("public:21:2") else 0,
             "market_volume_kospi_rows": upsert_series(conn, "public:21:3", market_breadth_rows.get("public:21:3", [])) if market_breadth_rows.get("public:21:3") else 0,
             "market_volume_kosdaq_rows": upsert_series(conn, "public:21:4", market_breadth_rows.get("public:21:4", [])) if market_breadth_rows.get("public:21:4") else 0,
+            "market_breadth_52w_kospi_rows": upsert_series(conn, "public:21:7", breadth_52w_rows.get("public:21:7", [])) if breadth_52w_rows.get("public:21:7") else 0,
+            "market_breadth_52w_kosdaq_rows": upsert_series(conn, "public:21:8", breadth_52w_rows.get("public:21:8", [])) if breadth_52w_rows.get("public:21:8") else 0,
             "ecos_consumer_sentiment_rows": upsert_series(conn, "public:20:101", ecos_macro_extension_rows.get("public:20:101", [])) if ecos_macro_extension_rows.get("public:20:101") else 0,
             "ecos_economic_sentiment_rows": upsert_series(conn, "public:20:102", ecos_macro_extension_rows.get("public:20:102", [])) if ecos_macro_extension_rows.get("public:20:102") else 0,
             "ecos_manufacturing_bsi_rows": upsert_series(conn, "public:20:103", ecos_macro_extension_rows.get("public:20:103", [])) if ecos_macro_extension_rows.get("public:20:103") else 0,
@@ -5197,6 +5715,8 @@ def main() -> None:
             if indicator_key in {f"public:23:{idx}" for idx in range(1, 11)}:
                 continue
             counts[f"customs_sector_{indicator_key.replace(':', '_')}_rows"] = upsert_series(conn, indicator_key, rows) if rows else 0
+        for indicator_key, rows in sorted(global_macro_bridge_rows.items()):
+            counts[f"global_macro_{indicator_key.replace(':', '_')}_rows"] = upsert_series(conn, indicator_key, rows) if rows else 0
 
         custom_market_specs = [
             (
@@ -5222,6 +5742,18 @@ def main() -> None:
                 4,
                 "KOSDAQ 거래량 확산: 신고가/신저가/3배 거래량",
                 "KOSDAQ 보통주 가격이력에서 20일 신고가수·20일 신저가수·거래량 3배 종목수·총거래대금을 계산.",
+            ),
+            (
+                "public:21:7",
+                7,
+                "KOSPI 52주 신고가/신저가 비율",
+                "KOSPI 보통주 가격이력에서 252거래일 롤링 최고/최저 대비 52주 신고가·신저가 종목수와 비율, 신고-신저 스프레드를 계산. 20일 단기 확산(public:21:3)과 달리 국면 판단용 저빈도 지표.",
+            ),
+            (
+                "public:21:8",
+                8,
+                "KOSDAQ 52주 신고가/신저가 비율",
+                "KOSDAQ 보통주 가격이력에서 252거래일 롤링 최고/최저 대비 52주 신고가·신저가 종목수와 비율, 신고-신저 스프레드를 계산.",
             ),
         ]
         for indicator_key, sub_code, name, notes in custom_market_specs:

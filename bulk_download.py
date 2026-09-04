@@ -7,7 +7,7 @@
   ③ 종목을 watchlist에 자동 등록
 
 실행 방법:
-  cd /Applications/stock_dashboard && source venv/bin/activate
+  cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
   python3 bulk_download.py                    # 전체 실행
   python3 bulk_download.py --market kospi     # 코스피만
   python3 bulk_download.py --market kosdaq    # 코스닥만
@@ -20,7 +20,7 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 import sys, os, time, argparse
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 
 import httpx
 import yfinance as yf

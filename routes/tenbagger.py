@@ -18,40 +18,190 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import date as _date_cls, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
+from config import IS_POSTGRES
+from db_compat import connect_primary_db
+from db_utils import STOCK_DB_PATH, connect_stock_db
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from env_utils import BASE_DIR
+from services.gemini import generate_text, is_configured, model_name
+from services.gemini_openai_compat import OpenAI
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = str(BASE_DIR / "stock.db")
+DB_PATH = str(STOCK_DB_PATH)
 EMP_DB_PATH = str(BASE_DIR / "employment_monitor" / "employment.db")
 TRADE_DB_PATH = str(BASE_DIR / "hs_trade_lab" / "data" / "hs_trade_lab.db")
 SECTOR_AI_CACHE_PATH = BASE_DIR / "scratch" / "sector_ai_daily.json"
+TURNAROUND_WATCH_CACHE_PATH = BASE_DIR / "scratch" / "turnaround_watch_cache.json"
+HISTORICAL_SCOREBOARD_V2_PATH = (
+    BASE_DIR / "research_outputs" / "historical_tenbagger_scoreboard_v2.json"
+)
+HISTORICAL_CAUSES_PATH = BASE_DIR / "research_outputs" / "historical_tenbagger_causes.json"
+HISTORICAL_SIGNAL_DISCOVERY_PATH = (
+    BASE_DIR / "research_outputs" / "historical_tenbagger_signal_discovery.json"
+)
+
+
+def _to_date(v: Any) -> str | None:
+    """price_history.date 비교에 바인딩할 값을 항상 'YYYY-MM-DD' 문자열로 정규화.
+
+    2026-08-24 정정: price_history.date는 PostgreSQL에서도 실제로는 TEXT 컬럼이다
+    (information_schema로 실측 확인). 애초 버그는 반대 방향이었음 — 일부 호출부의
+    sel_date가 `DATE(run_time) AS sel_date`처럼 SQL DATE() 함수를 거쳐 들어오는데,
+    PostgreSQL의 DATE()는 진짜 datetime.date 객체를 반환한다. 이 객체를 바인딩하면
+    psycopg가 date OID로 보내 TEXT 컬럼과 비교 시 "operator does not exist:
+    text > date"로 실패한다(SQLite는 전부 TEXT 비교라 무해했음). str이든 date/datetime
+    객체든 전부 문자열로 맞춰 바인딩하는 것이 올바른 방향."""
+    if v is None:
+        return None
+    if isinstance(v, (datetime, _date_cls)):
+        return v.strftime("%Y-%m-%d")
+    return str(v)[:10]
+
+# 턴어라운드 확률 예측 로지스틱 모델 (2026-07-24, 발굴/리스트업 전용 — 매매전략(moonshot 등)에는
+# 연결하지 않음). 기존 comprehensive_score(재도전/매출YoY성장/이익의질 3개 이진신호를 동일가중
+# 1점씩 합산)를 그대로 학습기(<=2022)/검증기(2023+) 데이터로 로지스틱회귀에 넣어 "실제 예측력에
+# 비례한" 가중치를 학습 — 3개 신호 모두 이진(binary)만 사용(연속값인 매출YoY% 자체를 직접 넣으면
+# 소형주 기저효과 노이즈에 취약함을 같은 날 moonshot_turnaround 동점처리 실험에서 확인했기 때문).
+# 검증 결과: 상위10% lift=1.96x/상위20% lift=2.24x로 기존 3점버킷(lift=1.60x)보다 개선
+# (scratch/claude_turnaround_logistic_model_20260724.py, research_outputs/claude_turnaround_
+# logistic_weights_20260724.json). 학습된 가중치가 재도전(0.83) > 이익의질(0.53) > 매출성장(0.22)
+# 순으로 불균등함을 확인 — 기존 동일가중 가정보다 실제에 가까움.
+_TA_LOGISTIC_W = {"intercept": -1.1938, "reattempt": 0.8291, "rev_growth": 0.2236, "quality": 0.5329}
+
+
+def _turnaround_probability(has_reattempt: bool, has_rev_growth: bool, has_quality: bool) -> float:
+    z = (_TA_LOGISTIC_W["intercept"]
+         + _TA_LOGISTIC_W["reattempt"] * int(bool(has_reattempt))
+         + _TA_LOGISTIC_W["rev_growth"] * int(bool(has_rev_growth))
+         + _TA_LOGISTIC_W["quality"] * int(bool(has_quality)))
+    if z < -30:
+        return 0.0
+    if z > 30:
+        return 100.0
+    return round(100.0 / (1.0 + math.exp(-z)), 1)
 TRIGGER_ANALYSIS_PATH = BASE_DIR / "research_outputs" / "signal_trigger_analysis_2020plus.json"
 TRIGGER_ANALYSIS_SCRIPT = BASE_DIR / "scripts" / "research_signal_trigger_analysis.py"
 
 _run_lock   = threading.Lock()
 _run_status = {"running": False, "last_run": None, "last_count": 0, "error": None}
+_DATA_STATUS_CACHE: dict[str, Any] = {"data": None, "at": 0.0}
+_DATA_STATUS_CACHE_TTL_SEC = 300
 
 
 def _get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect_primary_db(timeout=30, row_factory=sqlite3.Row)
 
 
 def _ro_conn(path: str):
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=30)
+    resolved = str(Path(path).resolve())
+    if resolved == str(STOCK_DB_PATH):
+        return connect_primary_db(timeout=30, row_factory=sqlite3.Row, readonly=True)
+    conn = sqlite3.connect(f"file:{resolved}?mode=ro", uri=True, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _latest_full_price_date(conn: sqlite3.Connection, min_coverage: int = 2000) -> str | None:
+    row = conn.execute(
+        """
+        SELECT date
+        FROM price_history
+        WHERE close > 0
+        GROUP BY date
+        HAVING COUNT(DISTINCT stock_code) >= ?
+        ORDER BY date DESC
+        LIMIT 1
+        """,
+        (min_coverage,),
+    ).fetchone()
+    return row["date"] if row else None
+
+
+def _price_return_pct(conn: sqlite3.Connection, code: str, as_of: str, days: int) -> float | None:
+    start = (datetime.strptime(as_of, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = conn.execute(
+        """
+        SELECT close
+        FROM price_history
+        WHERE stock_code=? AND date>=? AND date<=? AND close>0
+        ORDER BY date
+        """,
+        (code, start, as_of),
+    ).fetchall()
+    if len(rows) < 3:
+        return None
+    first = float(rows[0]["close"] or 0)
+    last = float(rows[-1]["close"] or 0)
+    return (last / first - 1.0) * 100.0 if first > 0 else None
+
+
+def _price_risk(ret_1m: float | None, ret_3m: float | None) -> dict[str, Any]:
+    flags: list[str] = []
+    penalty = 0
+    level = "OK"
+    label = "가격 정상"
+
+    if ret_3m is not None and ret_3m <= -50:
+        flags.append(f"3개월 {ret_3m:.1f}% 급락")
+        penalty = max(penalty, 18)
+        level = "AVOID"
+        label = "회피: 가격붕괴"
+    elif ret_3m is not None and ret_3m <= -35:
+        flags.append(f"3개월 {ret_3m:.1f}% 하락")
+        penalty = max(penalty, 10)
+        level = "WATCH_PRICE"
+        label = "가격확인 필요"
+
+    if ret_1m is not None and ret_1m <= -20:
+        flags.append(f"1개월 {ret_1m:.1f}% 급락")
+        penalty = max(penalty, 8)
+        if level == "OK":
+            level = "WATCH_PRICE"
+            label = "단기급락 확인"
+
+    return {
+        "price_risk": level,
+        "price_risk_label": label,
+        "price_risk_penalty": penalty,
+        "price_risk_flags": flags,
+    }
+
+
+def _enrich_tenbagger_price_risk(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    as_of = _latest_full_price_date(conn)
+    if not as_of:
+        return rows
+    for row in rows:
+        code = str(row.get("stock_code") or "").zfill(6)
+        if not code or code == "000000":
+            continue
+        ret_1m = _price_return_pct(conn, code, as_of, 30)
+        ret_3m = _price_return_pct(conn, code, as_of, 90)
+        risk = _price_risk(ret_1m, ret_3m)
+        base_score = float(
+            row.get("total_score")
+            or row.get("score")
+            or row.get("combined_score")
+            or row.get("signal_score")
+            or 0
+        )
+        row["price_as_of"] = as_of
+        row["price_return_1m"] = round(ret_1m, 1) if ret_1m is not None else None
+        row["price_return_3m"] = round(ret_3m, 1) if ret_3m is not None else None
+        row.update(risk)
+        row["risk_adjusted_score"] = round(max(0.0, base_score - risk["price_risk_penalty"]), 1)
+    return rows
 
 
 def _triple_winner_reason(row: dict) -> str:
@@ -111,6 +261,112 @@ def _metric_stats(rows: list[dict], key: str) -> dict:
         "median": pct(0.5),
         "p75": pct(0.75),
         "p90": pct(0.9),
+    }
+
+
+def _monthly_period_plus(period: str, months: int) -> str | None:
+    try:
+        y = int(period[:4])
+        m = int(period[5:7])
+    except Exception:
+        return None
+    total = y * 12 + (m - 1) + months
+    ny, nm = divmod(total, 12)
+    return f"{ny:04d}-{nm + 1:02d}"
+
+
+def _quarter_available_date(year: int, quarter: int) -> str:
+    month_map = {1: 5, 2: 8, 3: 11, 4: 3}
+    rel_year = year + 1 if quarter == 4 else year
+    month = month_map.get(quarter, 5)
+    return f"{rel_year:04d}-{month:02d}-15"
+
+
+def _load_quarterly_rows_for_codes(conn: sqlite3.Connection, codes: list[str]) -> dict[str, list[dict]]:
+    if not codes:
+        return {}
+    ph = ",".join("?" * len(codes))
+    rows = conn.execute(
+        f"""
+        WITH ranked AS (
+            SELECT stock_code, year, quarter, revenue, operating_profit, net_income,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY stock_code, year, quarter
+                       ORDER BY CASE WHEN report_type = 'CFS' THEN 0 ELSE 1 END,
+                                CASE WHEN LOWER(data_source) >= 'fnguide' AND LOWER(data_source) < 'fnguidf' THEN 0
+                                     WHEN LOWER(data_source) >= 'dart' AND LOWER(data_source) < 'daru' THEN 1 ELSE 2 END,
+                                id DESC
+                   ) AS rn
+            FROM financial_data
+            WHERE is_annual = 0
+              AND quarter BETWEEN 1 AND 4
+              AND stock_code IN ({ph})
+        )
+        SELECT stock_code, year, quarter, revenue, operating_profit, net_income
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY stock_code, year DESC, quarter DESC
+        """,
+        codes,
+    ).fetchall()
+    out: dict[str, list[dict]] = {}
+    for row in rows:
+        out.setdefault(str(row["stock_code"]), []).append(dict(row))
+    return out
+
+
+def _earnings_backed_profile(snapshot_date: str, code: str, qrows_by_code: dict[str, list[dict]]) -> dict[str, Any]:
+    as_of = snapshot_date[:10]
+    rows = [
+        r for r in (qrows_by_code.get(code) or [])
+        if _quarter_available_date(int(r["year"]), int(r["quarter"])) <= as_of
+    ]
+    rows = rows[:8]
+    lookup = {(int(r["year"]), int(r["quarter"])): r for r in rows}
+    tags: list[str] = []
+    rev_yoy = None
+    op_yoy = None
+    latest_op = None
+    latest_rev = None
+
+    if rows:
+        latest = rows[0]
+        latest_rev = _num(latest.get("revenue"))
+        latest_op = _num(latest.get("operating_profit"))
+        prev_same_q = lookup.get((int(latest["year"]) - 1, int(latest["quarter"])))
+        if prev_same_q:
+            rev_yoy = _pct_change(latest_rev, _num(prev_same_q.get("revenue")))
+            op_yoy = _pct_change(latest_op, _num(prev_same_q.get("operating_profit")))
+
+        if rev_yoy is not None and rev_yoy >= 10:
+            tags.append("매출YoY상승")
+        if latest_op is not None and latest_op > 0:
+            tags.append("영업흑자")
+        if op_yoy is not None and op_yoy >= 20:
+            tags.append("영업이익YoY상승")
+        if prev_same_q and _num(prev_same_q.get("operating_profit")) is not None and _num(prev_same_q.get("operating_profit")) <= 0 and (latest_op or 0) > 0:
+            tags.append("흑자전환")
+
+    yoy_rev_streak = _consecutive_yoy(rows, "revenue") if rows else 0
+    yoy_op_streak = _consecutive_yoy(rows, "operating_profit") if rows else 0
+    if yoy_rev_streak >= 2:
+        tags.append("매출연속성장")
+    if yoy_op_streak >= 2:
+        tags.append("이익연속성장")
+
+    earnings_backed = any(t in tags for t in (
+        "매출YoY상승", "영업이익YoY상승", "흑자전환", "매출연속성장", "이익연속성장"
+    )) and ("영업흑자" in tags or "흑자전환" in tags or (op_yoy is not None and op_yoy > 0))
+
+    return {
+        "earnings_backed": bool(earnings_backed),
+        "issue_driven_proxy": not bool(earnings_backed),
+        "earnings_tags": tags,
+        "rev_yoy_pct": round(rev_yoy, 1) if rev_yoy is not None else None,
+        "op_yoy_pct": round(op_yoy, 1) if op_yoy is not None else None,
+        "yoy_rev_streak": yoy_rev_streak,
+        "yoy_op_streak": yoy_op_streak,
+        "latest_op_positive": bool(latest_op is not None and latest_op > 0),
     }
 
 
@@ -306,8 +562,8 @@ def triple_winners_by_year(
                     MAX(p.high) AS max_high,
                     AVG(NULLIF(p.volume, 0)) AS avg_volume,
                     MAX(p.volume) AS max_volume,
-                    AVG(NULLIF(p.trade_amount, 0)) AS avg_trade_amount,
-                    MAX(p.trade_amount) AS max_trade_amount,
+                    AVG(COALESCE(NULLIF(p.trade_amount, 0), p.close * p.volume)) AS avg_trade_amount,
+                    MAX(COALESCE(NULLIF(p.trade_amount, 0), p.close * p.volume)) AS max_trade_amount,
                     COUNT(*) AS trading_days
                 FROM price_history p
                 JOIN su ON su.stock_code = p.stock_code
@@ -321,7 +577,7 @@ def triple_winners_by_year(
             ranked AS (
                 SELECT
                     y.*,
-                    ROUND(y.max_high / y.min_low, 2) AS multiple,
+                    ROUND(CAST(y.max_high / y.min_low AS NUMERIC), 2) AS multiple,
                     ROW_NUMBER() OVER (
                         PARTITION BY y.year
                         ORDER BY y.max_high / y.min_low DESC
@@ -338,8 +594,8 @@ def triple_winners_by_year(
                 COALESCE(su.sector, '미분류') AS sector,
                 COALESCE(su.theme, '') AS theme,
                 r.multiple,
-                ROUND(r.max_volume / NULLIF(r.avg_volume, 0), 1) AS vol_peak_x,
-                ROUND(r.max_trade_amount / NULLIF(r.avg_trade_amount, 0), 1) AS amount_peak_x
+                ROUND(CAST(r.max_volume / NULLIF(r.avg_volume, 0) AS NUMERIC), 1) AS vol_peak_x,
+                ROUND(CAST(r.max_trade_amount / NULLIF(r.avg_trade_amount, 0) AS NUMERIC), 1) AS amount_peak_x
             FROM ranked r
             JOIN su ON su.stock_code = r.stock_code
             WHERE r.rn <= ?
@@ -375,8 +631,8 @@ def triple_winners_by_year(
                     MAX(p.high) AS max_high,
                     AVG(NULLIF(p.volume, 0)) AS avg_volume,
                     MAX(p.volume) AS max_volume,
-                    AVG(NULLIF(p.trade_amount, 0)) AS avg_trade_amount,
-                    MAX(p.trade_amount) AS max_trade_amount,
+                    AVG(COALESCE(NULLIF(p.trade_amount, 0), p.close * p.volume)) AS avg_trade_amount,
+                    MAX(COALESCE(NULLIF(p.trade_amount, 0), p.close * p.volume)) AS max_trade_amount,
                     COUNT(*) AS trading_days
                 FROM price_history p
                 JOIN su ON su.stock_code = p.stock_code
@@ -395,9 +651,9 @@ def triple_winners_by_year(
                 COALESCE(su.sector, '미분류') AS sector,
                 COALESCE(su.theme, '') AS theme,
                 su.market_cap,
-                ROUND(y.max_high / y.min_low, 2) AS multiple,
-                ROUND(y.max_volume / NULLIF(y.avg_volume, 0), 1) AS vol_peak_x,
-                ROUND(y.max_trade_amount / NULLIF(y.avg_trade_amount, 0), 1) AS amount_peak_x
+                ROUND(CAST(y.max_high / y.min_low AS NUMERIC), 2) AS multiple,
+                ROUND(CAST(y.max_volume / NULLIF(y.avg_volume, 0) AS NUMERIC), 1) AS vol_peak_x,
+                ROUND(CAST(y.max_trade_amount / NULLIF(y.avg_trade_amount, 0) AS NUMERIC), 1) AS amount_peak_x
             FROM yearly y
             JOIN su ON su.stock_code = y.stock_code
             WHERE y.trading_days >= 60
@@ -457,6 +713,643 @@ def triple_winners_by_year(
         "years": years,
         "notice": "KOSPI/KOSDAQ 보통주 중 연중 저가 대비 고가 3~50배 종목만 표시합니다. 종목명 없는 코드, 보통주 외 증권, 100원 미만 저가/권리락 의심 데이터, 과도한 배율 이상치는 제외했습니다.",
     }
+
+
+@router.get("/historical-tenbaggers")
+def historical_tenbaggers(
+    horizon: str = Query("24m", description="24m|36m"),
+    multiple: int = Query(10, ge=3, le=10, description="3|5|10"),
+    start_date: str = Query("2020-01-01"),
+    end_date: str = Query("2026-08-08"),
+    analysis_focus: str = Query("earnings", description="earnings|all"),
+    min_score: float = Query(55.0, ge=0, le=100),
+    min_turnover_억: float = Query(3.0, ge=0, le=1000),
+    max_mktcap_억: float = Query(3000.0, ge=0, le=100000),
+    limit: int = Query(200, ge=10, le=1000),
+):
+    """
+    과거 월말 스냅샷에서 실제 3배/5배/10배 달성 종목을 '첫 포착 시점' 기준으로 재구성한다.
+    미래 후보 추천이 아니라, 과거 대승주를 당시 어떤 상태에서 먼저 포착할 수 있었는지 보기 위한 API.
+    """
+    if horizon not in {"24m", "36m"}:
+        raise HTTPException(status_code=400, detail="horizon must be 24m or 36m")
+    if multiple not in {3, 5, 10}:
+        raise HTTPException(status_code=400, detail="multiple must be 3, 5, or 10")
+
+    label_col = f"label_{multiple}x_{horizon}"
+    peak_col = f"forward_max_ret_{horizon}"
+
+    with _ro_conn(DB_PATH) as conn:
+        sql = f"""
+            WITH base AS (
+                SELECT
+                    snapshot_date,
+                    stock_code,
+                    stock_name,
+                    market,
+                    sector_large,
+                    close_price,
+                    market_cap_억,
+                    per,
+                    pbr,
+                    ret_20d,
+                    ret_60d,
+                    ret_120d,
+                    dist_high_252,
+                    dist_low_252,
+                    vol_ratio_20d,
+                    avg_turnover_20d_억,
+                    supply_20d_억,
+                    heuristic_score,
+                    model_score_12m,
+                    {peak_col} AS forward_peak,
+                    {label_col} AS winner_label,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY stock_code
+                        ORDER BY snapshot_date ASC
+                    ) AS rn
+                FROM strategy_feature_snapshot
+                WHERE snapshot_date >= ?
+                  AND snapshot_date <= ?
+                  AND heuristic_score >= ?
+                  AND avg_turnover_20d_억 >= ?
+                  AND market_cap_억 <= ?
+                  AND COALESCE({label_col}, 0) = 1
+            )
+            SELECT *
+            FROM base
+            WHERE rn = 1
+            ORDER BY snapshot_date ASC, heuristic_score DESC, model_score_12m DESC
+            LIMIT ?
+        """
+        rows = [dict(r) for r in conn.execute(
+            sql,
+            (start_date, end_date, min_score, min_turnover_억, max_mktcap_억, limit),
+        ).fetchall()]
+
+        if not rows:
+            return {
+                "meta": {
+                    "horizon": horizon,
+                    "multiple": multiple,
+                    "label_col": label_col,
+                    "peak_col": peak_col,
+                    "total": 0,
+                },
+                "summary": {},
+                "results": [],
+            }
+
+        code_set = sorted({str(r["stock_code"]) for r in rows if r.get("stock_code")})
+        qrows_by_code = _load_quarterly_rows_for_codes(conn, code_set)
+        ph = ",".join("?" * len(code_set))
+        month_close_rows = conn.execute(
+            f"""
+            SELECT stock_code, substr(snapshot_date, 1, 7) AS period, MAX(close_price) AS close_price
+            FROM strategy_feature_snapshot
+            WHERE stock_code IN ({ph})
+            GROUP BY stock_code, substr(snapshot_date, 1, 7)
+            """,
+            code_set,
+        ).fetchall()
+        close_map = {
+            (str(r["stock_code"]), str(r["period"])): float(r["close_price"] or 0)
+            for r in month_close_rows
+            if r["close_price"]
+        }
+
+        results = []
+        for row in rows:
+            code = str(row["stock_code"])
+            period = str(row["snapshot_date"])[:7]
+            p0 = float(row.get("close_price") or 0)
+            ret12 = None
+            target_12m = _monthly_period_plus(period, 12)
+            if target_12m:
+                p12 = close_map.get((code, target_12m))
+                if p12 and p0 > 0:
+                    ret12 = (float(p12) / p0 - 1.0) * 100.0
+            earnings = _earnings_backed_profile(str(row["snapshot_date"]), code, qrows_by_code)
+
+            item = {
+                "snapshot_date": row["snapshot_date"],
+                "stock_code": code,
+                "stock_name": row.get("stock_name") or code,
+                "market": row.get("market"),
+                "sector": row.get("sector_large") or "미분류",
+                "heuristic_score": round(float(row.get("heuristic_score") or 0), 1),
+                "model_score_12m": round(float(row.get("model_score_12m") or 0), 4),
+                "market_cap_억": round(float(row.get("market_cap_억") or 0), 1),
+                "pbr": round(float(row["pbr"]), 2) if row.get("pbr") is not None else None,
+                "per": round(float(row["per"]), 2) if row.get("per") is not None else None,
+                "ret_20d_pct": round(float(row["ret_20d"]) * 100.0, 1) if row.get("ret_20d") is not None else None,
+                "ret_60d_pct": round(float(row["ret_60d"]) * 100.0, 1) if row.get("ret_60d") is not None else None,
+                "ret_120d_pct": round(float(row["ret_120d"]) * 100.0, 1) if row.get("ret_120d") is not None else None,
+                "dist_high_252_pct": round(float(row["dist_high_252"]) * 100.0, 1) if row.get("dist_high_252") is not None else None,
+                "dist_low_252_pct": round(float(row["dist_low_252"]) * 100.0, 1) if row.get("dist_low_252") is not None else None,
+                "vol_ratio_20d": round(float(row["vol_ratio_20d"] or 0), 2),
+                "avg_turnover_20d_억": round(float(row["avg_turnover_20d_억"] or 0), 1),
+                "supply_20d_억": round(float(row["supply_20d_억"] or 0), 1),
+                "forward_peak_pct": round(float(row["forward_peak"] or 0) * 100.0, 1) if row.get("forward_peak") is not None else None,
+                "return_12m_pct": round(ret12, 1) if ret12 is not None else None,
+                **earnings,
+            }
+            if analysis_focus == "all" or item["earnings_backed"]:
+                results.append(item)
+
+        summary = {
+            "total": len(results),
+            "by_market": _dist(results, "market", 4),
+            "by_sector": _dist(results, "sector", 8),
+            "heuristic_score": _metric_stats(results, "heuristic_score"),
+            "model_score_12m": _metric_stats(results, "model_score_12m"),
+            "market_cap_억": _metric_stats(results, "market_cap_억"),
+            "pbr": _metric_stats(results, "pbr"),
+            "avg_turnover_20d_억": _metric_stats(results, "avg_turnover_20d_억"),
+            "return_12m_pct": _metric_stats(results, "return_12m_pct"),
+            "forward_peak_pct": _metric_stats(results, "forward_peak_pct"),
+            "deep_drawdown_share": _share(results, lambda r: (r.get("dist_high_252_pct") or 0) <= -70),
+            "near_bottom_share": _share(results, lambda r: (r.get("dist_low_252_pct") or 999) <= 15),
+            "volume_2x_share": _share(results, lambda r: (r.get("vol_ratio_20d") or 0) >= 2.0),
+            "smallcap_1500_share": _share(results, lambda r: 0 < (r.get("market_cap_억") or 0) <= 1500),
+            "earnings_backed_share": _share(results, lambda r: r.get("earnings_backed")),
+        }
+
+        return {
+            "meta": {
+                "horizon": horizon,
+                "multiple": multiple,
+                "analysis_focus": analysis_focus,
+                "label_col": label_col,
+                "peak_col": peak_col,
+                "start_date": start_date,
+                "end_date": end_date,
+                "min_score": min_score,
+                "min_turnover_억": min_turnover_억,
+                "max_mktcap_억": max_mktcap_억,
+                "total": len(results),
+                "dedupe_rule": "stock_code당 earliest snapshot_date 1건",
+            },
+            "summary": summary,
+            "results": results,
+        }
+
+
+@router.get("/historical-tenbagger-audit")
+def historical_tenbagger_audit(
+    horizon: str = Query("24m", description="24m|36m"),
+    multiple: int = Query(10, ge=3, le=10, description="3|5|10"),
+    start_date: str = Query("2020-01-01"),
+    end_date: str = Query("2026-08-08"),
+    analysis_focus: str = Query("earnings", description="earnings|all"),
+    min_score: float = Query(55.0, ge=0, le=100),
+    min_turnover_억: float = Query(3.0, ge=0, le=1000),
+    max_mktcap_억: float = Query(3000.0, ge=0, le=100000),
+    sample_limit: int = Query(30, ge=10, le=200),
+):
+    """
+    과거 실제 3배/5배/10배 승자 중 현재 필터로 잡힌 것(captured)과 놓친 것(missed)을 비교한다.
+    """
+    if horizon not in {"24m", "36m"}:
+        raise HTTPException(status_code=400, detail="horizon must be 24m or 36m")
+    if multiple not in {3, 5, 10}:
+        raise HTTPException(status_code=400, detail="multiple must be 3, 5, or 10")
+
+    label_col = f"label_{multiple}x_{horizon}"
+    peak_col = f"forward_max_ret_{horizon}"
+
+    with _ro_conn(DB_PATH) as conn:
+        sql = f"""
+            WITH winners AS (
+                SELECT
+                    snapshot_date,
+                    stock_code,
+                    stock_name,
+                    market,
+                    sector_large,
+                    close_price,
+                    market_cap_억,
+                    per,
+                    pbr,
+                    ret_20d,
+                    ret_60d,
+                    ret_120d,
+                    dist_high_252,
+                    dist_low_252,
+                    vol_ratio_20d,
+                    avg_turnover_20d_억,
+                    supply_20d_억,
+                    heuristic_score,
+                    model_score_12m,
+                    {peak_col} AS forward_peak,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY stock_code
+                        ORDER BY snapshot_date ASC
+                    ) AS rn
+                FROM strategy_feature_snapshot
+                WHERE snapshot_date >= ?
+                  AND snapshot_date <= ?
+                  AND COALESCE({label_col}, 0) = 1
+            )
+            SELECT *
+            FROM winners
+            WHERE rn = 1
+        """
+        all_rows = [dict(r) for r in conn.execute(sql, (start_date, end_date)).fetchall()]
+
+        qrows_by_code = _load_quarterly_rows_for_codes(
+            conn, sorted({str(r["stock_code"]) for r in all_rows if r.get("stock_code")})
+        )
+
+        def _normalize(row: dict) -> dict:
+            base = {
+                "snapshot_date": row["snapshot_date"],
+                "stock_code": str(row["stock_code"]),
+                "stock_name": row.get("stock_name") or str(row["stock_code"]),
+                "market": row.get("market"),
+                "sector": row.get("sector_large") or "미분류",
+                "heuristic_score": float(row.get("heuristic_score") or 0),
+                "model_score_12m": float(row.get("model_score_12m") or 0),
+                "market_cap_억": float(row.get("market_cap_억") or 0),
+                "pbr": float(row["pbr"]) if row.get("pbr") is not None else None,
+                "per": float(row["per"]) if row.get("per") is not None else None,
+                "ret_20d_pct": float(row["ret_20d"]) * 100.0 if row.get("ret_20d") is not None else None,
+                "ret_60d_pct": float(row["ret_60d"]) * 100.0 if row.get("ret_60d") is not None else None,
+                "ret_120d_pct": float(row["ret_120d"]) * 100.0 if row.get("ret_120d") is not None else None,
+                "dist_high_252_pct": float(row["dist_high_252"]) * 100.0 if row.get("dist_high_252") is not None else None,
+                "dist_low_252_pct": float(row["dist_low_252"]) * 100.0 if row.get("dist_low_252") is not None else None,
+                "vol_ratio_20d": float(row["vol_ratio_20d"] or 0),
+                "avg_turnover_20d_억": float(row["avg_turnover_20d_억"] or 0),
+                "supply_20d_억": float(row["supply_20d_억"] or 0),
+                "forward_peak_pct": float(row["forward_peak"] or 0) * 100.0 if row.get("forward_peak") is not None else None,
+            }
+            base.update(_earnings_backed_profile(str(row["snapshot_date"]), str(row["stock_code"]), qrows_by_code))
+            return base
+
+        winners = [_normalize(r) for r in all_rows]
+        if analysis_focus == "earnings":
+            winners = [r for r in winners if r.get("earnings_backed")]
+        captured = [
+            r for r in winners
+            if r["heuristic_score"] >= min_score
+            and (r["avg_turnover_20d_억"] or 0) >= min_turnover_억
+            and (r["market_cap_억"] or 0) <= max_mktcap_억
+        ]
+        captured_codes = {r["stock_code"] for r in captured}
+        missed = [r for r in winners if r["stock_code"] not in captured_codes]
+
+        def _summary(rows: list[dict]) -> dict:
+            if not rows:
+                return {"total": 0}
+            return {
+                "total": len(rows),
+                "by_market": _dist(rows, "market", 4),
+                "by_sector": _dist(rows, "sector", 8),
+                "heuristic_score": _metric_stats(rows, "heuristic_score"),
+                "model_score_12m": _metric_stats(rows, "model_score_12m"),
+                "market_cap_억": _metric_stats(rows, "market_cap_억"),
+                "pbr": _metric_stats(rows, "pbr"),
+                "avg_turnover_20d_억": _metric_stats(rows, "avg_turnover_20d_억"),
+                "forward_peak_pct": _metric_stats(rows, "forward_peak_pct"),
+                "deep_drawdown_share": _share(rows, lambda r: (r.get("dist_high_252_pct") or 0) <= -70),
+                "near_bottom_share": _share(rows, lambda r: (r.get("dist_low_252_pct") or 999) <= 15),
+                "volume_2x_share": _share(rows, lambda r: (r.get("vol_ratio_20d") or 0) >= 2.0),
+                "smallcap_1500_share": _share(rows, lambda r: 0 < (r.get("market_cap_억") or 0) <= 1500),
+                "earnings_backed_share": _share(rows, lambda r: r.get("earnings_backed")),
+            }
+
+        def _miss_reasons(row: dict) -> list[str]:
+            reasons = []
+            if row["heuristic_score"] < min_score:
+                reasons.append(f"점수 {row['heuristic_score']:.1f} < {min_score:.1f}")
+            if (row["avg_turnover_20d_억"] or 0) < min_turnover_억:
+                reasons.append(f"거래대금 {row['avg_turnover_20d_억']:.1f}억 < {min_turnover_억:.1f}억")
+            if (row["market_cap_억"] or 0) > max_mktcap_억:
+                reasons.append(f"시총 {row['market_cap_억']:.0f}억 > {max_mktcap_억:.0f}억")
+            if not reasons:
+                reasons.append("기타 조건 미세차")
+            return reasons
+
+        miss_reason_counter: Counter[str] = Counter()
+        constraint_counter = {
+            "score_cut": 0,
+            "turnover_cut": 0,
+            "mktcap_cut": 0,
+            "score_only": 0,
+            "turnover_only": 0,
+            "mktcap_only": 0,
+            "score_and_turnover": 0,
+            "score_and_mktcap": 0,
+            "turnover_and_mktcap": 0,
+            "all_three": 0,
+        }
+        for row in missed:
+            flags = {
+                "score_cut": row["heuristic_score"] < min_score,
+                "turnover_cut": (row["avg_turnover_20d_억"] or 0) < min_turnover_억,
+                "mktcap_cut": (row["market_cap_억"] or 0) > max_mktcap_억,
+            }
+            if flags["score_cut"]:
+                miss_reason_counter["점수컷"] += 1
+            if flags["turnover_cut"]:
+                miss_reason_counter["거래대금컷"] += 1
+            if flags["mktcap_cut"]:
+                miss_reason_counter["시총컷"] += 1
+            if flags["score_cut"] and not flags["turnover_cut"] and not flags["mktcap_cut"]:
+                constraint_counter["score_only"] += 1
+            if flags["turnover_cut"] and not flags["score_cut"] and not flags["mktcap_cut"]:
+                constraint_counter["turnover_only"] += 1
+            if flags["mktcap_cut"] and not flags["score_cut"] and not flags["turnover_cut"]:
+                constraint_counter["mktcap_only"] += 1
+            if flags["score_cut"] and flags["turnover_cut"] and not flags["mktcap_cut"]:
+                constraint_counter["score_and_turnover"] += 1
+            if flags["score_cut"] and flags["mktcap_cut"] and not flags["turnover_cut"]:
+                constraint_counter["score_and_mktcap"] += 1
+            if flags["turnover_cut"] and flags["mktcap_cut"] and not flags["score_cut"]:
+                constraint_counter["turnover_and_mktcap"] += 1
+            if flags["score_cut"] and flags["turnover_cut"] and flags["mktcap_cut"]:
+                constraint_counter["all_three"] += 1
+        for key in ("score_cut", "turnover_cut", "mktcap_cut"):
+            constraint_counter[key] = int(sum(
+                1 for row in missed
+                if (
+                    (key == "score_cut" and row["heuristic_score"] < min_score) or
+                    (key == "turnover_cut" and (row["avg_turnover_20d_억"] or 0) < min_turnover_억) or
+                    (key == "mktcap_cut" and (row["market_cap_억"] or 0) > max_mktcap_억)
+                )
+            ))
+
+        score_cut_rows = [r for r in missed if r["heuristic_score"] < min_score]
+        score_only_rows = [
+            r for r in missed
+            if r["heuristic_score"] < min_score
+            and (r["avg_turnover_20d_억"] or 0) >= min_turnover_억
+            and (r["market_cap_억"] or 0) <= max_mktcap_억
+        ]
+        mktcap_cut_rows = [r for r in missed if (r["market_cap_억"] or 0) > max_mktcap_억]
+        score_cut_archetypes: Counter[str] = Counter()
+        for row in score_cut_rows:
+            tags: list[str] = []
+            if row["model_score_12m"] >= 0.8:
+                tags.append("모델고득점")
+            elif row["model_score_12m"] >= 0.6:
+                tags.append("모델중상위")
+            if (row.get("dist_high_252_pct") or 0) <= -70:
+                tags.append("초낙폭")
+            elif (row.get("dist_high_252_pct") or 0) <= -50:
+                tags.append("중낙폭")
+            if (row.get("dist_low_252_pct") or 999) <= 15:
+                tags.append("저점근접")
+            if (row.get("vol_ratio_20d") or 0) >= 2.0:
+                tags.append("거래량급증")
+            if 0 < (row.get("market_cap_억") or 0) <= 1500:
+                tags.append("소형주")
+            elif (row.get("market_cap_억") or 0) > 3000:
+                tags.append("중대형주")
+            if (row.get("pbr") or 999) <= 1.0:
+                tags.append("저PBR")
+            if (row.get("avg_turnover_20d_억") or 0) < min_turnover_억:
+                tags.append("저유동성")
+            score_cut_archetypes["+".join(tags[:3]) if tags else "기타"] += 1
+
+        score_gap_bands = {
+            "0~5점 부족": 0,
+            "5~10점 부족": 0,
+            "10~20점 부족": 0,
+            "20점+ 부족": 0,
+        }
+        for row in score_cut_rows:
+            gap = max(0.0, min_score - row["heuristic_score"])
+            if gap < 5:
+                score_gap_bands["0~5점 부족"] += 1
+            elif gap < 10:
+                score_gap_bands["5~10점 부족"] += 1
+            elif gap < 20:
+                score_gap_bands["10~20점 부족"] += 1
+            else:
+                score_gap_bands["20점+ 부족"] += 1
+
+        def _cap_band(value: float) -> str:
+            if value <= 1500:
+                return "1500억 이하"
+            if value <= 3000:
+                return "1500~3000억"
+            if value <= 5000:
+                return "3000~5000억"
+            if value <= 10000:
+                return "5000억~1조"
+            return "1조 초과"
+
+        mktcap_cut_breakdown: Counter[str] = Counter()
+        for row in mktcap_cut_rows:
+            band = _cap_band(float(row.get("market_cap_억") or 0))
+            tag = band
+            if row.get("earnings_backed"):
+                if row.get("model_score_12m", 0) >= 0.8:
+                    tag += "+모델고득점"
+                elif row.get("model_score_12m", 0) >= 0.6:
+                    tag += "+모델중상위"
+                if (row.get("ret_60d_pct") or 0) >= 20:
+                    tag += "+상승추세"
+                elif (row.get("dist_high_252_pct") or 0) <= -50:
+                    tag += "+낙폭회복형"
+            mktcap_cut_breakdown[tag] += 1
+
+        earnings_pattern_counter: Counter[str] = Counter()
+        for row in score_cut_rows:
+            tags = row.get("earnings_tags") or []
+            if not tags:
+                earnings_pattern_counter["실적태그빈약"] += 1
+                continue
+            key = "+".join(tags[:3])
+            earnings_pattern_counter[key] += 1
+
+        def _avg_metric(rows: list[dict], key: str) -> float | None:
+            vals = [float(r[key]) for r in rows if r.get(key) is not None]
+            if not vals:
+                return None
+            return round(sum(vals) / len(vals), 2)
+
+        score_cut_feature_gap = []
+        for key, label, unit in [
+            ("heuristic_score", "휴리스틱 점수", "pt"),
+            ("model_score_12m", "모델 점수", ""),
+            ("market_cap_억", "시가총액", "억"),
+            ("avg_turnover_20d_억", "20일 평균 거래대금", "억"),
+            ("ret_60d_pct", "60일 수익률", "%"),
+            ("dist_high_252_pct", "52주 고점 대비 거리", "%"),
+            ("dist_low_252_pct", "52주 저점 대비 거리", "%"),
+            ("vol_ratio_20d", "20일 거래량 배수", "x"),
+            ("rev_yoy_pct", "매출 YoY", "%"),
+            ("op_yoy_pct", "영업이익 YoY", "%"),
+            ("yoy_rev_streak", "매출 성장 연속분기", "q"),
+            ("yoy_op_streak", "이익 성장 연속분기", "q"),
+        ]:
+            captured_avg = _avg_metric(captured, key)
+            score_cut_avg = _avg_metric(score_cut_rows, key)
+            if captured_avg is None and score_cut_avg is None:
+                continue
+            gap = None
+            if captured_avg is not None and score_cut_avg is not None:
+                gap = round(score_cut_avg - captured_avg, 2)
+            score_cut_feature_gap.append({
+                "metric": key,
+                "label": label,
+                "unit": unit,
+                "captured_avg": captured_avg,
+                "score_cut_avg": score_cut_avg,
+                "gap": gap,
+            })
+
+        score_only_feature_gap = []
+        for key, label, unit in [
+            ("heuristic_score", "휴리스틱 점수", "pt"),
+            ("model_score_12m", "모델 점수", ""),
+            ("market_cap_억", "시가총액", "억"),
+            ("avg_turnover_20d_억", "20일 평균 거래대금", "억"),
+            ("ret_60d_pct", "60일 수익률", "%"),
+            ("dist_high_252_pct", "52주 고점 대비 거리", "%"),
+            ("dist_low_252_pct", "52주 저점 대비 거리", "%"),
+            ("vol_ratio_20d", "20일 거래량 배수", "x"),
+            ("rev_yoy_pct", "매출 YoY", "%"),
+            ("op_yoy_pct", "영업이익 YoY", "%"),
+            ("yoy_rev_streak", "매출 성장 연속분기", "q"),
+            ("yoy_op_streak", "이익 성장 연속분기", "q"),
+        ]:
+            captured_avg = _avg_metric(captured, key)
+            score_only_avg = _avg_metric(score_only_rows, key)
+            if captured_avg is None and score_only_avg is None:
+                continue
+            gap = None
+            if captured_avg is not None and score_only_avg is not None:
+                gap = round(score_only_avg - captured_avg, 2)
+            score_only_feature_gap.append({
+                "metric": key,
+                "label": label,
+                "unit": unit,
+                "captured_avg": captured_avg,
+                "score_only_avg": score_only_avg,
+                "gap": gap,
+            })
+
+        sensitivity_configs = [
+            ("기준", min_score, min_turnover_억, max_mktcap_억),
+            ("점수 50", 50.0, min_turnover_억, max_mktcap_억),
+            ("점수 45", 45.0, min_turnover_억, max_mktcap_억),
+            ("거래대금 2억", min_score, 2.0, max_mktcap_억),
+            ("시총 5000억", min_score, min_turnover_억, 5000.0),
+            ("점수50+시총5000", 50.0, min_turnover_억, 5000.0),
+            ("점수50+거래2억", 50.0, 2.0, max_mktcap_억),
+            ("점수50+거래2억+시총5000", 50.0, 2.0, 5000.0),
+        ]
+        capture_sensitivity = []
+        base_captured = len(captured)
+        for name, score_cut, turnover_cut, mktcap_cut in sensitivity_configs:
+            scenario_rows = [
+                r for r in winners
+                if r["heuristic_score"] >= score_cut
+                and (r["avg_turnover_20d_억"] or 0) >= turnover_cut
+                and (r["market_cap_억"] or 0) <= mktcap_cut
+            ]
+            scenario_earnings_backed = sum(1 for r in scenario_rows if r.get("earnings_backed"))
+            capture_sensitivity.append({
+                "name": name,
+                "min_score": score_cut,
+                "min_turnover_억": turnover_cut,
+                "max_mktcap_억": mktcap_cut,
+                "captured": len(scenario_rows),
+                "capture_rate_pct": round(len(scenario_rows) / len(winners) * 100.0, 1) if winners else 0.0,
+                "incremental_vs_base": len(scenario_rows) - base_captured,
+                "earnings_backed_share": round(scenario_earnings_backed / len(scenario_rows) * 100.0, 1) if scenario_rows else 0.0,
+            })
+
+        missed_sorted = sorted(
+            missed,
+            key=lambda r: (
+                r.get("forward_peak_pct") or 0,
+                r.get("heuristic_score") or 0,
+            ),
+            reverse=True,
+        )
+        missed_examples = [{
+            **r,
+            "miss_reasons": _miss_reasons(r),
+        } for r in missed_sorted[:sample_limit]]
+
+        return {
+            "meta": {
+                "horizon": horizon,
+                "multiple": multiple,
+                "analysis_focus": analysis_focus,
+                "label_col": label_col,
+                "peak_col": peak_col,
+                "start_date": start_date,
+                "end_date": end_date,
+                "min_score": min_score,
+                "min_turnover_억": min_turnover_억,
+                "max_mktcap_억": max_mktcap_억,
+            },
+            "summary": {
+                "winners_total": len(winners),
+                "captured": len(captured),
+                "missed": len(missed),
+                "capture_rate_pct": round(len(captured) / len(winners) * 100.0, 1) if winners else 0.0,
+            },
+            "captured_profile": _summary(captured),
+            "missed_profile": _summary(missed),
+            "score_cut_profile": _summary(score_cut_rows),
+            "score_only_profile": _summary(score_only_rows),
+            "capture_sensitivity": capture_sensitivity,
+            "score_cut_feature_gap": score_cut_feature_gap,
+            "score_only_feature_gap": score_only_feature_gap,
+            "miss_reason_rank": [
+                {
+                    "name": name,
+                    "count": count,
+                    "pct_of_missed": round(count / len(missed) * 100.0, 1) if missed else 0.0,
+                }
+                for name, count in miss_reason_counter.most_common()
+            ],
+            "score_cut_archetypes": [
+                {
+                    "name": name,
+                    "count": count,
+                    "pct_of_score_cut": round(count / len(score_cut_rows) * 100.0, 1) if score_cut_rows else 0.0,
+                }
+                for name, count in score_cut_archetypes.most_common(12)
+            ],
+            "score_cut_earnings_patterns": [
+                {
+                    "name": name,
+                    "count": count,
+                    "pct_of_score_cut": round(count / len(score_cut_rows) * 100.0, 1) if score_cut_rows else 0.0,
+                }
+                for name, count in earnings_pattern_counter.most_common(12)
+            ],
+            "score_gap_bands": {
+                key: {
+                    "count": value,
+                    "pct_of_score_cut": round(value / len(score_cut_rows) * 100.0, 1) if score_cut_rows else 0.0,
+                }
+                for key, value in score_gap_bands.items()
+            },
+            "mktcap_cut_breakdown": [
+                {
+                    "name": name,
+                    "count": count,
+                    "pct_of_mktcap_cut": round(count / len(mktcap_cut_rows) * 100.0, 1) if mktcap_cut_rows else 0.0,
+                }
+                for name, count in mktcap_cut_breakdown.most_common(12)
+            ],
+            "constraint_overlap": {
+                key: {
+                    "count": value,
+                    "pct_of_missed": round(value / len(missed) * 100.0, 1) if missed else 0.0,
+                }
+                for key, value in constraint_counter.items()
+            },
+            "top_missed_examples": missed_examples,
+        }
 
 
 @router.get("/triple-trigger-analysis")
@@ -931,6 +1824,7 @@ def get_latest_results(limit: int = 20):
             return {"run_time": None, "results": [], "count": 0}
 
         latest_run = row["run_time"]
+        fetch_limit = max(limit * 3, limit, 60)
         rows = conn.execute("""
             SELECT id, run_time, run_type, stock_code, stock_name,
                    total_score, score_detail, reasons, ai_analysis,
@@ -941,7 +1835,7 @@ def get_latest_results(limit: int = 20):
             WHERE  run_time = ?
             ORDER  BY total_score DESC
             LIMIT  ?
-        """, (latest_run, limit)).fetchall()
+        """, (latest_run, fetch_limit)).fetchall()
 
         results = []
         for r in rows:
@@ -949,6 +1843,9 @@ def get_latest_results(limit: int = 20):
             d["reasons"]      = json.loads(d["reasons"] or "[]")
             d["score_detail"] = json.loads(d["score_detail"] or "{}")
             results.append(d)
+        results = _enrich_tenbagger_price_risk(conn, results)
+        results.sort(key=lambda x: (x.get("risk_adjusted_score", x.get("total_score") or 0), x.get("total_score") or 0), reverse=True)
+        results = results[:limit]
 
         return {"run_time": latest_run, "results": results, "count": len(results)}
     finally:
@@ -1008,6 +1905,8 @@ def get_run_detail(run_time: str, limit: int = 20):
             d["reasons"]      = json.loads(d["reasons"] or "[]")
             d["score_detail"] = json.loads(d["score_detail"] or "{}")
             results.append(d)
+        results = _enrich_tenbagger_price_risk(conn, results)
+        results.sort(key=lambda x: (x.get("risk_adjusted_score", x.get("total_score") or 0), x.get("total_score") or 0), reverse=True)
 
         return {"run_time": run_time, "results": results, "count": len(results)}
     finally:
@@ -1580,10 +2479,9 @@ def refresh_sector_ai_report(limit: int = 30, force: bool = True) -> dict:
         ai_error = ""
         try:
             import config
-            api_key = getattr(config, "OPENAI_API_KEY", "")
+            api_key = is_configured()
             if api_key and sector_payload:
-                import openai
-                client = openai.OpenAI(api_key=api_key, timeout=18.0, max_retries=0)
+                client = OpenAI()
                 prompt = (
                     "너는 미국 증시 흐름을 한국 주식 아이디어로 번역하는 섹터 전략가다. "
                     "아래 JSON을 보고 오늘 가장 강한 주도 섹터를 딱 1~3개만 선별한다. "
@@ -1732,7 +2630,7 @@ def get_recovery_candidates(
                 e.stock_code,
                 s.p_start,
                 e.p_end,
-                ROUND((e.p_end - s.p_start) / s.p_start * 100.0, 2) AS pct_change
+                ROUND(CAST((e.p_end - s.p_start) / s.p_start * 100.0 AS NUMERIC), 2) AS pct_change
             FROM end_p e
             JOIN start_p s ON s.stock_code = e.stock_code
             WHERE (e.p_end - s.p_start) / s.p_start * 100.0 <= -?
@@ -1756,16 +2654,35 @@ def get_recovery_candidates(
         universe = {r["stock_code"]: dict(r) for r in universe}
 
         # 4. 재무 데이터 (최근 연간)
+        # 2026-08-28: financial_data 연간행 중복(quarter=0/4/NULL 3중 관례 혼재 — CLAUDE.md
+        # 참조)이 있으면 기존 단순 MAX(CASE...)가 stock_code당 여러 (year) 중복행을 그대로
+        # 집계에 흘려보내 수치가 왜곡될 수 있었음 — ROW_NUMBER()로 (stock_code,year)당
+        # 하나의 대표행만 먼저 뽑은 뒤 집계하도록 변경.
         fin_rows = conn.execute(f"""
-            SELECT f.stock_code,
-                   MAX(CASE WHEN f.year = (SELECT MAX(year) FROM financial_data fd WHERE fd.stock_code=f.stock_code AND fd.is_annual=1) THEN f.revenue END) AS rev_cur,
-                   MAX(CASE WHEN f.year = (SELECT MAX(year) FROM financial_data fd WHERE fd.stock_code=f.stock_code AND fd.is_annual=1) - 1 THEN f.revenue END) AS rev_prev,
-                   MAX(CASE WHEN f.year = (SELECT MAX(year) FROM financial_data fd WHERE fd.stock_code=f.stock_code AND fd.is_annual=1) THEN f.operating_profit END) AS op_cur,
-                   MAX(CASE WHEN f.year = (SELECT MAX(year) FROM financial_data fd WHERE fd.stock_code=f.stock_code AND fd.is_annual=1) - 1 THEN f.operating_profit END) AS op_prev,
-                   MAX(CASE WHEN f.year = (SELECT MAX(year) FROM financial_data fd WHERE fd.stock_code=f.stock_code AND fd.is_annual=1) THEN f.roe END) AS roe
-            FROM financial_data f
-            WHERE f.stock_code IN ({ph}) AND f.is_annual = 1
-            GROUP BY f.stock_code
+            WITH ranked AS (
+                SELECT f.*,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY f.stock_code, f.year
+                           ORDER BY (CASE WHEN f.report_type='CFS' THEN 0 ELSE 1 END),
+                                    (CASE WHEN f.quarter=4 THEN 0 WHEN f.quarter=0 THEN 1 ELSE 2 END),
+                                    (CASE WHEN f.data_source='dart' THEN 0 ELSE 1 END),
+                                    f.id DESC
+                       ) AS rn
+                FROM financial_data f
+                WHERE f.stock_code IN ({ph}) AND f.is_annual = 1
+            ),
+            dedup AS (
+                SELECT *, MAX(year) OVER (PARTITION BY stock_code) AS latest_year
+                FROM ranked WHERE rn = 1
+            )
+            SELECT stock_code,
+                   MAX(CASE WHEN year = latest_year THEN revenue END) AS rev_cur,
+                   MAX(CASE WHEN year = latest_year - 1 THEN revenue END) AS rev_prev,
+                   MAX(CASE WHEN year = latest_year THEN operating_profit END) AS op_cur,
+                   MAX(CASE WHEN year = latest_year - 1 THEN operating_profit END) AS op_prev,
+                   MAX(CASE WHEN year = latest_year THEN roe END) AS roe
+            FROM dedup
+            GROUP BY stock_code
         """, codes).fetchall()
         fin_map = {r["stock_code"]: dict(r) for r in fin_rows}
 
@@ -1968,7 +2885,11 @@ def get_recovery_candidates(
                 "reasons":       reasons[:4],
             })
 
-        results.sort(key=lambda x: x["score"], reverse=True)
+        results = _enrich_tenbagger_price_risk(conn, results)
+        results.sort(
+            key=lambda x: (x.get("risk_adjusted_score", x.get("score") or 0), x.get("score") or 0),
+            reverse=True,
+        )
         results = results[:limit]
 
         return {
@@ -2070,16 +2991,15 @@ def get_bq_sector():
     return {"sectors": [dict(r) for r in data]}
 
 
-# ── DeepSeek 텐버거 심층 분석 ─────────────────────────────────────────
+# ── OpenAI mini 텐버거 심층 분석 ───────────────────────────────────────
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = str(STOCK_DB_PATH)
 _AI_CACHE_HOURS = 24  # 같은 날 재호출 시 캐시 반환
 
 
 def _build_tenbagger_context(stock_code: str) -> dict:
     """DB에서 종목의 재무/수급/공시/스코어 컨텍스트를 수집"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=30, row_factory=sqlite3.Row)
 
     # 기본 정보
     meta = conn.execute(
@@ -2203,11 +3123,7 @@ def _build_tenbagger_context(stock_code: str) -> dict:
     }
 
 
-def _call_deepseek_tenbagger(ctx: dict) -> str:
-    import os, requests as _rq
-    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
-    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
+def _call_openai_mini_tenbagger(ctx: dict) -> str:
 
     meta = ctx["meta"]
     mktcap = meta.get("market_cap", 0)
@@ -2279,38 +3195,28 @@ def _call_deepseek_tenbagger(ctx: dict) -> str:
 (숫자 기반, 구체적)
 """
 
-    if not api_key:
+    if not is_configured():
         return f"## {ctx['stock_name']} 텐버거 분석\n\nDeepSeek API 키가 설정되지 않았습니다."
 
     try:
-        res = _rq.post(
-            base_url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "당신은 10배 수익 후보 종목을 발굴하는 한국 주식 투자 전문 애널리스트입니다. 데이터 기반으로 냉정하게 분석하되, 텐버거 가능성이 있는 핵심 근거를 구체적 수치와 함께 제시하세요."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.3,
-                "max_tokens": 2000,
-            },
+        return generate_text(
+            prompt,
+            system_instruction="당신은 10배 수익 후보 종목을 발굴하는 한국 주식 투자 전문 애널리스트입니다. 데이터 기반으로 냉정하게 분석하되, 텐버거 가능성이 있는 핵심 근거를 구체적 수치와 함께 제시하세요.",
+            temperature=0.3,
+            max_output_tokens=2000,
             timeout=90,
         )
-        if res.ok:
-            return res.json()["choices"][0]["message"]["content"]
     except Exception as e:
-        logger.error("[Tenbagger AI] DeepSeek 호출 실패: %s", e)
+        logger.error("[Tenbagger AI] DeepSeek Flash 호출 실패: %s", e)
     return f"## {ctx['stock_name']} 분석 실패\n\nAPI 응답 오류가 발생했습니다."
 
 
 @router.get("/ai-analysis/{stock_code}")
 def get_tenbagger_ai_analysis(stock_code: str, force: bool = False):
-    """텐버거 후보 종목 DeepSeek 심층 분석. 24시간 캐시."""
+    """텐버거 후보 종목 OpenAI mini 심층 분석. 24시간 캐시."""
     import sqlite3 as _sl, os
     from datetime import datetime as _dt, timedelta
-    conn = _sl.connect(DB_PATH)
-    conn.row_factory = _sl.Row
+    conn = connect_primary_db(timeout=30, row_factory=_sl.Row)
 
     if not force:
         cached = conn.execute(
@@ -2328,16 +3234,16 @@ def get_tenbagger_ai_analysis(stock_code: str, force: bool = False):
     conn.close()
 
     ctx = _build_tenbagger_context(stock_code)
-    analysis = _call_deepseek_tenbagger(ctx)
+    analysis = _call_openai_mini_tenbagger(ctx)
 
     # 저장
-    conn2 = _sl.connect(DB_PATH)
+    conn2 = connect_primary_db(timeout=30, row_factory=_sl.Row)
     now = _dt.now().isoformat()
     conn2.execute(
         "INSERT INTO tenbagger_ai_analysis(stock_code, generated_at, score, reasons, ai_analysis, model)"
         " VALUES(?,?,?,?,?,?)",
         (stock_code, now, ctx["tb_score"], ctx["tb_reasons"], analysis,
-         os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro"))
+         model_name())
     )
     conn2.commit()
     conn2.close()
@@ -2349,8 +3255,7 @@ def get_tenbagger_ai_analysis(stock_code: str, force: bool = False):
 @router.get("/ai-analysis-list")
 def get_ai_analysis_list(limit: int = Query(20, ge=1, le=100)):
     """최근 생성된 AI 분석 목록"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=30, row_factory=sqlite3.Row)
     rows = conn.execute(
         "SELECT stock_code, generated_at, score, model FROM tenbagger_ai_analysis"
         " ORDER BY generated_at DESC LIMIT ?", (limit,)
@@ -2367,15 +3272,14 @@ def run_ai_analysis_batch(
     background_tasks: BackgroundTasks = None,
 ):
     """
-    텐버거 상위 후보 N종목 DeepSeek 심층 분석 배치 실행.
+    텐버거 상위 후보 N종목 OpenAI mini 심층 분석 배치 실행.
     - 24시간 이내 캐시된 종목은 건너뜀 (force=True 시 강제 재분석)
     - 백그라운드 실행: 즉시 job_id 반환, 진행 상황은 /ai-analysis-list 에서 확인
     """
     import threading, time as _t
     from datetime import datetime as _dt, timedelta
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=30, row_factory=sqlite3.Row)
 
     # 상위 후보 조회
     candidates = conn.execute("""
@@ -2414,14 +3318,14 @@ def run_ai_analysis_batch(
         for sc, sname, score in to_analyze:
             try:
                 ctx = _build_tenbagger_context(sc)
-                analysis = _call_deepseek_tenbagger(ctx)
-                conn2 = sqlite3.connect(DB_PATH, timeout=60)
+                analysis = _call_openai_mini_tenbagger(ctx)
+                conn2 = connect_primary_db(timeout=60, row_factory=sqlite3.Row)
                 conn2.execute(
                     "INSERT INTO tenbagger_ai_analysis"
                     "(stock_code, generated_at, score, reasons, ai_analysis, model)"
                     " VALUES(?,?,?,?,?,?)",
                     (sc, _dt.now().isoformat(), score, ctx.get("tb_reasons", ""),
-                     analysis, "deepseek-batch")
+                     analysis, model_name())
                 )
                 conn2.commit()
                 conn2.close()
@@ -2464,8 +3368,7 @@ def screener_v2(
     q: str = Query("", description="종목명/코드 검색"),
 ):
     """스크리너 v2 — 텐버거 결과에 필터/정렬/페이지네이션 지원"""
-    conn = sqlite3.connect(DB_PATH, timeout=20)
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=20, row_factory=sqlite3.Row)
 
     # 최신 run_time 기준 결과
     latest = conn.execute(
@@ -2519,6 +3422,7 @@ def screener_v2(
     ).fetchone()[0]
 
     offset = (page - 1) * page_size
+    fetch_size = page_size * 3 if sort_col == "total_score" else page_size
     rows = conn.execute(
         f"SELECT t.stock_code, t.stock_name, t.total_score, t.score_detail, t.reasons, "
         f"t.current_price, t.market_cap, t.per, t.pbr, t.roe, "
@@ -2530,17 +3434,26 @@ def screener_v2(
         f"WHERE {where_sql} "
         f"ORDER BY t.{sort_col} {order_sql} "
         f"LIMIT ? OFFSET ?",
-        params + [page_size, offset]
+        params + [fetch_size, offset]
     ).fetchall()
-
-    conn.close()
 
     def _parse_reasons(r):
         try: return __import__("json").loads(r) if r else []
         except: return [r] if r else []
 
+    result_rows = [{**dict(r), "reasons": _parse_reasons(r["reasons"])} for r in rows]
+    result_rows = _enrich_tenbagger_price_risk(conn, result_rows)
+    if sort_col == "total_score":
+        result_rows.sort(
+            key=lambda x: (x.get("risk_adjusted_score", x.get("total_score") or 0), x.get("total_score") or 0),
+            reverse=(order.lower() == "desc"),
+        )
+    result_rows = result_rows[:page_size]
+
+    conn.close()
+
     return {
-        "results": [{**dict(r), "reasons": _parse_reasons(r["reasons"])} for r in rows],
+        "results": result_rows,
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -2566,8 +3479,7 @@ def fp_fn_analysis(
     TN: 미선정 → 하락/횡보 (정상)
     """
     import json as _json
-    conn = sqlite3.connect(DB_PATH, timeout=20)
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=20, row_factory=sqlite3.Row)
 
     # 1. 전체 과거 선정 결과 (모든 실행 포함, 오래된 것 우선 — 가격 추적 가능성↑)
     base_rows = conn.execute("""
@@ -2589,7 +3501,7 @@ def fp_fn_analysis(
             SELECT close, date FROM price_history
             WHERE stock_code=? AND date > ? AND close > 0
             ORDER BY date
-        """, (code, sel_date)).fetchall()
+        """, (code, _to_date(sel_date))).fetchall()
         price_after = None
         after_date = None
         if ph_rows:
@@ -2773,8 +3685,7 @@ def screener_v3(
 ):
     """스크리너 v3 — 업황지표 YoY 조정 + FP 패널티 + 수주잔고 보너스."""
     import json as _json
-    conn = sqlite3.connect(DB_PATH, timeout=20)
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=20, row_factory=sqlite3.Row)
 
     # 최신 run_time
     latest = conn.execute("SELECT MAX(run_time) FROM tenbagger_results").fetchone()[0]
@@ -2850,7 +3761,7 @@ def screener_v3(
                 SELECT close FROM price_history
                 WHERE stock_code=? AND date > ? AND close > 0
                 ORDER BY date LIMIT 7
-            """, (code, sel_date)).fetchall()
+            """, (code, _to_date(sel_date))).fetchall()
             if ph:
                 low_close = min(r[0] for r in ph)
                 ret = (low_close - sel_price) / sel_price * 100
@@ -2883,6 +3794,14 @@ def screener_v3(
     except Exception:
         pass
 
+    # 수주공시 급증 proxy 보너스 (최근 3개월 vs 직전 3개월)
+    order_surge_map: dict = {}
+    try:
+        from signal_engine import _load_order_contract_surge_bonus_map
+        order_surge_map = _load_order_contract_surge_bonus_map(window_months=3)
+    except Exception:
+        order_surge_map = {}
+
     # v3 점수 계산
     results = []
     for row in rows:
@@ -2910,8 +3829,10 @@ def screener_v3(
         # 수주보너스
         bl_ratio = backlog_map.get(r["stock_code"], 0)
         backlog_bonus = 2 if bl_ratio >= 1.5 else 0
+        order_surge = order_surge_map.get(r["stock_code"])
+        order_surge_bonus = min(order_surge.get("bonus", 0), 4) if order_surge else 0
 
-        v3_score = (r["total_score"] or 0) + industry_adj + fp_penalty + backlog_bonus
+        v3_score = (r["total_score"] or 0) + industry_adj + fp_penalty + backlog_bonus + order_surge_bonus
 
         reasons = []
         try:
@@ -2928,6 +3849,8 @@ def screener_v3(
             reasons_v3.append(f"FP이력패널티({fp_cnt}회)")
         if backlog_bonus > 0:
             reasons_v3.append(f"수주잔고보너스(backlog/rev {bl_ratio:.1f}x)")
+        if order_surge_bonus > 0:
+            reasons_v3.append(f"수주급증보너스({order_surge.get('label')})")
 
         r["v3_score"] = round(v3_score, 2)
         r["industry_adj"] = industry_adj
@@ -2937,8 +3860,18 @@ def screener_v3(
         r["fp_fp_count"] = fp_cnt
         r["backlog_bonus"] = backlog_bonus
         r["backlog_ratio"] = round(bl_ratio, 2) if bl_ratio else None
+        r["order_surge_bonus"] = order_surge_bonus
+        r["order_surge"] = order_surge
         r["reasons_v3"] = reasons_v3
         results.append(r)
+
+    results = _enrich_tenbagger_price_risk(conn, results)
+    for r in results:
+        penalty = float(r.get("price_risk_penalty") or 0)
+        r["v3_score"] = round(max(0.0, float(r.get("v3_score") or 0) - penalty), 2)
+        if penalty > 0:
+            flags = r.get("price_risk_flags") or []
+            r["reasons_v3"] = list(r.get("reasons_v3") or []) + [f"가격위험감점 -{penalty:.0f}점" + (f" ({' / '.join(flags)})" if flags else "")]
 
     # v3_score 필터
     results = [r for r in results if r["v3_score"] >= min_v3_score]
@@ -3028,7 +3961,7 @@ def get_valuation_summary(
                    vh.year, vh.quarter, vh.close_price, vh.per, vh.pbr, vh.market_cap_억,
                    -- 역사적 PBR 분위
                    (SELECT COUNT(*) FROM valuation_history vh2 WHERE vh2.stock_code=vh.stock_code AND vh2.pbr IS NOT NULL) as pbr_hist_count,
-                   (SELECT ROUND(AVG(vh2.pbr),2) FROM valuation_history vh2 WHERE vh2.stock_code=vh.stock_code AND vh2.pbr IS NOT NULL) as pbr_hist_avg
+                   (SELECT ROUND(CAST(AVG(vh2.pbr) AS NUMERIC),2) FROM valuation_history vh2 WHERE vh2.stock_code=vh.stock_code AND vh2.pbr IS NOT NULL) as pbr_hist_avg
             FROM valuation_history vh
             JOIN stock_universe su ON su.stock_code=vh.stock_code
             WHERE vh.year=? AND vh.quarter=?
@@ -3067,6 +4000,9 @@ def get_segments(stock_code: str):
 @router.get("/data-status")
 def get_data_status():
     """데이터 현황 실시간 통계"""
+    cached = _DATA_STATUS_CACHE.get("data")
+    if cached and time.time() - float(_DATA_STATUS_CACHE.get("at") or 0) < _DATA_STATUS_CACHE_TTL_SEC:
+        return cached
     conn = _get_conn()
     try:
         def cnt(table, cond="1=1"):
@@ -3080,52 +4016,96 @@ def get_data_status():
             except Exception:
                 return {}
 
-        program_market = one("""
-            SELECT COUNT(*) AS rows,
-                   COUNT(DISTINCT source || '|' || market) AS markets,
-                   MIN(dt) AS min_dt,
-                   MAX(dt) AS max_dt
-            FROM broker_program_market_daily
-        """)
-        program_stock = one("""
-            SELECT COUNT(*) AS rows,
-                   COUNT(DISTINCT stock_code) AS stocks,
-                   MIN(dt) AS min_dt,
-                   MAX(dt) AS max_dt
-            FROM broker_program_stock_daily
-        """)
+        if IS_POSTGRES:
+            program_market = {}
+            program_stock = {}
+        else:
+            program_market = one("""
+                SELECT COUNT(*) AS rows,
+                       COUNT(DISTINCT source || '|' || market) AS markets,
+                       MIN(dt) AS min_dt,
+                       MAX(dt) AS max_dt
+                FROM broker_program_market_daily
+            """)
+            program_stock = one("""
+                SELECT COUNT(*) AS rows,
+                       COUNT(DISTINCT stock_code) AS stocks,
+                       MIN(dt) AS min_dt,
+                       MAX(dt) AS max_dt
+                FROM broker_program_stock_daily
+            """)
         
-        return {
-            "price_history":        {"rows": cnt("price_history")[0], "stocks": cnt("price_history")[1]},
-            "financial_data":       {"rows": cnt("financial_data")[0], "stocks": cnt("financial_data")[1]},
-            "cash_flow_data":       {"rows": cnt("cash_flow_data")[0], "stocks": cnt("cash_flow_data")[1]},
-            "order_backlog":        {"rows": cnt("order_backlog")[0], "stocks": cnt("order_backlog")[1]},
-            "cost_structure":       {"rows": cnt("cost_structure")[0], "stocks": cnt("cost_structure")[1]},
-            "dilution_events":      {"rows": cnt("dilution_events")[0], "stocks": cnt("dilution_events")[1]},
-            "kiwoom_credit_balance":{"rows": cnt("kiwoom_credit_balance")[0], "stocks": cnt("kiwoom_credit_balance")[1]},
-            "dart_insider_holdings":{"rows": cnt("dart_insider_holdings")[0], "stocks": cnt("dart_insider_holdings")[1]},
-            "valuation_history":    {"rows": cnt("valuation_history")[0], "stocks": cnt("valuation_history")[1]},
-            "segment_revenue":      {"rows": cnt("segment_revenue")[0], "stocks": cnt("segment_revenue")[1]},
-            "kiwoom_investor_daily":{"rows": cnt("kiwoom_investor_daily")[0], "stocks": cnt("kiwoom_investor_daily")[1]},
-            "earnings_signals":     {"rows": cnt("earnings_signals")[0], "stocks": cnt("earnings_signals")[1]},
-            "tenbagger_results":    {"rows": cnt("tenbagger_results")[0], "stocks": cnt("tenbagger_results")[1]},
-            "triple_pattern_daily": {"rows": cnt("triple_pattern_daily")[0], "stocks": cnt("triple_pattern_daily")[1]},
-            "treasury_buyback":     {"rows": cnt("treasury_buyback")[0], "stocks": cnt("treasury_buyback")[1]},
-            "investor_flow_quarterly": {"rows": cnt("investor_flow_quarterly")[0], "stocks": cnt("investor_flow_quarterly")[1]},
-            "foreign_flow_quarterly":  {"rows": cnt("foreign_flow_quarterly")[0], "stocks": cnt("foreign_flow_quarterly")[1]},
+        tables = (
+            "price_history", "financial_data", "cash_flow_data", "order_backlog",
+            "cost_structure", "dilution_events", "kiwoom_credit_balance",
+            "dart_insider_holdings", "valuation_history", "segment_revenue",
+            "kiwoom_investor_daily", "earnings_signals", "tenbagger_results",
+            "triple_pattern_daily", "treasury_buyback", "investor_flow_quarterly",
+            "foreign_flow_quarterly", "broker_program_market_daily",
+            "broker_program_stock_daily",
+        )
+        table_counts = {}
+        if IS_POSTGRES:
+            # 화면용 현황에 대형 테이블 전체 COUNT(DISTINCT)를 수행하지 않는다.
+            # ANALYZE 통계를 사용하므로 수치는 근사치지만 원본 데이터에는 영향이 없다.
+            quoted_tables = ",".join(f"'{table}'" for table in tables)
+            stats_rows = conn.execute(
+                f"""
+                SELECT st.relname,
+                       GREATEST(st.n_live_tup, 0) AS row_estimate,
+                       CASE
+                           WHEN ps.n_distinct < 0
+                               THEN ROUND(-ps.n_distinct * GREATEST(st.n_live_tup, 0))
+                           WHEN ps.n_distinct IS NOT NULL THEN ps.n_distinct
+                           ELSE 0
+                       END AS stock_estimate
+                FROM pg_stat_user_tables st
+                LEFT JOIN pg_stats ps
+                  ON ps.schemaname=st.schemaname
+                 AND ps.tablename=st.relname
+                 AND ps.attname='stock_code'
+                WHERE st.relname IN ({quoted_tables})
+                """
+            ).fetchall()
+            estimates = {
+                str(row[0]): {
+                    "rows": int(row[1] or 0),
+                    "stocks": int(float(row[2] or 0)),
+                    "approximate": True,
+                }
+                for row in stats_rows
+            }
+            table_counts = {
+                table: estimates.get(
+                    table, {"rows": 0, "stocks": 0, "approximate": True}
+                )
+                for table in tables
+            }
+        else:
+            for table in tables:
+                row = cnt(table)
+                table_counts[table] = {"rows": row[0] or 0, "stocks": row[1] or 0}
+
+        result = {
+            **table_counts,
             "broker_program_market_daily": {
-                "rows": program_market.get("rows", 0) or 0,
+                "rows": program_market.get("rows", table_counts["broker_program_market_daily"]["rows"]) or 0,
                 "markets": program_market.get("markets", 0) or 0,
                 "min_dt": program_market.get("min_dt"),
                 "max_dt": program_market.get("max_dt"),
+                "approximate": IS_POSTGRES,
             },
             "broker_program_stock_daily": {
-                "rows": program_stock.get("rows", 0) or 0,
-                "stocks": program_stock.get("stocks", 0) or 0,
+                "rows": program_stock.get("rows", table_counts["broker_program_stock_daily"]["rows"]) or 0,
+                "stocks": program_stock.get("stocks", table_counts["broker_program_stock_daily"]["stocks"]) or 0,
                 "min_dt": program_stock.get("min_dt"),
                 "max_dt": program_stock.get("max_dt"),
+                "approximate": IS_POSTGRES,
             },
         }
+        _DATA_STATUS_CACHE["data"] = result
+        _DATA_STATUS_CACHE["at"] = time.time()
+        return result
     finally:
         conn.close()
 
@@ -3171,7 +4151,7 @@ def get_treasury_buyback_top(days: int = Query(365, ge=30, le=3650), limit: int 
         from datetime import datetime, timedelta
         cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
         rows = conn.execute("""
-            SELECT tb.stock_code, su.stock_name, su.market,
+            SELECT tb.stock_code, MAX(su.stock_name) AS stock_name, MAX(su.market) AS market,
                    COUNT(*) as total_events,
                    SUM(CASE WHEN tb.event_type IN ('취득결정','취득결과') THEN 1 ELSE 0 END) as acquisitions,
                    SUM(CASE WHEN tb.event_type='소각' THEN 1 ELSE 0 END) as cancellations,
@@ -3229,7 +4209,7 @@ def get_score_performance(
                 SELECT close FROM price_history
                 WHERE stock_code=? AND date > ? AND close > 0
                 ORDER BY date LIMIT ?
-            """, (code, sel_date, days_after)).fetchall()
+            """, (code, _to_date(sel_date), days_after)).fetchall()
 
             p1 = ph[days_after - 1][0] if len(ph) >= days_after else None
             ret = round((p1 - p0) / p0 * 100, 2) if p0 > 0 and p1 else None
@@ -3311,6 +4291,351 @@ def get_score_performance(
             "bucket_stats": bucket_stats,
             "signal_stats": signal_stats,
             "results": results[:100],
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/historical-scoreboard-v2")
+def get_historical_scoreboard_v2():
+    """Return the leakage-controlled, business-validated historical scoreboard."""
+    if not HISTORICAL_SCOREBOARD_V2_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="historical scoreboard is not built; run scripts/research_historical_tenbagger_scoreboard_v2.py",
+        )
+    try:
+        report = json.loads(HISTORICAL_SCOREBOARD_V2_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.exception("Failed to read historical tenbagger scoreboard v2")
+        raise HTTPException(status_code=500, detail="historical scoreboard artifact is invalid") from exc
+
+    precision_finalists = [
+        {**item, "tier": "precision_core"}
+        for item in report.get("train_selected_finalists", [])
+        if item.get("stable")
+    ]
+    coverage_finalists = [
+        {**item, "tier": "coverage_watchlist"}
+        for item in report.get("train_selected_coverage_finalists", [])
+        if item.get("stable")
+    ]
+    report["stable_finalists"] = precision_finalists[:5] + coverage_finalists[:5]
+    report["status"] = (
+        "research_validated" if precision_finalists and coverage_finalists else "partially_validated"
+    )
+    report.setdefault("decision", {})["production_ready"] = False
+    report["decision"]["auto_trading_allowed"] = False
+    report["usage"] = (
+        "과거 지속형 텐버거 로직 검증 전용입니다. 현재 종목 추천이나 매수·매도 신호로 사용하지 않습니다."
+    )
+    return report
+
+
+@router.get("/historical-causes")
+def get_historical_tenbagger_causes():
+    """Return source-timed cause attribution for cleaned historical winners."""
+    if not HISTORICAL_CAUSES_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="historical cause audit is not built; run scripts/research_historical_tenbagger_causes.py",
+        )
+    try:
+        report = json.loads(HISTORICAL_CAUSES_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.exception("Failed to read historical tenbagger cause audit")
+        raise HTTPException(status_code=500, detail="historical cause artifact is invalid") from exc
+    report["status"] = (
+        "review_required"
+        if report.get("summary", {}).get("manual_review_required_stocks", 0)
+        else "validated"
+    )
+    report["usage"] = "사업 원인이 확인된 과거 표본 검증용이며 현재 종목 추천 신호가 아닙니다."
+    return report
+
+
+@router.get("/historical-signal-discovery")
+def get_historical_tenbagger_signal_discovery():
+    """Return train/validation/holdout-tested historical signal families."""
+    if not HISTORICAL_SIGNAL_DISCOVERY_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="historical signal discovery is not built",
+        )
+    try:
+        report = json.loads(HISTORICAL_SIGNAL_DISCOVERY_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.exception("Failed to read historical tenbagger signal discovery")
+        raise HTTPException(status_code=500, detail="historical signal artifact is invalid") from exc
+    report["status"] = report.get("conclusion", "unknown")
+    report["production_ready"] = False
+    report["auto_trading_allowed"] = False
+    return report
+
+
+@router.get("/empirical-scoreboard")
+def get_empirical_scoreboard(
+    min_score: float = Query(55.0),
+    limit: int = Query(250000, ge=1000, le=400000),
+):
+    """
+    과거 전체 월말 스냅샷(strategy_feature_snapshot)을 기준으로
+    "어떤 필터 조합이 실제 3배/10배 종목을 잘 포착했는지" 비교하는 실증 스코어보드.
+
+    핵심 지표:
+      - 12개월 월말 종가 기준 평균수익률 / 승률 / 손익비 / profit factor
+      - 24개월 최고수익 기준 2x/3x/5x/10x 포착률
+    """
+    import statistics as _stats
+
+    conn = _get_conn()
+    try:
+        rows = conn.execute("""
+            SELECT snapshot_date, stock_code, stock_name, market, sector_large,
+                   close_price, market_cap_억, per, pbr,
+                   ret_20d, ret_60d, ret_120d,
+                   dist_high_252, dist_low_252,
+                   vol_ratio_20d, avg_turnover_20d_억, supply_20d_억,
+                   heuristic_score, model_score_12m,
+                   forward_max_ret_12m, forward_max_ret_24m, forward_max_ret_36m,
+                   label_2x_12m, label_3x_12m, label_3x_24m, label_5x_24m, label_10x_24m
+            FROM strategy_feature_snapshot
+            WHERE heuristic_score >= ?
+            ORDER BY snapshot_date ASC
+            LIMIT ?
+        """, (min_score, limit)).fetchall()
+        if not rows:
+            return {"summary": {}, "scoreboard": [], "row_count": 0}
+
+        model_scores = sorted(float(r["model_score_12m"] or 0) for r in rows if r["model_score_12m"] is not None)
+        def _quantile(values: list[float], q: float) -> float:
+            if not values:
+                return 0.0
+            idx = min(len(values) - 1, max(0, int((len(values) - 1) * q)))
+            return float(values[idx])
+        model_q80 = _quantile(model_scores, 0.80)
+        model_q90 = _quantile(model_scores, 0.90)
+
+        # 12개월 종가수익률은 같은 스냅샷 테이블의 12개월 뒤 월말 종가로 계산한다.
+        month_close_map: dict[tuple[str, str], float] = {}
+        for r in rows:
+            code = str(r["stock_code"] or "")
+            period = str(r["snapshot_date"] or "")[:7]
+            close = float(r["close_price"] or 0)
+            if code and period and close > 0:
+                month_close_map[(code, period)] = close
+
+        def _month_plus(period: str, months: int) -> str | None:
+            try:
+                y = int(period[:4]); m = int(period[5:7])
+            except Exception:
+                return None
+            total = y * 12 + (m - 1) + months
+            ny, nm = divmod(total, 12)
+            return f"{ny:04d}-{nm + 1:02d}"
+
+        analyzed_rows: list[dict] = []
+        for r in rows:
+            code = str(r["stock_code"] or "")
+            period = str(r["snapshot_date"] or "")[:7]
+            close_0 = float(r["close_price"] or 0)
+            period_12m = _month_plus(period, 12)
+            close_12m = month_close_map.get((code, period_12m)) if period_12m else None
+            ret_12m = ((float(close_12m) / close_0 - 1.0) * 100.0) if close_0 > 0 and close_12m else None
+            analyzed_rows.append({
+                "stock_code": code,
+                "stock_name": r["stock_name"],
+                "snapshot_date": r["snapshot_date"],
+                "heuristic_score": float(r["heuristic_score"] or 0),
+                "model_score_12m": float(r["model_score_12m"] or 0),
+                "market_cap": float(r["market_cap_억"] or 0),
+                "per": float(r["per"] or 0) if r["per"] is not None else None,
+                "pbr": float(r["pbr"] or 0) if r["pbr"] is not None else None,
+                "ret_20d": float(r["ret_20d"] or 0) if r["ret_20d"] is not None else None,
+                "ret_60d": float(r["ret_60d"] or 0) if r["ret_60d"] is not None else None,
+                "ret_120d": float(r["ret_120d"] or 0) if r["ret_120d"] is not None else None,
+                "dist_high_252": float(r["dist_high_252"] or 0) if r["dist_high_252"] is not None else None,
+                "dist_low_252": float(r["dist_low_252"] or 0) if r["dist_low_252"] is not None else None,
+                "vol_ratio_20d": float(r["vol_ratio_20d"] or 0) if r["vol_ratio_20d"] is not None else None,
+                "avg_turnover_20d": float(r["avg_turnover_20d_억"] or 0) if r["avg_turnover_20d_억"] is not None else None,
+                "supply_20d": float(r["supply_20d_억"] or 0) if r["supply_20d_억"] is not None else None,
+                "ret_12m": ret_12m,
+                "peak_12m": float(r["forward_max_ret_12m"] or 0) if r["forward_max_ret_12m"] is not None else None,
+                "peak_24m": float(r["forward_max_ret_24m"] or 0) if r["forward_max_ret_24m"] is not None else None,
+                "peak_36m": float(r["forward_max_ret_36m"] or 0) if r["forward_max_ret_36m"] is not None else None,
+                "label_2x_12m": int(r["label_2x_12m"] or 0),
+                "label_3x_12m": int(r["label_3x_12m"] or 0),
+                "label_3x_24m": int(r["label_3x_24m"] or 0),
+                "label_5x_24m": int(r["label_5x_24m"] or 0),
+                "label_10x_24m": int(r["label_10x_24m"] or 0),
+            })
+
+        filter_specs = [
+            {
+                "key": "heuristic_55",
+                "label": "휴리스틱 55+",
+                "thesis": "현재 기본 후보군 전체",
+                "predicate": lambda x: x["heuristic_score"] >= 55,
+            },
+            {
+                "key": "heuristic_65",
+                "label": "휴리스틱 65+",
+                "thesis": "상위 점수만 압축",
+                "predicate": lambda x: x["heuristic_score"] >= 65,
+            },
+            {
+                "key": "model_top20",
+                "label": "모델 상위 20%",
+                "thesis": "model_score_12m 기준 상위 20%",
+                "predicate": lambda x: x["model_score_12m"] >= model_q80,
+            },
+            {
+                "key": "model_top10",
+                "label": "모델 상위 10%",
+                "thesis": "model_score_12m 기준 상위 10%",
+                "predicate": lambda x: x["model_score_12m"] >= model_q90,
+            },
+            {
+                "key": "smallcap_value",
+                "label": "소형 저PBR",
+                "thesis": "시총 1500억 이하 + PBR 1배 이하",
+                "predicate": lambda x: 0 < x["market_cap"] <= 1500 and (x["pbr"] is not None and x["pbr"] <= 1.0),
+            },
+            {
+                "key": "deep_drawdown_small",
+                "label": "초낙폭 소형주",
+                "thesis": "52주 고점 대비 -70% 이하 + 시총 3000억 이하",
+                "predicate": lambda x: (x["dist_high_252"] is not None and x["dist_high_252"] <= -0.70)
+                and (0 < x["market_cap"] <= 3000),
+            },
+            {
+                "key": "deep_drawdown_volume",
+                "label": "초낙폭+거래량",
+                "thesis": "고점 -70% 이하 + 거래량 2배+ + 거래대금 3억+",
+                "predicate": lambda x: (x["dist_high_252"] is not None and x["dist_high_252"] <= -0.70)
+                and (x["vol_ratio_20d"] is not None and x["vol_ratio_20d"] >= 2.0)
+                and (x["avg_turnover_20d"] is not None and x["avg_turnover_20d"] >= 3.0),
+            },
+            {
+                "key": "low_near_bottom",
+                "label": "저점 근접형",
+                "thesis": "52주 저점 15% 이내 + 고점대비 -50% 이하",
+                "predicate": lambda x: (x["dist_low_252"] is not None and x["dist_low_252"] <= 0.15)
+                and (x["dist_high_252"] is not None and x["dist_high_252"] <= -0.50),
+            },
+            {
+                "key": "liquid_supply_reversal",
+                "label": "유동성+수급반전",
+                "thesis": "거래대금 5억+ + 20일 수급 양수 + 최근60일 과매도",
+                "predicate": lambda x: (x["avg_turnover_20d"] is not None and x["avg_turnover_20d"] >= 5.0)
+                and (x["supply_20d"] is not None and x["supply_20d"] > 0)
+                and (x["ret_60d"] is not None and x["ret_60d"] <= -0.20),
+            },
+            {
+                "key": "model_overlay_value",
+                "label": "모델+가치",
+                "thesis": "모델 상위20% + PBR 1.2배 이하 + 시총 1500억 이하",
+                "predicate": lambda x: (x["model_score_12m"] >= model_q80)
+                and (x["pbr"] is not None and x["pbr"] <= 1.2)
+                and (0 < x["market_cap"] <= 1500),
+            },
+            {
+                "key": "balanced_core",
+                "label": "균형형 코어",
+                "thesis": "휴리스틱65+ + 모델상위20% + 거래대금 3억+",
+                "predicate": lambda x: x["heuristic_score"] >= 65
+                and (x["model_score_12m"] >= model_q80)
+                and (x["avg_turnover_20d"] is not None and x["avg_turnover_20d"] >= 3.0),
+            },
+        ]
+
+        scoreboard: list[dict] = []
+        for spec in filter_specs:
+            matched = [r for r in analyzed_rows if spec["predicate"](r)]
+            eval_12m = [r for r in matched if r.get("ret_12m") is not None]
+            eval_24m = [r for r in matched if r.get("peak_24m") is not None and r.get("label_3x_24m") is not None]
+            if len(eval_12m) < 20 or len(eval_24m) < 20:
+                continue
+
+            rets_12m = [float(r["ret_12m"]) for r in eval_12m]
+            winners = [x for x in rets_12m if x > 0]
+            losers = [x for x in rets_12m if x < 0]
+            gross_win = sum(winners)
+            gross_loss = abs(sum(losers))
+            avg_win = (sum(winners) / len(winners)) if winners else 0.0
+            avg_loss = (abs(sum(losers) / len(losers))) if losers else 0.0
+            peak24 = [float(r["peak_24m"]) for r in eval_24m]
+            x2_hits = sum(int(r["label_2x_12m"] or 0) for r in eval_12m)
+            triple_hits = sum(int(r["label_3x_24m"] or 0) for r in eval_24m)
+            x5_hits = sum(int(r["label_5x_24m"] or 0) for r in eval_24m)
+            x10_hits = sum(int(r["label_10x_24m"] or 0) for r in eval_24m)
+
+            win_rate = len(winners) / len(rets_12m) * 100.0
+            avg_ret = sum(rets_12m) / len(rets_12m)
+            median_ret = _stats.median(rets_12m) if rets_12m else 0.0
+            payoff = (avg_win / avg_loss) if avg_win > 0 and avg_loss > 0 else None
+            profit_factor = (gross_win / gross_loss) if gross_win > 0 and gross_loss > 0 else None
+            triple_rate = triple_hits / len(eval_24m) * 100.0 if eval_24m else 0.0
+            tenbagger_rate = x10_hits / len(eval_24m) * 100.0 if eval_24m else 0.0
+            score = (
+                triple_rate * 0.35
+                + win_rate * 0.20
+                + max(min(avg_ret, 120.0), -30.0) * 0.20
+                + min((profit_factor or 0.0) * 12.0, 30.0) * 0.15
+                + tenbagger_rate * 0.10
+            )
+            scoreboard.append({
+                "key": spec["key"],
+                "label": spec["label"],
+                "thesis": spec["thesis"],
+                "sample_count": len(matched),
+                "evaluated_12m": len(eval_12m),
+                "evaluated_24m": len(eval_24m),
+                "avg_return_12m": round(avg_ret, 2),
+                "median_return_12m": round(median_ret, 2),
+                "win_rate_12m": round(win_rate, 1),
+                "profit_factor_12m": round(profit_factor, 2) if profit_factor is not None else None,
+                "payoff_ratio_12m": round(payoff, 2) if payoff is not None else None,
+                "hit_rate_2x_24m": round(x2_hits / len(eval_12m) * 100.0, 1) if eval_12m else 0.0,
+                "hit_rate_3x_24m": round(triple_rate, 1),
+                "hit_rate_5x_24m": round(x5_hits / len(eval_24m) * 100.0, 1) if eval_24m else 0.0,
+                "hit_rate_10x_24m": round(tenbagger_rate, 1),
+                "empirical_score": round(score, 1),
+            })
+
+        scoreboard.sort(
+            key=lambda x: (
+                x.get("empirical_score") or 0,
+                x.get("hit_rate_3x_24m") or 0,
+                x.get("profit_factor_12m") or 0,
+                x.get("avg_return_12m") or 0,
+            ),
+            reverse=True,
+        )
+
+        overall_eval = [r for r in analyzed_rows if r.get("ret_12m") is not None]
+        overall_peak = [r for r in analyzed_rows if r.get("peak_24m") is not None]
+        return {
+            "summary": {
+                "row_count": len(analyzed_rows),
+                "evaluated_12m": len(overall_eval),
+                "evaluated_24m": len(overall_peak),
+                "baseline_avg_return_12m": round(
+                    sum(float(r["ret_12m"]) for r in overall_eval) / len(overall_eval), 2
+                ) if overall_eval else None,
+                "baseline_hit_rate_3x_24m": round(
+                    sum(int(r["label_3x_24m"] or 0) for r in overall_peak) / len(overall_peak) * 100.0, 1
+                ) if overall_peak else None,
+            },
+            "metric_guide": {
+                "avg_return_12m": "월말 스냅샷 기준 12개월 뒤 종가 수익률 평균",
+                "win_rate_12m": "12개월 뒤 종가 수익률이 0% 초과인 비율",
+                "profit_factor_12m": "12개월 이익합 / 손실합 절대값",
+                "payoff_ratio_12m": "평균 이익폭 / 평균 손실폭",
+                "hit_rate_3x_24m": "24개월 내 최고가 기준 3배주(label_3x_24m) 포착률",
+                "hit_rate_10x_24m": "24개월 내 최고가 기준 10배주(label_10x_24m) 포착률",
+            },
+            "scoreboard": scoreboard,
         }
     finally:
         conn.close()
@@ -3494,6 +4819,123 @@ def get_stock_extra_data(stock_code: str):
         conn.close()
 
 
+@router.get("/stock-quality-signals/{stock_code}")
+def get_stock_quality_signals(stock_code: str):
+    """개별종목 수주·선수금·재고·현금전환 신호.
+
+    These signals are explanatory evidence only. The 2026-07-26 execution
+    backtest rejected using them as a direct buy-ranking overlay.
+    """
+    conn = _get_conn()
+    try:
+        def one(sql: str, params: tuple = ()):
+            r = conn.execute(sql, params).fetchone()
+            return dict(r) if r else None
+
+        advance = one("""
+            SELECT fiscal_year, fiscal_quarter,
+                   gross_customer_funding AS advance_krw,
+                   revenue AS revenue_krw,
+                   gross_to_revenue_pct AS advance_to_revenue_pct,
+                   gross_yoy_pct AS advance_yoy_pct,
+                   signal_score,
+                   signal_label, quality_flag, source_accounts_json
+            FROM contract_advance_signals
+            WHERE stock_code=?
+            ORDER BY fiscal_year DESC, fiscal_quarter DESC
+            LIMIT 1
+        """, (stock_code,))
+
+        inventory = one("""
+            SELECT fiscal_year, fiscal_quarter, inventory_krw, revenue AS revenue_krw,
+                   order_contracts_krw, inventory_to_revenue_pct,
+                   inventory_yoy_pct, revenue_yoy_pct, signal_type,
+                   signal_score, risk_score, signal_label, quality_flag
+            FROM inventory_sales_signals
+            WHERE stock_code=?
+            ORDER BY fiscal_year DESC, fiscal_quarter DESC
+            LIMIT 1
+        """, (stock_code,))
+
+        cash = one("""
+            SELECT fiscal_year, fiscal_quarter,
+                   operating_cf AS operating_cf_krw,
+                   capex AS capex_krw,
+                   free_cf AS free_cf_krw,
+                   net_income AS net_income_krw,
+                   trade_receivable AS receivable_krw,
+                   revenue AS revenue_krw,
+                   rolling4_operating_cf AS ocf_4q_krw,
+                   rolling4_free_cf AS fcf_4q_krw,
+                   receivable_to_revenue_pct,
+                   ocf_to_net_income_pct AS ocf_to_ni_pct,
+                   signal_type, signal_score, risk_score,
+                   signal_label, quality_flag
+            FROM cash_conversion_signals
+            WHERE stock_code=?
+            ORDER BY fiscal_year DESC, fiscal_quarter DESC
+            LIMIT 1
+        """, (stock_code,))
+
+        orders = [
+            dict(r) for r in conn.execute("""
+                SELECT rcept_dt, report_nm, report_nm AS contract_title, contract_amount,
+                       revenue_ratio_pct, contract_start, contract_end,
+                       counterpart AS customer_name, is_termination, verified
+                FROM order_contracts
+                WHERE stock_code=?
+                  AND is_termination=0
+                ORDER BY rcept_dt DESC
+                LIMIT 5
+            """, (stock_code,)).fetchall()
+        ]
+
+        def _krw_억(v):
+            return round(v / 1e8, 1) if v is not None else None
+
+        for d in (advance, inventory, cash):
+            if not d:
+                continue
+            for k in list(d.keys()):
+                if k.endswith("_krw"):
+                    d[k.replace("_krw", "_억")] = _krw_억(d[k])
+
+        for o in orders:
+            o["contract_amount_억"] = _krw_억(o.get("contract_amount"))
+
+        positive = []
+        caution = []
+        if advance and advance.get("signal_score", 0) >= 4 and advance.get("quality_flag") == "ok":
+            positive.append("선수금/계약부채 증가")
+        if orders:
+            latest_order = orders[0]
+            if (latest_order.get("revenue_ratio_pct") or 0) >= 10:
+                positive.append("최근 대형 수주공시")
+        if cash and cash.get("signal_score", 0) >= 4 and cash.get("signal_type") == "cash_quality":
+            positive.append("현금전환 양호")
+        if inventory and inventory.get("signal_score", 0) >= 4:
+            caution.append("재고 신호는 전체 검증에서 매수 알파가 약해 참고만")
+        if inventory and inventory.get("risk_score", 0) >= 4:
+            caution.append("재고/매출 리스크")
+        if cash and cash.get("risk_score", 0) >= 4:
+            caution.append("현금전환 리스크")
+
+        return {
+            "stock_code": stock_code,
+            "verdict": "explanatory_only",
+            "verdict_label": "후보 설명용 · 매수랭킹 미채택",
+            "backtest_note": "2026-07-26 월별 실행 백테스트에서 보조랭킹은 기본 ML 랭킹보다 수익률이 낮아 매수점수로 쓰지 않습니다.",
+            "positive_flags": positive,
+            "caution_flags": caution,
+            "contract_advance": advance,
+            "inventory_sales": inventory,
+            "cash_conversion": cash,
+            "recent_order_contracts": orders,
+        }
+    finally:
+        conn.close()
+
+
 @router.get("/collection-coverage")
 def get_collection_coverage():
     """매입재료비/재고자산/수주잔고 수집 현황 분석"""
@@ -3618,18 +5060,110 @@ def get_stock_insight(stock_code: str):
             except: chg = 0
             insider_data.append({"name": r[0], "title": r[1], "current_qty": r[2], "change_qty": r[3], "change_amount": chg, "date": r[5], "is_ceo": bool(r[6]), "direction": "매수" if chg > 0 else ("매도" if chg < 0 else "기타")})
 
-        # 4) CB/BW 희석 이벤트 (최근 3년)
+        # 4) CB/BW 희석 이벤트 (최근 3년) — 2026-07-19 사용자 지적: LIMIT 10이 너무 낮아 잦은
+        # 희석 종목(예: 젬백스 082270, 3년 24건)의 절반 이상이 안 보였음. LIMIT을 30으로 올리고,
+        # 표시 개수와 무관하게 실제 총 건수(1년/3년)를 별도로 반환해 "몇 건이 더 있는지" 항상 알 수 있게 함.
+        dilution_count_1y = conn.execute(
+            "SELECT COUNT(*) FROM dilution_events WHERE stock_code=? AND disclosed_at >= date('now','-365 days')",
+            (stock_code,),
+        ).fetchone()[0]
+        dilution_count_3y = conn.execute(
+            "SELECT COUNT(*) FROM dilution_events WHERE stock_code=? AND disclosed_at >= date('now','-1095 days')",
+            (stock_code,),
+        ).fetchone()[0]
+        dilution_risk_count_1y = conn.execute(
+            """
+            SELECT COUNT(*) FROM dilution_events
+            WHERE stock_code=? AND disclosed_at >= date('now','-365 days')
+              AND event_type IN ('CB','BW','EB','RIGHTS','RIGHTS_BONUS')
+              AND COALESCE(risk_amount_status, 'amount_confirmed') != 'not_amount_applicable'
+            """,
+            (stock_code,),
+        ).fetchone()[0]
+        dilution_risk_count_3y = conn.execute(
+            """
+            SELECT COUNT(*) FROM dilution_events
+            WHERE stock_code=? AND disclosed_at >= date('now','-1095 days')
+              AND event_type IN ('CB','BW','EB','RIGHTS','RIGHTS_BONUS')
+              AND COALESCE(risk_amount_status, 'amount_confirmed') != 'not_amount_applicable'
+            """,
+            (stock_code,),
+        ).fetchone()[0]
         dilution_rows = conn.execute("""
-            SELECT event_type, issue_amount, dilution_pct, conversion_price, disclosed_at, report_nm
+            SELECT event_type, issue_amount, dilution_pct, conversion_price, shares_to_issue,
+                   current_shares, disclosed_at, report_nm, put_option_date,
+                   risk_amount_status, risk_event_bucket, risk_use_note
             FROM dilution_events
             WHERE stock_code=? AND disclosed_at >= date('now','-1095 days')
             ORDER BY disclosed_at DESC
-            LIMIT 10
+            LIMIT 30
         """, (stock_code,)).fetchall()
+        outstanding_row = conn.execute("""
+            SELECT COALESCE(sm.shares_outstanding, su.shares_issued)
+            FROM stock_universe su
+            LEFT JOIN stock_meta sm ON sm.stock_code=su.stock_code
+            WHERE su.stock_code=?
+            ORDER BY su.base_date DESC
+            LIMIT 1
+        """, (stock_code,)).fetchone()
+        current_outstanding_shares = outstanding_row[0] if outstanding_row else None
+
+        impact_labels = {
+            "CB": "전환 시 신주가 발행되어 주당가치·지분율이 희석될 수 있습니다.",
+            "BW": "신주인수권 행사 시 신주가 발행되어 주당가치·지분율이 희석될 수 있습니다.",
+            "RIGHTS": "유상증자 신주가 상장되면 기존 주주의 지분율과 주당지표가 희석될 수 있습니다.",
+            "RIGHTS_RESULT": "유상증자 발행 결과 공시입니다. 실제 상장·납입 여부를 원문으로 확인해야 합니다.",
+            "BONUS": "무상증자는 주식 수만 늘고 회사 가치가 같은 비율로 조정될 수 있어 경제적 희석과 구분해야 합니다.",
+            "RIGHTS_BONUS": "유무상증자는 유상증자 부분의 경제적 희석과 무상증자 부분을 구분해 해석해야 합니다.",
+            "EB": "교환사채는 통상 기존 주식 교환 구조여서 신주 발행 여부를 공시 원문으로 별도 확인해야 합니다.",
+        }
         dilution_data = []
         for r in dilution_rows:
             amt_억 = round(r[1]/1e8,1) if r[1] else None
-            dilution_data.append({"type": r[0], "issue_amount_억": amt_억, "dilution_pct": r[2], "conversion_price": r[3], "date": r[4], "report": r[5]})
+            potential_shares = r[4]
+            baseline_shares = r[5] or current_outstanding_shares
+            estimated_pct = r[2]
+            if estimated_pct is None and potential_shares and baseline_shares and r[0] != "EB":
+                estimated_pct = round(float(potential_shares) / float(baseline_shares) * 100, 2)
+            dilution_data.append({
+                "type": r[0],
+                "issue_amount_억": amt_억,
+                "dilution_pct": estimated_pct,
+                "conversion_price": r[3],
+                "potential_shares": potential_shares,
+                "baseline_shares": baseline_shares,
+                "impact_note": impact_labels.get(r[0], "주식 수 및 전환·행사 조건을 공시 원문으로 확인해야 합니다."),
+                "date": r[6],
+                "report": r[7],
+                "put_option_date": r[8],
+                "risk_amount_status": r[9],
+                "risk_event_bucket": r[10],
+                "risk_use_note": r[11],
+            })
+
+        # 풋옵션(조기상환청구권) 유동성 리스크 — 2026-07-19 신규(사용자 사례: 에이엘티 172670
+        # CB 200억, 풋옵션 개시 2026.12.13 vs 보유현금 77.5억). 다가오는 풋옵션 대비 회사가
+        # 실제로 상환할 현금이 있는지 계산. put_option_date는 자동파서가 아직 대부분 미채움 —
+        # 채워진 종목에 한해서만 계산되고, 없으면 has_liquidity_risk=False로 조용히 생략.
+        cash_row = conn.execute("""
+            SELECT cash_end FROM cash_flow_data
+            WHERE stock_code=? AND cash_end IS NOT NULL
+            ORDER BY year DESC, quarter DESC, (report_type='CFS') DESC LIMIT 1
+        """, (stock_code,)).fetchone()
+        latest_cash = cash_row[0] if cash_row else None
+        liquidity_risk = None
+        upcoming_puts = [r for r in dilution_rows if r[8] and r[1]]
+        if upcoming_puts:
+            upcoming_puts.sort(key=lambda r: r[8])
+            nearest = upcoming_puts[0]
+            shortfall = (nearest[1] - latest_cash) if latest_cash is not None else None
+            liquidity_risk = {
+                "put_option_date": nearest[8],
+                "amount_억": round(nearest[1]/1e8, 1),
+                "current_cash_억": round(latest_cash/1e8, 1) if latest_cash is not None else None,
+                "shortfall_억": round(shortfall/1e8, 1) if shortfall is not None else None,
+                "at_risk": bool(shortfall is not None and shortfall > 0),
+            }
 
         # 자사주 (최근 1년)
         buyback_rows = conn.execute("""
@@ -3661,6 +5195,20 @@ def get_stock_insight(stock_code: str):
             "investor_flow": investor_flow,
             "insider_trading": insider_data,
             "dilution_events": dilution_data,
+            "share_change_coverage": {
+                "status": "event_detected" if dilution_data else "unverified",
+                "current_outstanding_shares": current_outstanding_shares,
+                "note": (
+                    "최근 3년 DART 희석·증자 공시를 확인했습니다. 전환·행사·상환·실제 상장 여부는 각 공시별로 별도 확인이 필요합니다."
+                    if dilution_data else
+                    "이 종목은 현재 희석·증자 이벤트 DB에서 확인된 공시가 없습니다. '없음'이 아니라 과거 공시 전수 검증 전의 미확인 상태입니다."
+                ),
+            },
+            "dilution_count_1y": dilution_count_1y,
+            "dilution_count_3y": dilution_count_3y,
+            "dilution_risk_count_1y": dilution_risk_count_1y,
+            "dilution_risk_count_3y": dilution_risk_count_3y,
+            "liquidity_risk": liquidity_risk,
             "buyback": buyback_data,
             "credit_balance": credit_data,
             "foreign_ownership": foreign_data,
@@ -3668,9 +5216,73 @@ def get_stock_insight(stock_code: str):
             "has_investor_flow": len(investor_flow) > 0,
             "has_insider": len(insider_data) > 0,
             "has_dilution": len(dilution_data) > 0,
+            "has_liquidity_risk": liquidity_risk is not None,
             "has_buyback": len(buyback_data) > 0,
             "has_credit": len(credit_data) > 0,
             "has_foreign": len(foreign_data) > 0,
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/liquidity-risk-scan")
+def get_liquidity_risk_scan(months_ahead: int = Query(default=18)):
+    """전종목 CB/BW 풋옵션(조기상환청구권) vs 보유현금 유동성 리스크 스캔 — 2026-07-19 신규.
+    사용자 지시("에이엘티 CB 200억 풋옵션 vs 현금 77.5억 사실을 모든 종목에 반영") 대응.
+    put_option_date는 자동파서(dilution_v2)가 아직 대부분 미채움 — 채워진 건만 표시되며,
+    DART 재수집이 진행될수록 결과가 늘어나는 것이 정상(로직 결함 아님).
+    """
+    conn = connect_primary_db(timeout=15, row_factory=sqlite3.Row)
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        horizon = (datetime.now() + timedelta(days=months_ahead * 30)).strftime("%Y-%m-%d")
+        rows = conn.execute("""
+            SELECT stock_code, stock_name, event_type, issue_amount, conversion_price,
+                   put_option_date, disclosed_at, report_nm
+            FROM dilution_events
+            WHERE put_option_date IS NOT NULL AND put_option_date BETWEEN ? AND ?
+              AND issue_amount IS NOT NULL
+            ORDER BY put_option_date ASC
+        """, (today, horizon)).fetchall()
+
+        name_map = dict(conn.execute("SELECT stock_code, stock_name FROM stock_universe").fetchall())
+        mktcap_map = dict(conn.execute("SELECT stock_code, market_cap FROM stock_universe").fetchall())
+
+        results = []
+        for r in rows:
+            code = r["stock_code"]
+            cash_row = conn.execute("""
+                SELECT cash_end FROM cash_flow_data
+                WHERE stock_code=? AND cash_end IS NOT NULL
+                ORDER BY year DESC, quarter DESC, (report_type='CFS') DESC LIMIT 1
+            """, (code,)).fetchone()
+            cash = cash_row[0] if cash_row else None
+            shortfall = (r["issue_amount"] - cash) if cash is not None else None
+            results.append({
+                "stock_code": code, "stock_name": name_map.get(code, r["stock_name"] or code),
+                "mktcap_억": round(mktcap_map.get(code) or 0),
+                "event_type": r["event_type"],
+                "put_option_date": r["put_option_date"],
+                "amount_억": round(r["issue_amount"] / 1e8, 1),
+                "conversion_price": r["conversion_price"],
+                "current_cash_억": round(cash / 1e8, 1) if cash is not None else None,
+                "shortfall_억": round(shortfall / 1e8, 1) if shortfall is not None else None,
+                "at_risk": bool(shortfall is not None and shortfall > 0),
+                "disclosed_at": r["disclosed_at"],
+            })
+        results.sort(key=lambda x: (-int(x["at_risk"]), x["put_option_date"]))
+
+        return {
+            "months_ahead": months_ahead,
+            "results": results,
+            "research_note": {
+                "status": f"put_option_date 파싱 완료 건수: {len(rows)}건 (전체 dilution_events 대비 극히 일부 — "
+                          "자동파서가 조기상환청구권 날짜를 아직 대부분 추출하지 못함)",
+                "caveat": "이 스캔은 DART CB/BW 원문에서 '조기상환청구권/풋옵션' 날짜가 실제로 추출된 건만 "
+                          "표시합니다. 전종목 커버리지를 위해서는 dart_dilution_collector.py 재수집이 필요하며 "
+                          "DART API 일일한도 회복 후 순차 진행 예정입니다. 표시되지 않는다고 해당 종목에 "
+                          "풋옵션 리스크가 없다는 뜻은 아닙니다 — 데이터 미수집 상태일 수 있습니다.",
+            },
         }
     finally:
         conn.close()
@@ -3826,8 +5438,7 @@ def get_quant_context(stock_code: str, months: int = Query(12, ge=3, le=36)):
 @router.get("/rd-patent/{stock_code}")
 def get_rd_patent_signals(stock_code: str):
     """종목별 특허/기술이전/R&D 공시 이력"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=30, row_factory=sqlite3.Row)
     try:
         rows = conn.execute("""
             SELECT signal_type, rcept_dt, report_nm, amount_krw, notes, rcept_no
@@ -3868,9 +5479,49 @@ def get_action_signals_api(limit: int = 30):
     try:
         from tenbagger_engine import get_action_signals, BUY_PARAMS, SELL_PARAMS
         signals = get_action_signals(limit=limit)
+        conn = _get_conn()
+        try:
+            signals = _enrich_tenbagger_price_risk(conn, [dict(s) for s in signals])
+        finally:
+            conn.close()
+        for s in signals:
+            adjusted = float(s.get("risk_adjusted_score") or s.get("total_score") or s.get("score") or 0)
+            if s.get("buy_signal") and (s.get("price_risk") == "AVOID" or adjusted < 50):
+                reason = f"가격위험 보정 후 기준 미달({adjusted:.0f}점)"
+                s["buy_signal"] = False
+                s["buy_strength"] = "관망"
+                failed = list(s.get("buy_failed") or [])
+                if reason not in failed:
+                    failed.append(reason)
+                s["buy_failed"] = failed
+                reasons = list(s.get("buy_reasons") or [])
+                reasons.append(f"❌ {reason}")
+                s["buy_reasons"] = reasons
+        signals.sort(
+            key=lambda x: (
+                bool(x.get("buy_signal")),
+                x.get("risk_adjusted_score", x.get("score") or 0),
+                x.get("score") or 0,
+            ),
+            reverse=True,
+        )
+        buy_codes = {str(s.get("stock_code") or "") for s in signals if s.get("buy_signal")}
+        rebound_raw = get_recovery_candidates(days=10, drop_min=8.0, limit=max(12, min(limit, 24)))
+        rebound_candidates = []
+        for item in (rebound_raw or {}).get("results", []):
+            code = str(item.get("stock_code") or "")
+            if not code or code in buy_codes:
+                continue
+            rebound_candidates.append({
+                **item,
+                "strategy_label": "단기 반등",
+                "holding_hint": "5~20거래일 스윙",
+                "thesis": "낙폭 과대 후 기술적/수급 반등을 노리는 별도 전략",
+            })
         return {
             "buy_signals":   [s for s in signals if s.get("buy_signal")],
             "watch_signals": [s for s in signals if not s.get("buy_signal")],
+            "rebound_candidates": rebound_candidates,
             "params": {
                 "buy":  BUY_PARAMS,
                 "sell": SELL_PARAMS,
@@ -3880,6 +5531,10 @@ def get_action_signals_api(limit: int = 30):
                 "total_ret":   "+105.3%",
                 "kospi_ratio": "5.43x",
                 "mdd":         "-33.7%",
+            },
+            "strategy_note": {
+                "tenbagger": "실적/현금흐름/희석 방어를 통과한 장기 다년 보유 후보",
+                "rebound": "급락 뒤 반등 탄력에 초점을 둔 단기 스윙 후보. 텐버거와 분리해서 봐야 함",
             },
             "total": len(signals),
         }
@@ -3904,7 +5559,7 @@ def check_sell_signal_api(body: dict):
         current_price = body.get("current_price")
         if not current_price:
             import sqlite3 as _sl
-            _conn = _sl.connect(DB_PATH)
+            _conn = connect_primary_db(timeout=30, row_factory=_sl.Row)
             row = _conn.execute(
                 "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
                 (code,)
@@ -3923,3 +5578,813 @@ def check_sell_signal_api(body: dict):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ══════════════════════════════════════════════════════════════════
+# 턴어라운드 후보 추적 (2026-07-18 신규) — "실험 로드맵" 탭 전용
+#
+# 배경: scratch/turnaround_leading_signal_research.py의 walk-forward 검증
+# (학습≤2022/검증2023+, 적자모집단 43,036건) 결과 요약:
+#   - 강한 사전예측 리딩시그널은 아직 미발견
+#   - 매출YoY>0만 학습·검증 양쪽 방향 일치(lift ~1.07~1.08x, 약하지만 유일하게 안정)
+#   - 매출총이익률 개선은 부호 불안정(노이즈) / 임원매수·적자축소는 일관된 음의 예측력(반직관적)
+#   - 기존 확정(래깅) 흑자전환 신호에 매출YoY필터 추가 시 오히려 악화(+79.9%→+71.5%, 연속운용)
+# 이 탭은 "정답을 아는 척"하지 않고, 위 실증에 기반해 두 그룹을 정직하게 분리 표시한다:
+#   A) 최근 확정된 흑자전환(래깅, 신뢰도 높음) — 추적 관찰용
+#   B) 현재 적자이나 약한 리딩시그널(매출YoY>0)이 있는 후보 — 참고용, 예측력 약함을 명시
+# ══════════════════════════════════════════════════════════════════
+
+def _ta_avail_date(year: int, quarter: int) -> str:
+    if quarter == 1: return f"{year}-05-15"
+    if quarter == 2: return f"{year}-08-15"
+    if quarter == 3: return f"{year}-11-15"
+    return f"{year+1}-02-15"
+
+
+def _compute_turnaround_watch(min_mktcap: float = 300.0) -> dict:
+    """턴어라운드 추적 — 확정된 흑자전환(A) + 단일분기 흑자전환/TTM적자지속(C, 강한 리딩시그널)
+    + 약한 리딩시그널 적자후보(B) + 재도전 턴어라운드(D, 2026-07-19 신규, 최강 리딩시그널).
+    순수 로직(AI 미사용).
+
+    ⚠️ 전종목 financial_data/cash_flow_data/dart_contracts 등을 매번 풀스캔하는 무거운 연산
+    (수 분 소요, 서버 CPU 점유) — 매 요청 재계산하지 않고 새벽 유휴시간(스케줄러 04:40)에
+    사전계산해 TURNAROUND_WATCH_CACHE_PATH에 저장한 결과만 API가 서빙한다
+    (2026-07-26, 사용자 지시: "많이 무겁다면 매번 하면 안될거 같은데,, 새벽에 cpu가 한가할때만
+    돌도록 하세요"). 아래는 실제 계산 본체 — 캐시 갱신 함수(refresh_turnaround_watch_cache)와
+    최초기동 폴백(get_turnaround_watch)에서만 호출한다.
+    """
+    conn = connect_primary_db(timeout=15, row_factory=sqlite3.Row)
+    try:
+        # CFS/OFS 혼재 방지 (CLAUDE.md 알려진 함정): 종목별 stock_collection_config.
+        # preferred_report_type 존중(사용자 지시 2026-07-18 — 지주사 등 197종목은 이미
+        # OFS가 "교정된" 선택으로 기록돼 있었음), 없으면 CFS 기본값(K-IFRS 연결 우선 원칙).
+        overrides = {r["stock_code"]: r["config_value"] for r in conn.execute(
+            "SELECT stock_code, config_value FROM stock_collection_config "
+            "WHERE config_key='preferred_report_type'")}
+        raw_rows = conn.execute("""
+            SELECT stock_code, year, quarter, report_type, net_income, revenue
+            FROM financial_data
+            WHERE is_annual=0 AND quarter BETWEEN 1 AND 4 AND net_income IS NOT NULL
+            ORDER BY stock_code, year, quarter
+        """).fetchall()
+        # 종목별 선호 report_type 우선, 해당 분기에 없으면 다른 타입으로 폴백(공백 방지).
+        # ⚠️ 순이익은 override 존중(지주사 등 net_income 교정 목적)하되, 매출은 항상 CFS 우선.
+        # 이유(실측 재발견): 순수 지주사(DL 등)는 OFS 매출이 본사관리수익 수준(300억대)뿐이라
+        # 실제 사업 매출이 아니며 분기별로 크게 요동쳐(YoY -98%) 리딩시그널로 무의미함 —
+        # 반면 CFS 매출(1.2~1.4조원, 안정적)이 실제 그룹 영업활동을 반영함.
+        by_quarter: dict[tuple, dict] = {}
+        for r in raw_rows:
+            key = (r["stock_code"], r["year"], r["quarter"])
+            by_quarter.setdefault(key, {})[r["report_type"]] = r
+        panel: dict[str, list] = {}
+        for (code, y, q), variants in by_quarter.items():
+            pref = overrides.get(code, "CFS")
+            r_ni = variants.get(pref) or next(iter(variants.values()))
+            r_rev = variants.get("CFS") or r_ni
+            panel.setdefault(code, []).append((y, q, r_ni["net_income"], r_rev["revenue"]))
+        for code in panel:
+            panel[code].sort(key=lambda x: (x[0], x[1]))
+
+        name_map = dict(conn.execute(
+            "SELECT stock_code, stock_name FROM stock_universe").fetchall())
+        mktcap_map = dict(conn.execute(
+            "SELECT stock_code, market_cap FROM stock_universe").fetchall())
+
+        # 임원매수 (참고정보로만 표시 — 리딩시그널 연구에서 음의 예측력으로 판정됨)
+        insider_recent: dict[str, str] = {}
+        cutoff180 = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+        for r in conn.execute("""
+            SELECT stock_code, MAX(rcept_dt) d FROM dart_insider_holdings
+            WHERE COALESCE(sp_stock_lmp_irds_cnt,0) > 0 AND rcept_dt >= ?
+            GROUP BY stock_code
+        """, (cutoff180,)).fetchall():
+            insider_recent[r["stock_code"]] = r["d"]
+
+        # "꿈(내러티브)" 촉매 — 특허/기술이전/R&D계약/라이선스 공시(2026-07-19 walk-forward
+        # 검증됨, scratch/turnaround_dream_catalyst_test.py). 중앙값은 개선 없음(오히려 낮거나
+        # 비슷)이나 12개월 forward 50%+ 급등 달성률이 확정흑자전환 기준 검증기간 14.3%→25.0%로
+        # 유의하게 높아짐(학습기간도 동일 방향, 재현됨) — "대부분은 그대로지만 터지면 크게 터지는"
+        # 전형적 꿈/테마주 분포. 수주잔고서지(order_backlog YoY)는 train/test 부호가 뒤집혀
+        # (학습 -13.7%/검증 +17.7%) 기각 — 채택하지 않음.
+        patent_events: dict[str, list[str]] = {}
+        for r in conn.execute("SELECT stock_code, rcept_dt FROM dart_rd_patent_signals"):
+            patent_events.setdefault(r["stock_code"], []).append(r["rcept_dt"])
+        for c in patent_events:
+            patent_events[c].sort()
+
+        def _dream_catalyst(code: str, avail_date: str) -> bool:
+            evs = patent_events.get(code)
+            if not evs:
+                return False
+            cutoff = (datetime.strptime(avail_date, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
+            return any(cutoff <= d <= avail_date for d in evs)
+
+        # "감가상각 주도 적자" (회계상 적자 vs 실질 현금흐름) — 사용자 사례 에이엘티(172670)
+        # 재검증(2026-07-19, scratch/depreciation_driven_loss_test.py). 매출원가 문제로 인한
+        # 실질 적자와, 감가상각(비현금성 비용)이 커서 회계상으로만 적자로 보이는 경우를 구분.
+        # 실측: 에이엘티 2025 Q1~Q3는 순이익 -40.3/-45.0/-38.0억이지만 분기 감가상각비가
+        # 82.2/59.7/53.8억으로 더 커서 NI+감가상각(EBITDA근사)이 매분기 플러스, 영업현금흐름도
+        # 전분기 플러스(20~123억) — "회계상 적자, 실질 현금흐름은 건전"인 전형적 자본집약 사례.
+        # walk-forward 검증: 감가상각주도(NI+분기Dep>0) 단독 lift 1.31x(학습)/1.43x(검증),
+        # 영업현금흐름>0 단독 1.25x/1.38x, **둘다 충족 시 1.40x(학습)/1.67x(검증, 세션 최강)**.
+        cf_map: dict[tuple, dict] = {}
+        for r in conn.execute("""
+            SELECT stock_code, year, quarter, report_type, depreciation_q, operating_cf_q,
+                   financing_cf_q, capex_q
+            FROM cash_flow_data WHERE is_annual=0
+        """):
+            key = (r["stock_code"], r["year"], r["quarter"])
+            cf_map.setdefault(key, {})[r["report_type"]] = r
+
+        def _quality_of_loss(code: str, y: int, q: int, ni):
+            variants = cf_map.get((code, y, q))
+            if not variants:
+                return None, None, False, False
+            r = variants.get("CFS") or next(iter(variants.values()))
+            dep_q, ocf_q = r["depreciation_q"], r["operating_cf_q"]
+            dep_driven = bool(dep_q is not None and ni is not None and (ni + dep_q) > 0)
+            cash_positive = bool(ocf_q is not None and ocf_q > 0)
+            return dep_q, ocf_q, dep_driven, cash_positive
+
+        # "좋은 부채 vs 나쁜 부채" — 2026-07-28 신규(사용자 지시: "매출과 이익을 예측하고, 좋은
+        # 부채, 이익의 질을 보여주는게 중요해" + 기존 why_score는 "크게 의미는 없어 보여" 지적).
+        # walk-forward 검증(scratch/debt_quality_v2_test_20260728.py, TTM<=0 population, 학습<=2023/
+        # 검증2024~): financing 조달(financing_cf_q>0)이 있었던 분기에서 capex_q(성장투자, 절대값)가
+        # 영업현금소진액(-operating_cf_q, 양수화)보다 크면 "성장투자형"(좋은부채), 작으면 "생존형"
+        # (나쁜부채, 운영손실을 메우기 위한 조달)으로 분류. 검증 결과 학습/검증 양쪽에서 방향 일치:
+        # 성장투자형 avg12=3.58%/17.34%(loss30 26.5%/32.0%) vs 생존형 -1.01%/6.66%(loss30 30.2%/40.2%)
+        # — 생존형은 avg수익률도 낮고 -30%이하 손실확률도 8~10%p 더 높음(재현성 확인, 채택).
+        # 참고: 1차 정의(조달액 대비 capex 비중)는 학습/검증 방향이 뒤집혀 기각됨 — 반드시 이
+        # v2 정의(영업현금소진 대비 capex)만 사용할 것, 1차 정의로 되돌리지 말 것.
+        def _debt_quality(code: str, qs: list, i: int):
+            raised_any = False
+            good_hits = 0
+            bad_hits = 0
+            for j in range(max(0, i - 3), i + 1):
+                yj, qj = qs[j][0], qs[j][1]
+                variants = cf_map.get((code, yj, qj))
+                if not variants:
+                    continue
+                r = variants.get("CFS") or next(iter(variants.values()))
+                fin_cf, capex, ocf = r["financing_cf_q"], r["capex_q"], r["operating_cf_q"]
+                if fin_cf is None or fin_cf <= 0:
+                    continue
+                raised_any = True
+                if capex is None or ocf is None:
+                    continue
+                ocf_burn = max(0.0, -ocf)
+                if abs(capex) >= ocf_burn:
+                    good_hits += 1
+                else:
+                    bad_hits += 1
+            if not raised_any:
+                return "조달없음"
+            if good_hits == 0 and bad_hits == 0:
+                return "조달있음(데이터부족)"
+            return "성장투자형" if good_hits >= bad_hits else "생존형"
+
+        # 희석위험(CB/BW/EB/RIGHTS) — 2026-07-19 사용자 지적 계기(젬백스 082270가 재도전+매출
+        # 성장+이익의질 3개 신호를 모두 충족해 종합스코어 상위에 뜨지만, 실제로는 2025-08~2026-05
+        # 사이 거의 매달 CB/BW/유상증자 공시가 이어진 전형적 희석 스파이럴 종목(고점대비 -84%)임을
+        # 지적받음. walk-forward 재검증(scratch/dilution_risk_test.py, 적자모집단 n_train=10372/
+        # n_test=5432): 트레일링365일 희석공시 건수가 늘어날수록 TTM흑자전환율·12개월 forward
+        # 주가수익률이 모두 단조 악화 — 0건 lift 1.03x/1.07x(중앙값-12.2%/-15.5%, -30%이하 29%/31%)
+        # → 4건+(젬백스 수준) lift 0.90x/0.64x(중앙값-25.9%/-29.1%, **-30%이하 42.6%/49.3%** —
+        # 거의 절반이 1년 내 -30% 이상 하락). 재무 신호가 좋아도 희석이 잦으면 실제 성과는 반대로
+        # 나쁨 — 발굴 랭킹에서 반드시 별도 경고로 노출해야 함(점수에 섞지 않고 분리 표시).
+        dilution_map: dict[str, list[str]] = {}
+        for r in conn.execute("""
+            SELECT stock_code, disclosed_at FROM dilution_events
+            WHERE event_type IN ('CB','BW','EB','RIGHTS')
+              AND COALESCE(risk_amount_status, 'amount_confirmed') != 'not_amount_applicable'
+        """):
+            if r["disclosed_at"]:
+                dilution_map.setdefault(r["stock_code"], []).append(r["disclosed_at"][:10])
+        for c in dilution_map:
+            dilution_map[c].sort()
+
+        def _dilution_risk(code: str, avail_date: str) -> int:
+            evs = dilution_map.get(code)
+            if not evs:
+                return 0
+            cutoff = (datetime.strptime(avail_date, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
+            return sum(1 for d in evs if cutoff <= d <= avail_date)
+
+        confirmed, candidates, quarterly_flips, reattempts, quality_loss, comprehensive = [], [], [], [], [], []
+        today = datetime.now().strftime("%Y-%m-%d")
+        cutoff_recent = (datetime.now() - timedelta(days=200)).strftime("%Y-%m-%d")
+
+        for code, qs in panel.items():
+            mc = mktcap_map.get(code) or 0
+            if mc < min_mktcap:
+                continue
+            n = len(qs)
+            if n < 8:
+                continue
+            i = n - 1
+            y, q, ni, rev = qs[i]
+            avail = _ta_avail_date(y, q)
+            if avail > today:
+                # 최신 공시가 미래 avail_date로 추정되는 경우 그 이전 분기로 조정
+                continue
+            ttm_now = sum(x[2] or 0 for x in qs[max(0, i-3):i+1])
+            had_loss_recent = any((x[2] or 0) < 0 for x in qs[max(0, i-3):i])
+
+            def _rev_yoy():
+                if i-4 >= 0 and qs[i-4][3] and qs[i-4][3] >= 1e9 and rev:
+                    raw = (rev / qs[i-4][3] - 1) * 100
+                    return round(raw, 1) if abs(raw) <= 500 else None
+                return None
+
+            # A) 확정 흑자전환: 최신분기 TTM>0 이지만 그 직전 1~3분기 중 적자가 있었음, 확정일 최근 200일 이내
+            if ttm_now > 0 and had_loss_recent and avail >= cutoff_recent:
+                rev_yoy = _rev_yoy()
+                confirmed.append({
+                    "stock_code": code, "stock_name": name_map.get(code, code),
+                    "mktcap_억": round(mc), "confirmed_date": avail,
+                    "year": y, "quarter": q, "ttm_net_income": round(ttm_now),
+                    "revenue_yoy_pct": rev_yoy,
+                    "revenue_growth_at_confirm": bool(rev_yoy is not None and rev_yoy > 0),
+                    "dream_catalyst": _dream_catalyst(code, avail),
+                })
+            elif ttm_now <= 0:
+                # C) 단일분기 흑자전환, TTM은 아직 적자 (2026-07-18 신규 — walk-forward 검증된
+                # 강한 리딩시그널: lift 1.33x(학습)/1.70x(검증), 사용자 사례 에이엘티(172670)
+                # 2025Q4가 정확히 이 패턴 — 기존 A)TTM기준 확정 로직은 이런 경우를 놓쳤음.
+                # ⚠️ 바로 다음분기도 흑자 유지되는 비율은 47.6~54.6%뿐(에이엘티도 즉시 재적자
+                # 전환) — "단일분기 반전"은 노이즈가 크지만, 그럼에도 1년 내 진짜 흑자전환
+                # 확률을 유의하게 높이는 것으로 검증됨.
+                if ni is not None and ni > 0:
+                    rev_yoy = _rev_yoy()
+                    quarterly_flips.append({
+                        "stock_code": code, "stock_name": name_map.get(code, code),
+                        "mktcap_억": round(mc), "as_of": avail,
+                        "year": y, "quarter": q,
+                        "quarter_net_income": round(ni),
+                        "ttm_net_income": round(ttm_now),
+                        "revenue_yoy_pct": rev_yoy,
+                        "insider_buy_recent": insider_recent.get(code),
+                        "dream_catalyst": _dream_catalyst(code, avail),
+                    })
+                # B) 적자 지속 중이나 매출YoY 성장(약한 리딩시그널, lift 1.07~1.08x)
+                else:
+                    rev_yoy = _rev_yoy()
+                    dilution_risk = _dilution_risk(code, avail)
+
+                    # D) 재도전 턴어라운드 계산을 B)보다 먼저 끌어올림(2026-07-27) — "왜 이
+                    # 종목이 흑자전환 가능한가"를 설명하는 근거(재도전 이력/이익의 질)를 B)
+                    # 후보에도 그대로 붙이기 위해 순서 변경. 로직 자체는 변경 없음.
+                    last_flip_q = None
+                    for j in range(i - 1, max(-1, i - 5), -1):
+                        if (qs[j][2] or 0) > 0:
+                            last_flip_q = f"{qs[j][0]}Q{qs[j][1]}"
+                            break
+                    # E) 감가상각 주도 적자(이익의 질)도 B) 전에 먼저 계산 — 아래 참조.
+                    dep_q, ocf_q, dep_driven, cash_positive = _quality_of_loss(code, y, q, ni)
+                    dream = _dream_catalyst(code, avail)
+
+                    if rev_yoy is not None and rev_yoy > 0:
+                        # 2026-07-26 신규: 사용자 관심(에이엘티/에이팩트류 "숨은 진주") 대응 —
+                        # strategy_feature_snapshot 15.5만행 walk-forward 재검증 결과, 이 population을
+                        # 시총<1000억 + 매출YoY+20%↑로 좁히면 forward 12개월 3배(3x)율이 학습11.15%/
+                        # 검증12.10%로 전체평균(6.75%/7.71%)의 약 1.5~1.7배·검증기간에 더 강화(재현성
+                        # 확인) — 반대로 "시총작음+이미흑자+성장"은 오히려 8.13%/5.28%로 더 약해서,
+                        # "아직 적자인 소형 고성장주"가 핵심임(scratch/smallcap_earnings_accel_test_
+                        # 20260726.py). 희석위험으로 이 그룹을 추가 필터링해봤으나(scratch/smallcap_
+                        # dilution_risk_test_20260726.py) forward_max_ret 라벨 특성상(12개월 중 최고점
+                        # 기준이라 대부분 한번은 반등해 loss30 자체가 낮아 방향이 불안정) 유의미한
+                        # 리스크감소 효과를 확인 못함 — 배제하지 않고 참고정보(dilution_risk)로만 유지.
+                        small_cap_high_growth = bool(mc < 1000 and rev_yoy >= 20)
+                        # 2026-07-27 신규 — 사용자 지적: "에이엘티는 정밀분석으로 믿을만하다고
+                        # 판단했는데, 나머지 종목은 왜 흑자전환이 가능한지 알아낼 방법이 없나?"
+                        # → 에이엘티를 신뢰하게 만든 근거(재도전 이력 + 매출확인 + 회계상적자 vs
+                        # 실질현금흐름)가 이미 D/E 섹션에 계산돼 있었으나 B) 후보에는 붙어있지
+                        # 않았던 게 원인 — 동일 근거 필드를 여기에도 부여해 "왜"를 설명.
+                        # ⚠️ 2026-07-28: 여기서 붙였던 why_score(재도전+이익의질+꿈촉매 단순합산)는
+                        # 사용자 지적대로 폐기 — dream_catalyst는 "확률"이 아닌 "터지면 크게 터지는
+                        # 폭"(fat-tail) 신호라 확률성 점수에 합산하면 안 된다는 원칙(F섹션에서 이미
+                        # 확립된 원칙)을 B)에서는 어겼던 것이 근본 원인. 대신 walk-forward로 새로
+                        # 검증된 debt_quality(좋은부채/나쁜부채)를 정렬 기준으로 사용.
+                        debt_quality = _debt_quality(code, qs, i)
+                        candidates.append({
+                            "stock_code": code, "stock_name": name_map.get(code, code),
+                            "mktcap_억": round(mc), "as_of": avail,
+                            "year": y, "quarter": q, "ttm_net_income": round(ttm_now),
+                            "revenue_yoy_pct": rev_yoy,
+                            "insider_buy_recent": insider_recent.get(code),
+                            "dilution_risk": dilution_risk,
+                            "small_cap_high_growth": small_cap_high_growth,
+                            "has_reattempt": bool(last_flip_q),
+                            "last_flip_quarter": last_flip_q,
+                            "depreciation_q": round(dep_q) if dep_q is not None else None,
+                            "ni_plus_depreciation": round(ni + dep_q) if (ni is not None and dep_q is not None) else None,
+                            "operating_cf_q": round(ocf_q) if ocf_q is not None else None,
+                            "dep_driven": dep_driven,
+                            "cash_positive": cash_positive,
+                            "dream_catalyst": dream,
+                            "debt_quality": debt_quality,
+                        })
+
+                    # D) 재도전 턴어라운드 (2026-07-19 신규 — 사용자 사례 에이엘티(172670)가 정확히
+                    # 이 패턴: 25Q4 단일분기 흑자 후 26Q1 다시 적자, 그러나 매출은 계속 성장 중).
+                    # walk-forward 검증: "최근 4분기 내 단일분기 흑자(재도전) 이력"만으로도
+                    # lift 1.13x(학습)/1.22x(검증), 매출YoY성장까지 결합 시 1.18x(학습)/1.31x(검증)
+                    # — 이번 세션에서 검증한 신호 중 가장 강함(검증기간에 더 강해짐, 재현성 확인).
+                    # TTM 레벨 "적자폭 축소"는 음의 예측력이었지만, 이건 "이미 한번 흑자를 낸 적
+                    # 있는 회사가 다시 흑자권에 접근 중"이라는 질적으로 다른(더 구체적인) 신호.
+                    if last_flip_q:
+                        reattempts.append({
+                            "stock_code": code, "stock_name": name_map.get(code, code),
+                            "mktcap_억": round(mc), "as_of": avail,
+                            "year": y, "quarter": q,
+                            "quarter_net_income": round(ni) if ni is not None else None,
+                            "ttm_net_income": round(ttm_now),
+                            "last_flip_quarter": last_flip_q,
+                            "revenue_yoy_pct": rev_yoy,
+                            "revenue_confirmed": bool(rev_yoy is not None and rev_yoy > 0),
+                            "dream_catalyst": dream,
+                            "dilution_risk": dilution_risk,
+                        })
+
+                    # E) 감가상각 주도 적자(이익의 질) — 2026-07-19 신규, 사용자 지시(에이엘티
+                    # 사례: 매출원가 문제가 아니라 감가상각비가 커서 회계상으로만 적자로 보임).
+                    # walk-forward 검증: 감가상각주도(NI+분기Dep>0) 단독 1.31x/1.43x, 영업현금흐름
+                    # >0 단독 1.25x/1.38x, 둘다 충족 시 1.40x(학습)/1.67x(검증) — 세션 전체 최강.
+                    # (dep_q/ocf_q/dep_driven/cash_positive는 B) 처리 전에 이미 계산됨 — 재사용)
+                    if dep_driven or cash_positive:
+                        quality_loss.append({
+                            "stock_code": code, "stock_name": name_map.get(code, code),
+                            "mktcap_억": round(mc), "as_of": avail,
+                            "year": y, "quarter": q,
+                            "quarter_net_income": round(ni) if ni is not None else None,
+                            "depreciation_q": round(dep_q) if dep_q is not None else None,
+                            "ni_plus_depreciation": round(ni + dep_q) if (ni is not None and dep_q is not None) else None,
+                            "operating_cf_q": round(ocf_q) if ocf_q is not None else None,
+                            "dep_driven": dep_driven,
+                            "cash_positive": cash_positive,
+                            "both_confirmed": bool(dep_driven and cash_positive),
+                            "revenue_yoy_pct": rev_yoy,
+                            "dream_catalyst": dream,
+                            "dilution_risk": dilution_risk,
+                        })
+
+                    # F) 종합 턴어라운드 스코어 (2026-07-19 신규 — 사용자 지시: "재도전이 아니라
+                    # 감가상각비 등을 고려한 전체적인 분위기가 턴어라운드 가능한 종목을 발굴하는
+                    # 탭"). B/D/E 3개 독립신호를 하나로 합쳐 재랭킹 — walk-forward 검증 결과
+                    # 신호 개수와 흑자전환율이 깔끔한 단조증가(monotonic) 관계: 0개=0.52~0.59x
+                    # (기준율보다 낮음)/1개=0.79~0.91x/2개=1.13~1.23x/**3개 전부=1.38x(학습)/
+                    # 1.63x(검증, 검증기간에 더 강화)** — 신호들이 서로 겹치지 않고 독립적으로
+                    # 누적됨을 실증. dream_catalyst는 흑자전환 확률이 아니라 상승폭(fat-tail)
+                    # 신호라 스코어에는 포함하지 않고 별도 배지로만 표시.
+                    ta_score = int(bool(last_flip_q)) + int(bool(rev_yoy is not None and rev_yoy > 0)) + int(dep_driven or cash_positive)
+                    if ta_score >= 1:
+                        _has_rev_growth = bool(rev_yoy is not None and rev_yoy > 0)
+                        _has_quality = bool(dep_driven or cash_positive)
+                        comprehensive.append({
+                            "stock_code": code, "stock_name": name_map.get(code, code),
+                            "mktcap_억": round(mc), "as_of": avail,
+                            "year": y, "quarter": q,
+                            "quarter_net_income": round(ni) if ni is not None else None,
+                            "ttm_net_income": round(ttm_now),
+                            "score": ta_score,
+                            # 2026-07-24 신규: 로지스틱 예측확률(발굴 전용, 매매엔진 미연결) —
+                            # 동일 3개 이진신호를 검증된 가중치(재도전0.83>이익의질0.53>매출0.22)로
+                            # 결합, 검증기 상위20% lift=2.24x(기존 3점버킷 lift=1.60x보다 개선).
+                            "predicted_probability_pct": _turnaround_probability(last_flip_q, _has_rev_growth, _has_quality),
+                            "has_reattempt": bool(last_flip_q),
+                            "last_flip_quarter": last_flip_q,
+                            "has_revenue_growth": bool(rev_yoy is not None and rev_yoy > 0),
+                            "revenue_yoy_pct": rev_yoy,
+                            "has_quality_loss": bool(dep_driven or cash_positive),
+                            "depreciation_q": round(dep_q) if dep_q is not None else None,
+                            "ni_plus_depreciation": round(ni + dep_q) if (ni is not None and dep_q is not None) else None,
+                            "operating_cf_q": round(ocf_q) if ocf_q is not None else None,
+                            "dream_catalyst": dream,
+                            "dilution_risk": dilution_risk,
+                        })
+
+        # G) 수주모멘텀 — 계약기간 정규화 + 계약부채(선수금) 교차확인 (2026-07-25 신규,
+        # 사용자 지시: 아이크래프트(052460) 사례 계기). dart_contracts의 원시 contract_ratio_pct는
+        # 6개월 계약과 5년 계약을 동일 취급 — 계약기간(분기수)으로 나눠 근시일 매출임팩트를 정밀화.
+        # ⚠️ 국내(is_overseas=0) 계약 단독은 홀드아웃 검증 결과 해외계약보다 신호품질이 뚜렷이 낮음
+        # (scratch/claude_domestic_contract_signal_20260725.py: 검증기 25.4%/MDD-42.7% vs
+        # 해외전용 154.3%/MDD-27.9%, is_overseas=1 필터는 실측 근거 있는 설계였음을 확인) —
+        # 이 탭은 매매전략이 아니라 발굴 도구이므로 국내계약을 배제하지 않되 is_overseas로 구분 표시.
+        # Codex 신규 contract_advance_signals(계약부채/선수금, IFRS15 실제 고객선수금 근거)와
+        # 교차확인되면 "공시(예고)+계약부채(실제 현금 확인)" 이중검증이라 신뢰도가 훨씬 높아짐 —
+        # 단 현재 collect_dart_report_items.py가 시가총액 상위 종목 위주로만 수집돼 있어(63종목
+        # 한정, 2026-07-25 기준) 커버리지가 좁음을 정직하게 명시.
+        advance_map: dict[str, dict] = {}
+        for r in conn.execute("""
+            SELECT stock_code, fiscal_year, fiscal_quarter, fs_div, gross_to_revenue_pct,
+                   gross_qoq_pct, gross_yoy_pct, signal_score, signal_label
+            FROM contract_advance_signals WHERE quality_flag='ok'
+        """).fetchall():
+            rank = (r["fiscal_year"], r["fiscal_quarter"], 1 if r["fs_div"] == "CFS" else 0)
+            cur = advance_map.get(r["stock_code"])
+            if cur is None or rank > cur["_rank"]:
+                advance_map[r["stock_code"]] = {**dict(r), "_rank": rank}
+
+        def _quarters_between(start_s, end_s):
+            try:
+                sd = datetime.strptime(start_s, "%Y-%m-%d")
+                ed = datetime.strptime(end_s, "%Y-%m-%d")
+            except Exception:
+                return None
+            days = (ed - sd).days
+            if days <= 0:
+                return None
+            return max(days / 91.25, 0.25)  # 최소 0.25분기 하한 — 초단기계약 과대추정 방지
+
+        cutoff_contract_ymd = (datetime.now() - timedelta(days=180)).strftime("%Y%m%d")
+        contract_by_code: dict[str, list[dict]] = {}
+        for r in conn.execute("""
+            SELECT stock_code, disclosed_at, contract_amount_krw, contract_ratio_pct,
+                   contract_start, contract_end, is_overseas, report_nm
+            FROM dart_contracts
+            WHERE disclosed_at >= ? AND contract_ratio_pct >= 10
+            ORDER BY disclosed_at DESC
+        """, (cutoff_contract_ymd,)).fetchall():
+            code = r["stock_code"]
+            if (mktcap_map.get(code) or 0) < min_mktcap:
+                continue
+            dur_q = _quarters_between(r["contract_start"], r["contract_end"]) if r["contract_start"] and r["contract_end"] else None
+            q_impact = round(r["contract_ratio_pct"] / dur_q, 2) if dur_q else None
+            contract_by_code.setdefault(code, []).append({
+                "disclosed_at": r["disclosed_at"], "amount_억": round((r["contract_amount_krw"] or 0) / 1e8),
+                "ratio_pct": r["contract_ratio_pct"],
+                "contract_start": r["contract_start"], "contract_end": r["contract_end"],
+                "duration_quarters": round(dur_q, 1) if dur_q else None,
+                "quarterly_impact_pct": q_impact,
+                "is_overseas": bool(r["is_overseas"]),
+                "report_nm": (r["report_nm"] or "").strip(),
+            })
+
+        contract_momentum = []
+        for code, events in contract_by_code.items():
+            total_q_impact = round(sum(e["quarterly_impact_pct"] or 0 for e in events), 2)
+            if total_q_impact < 5:
+                continue
+            adv = advance_map.get(code)
+            contract_momentum.append({
+                "stock_code": code, "stock_name": name_map.get(code, code),
+                "mktcap_억": round(mktcap_map.get(code) or 0),
+                "events_180d": len(events),
+                "total_quarterly_impact_pct": total_q_impact,
+                "any_overseas": any(e["is_overseas"] for e in events),
+                "all_domestic": all(not e["is_overseas"] for e in events),
+                "contracts": sorted(events, key=lambda x: x["disclosed_at"], reverse=True)[:8],
+                "advance_signal_score": adv["signal_score"] if adv else None,
+                "advance_gross_to_revenue_pct": adv["gross_to_revenue_pct"] if adv else None,
+                "advance_label": adv["signal_label"] if adv else None,
+                "cross_confirmed": bool(adv and (adv["signal_score"] or 0) >= 4),
+                "dilution_risk": _dilution_risk(code, today),
+            })
+        contract_momentum.sort(key=lambda x: x["dilution_risk"])
+        contract_momentum.sort(key=lambda x: x["cross_confirmed"], reverse=True)
+        contract_momentum.sort(key=lambda x: x["total_quarterly_impact_pct"], reverse=True)
+
+        # 정렬 우선순위: 각 리스트의 핵심 기준을 최우선으로 하되, 희석위험(dilution_risk, 오름차순
+        # =위험 낮은 순)을 그 다음 우선순위로 끼워넣어 "재무신호는 좋지만 희석이 잦은" 종목이
+        # 같은 등급 내에서 상위로 올라오지 못하게 함(2026-07-19, 젬백스 사례 계기).
+        confirmed.sort(key=lambda x: x["confirmed_date"], reverse=True)
+        confirmed.sort(key=lambda x: x["dream_catalyst"], reverse=True)
+        candidates.sort(key=lambda x: -(x["revenue_yoy_pct"] or 0))
+        candidates.sort(key=lambda x: x["dilution_risk"])
+        # 2026-07-28: why_score(재도전+이익의질+꿈촉매 단순합산) 폐기 — debt_quality로 대체.
+        # walk-forward 검증된 순서: 조달없음 > 성장투자형 > 조달있음(데이터부족) > 생존형
+        _DEBT_Q_RANK = {"조달없음": 0, "성장투자형": 1, "조달있음(데이터부족)": 2, "생존형": 3}
+        candidates.sort(key=lambda x: _DEBT_Q_RANK.get(x.get("debt_quality"), 2))
+        candidates.sort(key=lambda x: not x["small_cap_high_growth"])  # 검증된 최강신호 최우선
+        quarterly_flips.sort(key=lambda x: -(x["quarter_net_income"] or 0))
+        quarterly_flips.sort(key=lambda x: x["dream_catalyst"], reverse=True)
+        reattempts.sort(key=lambda x: x["last_flip_quarter"], reverse=True)
+        reattempts.sort(key=lambda x: x["dilution_risk"])
+        reattempts.sort(key=lambda x: x["revenue_confirmed"], reverse=True)
+        quality_loss.sort(key=lambda x: -(x["ni_plus_depreciation"] or -1e18))
+        quality_loss.sort(key=lambda x: x["dilution_risk"])
+        quality_loss.sort(key=lambda x: x["both_confirmed"], reverse=True)
+        comprehensive.sort(key=lambda x: -(x["revenue_yoy_pct"] or -1e9))
+        comprehensive.sort(key=lambda x: x["dream_catalyst"], reverse=True)
+        comprehensive.sort(key=lambda x: x["dilution_risk"])
+        comprehensive.sort(key=lambda x: x["score"], reverse=True)
+        # 2026-07-24: 로지스틱 예측확률을 최우선 정렬기준으로 승격(위 score/dilution/dream_catalyst
+        # 정렬은 그 다음 tie-break로 유지) — 검증된 가중치 기반이라 동일가중 score보다 세밀한 랭킹.
+        comprehensive.sort(key=lambda x: x["predicted_probability_pct"], reverse=True)
+
+        return {
+            "confirmed_turnarounds": confirmed[:60],
+            "quarterly_flip_ttm_still_negative": quarterly_flips[:60],
+            "candidates_loss_but_revenue_growth": candidates[:60],
+            "reattempt_turnaround": reattempts[:60],
+            "quality_of_loss": quality_loss[:60],
+            "comprehensive_score": comprehensive[:80],
+            "contract_momentum": contract_momentum[:60],
+            "research_note": {
+                "status": "리딩시그널 5건 + 리스크신호 1건 검증됨(단일분기 흑자전환 + 재도전 턴어라운드 + 감가상각주도적자 + 종합스코어 + 꿈/테마 촉매 + 희석위험) — 2026-07-19 walk-forward 7차 검증",
+                "base_rate": "적자 기업의 44.8%(학습)/38.7%(검증)가 4분기 내 자연스럽게 흑자 전환 — 기준율 자체가 높음",
+                "findings": [
+                    "🔎소형고성장(small_cap_high_growth, 2026-07-26 신규 — 사용자 관심: 에이엘티/에이팩트 "
+                    "같은 '숨은 진주'는 시총 낮은 종목에서 텐버거 확률이 높다는 가설 검증): "
+                    "strategy_feature_snapshot 15.5만행 walk-forward(학습<=2023/검증2024~) 결과 시총 자체는 "
+                    "~300억 구간이 가장 높은 3배율(학습14.03%/검증13.99%, 매우 안정적)을 보이나 중간~대형 "
+                    "구간은 2024~26년 메가캡 슈퍼사이클(SK하이닉스 등)로 역전됨 — 시총만으로는 불충분. "
+                    "이 population(B섹션)을 시총<1000억 + 매출YoY+20%↑로 좁히면 3배율이 학습11.15%/검증"
+                    "12.10%(전체평균 6.75%/7.71%의 약 1.5~1.7배, 검증기간에 더 강화)로 강건 — 단, **이미 "
+                    "흑자인 소형 성장주는 오히려 더 약함**(8.13%/5.28%, 시총작음 단독 9.21%/8.04%보다도 열위) "
+                    "— '아직 적자인데 매출은 빠르게 크는 소형주'가 핵심(에이엘티류와 정확히 일치, 에이팩트류 "
+                    "-이미 흑자 성장가속-는 이 신호로는 안 잡힘, 별도 수급/거래량 신호 영역). 희석위험으로 "
+                    "추가 필터링을 시도했으나(forward_max_ret은 12개월 중 최고점 기준이라 손실위험 측정에 "
+                    "부적합 - 대부분 한번은 반등해 loss30 자체가 낮음) 방향이 불안정해 배제 미채택, 참고정보로만 "
+                    "유지. 소형주 리스크 관리는 필터가 아니라 **분산(집중배팅 금지, 최소 10종목 이상)**과 "
+                    "**엄격한 손절 규율**로 대응할 것 — 이 프로젝트가 검증한 V-MOONSHOT/V-MEGATREND와 동일 "
+                    "원칙.",
+                    "💰부채의 질(debt_quality, 2026-07-28 신규 — 사용자 지적: '3가지 점수(why_score)는 크게 "
+                    "의미 없어 보인다' + '좋은 부채, 이익의 질을 보여주는게 중요해'): 기존 why_score(재도전+"
+                    "이익의질+꿈촉매 단순합산)를 폐기했다 — dream_catalyst는 확률이 아니라 상승폭(fat-tail) "
+                    "신호라 확률성 점수에 합산하면 안 된다는 원칙(F섹션 종합스코어에서 이미 확립)을 B)에서는 "
+                    "어겼던 것이 원인. 대신 '좋은 부채/나쁜 부채'를 신규 검증(TTM<=0 population, 학습<=2023/"
+                    "검증2024~): financing 조달이 있었던 분기에서 capex(성장투자)가 영업현금소진액보다 크면 "
+                    "**성장투자형**(좋은부채), 작으면 **생존형**(나쁜부채, 운영손실을 메우기 위한 조달)으로 분류 "
+                    "— forward 12개월 평균수익률 학습3.58%/검증17.34%(성장투자형) vs 학습-1.01%/검증6.66%"
+                    "(생존형), -30%이하 손실확률도 성장투자형이 학습/검증 양쪽에서 8~10%p 낮음(26.5%/32.0% vs "
+                    "30.2%/40.2%) — 학습·검증 방향이 일치하고 재현됨(채택). ⚠️ 1차 시도(조달액 대비 capex "
+                    "비중으로 정의)는 학습/검증 방향이 뒤집혀 기각됐음 — 반드시 이 v2 정의(영업현금소진 대비 "
+                    "capex)만 사용할 것. 부채비율(총부채/자본) 하락추세, 영업이익률 개선추세도 같이 검증했으나 "
+                    "둘 다 학습/검증 방향이 불안정(부채비율은 완전히 뒤집힘, 영업이익률은 평균수익률 방향은 "
+                    "뒤집히고 3배율만 일치)해 채택하지 않음(scratch/debt_quality_earnings_quality_test_"
+                    "20260728.py, scratch/debt_quality_v2_test_20260728.py). '매출과 이익을 예측'은 정직하게 "
+                    "한계 명시 — analyst_pdf_extracts(애널리스트 컨센서스)는 이 숨은진주 58종목 중 단 1종목만 "
+                    "커버(소형주라 증권사 커버리지 자체가 없음), 검증된 예측모델도 없어 '예측'을 만들어 보여주는 "
+                    "대신 상세보기 패널의 분기 매출/이익 추세(실측치)로만 제공.",
+                    "🚨희석위험(트레일링365일 CB/BW/EB/RIGHTS 공시 건수, 리스크 신호 — 사용자 지적 계기: "
+                    "젬백스 082270이 재도전+매출성장+이익의질 3개 신호를 모두 충족해 종합스코어 상위에 뜨지만 "
+                    "실제로는 2025-08~2026-05 거의 매달 CB/BW/유상증자가 이어진 희석 스파이럴 종목, 고점대비 "
+                    "-84%): 희석공시 건수가 늘어날수록 TTM흑자전환율·12개월 forward 주가수익률이 모두 단조 "
+                    "악화 — 0건 lift 1.03x/1.07x(중앙값-12.2%/-15.5%, -30%이하비율 29%/31%) → **4건+(젬백스 "
+                    "수준) lift 0.90x/0.64x(중앙값-25.9%/-29.1%, -30%이하비율 42.6%/49.3% — 거의 절반이 1년 "
+                    "내 -30%이상 하락)**. 재무 신호가 좋아도 희석이 잦으면 실제 성과는 정반대로 나쁨 — 점수에 "
+                    "섞지 않고 모든 발굴 섹션(B/D/E/F)에 별도 경고 컬럼으로 노출, 동일 등급 내에서는 희석위험 "
+                    "낮은 순으로 재정렬.",
+                    "🎯종합 턴어라운드 스코어(재도전이력+매출YoY성장+이익의질 3개 신호를 0~3점으로 합산): "
+                    "신호 개수와 흑자전환율이 깔끔한 단조증가 — 0점 0.52~0.59x(기준율보다 낮음)/1점 0.79~0.91x/"
+                    "2점 1.13~1.23x/**3점 전부 1.38x(학습)/1.63x(검증, 검증기간에 더 강화)**. 세 신호가 서로 겹치지 "
+                    "않고 독립적으로 누적됨을 실증 — 이 조합 랭킹이 개별 탭보다 실전 발굴에 더 유용함.",
+                    "★★★감가상각주도적자(회계상 적자이나 NI+분기감가상각>0 이고 영업현금흐름도 양호): "
+                    "lift 1.40x(학습)/1.67x(검증) — 세션 전체 최강, 검증기간에 크게 강화(재현성 확인). "
+                    "감가상각주도(NI+분기Dep>0)만으로도 1.31x/1.43x, 영업현금흐름>0만으로도 1.25x/1.38x. "
+                    "사용자 사례 에이엘티(172670)의 2025년 분기 손실은 실제로 이 패턴 — 분기 감가상각비"
+                    "(53~82억)가 순손실(38~45억)보다 커서 NI+감가상각이 매분기 플러스였고, 영업현금흐름도 "
+                    "전분기 플러스(20~123억). 매출원가 문제(원가율>100%)가 아니라 자본집약적 사업(설비투자→"
+                    "감가상각)이 회계상 적자를 만드는 사례임을 실증.",
+                    "★★재도전 턴어라운드(최근4분기 내 단일분기 흑자 이력 + 현재 다시 적자 + 매출YoY성장): "
+                    "lift 1.18x(학습)/1.31x(검증) — 검증기간에 더 강해짐(재현성 확인). "
+                    "매출성장 조건 없이 '재도전 이력'만으로도 1.13x/1.22x. 에이엘티(25Q4 흑자→26Q1 재적자, "
+                    "매출은 계속 성장)가 정확히 이 패턴이며 이 신호로도 포착됨 — TTM만 보면 놓치는 종목을 "
+                    "잡아내는 게 핵심 취지.",
+                    "★단일분기 흑자전환(TTM 적자 지속): lift 1.33x(학습)/1.70x(검증) — 검증기간에 오히려 강화, 매우 강한 신호",
+                    "🌙꿈(테마) 촉매(특허/기술이전/R&D계약/라이선스 공시, 트레일링365일): 확정흑자전환 기준 12개월 forward "
+                    "50%+급등 달성률이 학습 17.2%→검증 25.0%로 상승(무촉매 14.9%/14.3%, 방향 일치·재현됨) — 단, "
+                    "중앙값은 개선 없음(오히려 낮거나 비슷)해 '대부분은 그대로지만 터지면 크게 터지는' 전형적 "
+                    "꿈/테마주 분포. tech_transfer·license만 좁혀서 보면 학습/검증 부호가 뒤집혀 노이즈 — 반드시 "
+                    "4종(특허/기술이전/R&D계약/라이선스) 전체를 합쳐서 사용해야 방향이 안정적임.",
+                    "매출YoY>0(단독): 학습·검증 양쪽 방향 일치 (lift 1.07~1.08x, 약함)",
+                    "매출 3분기 연속 QoQ 증가(계절 무시 순수추세, 단독): lift 1.05~1.09x — 매출YoY와 비슷한 수준, "
+                    "계절적 저점분기(예: Q1)에서는 직전분기 대비 감소로 보여 놓치는 경우 있음 — 반드시 YoY 비교와 "
+                    "병행할 것.",
+                    "당분기 순이익 YoY 개선(적자축소, 당분기 단위·TTM 아님, 단독): lift 0.95~0.96x — 여전히 무효과/약한 음의 "
+                    "예측력. '적자를 얼마나 덜 냈는가'보다 '매출이 늘고 있는가/과거 흑자 경험이 있는가/실질현금흐름이 "
+                    "건전한가'가 실제로 유효한 신호였음.",
+                    "매출총이익률 개선: 부호 불안정(학습 0.7x/검증 1.2x) — 노이즈로 판정",
+                    "임원매수(직전180일): 일관된 음의 예측력(0.88x/0.95x) — 스마트머니 가설 기각",
+                    "적자폭 축소 중(TTM 기준): 일관된 음의 예측력(0.86x/0.89x) — 딥밸류가 완만개선보다 더 잘 전환",
+                    "수주잔고 YoY서지(+30%↑): 학습/검증 부호가 뒤집힘(학습 -13.7%/검증 +17.7%, n도 20~77로 협소) — 기각",
+                    "🆕수주모멘텀(계약기간 정규화, 2026-07-25 신규): 단순 계약금액/매출 비율은 6개월 계약과 5년 "
+                    "계약을 동일 취급해 오도 가능(예: 아이크래프트 052460은 단순합산 128.74%지만 5.5년 장기계약 "
+                    "2건이 대부분 희석, 실제 2027-03-31 만기 단기계약 3건만 합치면 분기당 +31%로 훨씬 집중된 "
+                    "신호) — quarterly_impact_pct = ratio/계약기간(분기수)로 근시일 임팩트를 정밀화. ⚠️국내(is_overseas="
+                    "0) 계약은 홀드아웃 검증 결과 해외계약보다 신호품질이 뚜렷이 낮음(scratch/claude_domestic_"
+                    "contract_signal_20260725.py: 국내전용 검증 25.4%/MDD-42.7% vs 해외전용 154.3%/MDD-27.9%) — "
+                    "발굴 도구이므로 배제하지 않되 is_overseas/all_domestic 플래그로 구분 표시, 매매전략에는 미반영. "
+                    "Codex 신규 contract_advance_signals(계약부채/선수금)와 signal_score>=4로 교차확인되면 "
+                    "cross_confirmed=true — 공시(예고)+계약부채(실제 고객 현금수취 확인) 이중검증이라 신뢰도 높음. "
+                    "단 계약부채 수집이 아직 시가총액 상위 63종목 한정이라 커버리지 낮음(전종목 확장 시 개선 예정).",
+                ],
+                "caveat": "⚠️ 재무 신호(재도전/매출성장/이익의질)가 전부 좋아도 최근 1년 내 CB/BW/유상증자 등 "
+                          "희석 공시가 여러 건이면 실제 주가 성과는 반대로 나쁠 수 있습니다(위 희석위험 항목 참고) "
+                          "— 이 발굴 탭들은 재무제표만 보는 스크리닝이라 희석·주가 추세는 별도로 꼭 확인하세요. "
+                          "단일분기 흑자전환도 바로 다음분기 흑자 유지율은 47.6~54.6%뿐(거의 동전던지기) — "
+                          "개별 케이스로는 되돌아갈 위험이 큽니다. 재도전 턴어라운드·감가상각주도적자도 '다음엔 "
+                          "반드시 흑자'라는 보장이 아니라 확률이 유의하게 높아지는 것뿐입니다. 감가상각주도 판정은 "
+                          "cash_flow_data 분기 감가상각비 데이터가 있는 종목(전체 이력 기준 약 34%)에만 적용 가능 — "
+                          "데이터 없는 종목은 이 탭에 나타나지 않을 뿐 '해당 없음'을 의미하지 않습니다. ⚠️ 특히 최신 "
+                          "분기(2026 Q1)는 DART 현금흐름표 수집이 아직 진행 중이라(전종목 중 영업현금흐름 확보 "
+                          "153종목·감가상각 0종목, 2026-07-19 기준) 이 탭 결과 수가 일시적으로 매우 적습니다 — "
+                          "수집기가 따라잡으면 자동으로 늘어날 정상적인 데이터 지연이며 로직 결함이 아닙니다. "
+                          "꿈(테마) 촉매도 "
+                          "'이 종목이 오른다'는 보장이 아니라 '오를 때 크게 오를 확률이 상대적으로 높다'는 fat-tail "
+                          "신호일 뿐 — 표본이 작아(검증기간 확정흑자전환 촉매有 n=44) 과신 금지. '매출YoY성장'(B)은 "
+                          "기존 확정 보너스에 결합 백테스트 시 오히려 악화(+79.9%→+71.5%)됨이 실증되어 매매 필터가 "
+                          "아닌 참고 관찰용입니다.",
+                "next_steps": "단일분기 흑자전환(C)·재도전턴어라운드(D)·감가상각주도적자(E)·종합스코어(F)·꿈촉매"
+                              "(dream_catalyst)를 실제 매매전략(V-RECOVERY turnaround_bonus)에 결합 백테스트 예정. "
+                              "세그먼트별 매출 회복(segment_revenue), 컨센서스 추정치 상향(analyst_pdf_extracts) 등 "
+                              "미검증 후보도 남아 있음.",
+            },
+        }
+    finally:
+        conn.close()
+
+
+_turnaround_watch_lock = threading.Lock()
+
+
+def _load_turnaround_watch_cache() -> dict | None:
+    try:
+        if not TURNAROUND_WATCH_CACHE_PATH.exists():
+            return None
+        return json.loads(TURNAROUND_WATCH_CACHE_PATH.read_text())
+    except Exception:
+        return None
+
+
+def _save_turnaround_watch_cache(min_mktcap: float, data: dict) -> None:
+    try:
+        TURNAROUND_WATCH_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = TURNAROUND_WATCH_CACHE_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(
+            {"computed_at": datetime.now().isoformat(), "min_mktcap": min_mktcap, "data": data},
+            ensure_ascii=False,
+        ))
+        tmp.replace(TURNAROUND_WATCH_CACHE_PATH)
+    except Exception as e:
+        logger.warning(f"[turnaround-watch] cache write failed: {e}")
+
+
+def refresh_turnaround_watch_cache(min_mktcap: float = 300.0) -> dict:
+    """무거운 연산 실제 실행 지점 — 새벽 스케줄러(04:40) 전용, 수동 강제갱신(precompute)에서도 사용."""
+    with _turnaround_watch_lock:
+        data = _compute_turnaround_watch(min_mktcap)
+        _save_turnaround_watch_cache(min_mktcap, data)
+        return data
+
+
+@router.get("/turnaround-watch/detail/{stock_code}")
+def get_turnaround_watch_detail(stock_code: str):
+    """개별종목 "왜 흑자전환 가능한가" 상세 — 2026-07-27 신규(사용자: "페이지에 상세 표시해야지").
+    엑셀로 만들어 드린 것과 동일한 관점(분기재무추이/이익의질/희석이력/특허공시)을 페이지 내에서
+    바로 펼쳐볼 수 있게 함(scratch/build_hidden_gem_excel_20260727.py와 동일 로직 재사용)."""
+    conn = connect_primary_db(timeout=15, row_factory=sqlite3.Row)
+    try:
+        overrides = {r["stock_code"]: r["config_value"] for r in conn.execute(
+            "SELECT stock_code, config_value FROM stock_collection_config "
+            "WHERE config_key='preferred_report_type'")}
+        pref = overrides.get(stock_code, "CFS")
+
+        fin_rows = conn.execute("""
+            SELECT year, quarter, report_type, revenue, operating_profit, net_income
+            FROM financial_data WHERE is_annual=0 AND quarter BETWEEN 1 AND 4 AND stock_code=?
+            ORDER BY year, quarter
+        """, (stock_code,)).fetchall()
+        by_q: dict[tuple, dict] = {}
+        for r in fin_rows:
+            by_q.setdefault((r["year"], r["quarter"]), {})[r["report_type"]] = r
+        quarters = sorted(by_q.keys())[-8:]
+        quarterly = []
+        for (y, q) in quarters:
+            variants = by_q[(y, q)]
+            r_ni = variants.get(pref) or next(iter(variants.values()))
+            r_rev = variants.get("CFS") or r_ni
+            prev = by_q.get((y - 1, q))
+            rev_1y = None
+            if prev:
+                r_rev_prev = prev.get("CFS") or next(iter(prev.values()))
+                rev_1y = r_rev_prev["revenue"]
+            rev_yoy = round((r_rev["revenue"] / rev_1y - 1) * 100, 1) if (rev_1y and rev_1y > 0 and r_rev["revenue"]) else None
+            quarterly.append({
+                "year": y, "quarter": q,
+                "revenue_억": round((r_rev["revenue"] or 0) / 1e8, 1),
+                "revenue_yoy_pct": rev_yoy,
+                "operating_profit_억": round((r_ni["operating_profit"] or 0) / 1e8, 1) if r_ni["operating_profit"] is not None else None,
+                "net_income_억": round((r_ni["net_income"] or 0) / 1e8, 1) if r_ni["net_income"] is not None else None,
+            })
+
+        cf_rows = conn.execute("""
+            SELECT year, quarter, report_type, depreciation_q, operating_cf_q, financing_cf_q, capex_q
+            FROM cash_flow_data WHERE quarter BETWEEN 1 AND 4 AND stock_code=?
+            ORDER BY year, quarter
+        """, (stock_code,)).fetchall()
+        cf_by_q: dict[tuple, dict] = {}
+        for r in cf_rows:
+            cf_by_q.setdefault((r["year"], r["quarter"]), {})[r["report_type"]] = r
+        quality_of_loss = []
+        for (y, q) in quarters:
+            cf = cf_by_q.get((y, q))
+            if not cf:
+                continue
+            r_cf = cf.get(pref) or next(iter(cf.values()))
+            ni_row = by_q.get((y, q), {})
+            r_ni = ni_row.get(pref) or (next(iter(ni_row.values())) if ni_row else None)
+            ni = r_ni["net_income"] if r_ni else None
+            dep = r_cf["depreciation_q"]
+            ocf = r_cf["operating_cf_q"]
+            if dep is None and ocf is None:
+                continue
+            ni_dep = (ni + dep) if (ni is not None and dep is not None) else None
+            dep_driven = bool(ni_dep is not None and ni_dep > 0)
+            cash_positive = bool(ocf is not None and ocf > 0)
+            quality_of_loss.append({
+                "year": y, "quarter": q,
+                "net_income_억": round((ni or 0) / 1e8, 1) if ni is not None else None,
+                "depreciation_억": round((dep or 0) / 1e8, 1) if dep is not None else None,
+                "ni_plus_depreciation_억": round(ni_dep / 1e8, 1) if ni_dep is not None else None,
+                "operating_cf_억": round((ocf or 0) / 1e8, 1) if ocf is not None else None,
+                "dep_driven": dep_driven, "cash_positive": cash_positive,
+                "verdict": "회계상적자·실질건전" if (dep_driven and cash_positive and (ni or 0) < 0)
+                           else ("이익의질 양호" if (dep_driven or cash_positive) else "-"),
+            })
+
+        # 부채의 질(성장투자형/생존형) — 2026-07-28 신규, walk-forward 검증됨(quality_of_loss와
+        # 동일 원리로 분기별 근거를 그대로 노출): financing_cf_q>0(자금조달)인 분기에서 capex_q
+        # (성장투자, 절대값)가 영업현금소진액(-operating_cf_q)보다 크면 성장투자형, 작으면 생존형.
+        debt_financing = []
+        for (y, q) in quarters:
+            cf = cf_by_q.get((y, q))
+            if not cf:
+                continue
+            r_cf = cf.get(pref) or next(iter(cf.values()))
+            fin_cf, capex, ocf = r_cf["financing_cf_q"], r_cf["capex_q"], r_cf["operating_cf_q"]
+            if fin_cf is None or fin_cf <= 0:
+                continue
+            ocf_burn = max(0.0, -(ocf or 0))
+            capex_abs = abs(capex) if capex is not None else None
+            verdict = "-"
+            if capex_abs is not None:
+                verdict = "성장투자형(좋은부채)" if capex_abs >= ocf_burn else "생존형(주의)"
+            debt_financing.append({
+                "year": y, "quarter": q,
+                "financing_cf_억": round(fin_cf / 1e8, 1),
+                "capex_억": round(capex_abs / 1e8, 1) if capex_abs is not None else None,
+                "operating_cf_burn_억": round(ocf_burn / 1e8, 1),
+                "verdict": verdict,
+            })
+
+        cutoff3y = (datetime.now() - timedelta(days=1095)).strftime("%Y-%m-%d")
+        dilution_rows = conn.execute("""
+            SELECT event_type, issue_amount, dilution_pct, conversion_price, disclosed_at, report_nm, put_option_date
+            FROM dilution_events
+            WHERE stock_code=? AND event_type IN ('CB','BW','EB','RIGHTS','RIGHTS_BONUS') AND disclosed_at >= ?
+            ORDER BY disclosed_at DESC
+        """, (stock_code, cutoff3y)).fetchall()
+        dilution_history = [{
+            "type": r["event_type"], "issue_amount_억": round(r["issue_amount"] / 1e8, 1) if r["issue_amount"] else None,
+            "dilution_pct": r["dilution_pct"], "conversion_price": r["conversion_price"],
+            "date": r["disclosed_at"], "report": r["report_nm"], "put_option_date": r["put_option_date"],
+        } for r in dilution_rows]
+
+        patent_rows = conn.execute("""
+            SELECT rcept_dt, report_nm, signal_type, amount_krw FROM dart_rd_patent_signals
+            WHERE stock_code=? AND rcept_dt >= ? ORDER BY rcept_dt DESC
+        """, (stock_code, cutoff3y.replace("-", ""))).fetchall()
+        patent_history = [{
+            "date": r["rcept_dt"], "report": r["report_nm"], "type": r["signal_type"],
+            "amount_백만": round(r["amount_krw"] / 1e6) if r["amount_krw"] else None,
+        } for r in patent_rows]
+
+        name_row = conn.execute("SELECT stock_name, sector_large, sector_small, market FROM stock_universe WHERE stock_code=?", (stock_code,)).fetchone()
+
+        return {
+            "stock_code": stock_code,
+            "stock_name": name_row["stock_name"] if name_row else stock_code,
+            "sector_large": name_row["sector_large"] if name_row else None,
+            "sector_small": name_row["sector_small"] if name_row else None,
+            "market": name_row["market"] if name_row else None,
+            "quarterly": quarterly,
+            "quality_of_loss": quality_of_loss,
+            "debt_financing": debt_financing,
+            "dilution_history": dilution_history,
+            "patent_history": patent_history,
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/turnaround-watch")
+def get_turnaround_watch(min_mktcap: float = Query(default=300.0)):
+    """턴어라운드 추적 화면용 — 새벽 사전계산 캐시를 그대로 반환(요청마다 재계산하지 않음).
+    캐시가 아예 없는 경우(최초 기동 등)에 한해 이번 요청에서 동기 계산 후 캐싱한다."""
+    cached = _load_turnaround_watch_cache()
+    if cached and abs(float(cached.get("min_mktcap", 300.0)) - min_mktcap) < 1e-6:
+        return cached["data"]
+    return refresh_turnaround_watch_cache(min_mktcap)
+
+
+@router.post("/turnaround-watch/precompute")
+def trigger_turnaround_watch_precompute(min_mktcap: float = Query(default=300.0)):
+    """수동 강제 재계산 (평소엔 새벽 04:40 스케줄러가 자동 수행)."""
+    data = refresh_turnaround_watch_cache(min_mktcap)
+    return {
+        "ok": True,
+        "computed_at": datetime.now().isoformat(),
+        "sections": {k: (len(v) if isinstance(v, list) else None) for k, v in data.items()},
+    }

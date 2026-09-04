@@ -69,14 +69,16 @@ def send(msg: str, key: str = "") -> bool:
             return False
 
     try:
-        r = requests.post(
-            _API_URL,
-            json={"chat_id": cid, "text": msg, "parse_mode": "HTML"},
-            timeout=10,
-        )
-        if not r.ok:
-            logger.warning(f"[Notifier] 전송 실패 {r.status_code}: {r.text[:80]}")
-            return False
+        chunks = [msg[i:i + 4000] for i in range(0, len(msg), 4000)] or [""]
+        for chunk in chunks:
+            r = requests.post(
+                _API_URL,
+                json={"chat_id": cid, "text": chunk, "parse_mode": "HTML", "disable_web_page_preview": True},
+                timeout=10,
+            )
+            if not r.ok:
+                logger.warning(f"[Notifier] 전송 실패 {r.status_code}: {r.text[:80]}")
+                return False
     except Exception as e:
         logger.error(f"[Notifier] 오류: {e}")
         return False

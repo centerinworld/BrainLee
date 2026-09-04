@@ -42,6 +42,8 @@ export default function StockAnalysisRsView() {
   const [high52Loading, setHigh52Loading] = useState(false);
   const [high52Error, setHigh52Error] = useState('');
   const high52Loaded = useRef(false);
+  const [themeComposition, setThemeComposition] = useState(null);
+  const [themeCompositionError, setThemeCompositionError] = useState('');
 
   // 필터 상태
   const [period, setPeriod] = useState('12M');
@@ -118,6 +120,18 @@ export default function StockAnalysisRsView() {
     return () => clearInterval(t);
   }, [activeTab, fetchRsRows]);
 
+  useEffect(() => {
+    if (activeTab !== 'composition') return;
+    setThemeCompositionError('');
+    fetch(API('/api/stock-analysis-rs/theme-composition/tags'))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((json) => {
+        if (json?.success) setThemeComposition(json.data || {});
+        else setThemeCompositionError(json?.reason || '테마 구성 변화 로드 실패');
+      })
+      .catch((e) => setThemeCompositionError(String(e?.message || e)));
+  }, [activeTab]);
+
   // 필터 변경 시 1페이지로 리셋
   useEffect(() => { setPage(1); }, [debouncedQuery, sectorFilter, sectorMode, capMin, period]);
 
@@ -175,7 +189,10 @@ export default function StockAnalysisRsView() {
   useEffect(() => { setHigh52Page(1); }, [debouncedQuery, sectorFilter, sectorMode, capMin, highOnly, highSort]);
 
   // ── 섹터 점수 계산 (클라이언트 측, 요약 데이터 기반) ──────────
-  const sectorSource = sectorMode === 'major' ? (summary.sector_rs || []) : (summary.sector_rs_mid || []);
+  const periodKey = String(period || '12M').toLowerCase();
+  const sectorSource = sectorMode === 'major'
+    ? (summary.sector_rs_map?.[periodKey] || summary.sector_rs || [])
+    : (summary.sector_rs_mid_map?.[periodKey] || summary.sector_rs_mid || []);
   const maxAvgRs = Math.max(...sectorSource.map((s) => s.avg_rs || 0), 1);
   const minAvgRs = Math.min(...sectorSource.map((s) => s.avg_rs || 0), -1);
   const sectorScores = sectorSource.map((s) => ({
@@ -197,6 +214,7 @@ export default function StockAnalysisRsView() {
       <div style={{ display: 'flex', gap: 26, borderBottom: '1px solid #2a2f3a', paddingBottom: 10, marginBottom: 18, fontWeight: 700, fontSize: 27 }}>
         <button onClick={() => setActiveTab('rs')} style={{ border: 'none', background: 'transparent', borderBottom: activeTab === 'rs' ? '3px solid #d1d5db' : 'none', paddingBottom: 8, color: activeTab === 'rs' ? '#f9fafb' : '#7f8793', fontWeight: 700, fontSize: 27, cursor: 'pointer' }}>종합 RS</button>
         <button onClick={() => setActiveTab('high52')} style={{ border: 'none', background: 'transparent', borderBottom: activeTab === 'high52' ? '3px solid #d1d5db' : 'none', paddingBottom: 8, color: activeTab === 'high52' ? '#f9fafb' : '#7f8793', fontWeight: 700, fontSize: 27, cursor: 'pointer' }}>52주 신고가</button>
+        <button onClick={() => setActiveTab('composition')} style={{ border: 'none', background: 'transparent', borderBottom: activeTab === 'composition' ? '3px solid #d1d5db' : 'none', paddingBottom: 8, color: activeTab === 'composition' ? '#f9fafb' : '#7f8793', fontWeight: 700, fontSize: 27, cursor: 'pointer' }}>테마 구성 변화</button>
       </div>
 
       {summaryLoading && <div style={{ color: '#93c5fd', marginBottom: 10 }}>요약 데이터 로딩 중...</div>}
@@ -412,6 +430,29 @@ export default function StockAnalysisRsView() {
             <span style={{ color: '#cbd5e1', fontSize: 13 }}>{high52Page} / {high52TotalPages}</span>
             <button onClick={() => setHigh52Page((p) => Math.min(high52TotalPages, p + 1))} disabled={high52Page >= high52TotalPages || high52Loading} style={{ border: '1px solid #374151', background: '#0d1320', color: '#e5e7eb', borderRadius: 6, padding: '5px 10px', cursor: 'pointer' }}>다음</button>
           </div>
+        </section>
+      )}
+
+      {activeTab === 'composition' && (
+        <section style={{ background: '#111827', border: '1px solid #2b3240', borderRadius: 10, overflow: 'hidden', marginTop: 14 }}>
+          <div style={{ padding: 14, borderBottom: '1px solid #1f2937' }}>
+            <div style={{ fontWeight: 800, color: '#e5e7eb' }}>테마·업종 구성종목 변동</div>
+            <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 5 }}>{themeComposition?.notice || '기준일별 종목분류 스냅샷을 비교하는 중입니다.'}</div>
+            {themeComposition?.current_date && <div style={{ color: '#67e8f9', fontSize: 12, marginTop: 7 }}>비교: {themeComposition.previous_date} → {themeComposition.current_date}</div>}
+          </div>
+          {!!themeCompositionError && <div style={{ padding: 12, color: '#f87171' }}>오류: {themeCompositionError}</div>}
+          {!themeComposition ? <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8' }}>로딩 중...</div> : <>
+            <div style={{ padding: 14, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+                <thead><tr style={{ color: '#94a3b8', fontSize: 13, background: '#0f172a' }}><th style={{ textAlign: 'left', padding: '9px 12px' }}>테마/업종</th><th style={{ textAlign: 'right', padding: '9px 12px' }}>현재</th><th style={{ textAlign: 'right', padding: '9px 12px' }}>직전</th><th style={{ textAlign: 'right', padding: '9px 12px' }}>증감</th></tr></thead>
+                <tbody>{(themeComposition.themes || []).slice(0, 60).map((row) => <tr key={row.theme} style={{ borderTop: '1px solid #1f2937' }}><td style={{ padding: '8px 12px' }}>{row.theme}</td><td style={{ padding: '8px 12px', textAlign: 'right' }}>{fmtInt(row.count)}</td><td style={{ padding: '8px 12px', textAlign: 'right', color: '#94a3b8' }}>{fmtInt(row.previous_count)}</td><td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 800, color: row.change > 0 ? '#22c55e' : row.change < 0 ? '#f87171' : '#94a3b8' }}>{row.change > 0 ? '+' : ''}{fmtInt(row.change)}</td></tr>)}</tbody>
+              </table>
+            </div>
+            <div style={{ borderTop: '1px solid #1f2937', padding: 14 }}>
+              <div style={{ fontWeight: 750, marginBottom: 8 }}>종목 분류 변경</div>
+              {!themeComposition.moves?.length ? <div style={{ color: '#94a3b8', fontSize: 13 }}>두 기준일 사이 분류 변경 종목이 없습니다.</div> : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 8 }}>{themeComposition.moves.map((row) => <div key={row.stock_code} style={{ border: '1px solid #263043', borderRadius: 7, padding: '8px 10px', fontSize: 13 }}><b>{row.stock_name}</b> <span style={{ color: '#64748b' }}>{row.stock_code}</span><div style={{ color: '#94a3b8', marginTop: 4 }}>{row.previous_theme} <span style={{ color: '#67e8f9' }}>→</span> {row.current_theme}</div></div>)}</div>}
+            </div>
+          </>}
         </section>
       )}
     </div>

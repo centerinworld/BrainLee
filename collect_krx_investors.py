@@ -6,7 +6,7 @@ import config
 from datetime import date, datetime, timedelta
 
 # 설정
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 API_KEY = config.KRX_API_KEY
 BASE_URL = "https://openapi.krx.co.kr/svc/apis"
 HEADERS = {"AUTH_KEY": API_KEY}

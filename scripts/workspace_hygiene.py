@@ -1,4 +1,4 @@
-#!/Applications/stock_dashboard/venv/bin/python
+#!/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python
 """
 workspace_hygiene.py
 
@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 import sys
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 sys.path.insert(0, str(ROOT))
 from report_store import REPORTS_DB_PATH
 

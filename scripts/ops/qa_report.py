@@ -12,7 +12,7 @@ qa_report.py — 배치 완료 시 자동 QA 로그 생성
 import argparse, json, os, sys, sqlite3
 from datetime import datetime
 
-ROOT = "/Applications/stock_dashboard"
+ROOT = "/Volumes/Realtek_NVME/stock_dashboard/runtime"
 DB   = f"{ROOT}/stock.db"
 
 

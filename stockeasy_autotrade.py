@@ -6,33 +6,45 @@ import sqlite3
 import time
 from datetime import datetime, timedelta
 
-from db_utils import STOCK_DB_PATH
+from db_utils import connect_stock_db
 from notifier import send as send_telegram
 from kis_client import kis_client
+from live_trading_data import evaluate_live_data_contract, record_execution_snapshot
 from stockeasy_analyzer import fetch_strategy_api
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = str(STOCK_DB_PATH)
 LIVE_START_DATE = os.getenv("STOCKEASY_LIVE_START_DATE", "2026-05-18")
 PER_STOCK_BUDGET = int(os.getenv("STOCKEASY_PER_STOCK_BUDGET_KRW", "2000000"))
+# peak_monitor.py의 calc_quantity()와 동일한 가상매매 예산(1,000만원/종목).
+# peak/momentum/value 3개 전략이 peak_holding 테이블을 공유하므로 수량 산정 기준을
+# 통일해야 한다(2026-09-01 발견: 이 상수 없이 quantity=0으로 하드코딩되어 있던
+# 버그로 인해 활성 보유종목의 수익금이 항상 0원으로 표시되던 문제 수정).
+TREND_HOLDING_TICKET_KRW = 10_000_000
 ENABLE_LIVE = (os.getenv("STOCKEASY_LIVE_AUTOTRADE", "false").lower() == "true")
+LIVE_APPROVED_STRATEGIES = {
+    value.strip()
+    for value in os.getenv("STOCKEASY_LIVE_APPROVED_STRATEGIES", "").split(",")
+    if value.strip()
+}
 
 # ── Live order guard rails (fail-close) ─────────────────────────
 LIVE_MAX_KIWOOM_KIS_GAP_PCT = float(os.getenv("LIVE_MAX_KIWOOM_KIS_GAP_PCT", "1.5"))
 LIVE_KIWOOM_STALE_SEC = int(os.getenv("LIVE_KIWOOM_STALE_SEC", "180"))
 LIVE_CONSEC_FAIL_LIMIT = int(os.getenv("LIVE_CONSEC_FAIL_LIMIT", "3"))
 LIVE_FAIL_PAUSE_MIN = int(os.getenv("LIVE_FAIL_PAUSE_MIN", "30"))
+LIVE_BUY_CASH_BUFFER_PCT = float(os.getenv("STOCKEASY_LIVE_BUY_CASH_BUFFER_PCT", "1.02"))
 
 STRATEGIES = {
-    "momentum": {"label": "모멘텀 Easy", "portfolio_id": 1, "live": True},
+    # se_momentum is retired by strategy governance (worst period -43.32%).
+    "momentum": {"label": "모멘텀 Easy", "portfolio_id": 1, "live": False},
     "peak": {"label": "Peak Easy", "portfolio_id": 2, "live": False},
     "value": {"label": "벨류 Easy", "portfolio_id": 3, "live": False},
 }
 
 
 def _conn():
-    c = sqlite3.connect(DB_PATH, timeout=30)
+    c = connect_stock_db(timeout=30)
     c.row_factory = sqlite3.Row
     return c
 
@@ -55,6 +67,14 @@ def _ensure_tables(c: sqlite3.Connection) -> None:
             k TEXT PRIMARY KEY,
             v TEXT,
             updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS stockeasy_autotrade_manual_hold (
+            strategy TEXT NOT NULL,
+            stock_code TEXT NOT NULL,
+            reason TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (strategy, stock_code)
         );
         """
     )
@@ -90,6 +110,18 @@ def _is_nxt_time() -> bool:
     return (800 <= hm < 900) or (1530 <= hm < 2000)
 
 
+def _first_present(d: dict, *keys, default=0):
+    """`a or b or default` 패턴은 a=0(정상값)일 때도 falsy로 취급해 b로 조용히
+    대체해버리는 버그가 있음(2026-07-21 발견 — hold_days=0/priority_score=0처럼
+    "값이 있는데 0"인 경우와 "키 자체가 없음"을 구분 못함). 이 헬퍼는 None인 필드만
+    건너뛰고, 0/False처럼 정상적으로 존재하는 falsy 값은 그대로 사용한다."""
+    for k in keys:
+        v = d.get(k)
+        if v is not None:
+            return v
+    return default
+
+
 def _is_fresh_entry(entry_date: str, hold_days: int) -> bool:
     """
     '실제 신규 편입' 판정:
@@ -112,7 +144,11 @@ def _is_fresh_entry(entry_date: str, hold_days: int) -> bool:
 def _reconfirm_buy_signal(strategy: str, stock_code: str) -> tuple[bool, str]:
     """실주문 직전 2차 검증: 최신 전략 데이터에서 해당 종목이 여전히 신규 편입 신호인지 확인."""
     try:
-        latest = fetch_strategy_api(strategy) or {}
+        # 2026-07-21: fetch 실패(None)와 "성공+데이터 없음"을 구분 — 실패 시엔 이유를
+        # 명확히 남기고(매수 보류는 동일하게 안전하지만 원인 진단이 가능해야 함)
+        latest = fetch_strategy_api(strategy)
+        if latest is None:
+            return False, "reconfirm_fetch_failed"
         holdings = latest.get("holdings") or []
         target = None
         for h in holdings:
@@ -123,7 +159,7 @@ def _reconfirm_buy_signal(strategy: str, stock_code: str) -> tuple[bool, str]:
         if not target:
             return False, "reconfirm_not_in_latest_holdings"
 
-        hold_days = int(target.get("hold_days") or target.get("holding_days") or 0)
+        hold_days = int(_first_present(target, "hold_days", "holding_days", default=0))
         entry_date = str(target.get("entry_date") or _today_str())
         if not _is_fresh_entry(entry_date, hold_days):
             return False, f"reconfirm_not_fresh(hold_days={hold_days},entry_date={entry_date})"
@@ -143,6 +179,8 @@ def _upsert_trend_holding(strategy: str, stock_code: str, stock_name: str, price
         c.commit()
         c.close()
         return
+    qty = int(TREND_HOLDING_TICKET_KRW // price) if price and price > 0 else 0
+    amount = round(price * qty)
     c.execute(
         """
         INSERT INTO peak_holding(
@@ -150,11 +188,11 @@ def _upsert_trend_holding(strategy: str, stock_code: str, stock_name: str, price
             entry_date, hold_days, profit_pct, is_active, strategy, detected_at, updated_at
         ) VALUES (?,?,?,?,?,?,?,0,0.0,1,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
         """,
-        (stock_code, stock_name, "", price, price, 0, entry_date, strategy),
+        (stock_code, stock_name, "", price, price, qty, entry_date, strategy),
     )
     c.execute(
         "INSERT INTO peak_trade(stock_name, tx_type, price, quantity, total_amount, profit, profit_pct, tx_at, strategy) VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP,?)",
-        (stock_name, "buy", price, 0, 0, 0, 0.0, strategy),
+        (stock_name, "buy", price, qty, amount, 0, 0.0, strategy),
     )
     c.commit()
     c.close()
@@ -185,24 +223,35 @@ def _deactivate_trend_holding(strategy: str, stock_name: str, sell_price: float)
     c.close()
 
 
-def _place_live_order(stock_code: str, side: str, qty: int) -> tuple[bool, str]:
-    guard_ok, guard_reason = _preflight_order_guard(stock_code=stock_code, side=side, qty=qty)
-    if not guard_ok:
-        return False, guard_reason
+def _place_live_order(stock_code: str, side: str, qty: int, strategy_key: str) -> tuple[bool, str]:
+    """Fail closed until a reconciled broker lifecycle is implemented.
 
-    if qty <= 0:
-        return False, "qty<=0"
+    StockEasy remains an analysis/signal source.  It must never bypass the
+    shared order lifecycle with a direct broker request, even if an environment
+    variable or strategy flag is changed accidentally.  Paper execution is
+    handled by the Strategy Center path; a future live adapter must create an
+    idempotent order, reconcile broker acknowledgements/fills, and then replace
+    this explicit block.
+    """
+    _record_guard_result(False)
+    return False, "live_execution_disabled: unified broker lifecycle is not implemented"
+
+
+def _is_manual_hold(strategy: str, code: str) -> bool:
+    """수동 보류(자동매도 제외) 종목인지 확인 — 2026-07-21 도입.
+    사용자가 특정 종목을 자동매도 로직에서 명시적으로 제외하고 싶을 때 사용
+    (예: 버그로 인해 실제 청산 타이밍이 애매해진 기존 보유분을 직접 판단하고 싶은 경우).
+    독립 커넥션 사용 — 호출 시점(매수/매도 실행 루프)엔 메인 sync 커넥션이 이미 닫혀있음."""
+    c = _conn()
     try:
-        res = kis_client.place_order_cash(stock_code=stock_code, side=side, qty=qty, order_type="market")
-        if res and res.get("ok"):
-            _record_guard_result(True)
-            return True, f"order_no={res.get('order_no','-')}"
-        reason = (res or {}).get("error", "unknown_error")
-        _record_guard_result(False)
-        return False, reason
-    except Exception as e:
-        _record_guard_result(False)
-        return False, str(e)
+        _ensure_tables(c)
+        r = c.execute(
+            "SELECT 1 FROM stockeasy_autotrade_manual_hold WHERE strategy=? AND stock_code=?",
+            (strategy, code),
+        ).fetchone()
+        return r is not None
+    finally:
+        c.close()
 
 
 def _guard_get(c: sqlite3.Connection, key: str, default: str = "") -> str:
@@ -312,6 +361,16 @@ def _preflight_order_guard(stock_code: str, side: str, qty: int) -> tuple[bool, 
         if gap > LIVE_MAX_KIWOOM_KIS_GAP_PCT:
             return False, f"guard_price_gap({gap:.2f}%)"
 
+    if side == "buy":
+        snapshot = kis_client.get_account_snapshot() or {"summary": {}}
+        summary = snapshot.get("summary") or {}
+        strict_cash = float(summary.get("strict_cash_available") or 0.0)
+        required = float(qty) * kis_px * LIVE_BUY_CASH_BUFFER_PCT
+        if strict_cash <= 0:
+            return False, "guard_strict_cash_missing"
+        if strict_cash < required:
+            return False, f"guard_cash_short(strict={strict_cash:,.0f}<required={required:,.0f})"
+
     return True, "ok"
 
 
@@ -321,19 +380,29 @@ def _sync_one_strategy(strategy: str) -> dict:
     label = meta["label"]
     live_for_strategy = bool(meta["live"])
 
-    site = fetch_strategy_api(strategy) or {}
+    # 2026-07-21 버그 수정: `fetch_strategy_api() or {}`가 "API 호출 실패"(None)와
+    # "API 성공+실제 보유0건(전량 매도)"을 동일하게 취급해, 전략이 실제로 전량 청산됐을 때도
+    # early-return으로 removed(매도) 계산을 건너뛰어 DB/실주문 모두 갱신되지 않던 문제.
+    # momentum은 live=True(실주문) 전략이라 이 버그로 실계좌 매도가 누락될 수 있었음.
+    site = fetch_strategy_api(strategy)
+    if site is None:
+        logger.warning("[StockEasyAutoTrade] %s API 조회 실패(None)", strategy)
+        return {"strategy": strategy, "ok": False, "reason": "fetch_failed"}
     holdings = site.get("holdings") or []
     if not holdings:
-        logger.warning("[StockEasyAutoTrade] %s 보유종목 조회 실패/0건", strategy)
-        return {"strategy": strategy, "ok": False, "reason": "no_holdings"}
+        logger.info("[StockEasyAutoTrade] %s 보유종목 0건(전량 청산 상태) — 정상 처리 계속", strategy)
 
     current = {}
     for h in holdings:
         code = str(h.get("stock_code") or "").zfill(6)
         if not code or code == "000000":
             continue
+        # 2026-07-21: trend_score/score/sector_score가 0(정상적으로 낮은 점수)이어도
+        # `or` 체인이 falsy로 취급해 조용히 다른 지표로 대체해버리던 버그 수정.
+        # 우선순위(trend_score > score > sector_score)는 그대로 유지하되, "값이 있는데
+        # 0"과 "키가 아예 없음"을 구분한다.
         try:
-            priority_score = float(h.get("trend_score") or h.get("score") or h.get("sector_score") or 0)
+            priority_score = float(_first_present(h, "trend_score", "score", "sector_score", default=0))
         except Exception:
             priority_score = 0.0
         current[code] = {
@@ -342,7 +411,7 @@ def _sync_one_strategy(strategy: str) -> dict:
             "price": float(h.get("current_price") or h.get("buy_price") or 0),
             "ref_buy_price": float(h.get("buy_price") or 0),
             "entry_date": h.get("entry_date") or _today_str(),
-            "hold_days": int(h.get("hold_days") or h.get("holding_days") or 0),
+            "hold_days": int(_first_present(h, "hold_days", "holding_days", default=0)),
             "priority_score": priority_score,
         }
 
@@ -356,6 +425,25 @@ def _sync_one_strategy(strategy: str) -> dict:
     prev_active = {r["stock_code"]: r for r in db_rows if int(r["is_active"] or 0) == 1}
     current_codes = set(current.keys())
     prev_codes = set(prev_active.keys())
+
+    # 2026-08-22: fetch_strategy_api()가 스탁이지 사이트 네트워크 지연/타임아웃 등으로
+    # 일부 섹터만 불완전하게 반환할 때, current_codes가 급감해 정상 보유종목 다수가
+    # "편출"로 오판되고 텔레그램 알림이 대량 발송되는 문제 실측 확인(8/19 momentum
+    # 20종목 동시 편출 오탐 → 8/20 그중 2종목 재편입 확인, 전형적 데이터 플랩).
+    # prev가 10개 이상인데 current가 그 절반 미만이면 이번 사이클은 API 이상 응답으로
+    # 판단해 DB 갱신/알림 없이 건너뛴다(다음 정상 사이클에서 다시 비교).
+    if not first_sync and len(prev_codes) >= 10 and len(current_codes) < len(prev_codes) * 0.5:
+        c.close()
+        logger.warning(
+            "[StockEasyAutoTrade] %s API 응답 급감 의심(prev=%d current=%d) — 이번 동기화 스킵",
+            strategy, len(prev_codes), len(current_codes)
+        )
+        return {
+            "strategy": strategy, "ok": False, "reason": "suspected_partial_response",
+            "prev_count": len(prev_codes), "current_count": len(current_codes),
+            "added": [], "removed": [], "buy_done": [], "sell_done": [], "buy_fail": [], "sell_fail": [],
+        }
+
     added = sorted(list(current_codes - prev_codes))
     removed = sorted(list(prev_codes - current_codes))
 
@@ -397,13 +485,15 @@ def _sync_one_strategy(strategy: str) -> dict:
         }
 
     snapshot = kis_client.get_account_snapshot() or {"holdings": [], "summary": {}}
-    cash = float((snapshot.get("summary") or {}).get("cash_available") or 0.0)
+    summary = snapshot.get("summary") or {}
+    cash = float(summary.get("strict_cash_available") or 0.0)
     acct_holdings = {
         str(h.get("stock_code") or "").zfill(6): int(float(h.get("quantity") or 0))
         for h in (snapshot.get("holdings") or [])
     }
 
-    live_enabled = _is_live_window() and live_for_strategy
+    # A global switch alone must never promote a strategy into live trading.
+    live_enabled = _is_live_window() and live_for_strategy and strategy in LIVE_APPROVED_STRATEGIES
     market_open = _is_kr_market_open()
     nxt_time = _is_nxt_time()
     buy_done, sell_done, buy_fail, sell_fail = [], [], [], []
@@ -455,7 +545,7 @@ def _sync_one_strategy(strategy: str) -> dict:
             logger.warning("[StockEasyAutoTrade] %s buy blocked by reconfirm: %s %s", strategy, code, reconfirm_reason)
             continue
 
-        ok, reason = _place_live_order(code, "buy", qty)
+        ok, reason = _place_live_order(code, "buy", qty, strategy)
         if ok:
             amount = int(qty * px)
             cash -= amount
@@ -482,7 +572,16 @@ def _sync_one_strategy(strategy: str) -> dict:
         qty = int(acct_holdings.get(code, 0))
         if qty <= 0:
             continue
-        ok, reason = _place_live_order(code, "sell", qty)
+        if _is_manual_hold(strategy, code):
+            # 2026-07-21: 사용자가 명시적으로 자동매도 제외 지정한 종목 — 편출 감지/알림은
+            # 정상 수행하되 실주문은 생략(사용자가 직접 판단해 처리).
+            send_telegram(
+                f"⏸️ [StockEasy/{label}] 편출 감지했지만 수동보류 설정으로 자동매도 생략\n"
+                f"{stock_name}({code}) — 직접 확인 후 처리해주세요.",
+                key=f"se_manual_hold_skip_{strategy}_{code}_{_today_str()}",
+            )
+            continue
+        ok, reason = _place_live_order(code, "sell", qty, strategy)
         if ok:
             amount = int(qty * sell_px) if sell_px > 0 else 0
             sell_done.append((code, qty, amount))

@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-PROJECT_ROOT="/Applications/stock_dashboard"
+PROJECT_ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 LABEL="com.stock-dashboard.postgresql"
 SOURCE="$PROJECT_ROOT/launchd/${LABEL}.system.plist"
 TARGET="/Library/LaunchDaemons/${LABEL}.plist"

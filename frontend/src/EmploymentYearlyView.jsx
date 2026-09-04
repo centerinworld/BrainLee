@@ -90,7 +90,7 @@ const EmploymentYearlyView = () => {
       </div>
 
       <div style={{ padding: '0.55rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: '0.72rem', color: '#fbbf24', background: 'rgba(251,191,36,0.08)' }}>
-        안내: 피보험자 수는 특수고용직/사업장 집계를 포함할 수 있어 사업보고서 인원보다 크게 보일 수 있습니다.
+        모든 피보험자 수를 표시합니다. 보험 영업인력, 현장·프로젝트 인력, 다사업장 운영처럼 업종별 집계 범위가 다른 경우 종목명 옆에 특성을 표시합니다.
       </div>
 
       {/* 컨트롤 */}
@@ -157,6 +157,11 @@ const EmploymentYearlyView = () => {
                     <span style={{ fontSize: '0.68rem', color: '#c4b5fd', marginLeft: '0.45rem' }}>
                       (보고서 {formatNum(row.report_workers)}명)
                     </span>
+                    {row.employment_scope?.type !== 'general' && (
+                      <span title={row.employment_scope.note} style={{ display:'inline-block', marginLeft:'0.4rem', padding:'0.08rem 0.3rem', borderRadius:'4px', fontSize:'0.62rem', color:'#fbbf24', border:'1px solid rgba(251,191,36,0.35)', background:'rgba(251,191,36,0.08)' }}>
+                        {row.employment_scope.label}
+                      </span>
+                    )}
                   </td>
                   <td style={{ ...tdS, color: 'rgba(255,255,255,0.5)', fontSize: '0.77rem' }}>{row.sector || '-'}</td>
                   <td style={{ ...tdS, textAlign: 'right', color: '#c4b5fd', fontWeight: 600 }}>

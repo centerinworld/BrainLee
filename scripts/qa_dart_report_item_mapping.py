@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 
 
 def norm(text: str | None) -> str:

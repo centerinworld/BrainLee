@@ -5,6 +5,7 @@ import json
 import urllib.parse
 import xml.etree.ElementTree as ET
 import config
+from services.gemini_openai_compat import OpenAI
 
 _VALID_YEAR_MIN = 2000
 _VALID_YEAR_MAX = 2030
@@ -12,6 +13,31 @@ _VALID_QUARTERS = {1, 2, 3, 4}
 _QUARTER_TO_MONTH = {1: 3, 2: 6, 3: 9, 4: 12}
 _MONTH_TO_Q_LABEL = {'03': '1Q', '06': '2Q', '09': '3Q', '12': '4Q'}
 _TREASURY_BRIEF_CACHE = {"date": "", "text": ""}
+_BROAD_INDEX_SYMBOLS = {"^IXIC", "^GSPC", "^KS11", "^KQ11", "^KS200", "^KQ150"}
+
+
+def _is_broad_index_outlier(symbol: str, close: float | None, prev_close: float | None) -> bool:
+    if symbol not in _BROAD_INDEX_SYMBOLS or close is None or prev_close is None or prev_close <= 0:
+        return False
+    try:
+        return abs((float(close) / float(prev_close) - 1.0) * 100.0) >= 20.0
+    except Exception:
+        return False
+
+
+def _filter_broad_index_history(symbol: str, items: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    if symbol not in _BROAD_INDEX_SYMBOLS:
+        return items
+    filtered: list[tuple[str, float]] = []
+    prev_close: float | None = None
+    for date_str, close in sorted(items):
+        if close is None or close <= 0:
+            continue
+        if _is_broad_index_outlier(symbol, close, prev_close):
+            continue
+        filtered.append((date_str, close))
+        prev_close = float(close)
+    return filtered
 
 
 def _fmt_q_period(raw_period: str) -> str:
@@ -89,7 +115,7 @@ def _is_valid_record(d) -> bool:
 
 
 def get_chart_data(db: Session, stock_code: str, days: int = 30):
-    start_date = datetime.now() - timedelta(days=days)
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     prices = (
         db.query(models.PriceHistory)
         .filter(
@@ -108,6 +134,9 @@ def get_chart_data(db: Session, stock_code: str, days: int = 30):
         except Exception:
             pass
         seen[date_str] = p
+    if stock_code in _BROAD_INDEX_SYMBOLS:
+        allowed = {k for k, _ in _filter_broad_index_history(stock_code, [(k, seen[k].close) for k in seen])}
+        seen = {k: v for k, v in seen.items() if k in allowed}
     return [
         {
             "date":              k,
@@ -547,7 +576,7 @@ def _pct_change(latest, prev) -> float:
 
 def _history(db: Session, symbol: str, days: int = 30) -> list:
     """최근 N일 종가 배열 반환 (날짜 중복 제거, 오름차순)."""
-    cutoff = datetime.now() - timedelta(days=days + 10)  # 여유 있게
+    cutoff = (datetime.now() - timedelta(days=days + 10)).strftime("%Y-%m-%d")  # 여유 있게
     rows = (
         db.query(models.PriceHistory)
         .filter(
@@ -564,7 +593,7 @@ def _history(db: Session, symbol: str, days: int = 30) -> list:
         k = r.date.strftime("%Y-%m-%d") if hasattr(r.date, "strftime") else str(r.date)[:10]
         seen[k] = r.close
     # 최근 days일치만 슬라이싱
-    all_items = sorted(seen.items())
+    all_items = _filter_broad_index_history(symbol, sorted(seen.items()))
     return [{"date": k, "close": v} for k, v in all_items[-days:]]
 
 
@@ -613,9 +642,8 @@ def _build_treasury_ai_brief(y2, y10, y30, spread_10_2, spread_30_10, risk_level
     titles = dedup[:10]
 
     try:
-        if config.OPENAI_API_KEY:
-            import openai
-            client = openai.OpenAI(api_key=config.OPENAI_API_KEY, timeout=14.0, max_retries=0)
+        if config.GEMINI_API_KEY:
+            client = OpenAI()
             payload = {
                 "date": today,
                 "yields_pct": {"2Y": y2, "10Y": y10, "30Y": y30},
@@ -740,9 +768,9 @@ def get_macro_status(db: Session) -> dict:
     # ── 미국 국채(2Y/10Y/30Y) ────────────────────────────────
     us_treasury = {}
     treasury_sources = {
-        "US2Y": ["2YY=F", "^UST2Y"],
+        "US2Y": ["2YY=F"],
         "US10Y": ["^TNX", "10Y=F"],
-        "US30Y": ["^TYX", "30Y=F"],
+        "US30Y": ["^TYX"],
     }
     for key, candidates in treasury_sources.items():
         used_symbol, latest, prev = _query_latest_any(db, candidates)

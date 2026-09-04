@@ -232,7 +232,9 @@ def main() -> None:
 
     universe_rows = conn.execute(
         """
-        SELECT stock_code, stock_name, market, sector_large, sector_mid, sector_small
+        SELECT stock_code, MAX(stock_name) AS stock_name, MAX(market) AS market,
+               MAX(sector_large) AS sector_large, MAX(sector_mid) AS sector_mid,
+               MAX(sector_small) AS sector_small
         FROM stock_universe
         WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
           AND COALESCE(stock_type, '보통주') NOT IN ('ETF', 'ETN')

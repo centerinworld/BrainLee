@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 
 def test_interpolation():
-    conn = sqlite3.connect('/Applications/stock_dashboard/employment_monitor/employment.db')
+    conn = sqlite3.connect('/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db')
     df = pd.read_sql("SELECT stock_code, stock_name, sector_label, ym, worker_count FROM employment_company WHERE ym IN ('2023-12', '2024-12', '2025-12')", conn)
-    conn.execute(f"ATTACH DATABASE '/Applications/stock_dashboard/stock.db' AS main_db")
+    conn.execute(f"ATTACH DATABASE '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db' AS main_db")
     markets = pd.read_sql("SELECT stock_code, market FROM stock_universe", conn)
     conn.close()
     

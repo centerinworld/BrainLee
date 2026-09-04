@@ -27,8 +27,9 @@ from datetime import date, datetime, timedelta
 
 import requests
 import config
+from db_utils import connect_stock_db
 
-DB_PATH   = "/Applications/stock_dashboard/stock.db"
+DB_PATH   = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 API_KEY   = config.KRX_API_KEY
 BASE_URL  = "https://data-dbg.krx.co.kr/svc/apis"
 HEADERS   = {"AUTH_KEY": API_KEY}
@@ -109,13 +110,13 @@ def _save_stocks(conn, rows: list, bas_dd: str, today_str: str) -> tuple:
             inserted += 1
         else:
             # 기존 행 보완 (volume/trade_amount 없는 경우)
-            conn.execute("""
+            cursor = conn.execute("""
                 UPDATE price_history
                 SET open=?, high=?, low=?, close=?, volume=?, trade_amount=?
                 WHERE stock_code=? AND date=?
                   AND (volume IS NULL OR volume=0)
             """, (open_, high, low, close, volume, trade_amount, code, bas_dd))
-            updated += conn.execute("SELECT changes()").fetchone()[0]
+            updated += max(cursor.rowcount, 0)
 
         # 시가총액 + 상장주식수 + 소속부 갱신 (오늘 데이터만)
         if bas_dd == today_str:
@@ -204,7 +205,7 @@ def _collected_dates(conn) -> set:
     rows = conn.execute("""
         SELECT date, COUNT(*) AS cnt FROM price_history
         WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
-        GROUP BY date HAVING cnt >= 500
+        GROUP BY date HAVING COUNT(*) >= 500
     """).fetchall()
     return {r[0] for r in rows}
 
@@ -238,8 +239,7 @@ def main():
 
     print(f"KRX 수집 시작: {start} ~ {end}  (mode={args.mode})")
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = connect_stock_db(timeout=60, wal=True)
 
     print("기존 수집 날짜 확인 중...", end=" ", flush=True)
     collected = _collected_dates(conn)

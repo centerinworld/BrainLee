@@ -2,7 +2,7 @@
 # main.py 하단에 추가할 텔레그램 종목 언급 API
 # ──────────────────────────────────────────────────────────────
 
-# 아래 코드를 /Applications/stock_dashboard/main.py 하단 (export default App 위)에 추가하세요
+# 아래 코드를 /Volumes/Realtek_NVME/stock_dashboard/runtime/main.py 하단 (export default App 위)에 추가하세요
 
 """
 @app.get("/api/telegram/mentions/daily")

@@ -2,7 +2,7 @@
 import sqlite3
 from datetime import datetime
 
-DB='/Applications/stock_dashboard/stock.db'
+DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 RUN_ID='codex_bs_identity_all_20260530'
 
 def main():

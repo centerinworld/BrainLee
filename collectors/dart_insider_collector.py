@@ -17,7 +17,7 @@ if str(ROOT_DIR) not in sys.path:
 from dart_key_manager import get_dart_api_keys
 
 logger = logging.getLogger(__name__)
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 DART_BASE = "https://opendart.fss.or.kr/api"
 
 KEYS = get_dart_api_keys()
@@ -179,8 +179,13 @@ def collect_insider_holdings(
     return {"inserted": inserted, "updated": updated, "errors": errors}
 
 
-def collect_major_holders(bgn_de: str = None, end_de: str = None) -> dict:
-    """주요주주 지분공시 (5% 이상 보고)"""
+def collect_major_holders(
+    bgn_de: str = None,
+    end_de: str = None,
+    stock_codes: Optional[list[str]] = None,
+    limit: int = 0,
+) -> dict:
+    """주요주주 지분공시(5% 이상)를 corp_code별로 수집한다."""
     if not bgn_de:
         bgn_de = (datetime.now() - timedelta(days=365*3)).strftime("%Y%m%d")
     if not end_de:
@@ -189,9 +194,23 @@ def collect_major_holders(bgn_de: str = None, end_de: str = None) -> dict:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     corp_map = _get_corp_map()
-    corp_to_stock = {corp: stock for stock, corp in corp_map.items() if corp and stock}
-    inserted = errors = 0
-    page = 1
+    if stock_codes is None:
+        recent_rows = conn.execute(
+            """
+            SELECT DISTINCT stock_code
+            FROM dart_disclosures
+            WHERE REPLACE(rcept_dt,'-','') BETWEEN ? AND ?
+              AND report_nm LIKE '%대량보유상황보고서%'
+              AND stock_code <> ''
+            ORDER BY stock_code
+            """,
+            (bgn_de, end_de),
+        ).fetchall()
+        stock_codes = [row[0] for row in recent_rows]
+    stock_codes = [code for code in stock_codes if code in corp_map]
+    if limit:
+        stock_codes = stock_codes[:limit]
+    inserted = errors = requested = 0
 
     def _to_int(value):
         text = str(value or "").replace(",", "").strip()
@@ -211,69 +230,113 @@ def collect_major_holders(bgn_de: str = None, end_de: str = None) -> dict:
         except Exception:
             return None
 
-    while True:
-        key = _next_key()
-        if not key:
-            break
-        try:
-            r = requests.get(f"{DART_BASE}/majorstock.json", params={
-                "crtfc_key": key,
-                "bgn_de": bgn_de, "end_de": end_de,
-                "page_no": page, "page_count": 100,
-            }, timeout=20)
-            data = r.json()
-        except Exception as e:
-            errors += 1
-            break
-
-        if data.get("status") == "020":
-            _exhausted.add(key)
+    for stock_code in stock_codes:
+        corp_code = corp_map.get(stock_code)
+        if not corp_code:
             continue
-        if data.get("status") != "000":
-            break
-
-        items = data.get("list", [])
-        if not items:
-            break
-
-        for item in items:
-            dd = conn.execute(
-                "SELECT stock_code FROM dart_disclosures WHERE rcept_no=? LIMIT 1",
-                (item.get("rcept_no",""),)
-            ).fetchone()
-            stock_code = dd[0] if dd else corp_to_stock.get(item.get("corp_code", ""), "")
-
-            try:
-                conn.execute("""
-                    INSERT OR REPLACE INTO dart_major_holders
-                    (rcept_no, rcept_dt, stock_code, corp_code, corp_name,
-                     repror, stkqy, stkrt, ctr_stkqy, ctr_stkrt, report_tp,
-                     stk_diff, rt_diff, raw_json, created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
-                """, (
-                    item.get("rcept_no"), item.get("rcept_dt"), stock_code,
-                    item.get("corp_code"), item.get("corp_name"),
-                    item.get("repror"),
-                    _to_int(item.get("stkqy")), _to_float(item.get("stkrt")),
-                    _to_int(item.get("ctr_stkqy")), _to_float(item.get("ctr_stkrt")),
-                    item.get("report_tp"), _to_int(item.get("stk_diff")), _to_float(item.get("rt_diff")),
-                    str(item),
-                ))
-                inserted += 1
-            except Exception as e:
+        page = 1
+        while True:
+            key = _next_key()
+            if not key:
                 errors += 1
+                break
+            try:
+                r = requests.get(f"{DART_BASE}/majorstock.json", params={
+                    "crtfc_key": key,
+                    "corp_code": corp_code,
+                    "bgn_de": bgn_de, "end_de": end_de,
+                    "page_no": page, "page_count": 100,
+                }, timeout=20)
+                requested += 1
+                data = r.json()
+            except Exception:
+                errors += 1
+                break
 
-        conn.commit()
-        logger.info("majorstock 페이지 %d: %d건", page, len(items))
-        total_count = int(data.get("total_count", 0))
-        if page * 100 >= total_count:
-            break
-        page += 1
-        time.sleep(0.3)
+            if data.get("status") == "020":
+                _exhausted.add(key)
+                continue
+            if data.get("status") == "013":
+                break
+            if data.get("status") != "000":
+                errors += 1
+                logger.warning(
+                    "majorstock %s status=%s message=%s",
+                    stock_code, data.get("status"), data.get("message"),
+                )
+                break
+
+            items = data.get("list", [])
+            for item in items:
+                item_date = str(item.get("rcept_dt") or "").replace("-", "")
+                if bgn_de and item_date and item_date < bgn_de:
+                    continue
+                if end_de and item_date and item_date > end_de:
+                    continue
+                try:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO dart_major_holders
+                        (rcept_no, rcept_dt, stock_code, corp_code, corp_name,
+                         repror, stkqy, stkrt, ctr_stkqy, ctr_stkrt, report_tp,
+                         stk_diff, rt_diff, raw_json, created_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                    """, (
+                        item.get("rcept_no"), item.get("rcept_dt"), stock_code,
+                        corp_code, item.get("corp_name"), item.get("repror"),
+                        _to_int(item.get("stkqy")), _to_float(item.get("stkrt")),
+                        _to_int(item.get("ctr_stkqy")), _to_float(item.get("ctr_stkrt")),
+                        item.get("report_tp"), _to_int(item.get("stkqy_irds")),
+                        _to_float(item.get("stkrt_irds")), str(item),
+                    ))
+                    inserted += 1
+                except Exception:
+                    errors += 1
+            conn.commit()
+            total_count = int(data.get("total_count", 0) or 0)
+            if page * 100 >= total_count:
+                break
+            page += 1
+            time.sleep(0.05)
+
+        if requested and requested % 100 == 0:
+            logger.info("majorstock 요청 %d건, 저장 %d건, 오류 %d건", requested, inserted, errors)
 
     conn.commit()
     conn.close()
-    return {"inserted": inserted, "errors": errors}
+    return {
+        "stocks": len(stock_codes),
+        "requested": requested,
+        "inserted": inserted,
+        "errors": errors,
+    }
+
+
+def collect_major_holders_bulk(
+    limit: int = 0,
+    bgn_de: str = None,
+    end_de: str = None,
+) -> dict:
+    """전 종목 주요주주 5% 보고를 주간 또는 초기 백필로 수집한다."""
+    global _ki, _exhausted
+    _ki = 0
+    _exhausted = set()
+    if not bgn_de:
+        bgn_de = (datetime.now() - timedelta(days=365 * 6)).strftime("%Y%m%d")
+    if not end_de:
+        end_de = datetime.now().strftime("%Y%m%d")
+    corp_map = _get_corp_map()
+    conn = sqlite3.connect(DB_PATH, timeout=60)
+    stocks = [row[0] for row in conn.execute(
+        """
+        SELECT stock_code FROM stock_universe
+        WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
+          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+        ORDER BY market_cap DESC
+        """
+    ).fetchall()]
+    conn.close()
+    stocks = [code for code in stocks if code in corp_map]
+    return collect_major_holders(bgn_de, end_de, stock_codes=stocks, limit=limit)
 
 
 if __name__ == "__main__":
@@ -296,7 +359,25 @@ def collect_recent_disclosures(days: int = 2) -> dict:
     """최근 N일 임원·주요주주 공시 수집 (스케줄러에서 호출)"""
     bgn = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
     end = datetime.now().strftime("%Y%m%d")
-    r_insider = collect_insider_holdings(bgn, end)
+    conn = sqlite3.connect(DB_PATH)
+    recent_codes = [row[0] for row in conn.execute(
+        """
+        SELECT DISTINCT stock_code
+        FROM dart_disclosures
+        WHERE REPLACE(rcept_dt, '-', '') BETWEEN ? AND ?
+          AND report_nm LIKE '%특정증권등소유상황보고서%'
+          AND stock_code <> ''
+        ORDER BY stock_code
+        """,
+        (bgn, end),
+    ).fetchall()]
+    conn.close()
+    r_insider = collect_insider_holdings_bulk(
+        limit=0,
+        stock_codes=recent_codes,
+        bgn_de=bgn,
+        end_de=end,
+    )
     r_major = collect_major_holders(bgn, end)
     return {
         "insider": r_insider.get("inserted", 0),
@@ -305,7 +386,12 @@ def collect_recent_disclosures(days: int = 2) -> dict:
     }
 
 
-def collect_insider_holdings_bulk(limit: int = 2200) -> dict:
+def collect_insider_holdings_bulk(
+    limit: int = 2200,
+    stock_codes: Optional[list[str]] = None,
+    bgn_de: str = None,
+    end_de: str = None,
+) -> dict:
     """
     corp_code 기반 종목별 elestock 전량 수집 (주간 bulk용).
     시총 상위 limit 종목을 순서대로 수집하며, 3-key 라운드로빈으로 한도 초과 회피.
@@ -318,13 +404,19 @@ def collect_insider_holdings_bulk(limit: int = 2200) -> dict:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
 
-    stocks = [r[0] for r in conn.execute("""
-        SELECT stock_code FROM stock_universe
-        WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
-          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
-          AND market_cap IS NOT NULL
-        ORDER BY market_cap DESC LIMIT ?
-    """, (limit,)).fetchall()]
+    if stock_codes is None:
+        query_limit = limit if limit else 100000
+        stocks = [r[0] for r in conn.execute("""
+            SELECT stock_code FROM stock_universe
+            WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND market_cap IS NOT NULL
+            ORDER BY market_cap DESC LIMIT ?
+        """, (query_limit,)).fetchall()]
+    else:
+        stocks = list(dict.fromkeys(stock_codes))
+        if limit:
+            stocks = stocks[:limit]
 
     total_inserted = 0; errors = 0
     for i, sc in enumerate(stocks):
@@ -336,19 +428,35 @@ def collect_insider_holdings_bulk(limit: int = 2200) -> dict:
             logger.error("[임원매매bulk] API 키 모두 소진")
             break
         try:
-            r = requests.get(f"{DART_BASE}/elestock.json",
-                params={"crtfc_key": key, "corp_code": corp_code}, timeout=15)
+            params = {
+                "crtfc_key": key,
+                "corp_code": corp_code,
+                "page_no": 1,
+                "page_count": 100,
+            }
+            if bgn_de:
+                params["bgn_de"] = bgn_de
+            if end_de:
+                params["end_de"] = end_de
+            r = requests.get(f"{DART_BASE}/elestock.json", params=params, timeout=15)
             d = r.json()
             if d.get("status") == "020":
                 _exhausted.add(key)
                 key2 = _next_key()
                 if key2:
-                    r = requests.get(f"{DART_BASE}/elestock.json",
-                        params={"crtfc_key": key2, "corp_code": corp_code}, timeout=15)
+                    params["crtfc_key"] = key2
+                    r = requests.get(f"{DART_BASE}/elestock.json", params=params, timeout=15)
                     d = r.json()
             if d.get("status") != "000":
                 time.sleep(0.3); continue
             for item in (d.get("list") or []):
+                item_date = str(item.get("rcept_dt") or "").replace("-", "")
+                # elestock는 날짜 파라미터를 무시하고 기업 전체 이력을 반환하는
+                # 경우가 있어 일일 증분 수집은 저장 전에 접수일을 재검증한다.
+                if bgn_de and item_date and item_date < bgn_de:
+                    continue
+                if end_de and item_date and item_date > end_de:
+                    continue
                 change = None
                 try:
                     change = float(str(item.get("sp_stock_lmp_irds_cnt","")).replace(",","").replace("-","").replace("△","") or 0)

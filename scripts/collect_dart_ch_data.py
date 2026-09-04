@@ -9,13 +9,13 @@ DART API에서 CH시트 데이터 수집:
 import sqlite3, os, time, requests, sys, argparse, logging
 from datetime import datetime
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 from dart_key_manager import get_dart_api_keys
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger(__name__)
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 DART_KEYS = get_dart_api_keys()
 _key_idx = [0]
 _key_exhausted = [False]
@@ -81,6 +81,8 @@ def _fetch_dart(endpoint, params, timeout=12):
                 continue
             if d.get("status") == "000":
                 return d
+            if d.get("status") in ("013", "014"):
+                return {**d, "list": []}
         except Exception as e:
             log.warning("API 오류 %s: %s", endpoint, e)
             _next_key()

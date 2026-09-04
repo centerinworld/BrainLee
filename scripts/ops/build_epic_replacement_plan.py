@@ -30,7 +30,7 @@ RULES: list[Rule] = [
     Rule("대차잔고", "ready_existing", "short_balance", "KRX/공공데이터", "public_data_collector.py", "exact_or_close", "p1", "이미 일별/장기 수집 및 UI 사용 중."),
     Rule("글로벌 자동차 판매", "new_collector_needed", "autos_sales", "KAMA/KAIDA/OEM IR", "-", "exact_target", "p1", "EPIC와 동일 레벨의 회사/국가 판매 데이터는 OEM/협회 월간 공시 수집기 필요."),
     Rule("한국 자동차 판매", "new_collector_needed", "autos_sales", "KAMA/KAIDA/OEM IR", "-", "exact_target", "p1", "현대차/기아/KGM/르노/GM 월간 판매 공시 기반 신규 수집기 필요."),
-    Rule("시장 점유율", "derivable_after_new_collector", "autos_share", "derived from autos_sales", "-", "exact_if_sales_collected", "p1", "회사별 판매량 수집 후 계산 가능."),
+    Rule("시장 점유율", "ready_existing", "autos_share", "KAMA 회사별 월간 판매", "scripts/ops/sync_quant_major_indicators.py", "exact_if_sales_collected", "p1", "회사별 판매량 합계로 월별 시장점유율 계산 완료."),
     Rule("내수 판매: 모델별", "new_collector_needed", "autos_model_sales", "OEM IR/협회", "-", "exact_target", "p1", "모델별 테이블은 기존 DB에 없음. 제조사 월간 공지 파서 필요."),
     Rule("수출 판매: 모델별", "new_collector_needed", "autos_model_exports", "OEM IR/협회", "-", "exact_target", "p1", "모델별 수출판매는 OEM 공시/IR 기반 신규 수집 필요."),
     Rule("Steel Price", "new_collector_needed", "steel_price", "국내외 철강 시황원", "-", "exact_target", "p2", "현재 repo 내 직접 수집기 없음. 시세 소스 선정 필요."),

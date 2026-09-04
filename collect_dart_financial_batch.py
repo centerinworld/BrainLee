@@ -51,8 +51,8 @@ _RPRT: dict[int, str] = {
 
 # 손익계산서 계정 매핑
 _IS_MAP = [
-    (["매출액", "영업수익", "매출"],                              "revenue"),
-    (["영업이익"],                                                "operating_profit"),
+    (["매출액", "영업수익"],                                      "revenue"),
+    (["영업이익", "영업손익"],                                    "operating_profit"),
     # 당기순이익: 비지배주주귀속 제외, 주당 제외
     (["당기순이익", "당기순손익", "분기순이익", "반기순이익"],     "net_income"),
 ]
@@ -132,10 +132,25 @@ def _parse_finstate(df: pd.DataFrame) -> dict:
                 if field == "net_income":
                     if any(x in acc for x in ("비지배", "주당", "총포괄", "지배기업")):
                         continue
-                if any(kw in acc for kw in keywords):
-                    if m[field] is None:
-                        m[field] = val
-                    break
+                if field == "revenue":
+                    # "매출총이익", "매출원가", "영업외수익", "금융수익" 등 오매핑 차단
+                    if any(x in acc for x in ("원가", "총이익", "총손실", "비용", "대손", "충당", "차감", "조정", "금융", "외", "투자", "수수료")):
+                        continue
+                    # 정확한 "수익" 계정명 또는 매출액/영업수익 키워드 포함 검사
+                    if not (any(kw in acc for kw in keywords) or acc == "수익"):
+                        continue
+                elif field == "operating_profit":
+                    if any(x in acc for x in ("외", "금융", "기타")):
+                        continue
+                    if not any(kw in acc for kw in keywords):
+                        continue
+                else:
+                    if not any(kw in acc for kw in keywords):
+                        continue
+
+                if m[field] is None:
+                    m[field] = val
+                break
 
             # EPS: DART 직접 필드
             if any(kw in acc for kw in _EPS_KEYWORDS):

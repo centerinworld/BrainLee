@@ -148,6 +148,7 @@ from routes.order_contracts    import router as _order_contracts_router
 from routes.contract_advance_signals import router as _contract_advance_signals_router
 from routes.inventory_sales_signals import router as _inventory_sales_signals_router
 from routes.cash_conversion_signals import router as _cash_conversion_signals_router
+from routes.strategy_data_lab import router as _strategy_data_lab_router
 from routes.dart_excel         import router as _dart_excel_router
 from routes.earnings_signals   import router as _earnings_signals_router
 from routes.kiwoom             import router as _kiwoom_router
@@ -159,13 +160,15 @@ from routes.detailed_analysis  import router as _detailed_analysis_router
 from routes.global_macro       import router as _global_macro_router
 from routes.cafe_signals       import router as _cafe_signals_router
 from routes.us_virtual_trading import router as _us_virtual_trading_router
+from routes.us_13f            import router as _us_13f_router
 from routes.company_intelligence import router as _company_intelligence_router
+from routes.investment_decisions import router as _investment_decisions_router
 from routes.insider            import router as _insider_router
 from routes.notices            import router as _notices_router
 import sys as _sys
-_sys.path.insert(0, "/Applications/stock_dashboard/ETF_check")
+_sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime/ETF_check")
 from routes_etf                import router as _etf_check_router
-_sys.path.insert(0, "/Applications/stock_dashboard/employment_monitor")
+_sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor")
 from routes_employment_v2      import router as _employment_v2_router
 
 app.include_router(_trend_router,              prefix="/api/trend",              tags=["trend"])
@@ -190,6 +193,7 @@ app.include_router(_order_contracts_router,   prefix="/api/order-contracts",   t
 app.include_router(_contract_advance_signals_router, prefix="/api/contract-advance-signals", tags=["contract-advance-signals"])
 app.include_router(_inventory_sales_signals_router, prefix="/api/inventory-sales-signals", tags=["inventory-sales-signals"])
 app.include_router(_cash_conversion_signals_router, prefix="/api/cash-conversion-signals", tags=["cash-conversion-signals"])
+app.include_router(_strategy_data_lab_router, prefix="/api/strategy-data-lab", tags=["strategy-data-lab"])
 app.include_router(_dart_excel_router,       prefix="/api/dart-excel",        tags=["dart-excel"])
 app.include_router(_earnings_signals_router, prefix="/api/earnings-signals",  tags=["earnings-signals"])
 app.include_router(_kiwoom_router,          prefix="/api/kiwoom",         tags=["kiwoom"])
@@ -201,7 +205,9 @@ app.include_router(_detailed_analysis_router, prefix="/api/detailed-analysis", t
 app.include_router(_global_macro_router,      prefix="/api/global-macro",      tags=["global-macro"])
 app.include_router(_cafe_signals_router,      prefix="/api/cafe-signals",      tags=["cafe-signals"])
 app.include_router(_us_virtual_trading_router)
+app.include_router(_us_13f_router,              prefix="/api/us-13f",            tags=["us-13f"])
 app.include_router(_company_intelligence_router, prefix="/api/company-intelligence", tags=["company-intelligence"])
+app.include_router(_investment_decisions_router, prefix="/api/investment-decisions", tags=["investment-decisions"])
 # 2026-08-26: routes/insider.py·routes/notices.py는 완성되어 있었으나 여기 등록이 빠져
 # 개별종목 페이지의 임원·대주주 지분변동/공지사항 패널이 항상 404였음 — 등록 누락 수정.
 app.include_router(_insider_router,  prefix="/api/insider",  tags=["insider"])
@@ -554,7 +560,7 @@ def _upsert_cashflow(db, cf: schemas.CashFlowIngest):
     # write-gate: Q1 q필드 등 보정
     try:
         import sqlite3 as _sl_wg
-        _c = _sl_wg.connect("/Applications/stock_dashboard/stock.db")
+        _c = _sl_wg.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
         _wg_ensure_schema(_c)
         ok, fixed, _ = _wg_gate_cashflow_row(_c, {
             "stock_code": row.stock_code,
@@ -590,7 +596,7 @@ def _upsert_cashflow(db, cf: schemas.CashFlowIngest):
     # canonical sync
     try:
         import sqlite3 as _sl_wg
-        _c = _sl_wg.connect("/Applications/stock_dashboard/stock.db")
+        _c = _sl_wg.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
         _wg_ensure_schema(_c)
         _wg_upsert_canonical_cashflow(_c, {
             "stock_code": row.stock_code,
@@ -4033,6 +4039,75 @@ def _run_us_biotech_refresh(min_market_cap: float, limit: int) -> None:
 def get_us_biotech_refresh_status():
     return dict(_us_biotech_refresh_state)
 
+
+@app.get("/api/source-intelligence/opinions")
+def get_source_intelligence_opinions(asset_class: str = "all", source_key: str = "", limit: int = 200):
+    """Dashboard-only opinion summaries. Authenticated source text is never returned."""
+    limit = max(1, min(int(limit or 200), 500))
+    clauses, params = [], []
+    if asset_class != "all":
+        clauses.append("asset_class=?"); params.append(asset_class)
+    if source_key:
+        clauses.append("source_key=?"); params.append(source_key)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    conn = sqlite3.connect("stock.db", timeout=30); conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            f"SELECT source_key,source_type,source_name,published_at,ticker,company_name,asset_class,stance,signal_level,evidence_type,summary_text,excerpt FROM source_intelligence_mentions {where} ORDER BY published_at DESC LIMIT ?",
+            [*params, limit],
+        ).fetchall()
+    except Exception:
+        # The external-SSD collector writes a portable JSON snapshot as well.
+        # Use it during PostgreSQL migrations so the dashboard never shows an
+        # empty first-run state while durable tables are being created.
+        try:
+            snapshot = _json.loads((Path("research_outputs/trillion_us_biotech/latest.json")).read_text(encoding="utf-8"))
+            rows = []
+            for ticker, mentions in (snapshot.get("mentions") or {}).items():
+                for mention in mentions:
+                    if asset_class != "all" and mention.get("classification") != "known_us_biotech":
+                        continue
+                    rows.append({"source_key":"telegram:trillion","source_type":"telegram","source_name":"트릴리온","published_at":mention.get("date"),"ticker":ticker,"company_name":ticker,"asset_class":"us_biotech","stance":mention.get("stance"),"signal_level":mention.get("signal_level"),"evidence_type":mention.get("evidence_type"),"summary_text":mention.get("summary_text"),"excerpt":mention.get("excerpt")})
+            rows.sort(key=lambda row: row.get("published_at") or "", reverse=True)
+            rows = rows[:limit]
+        except Exception:
+            rows = []
+    finally:
+        conn.close()
+    labels = {"strong_positive":"강력 긍정","positive":"긍정","watch":"관찰","mixed":"혼재","negative":"부정","strong_negative":"강력 부정","neutral":"중립"}
+    raw_items = []
+    for row in rows:
+        item = dict(row)
+        if not item.get("signal_level"):
+            item["signal_level"] = {"explicit_buy_or_hold":"strong_positive", "positive_catalyst":"positive", "investor_flow_watch":"watch", "mixed_view":"mixed", "risk_or_negative_catalyst":"negative", "explicit_sell_or_avoid":"strong_negative"}.get(item.get("stance"), "neutral")
+        item["signal_label"] = labels.get(item["signal_level"], "중립")
+        source_text = re.sub(r"https?://\S+", "", str(item.get("excerpt") or "")).strip()
+        source_text = re.sub(r"\s+", " ", source_text)
+        item["summary"] = (source_text[:220] + ("..." if len(source_text) > 220 else "")) or item.get("summary_text") or ({"explicit":"명시적 보유·매수 또는 회피 의견", "research":"임상·규제·기관수급 관련 조사 근거"}.get(item.get("evidence_type"), "기업·산업 동향"))
+        raw_items.append(item)
+    rank = {"strong_positive":6,"positive":5,"watch":4,"mixed":3,"neutral":2,"negative":1,"strong_negative":0}
+    grouped = {}
+    for item in raw_items:
+        key = (item["source_key"], item["ticker"])
+        current = grouped.get(key)
+        if not current:
+            grouped[key] = {**item, "mention_count":1, "key_points":[item["summary"]], "mention_details":[{"date":item.get("published_at"), "level":item.get("signal_label"), "text":item["summary"]}]}
+            continue
+        current["mention_count"] += 1
+        current["mention_details"].append({"date":item.get("published_at"), "level":item.get("signal_label"), "text":item["summary"]})
+        if item["summary"] not in current["key_points"]:
+            current["key_points"].append(item["summary"])
+        if rank.get(item["signal_level"], 2) > rank.get(current["signal_level"], 2):
+            current.update({key:item[key] for key in ("signal_level","signal_label","stance","summary")})
+        if (item.get("published_at") or "") > (current.get("published_at") or ""):
+            current["published_at"] = item["published_at"]
+    items = list(grouped.values())
+    for item in items:
+        item["summary"] = " · ".join(item.pop("key_points")[:3])
+        item["mention_details"] = sorted(item["mention_details"], key=lambda row: row.get("date") or "", reverse=True)[:12]
+    items.sort(key=lambda item: (-item["mention_count"], item.get("published_at") or ""), reverse=False)
+    return {"items": items, "note":"원문 대신 티커별 요약·분류만 표시합니다. 기관 유입은 매수 추천이 아닌 관찰로 분리합니다."}
+
 @app.get("/api/dashboard/sectors")
 def get_sectors(db: Session = Depends(get_db)):
     """
@@ -4986,6 +5061,37 @@ def trigger_screener_refresh():
     return {"status": "started", "message": "스크리너 재계산 시작 — 약 60~120초 후 새로고침 하세요."}
 
 
+_FIX_FIELD_KO = {
+    "revenue": "매출액", "operating_profit": "영업이익", "net_income": "순이익",
+    "total_assets": "총자산", "total_liabilities": "총부채", "total_equity": "총자본",
+    "capital_stock": "자본금", "cash": "현금", "eps": "EPS", "bps": "BPS",
+    "operating_cf": "영업활동현금흐름", "investing_cf": "투자활동현금흐름",
+    "financing_cf": "재무활동현금흐름", "capex": "CapEx(설비투자)",
+    "cash_end": "기말현금", "depreciation": "감가상각비",
+}
+
+
+_GATE_REASON_KO = {
+    "FILL_EQUITY_FROM_A_L": "자산-부채로 자본 역산 보완",
+    "CAST_ERROR": "형식 오류로 저장 보류",
+    "FIX_EQUITY_IDENTITY": "자산=부채+자본 항등식 불일치 수정",
+    "FILL_Q1_Q_FIELD": "1분기 분기값 보완",
+    "FIX_LIABILITY_TOTAL_MATCH": "부채총계 불일치 수정",
+    "BS_IDENTITY_AMBIGUOUS": "재무상태표 항등식 판정불가(보류)",
+    "FIX_EQUITY_TOTAL_MATCH": "자본총계 불일치 수정",
+}
+
+
+def _fix_reason_ko(field_name: str) -> str:
+    """2026-09-01 신설: financial_fix_log/cashflow_fix_log의 field_name을 화면에 그대로
+    노출("MANUAL_FIX:__duplicate_row_deleted__" 등)하면 내부 구현 상수가 그대로 유저에게
+    보여 오해를 산다는 사용자 지적 반영 — 사람이 읽을 수 있는 한국어 사유로 변환."""
+    if field_name == "__duplicate_row_deleted__":
+        return "중복 저장된 사본 삭제(다른 정상 사본 값으로 통합)"
+    ko = _FIX_FIELD_KO.get(field_name, field_name)
+    return f"{ko} 값 재검증 후 수정"
+
+
 # ── 데이터 품질 등급 엔드포인트 ─────────────────────────────────────────
 @app.get("/api/dashboard/data-quality/{stock_code}")
 def get_data_quality(stock_code: str):
@@ -5582,7 +5688,7 @@ def get_data_quality(stock_code: str):
         recent_fixes.append({
             "ts": gl["gate_ts"],
             "target": f"{gl['table_name']} {yq} {gl['report_type'] or 'CFS'}",
-            "reason": gl["reason_code"],
+            "reason": _GATE_REASON_KO.get(gl["reason_code"], gl["reason_code"]),
         })
     for fl in fin_fix_logs:
         y = fl["year"]
@@ -5591,7 +5697,7 @@ def get_data_quality(stock_code: str):
         recent_fixes.append({
             "ts": fl["fixed_at"],
             "target": f"financial_data {yq} {fl['report_type'] or 'CFS'}",
-            "reason": f"MANUAL_FIX:{fl['field_name']}",
+            "reason": _fix_reason_ko(fl["field_name"]),
         })
     for cl in cf_fix_logs:
         y = cl["year"]
@@ -5600,7 +5706,7 @@ def get_data_quality(stock_code: str):
         recent_fixes.append({
             "ts": cl["fixed_at"],
             "target": f"cash_flow_data {yq} {cl['report_type'] or 'CFS'}",
-            "reason": f"MANUAL_FIX:{cl['field_name']}",
+            "reason": _fix_reason_ko(cl["field_name"]),
         })
     recent_fixes.sort(key=lambda x: x.get("ts") or "", reverse=True)
 
@@ -5907,6 +6013,27 @@ def get_data_quality(stock_code: str):
         grade, grade_label, grade_color = "B", "핵심 검증", "#3b82f6"
         grade_desc = "데이터 수집 완료 · 교차검증 미실시"
 
+    # 2026-09-01 신설: 사용자 지적("4중 검증했다는게 화면엔 거짓말") — 위 등급은
+    # fin_quarterly_validation_flags(분기 단위, 최근 분기 위주) 기준인데, 이번 세션에서
+    # 별도로 만든 field_verification_status(연간 데이터, 훨씬 넓은 기간·더 많은 필드 전수
+    # 대조)에서 이 종목에 실제 미해소 불일치가 있으면 등급 설명에 명시적으로 반영해
+    # 두 시스템 간 낙관적 불일치("여긴 A인데 저긴 disputed") 자체를 화면에서 숨기지 않는다.
+    try:
+        import sqlite3 as _sl_dv
+        _conn_dv = _sl_dv.connect("stock.db", timeout=10)
+        _dv_row = _conn_dv.execute(
+            "SELECT COUNT(*) FROM field_verification_status WHERE stock_code=? AND status='disputed'",
+            (stock_code,),
+        ).fetchone()
+        _conn_dv.close()
+        _dv_disputed = int(_dv_row[0]) if _dv_row else 0
+    except Exception:
+        _dv_disputed = 0
+    if _dv_disputed > 0:
+        grade_desc += f" ⚠ 단, 연간데이터 별도 전수재검증에서 미해소 불일치 {_dv_disputed}건 발견(펀더멘털 카드 참고)"
+        if grade == "A":
+            grade, grade_label, grade_color = "B+", "핵심 검증(연간 재검증 이견 있음)", "#f59e0b"
+
     # ── 6. 연도×항목 매트릭스 (새 UI용) ─────────────────────────────────
     # 표시 연도: 최근 7년 (2019~2025)
     _matrix_years = list(range(2019, 2026))
@@ -5966,21 +6093,30 @@ def get_data_quality(stock_code: str):
             }
 
     # (b) 연도별 검증 플래그 (cf_validation_flags)
+    # ⚠️ 2026-09-02: 위 배지(items/ambiguousItems)는 비금융·비지주사인데
+    # ai_verdict='STRUCTURAL_DIFF_FINANCIAL_SECTOR' 근거로 CONFIRMED 처리된
+    # 오분류 건을 ambiguous로 재분류하는데(mislabeled_map), 이 매트릭스는
+    # 그 재분류를 적용하지 않아 "배지엔 ⚠️1인데 펼쳐보면 전부 ✅"로 어긋났음
+    # (에이엘티 등에서 사용자가 "느낌표 표시가 안 된다"고 지적). 아래에서도
+    # 동일 로직으로 CONFIRMED→AMBIGUOUS 재분류해 배지와 매트릭스를 일치시킨다.
     _vflags = {}  # (year, field) -> {status, flag_type}
     for r in _mc.execute("""
-        SELECT year, field, flag_type, status, COUNT(*) cnt
+        SELECT year, field, flag_type, status, ai_verdict, COUNT(*) cnt
         FROM cf_validation_flags WHERE stock_code=?
           AND year BETWEEN 2019 AND 2025
-        GROUP BY year, field, flag_type, status
+        GROUP BY year, field, flag_type, status, ai_verdict
         ORDER BY year, field,
           CASE flag_type WHEN 'FIN_NAVER' THEN 0 WHEN 'FIN_CROSS' THEN 1 WHEN 'MATCH' THEN 2 ELSE 3 END
     """, (stock_code,)).fetchall():
+        st = r["status"]
+        if (st == "CONFIRMED" and not is_financial_like
+                and (r["ai_verdict"] or "") == "STRUCTURAL_DIFF_FINANCIAL_SECTOR"):
+            st = "AMBIGUOUS"
         k = (int(r["year"]), r["field"])
         if k not in _vflags:
-            _vflags[k] = {"status": r["status"], "flag_type": r["flag_type"]}
+            _vflags[k] = {"status": st, "flag_type": r["flag_type"]}
         # 우선순위: AMBIGUOUS > CONFIRMED > CLOSE_MATCH
-        existing = _vflags[k]
-        if r["status"] == "AMBIGUOUS":
+        if st == "AMBIGUOUS":
             _vflags[k] = {"status": "AMBIGUOUS", "flag_type": r["flag_type"]}
 
     # (c) data_lock 상태
@@ -6021,7 +6157,8 @@ def get_data_quality(stock_code: str):
             st = vf["status"]
             ft = vf["flag_type"]
             if st == "AMBIGUOUS":
-                return {"s": "WARN", "src": ft, "locked": locked}
+                _warn_src = {"FIN_NAVER": "D+F+N", "FIN_CROSS": "D+F", "MATCH": "D+F+S"}.get(ft, ft)
+                return {"s": "WARN", "src": _warn_src, "locked": locked}
             if st in ("CONFIRMED", "CLOSE_MATCH"):
                 if ft == "FIN_NAVER":
                     return {"s": "V3", "src": "D+F+N", "locked": locked}
@@ -6286,6 +6423,61 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
     is_kr  = stock_code.isdigit() and len(stock_code) == 6
     is_col = _collecting.get(stock_code) == "running"
 
+    # 2026-08-29 신설: DART 원문 조회 자체가 안 되는 종목(상폐/비표준공시 등)을
+    # 화면에 명시 표시하기 위한 플래그 — stock_dart_data_quality는 여러 검증/정리
+    # 스크립트(dedup_financial_data_annual, backfill_unverified_snapshot 등)가 DART
+    # 재조회를 시도할 때마다 누적 기록한다(dart_data_quality.py).
+    dart_quality = None
+    dart_quality_note = None
+    if is_kr:
+        try:
+            import sqlite3 as _sl3q
+            _conn_q = _sl3q.connect("stock.db")
+            _dq_row = _conn_q.execute(
+                "SELECT status, note FROM stock_dart_data_quality WHERE stock_code=?",
+                (stock_code,),
+            ).fetchone()
+            _conn_q.close()
+            if _dq_row:
+                dart_quality, dart_quality_note = _dq_row[0], _dq_row[1]
+        except Exception:
+            pass
+
+    # 2026-09-01 신설: 사용자 지적("3중/4중 검증했다는게 화면엔 하나도 안 보임, 거짓말이네")
+    # 반영 — field_verification_status(financial_data/cash_flow_data 등 각 필드별
+    # multi_source_verified/dart_only_verified/disputed 분류)를 종목 상세 페이지에 실제로
+    # 노출. disputed_detail은 화면 툴팁에서 "구체적으로 뭐가 다른지" 보여주기 위한 목록.
+    verification_summary = None
+    disputed_detail = []
+    if is_kr:
+        try:
+            import sqlite3 as _sl3v
+            _conn_v2 = _sl3v.connect("stock.db")
+            _rows = _conn_v2.execute(
+                "SELECT status, COUNT(*) FROM field_verification_status WHERE stock_code=? GROUP BY status",
+                (stock_code,),
+            ).fetchall()
+            if _rows:
+                counts = {r[0]: r[1] for r in _rows}
+                verification_summary = {
+                    "multi_source_verified": counts.get("multi_source_verified", 0),
+                    "dart_only_verified": counts.get("dart_only_verified", 0),
+                    "disputed": counts.get("disputed", 0),
+                    "unverified": counts.get("unverified", 0),
+                }
+                if counts.get("disputed"):
+                    _dd = _conn_v2.execute(
+                        """SELECT year, table_name, field_name, sources_checked FROM field_verification_status
+                           WHERE stock_code=? AND status='disputed' ORDER BY year DESC LIMIT 20""",
+                        (stock_code,),
+                    ).fetchall()
+                    disputed_detail = [
+                        {"year": r[0], "table": r[1], "field": r[2], "sources": r[3]} for r in _dd
+                    ]
+            _conn_v2.close()
+        except Exception:
+            pass
+
     # ── 재무 DB 확인 → 없으면 동기 수집 ─────────────────────────
     # 핵심 카드(매출/영업이익/순이익)는 연간 연결(CFS) 기준으로 고정
     # 동일 연도에 CFS/OFS가 공존할 때 OFS가 섞여 노출되는 문제를 방지한다.
@@ -6342,7 +6534,10 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
             _fin = _conn_v.execute(
                 """SELECT eps, bps FROM financial_data
                    WHERE stock_code=? AND is_annual=1 AND year >= 2020
-                   ORDER BY year DESC, (CASE WHEN data_source='fnguide' THEN 0 ELSE 1 END) ASC
+                   ORDER BY year DESC,
+                            (CASE WHEN data_source='fnguide' THEN 0 ELSE 1 END) ASC,
+                            (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END) ASC,
+                            id DESC
                    LIMIT 1""",
                 (stock_code,)
             ).fetchone()
@@ -6486,6 +6681,10 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
             "shareholder_data_quality": shareholder_profile.get("data_quality"),
             "shareholder_quality_note": shareholder_profile.get("quality_note"),
             "shareholder_profile": shareholder_profile or None,
+            "dart_data_quality": dart_quality,
+            "dart_data_quality_note": dart_quality_note,
+            "verification_summary": verification_summary,
+            "disputed_detail": disputed_detail,
         }
 
     opm = (
@@ -6531,6 +6730,10 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
         "shareholder_data_quality": shareholder_profile.get("data_quality"),
         "shareholder_quality_note": shareholder_profile.get("quality_note"),
         "shareholder_profile": shareholder_profile or None,
+        "dart_data_quality": dart_quality,
+        "dart_data_quality_note": dart_quality_note,
+        "verification_summary": verification_summary,
+        "disputed_detail": disputed_detail,
     }
 
 
@@ -6931,3 +7134,104 @@ def get_db_stats(db: Session = Depends(get_db)):
 def get_collection_runs(limit: int = 100):
     """Latest scheduler execution result per collection job."""
     return {"runs": latest_collection_runs(limit=limit)}
+
+# ═══════════════════════════════════════════════════════════════════
+#  나무증권(NAMUH) PLUG API — 체결추이 (체결강도·매수/매도 비율)
+# ═══════════════════════════════════════════════════════════════════
+import os as _namu_os
+
+_NAMU_BASE    = "https://api.nhplug.com:8443"
+_NAMU_KEY     = _namu_os.getenv("NAMU_STOCK_API_KEY", "")
+_NAMU_SECRET  = _namu_os.getenv("NAMU_STOCK_API_SECRET", "")
+
+# 토큰 캐시 (24시간 유효)
+_namu_token_cache: dict = {"token": None, "expires_at": 0.0}
+# 체결추이 결과 캐시 (종목별, 1분 유효)
+_namu_exec_cache: dict = {}
+
+
+def _get_namu_token() -> str | None:
+    """나무 플러그 OAuth 토큰 발급 (24시간 캐시)."""
+    import time as _t
+    now = _t.time()
+    if _namu_token_cache["token"] and now < _namu_token_cache["expires_at"] - 60:
+        return _namu_token_cache["token"]
+    if not _NAMU_KEY or not _NAMU_SECRET:
+        return None
+    try:
+        import requests as _rq
+        r = _rq.post(
+            f"{_NAMU_BASE}/oauth2/token",
+            data={
+                "grant_type": "client_credentials",
+                "appkey": _NAMU_KEY,
+                "appsecretkey": _NAMU_SECRET,
+                "scope": "oob",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            _namu_token_cache["token"] = data["access_token"]
+            _namu_token_cache["expires_at"] = now + data.get("expires_in", 86400)
+            return _namu_token_cache["token"]
+    except Exception as e:
+        logger.warning(f"[Namu] 토큰 발급 실패: {e}")
+    return None
+
+
+@app.get("/api/namu/execution/{stock_code}")
+def get_namu_execution(stock_code: str):
+    """
+    나무증권 PLUG API — 국내주식 체결추이.
+    최신 체결강도(cttr), 매수 비율(bidrate), 매도 비율(askrate) 반환.
+    1분 캐시 적용.
+    """
+    import time as _t, requests as _rq
+    if not (stock_code.isdigit() and len(stock_code) == 6):
+        raise HTTPException(status_code=400, detail="종목코드 6자리 필요")
+
+    now = _t.time()
+    cached = _namu_exec_cache.get(stock_code, {})
+    if cached and now - cached.get("cached_at", 0) < 60:
+        return cached["data"]
+
+    token = _get_namu_token()
+    if not token:
+        raise HTTPException(status_code=503, detail="나무 API 토큰 발급 실패 — .env의 NAMU_STOCK_API_KEY/SECRET 확인")
+
+    try:
+        r = _rq.post(
+            f"{_NAMU_BASE}/krstock/quote/v1/currentExecution",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"Input_0": {"market_cd": "KRX", "iem_cd": stock_code, "array_cnt": "3"}},
+            timeout=8,
+        )
+        if r.status_code != 200:
+            raise HTTPException(status_code=r.status_code, detail=r.text[:200])
+
+        rows = r.json().get("Output_0", [])
+        if not rows:
+            return {"cttr": None, "bidrate": None, "askrate": None, "price": None,
+                    "buy_vol": None, "sell_vol": None, "time": None, "cached_at": now}
+
+        latest = rows[0]
+        result = {
+            "cttr":     latest.get("cttr"),
+            "bidrate":  latest.get("bidrate"),
+            "askrate":  latest.get("askrate"),
+            "price":    latest.get("stck_prpr"),
+            "buy_vol":  latest.get("shnu_cntg_smtn"),
+            "sell_vol": latest.get("seln_cntg_smtn"),
+            "time":     latest.get("bsop_hour"),
+            "cached_at": now,
+        }
+        _namu_exec_cache[stock_code] = {"data": result, "cached_at": now}
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[Namu] 체결추이 조회 실패 {stock_code}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

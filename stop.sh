@@ -2,7 +2,7 @@
 # Stop local dashboard processes and free the fixed development ports.
 set -euo pipefail
 
-PROJECT_ROOT="/Applications/stock_dashboard"
+PROJECT_ROOT="/Volumes/Realtek_NVME/stock_dashboard/runtime"
 LOG_DIR="$PROJECT_ROOT/logs"
 LABEL="com.stock-dashboard.local"
 PROCESSES_ONLY=0
@@ -36,14 +36,10 @@ stop_pid_file frontend
 stop_pid_file peak_monitor
 
 # Catch servers started by older scripts or manual shell sessions.
-pkill -f "/Applications/stock_dashboard/venv/bin/uvicorn main:app" 2>/dev/null || true
+pkill -f "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/uvicorn main:app" 2>/dev/null || true
 pkill -f "/Volumes/Realtek_NVME/stock_dashboard/venv/bin/uvicorn main:app" 2>/dev/null || true
-pkill -f "uvicorn main:app" 2>/dev/null || true
-pkill -f "/Applications/stock_dashboard/venv/bin/python peak_monitor.py" 2>/dev/null || true
+pkill -f "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python peak_monitor.py" 2>/dev/null || true
 pkill -f "/Volumes/Realtek_NVME/stock_dashboard/venv/bin/python peak_monitor.py" 2>/dev/null || true
-pkill -f "python peak_monitor.py" 2>/dev/null || true
-pkill -f "vite --host" 2>/dev/null || true
-pkill -f "npm run dev" 2>/dev/null || true
 
 sleep 1
 

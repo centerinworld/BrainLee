@@ -122,7 +122,7 @@ class DataCollector:
         if key in self._fn_collected:
             return True
         try:
-            import sys; sys.path.insert(0, '/Applications/stock_dashboard')
+            import sys; sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
             from database import SessionLocal
             from models import FinancialData
             db = SessionLocal()
@@ -146,7 +146,7 @@ class DataCollector:
     def _has_any_financial(self, stock_code: str) -> bool:
         """DB에 해당 종목 재무 1건이라도 있는지."""
         try:
-            import sys; sys.path.insert(0, '/Applications/stock_dashboard')
+            import sys; sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
             from database import SessionLocal
             from models import FinancialData
             db = SessionLocal()
@@ -199,7 +199,7 @@ class DataCollector:
                     try:
                         if _USE_RL and not _rl.wait("DART"):
                             break  # 쿼터 소진
-                        disc = self.dart.list(today_str, today_str, kind=_kind)
+                        disc = self.dart.list(start=today_str, end=today_str, kind=_kind)
                     except Exception:
                         continue  # 결과 없을 때 예외 무시
                     if disc is not None and not disc.empty and "stock_code" in disc.columns:
@@ -242,7 +242,7 @@ class DataCollector:
                 try:
                     if _USE_RL and not _rl.wait("DART"):
                         break  # 쿼터 소진
-                    disc = self.dart.list(week_ago, today_str, kind=kind)
+                    disc = self.dart.list(start=week_ago, end=today_str, kind=kind)
                 except Exception:
                     continue  # OpenDartReader가 결과 없을 때 예외 던지는 경우 무시
                 if disc is None or disc.empty:
@@ -483,11 +483,9 @@ class DataCollector:
         global_symbols = {
             "^VIX":     "VIX",
             "2YY=F":    "US2Y",
-            "^UST2Y":   "US2Y_ALT",
             "^TNX":     "US10Y",
             "10Y=F":    "US10Y_ALT",
             "^TYX":     "US30Y",
-            "30Y=F":    "US30Y_ALT",
             "GC=F":     "GOLD",
             "CL=F":     "OIL",
             "USDKRW=X": "USD/KRW",
@@ -696,6 +694,7 @@ class DataCollector:
                 if symbol in kr_syms and not self._is_kr_trading_day():
                     prices = [p for p in prices if p["date"] != today_iso]
 
+                prices = self._filter_broad_index_prices(symbol, prices)
                 if not prices:
                     continue
 
@@ -947,7 +946,7 @@ class DataCollector:
         """심볼별 급변 허용치(절대 %)."""
         if symbol in ("^IXIC", "^GSPC", "^KS11", "^KQ11", "^KS200", "^KQ150"):
             return 12.0
-        if symbol in ("^TNX", "^TYX", "2YY=F", "10Y=F", "30Y=F", "^UST2Y"):
+        if symbol in ("^TNX", "^TYX", "2YY=F", "10Y=F"):
             return 6.0
         if symbol == "^VIX":
             return 25.0
@@ -983,6 +982,28 @@ class DataCollector:
             return c if c > 0 else None
         except Exception:
             return None
+
+    def _filter_broad_index_prices(self, symbol: str, prices: list[dict]) -> list[dict]:
+        """넓은 주가지수의 휴장일/스케일 오염 행을 저장 전에 제거."""
+        if symbol not in ("^IXIC", "^GSPC", "^KS11", "^KQ11", "^KS200", "^KQ150"):
+            return prices
+        out: list[dict] = []
+        prev_close: float | None = None
+        for p in sorted(prices, key=lambda x: x.get("date") or ""):
+            close = float(p.get("close") or 0)
+            if close <= 0:
+                continue
+            if prev_close and prev_close > 0:
+                diff_pct = abs((close - prev_close) / prev_close * 100.0)
+                if diff_pct >= 20.0:
+                    logger.warning(
+                        f"[MacroGuard] {symbol}: broad-index outlier skipped "
+                        f"{p.get('date')} diff={diff_pct:.2f}% prev={prev_close:.4f} close={close:.4f}"
+                    )
+                    continue
+            out.append(p)
+            prev_close = close
+        return out
 
     def _collect_macro_yahoo(self, symbol: str, name: str, today_iso: str):
         """
@@ -1044,6 +1065,14 @@ class DataCollector:
             if not prices:
                 print(f"  [Yahoo] {name}({symbol}): 데이터 없음 → 네이버 fallback 시도")
                 self._collect_macro_naver_world(symbol, name, today_iso)
+                return
+            prices = self._filter_broad_index_prices(symbol, prices)
+            from macro_data_quality import filter_plausible_price_rows
+            prices, rejected = filter_plausible_price_rows(symbol, prices)
+            if rejected:
+                logger.warning("[MacroGuard] %s 범위 이탈 %s건 차단", symbol, rejected)
+            if not prices:
+                logger.warning(f"[Yahoo] {name}({symbol}): broad-index 필터 후 유효 데이터 없음")
                 return
 
             latest = max(prices, key=lambda x: x["date"])
@@ -1391,7 +1420,7 @@ class DataCollector:
 def _acquire_daemon_lock() -> None:
     """데몬 모드 중복 실행 방지. 이미 실행 중인 인스턴스가 있으면 즉시 종료."""
     import atexit
-    pid_path = "/Applications/stock_dashboard/logs/data_collector.pid"
+    pid_path = "/Volumes/Realtek_NVME/stock_dashboard/runtime/logs/data_collector.pid"
     os.makedirs(os.path.dirname(pid_path), exist_ok=True)
 
     if os.path.exists(pid_path):

@@ -21,17 +21,18 @@ import io
 import logging
 import re
 import sqlite3 as _sl
-from datetime import datetime, date as _date_cls
+from datetime import datetime, date as _date_cls, timedelta as _timedelta
 
 import crud, models
 from database import get_db
+from db_utils import connect_stock_db
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _PORTFOLIO_CACHE = {"ts": 0.0, "data": None}
-_PORTFOLIO_CACHE_TTL_SEC = 20
+_PORTFOLIO_CACHE_TTL_SEC = 60
 
 
 def _invalidate_portfolio_cache():
@@ -296,7 +297,7 @@ def get_portfolio(db: Session = Depends(get_db)):
     # stock_name 누락 보완: 전체 stock_universe 스캔 대신 보유 코드만 조회
     if _codes:
         try:
-            _conn = _sl.connect("stock.db")
+            _conn = connect_stock_db(row_factory=_sl.Row)
             ph = ",".join("?" for _ in _codes)
             nm_rows = _conn.execute(
                 f"SELECT stock_code, stock_name FROM stock_universe WHERE stock_code IN ({ph})",
@@ -320,52 +321,66 @@ def get_portfolio(db: Session = Depends(get_db)):
 
     _latest_prev_map = {}
     _supply_rows_map = {}
+    _history_rows_map = {}
+    _valuation_map = {}
     _short_rows_map = {}
+    _short_rank_code_map = {}
+    _short_rank_name_map = {}
     _query_codes = sorted({c for c in _query_code_map.values() if c})
     if _query_codes:
         try:
-            conn = _sl.connect("stock.db")
-            conn.row_factory = _sl.Row
+            conn = connect_stock_db(row_factory=_sl.Row)
             ph = ",".join("?" for _ in _query_codes)
 
-            # 최신가/직전가를 종목별 1회 배치 조회
-            q_lp = f"""
+            # 최신가·수급·추세 계산에 필요한 270행을 한 번만 조회한다.
+            q_history = f"""
                 WITH ranked AS (
-                    SELECT stock_code, date, close,
+                    SELECT stock_code, date, close, volume,
+                           inst_net_buy, frn_net_buy,
+                           inst_net_buy_amt, frn_net_buy_amt,
                            ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
                     FROM price_history
                     WHERE stock_code IN ({ph}) AND close > 0
                 )
-                SELECT stock_code, date, close, rn
+                SELECT stock_code, date, close, volume,
+                       inst_net_buy, frn_net_buy,
+                       inst_net_buy_amt, frn_net_buy_amt, rn
                 FROM ranked
-                WHERE rn <= 2
+                WHERE rn <= 270
+                ORDER BY stock_code, rn
             """
-            rows = conn.execute(q_lp, _query_codes).fetchall()
+            rows = conn.execute(q_history, _query_codes).fetchall()
             for r in rows:
                 sc = r["stock_code"]
+                _history_rows_map.setdefault(sc, []).append(
+                    (r["close"], r["volume"], r["inst_net_buy"], r["frn_net_buy"],
+                     r["inst_net_buy_amt"], r["frn_net_buy_amt"])
+                )
                 slot = _latest_prev_map.setdefault(sc, {"latest": None, "prev": None})
                 if r["rn"] == 1:
                     slot["latest"] = {"close": r["close"], "date": r["date"]}
                 elif r["rn"] == 2:
                     slot["prev"] = {"close": r["close"], "date": r["date"]}
+                if r["rn"] <= 10:
+                    _supply_rows_map.setdefault(sc, []).append(
+                        (r["close"], r["frn_net_buy"], r["inst_net_buy"],
+                         r["frn_net_buy_amt"], r["inst_net_buy_amt"])
+                    )
 
-            # 수급(최근 10행) 배치 조회
-            q_sup = f"""
+            q_valuation = f"""
                 WITH ranked AS (
-                    SELECT stock_code, date, close, frn_net_buy, inst_net_buy, frn_net_buy_amt, inst_net_buy_amt,
-                           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
-                    FROM price_history
-                    WHERE stock_code IN ({ph}) AND close > 0
+                    SELECT stock_code, pbr, per, roe, roa,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY stock_code
+                               ORDER BY updated_at DESC NULLS LAST, base_date DESC NULLS LAST
+                           ) AS rn
+                    FROM stock_universe
+                    WHERE stock_code IN ({ph})
                 )
-                SELECT stock_code, close, frn_net_buy, inst_net_buy, frn_net_buy_amt, inst_net_buy_amt, rn
-                FROM ranked
-                WHERE rn <= 10
-                ORDER BY stock_code, rn
+                SELECT stock_code, pbr, per, roe, roa FROM ranked WHERE rn=1
             """
-            for r in conn.execute(q_sup, _query_codes).fetchall():
-                _supply_rows_map.setdefault(r["stock_code"], []).append(
-                    (r["close"], r["frn_net_buy"], r["inst_net_buy"], r["frn_net_buy_amt"], r["inst_net_buy_amt"])
-                )
+            for r in conn.execute(q_valuation, _query_codes).fetchall():
+                _valuation_map[r["stock_code"]] = (r["pbr"], r["per"], r["roe"], r["roa"])
 
             # 대차잔고(최근 30행) 배치 조회
             q_short = f"""
@@ -374,14 +389,43 @@ def get_portfolio(db: Session = Depends(get_db)):
                            ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY bas_dt DESC) AS rn
                     FROM short_sell_daily
                     WHERE stock_code IN ({ph}) AND borrow_bal_qty IS NOT NULL
+                      AND bas_dt >= ?
                 )
                 SELECT stock_code, bas_dt, borrow_bal_qty, rn
                 FROM ranked
                 WHERE rn <= 30
                 ORDER BY stock_code, rn
             """
-            for r in conn.execute(q_short, _query_codes).fetchall():
+            short_cutoff = (_date_cls.today() - _timedelta(days=120)).strftime("%Y%m%d")
+            for r in conn.execute(q_short, [*_query_codes, short_cutoff]).fetchall():
                 _short_rows_map.setdefault(r["stock_code"], []).append((r["bas_dt"], r["borrow_bal_qty"]))
+
+            holding_names = sorted({str(m.get("stock_name") or "").strip() for m in merged.values() if m.get("stock_name")})
+            if holding_names:
+                ph_names = ",".join("?" for _ in holding_names)
+                q_short_rank = f"""
+                    WITH ranked AS (
+                        SELECT stock_code, stock_name, bas_dt, lnb_rman_stck_cnt,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY COALESCE(NULLIF(stock_code,''), stock_name)
+                                   ORDER BY bas_dt DESC
+                               ) AS rn
+                        FROM short_rank_daily
+                        WHERE (stock_code IN ({ph}) OR stock_name IN ({ph_names}))
+                          AND lnb_rman_stck_cnt IS NOT NULL
+                          AND bas_dt >= ?
+                    )
+                    SELECT stock_code, stock_name, bas_dt, lnb_rman_stck_cnt, rn
+                    FROM ranked WHERE rn <= 30
+                    ORDER BY rn
+                """
+                params = [*_query_codes, *holding_names, short_cutoff]
+                for r in conn.execute(q_short_rank, params).fetchall():
+                    value = (r["bas_dt"], r["lnb_rman_stck_cnt"])
+                    if r["stock_code"]:
+                        _short_rank_code_map.setdefault(r["stock_code"], []).append(value)
+                    if r["stock_name"]:
+                        _short_rank_name_map.setdefault(r["stock_name"], []).append(value)
 
             conn.close()
         except Exception:
@@ -423,26 +467,26 @@ def get_portfolio(db: Session = Depends(get_db)):
         inst_net = 0.0
         try:
             sups = _supply_rows_map.get(sc_q, [])
-            # 수급 데이터가 있는 행만 최신 5일 추출
-            valid_sup = [r for r in sups if (r[1] or 0) or (r[2] or 0) or (r[3] or 0) or (r[4] or 0)][:5]
+            # 0 수급 포함 단순 최신 5거래일(sups[:5])을 취하여 메인 지표 및 signal_engine 의 5일 수급과 산출 정합성을 맞춤
+            valid_sup = sups[:5]
             if valid_sup:
                 frn_net  = round(sum(_to_억(r[1], r[3], r[0]) for r in valid_sup), 1)
                 inst_net = round(sum(_to_억(r[2], r[4], r[0]) for r in valid_sup), 1)
-            # 배치맵 누락 시(특수코드 등) 개별 fallback
-            if frn_net == 0.0 and inst_net == 0.0:
-                conn_fb = _sl.connect("stock.db")
+            # 배치맵 자체가 누락된 특수코드만 개별 fallback한다. 정상적인 0 수급은 재조회하지 않는다.
+            if not sups:
+                conn_fb = connect_stock_db(row_factory=_sl.Row)
                 sups_fb = conn_fb.execute(
                     "SELECT close, frn_net_buy, inst_net_buy, frn_net_buy_amt, inst_net_buy_amt "
                     "FROM price_history WHERE stock_code=? AND close>0 "
                     "ORDER BY date DESC LIMIT 10", (sc_q,)
                 ).fetchall()
                 conn_fb.close()
-                valid_fb = [r for r in sups_fb if (r[1] or 0) or (r[2] or 0) or (r[3] or 0) or (r[4] or 0)][:5]
+                valid_fb = sups_fb[:5]
                 if valid_fb:
                     frn_net  = round(sum(_to_억(r[1], r[3], r[0]) for r in valid_fb), 1)
                     inst_net = round(sum(_to_억(r[2], r[4], r[0]) for r in valid_fb), 1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"[PORTFOLIO_SUPPLY_ERROR] {sc}: {e}")
 
         # ── 대차잔고 (buy_candidates/short-sell과 동일 계산) ─────────
         short_data = None
@@ -451,16 +495,11 @@ def get_portfolio(db: Session = Depends(get_db)):
             # 일부 종목(예: 액스비스)은 short_sell_daily 코드 매핑이 비어 있고
             # short_rank_daily에 종목명 기준으로만 들어오는 케이스가 있어 fallback 조회.
             if len(srows) < 5:
-                conn_fb = _sl.connect("stock.db")
-                rank_rows = conn_fb.execute(
-                    "SELECT bas_dt, lnb_rman_stck_cnt "
-                    "FROM short_rank_daily "
-                    "WHERE (stock_code=? AND stock_code IS NOT NULL AND stock_code!='') "
-                    "   OR (stock_name=? AND lnb_rman_stck_cnt IS NOT NULL) "
-                    "ORDER BY bas_dt DESC LIMIT 30",
-                    (sc_q, m.get("stock_name") or ""),
-                ).fetchall()
-                conn_fb.close()
+                rank_rows = (
+                    _short_rank_code_map.get(sc_q)
+                    or _short_rank_name_map.get(m.get("stock_name") or "")
+                    or []
+                )
                 if rank_rows:
                     srows = [(r[0], r[1]) for r in rank_rows if r[1] is not None]
             if len(srows) >= 5:
@@ -502,19 +541,8 @@ def get_portfolio(db: Session = Depends(get_db)):
         val_detail    = []
         trend_detail  = []
         try:
-            conn = _sl.connect("stock.db")
-            ph = conn.execute(
-                "SELECT close, volume, inst_net_buy, frn_net_buy, "
-                "       inst_net_buy_amt, frn_net_buy_amt "
-                "FROM price_history WHERE stock_code=? AND close>0 "
-                "ORDER BY date DESC LIMIT 270", (sc,)
-            ).fetchall()
-            # 가치 지표 (stock_universe)
-            val_row = conn.execute(
-                "SELECT pbr, per, roe, roa FROM stock_universe "
-                "WHERE stock_code=? ORDER BY updated_at DESC LIMIT 1", (sc,)
-            ).fetchone()
-            conn.close()
+            ph = _history_rows_map.get(sc_q, [])
+            val_row = _valuation_map.get(sc_q)
 
             if len(ph) >= 20:
                 closes = [r[0] for r in ph]
@@ -686,6 +714,52 @@ def get_portfolio(db: Session = Depends(get_db)):
         except Exception as _e:
             logger.debug(f"[포트폴리오신호] {sc}: {_e}")
 
+        # ── 트레일링스탑 매도시그널 (2026-07-21 신규) ───────────────────
+        # 사용자 지시: "트레일링스탑-30%가 최적인지 검증 후, 보유종목에도 동일 로직 적용해
+        # 매도시그널 표시". V-GC/V-SECTOR/V-MEGATREND(추세추종 계열) A/B 검증 결과 손절-20%
+        # 고정 + 매수가 대비 이익권일 때만 고점대비 -30% 추적손절이 최적으로 확인됨
+        # (routes/backtest.py STRATEGY_DESC "megatrend" 참조). 매수일(bought_at) 이후 종가
+        # 고점을 추적해 동일 규칙을 실제 보유종목에 적용 — 4분면 신호와 별도의 독립 지표.
+        trail_signal = {"status": "hold", "reason": "", "peak_price": None, "peak_date": None,
+                        "drawdown_from_peak_pct": None, "peak_basis": None}
+        try:
+            bought_at_str = m.get("bought_at")
+            peak_basis = "매수일"
+            if not bought_at_str:
+                # 매수일 미기록 종목(portfolio.bought_at NULL) 다수 발견(2026-07-21) — 완전
+                # 생략 대신 최근 252거래일(전략센터 max_hold 관례와 동일) 고점으로 근사.
+                since_bought = (_date_cls.today() - _timedelta(days=365)).isoformat()
+                peak_basis = "매수일 미기록 — 최근 1년 고점 근사"
+            else:
+                since_bought = str(bought_at_str)[:10]
+            if current_price:
+                conn_t = connect_stock_db(row_factory=_sl.Row)
+                peak_row = conn_t.execute(
+                    "SELECT date, close FROM price_history WHERE stock_code=? AND date>=? "
+                    "AND close>0 ORDER BY close DESC LIMIT 1",
+                    (sc, since_bought),
+                ).fetchone()
+                conn_t.close()
+                if peak_row:
+                    peak_price, peak_date = peak_row[1], peak_row[0]
+                    trail_signal["peak_price"] = peak_price
+                    trail_signal["peak_date"] = peak_date
+                    trail_signal["peak_basis"] = peak_basis
+                    if peak_price and peak_price > 0:
+                        dd_pct = round((current_price - peak_price) / peak_price * 100, 2)
+                        trail_signal["drawdown_from_peak_pct"] = dd_pct
+                        if profit_pct <= -20:
+                            trail_signal["status"] = "sell"
+                            trail_signal["reason"] = f"손절선 도달(매수가 대비 {profit_pct:.1f}%)"
+                        elif profit_pct > 0 and dd_pct <= -30:
+                            trail_signal["status"] = "sell"
+                            trail_signal["reason"] = f"추적손절 발동(고점 {peak_date} {peak_price:,.0f}원 대비 {dd_pct:.1f}%)"
+                        elif profit_pct > 0 and dd_pct <= -20:
+                            trail_signal["status"] = "watch"
+                            trail_signal["reason"] = f"고점대비 {dd_pct:.1f}% 하락 — 추적손절(-30%) 근접 주의"
+        except Exception as _e:
+            logger.debug(f"[트레일링스탑신호] {sc}: {_e}")
+
         result.append({
             "stock_code":    m["stock_code"],
             "stock_name":    m["stock_name"],
@@ -711,7 +785,10 @@ def get_portfolio(db: Session = Depends(get_db)):
             "val_score":     val_score,
             "val_detail":    val_detail,
             "trend_detail":  trend_detail,
+            "trail_signal":  trail_signal,
         })
+        if m["stock_code"] == '172670':
+            logger.info(f"[PORTFOLIO_DEBUG] ALT frn_net={frn_net}, inst_net={inst_net}, valid_sup_len={len(valid_sup) if 'valid_sup' in locals() else 'N/A'}")
 
     result.sort(key=lambda x: x["total_value"], reverse=True)
     _PORTFOLIO_CACHE["ts"] = now_ts
@@ -750,7 +827,11 @@ def get_transactions(db: Session = Depends(get_db)):
     return [
         {"id": t.id, "stock_code": t.stock_code, "stock_name": t.stock_name,
          "tx_type": t.tx_type, "quantity": t.quantity, "price": t.price,
-         "tx_date": t.tx_date.strftime("%Y-%m-%d %H:%M") if t.tx_date else "",
+         "tx_date": (
+             t.tx_date.strftime("%Y-%m-%d %H:%M")
+             if hasattr(t.tx_date, "strftime")
+             else str(t.tx_date or "")[:16]
+         ),
          "memo": t.memo}
         for t in txs
     ]

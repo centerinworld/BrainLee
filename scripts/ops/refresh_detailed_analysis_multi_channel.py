@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sqlite3
+import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +13,10 @@ from typing import Any
 
 import requests
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+from services.gemini import generate_text, is_configured
+
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 EXCLUDE_CHANNELS: set[str] = set()
 SECTION_HEADER = "## 타채널 맥락 요약 (GPT mini)"
 
@@ -24,7 +28,7 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
-def _load_env(path: str = "/Applications/stock_dashboard/.env") -> None:
+def _load_env(path: str = "/Volumes/Realtek_NVME/stock_dashboard/runtime/.env") -> None:
     p = Path(path)
     if not p.exists():
         return
@@ -205,9 +209,7 @@ def _fallback_summary(meta: dict[str, str], by_channel: dict[str, list[dict[str,
 
 
 def _openai_mini_summary(meta: dict[str, str], by_channel: dict[str, list[dict[str, str]]]) -> str:
-    key = os.getenv("OPENAI_API_KEY", "").strip()
-    model = os.getenv("OPENAI_MINI_MODEL", "gpt-4o-mini")
-    if not key:
+    if not is_configured():
         return _fallback_summary(meta, by_channel)
 
     channel_blocks = []
@@ -255,22 +257,13 @@ def _openai_mini_summary(meta: dict[str, str], by_channel: dict[str, list[dict[s
 """
 
     try:
-        res = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "당신은 한국 주식 텔레그램 리서치 요약가다."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-            },
+        return generate_text(
+            prompt,
+            system_instruction="당신은 한국 주식 텔레그램 리서치 요약가다.",
+            temperature=0.2,
+            max_output_tokens=1800,
             timeout=90,
         )
-        res.raise_for_status()
-        data: dict[str, Any] = res.json()
-        return data["choices"][0]["message"]["content"].strip()
     except Exception:
         return _fallback_summary(meta, by_channel)
 

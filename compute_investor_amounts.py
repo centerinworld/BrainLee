@@ -18,7 +18,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 BATCH   = 10_000   # 한 번에 처리할 행 수
 
 
@@ -53,7 +53,7 @@ def run(days: int | None = None):
 
     while True:
         rows = conn.execute(f"""
-            SELECT rowid, inst_net_buy, frn_net_buy, close
+            SELECT stock_code, date, inst_net_buy, frn_net_buy, close
             FROM price_history
             WHERE close > 0
               AND (inst_net_buy != 0 OR frn_net_buy != 0)
@@ -69,7 +69,7 @@ def run(days: int | None = None):
             break
 
         upd_data = []
-        for rowid, inst_qty, frn_qty, close in rows:
+        for stock_code, date, inst_qty, frn_qty, close in rows:
             inst_qty = float(inst_qty or 0)
             frn_qty = float(frn_qty or 0)
             close = float(close or 0)
@@ -77,13 +77,13 @@ def run(days: int | None = None):
             inst_amt = round(inst_qty * close / 1_000_000, 6)
             frn_amt = round(frn_qty * close / 1_000_000, 6)
             ind_amt = -round(inst_amt + frn_amt, 6)  # 개인 = -(기관+외국인)
-            upd_data.append((inst_amt, frn_amt, ind_amt, rowid))
+            upd_data.append((inst_amt, frn_amt, ind_amt, stock_code, date))
 
         # 다른 프로세스(서버/스케줄러)가 동시에 DB를 쓰는 경우가 있어 lock 재시도
         for attempt in range(1, 11):
             try:
                 conn.executemany(
-                    "UPDATE price_history SET inst_net_buy_amt=?, frn_net_buy_amt=?, ind_net_buy_amt=? WHERE rowid=?",
+                    "UPDATE price_history SET inst_net_buy_amt=?, frn_net_buy_amt=?, ind_net_buy_amt=? WHERE stock_code=? AND date=?",
                     upd_data,
                 )
                 conn.commit()

@@ -21,9 +21,11 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
+from db_utils import connect_stock_db
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 # 신호 유형 정의
 SIGNAL_TYPES = {
@@ -249,7 +251,7 @@ def save_signals(conn: sqlite3.Connection, signals: list[dict], stock_name: str 
     saved = 0
     for s in signals:
         try:
-            conn.execute("""
+            cursor = conn.execute("""
                 INSERT OR IGNORE INTO earnings_signals
                 (stock_code, stock_name, year, quarter, signal_type, detail,
                  ttm_op_cur, ttm_op_prev_q, ttm_op_yoy_base,
@@ -265,7 +267,7 @@ def save_signals(conn: sqlite3.Connection, signals: list[dict], stock_name: str 
                 s.get("ttm_op_accel_pct"), s.get("price_at_signal"),
                 s.get("detected_at"),
             ))
-            saved += conn.execute("SELECT changes()").fetchone()[0]
+            saved += max(cursor.rowcount, 0)
         except Exception as e:
             logger.debug(f"신호 저장 스킵 {s.get('stock_code')} {s.get('signal_type')}: {e}")
     conn.commit()
@@ -283,33 +285,40 @@ def run_full_scan(days_back: int = 30, min_mktcap_억: int = 100) -> dict:
     Returns:
         {"scanned": N, "signals": M, "new_signals": K, "by_type": {...}}
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_stock_db(row_factory=sqlite3.Row)
     _ensure_signals_table(conn)
 
     cutoff = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
     # 최근 업데이트된 종목의 최신 분기 가져오기
+    # (PostgreSQL 라우팅 하에서는 GROUP BY f.stock_code + 비집계 컬럼 SELECT/HAVING가
+    #  GroupingError이므로, 종목별 최신 (year,quarter) 1행을 ROW_NUMBER()로 뽑는다.)
     stocks = conn.execute(f"""
-        SELECT
-            f.stock_code,
-            su.stock_name,
-            f.year,
-            f.quarter,
-            su.market_cap
-        FROM financial_data f
-        JOIN stock_universe su ON f.stock_code = su.stock_code
-        WHERE f.is_annual = 0 AND f.quarter > 0
-          AND f.revenue IS NOT NULL AND f.revenue > 0
-          AND f.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
-          AND su.market IN ('KOSPI','KOSDAQ')
-          AND (su.market_cap IS NULL
-               OR su.market_cap >= {min_mktcap_억}
-               OR su.market_cap >= {min_mktcap_억* 100000000})
-          AND f.created_at >= '{cutoff}'
-        GROUP BY f.stock_code
-        HAVING f.year = MAX(f.year) AND f.quarter = MAX(f.quarter)
-        ORDER BY su.market_cap DESC NULLS LAST
+        WITH ranked AS (
+            SELECT
+                f.stock_code,
+                su.stock_name,
+                f.year,
+                f.quarter,
+                su.market_cap,
+                ROW_NUMBER() OVER (
+                    PARTITION BY f.stock_code ORDER BY f.year DESC, f.quarter DESC
+                ) AS rn
+            FROM financial_data f
+            JOIN stock_universe su ON f.stock_code = su.stock_code
+            WHERE f.is_annual = 0 AND f.quarter > 0
+              AND f.revenue IS NOT NULL AND f.revenue > 0
+              AND f.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND su.market IN ('KOSPI','KOSDAQ')
+              AND (su.market_cap IS NULL
+                   OR su.market_cap >= {min_mktcap_억}
+                   OR su.market_cap >= {min_mktcap_억* 100000000})
+              AND f.created_at >= '{cutoff}'
+        )
+        SELECT stock_code, stock_name, year, quarter, market_cap
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY market_cap DESC NULLS LAST
     """).fetchall()
 
     scanned = 0
@@ -359,8 +368,7 @@ def run_full_scan(days_back: int = 30, min_mktcap_억: int = 100) -> dict:
 
 def scan_single_stock(stock_code: str) -> list[dict]:
     """단일 종목 즉시 스캔 (DART 공시 감지 시 호출)"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect_stock_db(row_factory=sqlite3.Row)
     _ensure_signals_table(conn)
 
     # 최신 분기 찾기

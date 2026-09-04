@@ -2,7 +2,7 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, Tuple, Any
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 
 def ensure_canonical_schema(conn: sqlite3.Connection) -> None:
@@ -111,6 +111,33 @@ def _log(conn: sqlite3.Connection, table_name: str, p: Dict[str, Any], level: st
 
 def gate_financial_row(conn: sqlite3.Connection, p: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
     q = dict(p)
+    revenue = q.get("revenue")
+    operating_profit = q.get("operating_profit")
+
+    # Revenue is a top-line flow for a whole reporting period. A negative value
+    # here is an extraction/sign-mapping error, not a value that downstream
+    # valuation calculations can safely consume.
+    if revenue is not None:
+        try:
+            revenue_f = float(revenue)
+        except (TypeError, ValueError):
+            _log(conn, "financial_data", q, "critical", "REVENUE_CAST_ERROR", "매출 숫자 캐스팅 실패")
+            return False, q, "REVENUE_CAST_ERROR"
+        if revenue_f < 0:
+            _log(conn, "financial_data", q, "critical", "NEGATIVE_REVENUE", f"매출 음수 차단: {revenue_f}")
+            return False, q, "NEGATIVE_REVENUE"
+        if operating_profit is not None and revenue_f > 0:
+            try:
+                operating_profit_f = float(operating_profit)
+            except (TypeError, ValueError):
+                _log(conn, "financial_data", q, "critical", "OPERATING_PROFIT_CAST_ERROR", "영업이익 숫자 캐스팅 실패")
+                return False, q, "OPERATING_PROFIT_CAST_ERROR"
+            # A small tolerance permits reporting-unit rounding, while catching
+            # swapped or incorrectly scaled income-statement fields.
+            if operating_profit_f > revenue_f * 1.05:
+                _log(conn, "financial_data", q, "critical", "OPERATING_PROFIT_EXCEEDS_REVENUE", f"영업이익/매출 비정상: {operating_profit_f}/{revenue_f}")
+                return False, q, "OPERATING_PROFIT_EXCEEDS_REVENUE"
+
     ta = q.get("total_assets")
     tl = q.get("total_liabilities")
     te = q.get("total_equity")
@@ -128,8 +155,18 @@ def gate_financial_row(conn: sqlite3.Connection, p: Dict[str, Any]) -> Tuple[boo
                 diff = ta_f - tl_f - te_f
                 tol = max(abs(ta_f) * 0.01, 5e8)
                 if abs(diff) > tol:
-                    q["total_equity"] = ta_f - tl_f
-                    _log(conn, "financial_data", q, "warn", "FIX_EQUITY_IDENTITY", f"A-L-E 불일치 보정 diff={diff}")
+                    scale = max(abs(ta_f), 1.0)
+                    liabilities_match_assets = abs(tl_f - ta_f) / scale < 0.03
+                    equity_match_assets = abs(te_f - ta_f) / scale < 0.03
+                    if liabilities_match_assets and not equity_match_assets and abs(te_f) > scale * 0.03:
+                        q["total_liabilities"] = ta_f - te_f
+                        _log(conn, "financial_data", q, "warn", "FIX_LIABILITY_TOTAL_MATCH", f"부채총계가 자산총계로 오매칭 diff={diff}")
+                    elif equity_match_assets and not liabilities_match_assets and abs(tl_f) > scale * 0.03:
+                        q["total_equity"] = ta_f - tl_f
+                        _log(conn, "financial_data", q, "warn", "FIX_EQUITY_TOTAL_MATCH", f"자본총계가 자산총계로 오매칭 diff={diff}")
+                    else:
+                        _log(conn, "financial_data", q, "critical", "BS_IDENTITY_AMBIGUOUS", f"근거 없는 항등식 보정 차단 diff={diff}")
+                        return False, q, "BS_IDENTITY_AMBIGUOUS"
         except Exception:
             _log(conn, "financial_data", q, "critical", "CAST_ERROR", "B/S 숫자 캐스팅 실패")
             return False, q, "CAST_ERROR"

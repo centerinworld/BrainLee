@@ -5,7 +5,7 @@ update_sector.py — 보유종목 업종(소분류) 자동 업데이트
 portfolio 테이블의 sector 컬럼을 업데이트합니다.
 
 실행:
-  cd /Applications/stock_dashboard && source venv/bin/activate
+  cd /Volumes/Realtek_NVME/stock_dashboard/runtime && source venv/bin/activate
   python3 update_sector.py
 """
 
@@ -13,11 +13,11 @@ import sys, sqlite3, time, requests, logging
 from pathlib import Path
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 
 
 def get_sector_naver(stock_code: str) -> str | None:

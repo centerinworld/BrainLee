@@ -2,8 +2,8 @@
 import sqlite3, csv
 from datetime import datetime
 
-DB='/Applications/stock_dashboard/stock.db'
-OUT='/Applications/stock_dashboard/scratch/stock_reliability_report_{}.csv'.format(datetime.now().strftime('%Y%m%d_%H%M%S'))
+DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
+OUT='/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/stock_reliability_report_{}.csv'.format(datetime.now().strftime('%Y%m%d_%H%M%S'))
 
 conn=sqlite3.connect(DB)
 conn.row_factory=sqlite3.Row

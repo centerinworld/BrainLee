@@ -224,11 +224,16 @@ def _metric_snapshot(monthly: list[dict], value_key: str) -> dict:
 def _ensure_sector_presets() -> None:
     db = SessionLocal()
     try:
-        existing = {row.sector_key for row in db.query(SectorPreset).all()}
+        existing = {row.sector_key: row for row in db.query(SectorPreset).all()}
         for item in DEFAULT_SECTORS:
-            if item["sector_key"] in existing:
+            row = existing.get(item["sector_key"])
+            if row is None:
+                db.add(SectorPreset(**item))
                 continue
-            db.add(SectorPreset(**item))
+            # Keep the operational database aligned with the versioned taxonomy.
+            row.label = item["label"]
+            row.description = item["description"]
+            row.sort_order = item["sort_order"]
         db.commit()
     finally:
         db.close()
@@ -667,6 +672,89 @@ PROVISIONAL_10DAY_CATEGORY = {
 }
 
 
+SEMICONDUCTOR_SUBGROUPS = {
+    "devices": {
+        "label": "메모리·시스템 IC",
+        "description": "HS 854231/854232 기준의 직접 반도체 소자 수출",
+    },
+    "storage": {
+        "label": "SSD/저장장치",
+        "description": "낸드 응용 저장장치로, 웨이퍼·칩 수출과 별도 사이클일 수 있음",
+    },
+    "equipment": {
+        "label": "제조·검사 장비",
+        "description": "전공정·후공정·검사 장비 수출",
+    },
+    "materials_parts": {
+        "label": "소재·부품",
+        "description": "웨이퍼·가스·포토레지스트·패키징 등",
+    },
+    "adjacent_electronics": {
+        "label": "인접 전자부품",
+        "description": "OLED·PCB·MLCC 등 반도체 직접 소자와 구분해 해석",
+    },
+}
+
+
+def _semiconductor_subgroup(hs_code: str) -> str:
+    """Classify the broad legacy semiconductor basket for investor-facing analysis."""
+    code = str(hs_code or "")
+    if code.startswith(("854231", "854232")):
+        return "devices"
+    if code.startswith("852351"):
+        return "storage"
+    if code.startswith(("848620", "848640", "846420", "845611", "903141", "903149", "903180", "841410", "842121", "842890", "901210")):
+        return "equipment"
+    if code.startswith(("281122", "284", "320730", "340590", "370", "381", "392", "700600", "701710", "741021", "831190", "854290", "853690")):
+        return "materials_parts"
+    return "adjacent_electronics"
+
+
+def _semiconductor_subgroup_series(conn: sqlite3.Connection, months: int) -> list[dict]:
+    """Return non-overlapping subseries so a broad basket cannot imply a chip-cycle call."""
+    rows = conn.execute(
+        """
+        SELECT period_ym, hs_code, export_value
+        FROM analysis2_sector_hs_monthly_cache
+        WHERE sector_key='semiconductors'
+          AND period_ym >= date('now', ? || ' months')
+        ORDER BY period_ym, hs_code
+        """,
+        (f"-{months}",),
+    ).fetchall()
+    grouped: dict[str, dict[str, float]] = {
+        key: {} for key in SEMICONDUCTOR_SUBGROUPS
+    }
+    for row in rows:
+        bucket = _semiconductor_subgroup(row["hs_code"])
+        period = row["period_ym"]
+        grouped[bucket][period] = grouped[bucket].get(period, 0.0) + float(row["export_value"] or 0)
+
+    periods = sorted({row["period_ym"] for row in rows})
+    result = []
+    for key, meta in SEMICONDUCTOR_SUBGROUPS.items():
+        monthly = [
+            {"period_ym": period, "export_val": round(grouped[key].get(period, 0.0))}
+            for period in periods
+        ]
+        stats = _metric_snapshot(monthly, "export_val")
+        latest = stats["latest"]
+        result.append({
+            "key": key,
+            **meta,
+            "monthly": monthly,
+            "export_latest": latest,
+            "export_mom": stats["mom"],
+            "export_yoy": stats["yoy"],
+            "latest_share": None,
+        })
+    total_latest = sum(group["export_latest"] or 0 for group in result)
+    for group in result:
+        latest = group["export_latest"] or 0
+        group["latest_share"] = round((latest / total_latest) * 100, 2) if total_latest else None
+    return result
+
+
 def _latest_provisional_10day(conn: sqlite3.Connection, sector_key: str | None) -> dict | None:
     if not sector_key:
         return None
@@ -770,6 +858,7 @@ def analysis2_sectors(months: int = 24):
         result.append(
             {
                 **sector,
+                "label": "반도체 밸류체인" if sector["sector_key"] == "semiconductors" else sector["label"],
                 "monthly": monthly,
                 "latest_period": monthly[-1]["period_ym"] if monthly else None,
                 "provisional_10day": provisional,
@@ -792,6 +881,9 @@ def analysis2_sectors(months: int = 24):
                 "import_dependency": round((import_latest / export_latest) * 100, 2) if export_latest else None,
                 "mom": export_stats["mom"],
                 "yoy": export_stats["yoy"],
+                "subgroups": _semiconductor_subgroup_series(conn, months)
+                if sector["sector_key"] == "semiconductors"
+                else [],
             }
         )
     conn.close()
@@ -1806,6 +1898,131 @@ def analysis2_export_health(months: int = 6):
             {"hs_code": r["hs_code"], "hs_name": r["hs_name"], "company_count": r["company_count"]}
             for r in shared_rows
         ],
+    }
+
+
+@app.get("/api/analysis2/trade-triggers")
+def analysis2_trade_triggers(months: int = 24):
+    """Convert confirmed HS trade changes into research actions, never execution orders."""
+    conn = _hs_db()
+    rows = conn.execute(
+        """
+        SELECT sector_key, MAX(sector_label) AS sector_label,
+               stock_code, MAX(stock_name) AS stock_name, period_ym,
+               SUM(export_value) AS export_value,
+               SUM(export_weight) AS export_weight,
+               MIN(CASE mapping_status
+                     WHEN 'exact' THEN 1 WHEN 'composite' THEN 2 ELSE 3 END) AS mapping_rank
+        FROM analysis2_company_monthly_cache
+        WHERE period_ym >= date('now', ? || ' months')
+        GROUP BY sector_key, stock_code, period_ym
+        ORDER BY sector_key, stock_code, period_ym
+        """,
+        (f"-{months}",),
+    ).fetchall()
+    conn.close()
+
+    status_by_rank = {1: "exact", 2: "composite", 3: "provisional"}
+    groups: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        key = (row["sector_key"], row["stock_code"])
+        group = groups.setdefault(key, {
+            "sector_key": row["sector_key"],
+            "sector_label": row["sector_label"],
+            "stock_code": row["stock_code"],
+            "stock_name": row["stock_name"],
+            "mapping_rank": row["mapping_rank"],
+            "monthly": [],
+        })
+        group["mapping_rank"] = min(group["mapping_rank"], row["mapping_rank"])
+        export_value = float(row["export_value"] or 0)
+        export_weight = float(row["export_weight"] or 0)
+        group["monthly"].append({
+            "period_ym": row["period_ym"],
+            "export_val": export_value,
+            "export_kg": export_weight,
+            "unit_price": (export_value / export_weight) if export_weight else None,
+        })
+
+    triggered = []
+    for group in groups.values():
+        monthly = group["monthly"]
+        export = _metric_snapshot(monthly, "export_val")
+        volume = _metric_snapshot(monthly, "export_kg")
+        price = _metric_snapshot(monthly, "unit_price")
+        if not export["latest"] or export["latest"] <= 1_000_000:
+            continue
+
+        mapping_status = status_by_rank.get(group["mapping_rank"], "provisional")
+        yoy = export["yoy"]
+        mom = export["mom"]
+        volume_yoy = volume["yoy"]
+        price_yoy = price["yoy"]
+        score = 0
+        reasons: list[str] = []
+        if yoy is not None and yoy >= 15:
+            score += 2; reasons.append(f"수출 YoY +{yoy:.1f}%")
+        elif yoy is not None and yoy <= -15:
+            score -= 2; reasons.append(f"수출 YoY {yoy:.1f}%")
+        if mom is not None and mom >= 5:
+            score += 1; reasons.append(f"MoM +{mom:.1f}%")
+        elif mom is not None and mom <= -5:
+            score -= 1; reasons.append(f"MoM {mom:.1f}%")
+        if volume_yoy is not None and volume_yoy >= 5:
+            score += 1; reasons.append(f"물량 YoY +{volume_yoy:.1f}%")
+        elif volume_yoy is not None and volume_yoy <= -5:
+            score -= 1; reasons.append(f"물량 YoY {volume_yoy:.1f}%")
+        if price_yoy is not None and price_yoy >= 5:
+            score += 1; reasons.append(f"단가 YoY +{price_yoy:.1f}%")
+        elif price_yoy is not None and price_yoy <= -5:
+            score -= 1; reasons.append(f"단가 YoY {price_yoy:.1f}%")
+
+        if mapping_status == "exact" and score >= 4 and (volume_yoy or 0) >= 5:
+            action = "buy_candidate"
+            action_label = "매수 후보"
+            action_note = "주가 추세·실적 추정치·밸류에이션 확인 후에만 진입 검토"
+        elif mapping_status in {"exact", "composite"} and score <= -4 and (volume_yoy or 0) <= -5:
+            action = "reduce_review"
+            action_label = "비중 축소 검토"
+            action_note = "수출 신호 악화가 실제 수주·실적에 반영되는지 확인"
+        else:
+            action = "watch"
+            action_label = "관찰"
+            action_note = "단일 월 변동 또는 기업 귀속 불확실성으로 매매 근거가 부족"
+
+        triggered.append({
+            **{key: value for key, value in group.items() if key != "monthly"},
+            "mapping_status": mapping_status,
+            "latest_period": export["latest_period"],
+            "export_latest": export["latest"],
+            "export_mom": mom,
+            "export_yoy": yoy,
+            "volume_yoy": volume_yoy,
+            "unit_price_yoy": price_yoy,
+            "score": score,
+            "action": action,
+            "action_label": action_label,
+            "action_note": action_note,
+            "reasons": reasons,
+        })
+
+    buy_candidates = sorted(
+        (row for row in triggered if row["action"] == "buy_candidate"),
+        key=lambda row: row["score"], reverse=True,
+    )[:12]
+    reduce_reviews = sorted(
+        (row for row in triggered if row["action"] == "reduce_review"),
+        key=lambda row: row["score"],
+    )[:12]
+    watchlist = sorted(
+        (row for row in triggered if row["action"] == "watch"),
+        key=lambda row: row["score"], reverse=True,
+    )[:12]
+    return {
+        "methodology": "exact HS 매핑 + 수출 YoY/MoM + 물량 YoY 확인. 자동 매매 신호가 아닌 리서치 우선순위입니다.",
+        "buy_candidates": buy_candidates,
+        "reduce_reviews": reduce_reviews,
+        "watchlist": watchlist,
     }
 
 

@@ -3,7 +3,7 @@
 BigQuery 3배주 패턴 아침 리포트 + 텔레그램 발송
 
 실행:
-  /Applications/stock_dashboard/venv/bin/python scripts/bigquery_triple_morning_alert.py
+  /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python scripts/bigquery_triple_morning_alert.py
 """
 
 from __future__ import annotations
@@ -72,25 +72,16 @@ def _render(rows):
 
 
 def _send_telegram(msg: str) -> bool:
-    if not BOT_TOKEN or not CHAT_ID:
+    try:
+        from notifier import send
+        return send(msg)
+    except Exception:
         return False
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    resp = requests.post(
-        url,
-        json={
-            "chat_id": CHAT_ID,
-            "text": msg,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        },
-        timeout=20,
-    )
-    return resp.ok
 
 
 def _save_local_report(msg: str):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = Path("/Applications/stock_dashboard/reports")
+    out_dir = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/reports")
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"bq_triple_morning_{ts}.md"
     path.write_text(msg, encoding="utf-8")

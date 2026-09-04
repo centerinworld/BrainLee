@@ -7,7 +7,7 @@ BigQuery 3배주/우상향 패턴 일일 파이프라인
 2) 섹터 요약 테이블(triple_pattern_sector_daily) 적재
 
 실행:
-  /Applications/stock_dashboard/venv/bin/python scripts/bigquery_triple_pipeline.py
+  /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python scripts/bigquery_triple_pipeline.py
 """
 
 from __future__ import annotations
@@ -188,7 +188,7 @@ def _run_pipeline(client) -> dict:
 def _sync_to_local(rows: list) -> int:
     """BQ triple_pattern_daily 결과를 local stock.db에 동기화."""
     import sqlite3 as _sl
-    DB_PATH = "/Applications/stock_dashboard/stock.db"
+    DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
     conn = _sl.connect(DB_PATH, timeout=60)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("""

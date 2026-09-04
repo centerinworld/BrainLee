@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/stock_dashboard/.claude/hooks/session_start.sh"
+            "command": "/Volumes/Realtek_NVME/stock_dashboard/runtime/.claude/hooks/session_start.sh"
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/stock_dashboard/.claude/hooks/session_stop.sh"
+            "command": "/Volumes/Realtek_NVME/stock_dashboard/runtime/.claude/hooks/session_stop.sh"
           }
         ]
       }

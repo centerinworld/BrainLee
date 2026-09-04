@@ -16,8 +16,8 @@ if str(ROOT) not in sys.path:
 import config  # noqa: E402
 from collectors.dart_collector import _parse_cf_df, _parse_fin_df  # noqa: E402
 
-DB = Path("/Applications/stock_dashboard/stock.db")
-OUT = Path("/Applications/stock_dashboard/scratch")
+DB = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+OUT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch")
 OUT.mkdir(exist_ok=True)
 
 

@@ -42,6 +42,13 @@ CORE_TABLES = (
     "quant_major_indicator_series",
 )
 
+# These tables are rebuilt from PostgreSQL source data and replace their entire
+# contents. The legacy SQLite copy is only a pre-cutover snapshot, so a lower
+# PostgreSQL row count can be the expected result of removing stale findings.
+POSTGRES_AUTHORITATIVE_SNAPSHOTS = {
+    "price_jump_audit": "audited_at",
+}
+
 
 def sqlite_count(conn: sqlite3.Connection, table: str) -> int:
     quoted = '"' + table.replace('"', '""') + '"'
@@ -87,7 +94,41 @@ def main() -> None:
                     "delta": target_count - source_count,
                 }
             )
-        behind = [item for item in parity if item["delta"] is not None and item["delta"] < 0]
+        behind = [
+            item
+            for item in parity
+            if item["delta"] is not None
+            and item["delta"] < 0
+            and item["table"] not in POSTGRES_AUTHORITATIVE_SNAPSHOTS
+        ]
+        snapshot_freshness = []
+        for table, timestamp_column in POSTGRES_AUTHORITATIVE_SNAPSHOTS.items():
+            if table not in active_tables or table not in pg_tables:
+                continue
+            quoted_table = '"' + table.replace('"', '""') + '"'
+            quoted_column = '"' + timestamp_column.replace('"', '""') + '"'
+            sqlite_latest = sqlite_conn.execute(
+                f"SELECT MAX({quoted_column}) FROM {quoted_table}"
+            ).fetchone()[0]
+            pg_latest = pg_conn.execute(
+                sql.SQL("SELECT MAX({}) FROM public.{}").format(
+                    sql.Identifier(timestamp_column), sql.Identifier(table)
+                )
+            ).fetchone()[0]
+            item = {
+                "table": table,
+                "timestamp_column": timestamp_column,
+                "sqlite_latest": str(sqlite_latest) if sqlite_latest is not None else None,
+                "postgres_latest": str(pg_latest) if pg_latest is not None else None,
+                "ok": pg_latest is not None
+                and (sqlite_latest is None or str(pg_latest) >= str(sqlite_latest)),
+            }
+            snapshot_freshness.append(item)
+            if not item["ok"]:
+                failures.append(
+                    f"PostgreSQL authoritative snapshot stale: {table} "
+                    f"({item['postgres_latest']} < {item['sqlite_latest']})"
+                )
         if missing:
             failures.append(f"missing PostgreSQL tables: {', '.join(missing)}")
         if behind:
@@ -192,6 +233,7 @@ def main() -> None:
             "sqlite_active_table_count": len(active_tables),
             "missing_tables": missing,
             "postgres_behind": behind,
+            "postgres_authoritative_snapshots": snapshot_freshness,
             "postgres_ahead": [item for item in parity if (item["delta"] or 0) > 0],
             "core_counts": core_counts,
             "price_history": {

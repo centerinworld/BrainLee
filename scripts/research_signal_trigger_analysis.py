@@ -280,6 +280,8 @@ def _enrich_backlog_employee_material(conn: sqlite3.Connection, panel: pd.DataFr
         LEFT JOIN dart_backlog_quarterly p
           ON p.stock_code=b.stock_code AND p.fiscal_year=b.fiscal_year-1 AND p.fiscal_quarter=b.fiscal_quarter
         WHERE b.fiscal_year BETWEEN ? AND ?
+          AND b.backlog_confidence >= 0.95
+          AND p.backlog_confidence >= 0.95
         GROUP BY b.stock_code, b.fiscal_year
         """,
         conn,
@@ -312,7 +314,12 @@ def _enrich_backlog_employee_material(conn: sqlite3.Connection, panel: pd.DataFr
     out = panel.merge(backlog, on=["stock_code", "year"], how="left")
     out = out.merge(emp, on=["stock_code", "year"], how="left")
     out = out.merge(mat, on=["stock_code", "year"], how="left")
-    out["backlog_growth"] = (out["backlog"] > out["prev_backlog"]) & (out["prev_backlog"] > 0)
+    backlog_ratio = out[["backlog", "prev_backlog"]].max(axis=1) / out[["backlog", "prev_backlog"]].min(axis=1).replace(0, np.nan)
+    out["backlog_growth"] = (
+        (out["backlog"] > out["prev_backlog"])
+        & (out["prev_backlog"] > 0)
+        & backlog_ratio.le(20.0)
+    )
     out["employee_growth"] = (out["emp"] > out["prev_emp"]) & (out["prev_emp"] > 0)
     out["material_purchase_growth"] = (out["material"] > out["prev_material"]) & (out["prev_material"] > 0)
     return out

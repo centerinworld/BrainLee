@@ -25,7 +25,7 @@ from urllib.parse import unquote
 import requests
 from dateutil.relativedelta import relativedelta
 
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 try:
     from config import PUBLIC_DATA_API_KEY
     API_KEY = unquote(PUBLIC_DATA_API_KEY)
@@ -37,7 +37,7 @@ if not API_KEY:
     print("❌ PUBLIC_DATA_API_KEY not found")
     sys.exit(1)
 
-EMP_DB = '/Applications/stock_dashboard/employment_monitor/employment.db'
+EMP_DB = '/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db'
 NPS_URL = 'http://apis.data.go.kr/B552015/NpsBsnmWorkplaceListInfoService/getNpsBsnmBssInfoList'
 
 

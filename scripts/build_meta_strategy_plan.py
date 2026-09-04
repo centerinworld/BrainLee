@@ -16,14 +16,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import signal_engine
 
-DB_PATH = "/Applications/stock_dashboard/stock.db"
-OUT_PATH = Path("/Applications/stock_dashboard/scratch/meta_strategy_plan_2026-05-19.json")
+DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+OUT_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/meta_strategy_plan_2026-05-19.json")
 
 
 @dataclass

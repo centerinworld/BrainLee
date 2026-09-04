@@ -47,7 +47,7 @@ for naver_sym, yf_sym, name in [("NAS", "^IXIC", "NASDAQ"), ("SPI", "^GSPC", "S&
 
 print("\n\n=== DB 직접 삽입 (파싱 성공한 경우) ===")
 if results:
-    conn = sqlite3.connect("/Applications/stock_dashboard/stock.db")
+    conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
     for yf_sym, data in results.items():
         inserted = 0
         for item in data:
@@ -86,7 +86,7 @@ else:
     # 수동 삽입 스크립트 생성
     manual = '''
 import sqlite3
-conn = sqlite3.connect("/Applications/stock_dashboard/stock.db")
+conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 # 5월 8일 (목) 종가 - 확인 후 수정하세요
 data = [
     # (symbol, date, open, high, low, close, volume)
@@ -106,12 +106,12 @@ conn.commit()
 conn.close()
 print("삽입 완료")
 '''
-    with open("/Applications/stock_dashboard/insert_manual.py", "w") as f:
+    with open("/Volumes/Realtek_NVME/stock_dashboard/runtime/insert_manual.py", "w") as f:
         f.write(manual)
     print("insert_manual.py 생성됨")
 
 print("\n=== DB 최신 상태 ===")
-conn = sqlite3.connect("/Applications/stock_dashboard/stock.db")
+conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 rows = conn.execute(
     "SELECT stock_code, date, close FROM price_history WHERE stock_code IN ('^IXIC','^GSPC') ORDER BY stock_code, date DESC LIMIT 6"
 ).fetchall()

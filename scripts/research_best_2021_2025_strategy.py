@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 
-ROOT = Path("/Applications/stock_dashboard")
+ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 DB_PATH = ROOT / "stock.db"
 OUT_DIR = ROOT / "research_outputs"
 DATASET_PATH = OUT_DIR / "market2x_signal_dataset.parquet"

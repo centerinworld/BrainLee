@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 import pandas as pd
 import requests
+from services.gemini import generate_text, is_configured
 from pydantic import BaseModel
 
 DB_PATH = "stock.db"
@@ -21,7 +22,7 @@ POSTS_PAGE_SIZE_MAX = 100
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -93,10 +94,10 @@ def _tokenize_stocks_field(value: str | None) -> set[str]:
 def _report_file_matches_stock(row: sqlite3.Row | dict, stock_name: str, stock_code: Optional[str]) -> bool:
     name_norm = _norm_text(stock_name)
     code_norm = _norm_text(stock_code)
-    row_name_norm = _norm_text(row["stock_name"] if isinstance(row, sqlite3.Row) else row.get("stock_name"))
-    row_code_norm = _norm_text(row["stock_code"] if isinstance(row, sqlite3.Row) else row.get("stock_code"))
-    file_name_norm = _norm_text(row["file_name"] if isinstance(row, sqlite3.Row) else row.get("file_name"))
-    caption_norm = _norm_text(row["caption"] if isinstance(row, sqlite3.Row) else row.get("caption"))
+    row_name_norm = _norm_text(row.get("stock_name") if isinstance(row, dict) else row["stock_name"])
+    row_code_norm = _norm_text(row.get("stock_code") if isinstance(row, dict) else row["stock_code"])
+    file_name_norm = _norm_text(row.get("file_name") if isinstance(row, dict) else row["file_name"])
+    caption_norm = _norm_text(row.get("caption") if isinstance(row, dict) else row["caption"])
 
     if code_norm and row_code_norm == code_norm:
         return True
@@ -113,7 +114,7 @@ def _report_file_matches_stock(row: sqlite3.Row | dict, stock_name: str, stock_c
 def _telegram_message_matches_stock(row: sqlite3.Row | dict, stock_name: str, stock_code: Optional[str]) -> bool:
     name_norm = _norm_text(stock_name)
     code_norm = _norm_text(stock_code)
-    tokens = _tokenize_stocks_field(row["stocks"] if isinstance(row, sqlite3.Row) else row.get("stocks"))
+    tokens = _tokenize_stocks_field(row.get("stocks") if isinstance(row, dict) else row["stocks"])
     if code_norm and code_norm in tokens:
         return True
     if name_norm and name_norm in tokens:
@@ -346,10 +347,7 @@ def _collect_telegram_signal_context(conn: sqlite3.Connection, stock_name: str, 
     return "\n".join(lines)
 
 
-def _deepseek_investment_analysis(stock_name: str, stock_code: Optional[str], files: List[str], fin_ctx: str, cf_ctx: str, disc_ctx: str, tg_ctx: str) -> str:
-    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
-    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
+def _openai_mini_investment_analysis(stock_name: str, stock_code: Optional[str], files: List[str], fin_ctx: str, cf_ctx: str, disc_ctx: str, tg_ctx: str) -> str:
     file_list = "\n".join([f"- {Path(fp).name}" for fp in files]) if files else "- 없음"
 
     fallback = (
@@ -368,7 +366,7 @@ def _deepseek_investment_analysis(stock_name: str, stock_code: Optional[str], fi
         "- CAPEX 확대가 성장 투자 성격인지 점검\n"
         "- 최근 공시에서 수요/원가/재고/인력 관련 방향성 확인\n"
     )
-    if not api_key:
+    if not is_configured():
         return fallback
 
     prompt = f"""
@@ -403,23 +401,13 @@ def _deepseek_investment_analysis(stock_name: str, stock_code: Optional[str], fi
 {tg_ctx}
 """
     try:
-        res = requests.post(
-            base_url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "당신은 숫자 기반 주식 투자 애널리스트다."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-            },
+        text = generate_text(
+            prompt,
+            system_instruction="당신은 숫자 기반 주식 투자 애널리스트다.",
+            temperature=0.2,
+            max_output_tokens=1500,
             timeout=60,
         )
-        if not res.ok:
-            return fallback
-        data = res.json()
-        text = data["choices"][0]["message"]["content"]
         return f"# {stock_name} 투자관점 상세분석\n\n{text}"
     except Exception:
         return fallback
@@ -806,11 +794,11 @@ def bootstrap_from_files(payload: BootstrapRequest):
             cf_ctx = _collect_cashflow_context(conn, code)
             disc_ctx = _collect_disclosure_context(conn, code)
             tg_ctx = _collect_telegram_signal_context(conn, stock_name, code)
-            content_md = _deepseek_investment_analysis(stock_name, code, file_paths, fin_ctx, cf_ctx, disc_ctx, tg_ctx)
+            content_md = _openai_mini_investment_analysis(stock_name, code, file_paths, fin_ctx, cf_ctx, disc_ctx, tg_ctx)
             conn.execute(
                 """
                 UPDATE detailed_analysis_posts
-                SET stock_code=?, title=?, content_md=?, source='deepseek_auto', updated_at=datetime('now')
+                SET stock_code=?, title=?, content_md=?, source='openai_mini_auto', updated_at=datetime('now')
                 WHERE id=?
                 """,
                 (code, title, content_md, post_id),

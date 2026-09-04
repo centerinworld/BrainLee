@@ -2,12 +2,12 @@ import sys
 import sqlite3
 from datetime import datetime
 
-sys.path.insert(0, '/Applications/stock_dashboard')
+sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 import config
 from data_collector import DataCollector
 
-DB='/Applications/stock_dashboard/stock.db'
-LOG='/Applications/stock_dashboard/scratch/fill_2026q1_missing.log'
+DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
+LOG='/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/fill_2026q1_missing.log'
 
 conn=sqlite3.connect(DB)
 rows=conn.execute('''

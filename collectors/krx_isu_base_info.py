@@ -125,23 +125,48 @@ def _diff_and_record(
     return cnt
 
 
-def collect_base_info(today_str: str | None = None) -> dict:
+def collect_base_info(today_str: str | None = None, max_lookback_days: int = 5) -> dict:
     """
-    KOSPI/KOSDAQ 종목기본정보를 KRX API에서 가져와 저장 + 변동 추적.
+    KOSPI/KOSDAQ 종목기본정보(관리종목/투자유의 등 sector_type 포함)를 KRX API에서
+    가져와 저장 + 변동 추적.
+
+    2026-08-13 발견·수정: basDd=오늘 요청 시 KRX가 당일 종목기본정보 스냅샷을 스케줄
+    실행시각(18:35)까지 아직 발행하지 않는 날이 있어(실측: 오늘자는 항상 빈 응답,
+    전일자는 정상 942건) "응답 없음"이 매일 조용히 반복 — 재시도 로직이 전혀 없어
+    2026-07-10 이후 한 달 넘게 stock_base_info_history가 전혀 갱신되지 않고 있었음
+    (관리종목/거래정지 관련 데이터로, 실전매매 리스크게이트 신뢰성에 직결). 발행 완료된
+    가장 최근 날짜를 찾을 때까지 최대 max_lookback_days일 역순 재조회하고, 실제 데이터를
+    받은 날짜를 snapshot_date로 저장(오늘 날짜로 위장하지 않음 — PIT 정합성 유지).
 
     Returns:
-        {"updated": N, "history": M, "changes": K, "skipped": S}
+        {"updated": N, "history": M, "changes": K, "skipped": S, "snapshot_date": str|None}
     """
-    today_str = today_str or date.today().isoformat()
-    bas_dd = today_str.replace("-", "")
-
-    rows_kospi  = _fetch("sto/stk_isu_base_info", bas_dd)
-    rows_kosdaq = _fetch("sto/ksq_isu_base_info", bas_dd)
-    rows = rows_kospi + rows_kosdaq
+    target = date.fromisoformat(today_str) if today_str else date.today()
+    rows: list[dict] = []
+    resolved_date = target
+    for offset in range(max_lookback_days):
+        d = target - timedelta(days=offset)
+        bas_dd = d.strftime("%Y%m%d")
+        rows_kospi = _fetch("sto/stk_isu_base_info", bas_dd)
+        rows_kosdaq = _fetch("sto/ksq_isu_base_info", bas_dd)
+        rows = rows_kospi + rows_kosdaq
+        if rows:
+            resolved_date = d
+            if offset > 0:
+                logger.info(
+                    f"[KRX기본정보] {target.isoformat()} 데이터 미발행 — "
+                    f"{d.isoformat()}(T-{offset})로 대체"
+                )
+            break
 
     if not rows:
-        logger.warning("[KRX기본정보] 응답 없음 — KRX 휴장/차단 가능")
-        return {"updated": 0, "history": 0, "changes": 0, "skipped": 0}
+        logger.warning(
+            f"[KRX기본정보] {target.isoformat()} 기준 {max_lookback_days}일 역순 조회에도 "
+            "응답 없음 — KRX 휴장/차단 가능"
+        )
+        return {"updated": 0, "history": 0, "changes": 0, "skipped": 0, "snapshot_date": None}
+
+    today_str = resolved_date.isoformat()
 
     conn = sqlite3.connect(DB_PATH, timeout=60)
     cur = conn.cursor()
@@ -211,6 +236,7 @@ def collect_base_info(today_str: str | None = None) -> dict:
     return {
         "updated": updated, "history": history,
         "changes": changes, "skipped": skipped,
+        "snapshot_date": today_str,
     }
 
 

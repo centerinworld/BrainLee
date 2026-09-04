@@ -2,13 +2,13 @@
 # ============================================================
 # fix_db_and_restart.sh — DB WAL 복구 + 서버 재시작
 # ============================================================
-# 실행: bash /Applications/stock_dashboard/fix_db_and_restart.sh
+# 실행: bash /Volumes/Realtek_NVME/stock_dashboard/runtime/fix_db_and_restart.sh
 #
 # 증상: "file is not a database" SQLite WAL 충돌
 # 원인: 서버/스케줄러/백필 동시 DB 쓰기 → WAL 오염
 # ============================================================
 
-cd /Applications/stock_dashboard
+cd /Volumes/Realtek_NVME/stock_dashboard/runtime
 
 echo "========================================================"
 echo "  DB WAL 복구 + 서버 재시작"
@@ -42,7 +42,7 @@ source venv/bin/activate 2>/dev/null
 python3 - <<'PYEOF'
 import sqlite3, os
 
-db_path = "/Applications/stock_dashboard/stock.db"
+db_path = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 wal_path = db_path + "-wal"
 shm_path = db_path + "-shm"
 
@@ -74,7 +74,7 @@ PYEOF
 
 echo ""
 echo "[3/4] WAL 크기 확인..."
-ls -lh /Applications/stock_dashboard/stock.db* 2>/dev/null
+ls -lh /Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db* 2>/dev/null
 
 # ── 3. SQLite busy_timeout 설정 확인 ──────────────────────
 echo ""
@@ -89,11 +89,11 @@ if [ -f /Library/LaunchDaemons/com.stock_dashboard.backend.plist ] || \
     echo "  launchd로 서버 재시작"
 else
     # 직접 실행 방식
-    nohup /Applications/stock_dashboard/venv/bin/python \
+    nohup /Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python \
         -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 \
-        >> /Applications/stock_dashboard/logs/backend.launchd.log 2>&1 &
+        >> /Volumes/Realtek_NVME/stock_dashboard/runtime/logs/backend.launchd.log 2>&1 &
     NEW_PID=$!
-    echo "$NEW_PID" > /Applications/stock_dashboard/logs/backend.pid
+    echo "$NEW_PID" > /Volumes/Realtek_NVME/stock_dashboard/runtime/logs/backend.pid
     echo "  서버 시작 PID: $NEW_PID"
 fi
 

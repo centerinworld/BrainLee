@@ -27,7 +27,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-DB_PATH  = "/Applications/stock_dashboard/stock.db"
+DB_PATH  = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 BASE_URL = "https://data.krx.co.kr"
 
 # 투자자 구분 → 컬럼 키 매핑 (CSV 헤더명)

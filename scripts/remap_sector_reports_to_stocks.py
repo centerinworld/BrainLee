@@ -4,7 +4,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path("/Applications/stock_dashboard/stock.db")
+DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 
 
 def normalize(text: str | None) -> str:

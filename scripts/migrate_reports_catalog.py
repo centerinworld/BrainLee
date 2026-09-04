@@ -1,10 +1,10 @@
-#!/Applications/stock_dashboard/venv/bin/python
+#!/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python
 from __future__ import annotations
 
 import json
 import sys
 
-sys.path.insert(0, "/Applications/stock_dashboard")
+sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
 from report_store import migrate_from_stock_db
 
