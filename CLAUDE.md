@@ -107,6 +107,7 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 필수 검증 로그:
 - 모든 자동보정은 `financial_fix_log` 또는 `cashflow_fix_log`에 사유/전후값/run_id 기록.
 - run_id 없는 UPDATE 금지.
+- **financial_data/cash_flow_data 외 다른 테이블 보정은 `data_fix_log`(2026-09-05 신규, 범용)에 table_name/scope/row_count/fix_rule/old_value_summary/new_value_summary/source/run_id 기록** — 대량 UPDATE 하나당 1행(개별 row 단위 아님). 사용자 지시("데이터가 검증오류 고치는 작업을 통해 많이 변경되었는데 해당 사항을 주기적으로 기록") 반영. 2026-09-05 이전 이력은 CLAUDE.md archive/각 backup 테이블에만 있고 이 로그로 소급 이관하지 않음.
 
 ---
 
@@ -150,6 +151,10 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 │   ├── dram_spot_collector.py # TrendForce/DRAMeXchange 실제 D램 현물가
 │   ├── market_quant_bridge_collector.py # 기존 주요 퀀트 지표를 글로벌 인텔리전스로 브릿지
 │   ├── kiwoom_collector.py # 키움 REST 연결/인증 상태 점검
+│   ├── asia_foreign_flow_collector.py # 한국+대만 외국인 순매수(USD환산) → global_macro_data ★신규(2026-09-08)
+│   ├── india_fpi_flow_collector.py # 인도 NSDL FPI 주식 순투자 → global_macro_data ★신규(2026-09-08)
+│   ├── mof_japan_flow_collector.py # 일본 MOF 공개 주간 CSV 직접수집(대내증권투자 주식 순매수) ★신규(2026-09-08), e-Stat→MOF CSV 전환(2026-09-09)
+│   ├── tic_bilateral_flow_collector.py # 미 재무부 TIC 국가별 대미 주식 양자간 흐름(FRED 미러링, 국가/지역 확장 중) ★신규(2026-09-08)
 │   └── base.py          # BaseCollector (rate limit, async)
 │
 ├── scripts/
@@ -169,7 +174,20 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 
 ---
 
-## 2. DB 스키마 (stock.db)
+## 2. DB 스키마 및 저장 위치
+
+### DB/저장 경로 강제 규칙 (2026-09-04)
+
+> **운영 기준 DB는 PostgreSQL이다. 모든 운영 조회, 백테스트, 전략 검증, run registry 및
+> `signal_experiment_ledger` 기록은 `.env`의 `POSTGRES_DATABASE_URL`을 그대로 사용한다.**
+
+- 기본 연결은 반드시 `config.DATABASE_URL` + `db_compat.connect_primary_db()`를 사용한다. 백테스트 명령에서 `POSTGRES_DATABASE_URL`이나 `DATABASE_URL`을 `sqlite:`로 덮어써 PostgreSQL 라우팅을 우회하지 않는다.
+- PostgreSQL 데이터 디렉터리와 프로젝트 데이터·캐시·연구 산출물은 모두 외장 SSD의 `/Volumes/Realtek_NVME/stock_dashboard/` 아래에 둔다.
+- `/Volumes/Realtek_NVME/stock_dashboard/runtime/`는 레거시 실행 경로 또는 심볼릭 링크일 뿐이다. DB 경로, 출력 경로, 명령 인자, 코드 상수에 사용하지 않는다. 같은 파일을 가리키더라도 반드시 `/Volumes/Realtek_NVME/stock_dashboard/...` 정규 경로를 사용한다.
+- `stock.db`는 레거시/오프라인 호환용 SQLite 스냅샷이다. 운영 성과 판정, 전략 채택·기각, 원장 기록의 근거로 사용하지 않는다. 독립 SQLite side DB가 꼭 필요한 경우에도 저장 위치는 외장 SSD 아래로 제한하고 용도를 명시한다.
+- 운영 PostgreSQL 접속 실패 시 SQLite로 자동 또는 수동 폴백해 검증을 계속하지 않는다. 실패 원인을 해결한 뒤 PostgreSQL에서 처음부터 재실행한다.
+
+### 주요 테이블
 
 | 테이블 | 행수 | 핵심 컬럼 | 용도 |
 |--------|------|-----------|------|
@@ -246,16 +264,16 @@ inst_net_buy, frn_net_buy → 수량(주)
 
 ### DB 연결 패턴
 ```python
-# routes/ 파일 표준 (sqlite3 직접)
-import sqlite3 as _sl
-DB_PATH = "stock.db"
-conn = _sl.connect(DB_PATH)
-conn.row_factory = _sl.Row   # dict처럼 r["col_name"] 접근
+# 운영 주 DB 표준: .env의 PostgreSQL 연결을 유지
+from db_compat import connect_primary_db
+conn = connect_primary_db(timeout=30)
 
 # SQLAlchemy (ORM 필요 시)
 from database import get_db
 db: Session = Depends(get_db)
 ```
+
+`sqlite3.connect("stock.db")` 직접 연결은 독립 SQLite 도구 또는 명시적 레거시 점검 외에는 금지한다.
 
 ### 지수/ETF 제외 필터 (price_history 조회 시 항상 적용)
 ```sql
@@ -353,7 +371,42 @@ POST   /combo/{key}/execute   # 병합조합 가상매매 즉시 실행(매도�
 ```
 - **⛔ 2026-07-23 삭제(저효율 확인)**: `ai-combo/execute`(strategy='ai_combo', 승률23%·누적-20.7M)/`v18/recommendations`·`v18/execute`(strategy='gpt_v18', 승률27%·누적-8.6M)/`turnover/*`(strategy='turnover_100m'·'turnover_auto_100m', 1건뿐 또는 0건) — 엔드포인트 코드는 남아있으나 스케줄러 루프(`_loop_v14_10m`) 비활성화, 프론트 STRATEGIES 버튼 제거. 오픈포지션 1건(gpt_v18, 안국약품)은 +7.22%에 청산 후 종료. 대체: 아래 병합조합 4종.
 - **V12 골든크로스**: strategy='v_gc', MA20↑MA60(15일내)+거래량1.2x+RS6M>-20%+시총2000억+, Trail-25%/손절-12%/300일, 1억원 예산/종목당1000만원/최대8종목. 20분 주기 장중 자동실행. avg6=+47.6%, 6/6기간 양수.
-- **병합조합 가상매매(2026-07-23 신규)**: 전략센터 "전략 조합" 탭에서 `persist_merged_run`으로 등록된 4개 검증조합(605.05%/539.18%/510.12%/473.87%, `/api/backtest/combinations/list` 참조)을 각각 독립 1억원 가상계좌로 실행. `combo_605`/`combo_539`/`combo_510`/`combo_474` 4개 strategy 키(peak_holding/peak_trade 재사용). 구성 컴포넌트(v4/v2/sector_focus/v10/recovery/earnings_conviction/moonshot_turnaround)를 등록 당시와 동일 파라미터로 2020-03-01~최신거래일까지 매번 재실행(`routes/trend.py COMBO_COMPONENTS`)해 "최신거래일 당일" 발생분만 오늘의 매수/매도 시그널로 추출, 콤보 우선순위(등록된 priority)로 랭킹 후 고정티켓(1,000만원)/20%현금보유 방식(v_gc/v_recovery와 동일 패턴)으로 체결. 컴포넌트 1개당 1~20초 소요(총 7개 최초 1회 약 60~90초, 프로세스 내 캐시로 하루 1회만 계산·여러 콤보가 공유). **매도 판단 이중화**: (a) 원천 컴포넌트가 오늘 자신의 매도신호를 냈으면 반영 (b) 컴포넌트별 stop_loss를 안전망으로 상시 병행 평가(콤보 자신의 진입가/일자가 컴포넌트 연속시뮬레이션과 다를 수 있어 (a)만으로는 누락 위험). ⚠️ **재발방지 버그(발견·수정 완료)**: 백테스트 엔진이 end_date(=오늘)에 아직 보유 중인 포지션을 회계상 강제청산할 때 붙이는 사유(`기간종료`/`기간종료(시세부재 전액손실)`/`종료청산`/`final`/`end`, 엔진마다 문자열 다름)를 걸러내지 않으면 "오늘 보유 중인 모든 포지션"이 매번 매도신호로 오탐됨 — `_COMBO_PERIOD_END_MARKERS`로 필터링. 매일 18:35(평일, KRX일별수집 이후) `_loop_combo_daily` 자동 실행.
+- **⛔ 병합조합 가상매매(2026-07-23 신규, 2026-08-23 이후 사실상 중단)**: 전략센터 "전략 조합" 탭에서 `persist_merged_run`으로 등록된 4개 검증조합(605.05%/539.18%/510.12%/473.87%)을 각각 독립 1억원 가상계좌(`combo_605`/`combo_539`/`combo_510`/`combo_474`)로 실행하던 구조. `scheduler.py`의 `_loop_combo_daily`/`_job_combo_daily`는 스레드 이름은 유지한 채 내부 구현이 아래 "전략센터 상위5 가상매매"로 교체됐고("과거 고정 병합조합은 더 이상 스케줄하지 않으며" — 코드 주석), 이 4개 combo_* 계좌는 **2026-08-23 09:37 마지막 실행 이후 한 번도 재실행되지 않아 포지션이 그대로 방치돼 있다**(2026-09-07 확인: 시세만 오늘 기준으로 평가돼 -2.9%~+8.82%로 보이지만 살아있는 검증이 아님). 이 전환이 언제·왜 결정됐는지, combo_* 4개 계좌를 정리(청산/보존)할지는 아직 미정 — `/api/backtest/combinations/list`의 4개 등록조합 자체도 2026-09-07 재검토 결과 605.05%/671.8%/601.0%×2가 동점 타이브레이크 안정성 미검증 상태였음(`research_outputs/merged_account_tiebreak_review_20260907.md` 참조).
+- **전략센터 상위5 가상매매(2026-08-26 신규, 위 병합조합 대체)**: 고정 조합 대신 전략센터 매트릭스에서 그날 상위 5(현재는 sc_golden_cross/sc_sector_focus/sc_v2/sc_v5/sc_v8/sc_v10/sc_contract_momentum 중 상황에 따라 선정)를 매일 재선정해 각각 독립 1억원 가상계좌로 실행(`routes/trend.py execute_strategy_center_top_five_now`/`_execute_strategy_center_paper`, `STRATEGY_CENTER_PAPER_ENGINES`). 매일 18:35 `_loop_combo_daily`(스레드명 유지) 자동 실행.
+  ⚠️ **2026-09-07 발견·수정: 6개 계좌 전부 설정 이후(8/26~28) 3주 가까이 매수 0건이던 근본 원인 2가지, 모두 리스크게이트 실행계층 버그(전략 신호 로직은 정상이었음)**:
+  1. `routes/trend.py _execute_strategy_center_paper`: 고정 매수단위(`STRATEGY_CENTER_PAPER_TICKET_KRW`=1천만원)가 `_gate_volatility_sizing`의 종목당 리스크한도(자본×1.2%÷가정손절20%=자본의 6%, 1억원 계좌 기준 600만원)를 항상 구조적으로 초과 → 게이트 판정이 매번 최선이어도 `SIZE_REDUCED`(전액매수 불가·축소는 가능)인데, 실행 루프가 정확히 `BUY_ALLOWED`만 받아들여 SIZE_REDUCED를 매수거부로 취급하고 있었음. 게이트가 제시한 한도로 수량을 줄여 재검증하도록 수정.
+  2. `routes/kis_trading.py _gate_sector_concentration`: KOSPI/KOSDAQ의 절반(2,686/5,379종목)이 `stock_universe.sector_large` NULL → "섹터 판단불가"가 뜨는데, `evaluate_risk_gates(strict_for_execution=True)`는 판단불가 게이트가 하나라도 있으면 BUY_ALLOWED를 WAIT_CONFIRM으로 강등하는 정책이라 이것만으로도 매수가 막혔음. 안전정책은 그대로 두고, 이미 DB에 있는 `stockeasy_sector_membership`(94% 커버)을 폴백으로 추가.
+  검증: golden_cross 2026-09-02 신호(8종목) 재실행 시 수정 전 8/8 거부 → 수정 후 4/8 BUY_ALLOWED(나머지 4개는 수급이탈·갭위험 등 진짜 리스크 사유로 정당하게 차단 — 안전정책 우회 아님). `scripts/safe_restart_backend.sh`로 반영 완료.
+  ⚠️ **v8 별도 원인(2026-09-07 수정)**: 위 게이트 버그와 무관하게 `hs_trade_lab.db`의 `trade_series_cache`(수출YoY 집계)가 2026-03에서 멈춰있었음 — 원본 `customs_monthly_record`는 실제로 2026-07까지 있었는데 집계 스크립트(`hs_trade_lab/scripts/backfill_trade_series_cache.py`)가 재실행 안 됨. `_date_to_ym`의 2개월 지연 설계와 겹쳐 6월부터 v8 신호가 전부 죽었던 것 — 재실행(멱등, `ON CONFLICT...DO UPDATE`)으로 2026-07까지 갱신, v8 재검증 결과 8월 거래 재개 확인.
+  ⚠️ **HS 무역통계 다중매핑 중복계상 버그(2026-09-07 발견, 09-07 중 2차례 수정, 사용자 질문/피드백으로 발견)**: 사용자 지적("유니드는 독점이지만 필러는 성남에 여러 업체") 확인 결과, `hs_code_company_map`은 HS코드 313개 중 193개(62%)가 2개 이상 기업에 매핑돼 있음(최대 33개사 — 반도체 웨이퍼장비 HS '848620'). 기업별 실제 점유율을 담는 `market_share_pct` 컬럼이 존재하지만 941건 전부 미입력 상태였는데도, `backtest_common.py _load_trade_signals()`는 매핑된 각 기업에게 해당 HS코드 수출액 "전액"을 그대로 부여하고 있었음(예: 필러 HS '300190' 5개사 전부에게 같은 총액을 중복 부여) — 실제 수출 규모가 과다계상돼 v8의 수출YoY 신호가 왜곡돼 있었음.
+  1차 수정(매핑 기업 수로 균등분할)에 대해 사용자가 "균등 분할도 위험하다 — 33개사가 똑같이 1/33씩 수출하는 게 아니다"고 재지적. 2차 수정: `_load_company_revenue_map()` 신설, HS그룹 내 기업들의 **최근 연간 매출액(`financial_data.revenue`, CFS 우선 최신연도 1건) 비례**로 가중치 산정 — 매핑 대상 398개사 중 384개(96.5%)에서 매출 데이터 확인. 매출 데이터 없는 개별 기업은 같은 그룹 내 매출 확인된 기업들의 평균값으로 대체(imputation)해 그룹 가중치 합이 항상 1이 되도록 하고, 그룹 전체에 매출 데이터가 없는 예외적 경우만 기존 균등분할로 폴백. 기업 "전체" 매출 비중이지 해당 HS 품목만의 매출 비중은 아니므로 여전히 근사치이나, 균등분할보다 기업 규모 차이를 반영하는 훨씬 나은 proxy. market_share_pct가 채워지면 항상 최우선.
+  이 작업 중 `financial_data`에서 **CFS/OFS 중복 미제거로 매출액이 실제로 두 배로 잡히는 것**을 재확인(예: 메디톡스 2025년 revenue가 CFS 247,290,289,368 / OFS 222,046,566,421 두 행 다 IN절 조회에 걸림) — se_momentum.py에서 발견된 것과 동일 부류의 버그. `_load_company_revenue_map()`은 `ORDER BY stock_code, year DESC, CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END` + 종목당 1건만 채택하는 방식으로 dedup 처리. 같은 부류 버그가 다른 곳에도 더 있는지 서브에이전트로 전수 감사(아래 "CFS/OFS 미탈리브레이크 감사" 항목 참조) — 6곳 추가 발견·미수정(감사만, 수정은 별도 승인 필요).
+  ⚠️ **3차 수정(2026-09-08, 사용자 재지적 — "매출비례도 좋지만 상관계수 등도 고려", "균둥분할 같은 게 다른 곳에도 더 있을것")**: 두 건 추가 발견·수정.
+  (a) **조인 불일치로 인한 무응답 버그(더 찾기 어려운 유형 — "틀린 값"이 아니라 에러 없이 조용히 신호가 0으로 비어있는 형태)**: `hs_code_company_map`이 hs_code를 4/6/10자리 뒤섞어 저장하는데 `trade_series_cache`는 관세청 원본대로 10자리로만 존재 — 문자열 완전일치 조인이라 4/6자리 축약 항목(69건)은 절대 매칭 불가, 10자리 항목 중 35건도 세번코드 뒷자리 표기가 실제 관세데이터와 미세하게 달라(예: map '2849201000' vs 실제 '2849200000') 매칭 실패. 매핑 313개 HS코드 중 113개(36%)가 이 문제로 단 한 번도 매칭 안 됐고, 그 결과 S-Oil/SK이노베이션/DB하이텍/LX세미콘/티씨케이 등 398개사 중 **97개사(24%)가 애초에 무역 신호를 영구히 못 받고 있었음**. 확인해보니 113개 전부 앞 6자리(HS 6단위, 국제표준)는 원본 데이터에 존재 — 데이터가 없는 게 아니라 표기 정밀도 문제였음. 조치: ① `hs_trade_lab/scripts/backfill_trade_series_cache.py --all-hs` 재실행으로 원본 관세데이터 전체(10자리 125만행 — 기존엔 hs_code_company_map과 정확히 일치하는 코드만 22,123건 담고 있었고, 그마저 `mapping_status='confirmed'` 필터가 실제로는 한 번도 쓰인 적 없는 값이라 무의미했으며 'provisional' 103건까지 암묵적으로 배제되고 있었음)를 캐시에 반영, ② `_load_trade_signals()` 조인을 "hs_code 완전일치" → "6자리 접두사 일치(4자리 map항목은 4자리 접두사)"로 변경. 검증: 위 97개사 전부 신호 복원 확인.
+  (b) **상관계수 필터 추가(재설계)**: 최초엔 상관계수를 매출비례 가중치에 곱하는 "완만한 confidence"로 넣었으나, 사용자가 "수출이 늘어도 실제 매출로 이어지는 기업도 있고 아닌 기업도 있으니 상관계수가 충분히 높은 기업만 적용하고 관련 없는 기업엔 아예 적용하지 말라"고 재지적 — 가중치를 깎는 방식에서 **완전 제외(하드 필터)** 방식으로 재설계. `_load_company_quarterly_revenue_yoy()`(CFS우선 dedup)로 각사 분기매출YoY를 구해 그룹 수출YoY와의 상관계수를 계산(`_MIN_CORR_SAMPLES`=8분기 미만이면 "관련없다는 증거 부족"으로 중립 포함), `_MIN_CORR`=0.2 이하인 기업은 해당 HS그룹 신호에서 완전히 제외하고 생존 기업끼리만 매출비례로 재분배. 실측: 필러그룹(HS '300190') 6개사 중 휴젤(corr 0.47)·바이오플러스(0.17)·069620(0.07, 그룹에 새로 포착된 대형사)만 생존, 메디톡스(-0.08)·휴메딕스(-0.01)·파마리서치(-0.07)는 이 그룹에서 제외(단, 파마리서치는 다른 매핑 HS코드에서는 여전히 신호 보유). 전체 효과: 398개 매핑기업 중 신호를 받는 기업이 193개로 감소(상관계수 낮은 기업은 의도적으로 신호 없음 — 버그 아니라 설계). v8 두 구간(24.06_25.05, 22.11_23.10) 재실행 크래시 없음 확인, 콤보 재검증은 미완료.
+  ⚠️ **sector_focus 추가 버그(2026-09-07 수정)**: 위와 별개로 `backtest_strategies/sector.py`의 영업이익 YoY 스코어 컴포넌트(최대 25점)가 `cur_yr`을 거래일의 달력연도로 고정해서, 그 해 사업보고서가 아직 공시 전인 연중 대부분(1~11월) 항상 0점 처리되고 있었음 — 실제 공시된 최신 연도를 찾도록 수정, 6기간 재검증 avg6 23.80%→29.53%(5/6기간 양수)로 개선 확인(sector_focus+v2 콤보 성과도 같이 개선될 전망, 콤보 재검증은 미완료).
+  ⚠️ **4차 수정(2026-09-08, 사용자 지적 — "DDR메모리는 삼성전자·하이닉스 2개사가 다인데 어떻게 처리했어?" + "매핑 비율이 너무 낮은데 개선 방법 없나")**: 두 축으로 작업.
+  (a) **상관계수 필터의 실제 결함 발견·수정**: DDR메모리(HS '854232')를 실측한 결과, SK하이닉스(corr=0.11)가 상관계수 필터에 걸려 제외되고 군소 팹리스 제주반도체(corr=0.321, 매출 3천억대)가 살아남는 역설을 확인 — 대기업은 전사매출에 다른 사업(낸드/파운드리 등)이 섞여 좁은 HS카테고리 하나와의 상관계수가 오히려 희석되는 구조적 약점이었음. `hs_company_market_share`(애널리스트 실측 점유율 12건, 삼성/하이닉스 등)를 `hs_code_company_map.market_share_pct`에 반영(누락된 쌍 1건은 신규 INSERT)하고, 가중치 로직을 **"그룹 전원이 점유율값을 가져야 적용"(all-or-nothing, 사실상 사문화돼 있었음) → "점유율값이 있는 회사부터 개별 우선 적용, 나머지는 잔여비중(1-알려진점유율합)만 상관계수필터+매출비례로 배분"**으로 재설계 — 검증 결과 삼성(58%)+하이닉스(42%)=100%로 이미 꽉 차 나머지 3개사(제주반도체/해성디에스/한미반도체[장비사])는 이 그룹에서 자동으로 0이 되어 실제 시장구조와 일치하게 됨.
+  (b) **커버리지 확장(398→404개사, 7.3%→7.4%)**: `hs_company_market_share`(12건 백필), `regional_company_mapping_evidence`(evidence_score≥0.71 또는 [≥0.65 AND post_count≥2] 기준으로 84쌍 승격 — 명백히 깨진 지역데이터[예: "경기도 기장군"(기장군은 부산 소재), "경상남도 성북구"(성북구는 서울 소재)]는 자동으로 임계값 미달 처리돼 배제됨, 단 이 소스는 기존에 이미 알려진 398개사의 HS코드 커버리지만 넓혔고 신규 기업은 0개), `segment_revenue`(DART 사업부문별 매출, 2,561개사 — 커버리지 확장의 진짜 지렛대가 될 것으로 기대) 세 소스를 검토. segment_revenue는 세그먼트명↔HS설명 키워드 자동매칭을 시도했으나 **한국어 사업분야 용어의 동음이의/과잉일반화로 실측 오탐률 약 50%** 확인(예: KCC의 "실리콘" 사업부문이 반도체용 실리콘 웨이퍼로 오매칭됐지만 KCC는 실리콘[규소]이 아닌 실리콘[폴리머 밀폐제] 화학회사; 파크시스템스의 "산업용 자동화 원자현미경" HS설명에서 "자동화"만 추출돼 POSCO홀딩스/현대엘리베이터/뉴로메카 등 무관 8개사에 오매칭; 한화의 "가성소다(USD/톤)" 세그먼트는 매출이 아니라 톤당 가격 참조행[revenue=4.15]이었음) — 자동화 매칭은 폐기하고 33건 후보를 전부 수동 검토해 11쌍(6개 신규기업: 종근당홀딩스/코아스템켐온/한미사이언스/한미약품/대한유화/이수화학, +송원산업/SNT에너지/DN오토모티브/세방전지/LS의 신규 HS링크)만 provisional로 커밋. 결론: 세그먼트명 기반 완전자동매칭은 정밀도가 낮아 대량 확장에는 부적합 — 유의미한 커버리지 확대는 (i) 수동/반자동 검토를 곁들인 점진적 확장이거나 (ii) 향후 LLM 기반 의미매칭(단순 부분문자열이 아닌 문맥 판단)이 필요, 미해결 과제로 남김. v8 재검증 크래시 없음 확인.
+  ⚠️ **5차 수정(2026-09-08, 사용자 지시 — "dart는 후행, hs code는 선행/실시간", "상관계수를 전수조사해", "그 회사의 매출규모가 반드시 고려돼야", "hs 월별실적과 dart 분기실적이 고려된 정보여야")**: 상관계수 필터 자체의 구조적 결함을 전수조사로 확인·재설계.
+  (a) **월별-분기 주기 불일치 수정**: 기존 상관계수 계산이 DART 분기매출YoY(3개월 누적)를, HS 수출데이터는 분기말 딱 한 달(3/6/9/12월)의 월별YoY만 뽑아 비교하고 있었음(주기 불일치로 왜곡). `_quarterly_export_yoy_series()` 신설 — HS 월별 수출액을 분기(1~3월=Q1 등, 3개월 전부 있는 완전한 분기만) 합산 후 YoY 계산해 DART와 동일 주기로 정렬. 단 실제 v8 매매신호(`_get_export_yoy`)는 손대지 않음 — 그건 월별 그대로 유지해야 "선행지표"로서의 존재 이유(HS가 DART보다 빠르다는 점)가 유지됨.
+  (b) **전수조사로 상관계수 필터의 구조적 편향 발견**: 2개사 이상 매핑된 모든 HS그룹×기업 쌍(722건) 상관계수를 계산한 결과 — corr 분포가 mean=0.107/median=0.085로 애초에 약함에도, 기존 "corr>0.2 이상만 포함"(대칭적 진입장벽) 기준을 쓰면 **80곳 이상의 그룹에서 그 그룹의 명백한 실제 1위 사업자(삼성전자/현대차/LG화학/POSCO홀딩스/삼성바이오로직스/SK이노베이션/현대제철/대한항공/LG전자/롯데칠성 등)가 부당하게 제외되고, 대신 매출 규모가 수백억원대에 불과한 군소기업이 짧은 표본(28~40분기)의 통계적 잡음만으로 살아남는 역전 현상**이 광범위하게 확인됨 — 대기업일수록 전사매출에 여러 사업이 섞여 좁은 HS카테고리 하나와의 상관계수가 구조적으로 희석되는 게 원인. DDR메모리 사례는 이 문제의 극히 일부였을 뿐, 전사적으로 퍼져있던 구조적 결함이었음.
+  (c) **재설계**: 상관계수를 "진입하려면 넘어야 하는 대칭적 문턱"에서 **"이미 매핑된 근거를 뒤집을 만큼 뚜렷한 반증(corr<-0.3)이 있을 때만 배제하는 비대칭 필터"**로 전환 — 기본은 포함(매출비례 가중치가 규모를 자연스럽게 반영하도록 맡김). 재검증 결과 대기업 오제외 사례가 80여건→5건(대상홀딩스/서흥/삼성SDI/현대제철/LS ELECTRIC — corr -0.33~-0.48의 뚜렷한 역상관, 정당한 제외로 판단)으로 감소. DDR 검증: 제주반도체/해성디에스/한미반도체가 '854232' 그룹에서는 market_share_pct 우선 로직으로 여전히 0을 받고, 이들이 매핑된 *다른* HS그룹에서 받는 신호를 전부 합산해도 삼성전자 대비 0.01~0.16% 수준(1% 미만) — 사용자 지적(점 6) 그대로 정량 확인됨.
+  ⚠️ **점 5(지역정보 교집합) 조사 결과 — 인프라 부재로 보류**: `customs_monthly_record`에 시도(광역단체)별 수출데이터가 있는지 확인한 결과, 실제 시도×품목 교차 데이터를 담은 `sidoitemtrade` 엔드포인트(18,048건)가 존재하긴 하나 hs_code 필드값이 `'0000000001'`류의 알 수 없는 플레이스홀더로 깨져 있고 period_ym도 `'2016'`/`'총계'` 등 비정상값이 섞여 있어 **우리가 추적 중인 313개 HS코드와 교집합이 0건** — 사실상 미가공/방치 상태 데이터로 확인됨. `regional_company_mapping_evidence`(텔레그램 근거 기반 스냅샷, 499건)는 이미 활용 중이나 이건 시계열이 아니라 단발 증거이며, 시군구 단위의 체계적 월별 품목별 무역통계는 관세청 공개데이터 자체에 원래 없음(시도 단위까지만 존재). 결론: 이 아이디어를 제대로 구현하려면 `sidoitemtrade` 원본을 관세청에서 올바른 HS코드 라벨로 재수집하는 별도 작업이 선행돼야 함 — 미해결 과제로 남김.
+  ⚠️ **알파벳 섞인 종목코드 시세공백(2026-09-07 재조사·수정)**: 앞선 조사에서 "923개, 어느 수집기도 담당 안 함"으로 잘못 결론지었던 것을 사용자가 정정("최근 상장 종목이다, 무시하면 안 됨"). 재확인 결과 실제 stock_universe 내 알파벳 포함 코드는 81개(예: `0007J0`=인벤테라, `0011A0`=액스비스, `0126Z0`=삼성에피스홀딩스[시총 8.9조] — 신규상장 스팩·일반주 및 우선주), KIS API로 직접 조회 시 오늘(2026-09-07)까지 정상 시세 확인 — 실존하는 활성 상장종목이 맞았음. 원인은 `collect_kis_ohlcv.py`의 전종목 대상 쿼리가 원래 `GLOB '[0-9]*'`(숫자로 시작하는 6자리 — 알파벳코드 포함)였는데, 2026-09-07 진행 중이던 Postgres 마이그레이션 작업 중 `GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'`(순수 숫자 6자리만)로 조용히 강화되어 있었음(미커밋 상태, 그날 밤 정기수집부터 반영될 뻔함) — 원래 필터로 되돌림(3곳: 종목선정 쿼리 + 검증로그 쿼리 2곳). 2026-06-05~09-07 구간 81개 종목 전체 즉시 백필 완료(5,192건, 에러 0). 다만 이 되돌린 필터가 적용되기 전, 즉 6월 5일부터 이 되돌리기 전까지 왜 정지돼 있었는지(그 시점엔 아직 이 강화된 필터가 존재하지 않았음)는 로그 부족으로 완전히 특정 못함 — 2026-09-08 이후 정기수집(18:35)이 계속 정상 작동하는지 확인 필요.
+  ⚠️ **옛 병합조합 4계좌(combo_605/539/510/474) — 사용자 결정: 동결보전**(2026-09-07). 청산하지 않고 현재 포지션 그대로 유지, 추가 리밸런싱·정리 작업 불필요.
+  ⚠️ **6차: LLM 기반 HS매핑 커버리지 확장 파이프라인(2026-09-08, 사용자 지시 — "애널리스트 리포트나 DART 원문 비교 등 다양한 방법으로, OpenAI 대신 DeepSeek으로")**: 커버리지 398→404(세그먼트명 수동매칭)에서 **478개사(전체 5,459개사의 8.8%)**로 추가 확장.
+  - **신규 인프라**(`hs_trade_lab/scripts/`): `llm_hs_matcher.py`(공용 매칭 코어 — `config.get_ai_client()`로 DeepSeek 사용, hs_codes 324개 카테고리 전체를 컨텍스트로 제공해 목록 밖 카테고리 환각 방지), `build_hs_candidates_from_analyst_pdfs.py`(애널리스트 PDF `report_files` 23,727건/1,456개사에서 사업설명 추출), `build_hs_candidates_from_dart_filings.py`(DART Open API document.xml로 사업보고서 "사업의 내용" 원문 추출, segment_revenue 2,561개사 중 미매핑 기업 대상), `promote_llm_hs_candidates.py`(안전기준 통과분만 승격).
+  - **파일럿에서 발견·수정한 버그들**(전부 실측 검증): (1) `report_files.stock_name`이 파일명 파싱 잔여물로 깨져있어(예: "오킨스전자［］ Hyundai+Moto") LLM에 그대로 넘기면 자기검열로 매칭이 0건까지 떨어짐 — `stock_universe` 정식 종목명으로 교체. (2) 증권사 발간 리포트의 stock_code 라벨이 실제 분석대상이 아닌 발행 증권사로 잘못 붙는 사례(상상인증권 파일이 실제로는 삼성SDI 분석) 확인. (3) **지주/그룹 대표종목의 자회사 실적 자기귀속** 대량 확인 — 롯데지주/SK스퀘어/한화/SK/GS/효성/에코프로/CJ/대웅 등이 종목명에 "지주"가 없어도(SK스퀘어, 한화, GS, SK, 효성처럼) 사업보고서/리포트 원문이 그룹 전체를 서술하다 보니 자회사(SK하이닉스, 한화에어로스페이스, GS칼텍스, 효성티앤씨 등) 실적이 모회사 종목코드로 매칭됨 — `mentions_subsidiary()`(회사명+추가글자 패턴, "자회사"/"계열사" 키워드) 신설로 검출. (4) LLM이 reason에 "정확히 일치하는 코드가 없어 억지로 끼워맞춤"을 스스로 인정하고도 confidence 0.8~0.9를 부여한 사례(씨엠티엑스: 실리콘 부품을 "실리콘카바이드"로 근사매칭) 및 reason에 "매칭하지 않음"이라고 명시하고도 matches 배열에 포함시킨 자기모순 사례(서울반도체 LED, 오리온 라면류)까지 확인 — `has_hedge_language()` 회피표현 필터 신설.
+  - **최종 안전장치 3중**: `is_sector_plausible`(증권/은행/보험/지주/홀딩스 종목명·섹터 배제) + `mentions_subsidiary`(자회사 귀속 의심 배제) + `has_hedge_language`(강제매칭/자기모순 배제) + confidence≥0.8. 800개사 파일럿(analyst_pdf 400 + dart_filing 200 + 초기 테스트 200)에서 최종 127건(74개사)만 승격 통과 — 무작위 15건 재검토 결과 전부 타당, provisional 상태로 반영.
+  - **미해결**: 코드베이스에 "지주회사 여부" 플래그가 없어 `mentions_subsidiary`의 이름패턴 방식은 완전 일반화가 안 됨(예: KG케미칼↔KG스틸처럼 형제회사 간 이름이 겹치지 않는 경우는 못 잡음) — 이런 잔여 사례는 provisional 상태이므로 후속 리뷰에서 걸러짐. `analyst_pdf_extracts`(기존 OpenAI/Gemini 기반, 목표주가 추출용, 비용 문제로 비활성)와는 별개 파이프라인.
+  ⚠️ **CFS/OFS 미탈리브레이크 전수감사 및 수정 완료(2026-09-08)**: HS매핑 버그 조사 중 발견한 "financial_data에 report_type 타이브레이크 없이 SUM/AVG/positional-index하면 CFS+OFS 이중계상·비결정성" 부류 버그를 서브에이전트로 전수감사, se_momentum/megatrend/peak_easy/`_load_company_revenue_map` 외에 8곳 더 확인 — 사용자 지시("남기지말고 모두 고쳐")로 전부 기존 확립 패턴(`ROW_NUMBER() OVER(...ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END)` 서브쿼리로 종목·연도·분기당 1행만 남긴 뒤 집계)으로 수정 완료, 전 파일 컴파일+실제 쿼리/백테스트 재실행 검증 완료:
+  1. `routes/market_radar.py`(3곳: 반도체 밸류스트림 TTM매출 2곳 + financial-detail TTM 1곳) — 종목 000020 TTM매출 445.3B(버그) → 513.2B(수정 후, 검증됨)로 13% 상향.
+  2. `routes/tenbagger.py`(`/custom-filter` 재무 JOIN 2곳 + `_quarterly_rows`) — 종목 226340 2026Q1 영업이익이 CFS -2.09B/OFS +2.33B 사이에서 비결정적으로 뒤집히던 것을 CFS -2.09B(적자)로 고정 확인.
+  3. `routes/sector_rotation.py`(`_get_sector_earnings_yoy` AVG + top-picks QoQ `q_rows`) — 전력기기 섹터 실측 재확인(earnings_yoy=73.25%, 정상 동작).
+  4. `routes/trend.py`(`_rec_is_turnaround`, V-RECOVERY 라이브 가상매매) — 기존엔 OFS+4분기+dart_ofs_backfill 특수케이스만 걸렀는데 일반적인 CFS/OFS 중복도 걸러지도록 일반화(감사에서 "잔여 리스크"로 플래그됐던 부분).
+  5. `backtest_strategies/golden_cross.py`(섹터 영업이익YoY SUM), `backtest_strategies/sector.py`(2곳: op_rows_s/op_prev_s 딕셔너리 비결정성, turnaround ni_rows 흑자전환 판정) — 백테스트 전용, golden_cross/sector 재검증 실행(pick_ta_bonus 경로 포함) 크래시 없음 확인.
+  전체 콤보/6기간 재검증은 미완료 — 위 수정들이 실전략 성과에 미치는 영향은 다음 정기 재검증 때 반영.
 - 메타시뮬레이터 기반: backtest_runs DB의 AUTO 런 목록 블렌딩 → 상위 종목 추출
 
 ### routes/portfolio.py → /api/portfolio
@@ -478,6 +531,33 @@ POST /semiconductor/valuestream/refresh
 GET  /semiconductor/megatrend     # 메가트렌드 탐지 스크리너 ★신규(2026-07-20)
 ```
 
+### routes/sector_rotation.py → /api/sector-rotation ★신규(2026-06-27), 문서 소급기재(2026-09-08)
+```
+GET  /scores                      # 섹터별 활성도 스코어(0~100, 수급+수출+실적+거래량+RS)
+GET  /leadership                  # 주도섹터·주도주·진입단계(ENTRY_NOW/EARLY_WATCH/HOLD_LEADER/WAIT/AVOID) 통합
+GET  /history/{sector_key}        # 섹터별 월별 RS 히스토리
+GET  /rotation-map                # 4주/12주 RS 4분면 맵
+GET  /top-picks/{sector_key}      # 섹터 내 급등 후보 종목
+GET  /dashboard-summary           # ★신규(2026-09-08) 메인페이지(macro 탭) 카드용 — 전략1(추세추종 집중/탈출)+전략2(낙폭과대 반등) 통합
+POST /refresh-cache               # 캐시 수동 재계산
+GET  /flow-signal-validation      # ka10051 업종별투자자순매수 신호 검증 현황
+```
+- `SECTOR_GROUPS`(10개 커스텀 섹터: 전력기기/원자력/화장품뷰티/의료기기미용/반도체/기판패키지/2차전지/방산/조선/바이오)는 파일 상단에 하드코딩. 캐시는 `sector_rotation_cache` 테이블(장중 1시간/장마감 기준 자동 갱신).
+- `/dashboard-summary`: 전략1은 기존 `_entry_stage` ENTRY_NOW 중 최고점 1개를 `primary_focus`(집중)로 스포트라이트, 나머지는 `secondary`. 12주RS 양호했다가 4주RS가 막 꺾인 섹터는 `exit_alerts`(추세이탈 경보)로 별도 표시. 전략2(`_score_bottom_reversal`)는 낙폭과대(30)+반전조짐(30, 단기RS가 장기RS보다 개선됐는지)+수급전환(25, 최근30일 대 이전60일)+밸류트로프(15)로 점수화, `BOTTOM_ENTRY`는 반전조짐 컴포넌트가 실제로 점수를 받았을 때만 승격(낙폭+수급만으로는 승격 안 함 — 전략1의 "가격 확인 없이는 BUY 승격 금지" 원칙과 동일 취지). 전략1 ENTRY_NOW인 섹터는 전략2 목록에서 중복 제외.
+
+### routes/global_foreign_flow.py → /api/global-foreign-flow ★신규(2026-09-08), TIC 대미 흐름 확장(2026-09-08 2차)
+```
+GET  /summary                     # ①국가별 자국시장 외국인 순매수(한국/대만/일본/중국/인도) + ②TIC 국가별 대미 주식 순매수(16개국) + observations(상관관계 관찰) + DXY/VIX/UST10Y
+GET  /history?days=180            # ① 국가별 자국시장 시계열(라인차트용)
+GET  /us-inbound-history?months=24 # ② TIC 전세계/아시아/유럽/국가별 월별 시계열(라인차트용)
+```
+- 데이터는 `routes/global_macro.py`의 `global_macro_data`(범용 시계열 저장소, indicator_code+date)를 그대로 재사용 — 신규 테이블 없음.
+- **① 자국시장 외국인 순매수** 신뢰도(2026-09-09 기준): **한국**(`KR_FOREIGN_FLOW_USD`, price_history 집계) HIGH / **인도**(`IN_FPI_FLOW_USD`, NSDL `fpi.nsdl.co.in/Reports/Latest.aspx` HTML 파싱) HIGH / **일본**(`JP_FOREIGN_FLOW_USD`, MOF `week.csv` 직접 CSV) HIGH — e-Stat 대신 재무성 공개 CSV로 전환(섹션 9 참조) / **대만**(`TW_FOREIGN_FLOW_USD`) **BLOCKED**(TWSE WAF가 `/rwd/`·`/exchangeReport/` 경로를 307로 차단, Playwright도 동일) / **중국 북향자금**(`CN_NORTHBOUND_FLOW_USD`) PENDING(HKEX net-flow 엔드포인트 미확정).
+- **② TIC(미 재무부) 국가별 대미 주식 양자간 흐름** ★신규(2026-09-08 2차, `collectors/tic_bilateral_flow_collector.py`) — 사용자가 "유럽/미주 등 시총 상위 국가 전체로 확장"을 요청해, ①과는 반대 방향("그 나라 투자자가 미국 주식을 얼마나 순매수했는가")을 측정하는 FRED 미러링 TIC 데이터(`FORLTEQTYNET*` 시리즈)를 추가 — 20개 국가/지역 시리즈(전세계·아시아합계·유럽합계·유로존 + 중국/일본/홍콩/대만/한국/인도/싱가포르(아시아), 영국/독일/프랑스/이탈리아/스위스(유럽), 캐나다/호주/사우디/브라질) 전부 실측 확인됨(월별, USD 백만, 공식발표상 약 2~3개월 지연). 기존 KRX 스타일 개별 거래소 스크래핑과 달리 **차단 리스크 없이 한 번의 API로 시총 상위 대부분 국가를 커버** — TWSE/HKEX처럼 개별 국가 거래소를 일일이 뚫는 것보다 훨씬 안정적임을 확인, 향후 유사 요청은 이 방식을 우선 검토할 것.
+- `observations` 필드: ①이 마이너스(자국 이탈)이면서 ②아시아합계가 플러스(미국 유입)일 때 "방향 일치" 관찰 문구를 자동 생성 — 인과관계 단정은 하지 않고 상관관계 관찰로만 표현(문구에 명시).
+- 프론트: `frontend/src/views/GlobalForeignFlowView.jsx`(`global_foreign_flow` 탭) — 섹션①(자국시장)+섹션②(대미 TIC, 국가별 랭킹바+지역합계+월별추이) 2단 구성. 데이터 없는 나라는 "0"이 아니라 "데이터 없음"으로 표시.
+- 수집: 별도 스케줄러 잡 없음 — 기존 `_loop_global_macro_daily`(매일 06:45)가 실행하는 `scripts/ops/collect_global_macro_daily.py`에 `asia_foreign_flow`/`india_fpi_flow`/`jp_foreign_flow`/`tic_bilateral_flow` 4단계 추가(TIC는 FRED와 같은 API키 재사용, `fred` 스텝 바로 다음에 실행).
+
 ### routes/sector_define.py → /api/sector-define ★등록(2026-05)
 ```
 GET  /posts                       # Hot 섹터 포스트 목록
@@ -538,7 +618,7 @@ POST /precompute        # 캐시 강제 재계산 (스케줄러 18:30 호출)
 | `_job_kiwoom_stock_universe` | 매주 월요일 06:30 | 키움 ka10001 전종목 PER/PBR/ROE/유동주식수 갱신 |
 | `_job_dart_financial_recollect` | 00:30 daily | DART finstate_all 재무제표 재수집 (ETF/ETN/상폐 제외, legacy_dart_recollect.py --resume, 최대 4시간) |
 | `_job_dart_segment` | 매주 일요일 03:30 | DART fnlttSinglAcntAll IS계정 기반 사업부문별 매출 수집 (시총상위 500, scripts/collect_dart_segment_breakdown.py) ★신규(2026-06-14) |
-| `_job_combo_daily` | 매일 18:35 (평일) | 전략센터 병합조합 4종(605/539/510/473%) 가상매매 실행 — 구성 컴포넌트 7개 today-signal 재계산(최초 1회 약 60~90초) 후 매도→매수 체결 ★신규(2026-07-23) |
+| `_job_combo_daily` | 매일 18:35 (평일) | (스레드명 유지, 구현은 2026-08-26 교체) 전략센터 상위5 가상매매 — `execute_strategy_center_top_five_now()`가 그날 매트릭스 상위 5개를 재선정해 각 계좌 매도→매수 체결. 옛 병합조합 4종(combo_605/539/510/474)은 2026-08-23 이후 재실행 안 됨(위 "병합조합 가상매매" 항목 참조). ⚠️2026-09-07: 6개 계좌 전부 매수 0건 지속 중, 원인 미확인 |
 
 ### ETF 수집 스케줄 (crontab — ETF_check/scheduler.py)
 | 시간 | 실행 모드 | 설명 |
@@ -604,6 +684,8 @@ def _cache():
 | `frontend/src/views/BacktestView.jsx` | backtest ★2026-09-03 분리 |
 | `frontend/src/views/StockDecisionEvidencePanel.jsx` | 분석(`analysis`) 메인 화면 내부, 즉시 로드(lazy 아님) |
 | `frontend/src/views/InvestmentDecisionTaskPanel.jsx` | 분석(`analysis`) 메인 화면 내부, 즉시 로드(lazy 아님) |
+| `frontend/src/views/SectorSignalSummary.jsx` | macro(매크로 탭 최상단, `MacroDashboard`의 `<SignalBoard>` 바로 다음) 내부, 즉시 로드(lazy 아님) ★신규(2026-09-08) — `/api/sector-rotation/dashboard-summary` 카드 |
+| `frontend/src/views/GlobalForeignFlowView.jsx` | global_foreign_flow(`React.lazy`) ★신규(2026-09-08) — 아시아 5개국 외국인 자금흐름, `/api/global-foreign-flow/*` |
 | `frontend/src/EtfCheckView.jsx` | etf_check (views/ 밖, src 바로 아래) |
 | `frontend/src/utils.js` | API, isKRMarketOpen, isUSMarketOpen, fmtKrw, fmtPctUs 등 공유 유틸 ★2026-09-04 fmtKrw/fmtPctUs 추가 |
 
@@ -669,6 +751,7 @@ KIWOOM_ENABLED=false
 KIWOOM_APP_KEY / KIWOOM_SECRET_KEY
 KIWOOM_BASE_URL=https://api.kiwoom.com
 KIWOOM_WS_URL=
+ESTAT_APP_ID=                          # 일본 e-Stat API 앱ID(무료 가입 즉시 발급) — collectors/mof_japan_flow_collector.py, 미설정 시 스킵
 ```
 
 ---
@@ -738,8 +821,8 @@ same_sector_codes = {r["stock_code"] for r in mc.execute(
 ### stock_collection_config 패턴 (종목별 수집 특성 등록)
 ```python
 # 수집기에서 이 테이블을 먼저 읽어 종목별 특성 반영
-import sqlite3
-conn = sqlite3.connect("stock.db")
+from db_compat import connect_primary_db
+conn = connect_primary_db(timeout=30)
 cfg = {r["config_key"]: r["config_value"] for r in conn.execute(
     "SELECT config_key, config_value FROM stock_collection_config WHERE stock_code=?", (code,)
 )}
@@ -816,8 +899,8 @@ ROA     = 최신 연도 net_income / total_assets × 100  (annual 기준)
 - 수동 TTM 일괄 재계산:
 ```python
 python3 - <<'EOF'
-import sqlite3
-conn = sqlite3.connect('stock.db')
+from db_compat import connect_primary_db
+conn = connect_primary_db(timeout=30)
 stocks = conn.execute("""
     SELECT su.stock_code, su.shares_issued, ph.close AS price
     FROM stock_universe su
@@ -863,14 +946,24 @@ EOF
 
 | 항목 | 상태 | 내용 |
 |------|------|------|
+| KRX 신규 영숫자 종목코드(예: 액스비스=0011A0) TTM/공시/현금흐름 누락 | ✅ 수정(2026-09-06) | `main.py` 전역의 `stock_code.isdigit() and len==6` 국내종목 판정이 KRX 2026년 신규 6자리 영숫자 코드(숫자+대문자 1글자)를 전부 해외/미상장으로 오판 — TTM(`_calc_ttm_fundamentals`)·PER/PBR·시장정보·공시·전략분석 background 수집이 전부 스킵됨(실사용 73종목 확인). `_is_kr_code()`(정규식 `^[0-9A-Z]{6}$`) 헬퍼로 main.py 10곳 + `App.jsx` `isKrStockCode()`로 프론트 24곳 통일. 부수 발견: 현금흐름표(`get_cashflow_table`)는 데이터가 없어도 백그라운드 재수집을 트리거한 적이 없는 dead code(`_bg_collect_cashflow` 미호출) — 프론트는 이미 15초×8회 폴링 로직이 있었는데 서버가 트리거를 안 해 영원히 빈 테이블로 남던 상태였음. `raw` 없을 때 자동 트리거 추가. |
+| 개별종목 심층 인사이트 vs 대주주 섹션 중복 | ✅ 정리(2026-09-06) | "대주주·임원 지분변동" 섹션과 "심층 인사이트"가 동일 테이블(`dart_insider_holdings`, `/api/insider/holdings` = tenbagger stock-insight `insider_trading`)을 각각 별도 fetch해 임원매매 이력을 화면에 두 번 표시하던 중복 제거 — 대주주 섹션은 "현재 주요주주"만 남기고 임원매매는 심층 인사이트에서만 표시. 심층 인사이트 섹션을 페이지 최하단에서 대주주 섹션 바로 아래(재무제표/현금흐름표보다 위)로 재배치. |
 | KRX 승인API (data-dbg.krx.co.kr) | ✅ 정상 | OHLCV·지수 정상 수집. PER/PBR은 제공 안 함 → DB 직접 계산 |
 | KRX 웹API (data.krx.co.kr) | ✅ Playwright로 정상 | requests 방식 CSV 다운로드 실패(보안강화). Playwright(실 브라우저) → 로그인+OTP+CSV 모두 성공. 매일 18:10 스케줄링됨 |
 | K-mydata | ❌ 인증실패 | KRX_API_KEY가 K-mydata용 아님 |
 | pykrx | ❌ Empty | KRX 서버 차단으로 빈 DataFrame |
+| TWSE(대만) 외국인 순매수 수집 | ❌ 접속 차단(2026-09-08 확인) | `/rwd/`·`/exchangeReport/` 등 데이터 경로가 이 Mac 네트워크에서 WAF 307("FOR SECURITY REASONS")로 전부 차단됨(루트 도메인은 200으로 정상 — 데이터 경로만 선별 차단). Referer/User-Agent 조정, Playwright 풀브라우저 모두 동일하게 막힘 — IP/지역 기반 차단으로 추정. 대체 소스 없이는 `TW_FOREIGN_FLOW_USD` 수집 불가(`collectors/asia_foreign_flow_collector.py`의 `collect_tw_foreign_flow`는 코드는 있으나 상시 0건). 우회 시도(프록시/스푸핑)는 정책상 하지 않음. |
+| 중국 북향자금(HKEX Stock Connect) 순매수 수집 | ⚠️ 미구현 | 사이트 자체는 접근 가능하나(hkex.com.hk 200) Historical-Daily 통계표가 JS로 동적 렌더링됨 — Playwright로 네트워크 캡처해 찾은 `/eng/csm/DailyStat/data_tab_daily_YYYYMMDDe.js`는 Turnover(거래대금)만 있고 실제 순매수(Net Buy/Sell) 필드가 없어 사용 불가. 실제 net flow가 나오는 엔드포인트는 날짜검색 인터랙션 뒤에 있는 것으로 추정되나 미확인 — 후속 조사 필요, `CN_NORTHBOUND_FLOW_USD` 현재 0건. |
+| 일본 외국인 증권매매 수집 | ✅ 수집 중(2026-09-09) | `collectors/mof_japan_flow_collector.py` — 사용자가 `ESTAT_APP_ID` 발급 후 e-Stat으로 실제 조회해보니 이 통계("対外及び対内証券売買契約等の状況")는 e-Stat 포털에 없었음(검색 0건, API 자체는 정상 — "人口" 등 다른 키워드는 25,022건 조회됨). 대신 재무성이 인증 없이 직접 공개하는 CSV(`mof.go.jp/.../week.csv`, 2005년~현재, 주간, 지연 약1~2주)를 발견해 그쪽으로 전환 — e-Stat보다 오히려 더 간단하고 안정적. `ESTAT_APP_ID`는 `.env`에 보관만 하고(향후 JP_CPI/JP_GDP 등 다른 e-Stat 확장에 재사용 가능) 이 수집기는 사용 안 함. |
 | 공공데이터포털 투자자API | ❌ 404 | getStocInvtTrdnInfo 서비스 폐지 |
 | investor_trading_daily | ⚠️ 미수정 잔존 | 여전히 매수금액(buy-only) 오염 상태 — kiwoom_investor_daily는 2026-07-21 trde_tp='0' 수정으로 해결됐으나 이 테이블(동일 로직 복사본)은 미반영. |
 | foreign_holding_daily | ℹ️ 정상 적재 중 | 문서상 "0행"으로 남아있었으나 실측 107,764행 확인(Kiwoom ka10008 경유로 이미 채워지고 있음, 문서만 stale이었음) |
+| `stock_universe` 월간 배치 장기 정지 | ✅ 수정(2026-09-06) | `update_universe()`(존재하지 않는 함수) 호출로 매월 1일 배치가 조용히 실패 → `update_from_krx()`로 수정 + Naver fallback 정규식/PRAGMA/base_date 타입 동반 수정. 상세는 섹션 11 최상단 참조. |
+| 분기 현금흐름표 investing/financing_cf 음수 전부 None | ✅ 수정(2026-09-06) | `main.py get_cashflow_table`의 `_q_or_diff()`가 capex 전용 "음수=오류" 필터를 operating/investing/financing_cf에도 적용해 정상적인 음수 흐름값(예: capex 지출로 인한 investing_cf 음수)을 전부 숨김. 삼성전자 등 대다수 종목의 분기 현금흐름표에 영향. `field=='capex'`일 때만 필터 적용하도록 수정. |
 | Screener/StrategyCenterView `fmtKrw`/`fmtPctUs` 스코프 버그 | ✅ 수정(2026-09-04) | 2026-09-03 App.jsx→views 분리 시 각 파일이 참조하던 포맷 함수(`fmtKrw`, `fmtPctUs`)가 다른 ES 모듈로는 안 넘어가 `ReferenceError`로 렌더가 크래시(Screener embed는 전체 화면 블랙아웃까지 발생). `frontend/src/utils.js`에 두 함수를 공용 헬퍼로 추가하고 양쪽에서 import하도록 수정. **재발방지**: 컴포넌트를 별도 파일로 분리할 때는 반드시 참조하는 모든 헬퍼가 import돼 있는지 확인(섹션 6 상단 경고 참조). |
+| 백테스트 4개 전략(turnaround/regime_adaptive/value/v2) 결과 비결정성 | ✅ 수정(2026-09-04) | 근본원인은 `financial_data` CFS/OFS 중복행에 대한 정렬 tiebreak 부재(지배적) + corp_action/financial_data 실시간 재검증 잡과의 타이밍 경쟁(2차) — 섹션 11 참조. `report_type` 필터+ORDER BY tiebreak는 기본 적용, `data_asof_ts` 옵션 파라미터로 회귀검증 재현성 확보. v8도 동일 취약점 확인·수정. |
+| composite 시장필터 dead code | ✅ 발견+opt-in 수정(2026-09-04) | `run_backtest_composite`가 KOSPI MA120 `market_bullish`를 계산만 하고 매수 게이트에 배선한 적이 없어 하락장 방어가 전혀 작동하지 않던 상태(2026-07 폭락에서 KOSPI와 거의 동행한 -20.95%의 원인). `use_market_filter=True`(opt-in)로 배선 가능하나, walk-forward 검증 결과 상승장 기회비용이 더 커 기본값 False 유지. |
+| 텐버거 가치함정(value trap) 추천 | ✅ 수정(2026-09-06) | 미원화학처럼 유동성 낮고 대주주 지분 집중된 흑자·저PBR 종목이 텐버거 후보로 추천되던 문제 — `tenbagger_engine.py`에 유동성(60일 평균거래대금)+지분집중(`dart_insider_holdings`) 가드레일 신규, composite.py엔 `value_trap_gate`(opt-in)로 이식. 상세는 섹션 11(4차) 및 [docs/CLAUDE_CHANGELOG_20260906_composite_tuning.md](docs/CLAUDE_CHANGELOG_20260906_composite_tuning.md). |
 
 ### 키움 REST API 확인된 엔드포인트 (URI: /api/dostk/stkinfo, Bearer 토큰)
 | API-ID | 설명 | 필수 파라미터 |
@@ -1089,163 +1182,76 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 > 2. 최근 20~25개 항목만 유지하고, 그 이전은 [docs/CLAUDE_CHANGELOG_ARCHIVE.md](docs/CLAUDE_CHANGELOG_ARCHIVE.md) 맨 아래에 이어붙이세요.
 > 3. 2026-07-01~2026-08-30 전체 이력(276건)은 이번에 전량 archive로 이관되었습니다. 과거 버그 재발/근거 추적 시에만 Read/grep 하세요.
 
-> 📦 **2026-08-30 이전 변경이력은 `docs/CLAUDE_CHANGELOG_ARCHIVE.md`로 이관되었습니다** (2026-09-03). 아래는 2026-08-26 이후 최근 20개 항목만 표시합니다.
+> 📦 **2026-08-30(2차) 이전 변경이력은 전량 `docs/CLAUDE_CHANGELOG_ARCHIVE.md`에 있습니다** (2026-09-04 재정리 — 이전엔 archive로 옮긴다면서 CLAUDE.md 원본을 안 지워 20건이 그대로 중복 남아있었음, 이번에 제거). 아래는 최근 5개 항목만 유지합니다.
 
-### 2026-09-04 미커밋 백엔드/프론트엔드 작업물 대량 정리·커밋 + CLAUDE.md 섹션 6 전면 재검증
-> 이 저장소(`runtime`)에 몇 달째 커밋 안 된 채 쌓여있던 1085개 항목(routes/collectors/scripts/docs/frontend 등)을 점검 후 정리.
-- 10MB 로그 3개·90MB git bundle 백업(`backups/`)·74MB 자동생성 리서치 산출물(`research_outputs/`)·캐시 파일 등 버전관리에 부적합한 것은 `.gitignore`에 추가해 제외하고, 나머지 1275개 정상 소스 파일을 커밋(`81e53ee`). 이미 `.gitignore`에 있었지만 실제로는 계속 추적되던 `hs_trade_lab/data/customs_downloads/`(618개)도 `git rm --cached`로 규칙과 일치시킴.
-- 위 정리 과정에서 섹션 6(프론트엔드 컴포넌트)이 2026-07-09 기준으로 멈춰있고 2026-09-03 views/ 분리가 전혀 반영 안 된 것을 발견 — App.jsx 최신 줄번호로 전면 재검증·갱신, 미사용 고아 파일(`SemiconductorSectorView.jsx`) 발견 기록.
+### 2026-09-09 composite 추가신호 탐색 6건 전부 기각 + 구조적 개선(conviction_sizing_gate) 시도도 기각
+> "다른건 추가로 검토할게 없을까" 연장선 — 신용잔고(kiwoom_credit_balance)/대량보유자 지분변동(dart_major_holders) 2건을 마저 독립검증했으나 리프트가 0에 가깝거나(신용잔고 +8.1% vs 베이스라인 +8.8%) 오히려 위험(대량보유자: 큰 변동 버킷 함정률 28~29% vs 보합 12.7%) — 이걸로 이번 세션 신규 단일신호 탐색(PBR백분위/고정비레버리지/CAPEX/재고급증/신용잔고/대량보유자, 총 6건) 전부 약하거나 역효과로 마무리, 신규 단일신호 탐색 중단.
+- 방향을 "새 신호 찾기"에서 "이미 있는 score를 다르게 쓰기"로 전환 — `conviction_sizing_gate` 신규(opt-in): 매수 여부뿐 아니라 포지션 사이즈도 score(60~69/70~79/80+)에 비례시킴(총 투입자본 한도는 불변, 재배분만). 5개 강도 조합 7구간 walk-forward 전부 기각(23.21%→8~16%대) — bull_covid 구간에서 문턱만 겨우 넘긴(60~69점) 종목들이 오히려 그 구간 최대 승자였음이 밝혀져, "고득점=고수익"이라는 전제 자체가 이 전략엔 안 맞음. 기본값 False 유지, 상세는 `composite.py` docstring 참조.
 
-### 2026-09-03 Screener/PeakView 등 8개 컴포넌트를 App.jsx에서 views/*.jsx로 분리 (토큰 최적화)
-> App.jsx가 24K줄까지 불어나 세션 시작 시 로드 비용이 커진 문제로, 대형 컴포넌트를 개별 파일로 분리해 `React.lazy()` 로딩.
-- `Screener`→`views/Screener.jsx`, `PeakView`→`views/StrategyCenterView.jsx`(탭 라벨은 그대로 "가상 매매"), `BacktestView`/`StrategyHub`/`StockDecisionEvidencePanel`/`InvestmentDecisionTaskPanel`/`RiskGateMonitorView`/`CafeSignalsView` 등을 이관. **분리 시 각 컴포넌트가 참조하던 App.jsx 모듈스코프 헬퍼(`fmtKrw`/`fmtPctUs`)를 import하지 않아 런타임 크래시가 발생 — 2026-09-04에 별도 세션이 발견·수정(섹션 9 참조)**.
+### 2026-09-08(5차) composite의 material_backlog_bonus를 turnaround/v2/value에도 이식 — 전부 기각(무변화 또는 악화)
+> 지난 세션(09-06)의 composite 튜닝 후속 — 사용자가 "백테스트 관련 다른 전략"에도 적용해보라고 요청.
+- turnaround(복합점수에 직접 가산)/v2·value(entry_bonus_fn 진입우선순위, composite와 달리 진입조건 자체는 불변)에 opt-in `use_material_backlog_bonus` 신규, 공용 헬퍼 `_make_material_backlog_bonus_fn()`을 backtest_common.py에 추가. 7구간 walk-forward 결과 **전부 기각**: turnaround avg 20.92%→20.48%(거의 무변화 — 기존 점수스케일 100점이 이벤트보너스 3점을 압도), v2 avg 15.36%→13.91%(악화, 구간별 들쭉날쭉), value avg 14.78%→11.64%(일관 악화). composite에서만 성공했던 이유는 "이미 신호를 통과한 후보의 순서만 바꾸는" v2/value 구조와 달리 composite는 이 보너스가 threshold 게이트 통과 여부 자체에 영향을 주는 스코어 성분이기 때문으로 추정. 3개 전략 전부 기본값 False 유지, 상세 수치는 각 파일 docstring 참조. regime_adaptive는 애초에 스코어링/우선순위 메커니즘 자체가 없어(첫 매치 종목 순서로 매수) 이식하지 않음.
 
-### 2026-08-30 사용자 질문 2건 — DART 3키 실사용여부 재확인 중 로테이션 자체가 무력화돼있던 버그 발견·수정 + KRX/공공데이터포털 API 라이브 재검증
-> 사용자: "1. 12시가 넘어가면 dart 초기화되니까 시도해, 그리고 id가 3개나 있는데 모두 사용한거야? / 2. 첨부한 이미지와 같이 krx openapi를 사용하고 있는것으로 알고 있는데, codex가 안된다고 하고 있음. 점검해봐"
-- **①DART 3키 재점검 — "모두 사용한거야?"에 대한 답: 아니오, 사실상 1개만 쓰이고 있었음(치명적 버그 발견)**. `dart_key_manager.RotatingOpenDartReader`는 쿼터소진 감지를 `is_quota_error(result)`로 하는데, `OpenDartReader.finstate_all()`은 DART가 status≠'000'(쿼터소진 포함)이어도 예외를 던지거나 에러값을 리턴하지 않고 **그냥 `print(jo)` 후 빈 DataFrame을 반환**함(`venv/.../OpenDartReader/dart_finstate.py:64-69`) — `is_quota_error()`는 DataFrame을 통째로 무조건 `False` 처리하도록 짜여 있어서, 쿼터소진이 "빈 데이터(정상적인 조회결과없음)"와 절대 구분되지 않고 로테이션이 **단 한 번도 발동하지 않고 있었음**(실측: KEY1 쿼터소진 상태에서 계속 KEY1만 재시도). **수정**: `_call()`에서 `contextlib.redirect_stdout`으로 라이브러리가 인쇄하는 원본 에러 JSON을 캡처해 그 텍스트에서 쿼터 마커를 찾아내는 방식으로 우회 탐지 추가. 수정 후 재현 테스트: KEY1→KEY2 순서로 정확히 로테이션되며 KEY3에서 정상 데이터(176행) 수신 확인. **즉 어제(8/29) financial_data/cash_flow_data 전건검증에서 "쿼터소진"으로 보였던 것은 실제로는 3키 합산 용량이 아니라 어느 한 키의 용량에 근접했을 가능성이 있음** — 다만 verify_all 스크립트들은 처음부터 quota_hit=False로 완주했으므로 실질적 손해는 크지 않았고, 문제는 `_fetch_dart_annual()`(교차검증 전용, 이 함수만 별도로 KEY1 고정 사용) 경로에 집중돼 있었음. `collectors/fnguide_financial_collector.py`의 `_get_dart_client()`도 `RotatingOpenDartReader`로 교체(기존엔 KEY1 하나만 썼음). 수정 후 financial_source_snapshot 백필 재실행 결과 KEY1/KEY2 자동 스킵 후 KEY3로 정상 처리 확인.
-- **②KRX 주가 API(공공데이터포털/data.krx.co.kr) 자체는 라이브 정상** 확인(price API 직접 호출 성공). `collect_krx_history.py`는 scheduler에 미등록된 수동 스크립트.
+### 2026-09-08(4차) "세계 최고 수익 로직" 요청에 대한 신규가설 검증 — 2건 기각(라이브 노출 없음 확인)
+- 사용자가 "모든 지식을 동원해 새로운 가치를 창출하는 로직"을 요청 — 감이 아니라 오늘 HS작업에서 쓴 것과 동일한 실측검증 방법론으로 신규 가설 2건을 테스트하고 **둘 다 기각**.
+- **가설1(내부자매수 추종) 기각**: `dart_insider_holdings`에서 CEO/등기임원 순매수 공시 이벤트(2021~2025, 전체 14,072건/CEO만 4,372건) 이후 20/60/120일 KOSPI 대비 초과수익을 이벤트스터디로 계산 — 전 구간·전 필터링에서 **초과수익 전부 마이너스(-1.4%~-8.9%), 승률 37~42%(50% 미만)**. 원시수익률만 보면 플러스(시장 베타에 편승)라 착시 위험 있음 — 반드시 벤치마크 대비로 봐야 함. "임원 매수=매수신호"는 이 시장 데이터에서 성립하지 않음.
+- **가설2(patent_catalyst 단독전략) 재확인 결과 미흡**: 과거 세션에서 라벨레벨 통계적 lift(적자기업 12개월 내 50%+ 달성률 학습42.3%/검증41.9% vs 대조35.9%/34.8%, lift 1.18~1.20x)는 검증돼 있었으나, **이번에 처음으로 실제 백테스트(2024.06~2025.05)를 돌려보니 총수익률 -11.22%, 승률 26.1%**로 실전 수익성은 없음 확인 — 통계적 lift가 있어도 그대로 단독 전략 수익으로 이어지지 않는다는 걸 재확인(과거 기록에 "실전 수익성 미검증"이라 이미 적혀 있었던 그대로).
+- **라이브 노출 여부 확인 — 둘 다 없음**: `routes/trend.py STRATEGY_CENTER_PAPER_ENGINES`(실제 가상매매 7개 엔진: golden_cross/sector_focus/v5/v10/v8/v2/contract_momentum)에도, `routes/backtest.py ALL_STRATEGIES`(백테스트 거버넌스 매트릭스)에도 `patent_catalyst`/`dual_conviction`이 등록돼 있지 않음 — `backtest.py` import shim에만 있고 UI/API로 선택할 경로 자체가 없는 고립 코드, 애초에 라이브 노출된 적 없음. `composite`(V11)의 임원매수 활용은 단독신호가 아니라 흑자전환/추세/수급/가치와 묶인 opt-in 보너스이며 자체 walk-forward 검증(avg6 +9.47%→+10.95%) 기록이 있어 오늘 발견과 직접 충돌하지 않음 — 미변경. `high_profit_compound`(V13, 임원매수180일 필터 사용)는 이미 "legacy — 실전용 아님"으로 표시돼 `include_legacy=false` 기본 API에서 제외된 상태 — 추가 조치 불필요.
+- **후속 검증 완료(2026-09-08 같은날 진행)**: 수주잔고 급증(QoQ+30%↑, DART rcept_no 기반 as-of 공시일 사용, 1,426건)과 기관/외국인 순매수 가속도(5일 순매수가 직전 페이스의 3배 이상, 900개 표본종목 무작위추출, 89,592건 중 20,000건 다운샘플) 둘 다 **기각**. 수주잔고: 20/60/120일 초과수익 평균+4.4%/0.0%/-1.0%이나 **중앙값은 전부 마이너스(-2.4%/-7.9%/-11.0%), 승률 35~41%** — 평균이 플러스로 보이는 20일 구간도 소수 대박종목이 끌어올린 착시(로또형 분포)일 뿐 일관된 엣지 아님. 순매수가속도: 10/20/60일 평균초과수익 전부 마이너스(-0.25%/-0.38%/-2.21%), 중앙값도 마이너스, 승률 38~43% — 표본이 약 2만건으로 커서 통계적으로 견고한 기각.
+  **종합**: 이번 세션에서 테스트한 4개 단독가설(임원매수/특허촉매 단독전략/수주잔고급증/수급가속도) **전부 기각** — "이미 공개된 이벤트에 사후 반응"하는 방식은 이 시장에서 단독 엣지가 안 나옴이 일관되게 확인됨. composite.py(V11)가 이런 신호들을 단독이 아니라 흑자전환+추세+수급+가치와 AND로 결합했을 때만 보너스로 쓰는 설계가 왜 옳은 접근인지 방증하는 결과. 추가로 테스트할 만한 단독가설이 새로 나오면 이 항목 갱신할 것.
+- ⚠️ **"600%대 병합계좌" 재검증 — 헤드라인 688.9%는 버그로 부풀려진 숫자였음, 실제 기대값 366~403%**: 사용자 질문("600%에 만족해도 되나")에 답하기 위해 상위 헤드라인 `cmb_c8f841b9708d`(688.9%, sector_focus+v2, 2020-01-01~2026-08-20 연속 단일 시뮬레이션, max_positions=20, ticket_budget=1000만원, dynamic_tickets=True, 가중치 없음)의 정확한 설정을 `backtest_run_specs.parameter_json`에서 복원해 **오늘까지의 모든 버그수정(sector.py op_yoy·CFS/OFS dedup 등)을 반영한 코드로 완전히 동일 설정 재현**(`scripts/research_combo_20260908_continuous_repro.py`, 2020-01-01~2026-09-08). 결과: **총수익률 403.09%**(원본 대비 -286%p), `tiebreak_stability`(8회 무작위 타이브레이크) 평균 368.6%/중앙값 366.3%/범위 331.6~404.8%/CV 5.2%/base_above_max=False — 이번엔 안정적(운 아님)으로 검증됨. MDD -41.8%.
+  **결론**: 688.9%는 오늘 고친 버그들 때문에 부풀려져 있던 숫자였고, 지금 코드 기준 진짜 재현 가능한 기대값은 **366~403%(6.5년 누적, MDD -41.8%)**. 참고로 avg6(6개 표준구간 독립 재시작·비복리) 방식으로는 sector_focus 단독/60:40조합 모두 구간당 평균 24~27%(연속복리 방식과는 다른 지표, 직접 비교 불가 — 방법론 차이 주의). combo_* 4계좌(동결보전 결정된 옛 계좌들)도 이 부풀려진 시절 숫자를 근거로 등록됐던 것이므로, 향후 재평가 시 이 재현값을 기준으로 삼을 것.
+  ⚠️ **정식 등록 완료(2026-09-08, 사용자 지시 "제대로 다 돌려줘")**: `persist_merged_run()`의 execution_strict 게이트(price_integrity/survivorship_integrity/corporate_action_integrity 3종 필요)에 처음엔 막힘 — **원본 688.9%의 컴포넌트 런(80092cf054aa/c1925e1b53af)도 이 3종이 전부 미등록 상태였다는 걸 확인**(이 게이트가 원본 등록 이후 추가됐거나 다른 경로로 우회됐던 것으로 추정). 대충 통과 처리하지 않고, `scripts/audit_selected_strategy_price_integrity.py`와 동일한 실제 검증 로직(as-of 거래가능구간·상장폐지구간·price_jump_audit 오염구간 체크)을 재실행분 run_hash 2개(`24ab3fdb0a28`/`5d1dbed8b823`)에 직접 적용(`scripts/audit_combo_20260908_refresh_integrity.py`) — 실측 결과 sector_focus 175개/v2 673개 보유구간 전부 오염 0건, 3종 전부 정직하게 PASS. 이후 두 런의 상태가 `point_in_time_approx`(rank 2)로 올라 게이트 통과, `persist_merged_run()`으로 **정식 등록 완료: run_id `cmb_90d92c104f0a`, 403.09%, tiebreak_stability 기록됨(평균368.6%/중앙값366.3%/범위331.6~404.8%/CV5.2%/base_above_max=False)** — `/api/backtest/combinations/list`에 노출 확인. 참고: 동일 스크립트를 실수로 두 번 실행해 `cmb_04252615749f`(동일 403.09%)도 중복 등록됨 — 값은 둘 다 정확하고 무해하나 목록에 중복 항목으로 남아있음, 필요시 정리 검토.
+  ⚠️ **2026-09-09 전 복합전략 재검증(사용자 지시 "복합전략 모두에 대해서 필요하다면 백테스트 후 % 수정")**: 등록된 병합계좌 36건 전수 조사 — 대부분(`sector`/`sector_fresh`/`earn`/`moon30`/`v10_bull`/`v10_latest`/`v10_current_control` 컴포넌트 사용)이 현재 `routes/backtest.py ALL_STRATEGIES`에 없는 죽은 별칭이라 현재 코드로 재현 자체가 불가능함(별도 조치 불필요 — 애초에 `/api/backtest/combinations/list`가 "가장 최근 측정일 기준 상위 5개"만 보여주므로 이 죽은 조합들의 부정확한 수치가 사용자 화면에 노출된 적도 없음). 실제 로직이 바뀐 컴포넌트(recovery=equity-curve $0버그, se_momentum=CFS/OFS 비결정성, golden_cross=CFS/OFS SUM중복)를 포함하는 재현 가능한 조합 5개를 sector_focus+v2와 동일 절차(연속 2020-01-01~2026-09-09 시뮬레이션 → 무결성감사 → tiebreak_stability → persist_merged_run)로 재실행(`scripts/refresh_all_combos_20260909.py`):
+  - **sector_focus 단독**: `cmb_14d19e97767b`, **547.36%** 정식 등록(무결성 통과, tiebreak 안정).
+  - **golden_cross+recovery**: `cmb_849d7435701d`, **155.47%** 정식 등록(무결성 통과, tiebreak 안정).
+  - **earnings_conviction+golden_cross+recovery**: 등록 **거부됨**(정상 동작) — 단일경로 244.9%가 8회 무작위 타이브레이크 최댓값 215.0%(평균 146.4%, CV 31.4%)를 초과해 "타이브레이크 운"으로 판정, `allow_path_luck=True`로 억지 통과시키지 않음 — 이 조합의 정직한 기대값은 244.9%가 아니라 ~146%대.
+  - **earnings_conviction+se_momentum, earnings_conviction+recovery+se_momentum**: 최초 등록 시도 **실패** — 두 가지 문제 겹침. (1) se_momentum의 trades_json이 라운드트립 완결거래(1,752건)와 **그것과 code+매수일까지 100% 중복되는** action='buy' 이벤트로그(1,752건)를 같이 담고 있는데, 재실행 스크립트의 주문 파서가 action 키만 보고 이벤트로그로 오인 처리해 이중집계·매도주문누락(내 파싱 버그) — 라운드트립 필드가 있으면 무조건 그쪽을 우선하도록 수정. (2) **더 근본적인 문제 — se_momentum.py 자체의 미조정 가격 버그**: se_momentum이 쓰는 가격 시계열이 원시(미수정) 종가라, 보유기간이 확정된 기업행위(감자 등)를 가로지르면 그 점프가 그대로 pnl에 섞였음. 실측: 097780이 2026-06-16 감자(주식수 50,732,723→20,293,089, 2.5배)로 664원→1,348원 하루 +103% — 진짜 거래이익 아님. 기존 "1일 등락률 0.45~2.2배 밖이면 종목 전체 제외" 필터가 있었지만 097780(2.03배)·084010(2022-02-21, +117%→3일뒤 원복, 2.17배)처럼 문턱 바로 아래인 경우는 조정 안 된 채 그대로 거래에 쓰였음. turnaround/regime_adaptive/composite는 2026-08-23에 이미 `_load_corp_action_factors`/`_corp_action_adjusted_entry`로 이 문제를 막아뒀는데 se_momentum엔 그 보호가 없었음(제자리에서 발견한 원인).
+    **수정 완료(`backtest_strategies/se_momentum.py`)**: (a) 확정된 기업행위(`corporate_action_events.adjustment_status='factor_confirmed'`)가 있는 종목은 이벤트 이전 구간의 가격을 backward_price_factor로 누적조정해 시계열을 연속화(수정주가 방식) — 종목을 통째로 버리지 않고 정상적으로 거래에 포함. (b) 확정 근거가 없는 미해소 이상급등락(`price_jump_audit.return_usable=0`이면서 확정 이벤트로 설명 안 되는 날짜)이 하나라도 있는 종목은 여전히 통째로 제외(기존 보수적 동작 유지, 084010 등 3종목 계속 제외됨). 재검증: se_momentum 재실행(run_id 244ad1b9) 후 무결성 재감사 결과 **오염 20건이 전부 confirmed_corporate_action(이제 정상 조정됨)뿐, unresolved/missing_asof/held_through_listing_end 0건** — price_integrity PASS, status `point_in_time_approx`(rank 2)로 승격.
+    **최종 등록**: earnings_conviction+se_momentum → `cmb_9037383a2bfc`, **135.93%** 정식 등록(무결성·안정성 통과). earnings_conviction+recovery+se_momentum은 tiebreak_stability에서 **정당하게 거부**됨(단일경로 249.6% vs 8회 무작위 최댓값 229.1%/평균193.4%/CV11.9% — 타이브레이크 운으로 판정, allow_path_luck 강제통과 안 함 — 이 조합의 정직한 기대값은 193%대). 짧은 회귀 백테스트(2024.06~2025.05)로 se_momentum 수정본 크래시 없음 재확인.
 
-### 2026-08-30(2차) Codex의 ETF Check 대체 파이프라인(PDF 역산) — KRX 로그인 버그 발견·수정
-> 배경: etfcheck.co.kr 스크래핑의 저작권 리스크 회피 위해 Codex가 KRX 공식 PDF(포트폴리오예탁파일) 기반 파이프라인(`ETF_check/full_pdf_collector.py`)을 작성 중이었으나 4연속 실패("KRX authentication did not issue a client session").
-- **원인**: KRX 로그인 시 "이미 로그인된 계정입니다" 확인 다이얼로그가 `<button>`이 아닌 다른 태그로 렌더링돼 기존 `button:has-text('확인')` 셀렉터가 매칭 실패 → 다이얼로그가 안 닫혀 로그인 미완료. Playwright로 직접 재현해 원인 특정.
-- **수정**: 셀렉터를 `a`/`button`/`input[value='확인']` 전체로 확장(`full_pdf_collector.py` `_login()`). 단독 재현 테스트 1회 성공(세션쿠키 확인) — 단 반복 재현 시 "이미 로그인된 계정" 재발(내 반복 테스트 자체가 세션을 계속 점유한 것으로 추정, KRX측 동시세션 제한 가능성). 실제 스케줄 실행(21:15/02:15)에서 안정적으로 통과하는지 다음 실행 로그 확인 필요.
-- **Codex 코드에 대한 그 외 개선 포인트**(서브에이전트 감사, 코드 수정은 안 함): (1) KIS기반 임시 파이프라인이 실제로는 상위 30종목만 반환하는 추정치인데 테이블명이 `etf_pdf_daily`라 "공식 PDF값"으로 오인될 위험 — 개명 권장. (2) `full_pdf_*`/legacy etfcheck.co.kr 스크래퍼/KIS추정 3개 파이프라인이 아직 어느 것도 routes_etf.py·프론트에 연결 안 됨. (3) KRX 로그인 실패가 4회 연속돼도 사람에게 알림 없이 조용히 실패 기록만 함(legacy 스크래퍼는 텔레그램 알림 있음).
+- ⚠️ **2026-09-09 국내 주가 ±30% 상하한가 전수조사(사용자 지시 "상장일 제외 30% 상한가 규정을 벗어나는 게 없는지 전체 조사, 백테스트 매수/매도 겹치면 전수조사")** — 세션 최대 규모의 데이터무결성 발견.
+  **[1] 기존 감사 시스템 자체의 사각지대 확인**: `price_jump_audit`(`scripts/audit_price_jumps_and_build_canonical.py`)의 탐지 문턱이 `ratio>1.8 또는 <0.55`였음 — 실제 규정(±30%, ratio 1.30/0.70)보다 훨씬 느슨해 **+30%~+80%/-30%~-45% 구간 전체가 감사망에서 빠져 있었음**.
+  **[2] 실제 규정(0.70~1.30 밖, 상장일=종목별 최초관측일 제외)으로 전수조사**: 원시 발견 5,039건(지수/매크로 제외) → 기존 감사 테이블에 이미 있음 2,766건 → 확정 기업행위인데 감사 테이블 미등재 17건 → **완전 사각지대 2,256건**. 이 중 429건은 갭 10일 초과(수년치 데이터공백 후 재개 — 진짜 하루 위반 아님, 데이터 커버리지 문제로 재분류)이고 나머지 1,827건이 진짜 검토대상.
+  **[3] 두 가지 서로 다른 근본원인을 실측으로 확정**:
+  (a) **배치 이음매 가격기준 불일치**: `price_history.created_at`을 대조한 결과, 예를 들어 000700/003490 등 2018-12-24~2019-01-02 경계, 207940(삼성바이오로직스) 2022-01-03 등에서 **경계 앞뒤 날짜의 created_at이 서로 다른 배치 실행 시각**임을 확인 — 한쪽은 정수 원시종가, 다른 쪽은 소수점 정밀도의 수정주가(예: 207940 2022-01-03만 911,000 정수값, 앞뒤 며칠은 1,373,812~1,350,991 소수점값)로 서로 다른 가격기준을 쓰는 별개 백필 작업이 이어붙여지며 생긴 가짜 점프. 2018-12-24(72종목)/2019-01-02(128종목)/2022년 1~5월 여러 날짜(각 13~58종목) 클러스터가 전부 이 패턴과 일치 — 같은 날 수십~수백 개 무관 종목이 동시에 규정위반 수준으로 움직인 것 자체가 실제 시장현상일 수 없다는 논리로 최초 의심, created_at 대조로 확정. **어느 쪽 값이 맞는지는 이 세션에서 확정 못함 — 외부 검증 필요, 미해결**.
+  (b) **보통주/우선주 데이터 혼입(확정·수정 완료)**: 001720(신영증권) 2022년 1~3월 급등락 7건 중 6건이 001725(신영증권우, 우선주)의 **같은 날짜 가격대와 거의 일치**함을 확인(예: 001720 2022-02-21=63,000원 vs 001725 같은날=63,300원, 반면 001720의 정상 추세는 45,000~48,000원대) — 우선주 가격이 보통주 행에 잘못 섞여들어간 명백한 데이터 오염. **6개 오염 행을 price_history에서 삭제**(조작값으로 채우지 않고 결측 처리 — 기존 세션 전체의 "빈 값은 직전가로 폴백" 관례와 일치).
+  **[4] 수정 효과가 실측으로 컸음**: `golden_cross` 재백테스트 결과 **001720 매매 자체가 통째로 사라짐**(오염된 가격이 골든크로스 진입신호를 가짜로 만들어냈던 것 — profit_amt 552,777원짜리 있지도 않았을 거래) — 전체 avg return 102.36%→**85.33%**(연속 2020~2026), 이미 등록했던 `golden_cross_recovery` 조합도 재검증해 155.47%→**107.60%**(`cmb_4ccab6fc6785`)로 재등록(-48%p, 상대 -31%). 종목 1개의 6개 행 수정만으로 이 정도 낙폭 — 이 세션에서 발견한 다른 어떤 로직버그보다 조합 수익률에 미친 영향이 컸음.
+  **[5] 나머지 사례**: 등록된 6개 전략 거래와 겹치는 17건 중 001720(6건)은 위에서 수정. 나머지(003000/207940/079160/073570/067170/476830/099320/042660/006740)는 대부분 ratio가 1.30~1.32 근처에 몰려있어 **진짜 상한가(정상)일 가능성**과 (a)의 배치이음매 아티팩트일 가능성이 공존 — 외부 검증 없이는 어느 쪽인지 확정 못해 손대지 않음. 오늘(2026-09-09) 발생한 3건(273060/001290/121850)은 전부 거래정지 재개·정리매매(코이즈는 상장폐지 사유로 정리매매 중, 규정상 가격제한 없음)로 확인된 정당한 케이스.
+  **미해결 과제로 남김**: (i) 배치이음매 근본원인(어느 배치가 언제 어떤 가격기준으로 재적재했는지 데이터 파이프라인 이력 추적), (ii) 나머지 ~1,800건(1.30~1.32 근접 다수 포함)의 개별 검증, (iii) 001720류 보통주/우선주 혼입이 다른 종목쌍에도 있는지 전종목 스캔.
+
+### 2026-09-08 섹터 로테이션 2대 전략(추세추종 집중/탈출 + 낙폭과대 반등) + 메인페이지(macro 탭) 신호 카드 신규
+- 사용자 요청으로 `routes/sector_rotation.py`에 전략1 보강(ENTRY_NOW 중 최고점 1개를 `primary_focus`로 스포트라이트, 12주RS 양호→4주RS 급락 시 `exit_alerts`)과 전략2 신규(`_score_bottom_reversal` — 낙폭과대+반전조짐+수급전환+밸류트로프 4요소, `BOTTOM_ENTRY`는 반전조짐이 실제 점수를 받았을 때만 승격)를 추가, `GET /api/sector-rotation/dashboard-summary`로 통합(캐시 키 추가, 상세는 섹션 3 참조). Postgres 라이브 데이터로 검증: 바이오는 낙폭은 크지만(-44%) 4주RS가 여전히 자유낙하(-21.5%p)+수급도 순매도 전환이라 `NONE`(반등 신호 아님)으로 정확히 걸러짐, 화장품/뷰티가 전략1 `primary_focus`로 정상 포착됨.
+- `frontend/src/views/SectorSignalSummary.jsx` 신규, `MacroDashboard`(macro 탭, App.jsx) 최상단 `<SignalBoard>` 바로 다음에 삽입 — "지금 집중할 섹터" 또는 "관망(현금 보유) 시기" 카드. Browser 도구로 실제 macro 탭 렌더 확인 완료.
+
+### 2026-09-08(2차) 아시아 외국인 자금흐름 신규(`global_foreign_flow` 탭) — 실측 조사 결과 국가별 접근성 크게 갈림
+- 사용자 요청("외국인 자금이 아시아에서 빠지고 있다는데 확인할 화면")으로 한국/대만/일본/중국/인도 5개국 외국인 순매수를 `global_macro_data`(기존 범용 시계열 테이블) 재사용해 통합. **실측 결과 예상과 다르게 갈림**: 사전 WebFetch 조사에선 대만 TWSE가 "즉시 JSON 반환"으로 확인됐으나 실제 이 Mac 네트워크로는 WAF 307 전면 차단(도구별 네트워크 경로가 달라 검증 결과가 달랐음), 반대로 WebFetch에서 ECONNRESET 났던 인도 NSDL은 이 Mac에서 정상 200 + USD 백만달러 값을 이미 계산해서 제공(가장 쉬운 소스였음). 최종: 한국(price_history 집계)·인도(NSDL HTML 파싱) HIGH신뢰도 실가동, 대만 BLOCKED, 일본(e-Stat, ESTAT_APP_ID 필요) 및 중국(HKEX 북향자금, net-flow 엔드포인트 미확정) PENDING — 상세는 섹션 3 `routes/global_foreign_flow.py`, 섹션 9 알려진이슈 참조.
+- `routes/global_foreign_flow.py`(`/summary`,`/history`) 신규, `frontend/src/views/GlobalForeignFlowView.jsx` 신규 탭 등록. 수집은 기존 `_loop_global_macro_daily`(매일 06:45)의 `scripts/ops/collect_global_macro_daily.py`에 3단계 추가(신규 스케줄러 잡 없음). 대만/일본/중국은 화면에 "데이터 없음 + 사유"로 정직하게 표시(가짜 값 없음).
+
+### 2026-09-08(3차) TIC(미 재무부) 국가별 대미 주식 양자간 흐름 추가 — "아시아→미국 이동" 가설을 직접 검증하는 데이터로 확장
+- 사용자가 "유럽/미주 등 시총 상위 국가 전체로 확장" 요청 — FRED가 미러링하는 TIC `FORLTEQTYNET*` 시리즈(그 나라 투자자의 미국 주식 순매수)가 20개국/지역 전부 실측됨을 확인(전세계·아시아합계·유럽합계 + 아시아 7개국·유럽 5개국·아메리카/MEA 4개국). 기존 KRX 스타일 개별 거래소 스크래핑과 달리 차단 리스크 없이 한 번의 API로 커버 — 향후 유사 확장은 이 방식 우선 검토.
+- `collectors/tic_bilateral_flow_collector.py` 신규, `routes/global_foreign_flow.py`에 `us_inbound` 섹션+`/us-inbound-history`+`observations`(①자국유출·②아시아TIC유입 방향 일치 시 자동 관찰문, 인과 단정 안 함) 추가. 실측(2026-06 3개월 합): 한국 +$25.1B·홍콩 +$10.3B·대만 +$5.9B 미국행인 반면 **일본은 -$8.0B로 순매도** — 아시아 내에서도 국가별 방향이 다름을 확인.
+
+### 2026-09-09 일본 자국시장 외국인 순매수 수집 완성 — e-Stat 대신 재무성 공개 CSV로 전환
+- 사용자가 e-Stat 앱ID를 발급해 실제 조회해보니 "対外及び対内証券売買契約等の状況" 통계가 e-Stat 포털에 없음을 확인(검색 0건, API 자체는 정상 동작 — "人口" 등 다른 키워드는 25,022건). 대신 재무성이 인증 없이 직접 공개하는 CSV(`mof.go.jp/.../week.csv`, 2005년~현재 주간, 지연 약1~2주)를 발견해 `collectors/mof_japan_flow_collector.py`를 이쪽으로 전면 재작성 — e-Stat보다 더 간단하고 안정적(대내증권투자 "주식·투자펀드지분" 순매수 컬럼만 사용). `ESTAT_APP_ID`는 `.env`에 보관(향후 JP_CPI/JP_GDP 등 다른 e-Stat 확장용, 이 수집기는 미사용).
+- `JP_USD_JPY` 등 FX 환산용 시계열을 기존 120일치→약 4년치로 1회성 확장 백필(`collect_yahoo_macro(lookback_days=1500)`)해 MOF 주간 히스토리와 정합. 자국시장 외국인 순매수 3/5개국(한국·일본·인도) HIGH 신뢰도로 실가동 확인.
 
 
-> 사용자: "전략조합으로 600%가 넘는 실적을 얻었는데? 이 로직으로 가상매매가 진행되고 있어? 그리고 20개가 넘는 전략센터 내 전략중에서 진짜 몇개만 남은것으로 보이는데, 키움에서 여러 데이터가 추가된 만큼 추가할 전략이나 기존 전략을 개선할 여지는 없는지 검토해" — 1번 질문(가상매매 미작동)은 바로 위 2026-08-26 항목에서 이미 처리(v8/v2 어댑터 추가로 sc_* 5개 페이퍼계좌 정상화). 이 항목은 2번 질문(전략 확장/개선 여지)에 대한 조사.
-- **governance tier 현황 재확인**: 25개 전략 중 `retired` 18개, `validation_queue` 4개(sector_focus/v2/earnings_conviction/v11), `offensive_satellite` 1개(golden_cross), `paper_core` 2개(contract_momentum/v8), `live_eligible` 0개 — 실제 종이운용 이상 등급은 7개뿐이라는 사용자 관찰이 정확했음을 재확인.
-- **⚠️ governance 경계선 硬直性 발견**: `strategy_governance.py`의 `validation_queue` 기준은 `positive_periods>=4`(6구간 중 4구간 이상 플러스)를 요구하는데, **v5(V4수급모멘텀, avg=21.95%)·vbr(V8 52W돌파, avg=19.63%)·v1_value(V2가치매수, avg=18.95%)가 딱 3구간 플러스라 1구간 차이로 retired**로 밀려나 있음 — 특히 v1_value는 worst=-3.87%(거의 손실 없음, 3승3패지만 패배폭이 -2.45~-3.87%로 극소)인데도 기계적 임계값 미달로 퇴역 분류. 전략 품질 문제라기보다 판정기준의 이산적 경계 문제로 판단, 재조정은 신중한 별도 검토 필요(이번 세션에서 기준 자체는 변경하지 않음).
-- **Kiwoom 데이터 활용 현황 매핑**: `kiwoom_credit_balance`(신용잔고비율, 407만행/2,680종목, 최신 2026-08-25 — 2026-08-23 근본수정 이후 완전히 정상화 확인)는 `run_backtest_recovery`의 `market_regime_gate_min`·`run_backtest_megatrend`의 `smart_money_min_score`에만 실험적으로 연결(둘 다 기본값 미적용, 과거 세션에서 각각 기각 이력). **`kiwoom_investor_daily`(기관 세부매매 10종 분류, 465만행, 최신 2026-08-26)와 `kiwoom_foreign_flow`(외국인 보유비중, 최신 2026-08-26)는 `backtest.py` 어디에도 전혀 사용되지 않는 완전 미개척 데이터**임을 확인.
-- **신규 검증 ①기관 세부유형별 20일 순매수(kiwoom_investor_daily) — 기각**: `strategy_feature_snapshot`(mktcap≥300억, n_train=72,474/n_test=67,113, 학습≤2022-12/검증2023-01+) 기준 walk-forward. 연기금(penfnd_etc)/보험(insrnc)/사모펀드(samo_fund)/투신(invtrt)/은행(bank)/금융투자(fnnc_invt)/기타법인(etc_corp) 7개 유형 전부 forward_max_ret_12m에 대해 lift 0.81~1.14x(무판별력~약한 역효과), 대부분 학습·검증 방향 불일치 또는 일관된 역효과 — 신용잔고+수급을 "결합"했던 기존 채택 신호(2026-07-22(9차), lift 2.39x)와 달리 단일 기관유형 買い越し만으로는 무효.
-- **신규 검증 ②외국인 보유비중 20일 변화(kiwoom_foreign_flow) — 판정불가(데이터 부족)**: 테이블 실측 결과 종목별 이력이 **2026-04월부터만 존재**(211,938행이 사실상 최근 수개월치뿐) — `strategy_feature_snapshot`(2020-01~2026-07)과 asof merge 시 매칭 0건, walk-forward 검증 자체가 현재로선 불가능. 기각이 아니라 데이터 축적 후 재검증 대상으로 보류.
-- **신규 검증 ③신용잔고<1% 제외필터를 V-RECOVERY에 실전 구현 — case-control은 유망했으나 실행백테스트에서 기각**: 낙폭과대 population(52주고점대비-30%↓, 시총300+)에서 신용잔고비율 3분위 사전검증 결과 <1%(매우낮음) lift 1.21x(학습)/1.11x(검증) — 단조·방향일치로 유망해 보여, `run_backtest_recovery`에 `max_credit_ratio` 파라미터 신규 구현(kiwoom_credit_balance asof 조회, bisect 기반, 30일 이내 데이터 없으면 판단불가로 통과). **6기간 전수 실행 백테스트 결과 avg6 0.90%(3/6)→-5.03%(3/6)로 오히려 악화** — 단일기간(25.6~26.3)만 보면 -3.41%→+17.34%(+20.75pp)로 극적 개선처럼 보였으나 22.11~23.10(-26.86pp)·23.11~24.12(-32.18pp) 2개 구간에서 대폭 악화, 거래건수도 감소(정상 반등후보 배제). 이번 세션 ①과 동일 패턴(case-control 사전검증 lift가 실행가능 전략에 전이되지 않음) 재확인. `max_credit_ratio` 파라미터는 코드 보존(기본 None=미적용), signal_experiment_ledger 기록.
-- **⚠️ V-RECOVERY 성과 하락 원인 후속 진단 — 코드 버그 아님, price_jump_audit로 인한 데이터 변화로 추정**: 위 baseline(avg6=0.90%, 3/6, 보너스 포함)이 2026-07-20 기록(+29.5%)과 크게 괴리된 것을 확인한 뒤, **보너스를 전부 비활성화(turnaround_bonus=None, flow_bonus=None)한 순수 베이스라인을 6기간 재실행**해 2026-07-12 기록(보너스 도입 전 avg6=+25.8%)과 대조 — 결과 **avg6=-4.05%(3/6)로 약 30pt 하락**, 보너스 있는 버전(-29pt 하락)과 거의 동일한 낙폭. 보너스 유무와 무관하게 같은 폭으로 떨어졌다는 것은 `turnaround_bonus`/`flow_bonus` 로직 자체의 결함이 아니라 그 전제인 기초 가격데이터(MA60낙폭/52주저점거리/거래량반등 판정에 쓰이는 `price_history` 시계열)의 값 자체가 코드 변경 없이 바뀌었음을 시사 — 시점상 2026-08-22~24 price_jump_audit 재구축(가격 이상치·펌프덤프 아티팩트 대량 정정)과 일치. **낙폭과대반등 전략은 정의상 급락 패턴에 의존하므로, 과거 고수익 기록의 일부가 실제로는 가격 데이터 오류(가짜 급락→가짜 급반등)에서 나온 착시였을 가능성**이 있음(원인 확정은 아니며 정확한 인과관계 미확인). 즉 현재의 낮은 성과(governance상 retired)는 버그가 아니라 더 정확해진 데이터를 반영한 결과일 개연성이 높음 — 코드 변경 없이 진단만 완료, signal_experiment_ledger에 기록(`recovery/no_bonus_baseline_vs_historical_record_20260827`).
-- **결론(사용자 질문에 대한 답)**: 20+개 전략 중 7개만 稼働 중인 것은 governance 경계선의 이산적 판정 기준(4/6구간 요구) 영향이 일부 있으나 대체로 정당한 필터링. Kiwoom 신규데이터(신용잔고/외국인지분율/기관세부매매)를 활용한 신규 시그널 3건을 이번 세션에서 직접 탐색·구현·검증했으나 **전부 기각**(1건은 데이터 부족으로 판정 보류) — Kiwoom 데이터가 아직 검증 가능한 형태의 알파를 제공하지 못하고 있음을 정직하게 확인. signal_experiment_ledger에 전부 기록(`discovery_tools/kiwoom_institutional_subtype`, `discovery_tools/kiwoom_foreign_weight_change`, `recovery/max_credit_ratio_1pct_exclude_filter_20260827`).
+### 2026-09-09(2차) 한일 선행지표 매칭 — 구축 직후 백테스트에서 전부 기각, 기능 삭제
+- 일본 기계수주(내각부, e-Stat) 업종별 발주액을 삼성전자/SK하이닉스/POSCO홀딩스/현대모비스/HD한국조선해양과 엮는 7개 페어(`jp_kr_indicators` 탭)를 만들었으나, 사용자 지시("백테스트 해보고 의미가 없다면 삭제해")로 2005~2026 월간 데이터 전체를 Pearson 상관+정규근사 p-value+부호적중률로 검증(narrow/누적수익률, YoY/MoM 총 4가지 변형으로 관대하게 재검증 포함).
+- **결과: 7페어 전부 기각.** 12/14 조합은 |r|<0.15·p>0.09(사실상 무관), 나머지 2개(전기기계→삼성전자·SK하이닉스, YoY)는 p<0.01로 유의했으나 **부호가 정반대**(r=-0.21, 적중률 43~44%=동전던지기보다 나쁨) — "일본 반도체장비 공급망 의존→선행지표" 스토리가 실제 데이터로 뒷받침되지 않음. `collectors/jp_machinery_orders_collector.py`/`routes/jp_kr_indicator_pairs.py`/`frontend/src/views/JpKrIndicatorsView.jsx` 및 관련 배선(main.py, App.jsx, collect_global_macro_daily.py, global_macro_categories) 전부 삭제, `global_macro_data`의 `JP_MACHORDER_*` 데이터도 정리.
+- **교훈**: 그럴듯한 산업 스토리(공급망 의존, 국제적으로 통용되는 매크로 지표)만으로 페어를 확정하지 말 것 — 배포 전 반드시 보유 히스토리로 상관관계·부호·유의성을 검증한다. 후속으로 유사한 매칭 아이디어가 나오면 이 백테스트 방법론(월간 리샘플+Pearson+정규근사 p-value+부호적중률)을 재사용할 것.
 
-### 2026-08-29 미국종목 13F 거물 매매 분석 추가
-- `routes/us_13f.py`와 `GET /api/us-13f/summary`를 추가했다. SEC EDGAR 원문의 최신·직전 `13F-HR` 정보표를 비교해 신규 편입, 추가 매수, 비중 축소, 전량 매도를 CUSIP 기준으로 반환하며 12시간 캐시와 원문 링크를 제공한다.
-- `frontend/src/App.jsx` `USStocksView`에 `13F 거물 동향` 탭을 추가했다. 운용사 필터와 매수/매도 변동 필터, 여러 운용사 동시 변동, 운용사별 변동표를 표시한다. 13F의 분기 지연·롱 포지션 한계는 화면과 API 문서에 명시했으며 자동 추격 주문에는 연결하지 않는다.
+### 2026-09-09(3차) blindspot_audit_20260909 후속 — 가격 무결성 게이트 4개 우선조치 수정 + 운영 PostgreSQL 적용
+- 읽기전용 감사(`research_outputs/blindspot_audit_20260909/findings.md`)가 지적한 것 중 4개를 코드 수정 후 실제 운영 DB에 적용: ①확정 기업행위가 외부(Naver) 일치만으로 `return_usable=1`로 뒤집히던 오버라이드 차단(`verify_price_history_with_naver.py` PROTECTED_FROM_OVERRIDE) + 미확정 기업행위가 raw-source 일치로 새는 구멍 신규 분류 `corporate_action_pending_confirmation` 추가(`audit_price_jumps_and_build_canonical.py`). ②낡은 외부 검증 재사용 차단 — `input_fingerprint`(SHA256, classification 제외) 도입해 비교기간/가격이 바뀌면 자동 재검증(036220 사례 확인·수정). ③`price_integrity.py`(미커밋 신규 모듈, `native_script()`로 Postgres DDL 스킵 우회)를 실제 실행해 운영 PostgreSQL에 `canonical_price_history_v`/`canonical_price_returns_v`/`price_trading_calendar`/`price_integrity_quarantine` 등을 처음으로 생성(`scripts/apply_price_integrity_schema.py` 신규) — 이전엔 전부 부재. ④`scripts/audit_selected_strategy_price_integrity.py`(선택전략 26종 게이트)가 좁은 `price_jump_audit` 대신 이 canonical view를 보도록 수정.
+- **중요 부작용**: 위 ④ 재실행 결과 선택된 26개 전략 전부에서 최소 1개 이상의 오염된 보유기간이 새로 발견되어(비율은 낮음, 0.8~16%) `price_integrity` 아티팩트가 전부 fail로 전환됨 → `routes/backtest.py` 스위트 상태가 `legacy`로 강등. 전부-아니면-전무 통과기준을 유지할지 임계값을 둘지는 정책 결정 필요(미결정, 임의 변경 안 함).
+- 대한항공(003490)/005440의 2018-12-24 접합 오류는 가격을 직접 고치지 않고(`price_series_registry`의 "naver_price_history_backfill로 price_history 덮어쓰기 금지" 정책 준수) ±30% 문턱 자동차단(unexplained_jump)으로만 해결 — 802건대 ±30% 미만 접합 후보·2022년 클러스터는 미해결. 상세·재현 명령·남은 과제는 [docs/CLAUDE_CHANGELOG_20260909_price_integrity_gate_fix.md](docs/CLAUDE_CHANGELOG_20260909_price_integrity_gate_fix.md).
 
-### 2026-08-29 미국종목 13F 거물 동향 확장
-- 13F 분석 대상을 20개 운용사로 확대하고 Nancy Pelosi의 하원 공식 PTR을 별도 출처로 추가했다. 인물 선택 시 현재 13F 보유 포트폴리오와 이번 분기 매수/매도·축소를 분리해 표시하며, 여러 운용사의 중복 변동은 별도 동시 변동표에서 강조한다.
-- `scheduler.py`에 `미국13F거물공시` 일일 07:12(KST) 점검을 추가했다. SEC/House 원문을 재확인해 13F 캐시를 갱신한다. Buffett 선택 시 SEC companyfacts의 Berkshire 현금·단기투자자산 시계열 차트를 표시한다.
-
-### 2026-08-29 13F 매매판단 정보구조 보강
-- 13F 행에 보고 기준일·제출일·실제 매매일 공개 여부를 분리하고, 수량 변화와 보고가치로 계산한 `change_notional_usd`(추정 변동 규모) 및 현재 보고 포트폴리오 비중을 추가했다. 13F는 실제 체결일을 공개하지 않으므로 UI에 `13F 비공개`로 명시한다. House PTR만 실제 거래일과 신고 금액 범위를 표시한다.
-- 동시 변동표는 같은 방향으로 움직인 인원수와 매수/매도 합산 추정 변동 규모를 표시한다. 집계는 각 운용사의 보고가치 기준 상위 100개 변동 안에서 수행되므로 전체 비공개 거래의 공통 보유 현황을 뜻하지 않는다.
-
-### 2026-08-29 13F 투자 스타일 프로필 추가
-- Ken Fisher(Fisher Asset Management)와 Cathie Wood(ARK Investment Management)를 13F 대상에 추가해 총 22개 운용사를 조회한다. 모든 대상에 가치·성장·퀀트·매크로·이벤트드리븐 등 스타일과 투자 초점 메타데이터를 부여하고, 미국종목 선택 UI에 함께 표시한다. 스타일은 과거·공개 운용 철학의 요약으로 개별 공시 종목의 매수 근거나 향후 성과를 보장하지 않는다.
-
-### 2026-08-29 13F 유명 펀드매니저 2차 확장
-- Viking(Andreas Halvorsen), Coatue(Philippe Laffont), Tudor(Paul Tudor Jones), Paulson(John Paulson), Farallon(Thomas Steyer), Balyasny(Dmitry Balyasny), Millennium(Izzy Englander), Point72(Steve Cohen)를 SEC CIK 검증 후 추가했다. 13F 분석 대상은 총 30개 운용사이며, 각 운용사의 성장·테크·매크로·이벤트드리븐·멀티전략 특성을 함께 표시한다.
-
-### 2026-08-29 13F 바이오 전문 운용사 추가
-- Baker Bros.(Julian·Felix Baker), Perceptive(Joseph Edelman), RA Capital(Peter Kolchinsky), OrbiMed(Sven Borho), Deerfield(James Flynn)를 SEC 13F 원문 확인 후 추가해 총 35개 운용사를 조회한다. `바이오 전문` 프로필은 임상·규제·상업화 촉매에 민감하므로 일반 성장주 공통매수와 같은 의미로 해석하지 않도록 스타일·초점에 명시한다.
-
-### 2026-08-29(3차) price_history H1 2022 KRX 오염 — 전수 자동탐지로 5개 클러스터 일괄 정정(총 358건/90종목) + 소규모 22건은 증거불충분으로 보류
-> 사용자: "게속해"(2차 발견 이후 계속) — 개별 날짜를 하나씩 찾는 대신, 전체기간·전종목 대상 "전일대비 급변일" 자동 스캔(LAG 윈도우함수, 7.5초)으로 일괄 탐지.
-- **전수스캔 결과**: 급변종목 15개+인 날짜 18건 발견 — 그중 2022년 구간에 **2/21(44)·2/22(24)·2/24(65)·3/10(30)·3/14(23)·3/15(36)·3/18(29)** 신규 클러스터 다수 확인. 000670(SK하이닉스)로 정밀추적한 결과 **한 종목이 Feb~Mar 2022 사이 3차례(2/21-23, 3/10-11, 3/15-17) 반복적으로 오염-복귀를 겪는 패턴**을 발견 — 단발성 사고가 아니라 이 시기 KRX 파이프라인이 상습적으로 결함을 일으켰음을 시사. 지수(^KS11/^KQ11)는 전 구간 정상.
-- **일반화된 자동탐지 알고리즘 신규 구현**(`scratch/tccbridge/detect_all_2022h1_bursts.py`): 종목별 시계열을 순회하며 "전일대비 ±40%+ 급변 시작 → 직전 안정가(baseline) 대비 ±15%이내로 복귀할 때까지(최대 4거래일) 사이의 모든 날"을 오염행으로 표시하는 범용 로직 — 2021-12~2022-07 구간(45.7만행)에서 **387건/82종목** 탐지(2.2초 소요).
-- **표본검증으로 오탐 분리(중요)**: 주요 클러스터(2/21·22·23, 3/10·11·14·15·16·17, 1/3·1/4·5/9) 외의 소규모(33건) 표본을 전수 확인한 결과 **명확한 오탐 다수 발견**(089850/192410 등은 전후값이 사실상 비슷한 범위라 정상 변동성, 203690/221610은 복귀 없이 지속되거나 점진하락하는 패턴이라 진짜 재평가/하락일 가능성) — **이 소규모 22건(139050 11건 제외)은 증거 불충분으로 정정하지 않고 그대로 보류**. 반면 006740·024850은 동일 종목 내 baseline 대비 명확한 burst-then-revert 재현이 확인돼 주요 클러스터와 함께 정정 대상에 포함.
-- **정정 실행(3단계, 139050 비상장 매번 자동 제외)**: ①주요 클러스터(2/21·22·23 + 3/10·11·14·15·16·17 + 1/3·1/4·5/9 잔여) 346건/78종목 — `price_history_h1_2022_burst_backup_20260829` 백업 후 삭제. ②재스캔 결과 2022-01-03에만 13건(139050 제외 12건) 잔존 확인 → `price_history_jan03_residual_backup_20260829` 백업 후 추가 정정. **누계: 358건/90종목**(2026-08-29 세션 전체 합산: Feb8-9 134건 + 이번 358건 = 492건).
-- **최종 재검증**: 동일 스캔쿼리로 재확인 결과 H1 2022 구간에서 10건+ 몰린 날짜가 **완전히 소멸**(0건), 표본종목(000670/021045/001080) 전부 자연스러운 연속 흐름으로 복원(오염일은 결측으로 남음, KRX 재조회는 2026-08-23(3차) 교훈에 따라 시도하지 않음).
-- **잔여**: 소규모 22건(039230/052790 등 개별 종목, 증거 불충분) 미해결 — 다음에 볼 때는 3~4일이 아닌 더 넓은 윈도우(예 10일)로 복귀여부를 재확인하거나 개별 DART 공시 대조가 필요. 2015-01-02(845)·2018-12-24(458)·2019-01-02(370)·2010-05(3개 날짜, 각 15~19건) 구간은 규모가 훨씬 크고 원인 성격이 다를 가능성이 높아(오래된 구간, 데이터 신뢰도 자체가 다른 시기) 이번 세션에서 다루지 않음 — 별도의 큰 조사 필요, 다음 세션 후보 1순위로 남김. 2024-04-01(4종목, 실거래량 확인)과 2026-04-30/05-18(각 17/15종목)은 조사 결과 복귀 없이 지속되는 패턴(실제 액면병합/재평가로 추정)이라 오염이 아닌 것으로 판정, 정정하지 않음.
-- 재현: `scratch/tccbridge/full_scan_cluster_dates.py`(전수스캔), `detect_all_2022h1_bursts.py`(자동탐지), `spotcheck_singleton_bursts.py`(오탐분리), `remediate_h1_2022_bursts.py`, `finish_jan03_residual.py`.
-
-### 2026-08-29(2차) price_history 4번째 KRX 오염클러스터(2022-02-08~09) 신규 발견·정정 — `price_jump_audit`의 미해결 잔여(unresolved_active_common) 후속 조사
-> 사용자: "다른거 더 점검할게 있어?" — 기존 `price_jump_audit`(2026-08-24 재빌드) 미해결 큐 중 가장 큰 카테고리인 `unresolved_active_common`(2,349건, 2010~2026 전 구간)을 처음으로 직접 파고들어 발견.
-- **발견 경위**: `unresolved_active_common` 연도별 분포를 보다가 2022년(441건) 내 특정 날짜에 이상 집중된 걸 확인 → 2022-02-08 하루에만 69/70건이 이 분류로 몰려있음을 발견. KOSPI/KOSDAQ 지수(^KS11/^KQ11)는 이날 완전히 정상(2767.76→2746.47, 900.7→895.27, 거래량도 평시 수준)이라 시장 전체 이벤트가 아님을 먼저 확인.
-- **패턴 확정**: 021045(2/7 14,250원→**2/8 1,395원→2/9 1,370원**→2/10 13,750원 정상복귀), 001080(2/7 2,246원→**2/8 22,850원→2/9 22,950원**→2/10 2,241원 정상복귀) 등 — 기존에 이미 확정한 2022-01-03(254종목)·2022-05-09(232종목) 오염과 정확히 동일한 시그니처(단, 이번엔 **이틀 연속**(2/8+2/9) 오염이 지속된 뒤 3일째(2/10)에 원상복귀 — 이게 원인). **왜 이전 세션의 전수조사(2026-08-23)에서 놓쳤는가**: 당시 판정기준이 "전일대비 급변 & **익일** 15%이내 원상복귀"(1일 지연 가정)였는데, 이 클러스터는 복귀가 2일 뒤(2/10)에 일어나 그 필터를 통과하지 못하고 `unresolved_active_common`으로 남아있었음 — **오염 지속기간이 항상 하루라는 가정 자체가 놓친 사각지대**였다는 재발방지 교훈.
-- **스코프 확정(재현가능 SQL: `d7→d8·d9 40%이상급변 & d10 15%이내복귀`)**: 68종목 매칭, 그중 139050은 `stock_universe` 비상장(사용자 지시 "비상장 주식은 필요 없고" 범위 밖) — **67개 코스피/코스닥 상장종목**만 대상 확정(상장여부 67/67 재확인).
-- **정정 실행**: `price_history_corruption_backup_20260829`(134행=67종목×2일) 백업 후 원본에서 2022-02-08·2022-02-09 두 날짜 전량 삭제 → 재검증 결과 잔존 0건, 021045/001080 등 표본 재확인상 결측(gap)으로 정상 복원. **재발취(KRX 재조회) 시도는 하지 않음** — 2026-08-23(3차)에서 이미 "재조회하면 동일 오염값이 그대로 다시 채워지는" 것을 직접 겪고 "삭제 후 결측으로 남기는 것이 유일하게 안전하고 durable한 정정"이라고 결론낸 교훈을 그대로 적용.
-- **잔여 상태**: `unresolved_active_common` 2,349건 중 이번 정정(134건)을 제외한 나머지는 대부분 ①2015-01-02/2010-2011년 구간(842건, 최초일자 아티팩트 가설은 기각됨 — 진짜 원인 미상, 오래된 구간이라 우선순위 낮음) ②`stock_price_daily`(비조정) 기준과의 조정기준 불일치(2026-08-23(3차)에서 이미 정책적으로 "비교 불가"로 확정된 것과 동일 클래스) — 남은 건 중 2022년 이후(최근, 라이브 전략에 영향 가능성 있는 구간)만 701건, 이 중 `corporate_action_events` 기록이 전혀 없는 순수 미상 종목은 16개(020180/054940/101680/101970/127980/204210/354320/356890/377220/383220/417200/417310/430690/445680/450520/452430) — 이번에 발견한 것과 같은 4번째 미지의 클러스터가 섞여있을 가능성이 있으나 미조사, 다음 세션 우선 후보로 남김.
-- 재현: `scratch/tccbridge/check_unresolved_active_common.py`, `check_recent_unresolved.py`, `check_20220208_cluster.py`, `scope_feb0809_cluster.py`, `check_139050_feb.py`, `remediate_feb0809.py`.
-
-### 2026-08-29 전략센터 데이터 라우팅 레이어 추가
-- `routes/strategy_data_lab.py` 신규, `GET /api/strategy-data-lab/overview`로 실적변곡·계약선행·현금전환·재고/매출·수주공시·컨센서스의 커버리지/신선도와 역할(진입·확인·촉매·위험제거)을 반환한다. 다중확인 후보는 `V-CATALYST`/`V-REVISION`/`V-QUALITY-ROUTE` 연구 전용으로만 노출하며 자동매매와 성과 매트릭스에는 연결하지 않는다.
-- `frontend/src/App.jsx` `StrategyHub`에 `데이터 라우팅` 탭을 추가해 소스별 상태, 설계 중인 전략 역할, V-CATALYST 다중확인 후보를 표시한다. 과거 실행 검증에서 품질/수주 지표를 매수랭킹에 가산할 때 성과가 악화된 결론을 유지해, 이 데이터는 설명·교차확인·위험표시 역할로 제한한다.
-
-### 2026-08-29 전략센터 고수익 조합 가상계좌 추가 시도 철회
-- `sc_return_core` 전방 가상계좌를 추가하려다 철회했다. 최신 등록 병합 run `cmb_c8f841b9708d`의 +688.9%는 단순 `v2 + sector_focus`가 아니라 **V-SECTOR 피라미딩과 최소보유 60일**까지 포함한 명세인데, 최초 연결안은 이 조건을 빠뜨려 동일 전략이 아니었다.
-- 재발 방지: 전략 로직·가상운용 어댑터·파라미터를 새로 만들거나 바꿀 때는 배포 전에 반드시 **동일 주문 흐름의 병합 백테스트**, 동점순서 안정성, MDD를 실행한다. 기존 등록 run의 수익률만 인용해 새 실행 경로를 배포하지 않는다.
-
-### 2026-08-29 전략센터 최신구간 전수 백테스트 상태 점검
-- 가격 데이터는 2026-08-29까지 있으나, 전략센터 표준 여섯 번째 구간은 여전히 `2025-06-01~2026-03-31(25.6~26.3)`이다. 따라서 이 시점의 전략센터 매트릭스를 "오늘 기준 전수 백테스트"라고 부르면 안 된다.
-- `25.6~26.8`로 26개 전략을 일괄 연장하는 실행을 시도했으나, `high_profit_compound`의 대규모 가격 이력 집계가 장시간 진행되고 일부 전략만 새 기간으로 등록되는 부분 상태가 발생했다. 실행을 중지하고, 새로 선택된 5개 전략은 이전 suite로 복구했다. 현재 프런트/레지스트리의 표준 기간은 다시 `25.6~26.3`으로 일관된다.
-- 후속 전수검증은 먼저 `high_profit_compound`의 최신기간 쿼리 성능을 개선하고, 전략별 checkpoint·원자적 선택 전환(26개 모두 성공한 뒤에만 registry 교체)을 갖춘 별도 러너로 실행한다. 중간 산출물이나 일부 최신 결과를 전략센터 순위에 노출하지 않는다.
-
-### 2026-08-29 사용자 4개 후속지시 처리 — 분기데이터 재검토(클린 확인) + DART조회불가 종목 화면표시 신설 + 타 재무테이블 감사·부분정리 + financial_source_snapshot 백필 재시도(DART 자체장애 발견)
-> 사용자: "1. 분기 데이터 다시 봐주세요 / 2. Dart 원문 조회자체가 안되는 종목들에는 국내종목 페이지 내에 꼭 표시를 해서 데이터에 문제가 있다고 표시 할 것 / 3. 다른 재무 테이블도 보세요 / 4. Financial Source 남은 872건, 미검증 136441건도 검증하세요"
-- **①분기(is_annual=0) 데이터 재검토 — 클린 확인**: financial_data/cash_flow_data 둘 다 분기 데이터는 `(stock_code,year,quarter,report_type)` 정확일치 중복그룹 **0건**. 연간행과 달리 quarter 값이 항상 1~4 실값이라(모든 writer가 `{"11011":4,"11012":2,"11013":1,"11014":3}` 류의 동일 report_code→quarter 매핑을 씀) 애초에 관례 충돌 여지가 없었음. 분기 데이터는 이번 세션 버그 클래스의 영향 밖으로 확인.
-- **②DART 원문 조회불가 종목 화면표시 신설**: [dart_data_quality.py](dart_data_quality.py) 신규 — `stock_dart_data_quality` 테이블(종목별 DART 재조회 성공/실패 연도 누적, status: ok/partial/no_dart_data)을 만들고, dedup/백필 스크립트들이 DART 재조회를 시도할 때마다 `record_dart_result()`로 결과를 누적 기록하도록 연동(`dedup_financial_data_annual.py`/`dedup_cash_flow_data_annual.py`/`scripts/backfill_unverified_snapshot.py`). [main.py](main.py) `/api/dashboard/fundamentals/{stock_code}` 응답에 `dart_data_quality`/`dart_data_quality_note` 필드 추가(기존 `shareholder_data_quality` 패턴과 동일 방식). [App.jsx](frontend/src/App.jsx) 종목 상세 페이지에 빨간색 "⚠ DART 원문 조회불가"/"⚠ DART 일부연도 조회불가" 경고 배지 추가(기존 유통주식수 배지 바로 아래, 동일 스타일). `npx vite build`로 빌드 검증 완료. **데이터는 스크립트들이 실제로 각 종목을 재조회할 때마다 점진적으로 채워짐 — 세션 종료 시점 기준 아직 대부분 종목이 미채움 상태(초기 0건, no_dart_data 케이스가 아직 실측되지 않음), 신규 기능 자체는 배포 완료.**
-- **③다른 재무테이블 감사 — 서브에이전트로 23개 테이블 전수조사**(1차 세션한도 초과로 중단 → 재개 완료). 확정된 실제 버그:
-  - **`canonical_financial_data`(8,687그룹)/`canonical_cashflow_data`(9,681그룹)**: 이전 세션이 만든 "최선의 1행 선정" 통합테이블이 정확히 같은 버그(quarter=0/4 리터럴로 먼저 GROUP BY 하는 `scripts/ops/rebuild_canonical_2022_2025.py:45-57` 근본원인)를 그대로 재현하고 있었음. 라이브 라우트는 안 씀(위험 낮음)이나 **`scripts/audit_all_page_data_quality.py`가 이 테이블을 "중복 grain이 이미 해소된 표준테이블"로 잘못 신뢰해 실제로는 안 풀린 이슈를 "해결됨"으로 오탐지 중**이었고, `bigquery_sync.py`가 매일 이 오염된 데이터를 BigQuery로 내보내고 있었음. **미수정(다음 세션 과제)** — financial_data/cash_flow_data 중복정리가 끝난 뒤 그 클린 소스로 canonical을 재빌드하는 것이 정공법으로 판단.
-  - **`dart_insider_holdings`(16,544그룹)/`dart_major_holders`(11,098그룹)/`dart_employee_count`(1,582그룹)**: 실제 자연키(`rcept_no`+`repror` 등)에 대한 유효 UNIQUE 제약이 없거나(surrogate PK만 존재, 인덱스가 아예 `_nonunique`로 명명됨) NULL이 무력화해 재수집 스크립트 재실행마다 동일 공시가 그대로 중복 삽입되던 문제. **DART 재조회 불필요(이미 저장된 값들끼리 비교로 충분)** — `scratch/dedup_no_unique_tables.py` 신규, 그룹 내 값이 완전 동일하면 최신 1건만 남기고 삭제, 실제로 값이 다르면 자동삭제 안 하고 플래그만 남김. 결과: major_holders 11,098그룹 **100% 정리**(42,985행 삭제), employee_count 1,582그룹 중 1,573그룹 정리(9그룹은 진짜 값 차이로 보류), insider_holdings 16,544그룹 중 5,114그룹만 완전동일이라 정리(11,430그룹은 **같은 rcept_no+repror인데 값 자체가 다름** — 원인 미상, 자동삭제 안 하고 보류, 후속 조사 필요). 백업: `{table}_backup_dedup_20260829`.
-  - **`us_financial_data`**: PK는 유효하나 `period_end`가 SEC XBRL 원본을 그대로 써서 동일 분기에 재수집마다 값이 미세하게 달라짐(1,566+412그룹). 미국주식 데이터라 "국내종목" 우선순위 밖으로 이번 세션 미수정.
-  - 나머지 15개 테이블(`dart_backlog_quarterly`/`dart_cost_quarterly`/`dart_bs_items`/`naver_financial`/`order_backlog`/`dart_material_purchase` 등)은 quarter값이 항상 1~4 실값이거나 자연키가 rcept_no 기반이라 **클린** 확인, `dart_raw_accounts`(112행, dead)/`seibro_financial_snapshot`(0행, dead)은 낮은 우선순위로 기록만.
-- **④financial_source_snapshot 872건/136,441건 백필 재시도 — DART 자체 장애로 중단**: 대량배치(`--limit 140000`) 실행 중 전건이 "status=800 시스템점검"으로 실패. 조사 결과 (a) `_fetch_dart_annual()`이 호출마다 매번 새 OpenDartReader를 생성하고 있었는데 이 라이브러리는 회사고유번호목록을 **날짜별 pickle 캐시**로 관리 — 자정(8/28→8/29) 직후라 오늘자 캐시가 없어 매 호출이 원격 재다운로드를 시도하던 비효율 발견·수정(클라이언트를 프로세스당 1회만 생성해 재사용하도록 `_get_dart_client()` 신설, [fnguide_financial_collector.py](collectors/fnguide_financial_collector.py)). (b) 수정 후에도 실패 지속 → 단독 재현 테스트로 **DART 서버 자체가 그 시각(새벽 1시경) corp_codes 다운로드 엔드포인트에 대해 실제로 점검 중**임을 확인(financial_data dedup은 자정 이전에 이미 연결을 맺어놓은 별도 프로세스라 영향 없이 계속 정상 진행됨). 외부 서비스 장애라 이번 세션에서 완료 못 함 — 코드수정은 반영 완료, DART 정상화 후 재시도 필요.
-- **최종 상태(세션 종료 시점)**: financial_data 연간 중복 12,113→3,411그룹(계속 진행 중, 배경 프로세스), cash_flow_data(20,392그룹) 미착수, financial_source_snapshot 872+136,441건 DART 장애로 보류, canonical_* 2테이블 미수정, us_financial_data 미수정, dart_insider_holdings 11,430그룹(값 자체가 다른 원인불명 케이스) 미해결.
-- **financial_data 연간 중복정리 최종 완료**: 12,113/12,113그룹 전량 정리(no_dart_data 0건, quota_hit 없이 완주).
-
-### 2026-08-29(2차) 우선순위 전환 — "중복행보다 데이터 오류 자체가 더 큰 문제" (사용자 지시)
-> 사용자: "중복행도 문제이지만 데이터 오류가 가장 문제야 / 오류/잘못 들어온 데이터 검증을 우선시 하고 중복은 오류 검증중에 확인하도록해 / Dart는 완료되었을 가능성이 높으니 재점검 해봐"
-- **DART 재점검 결과**: 여전히 점검중(09:57 KST 확인, 01:08부터 9시간 가까이 지속 — 통상적 야간정기점검치고 이례적으로 김). 사용자 기대와 달리 아직 복구 안 됨을 정직하게 보고.
-- **접근법 전환**: 기존 `dedup_*_annual.py`는 "이미 중복행이 있는 그룹만" 대상으로 했음 — 이는 단일행(중복 아님)인데 값 자체가 틀린 케이스를 전혀 검증하지 못하는 구조적 사각지대였음(사용자가 정확히 지적한 문제). **`verify_all_financial_data_annual.py`/`verify_all_cash_flow_data_annual.py`(scratchpad) 신규 — 중복 여부와 무관하게 모든 (stock_code,year,report_type) 연간 그룹을 DART 원문과 대조**, 값이 틀리면 수정(financial_fix_log/cashflow_fix_log 기록), 중복이 남아있으면 그 김에 정리(승자선정+삭제) — "중복정리는 오류검증의 부산물"로 재구성.
-- **진행상황 추적 신설**: 라이브 `financial_data`/`cash_flow_data` 스키마는 건드리지 않고(ALTER TABLE이 락 경합으로 멈춰 킬하고 우회 — 운영 중인 uvicorn 프로세스와 충돌 가능성 때문에 라이브 테이블 스키마변경 자체를 회피) 별도 테이블 `financial_data_verify_progress`(table_name,stock_code,year,report_type,last_verified_at,last_result) 신설 — 한번도 검증 안 된 그룹 최우선(NULLS FIRST), 그 다음 가장 오래전에 검증된 순으로 처리해 상시 롤링 감사가 되도록 설계.
-- **우선순위 체인 실행**: `scratch/wait_dart_and_run_priority_chain.sh` — DART 정상화 대기(2분 간격) → 복구되면 ①financial_data 연간 전건검증 → ②cash_flow_data 연간 전건검증 → ③financial_source_snapshot 백필 순서로 자동 순차실행(사용자 지시대로 데이터오류 검증 우선, 감사전용 테이블은 최후순위).
-- **⚠️ 버그 발견·수정(1차 실행 중)**: `verify_all_*.py`의 while루프가 "그룹이 남아있으면(=거의 항상) 절대 빈 배치를 반환 안 함" 특성 때문에 한 바퀴를 다 돌고도 종료 못 하고 무한히 재순회 — financial_data만 30분+ 붙잡고 cash_flow_data/snapshot으로 못 넘어가던 것 발견. 시작시점 총 그룹수를 못박아 `processed >= TOTAL_GROUPS`가 되면 반드시 종료하도록 수정. (참고: 이 버그 상태에서도 실질적 피해는 없었음 — financial_data 31,306그룹 중 13,278건(42%)의 실제 값 오류를 이미 발견·수정한 뒤였고, 단지 다음 단계로 못 넘어갔을 뿐.)
-- **2026-08-29(3차) 사용자 추가지시 반영**: "10년치의 데이터를 목표로해서 진행해줘" — `verify_all_financial_data_annual.py`/`verify_all_cash_flow_data_annual.py`에 `MIN_YEAR = 올해-9`(2017년~) 범위 필터 추가 + 같은 우선순위(미검증 우선) 내에서 `year DESC` 2차 정렬 추가(중단되더라도 최근 연도가 먼저 끝나도록). financial_data 2017년~ 대상 29,975그룹/cash_flow_data 38,572그룹으로 재정의 후 처음부터 재실행.
-- **✅ 최종 완료(2017~2026, 10개년)**:
-  - **financial_data**: 30,000건 처리, **수정 0건**(이미 앞선 세션의 fix가 durable하게 유지됨을 재확인), 정상 29,039건, DART데이터없음 961건. 잔여 중복그룹 **0개**.
-  - **cash_flow_data**: 38,600건 처리, **수정 9,437건(24.4%!)** — 이번에 처음으로 "중복 아닌 단일행"까지 전수검증한 결과, 중복행 문제보다 오히려 큰 규모의 실제 값 오류가 발견됨(사용자가 정확히 예견한 그대로). 정상 22,479건, DART데이터없음 6,684건(17.3%). 잔여 중복그룹 20,392→**4개**(사실상 완전 해소).
-  - **financial_source_snapshot 백필(③)은 DART 일일 실사용한도(status=020, 앞의 두 단계에서 68,600여 회 호출)를 소진해 오늘은 착수 못 함** — 쿼터 소진은 정상적인 상한 도달이지 버그 아님. 이미 등록된 매일 03:45 스케줄러 잡(`_loop_unverified_snapshot_backfill`)이 쿼터 리셋 후 자동으로 하루 1,000건씩 이어서 처리.
-  - **체인 스크립트 사소한 실행오류**: step3 진입 시점에 일시적으로 `venv/bin/python3` 경로를 못 찾는 오류(원인 미상 — venv 자체는 정상 확인됨, 아마 장시간 실행 중 외부요인) 발생 → step1/2는 이미 정상 완료된 상태였으므로 step3만 단독 재실행(재시도 결과 DART 쿼터 소진으로 확인, 위 참고).
-  - **DART없음(no_dart_data) 비율이 예상보다 높음(961+6,684=7,645건, 약 11%)** — `stock_dart_data_quality` 테이블에 누적 기록됨, 다음 세션에서 종목상세 페이지 배지로 실제로 얼마나 뜨는지 확인 필요.
-
-### 2026-08-28 multi_source_financial_mismatch_log 잔여 145건 전수 재검토 완료 (income_statement/cash_flow/material_purchase_internal)
-> 사용자: "그래서 완료된거야? 뭐야?" → "재검토 진행해. 너가 완료를 안하면 미완료 상태로 계속 남아. 멈추지 말고 무조건 수정을 완료해 / 해당 사항에 대해서는 기록해서 모든 ai가 적용하도록해" — DART 원문 재검증(anchor) 원칙에 따라 세 카테고리(income_statement 49건, cash_flow 28건, material_purchase_internal 68건, 총 145건) 잔여 mismatch를 전부 DART 원문 재조회로 재검증. cross-check 플래그를 무조건 정답으로도, 재추출 결과를 무조건 정답으로도 취급하지 않고 매 건 근거를 남김.
-- **방법론 ①(income_statement/cash_flow)**: `dart_key_manager.RotatingOpenDartReader.finstate_all(stock_code, year, '11011', fs_div='CFS')`로 원문 재조회(빈 응답/status=013 시 `fs_div='OFS'`로 폴백) → `dart_collector.py`의 기존 계정매칭 파서 `_parse_fin_df`/`_parse_cf_df` 그대로 재사용해 재파싱 → 저장값과 2% 이내 오차면 `dart_confirmed`(원본 데이터 정상, 외부소스 쪽 기준차이), 다르면 재파싱값으로 `corrected`. 스크립트: `scratch/verify_income_cf_mismatches.py`, `scratch/apply_income_cf_corrections.py`(`RUN_ID=verify_remaining_mismatch_20260828`).
-- **🔑 근본원인 발견 — income_statement/cash_flow "corrected" 건 상당수는 실제로는 파서버그가 아니라 중복행 문제**: 동일 (stock_code, year, report_type)에 대해 `financial_data`/`cash_flow_data`에 `created_at`이 동일한 중복 행이 존재하고(이미 정정된 최신값 행 + 정정 전 stale값 행 공존), crosscheck 스크립트의 `created_at DESC` 정렬이 동률 시 비결정적으로 stale 행을 읽고 있었던 것. 재현 불가한 크로스체크 랭킹 로직을 다시 만드는 대신, 로그에 남은 stale dart_value와 **정확히 일치하는 행**(실패 시 ±0.5% 근사)만 정밀 타겟팅해 수정 — 원인 자체(중복행 생성 경로)는 이번 세션에서 미조사, 후속 필요.
-- **방법론 ②(material_purchase_internal)**: `dart_material_purchase_collector.download_and_extract(rcept_no, key, year)`로 원문 document.xml 재다운로드+재추출(XBRL 태그 → 키워드/IFRS주석 → 태그 스캔 3단계 폴백) 후 저장값과 비교. 재추출값=저장값(2%이내) → 매입재료비 자체는 정확, cost_structure 프록시(COGS 비교) 쪽의 구조적 한계로 판단해 `no_external_source`로 재분류(`mismatch` 아님). 재추출값≠저장값 → **`financial_data.revenue` 대비 비율로 타당성 재검증 후에만** `dart_material_purchase.material_purchase_krw` 수정. 스크립트: `scratch/verify_material_purchase.py`(RUN_ID=verify_material_purchase_20260828, `run_in_background`+`python3 -u`로 백그라운드 실행), `scratch/apply_mp_corrections.py`.
-- **⚠️ 자동재추출 결과 중 명백한 오류 2건을 타당성 필터로 사전 차단(적용 안 함)**: `041520`(이엘씨) 재추출값이 매출대비 4.44배(기존 3.68배보다 오히려 악화), `064090`(인크레더블버즈) 재추출값이 매출대비 574배(파서가 무관한 큰 수치를 오매칭한 것으로 판단) — 둘 다 "재추출값도 신뢰 불가"로 판단해 **저장값 유지, `mismatch` 상태 그대로 note만 추가**(수동 원문 확인 필요). CLAUDE.md 상단 재무 무결성 규칙("DART 재검증 없이 자동보정 금지")과 "OPEN은 임의 확정 금지" 원칙을 이 필터로 실제 적용한 사례.
-- **최종 결과**(`SELECT category,status,COUNT(*) FROM multi_source_financial_mismatch_log GROUP BY category,status`): income_statement `mismatch→0`(35 corrected + 14 dart_confirmed, 49/49 완료). cash_flow `mismatch 28→3`(22 corrected + 3 dart_confirmed; 잔여 3건은 001000/001720 depreciation, 001770 capex — DART 원문 자체가 해당 계정을 별도 항목으로 안 싣는 직접법 현금흐름표로 판단, 데이터 결손 아님, 정직하게 OPEN 유지). material_purchase_internal `mismatch 68→49`(14 corrected + 5 no_external_source 재분류; 나머지 49건은 재추출 실패 45건+rcept_no 없음 2건+타당성필터 차단 2건, 전부 정직하게 `mismatch` 유지, 임의 확정 안 함).
-- **백업**: `financial_data_backup_mismatch_verify_20260828`, `cash_flow_data_backup_mismatch_verify_20260828`, `dart_material_purchase_backup_mismatch_verify_20260828`(각 UPDATE 전 대상 범위만 스코프 백업).
-- **후속 미착수 항목(다음 세션 인계)**: cash_flow 3건(계정 자체 미기재 추정, 재도전해도 결과 동일할 가능성 높음), material_purchase_internal 45건 재추출실패(문서 형식이 현재 파서 3단계 전부와 안 맞는 케이스 — `download_and_extract` 자체의 4번째 폴백 패턴 추가가 필요할 수 있음), 041520/064090 2건(수동 원문 확인 필요), income_statement/cash_flow 중복행 생성 근본원인(파이프라인 어디서 중복 insert가 발생하는지 미조사) — **바로 아래 항목에서 근본원인 규명·부분수정함**.
-
-### 2026-08-28(2차) ⚠️ financial_data/cash_flow_data 연간행 대량중복(annual quarter 값 3중 불일치) 근본원인 발견 + 수집코드 수정 + financial_source_snapshot 1,045건 중 안전한 범위 마무리
-> 사용자: "데이터가 무결점이 아니라면 계속 검증 계획을 세우고 진행해줘" — 위 항목(1차)에서 다룬 `multi_source_financial_mismatch_log`(145건)와 별개로, FnGuide↔DART 교차검증 전용 테이블 `financial_source_snapshot`(150,261행)을 발견. 상태분포: `unverified` 136,441(91%!) / `verified` 10,823 / `mismatch` 1,045 / `reconstructed` 1,828 / `structural_diff` 108. 매일 수집분의 90%가 검증조차 안 되고 있었음.
-- **1단계 원인**: `cross_validate_annual()`이 `api_limiter.wait("DART")` 실패(쿼터체크) 시 재시도/백필 없이 조용히 `unverified` 반환 — `unverified`의 `fetched_at`이 2026-05-10~08-22까지 매일 계속 쌓이고 있어(정적 잔재가 아니라 현재진행형 구조적 결함) 코드 원인은 확인했으나 이번 세션에서 수정하지 않음(범위상 다음 세션 과제로 명시 보류).
-- **2단계 원인(더 심각, 오늘의 핵심 발견) — annual quarter 값 3중 불일치로 UNIQUE(stock_code,year,quarter,is_annual,report_type) 제약이 사실상 무력화됨**: `financial_data`/`cash_flow_data` 둘 다 연간(is_annual=1) 행에 quarter=`0`(FnGuide계열), `4`(DART계열, `collect_dart_financial_batch.py`/`collect_dart_cashflow_batch.py`가 의도적으로 사용 — `validate_eps_bps()`가 이 둘을 JOIN해 EPS/BPS 교차검증하는 **의도된 설계**), `NULL`(`scratch/legacy_dart_recollect.py`의 `update_annual_pl`/`update_cf_annual`이 신규 insert 시 사용 — **이것만 의도되지 않은 세 번째 관례**) 세 가지가 혼재. PostgreSQL UNIQUE 인덱스는 NULL을 서로 다른 값으로 취급하고, quarter=0/4/NULL은 애초에 다른 키라 제약 자체가 중복을 막지 못함. 실측: **financial_data 연간 중복그룹 12,113개, cash_flow_data 연간 중복그룹 20,392개**. `routes/*.py`의 financial_data 조회 대부분이 quarter/data_source를 구분하지 않고 조회해 어느 사본이 화면에 뜨는지 사실상 비결정적.
-- **수정(근본원인 중 안전하게 확정 가능한 부분만)**: `scratch/legacy_dart_recollect.py`의 `update_annual_pl()`/`update_cf_annual()` 신규 INSERT 시 `quarter=NULL` → `quarter=4`로 변경(기존 행 탐색은 이미 quarter 무관 조회라 안전). **quarter=0(FnGuide) vs quarter=4(DART) 이원구조 자체는 `validate_eps_bps()`가 의도적으로 사용 중이라 건드리지 않음** — 이걸 섣불리 "하나로 통일"했으면 그 교차검증 기능이 깨졌을 것(사용자에게 재확인 후 축소 진행). 기존에 이미 쌓인 12,113+20,392개 중복행 자체는 오늘 정리하지 않음 — 대형 별도 프로젝트로 이관(다음 세션 과제).
-- **financial_source_snapshot 1,045건 mismatch 처리**: DART 원문 재파싱(`dart_collector._parse_fin_df`)으로 재검증한 결과 `live_data_bug`(라이브 financial_data가 실제로 틀림) 880건 중 **865건(98%)이 위 중복행 문제와 얽혀있어** 임의 수정하면 잘못된 사본을 고칠 위험이 있음을 발견하고 적용 중단. 최종적으로 **중복 없이 안전하게 확정 가능한 15건만 수정**(43개 필드, `financial_fix_log` 기록, run_id=`verify_snapshot_mismatch_20260828`), `fnguide_only_diff`(라이브 정상, FnGuide만 다름) 158건은 상태만 `dart_reverified_ok`로 갱신(데이터 변경 없음), 나머지 865건(중복 얽힘)+7건(비교대상 없음)은 정직하게 note만 남기고 보류.
-- **최종 financial_source_snapshot 상태**(GROUP BY): mismatch 1045→**872**, dart_reverified_ok 신규 158, confirmed 신규 15, unverified 136,441(변화없음, 다음 세션 과제).
-- **다음 세션 인계 항목(우선순위 순)**: ① 12,113+20,392개 기존 중복행 정리(DART 원문 재검증 기반, 규모상 며칠간 DART 쿼터 분할 소요 예상 — 사용자가 "근본원인 코드수정 먼저, 기존 중복정리는 별도 대형작업으로" 명시적으로 선택함), ② `routes/*.py` 전수 감사 — financial_data 조회 시 quarter=4(DART)/report_type 명시 없이 그냥 SELECT하는 곳이 몇 곳인지, 실제 화면에 어느 사본이 노출되는지 확인, ③ `cross_validate_annual()`의 쿼터소진시 무재시도 문제(1단계 원인) 백필 잡 추가, ④ financial_source_snapshot `unverified` 136,441건 잔여, `mismatch` 872건 잔여. **①③은 아래 2026-08-28(3차)에서 진행/부분완료, ②는 감사 완료 후 실제 수정까지 완료.**
-
-### 2026-08-28(4차) 가상매매 탭 정리(옛 병합조합 5개 숨김) + 전략센터상위5 500오류 해소 확인 + golden_cross "잔존" 마커 누락 잠재버그 발견·수정
-> 사용자: "옛 탭은 삭제하고 실제 가동중인것만 표시해" + "내가 가상매매를 진행하라고 했는데 진행 안하는거야?" — 가상매매 탭 확인 중 3건 처리.
-- **① `frontend/src/App.jsx` PeakView STRATEGIES에서 combo_605/539/510/474/546("기존 조합①~⑤") 5개 항목 제거**: 2026-07-31 이후 `scheduler.py _job_combo_daily`가 이 계좌들을 더 이상 건드리지 않고(전략센터 상위5로 완전 교체됨, 함수 이름만 옛 이름 유지) 갱신이 끊긴 옛 스냅샷을 계속 노출해 혼란을 주고 있었음 — DB의 `peak_holding`/`peak_trade` 기록은 그대로 보존, 화면 탭만 제거. `npm run build`(vite preview 정적서빙이라 재빌드 필수, HMR 무효) + 브라우저 실검증 완료, 콘솔 에러 0.
-- **② `/api/trend/strategy-center/top-five` 500 오류는 이미 해소돼 있었음을 재확인**: 2026-08-26 다른 세션이 `STRATEGY_CENTER_PAPER_ENGINES`에 v2/v8을 추가해 실행가능 전략 3→5개(golden_cross/sector_focus/v2/contract_momentum/v8)로 복구 완료된 상태였음 — 실API 호출로 200 정상 확인.
-- **🔴 ③ 신규 발견·수정 — `run_backtest_golden_cross`(backtest.py:6502)만 아직 보유 중인 포지션의 회계상 마감 사유로 `"잔존"`이라는 문자열을 쓰는데, `routes/trend.py`의 `_COMBO_PERIOD_END_MARKERS`(2026-07-23 도입, v10/v4/v2/earnings/moonshot/recovery의 각기 다른 마감사유 문자열을 걸러 "오늘 보유중인 모든 포지션이 매도신호로 오인"되는 걸 막는 필터)에는 `"잔존"`이 빠져 있었음**: golden_cross가 새로 STRATEGY_CENTER_PAPER_ENGINES에 편입되며 처음으로 이 파서를 타게 됐는데, sc_golden_cross 계좌가 아직 한 번도 매수를 못해(2026-08-24 이후 신규 진입 자체가 없음, 정상적인 "신호 없음" 상태) 지금까지는 실제 오매도로 이어지지 않았을 뿐 — 첫 매수가 체결되는 즉시 다음날 재실행에서 방금 산 종목 전부가 "매도신호"로 오인되어 하루 만에 되팔릴 잠재 버그였음(사전 발견). `_COMBO_PERIOD_END_MARKERS`에 `"잔존"` 추가. v2/v8(`_run_generic_backtest` 공용, `기간종료`류)·contract_momentum(`final`)·sector_focus(event-stream `FINAL`/`SECTOR_EXIT` action, `_combo_parse_trades`가 애초에 BUY/SELL만 인식해 무해하게 무시됨) 나머지 4개 엔진은 전수 확인 결과 이미 안전. `scripts/safe_restart_backend.sh`로 안전 재시작 후 golden_cross 최신 backtest_runs(`bc2398fe`)를 실제 파서에 통과시켜 검증(수정 전 오탐 매도 10건 → 수정 후 0건).
-
-### 2026-08-28(3차) "모두 다 진행해" — 연간행 중복정리 백그라운드 실행 + routes/*.py 화면단 버그 5건 수정 + 미검증백로그 백필 자동화
-> 사용자: "모두 다 진행해.. 재무 데이터라 매우 중요해" — (2차)에서 발견한 4개 후속 항목을 순서대로 진행.
-- **③ financial_source_snapshot `unverified` 백필 자동화**: `scripts/backfill_unverified_snapshot.py` 신규 — FnGuide 원본은 이미 스냅샷에 저장돼 있으므로 재수집 없이 DART 쪽만 재시도(`cross_validate_annual` 재사용). 스케줄러에 `_loop_unverified_snapshot_backfill`/`_job_unverified_snapshot_backfill` 등록(매일 03:45, 03:15 FnGuideDART전종목검증 직후, limit=1000/day). 3건 실측 테스트로 정상 작동 확인(verified 1/mismatch 2). 근본원인(쿼터체크 실패시 무재시도) 자체는 미수정 — 이 백필이 사후 보완.
-- **① financial_data/cash_flow_data 연간행 중복정리 실행**: `scratch/dedup_financial_data_annual.py`/`dedup_cash_flow_data_annual.py` 신규(DART 원문 재파싱 앵커, 그룹별 승자 선정 후 나머지 삭제+`financial_fix_log`/`cashflow_fix_log` 기록, 삭제행은 `financial_data_backup_dedup_20260828`/`cash_flow_data_backup_dedup_20260828`에 전체 백업 보존). 실행 중 **UNIQUE 제약 충돌 버그 발견·즉시 수정**(패자 행이 이미 quarter=4일 때 승자를 quarter=4로 먼저 바꾸면 충돌 — 패자 삭제를 승자 quarter 갱신보다 먼저 하도록 순서 수정, 000020/2020/CFS 실측으로 발견). financial_data 쪽 백그라운드 실행 중(세션 종료 시점 기준 12,113→10,642+ 그룹 진행 중, 완료까지 수 시간 예상, 쿼터 소진 시 자동 안전정지 후 재실행하면 이어서 진행되는 멱등 설계). cash_flow_data(20,392그룹)는 financial_data 완료 후 순차 착수 예정(같은 DART 쿼터를 두 프로세스가 동시에 나눠쓰는 것보다 순차가 안전).
-- **② routes/*.py 감사 + 실제 수정**: Explore 서브에이전트로 `financial_data`/`cash_flow_data`를 quarter/report_type 구분 없이 읽는 지점 전수 조사(36개 routes 파일 + main.py). **실제 화면에 영향 주는 버그 5건 확정 수정**(모두 기존에 이미 검증된 안전패턴 — `main.py:6292` CASE 기반 tiebreak, `main.py:4525` ROW_NUMBER() OVER — 을 재사용):
-  - [main.py](main.py) EPS/BPS(PER/PBR 카드, `/api/dashboard/fundamentals`): tiebreak 없어 동일연도 중복 시 PER/PBR이 요청마다 바뀔 수 있었음 → quarter=4/id DESC tiebreak 추가.
-  - [routes/sector_rotation.py](routes/sector_rotation.py) 영업이익 YoY(섹터로테이션 리더십/톱픽 스크리너, 4곳): `ORDER BY` 자체가 아예 없어 완전 임의값이었음 → CFS/quarter=4/dart 우선 tiebreak 추가.
-  - [routes/tenbagger.py](routes/tenbagger.py) 회복후보 스크리너(`/api/tenbagger/recovery-candidates`): 단순 `MAX(CASE...)` 집계라 중복행 중 **숫자가 더 큰 쪽이 항상 이기는 구조적 왜곡**(무작위 아님, 매번 같은 방향으로 편향) → `ROW_NUMBER() OVER (PARTITION BY stock_code,year ORDER BY ...)`로 그룹당 대표행 1개 선정 후 집계하도록 재작성.
-  - [routes/order_contracts.py](routes/order_contracts.py) `_latest_annual_revenue`(수주잔고 스크리너/상세 3곳): report_type 구분조차 없었음 → tiebreak 추가.
-  - [routes/market_radar.py](routes/market_radar.py) 반도체 재무이력(`/semiconductor/financial-history`): "연도당 첫 행 채택" dedup 로직이 있었으나 정렬 자체가 비결정적이라 그 "첫 행"이 매번 바뀔 수 있었음 → tiebreak 추가(financial_data/cash_flow_data 양쪽, 폴백 쿼리 포함 총 4곳).
-  - 감사에서 이미 안전하다고 확인된 패턴도 문서화: `main.py:4525`(ROW_NUMBER 기반, 가장 견고), `main.py:6292`, `routes/dart_excel.py`(2곳) — 참고용, 수정 안 함.
-  - 모든 수정된 쿼리는 실제 라이브 DB(005930/000660/035420 등)로 실행 검증 완료.
-- **진행 중 요약**: 세션 종료 시점 기준 financial_data 중복정리 진행 중(완료 후 cash_flow_data 착수), routes 수정 5건 완료·검증, unverified 백필 자동화 완료(내일 새벽부터 매일 가동). 사용자에게는 매 단계 "이걸로 데이터가 완벽해지는 건 아니다"(분기데이터 미검토, DART재파싱 실패건 미해결, 다른 재무테이블 미감사, DART파서 자체의 잠재 버그 가능성, 살아있는 데이터라 상시관리 필요)를 명시적으로 반복 고지함 — 과장 보고 금지 원칙 준수.
-
-### 2026-08-26 가상매매 페이지 진입 시 종목이 안 보이던 버그 — 원인 규명 및 프론트 수정
-> 사용자: "가상매매 탭에서 매수/매도 종목이 보이지 않지?" — 실제로는 데이터 자체는 정상인데 페이지 첫 진입 시 어떤 탭도 자동 선택되지 않아 빈 화면처럼 보이던 프론트엔드 버그.
-- **재현·원인**: 브라우저에서 "가상 매매" 탭 진입 직후 스크린샷은 "투입원금 0원 / 보유 종목이 없습니다"로 비어 보였으나, 네트워크 로그 확인 결과 `/api/trend/holdings`(319건, 오늘자 갱신분 포함)는 정상 200 응답 — 문제는 별도로 호출되는 `/api/trend/strategy-center/top-five`가 500 에러를 내고 있었던 것. `PeakView`의 `loadPeak()`가 이 호출이 성공(`scRes.ok`)할 때만 `setStrategy(selected[0]?.key || '')`로 기본 선택 탭을 정하는 구조라, 이 호출이 실패하면 `strategy` state가 초기값 `''`(빈 문자열)에 영원히 머물러 — 어떤 탭도 `strategy===key`를 만족 못해 `curHoldings`/`curExits` 필터가 항상 빈 배열이 되고, "기존 조합①"(combo_605) 같은 탭을 **직접 클릭**하면 즉시 실제 보유종목(삼성전자 +26.3%/SK하이닉스 +27.7%/롯데렌탈 +18.9% 등)이 정상 표시됨을 확인 — 데이터·필터 로직 자체는 멀쩡했다.
-- **500의 근본원인(참고, 이번 세션 중 다른 세션이 해결)**: `_select_strategy_center_top_five()`(routes/trend.py)가 `STRATEGY_CENTER_PAPER_ENGINES`에 등록된 5개 전략(golden_cross/sector_focus/v5/v10/contract_momentum) 중 "퇴역(retired)"이 아닌 것이 정확히 5개여야 하도록 의도적으로 fail-closed 설계돼 있는데, 최근 재검증 세션에서 v5·v10이 둘 다 '퇴역' 등급으로 강등되며 후보가 3개로 줄어 매번 `RuntimeError: selected=3`로 500이 발생 중이었음. 조사 도중 다른 세션이 `STRATEGY_CENTER_PAPER_ENGINES`에 v2·v8을 추가해(현재 파일에 반영됨) 유효 후보가 5개(golden_cross/sector_focus/v2/contract_momentum/v8)로 복구되어 엔드포인트가 다시 200을 반환하는 것을 확인 — 이 백엔드 수정은 이번 세션이 직접 작성한 것이 아니며 검토도 하지 않았음(routes/trend.py는 이번 조사 중 2,400줄 넘게 동시수정 중이라 별도 세션의 진행중 작업으로 판단, 커밋 대상에서 제외).
-- **프론트 수정(직접 반영)**: `frontend/src/App.jsx`의 `PeakView` — `const [strategy, setStrategy] = React.useState('')` → `React.useState('peak')`로 변경. 이제 top-five 호출이 다시 실패하더라도(예: 앞으로 또 어떤 이유로든 5개 미만이 되는 경우) 최소한 하드코딩된 첫 탭(Peak Easy)이 기본 선택되어 화면이 비어 보이는 일이 재발하지 않음 — top-five가 정상일 때는 기존처럼 그 결과가 기본 탭을 덮어씀(동작 변화 없음).
-- **검증**: `npm run build` 성공 후 frontend preview(vite preview, 5173) 재기동 — 재기동이 필요했던 이유는 이 프로젝트의 프론트가 `vite dev`가 아니라 `npm run build && npm run preview`(정적 프리빌드) 방식으로 서빙되어 소스 수정이 HMR로 즉시 반영되지 않기 때문(재발방지: 프론트 소스 수정 후에는 반드시 재빌드+preview 재기동 필요, `start.sh`의 62~71번째 줄과 동일 절차). 브라우저 재검증: 새로고침 직후 "1. V12골든크로스 BT+33.6%" 탭이 자동 선택되어 정상 표시(top-five가 이미 복구된 상태라 sc_ 전략이 기본값이 됨), "기존 조합①" 클릭 시 여전히 실제 보유종목 3건 정상 표시 확인.
-
+### 2026-09-11 ETF KRX 공식 PDF 파이프라인(`full_pdf_collector.py`) — 9/10 ISIN 코드 회귀 근본수정 + 1,168개 전량 재정규화 (Codex 작업 이어받아 완료, 아직 미커밋)
+> 이 파이프라인은 `routes_etf.py`/프론트(`etf_inclusion_daily` 기반 tab1~4)와 **아직 연결되지 않은 별도 검증용 파이프라인**이라 사용자 화면에는 영향 없었음(2026-08-30 기록 그대로 유효).
+- **근본원인**: KRX가 2026-09-10부터 일부 ETF 구성종목의 `COMPST_ISU_CD`를 6자리 종목코드 대신 ISIN(`KR7...`)으로 내려주기 시작(시장구분/평가금액도 일부 공란) → 기존 파서가 이를 해외자산으로 오인해 국내 종목 편입개수가 실제보다 적게 계산됨(예: 삼성전자 -5개, SK하이닉스 -7개). 80종목 표본 검증에서 ETF-Check 대비 개수 일치율이 73.75%(기준 80%)로 미달되며 발견.
+- **수정**(`ETF_check/full_pdf_collector.py`): ①`resolve_isin_codes`/`resolve_all_isin_codes` — 과거(직전일 이전) 스냅샷의 `raw_json.COMPST_ISU_CD2`(ISIN) ↔ 6자리코드가 1:1로 유일했던 이력만으로 ISIN→코드 역매핑 캐시 생성(모호한 다대다 매핑은 제외), `collect()`는 실행당 1회 전체 캐시. ②`response_quality_issue` — 전일 대비 구성종목 수가 절반 이하로 급감 **and** 비중합계<80%인 "절단된 PDF" 응답을 빈 응답과 동일하게 실패 처리(정상 리밸런싱과 구분하기 위해 두 조건 AND로 보수적으로 설정). ③빈/저품질 응답도 재시도(최대 3회, 기존엔 즉시 종료) + `save_failure`가 실패 시 해당 (날짜,티커)의 기존 구성종목 행을 삭제하고 `assess_and_publish`가 불완전한 날짜의 과거 `etf_pdf_full_publication` 행도 취소하도록 수정(부분 실패가 "완료"로 잘못 발행되는 것 방지).
+- **복구**(`ETF_check/repair_full_pdf_snapshot.py` 신규): 보관된 raw gzip 원문을 재판독해 새 로직으로 전량 재정규화하는 감사 가능한 스크립트. 실행 전 `ETF_check/backups/etf_check.pre_pdf_repair_20260911.db`로 SQLite 온라인 백업 확보. 최초 버전은 ETF마다 과거 전체 이력을 재스캔해 O(n²)로 30초+ 소요 → 날짜 단위 ISIN 캐시 1회 계산으로 변경 후 4초로 개선. 결과: 2026-09-10 1,168종목 중 **1,156개 정상 복구**, KRX 원문 자체가 절단된 12개는 실패 상태로 정확히 격리(자동 확정 금지 원칙 준수) → 재수집으로 11개 추가 회복.
+- **잔존 미해결 1건**: `435420`(TIGER 미국나스닥100채권혼합50) — KRX가 3회 재시도 모두 109개 중 52개만 반환(원문 자체 절단, 파서 문제 아님). 미래에셋 TIGER 공식 사이트(`investments.miraeasset.com/tigeretf/.../pdfListAjax.ajax`)로 보완 가능한지 확인했으나 **해당 사이트는 총 51개 구성종목만 반환**(KRX 109개와 이유 불명 불일치, 만기/평가일 정의 차이 추정) — 원인 미규명 상태에서 이 수치로 강제 보정하면 새로운 오류를 만들 위험이 커서 **보류**. `ETF_check/issuer_pdf_fallback.py`(기존, PLUS운용 489010만 지원)에 미래에셋 어댑터를 추가하는 방향이 유력하나, 결과는 항상 별도 `etf_pdf_issuer_fallback`/`etf_pdf_issuer_component` 테이블에만 저장하고(원본 `etf_pdf_full_snapshot`은 절대 덮어쓰지 않음) `effective_date`를 있는 그대로 기록하는 기존 설계를 유지할 것. 이 파이프라인이 크론/스케줄러에 아직 연결되지 않아 자동 재시도가 없으므로, 다음에 수동 재수집(`python3 full_pdf_collector.py --date 20260910 --stock 435420`) 시도 시 KRX가 정상 응답하는지부터 먼저 확인할 것.
+- **검증**: 국내종목 기준 동등성 재검증(80종목 표본) — ETF 개수 일치율 100%, 편입종목 교집합 100%, 편입금액 상관계수 0.9983, 총액 차이 0.16%. `tests/test_etf_full_pdf_collector.py` 7건 전체 통과(unittest, `venv/bin/python3.11 -m unittest tests.test_etf_full_pdf_collector`).
+- **상태**: 코드 3개 파일(`full_pdf_collector.py`, `repair_full_pdf_snapshot.py`, `tests/test_etf_full_pdf_collector.py`) 및 DB 복구 모두 `runtime/` 워크트리(`claude/sqlite-migration-completion-x0h891` 브랜치)에 반영됨, **아직 git commit 안 됨** — 커밋 여부는 사용자 확인 후 진행.

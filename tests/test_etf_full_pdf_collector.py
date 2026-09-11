@@ -14,6 +14,8 @@ from full_pdf_collector import (  # noqa: E402
     connect,
     membership,
     normalized,
+    response_quality_issue,
+    save_failure,
     save_snapshot,
 )
 
@@ -54,6 +56,28 @@ class FullPDFCollectorTest(unittest.TestCase):
         self.assertEqual(items[1]["code"], "CASH")
         self.assertEqual(items[1]["is_domestic"], 0)
 
+    def test_normalization_recovers_six_digit_code_from_isin_map(self):
+        rows = [{
+            "COMPST_ISU_CD": "KR7005830005",
+            "COMPST_ISU_CD2": "KR7005830005",
+            "COMPST_ISU_NM": "DB손해보험",
+        }]
+        item = normalized(rows, {"KR7005830005": "005830"})[0]
+        self.assertEqual(item["code"], "005830")
+        self.assertEqual(item["is_domestic"], 1)
+
+    def test_truncated_unweighted_response_is_rejected(self):
+        rows = [
+            {"COMPST_ISU_CD": "005930", "COMPST_RTO": "-"}
+            for _ in range(3)
+        ]
+        self.assertIsNotNone(response_quality_issue(rows, previous_count=34))
+        rows[0]["COMPST_RTO"] = "33.3"
+        self.assertIsNotNone(response_quality_issue(rows, previous_count=34))
+        for row in rows:
+            row["COMPST_RTO"] = "33.4"
+        self.assertIsNone(response_quality_issue(rows, previous_count=34))
+
     def test_partial_date_cannot_confirm_absence(self):
         self.conn.execute(
             "INSERT INTO etf_pdf_full_publication VALUES(?,?,?,?,?,?)",
@@ -79,6 +103,25 @@ class FullPDFCollectorTest(unittest.TestCase):
         save_snapshot(self.conn,"20260828",etf,ROWS,"raw.gz","abc")
         assessment=assess_and_publish(self.conn,"20260828",2)
         self.assertFalse(assessment["complete"])
+
+    def test_failure_clears_components_and_revokes_publication(self):
+        etf=ETF("069500","KODEX 200","KR7069500007")
+        save_snapshot(self.conn,"20260828",etf,ROWS,"raw.gz","abc")
+        self.assertTrue(assess_and_publish(self.conn,"20260828",1)["complete"])
+        save_failure(self.conn,"20260828",etf,"error","truncated")
+        assessment=assess_and_publish(self.conn,"20260828",1)
+        self.assertFalse(assessment["complete"])
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM etf_pdf_full_component WHERE base_date='20260828'"
+            ).fetchone()[0],
+            0,
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM etf_pdf_full_publication WHERE base_date='20260828'"
+            ).fetchone()
+        )
 
 
 if __name__ == "__main__":

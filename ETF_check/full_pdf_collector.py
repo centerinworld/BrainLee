@@ -115,8 +115,8 @@ def initialize(conn: sqlite3.Connection) -> None:
             valuation_amount REAL,
             component_amount REAL,
             weight REAL,
-            is_domestic_stock INTEGER NOT NULL,
-            raw_json TEXT NOT NULL,
+            is_domestic_stock INTEGER NOT NULL DEFAULT 0,
+            raw_json TEXT NOT NULL DEFAULT '{}',
             PRIMARY KEY(base_date, etf_ticker, component_order),
             FOREIGN KEY(base_date, etf_ticker)
                 REFERENCES etf_pdf_full_snapshot(base_date, etf_ticker)
@@ -285,10 +285,16 @@ def store_raw(day: str, ticker: str, rows: list[dict[str, Any]], root: Path = RA
     return str(path), digest
 
 
-def normalized(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def normalized(
+    rows: list[dict[str, Any]],
+    isin_code_map: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    isin_code_map = isin_code_map or {}
     result = []
     for order, row in enumerate(rows, 1):
-        code = str(row.get("COMPST_ISU_CD") or "").strip()
+        raw_code = str(row.get("COMPST_ISU_CD") or "").strip()
+        isin = str(row.get("COMPST_ISU_CD2") or "").strip()
+        code = isin_code_map.get(raw_code) or isin_code_map.get(isin) or raw_code
         name = str(row.get("COMPST_ISU_NM") or "").strip()
         result.append(
             {
@@ -306,6 +312,68 @@ def normalized(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+def resolve_isin_codes(
+    conn: sqlite3.Connection,
+    rows: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Resolve KRX's occasional ISIN-in-code rows from prior unambiguous rows."""
+    targets = {
+        str(row.get("COMPST_ISU_CD") or "").strip()
+        for row in rows
+        if re.fullmatch(r"KR[A-Z0-9]{10}", str(row.get("COMPST_ISU_CD") or "").strip())
+    }
+    if not targets:
+        return {}
+    placeholders = ",".join("?" for _ in targets)
+    mapped = conn.execute(
+        f"""
+        SELECT isin,MIN(component_code) AS component_code
+        FROM (
+            SELECT json_extract(raw_json,'$.COMPST_ISU_CD2') AS isin,component_code
+            FROM etf_pdf_full_component
+            WHERE component_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND json_extract(raw_json,'$.COMPST_ISU_CD2') IN ({placeholders})
+        ) historical_codes
+        GROUP BY isin
+        HAVING COUNT(DISTINCT component_code)=1
+        """,
+        tuple(sorted(targets)),
+    ).fetchall()
+    return {str(row["isin"]): str(row["component_code"]) for row in mapped if row["isin"]}
+
+
+def resolve_all_isin_codes(conn: sqlite3.Connection) -> dict[str, str]:
+    """Build one collection-wide cache of every unambiguous historical ISIN."""
+    mapped = conn.execute(
+        """
+        SELECT isin,MIN(component_code) AS component_code
+        FROM (
+            SELECT json_extract(raw_json,'$.COMPST_ISU_CD2') AS isin,component_code
+            FROM etf_pdf_full_component
+            WHERE component_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND json_extract(raw_json,'$.COMPST_ISU_CD2') GLOB 'KR??????????'
+        ) historical_codes
+        GROUP BY isin
+        HAVING COUNT(DISTINCT component_code)=1
+        """
+    ).fetchall()
+    return {str(row["isin"]): str(row["component_code"]) for row in mapped if row["isin"]}
+
+
+def response_quality_issue(rows: list[dict[str, Any]], previous_count: int | None) -> str | None:
+    """Reject likely truncated KRX baskets instead of publishing them as complete."""
+    if not previous_count or previous_count < 10:
+        return None
+    weights = [number(row.get("COMPST_RTO")) for row in rows]
+    weight_sum = sum(value for value in weights if value is not None)
+    if len(rows) < previous_count * 0.5 and weight_sum < 80:
+        return (
+            f"suspect partial PDF: components dropped {previous_count}->{len(rows)} "
+            f"with weight sum {weight_sum:.2f}"
+        )
+    return None
+
+
 def save_snapshot(
     conn: sqlite3.Connection,
     day: str,
@@ -313,8 +381,12 @@ def save_snapshot(
     rows: list[dict[str, Any]],
     raw_path: str,
     digest: str,
+    isin_code_map: dict[str, str] | None = None,
 ) -> None:
-    items = normalized(rows)
+    items = normalized(
+        rows,
+        resolve_isin_codes(conn, rows) if isin_code_map is None else isin_code_map,
+    )
     weight_values = [item["weight"] for item in items if item["weight"] is not None]
     now = datetime.now().isoformat(timespec="seconds")
     with conn:
@@ -363,12 +435,17 @@ def save_snapshot(
 def save_failure(conn: sqlite3.Connection, day: str, etf: ETF, status: str, error: str) -> None:
     with conn:
         conn.execute(
+            "DELETE FROM etf_pdf_full_component WHERE base_date=? AND etf_ticker=?",
+            (day, etf.ticker),
+        )
+        conn.execute(
             """
             INSERT INTO etf_pdf_full_snapshot(
                 base_date,etf_ticker,etf_name,isin,status,error,collected_at
             ) VALUES(?,?,?,?,?,?,?)
             ON CONFLICT(base_date,etf_ticker) DO UPDATE SET
-                status=excluded.status,error=excluded.error,collected_at=excluded.collected_at
+                status=excluded.status,component_count=0,domestic_stock_count=0,
+                weight_sum=NULL,error=excluded.error,collected_at=excluded.collected_at
             """,
             (day,etf.ticker,etf.name,etf.isin,status,error[:1000],datetime.now().isoformat(timespec="seconds")),
         )
@@ -391,8 +468,8 @@ def assess_and_publish(conn: sqlite3.Connection, day: str, universe_count: int) 
     empty_count = int(row["empty_count"] or 0)
     errors = int(row["errors"] or 0)
     complete = snapshots == universe_count and successes == universe_count and not empty_count and not errors
-    if complete:
-        with conn:
+    with conn:
+        if complete:
             conn.execute(
                 """
                 INSERT INTO etf_pdf_full_publication(
@@ -405,6 +482,12 @@ def assess_and_publish(conn: sqlite3.Connection, day: str, universe_count: int) 
                     published_at=excluded.published_at
                 """,
                 (day,universe_count,snapshots,int(row["components"]),datetime.now().isoformat(timespec="seconds")),
+            )
+        else:
+            # A later integrity repair can invalidate an earlier false publication.
+            conn.execute(
+                "DELETE FROM etf_pdf_full_publication WHERE base_date=?",
+                (day,),
             )
     return {
         "snapshots": snapshots,
@@ -434,6 +517,7 @@ def collect(
 
     conn = connect(db_path)
     universe = active_etfs(conn)
+    historical_isin_map = resolve_all_isin_codes(conn)
     if limit:
         universe = universe[:limit]
     if not universe:
@@ -466,16 +550,29 @@ def collect(
                     stats["skipped"] += 1
                     continue
                 last_error: Exception | None = None
+                final_status = "error"
+                previous = conn.execute(
+                    """
+                    SELECT component_count FROM etf_pdf_full_snapshot
+                    WHERE etf_ticker=? AND base_date<? AND status='success'
+                    ORDER BY base_date DESC LIMIT 1
+                    """,
+                    (etf.ticker, day),
+                ).fetchone()
+                previous_count = int(previous[0]) if previous else None
                 for attempt in range(max(retries, 1)):
                     try:
                         rows = source.fetch(day, etf.isin)
                         if not rows:
-                            save_failure(conn,day,etf,"empty","KRX returned an empty PDF")
-                            stats["empty"] += 1
-                        else:
-                            path,digest = store_raw(day,etf.ticker,rows,raw_root)
-                            save_snapshot(conn,day,etf,rows,path,digest)
-                            stats["fetched"] += 1
+                            final_status = "empty"
+                            raise RuntimeError("KRX returned an empty PDF")
+                        issue = response_quality_issue(rows, previous_count)
+                        if issue:
+                            final_status = "error"
+                            raise RuntimeError(issue)
+                        path,digest = store_raw(day,etf.ticker,rows,raw_root)
+                        save_snapshot(conn,day,etf,rows,path,digest,historical_isin_map)
+                        stats["fetched"] += 1
                         last_error = None
                         break
                     except KRXUnavailable:
@@ -485,8 +582,8 @@ def collect(
                         if attempt + 1 < max(retries, 1):
                             time.sleep(min(2 ** attempt, 4))
                 if last_error:
-                    save_failure(conn,day,etf,"error",str(last_error))
-                    stats["errors"] += 1
+                    save_failure(conn,day,etf,final_status,str(last_error))
+                    stats["empty" if final_status == "empty" else "errors"] += 1
                     if len(stats["error_samples"]) < 30:
                         stats["error_samples"].append({"ticker":etf.ticker,"error":str(last_error)})
                 if index % 50 == 0:
