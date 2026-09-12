@@ -4,22 +4,36 @@ ceo-briefing-platform (ceo_briefing.db & Port 8011 API) 실시간 DAPA/국방부
 """
 
 import os
+import re
 import sqlite3
 import asyncio
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
+from llm_client import AntigravityLLMClient
+from memory.llm_usage_ledger import LLMUsageLedger
+
 logger = logging.getLogger("defense_researcher")
 
 class DefenseResearcherWorker:
-    def __init__(self, vector_store=None, codex_db_path: Optional[str] = None):
+    def __init__(
+        self,
+        vector_store=None,
+        codex_db_path: Optional[str] = None,
+        llm_client: Optional[AntigravityLLMClient] = None,
+        usage_ledger: Optional[LLMUsageLedger] = None
+    ):
         self.vector_store = vector_store
         self.similarity_threshold = 0.85
         self.codex_db_path = codex_db_path or os.getenv(
             "CODEX_DB_PATH",
             "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db"
         )
+        # 요약 생성이 실제 LLM을 부르도록 - 이전에는 아래 3줄 요약이 전부 키워드
+        # if-elif 템플릿이었다(에이전트라는 이름이었지만 LLM을 호출한 적이 없었음).
+        self.llm_client = llm_client or AntigravityLLMClient()
+        self.usage_ledger = usage_ledger or LLMUsageLedger()
 
     async def fetch_defense_sources(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
@@ -66,14 +80,8 @@ class DefenseResearcherWorker:
             logger.error(f"ceo_briefing.db 수집 오류: {e}")
             return []
 
-    def generate_three_line_strategy_summary(self, title: str, content: str, source: str) -> Dict[str, str]:
-        """
-        엄격한 3단계 전략 요약문 생성:
-        1. [주요 팩트]
-        2. [경쟁 환경 및 산업 영향]
-        3. [전사 사업 전략 관점의 시사점]
-        """
-        clean_title = title.replace("[", "").replace("]", "")
+    def _template_summary(self, clean_title: str, title: str, source: str) -> Dict[str, str]:
+        """LLM 호출이 전부 실패했을 때만 쓰는 키워드 기반 결정론적 폴백 (이전에는 이게 기본 동작이었다)."""
         if any(k in title for k in ["KF-21", "전투기", "항공", "KAI", "사천"]):
             fact = f"{clean_title} 관련 핵심 사업 및 양산/수출 진행 상황 확인 ({source})."
             impact = "국내 항공 완제기 독점 제조 경쟁력 강화 및 엔진/항전 협력업체 밸류체인 수혜 확대."
@@ -96,6 +104,62 @@ class DefenseResearcherWorker:
             "impact_summary": f"[경쟁 환경 및 산업 영향] {impact}",
             "strategy_summary": f"[전사 사업 전략 관점의 시사점] {strategy}"
         }
+
+    @staticmethod
+    def _parse_three_line_summary(text: str) -> Optional[Dict[str, str]]:
+        """LLM 응답에서 3개 필수 대괄호 헤더 라인을 추출한다. 형식이 안 맞으면 None
+        (형식이 틀린 응답을 그대로 진짜 요약처럼 쓰지 않는다)."""
+        if not text:
+            return None
+        patterns = {
+            "fact_summary": r"\[주요 팩트\][^\n]*",
+            "impact_summary": r"\[경쟁 환경 및 산업 영향\][^\n]*",
+            "strategy_summary": r"\[전사 사업 전략 관점의 시사점\][^\n]*",
+        }
+        result = {}
+        for key, pattern in patterns.items():
+            m = re.search(pattern, text)
+            if not m:
+                return None
+            result[key] = m.group(0).strip()
+        return result
+
+    def generate_three_line_strategy_summary(self, title: str, content: str, source: str) -> Dict[str, str]:
+        """
+        엄격한 3단계 전략 요약문 생성 (실제 LLM 호출):
+        1. [주요 팩트]
+        2. [경쟁 환경 및 산업 영향]
+        3. [전사 사업 전략 관점의 시사점]
+        전부 실패하거나 형식이 안 맞으면 키워드 템플릿으로 저하하고 data_source로 표시한다.
+        """
+        clean_title = title.replace("[", "").replace("]", "")
+        prompt = (
+            "다음 방산/항공 뉴스에 대해 정확히 3줄로 전략 요약을 작성해줘. "
+            "각 줄은 반드시 아래 대괄호 헤더로 시작하고, 헤더당 정확히 한 문장만 써줘:\n"
+            "[주요 팩트] <핵심 사실>\n"
+            "[경쟁 환경 및 산업 영향] <산업/경쟁 영향>\n"
+            "[전사 사업 전략 관점의 시사점] <전략적 시사점>\n\n"
+            f"출처: {source}\n제목: {clean_title}\n본문: {content[:1000]}"
+        )
+        result = self.llm_client.chat_completion_with_meta(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=400
+        )
+        self.usage_ledger.record("defense_researcher.generate_three_line_strategy_summary", result)
+
+        if not result.get("is_fallback"):
+            parsed = self._parse_three_line_summary(result.get("content", ""))
+            if parsed:
+                parsed["data_source"] = f"llm_generated:{result.get('provider')}"
+                return parsed
+            logger.warning(f"[{result.get('provider')}] 응답이 3줄 형식과 안 맞음 - 템플릿 폴백: '{title[:40]}'")
+        else:
+            logger.warning(f"모든 LLM provider 실패 - 템플릿 폴백: '{title[:40]}'")
+
+        summary = self._template_summary(clean_title, title, source)
+        summary["data_source"] = "template_fallback"
+        return summary
 
     async def process_and_filter_intel(self, raw_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """

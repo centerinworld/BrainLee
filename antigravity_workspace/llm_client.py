@@ -66,12 +66,26 @@ class AntigravityLLMClient:
         temperature: float = 0.3,
         max_tokens: int = 1500
     ) -> str:
+        """하위 호환용 - 응답 텍스트만 반환. 비용/사용량 추적이 필요하면
+        chat_completion_with_meta()를 쓴다."""
+        return self.chat_completion_with_meta(messages, model, temperature, max_tokens)["content"]
+
+    def chat_completion_with_meta(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        max_tokens: int = 1500
+    ) -> Dict[str, Any]:
         """
         사용자 지정 3단계 지능형 LLM 연쇄 호출 (Cascading Multi-Tier):
         1차 (1순위): Google Gemini API (무료 Gemini API 우선 사용)
         2차 (2순위 - 한도 초과 시 자동 전환): Groq / xAI Grok API
         3차 (3순위 - 추가 초과 시 자동 전환): DeepSeek API (deepseek-chat / deepseek-reasoner)
         4차 (최종 안전망): OpenAI GPT-4o-mini & 룰베이스 엔진
+
+        반환값에 provider/model/usage(토큰수)/is_fallback을 함께 담아 실제 사용량 원장을
+        만들 수 있게 한다 (기존에는 응답 문자열만 반환해 비용 추적이 불가능했다).
         """
         # =========================================================================
         # 1차 (1순위): Google Gemini API
@@ -101,7 +115,11 @@ class AntigravityLLMClient:
                     if choices and "message" in choices[0]:
                         self.last_provider_used = f"Google Gemini ({g_model})"
                         logger.info(f"[1차 성공] Google Gemini ({g_model}) 응답 완료")
-                        return choices[0]["message"]["content"]
+                        return {
+                            "content": choices[0]["message"]["content"],
+                            "provider": "gemini", "model": g_model,
+                            "usage": data.get("usage"), "is_fallback": False
+                        }
                 elif res.status_code == 429:
                     logger.warning("[LLM 라우팅] ⚠️ 1차 Google Gemini 무료 할당량(429 Quota) 초과 -> 2차 Grok으로 자동 전환합니다.")
                 else:
@@ -130,7 +148,11 @@ class AntigravityLLMClient:
                     data = res.json()
                     self.last_provider_used = f"xAI Grok ({target_grok_model})"
                     logger.info(f"[2차 성공] xAI Grok ({target_grok_model}) 응답 완료")
-                    return data["choices"][0]["message"]["content"]
+                    return {
+                        "content": data["choices"][0]["message"]["content"],
+                        "provider": "grok", "model": target_grok_model,
+                        "usage": data.get("usage"), "is_fallback": False
+                    }
                 elif res.status_code == 429:
                     logger.warning("[LLM 라우팅] ⚠️ 2차 xAI Grok 사용량 초과(429) -> 3차 DeepSeek으로 자동 전환합니다.")
                 else:
@@ -159,7 +181,11 @@ class AntigravityLLMClient:
                     data = res.json()
                     self.last_provider_used = f"DeepSeek ({target_model})"
                     logger.info(f"[3차 성공] DeepSeek API 응답 완료 (초저비용: $0.14/1M)")
-                    return data["choices"][0]["message"]["content"]
+                    return {
+                        "content": data["choices"][0]["message"]["content"],
+                        "provider": "deepseek", "model": target_model,
+                        "usage": data.get("usage"), "is_fallback": False
+                    }
                 else:
                     logger.warning(f"DeepSeek API 반환 오류: {res.status_code} -> 4차 안전망으로 폴백")
             except Exception as e:
@@ -179,14 +205,23 @@ class AntigravityLLMClient:
                     max_tokens=max_tokens
                 )
                 self.last_provider_used = "OpenAI (gpt-4o-mini)"
-                return res.choices[0].message.content
+                usage = getattr(res, "usage", None)
+                return {
+                    "content": res.choices[0].message.content,
+                    "provider": "openai", "model": "gpt-4o-mini",
+                    "usage": usage.model_dump() if usage else None, "is_fallback": False
+                }
             except Exception as e:
                 logger.error(f"OpenAI API 호출 실패: {e}")
 
         # =========================================================================
-        # 5차: 로컬 룰베이스 결정론적 폴백
+        # 5차: 모든 provider 실패 - 결정론적 폴백 (실제 LLM 응답이 아님을 명시)
         # =========================================================================
-        last_user_msg = messages[-1]["content"] if messages else ""
-        self.last_provider_used = "Fallback Engine"
-        return f"[Project Antigravity Engine] '{last_user_msg[:40]}...' 분석 및 전략 처리 완료."
+        self.last_provider_used = "NONE_ALL_PROVIDERS_FAILED"
+        logger.error("모든 LLM provider 호출 실패 - 폴백 텍스트 반환 (실제 분석 아님)")
+        return {
+            "content": "",
+            "provider": "none", "model": None,
+            "usage": None, "is_fallback": True
+        }
 

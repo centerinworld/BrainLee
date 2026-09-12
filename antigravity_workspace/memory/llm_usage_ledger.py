@@ -1,0 +1,105 @@
+"""
+Project Antigravity: 실제 LLM 호출 사용량/추정비용 원장.
+
+기존 대시보드의 "Quota Progress Cards"(88.5% 등)와 CEO 백엔드의 subscription_quotas는
+하드코딩된 고정 숫자였다(이번 세션 조사로 확인) - 실제 호출 횟수/토큰과 무관했다.
+이 모듈은 llm_client.AntigravityLLMClient.chat_completion_with_meta()가 실제로 반환한
+usage(토큰수)만 기록한다. 추정비용은 대략적인 공개 가격표 기준이며 정확한 청구액이
+아니다 - 실제 사용량(횟수/토큰) 자체는 정확하지만, KRW/USD 환산 비용은 참고용이다.
+"""
+
+import os
+import sqlite3
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+DEFAULT_USAGE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llm_usage.sqlite3")
+
+# 1M 토큰당 USD 추정치 (공개 요금표 기준 근사값, 실제 청구서와 다를 수 있음).
+# gemini/groq 무료 티어는 0으로 두되, 유료 한도 초과 시 실제로는 요금이 붙을 수 있음을 주석으로 남긴다.
+ESTIMATED_COST_PER_1M_TOKENS_USD = {
+    "gemini": {"input": 0.0, "output": 0.0},       # 무료 티어 가정. 유료 승급 시 갱신 필요.
+    "grok": {"input": 0.0, "output": 0.0},          # Groq 무료 티어 가정.
+    "deepseek": {"input": 0.14, "output": 0.28},
+    "openai": {"input": 0.15, "output": 0.60},      # gpt-4o-mini 근사치.
+    "none": {"input": 0.0, "output": 0.0},
+}
+
+
+class LLMUsageLedger:
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or DEFAULT_USAGE_DB_PATH
+        self._init_schema()
+
+    def _init_schema(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS llm_usage_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                caller TEXT,
+                provider TEXT,
+                model TEXT,
+                prompt_tokens INTEGER,
+                completion_tokens INTEGER,
+                total_tokens INTEGER,
+                estimated_cost_usd REAL,
+                is_fallback INTEGER,
+                created_at TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def record(self, caller: str, result: Dict[str, Any]) -> Dict[str, Any]:
+        """llm_client.chat_completion_with_meta()가 반환한 dict를 그대로 넘기면 기록한다."""
+        provider = result.get("provider") or "none"
+        usage = result.get("usage") or {}
+        prompt_tokens = usage.get("prompt_tokens") or 0
+        completion_tokens = usage.get("completion_tokens") or 0
+        total_tokens = usage.get("total_tokens") or (prompt_tokens + completion_tokens)
+
+        rates = ESTIMATED_COST_PER_1M_TOKENS_USD.get(provider, {"input": 0.0, "output": 0.0})
+        estimated_cost = (
+            (prompt_tokens / 1_000_000) * rates["input"]
+            + (completion_tokens / 1_000_000) * rates["output"]
+        )
+
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            INSERT INTO llm_usage_log
+            (caller, provider, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, is_fallback, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            caller, provider, result.get("model"), prompt_tokens, completion_tokens, total_tokens,
+            estimated_cost, 1 if result.get("is_fallback") else 0, datetime.now().isoformat()
+        ))
+        conn.commit()
+        conn.close()
+        return {
+            "provider": provider, "total_tokens": total_tokens,
+            "estimated_cost_usd": estimated_cost, "is_fallback": bool(result.get("is_fallback"))
+        }
+
+    def summary(self) -> Dict[str, Any]:
+        """실제 누적 사용량 - 대시보드가 하드코딩된 숫자 대신 이걸 조회하도록 다음 단계에서 연결한다."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT provider,
+                   COUNT(*) AS call_count,
+                   SUM(total_tokens) AS total_tokens,
+                   SUM(estimated_cost_usd) AS estimated_cost_usd,
+                   SUM(is_fallback) AS fallback_count
+            FROM llm_usage_log
+            GROUP BY provider
+        """).fetchall()
+        conn.close()
+        by_provider = {r["provider"]: dict(r) for r in rows}
+        return {
+            "by_provider": by_provider,
+            "total_calls": sum(r["call_count"] for r in by_provider.values()),
+            "total_estimated_cost_usd": sum(r["estimated_cost_usd"] or 0.0 for r in by_provider.values()),
+        }
+
+
+default_ledger = LLMUsageLedger()

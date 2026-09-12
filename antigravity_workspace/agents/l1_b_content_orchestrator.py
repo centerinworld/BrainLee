@@ -17,9 +17,18 @@ from agents.l2_workers.defense_researcher import DefenseResearcherWorker
 logger = logging.getLogger("l1_b_content_orchestrator")
 
 class ContentOrchestrator:
-    def __init__(self, vector_store: Optional[MemoryVectorStore] = None, ledger: Optional[StateLedger] = None):
+    def __init__(
+        self,
+        vector_store: Optional[MemoryVectorStore] = None,
+        ledger: Optional[StateLedger] = None,
+        llm_client=None,
+        usage_ledger=None
+    ):
         self.vector_store = vector_store or MemoryVectorStore()
-        self.researcher = DefenseResearcherWorker(vector_store=self.vector_store)
+        # llm_client/usage_ledger는 테스트에서 실제 네트워크 호출 없이 주입할 수 있게 전달만 한다.
+        self.researcher = DefenseResearcherWorker(
+            vector_store=self.vector_store, llm_client=llm_client, usage_ledger=usage_ledger
+        )
         self.slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", "")
         self.published_reports: List[Dict[str, Any]] = []
         # A08: 발행 준비 상태를 재시작에도 남도록 영속 원장에 저장해, 같은 항목을 다시

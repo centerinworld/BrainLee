@@ -6,6 +6,7 @@ import unittest
 import asyncio
 import os
 import sys
+from unittest.mock import patch
 
 # Add workspace root to sys.path
 workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,8 +51,13 @@ class TestAntigravityAgents(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(t["status"], "PENDING")
             self.assertEqual(t["priority"], "HIGH")
 
-    async def test_full_autonomous_pipeline(self):
-        """전체 자율 오케스트레이션 파이프라인 (L1 -> L1-A/L1-B -> L2 -> QA) 통합 테스트"""
+    @patch(
+        "agents.l2_workers.defense_researcher.AntigravityLLMClient.chat_completion_with_meta",
+        return_value={"content": "", "provider": "none", "model": None, "usage": None, "is_fallback": True}
+    )
+    async def test_full_autonomous_pipeline(self, mock_llm):
+        """전체 자율 오케스트레이션 파이프라인 (L1 -> L1-A/L1-B -> L2 -> QA) 통합 테스트.
+        LLM 호출은 mock 처리 - 실제 네트워크/비용 없이 템플릿 폴백 경로로 검증한다."""
         pm = L1PMOwner(auto_heal=True)
         completed_tasks = await pm.run_autonomous_loop("삼성전자 및 KAI 방산 전체 파이프라인 가동")
         

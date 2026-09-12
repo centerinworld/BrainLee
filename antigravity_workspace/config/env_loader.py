@@ -7,6 +7,8 @@ Project Antigravity: 통합 환경 변수 및 API Key 로더
 import os
 from pathlib import Path
 
+_WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
+
 def load_unified_env():
     """
     루트 stock_dashboard/.env 및 관련 기존 시스템 설정을 탐색하여
@@ -16,6 +18,10 @@ def load_unified_env():
         Path("/Volumes/Realtek_NVME/stock_dashboard/.env"),
         Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/.env"),
         Path("/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/.env"),
+        # antigravity_workspace 자체 .env (예: ANTIGRAVITY_BRIDGE_API_KEY, STOCK_POSTGRES_URL,
+        # GOAL_INTAKE_BOT_TOKEN 등). 이전에는 이 파일이 후보에 없어서, 이 워크스페이스
+        # 전용 환경변수는 이 로더를 거치는 어떤 모듈에서도 실제로는 로드된 적이 없었다.
+        _WORKSPACE_ROOT / ".env",
     ]
 
     loaded_paths = []

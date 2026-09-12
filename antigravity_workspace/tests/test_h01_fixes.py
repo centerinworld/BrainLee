@@ -9,6 +9,7 @@ import sys
 import asyncio
 import tempfile
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,11 +26,20 @@ from fastapi import HTTPException
 import bridge_api
 from memory.vector_store import MemoryVectorStore
 from memory.state_ledger import StateLedger
+from memory.llm_usage_ledger import LLMUsageLedger
+from agents.l2_workers.defense_researcher import DefenseResearcherWorker
 
 # config.env_loader가 import 시점에 stock_dashboard/runtime/.env의 실제 POSTGRES_DATABASE_URL을
 # 프로세스 환경에 심어두므로(A10), SQLite 폴백 경로를 테스트할 때는 이 값으로 명시적으로
 # postgres_url을 덮어써 실제 운영 DB에 붙지 않도록 격리한다.
 UNREACHABLE_PG_URL = "postgresql://nouser:nopass@127.0.0.1:1/doesnotexist"
+
+
+class _StubLLMClient:
+    """실제 네트워크 호출 없이 항상 폴백 응답을 반환하는 테스트용 스텁 (llm_client 실사용 회귀
+    테스트는 TestLLMWiring에서 별도로 mock 응답을 통해 다룬다)."""
+    def chat_completion_with_meta(self, *args, **kwargs):
+        return {"content": "", "provider": "none", "model": None, "usage": None, "is_fallback": True}
 
 
 class TestA01ProcessWatchdog(unittest.TestCase):
@@ -131,7 +141,7 @@ class TestA04IntentAndBudget(unittest.TestCase):
 class TestA06ContentDelivery(unittest.TestCase):
     def test_prepared_reports_are_not_marked_as_sent(self):
         """A06: 실제 Slack/Notion 전송 없이 is_notified_slack/is_published_notion을 True로 표시하지 않는다."""
-        orchestrator = ContentOrchestrator()
+        orchestrator = ContentOrchestrator(llm_client=_StubLLMClient())
         result = asyncio.run(orchestrator.run_defense_intelligence_cycle())
         for item in result["reports"]:
             if item.get("delivery_status") == "PREPARED_NOT_SENT":
@@ -272,12 +282,12 @@ class TestA08StatePersistence(unittest.TestCase):
             return MemoryVectorStore(db_url="postgresql://nouser:nopass@127.0.0.1:1/doesnotexist", fallback_db_path=tmp.name)
 
         # 1회차: 콘텐츠 dedup 이력이 없는 새 vector_store
-        orchestrator1 = ContentOrchestrator(vector_store=make_isolated_vector_store(), ledger=ledger)
+        orchestrator1 = ContentOrchestrator(vector_store=make_isolated_vector_store(), ledger=ledger, llm_client=_StubLLMClient())
         result1 = asyncio.run(orchestrator1.run_defense_intelligence_cycle())
         self.assertGreater(result1["filtered_and_prepared"], 0)
 
         # "재시작" 시뮬레이션: vector_store는 또 새 것(dedup 이력 없음)이지만 ledger는 공유
-        orchestrator2 = ContentOrchestrator(vector_store=make_isolated_vector_store(), ledger=ledger)
+        orchestrator2 = ContentOrchestrator(vector_store=make_isolated_vector_store(), ledger=ledger, llm_client=_StubLLMClient())
         result2 = asyncio.run(orchestrator2.run_defense_intelligence_cycle())
         self.assertEqual(result2["filtered_and_prepared"], 0)
         skipped = [r for r in result2["reports"] if r.get("delivery_status") == "ALREADY_PREPARED_SKIPPED"]
@@ -310,6 +320,88 @@ class TestA10PostgresVsLegacySqlite(unittest.TestCase):
         import inspect
         src = inspect.getsource(QuantTraderWorker._get_universe_from_postgres)
         self.assertIn("MAX(base_date)", src)
+
+
+class TestLLMWiring(unittest.TestCase):
+    """defense_researcher가 실제 LLM 호출 경로를 쓰도록 바뀐 것(완전 자동화 1차 단계) 검증.
+    실제 네트워크는 절대 호출하지 않고 llm_client를 항상 mock한다."""
+
+    def setUp(self):
+        self.tmp_usage_db = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
+        self.tmp_usage_db.close()
+        self.usage_ledger = LLMUsageLedger(db_path=self.tmp_usage_db.name)
+
+    def tearDown(self):
+        os.unlink(self.tmp_usage_db.name)
+
+    def _make_worker(self, llm_client) -> DefenseResearcherWorker:
+        return DefenseResearcherWorker(llm_client=llm_client, usage_ledger=self.usage_ledger)
+
+    def test_well_formed_llm_response_is_used_and_labeled(self):
+        stub = unittest.mock.Mock()
+        stub.chat_completion_with_meta.return_value = {
+            "content": "[주요 팩트] 테스트 팩트\n[경쟁 환경 및 산업 영향] 테스트 영향\n[전사 사업 전략 관점의 시사점] 테스트 시사점",
+            "provider": "gemini", "model": "gemini-3.6-flash",
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+            "is_fallback": False
+        }
+        worker = self._make_worker(stub)
+        summary = worker.generate_three_line_strategy_summary("KF-21 테스트 제목", "본문", "DAPA")
+        self.assertEqual(summary["data_source"], "llm_generated:gemini")
+        self.assertIn("[주요 팩트] 테스트 팩트", summary["fact_summary"])
+
+    def test_malformed_llm_response_falls_back_to_template(self):
+        """A03/A07과 같은 패턴: 형식이 안 맞는 응답을 진짜 요약처럼 쓰지 않는다."""
+        stub = unittest.mock.Mock()
+        stub.chat_completion_with_meta.return_value = {
+            "content": "형식이 하나도 안 맞는 응답입니다.",
+            "provider": "gemini", "model": "gemini-3.6-flash",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            "is_fallback": False
+        }
+        worker = self._make_worker(stub)
+        summary = worker.generate_three_line_strategy_summary("KF-21 테스트", "본문", "DAPA")
+        self.assertEqual(summary["data_source"], "template_fallback")
+        self.assertIn("[주요 팩트]", summary["fact_summary"])
+
+    def test_all_providers_failed_falls_back_to_template(self):
+        stub = unittest.mock.Mock()
+        stub.chat_completion_with_meta.return_value = {
+            "content": "", "provider": "none", "model": None, "usage": None, "is_fallback": True
+        }
+        worker = self._make_worker(stub)
+        summary = worker.generate_three_line_strategy_summary("드론 테스트", "본문", "DAPA")
+        self.assertEqual(summary["data_source"], "template_fallback")
+
+    def test_usage_is_recorded_to_ledger(self):
+        stub = unittest.mock.Mock()
+        stub.chat_completion_with_meta.return_value = {
+            "content": "[주요 팩트] a\n[경쟁 환경 및 산업 영향] b\n[전사 사업 전략 관점의 시사점] c",
+            "provider": "deepseek", "model": "deepseek-chat",
+            "usage": {"prompt_tokens": 200, "completion_tokens": 100, "total_tokens": 300},
+            "is_fallback": False
+        }
+        worker = self._make_worker(stub)
+        worker.generate_three_line_strategy_summary("제목", "본문", "DAPA")
+        summary = self.usage_ledger.summary()
+        self.assertEqual(summary["total_calls"], 1)
+        self.assertIn("deepseek", summary["by_provider"])
+        self.assertEqual(summary["by_provider"]["deepseek"]["total_tokens"], 300)
+
+    def test_no_llm_client_construction_hits_network_at_import_time(self):
+        """llm_client 모듈 자체는 import만으로 API를 호출하지 않아야 한다(생성자는 env만 읽음)."""
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        self.assertEqual(client.last_provider_used, "NONE")
+
+
+class TestEnvLoaderIncludesWorkspaceEnv(unittest.TestCase):
+    def test_workspace_env_file_is_actually_loaded(self):
+        """이전에는 antigravity_workspace/.env 자체가 후보 목록에 없어서, 이 워크스페이스에
+        새로 추가한 환경변수(ANTIGRAVITY_BRIDGE_API_KEY 등)가 실제로는 로드된 적이 없었다."""
+        import config.env_loader as env_loader
+        loaded_paths = env_loader.load_unified_env()
+        self.assertTrue(any(p.endswith("antigravity_workspace/.env") for p in loaded_paths))
 
 
 if __name__ == "__main__":
