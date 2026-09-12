@@ -18,8 +18,9 @@ from agents.l2_workers.quant_trader import QuantTraderWorker
 logger = logging.getLogger("l1_a_dev_orchestrator")
 
 class DevOrchestrator:
-    def __init__(self, is_mock: bool = True):
-        self.codex_builder = CodexBuilder()
+    def __init__(self, is_mock: bool = True, codex_builder: Optional[CodexBuilder] = None):
+        # codex_builder 주입 경로 - 테스트에서 실제 LLM 네트워크 호출 없이 대체할 수 있게 한다.
+        self.codex_builder = codex_builder or CodexBuilder()
         self.claude_reviewer = ClaudeReviewer()
         self.quant_trader = QuantTraderWorker(is_mock=is_mock)
         self.self_healing_logs: List[Dict[str, Any]] = []

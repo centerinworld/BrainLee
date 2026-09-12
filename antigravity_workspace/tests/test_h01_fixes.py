@@ -69,8 +69,10 @@ class TestA01ProcessWatchdog(unittest.TestCase):
 
 class TestA02SelfHealing(unittest.TestCase):
     def test_comment_only_patch_is_not_auto_merged(self):
-        """A02: 주석 스캐폴드뿐인 패치는 리뷰 승인과 무관하게 자동 머지되면 안 된다."""
-        dev = DevOrchestrator(is_mock=True)
+        """A02: 주석 스캐폴드뿐인 패치는 리뷰 승인과 무관하게 자동 머지되면 안 된다.
+        LLM은 mock(is_fallback)해 실제 네트워크 호출 없이 스캐폴드 저하 경로를 검증한다."""
+        stub_builder = CodexBuilder(llm_client=_StubLLMClient())
+        dev = DevOrchestrator(is_mock=True, codex_builder=stub_builder)
         try:
             raise ValueError("테스트용 에러")
         except ValueError as e:
@@ -79,9 +81,37 @@ class TestA02SelfHealing(unittest.TestCase):
         self.assertIn("merge_blocked_reason", record)
 
     def test_generate_patch_reports_no_code_change(self):
-        builder = CodexBuilder()
+        """LLM이 전부 실패(mock)하면 has_code_change=False로 스캐폴드 저하."""
+        builder = CodexBuilder(llm_client=_StubLLMClient())
         patch = builder.generate_patch({"error_type": "ValueError", "error_message": "x", "target_file": "f.py"})
         self.assertFalse(patch["has_code_change"])
+
+    def test_generate_patch_accepts_real_unified_diff(self):
+        stub = unittest.mock.Mock()
+        stub.chat_completion_with_meta.return_value = {
+            "content": "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,2 @@\n+# fix\n x = 1\n",
+            "provider": "deepseek", "model": "deepseek-chat",
+            "usage": {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70},
+            "is_fallback": False
+        }
+        builder = CodexBuilder(llm_client=stub)
+        patch = builder.generate_patch({"error_type": "ValueError", "error_message": "x", "target_file": "f.py"})
+        self.assertTrue(patch["has_code_change"])
+        self.assertEqual(patch["status"], "DRAFT_DIFF_GENERATED")
+
+    def test_generate_patch_rejects_non_diff_response(self):
+        """형식이 unified diff가 아니면(설명문만 등) has_code_change=False로 저하."""
+        stub = unittest.mock.Mock()
+        stub.chat_completion_with_meta.return_value = {
+            "content": "이 에러는 null 체크를 추가하면 해결됩니다.",
+            "provider": "deepseek", "model": "deepseek-chat",
+            "usage": {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70},
+            "is_fallback": False
+        }
+        builder = CodexBuilder(llm_client=stub)
+        patch = builder.generate_patch({"error_type": "ValueError", "error_message": "x", "target_file": "f.py"})
+        self.assertFalse(patch["has_code_change"])
+        self.assertEqual(patch["status"], "DRAFT_ONLY")
         self.assertEqual(patch["status"], "DRAFT_ONLY")
 
 
