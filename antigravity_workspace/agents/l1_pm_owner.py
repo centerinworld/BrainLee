@@ -41,24 +41,28 @@ class L1PMOwner:
         timestamp_id = datetime.now().strftime('%Y%m%d%H%M%S')
         
         # 의도 분석 (키워드 및 도메인 매핑)
+        # 일반 질문("전체"/방산 무관 문의 등)이 자동으로 주문 실행으로 이어지지 않도록,
+        # 도메인 매칭(is_stock/is_defense)과 주문 실행 의도(is_order_intent)를 분리한다.
         is_stock = any(k in user_prompt for k in ["주식", "매매", "수급", "포트폴리오", "트레이딩", "삼성전자", "퀀트", "가격", "재무"])
         is_defense = any(k in user_prompt for k in ["방산", "KAI", "항공", "KF-21", "FA-50", "DAPA", "방사청", "국방", "한화에어로"])
-        
-        if is_stock or ("전체" in user_prompt) or not is_defense:
+        is_order_intent = any(k in user_prompt for k in ["매수", "매도", "주문", "리밸런싱 실행", "체결"])
+
+        if is_stock or ("전체" in user_prompt and is_stock):
             real_universe = self.dev_orchestrator.quant_trader.get_real_universe(limit=5)
             tasks.append({
                 "task_id": f"TASK_{timestamp_id}_DEV_01",
                 "domain": "dev_orchestrator",
-                "title": "주식 퀀트 팩터 분석 및 포트폴리오 리밸런싱 주문 실행",
+                "title": "주식 퀀트 팩터 분석" + (" 및 포트폴리오 리밸런싱 주문 실행" if is_order_intent else " (분석 전용, 주문 미실행)"),
                 "priority": "HIGH",
                 "deadline": "IMMEDIATE",
                 "status": "PENDING",
                 "payload": {
-                    "universe": real_universe
+                    "universe": real_universe,
+                    "execute_orders": is_order_intent
                 }
             })
 
-        if is_defense or ("전체" in user_prompt) or not is_stock:
+        if is_defense or ("전체" in user_prompt and is_defense):
             tasks.append({
                 "task_id": f"TASK_{timestamp_id}_CONTENT_02",
                 "domain": "content_orchestrator",
@@ -68,6 +72,9 @@ class L1PMOwner:
                 "status": "PENDING",
                 "payload": {}
             })
+
+        if not tasks:
+            logger.info(f"[L1 PM Intent Parsing] 주식/방산 도메인으로 분류되지 않은 요청 - 실행 태스크 생성 안 함: {user_prompt[:80]!r}")
 
         self.tasks.extend(tasks)
         logger.info(f"[L1 PM Intent Parsing] {len(tasks)}개의 실행 DAG 태스크 분해 완료")
@@ -88,7 +95,8 @@ class L1PMOwner:
         try:
             if domain == "dev_orchestrator":
                 universe = task["payload"].get("universe", [])
-                result = await self.dev_orchestrator.run_trading_pipeline(universe)
+                execute_orders = task["payload"].get("execute_orders", False)
+                result = await self.dev_orchestrator.run_trading_pipeline(universe, execute_orders=execute_orders)
             elif domain == "content_orchestrator":
                 result = await self.content_orchestrator.run_defense_intelligence_cycle()
             else:

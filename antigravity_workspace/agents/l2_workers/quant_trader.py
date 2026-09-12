@@ -22,15 +22,25 @@ class QuantTraderWorker:
         self.orders: List[Dict[str, Any]] = []
         self.rate_limit_delay = 1.0
 
-    def get_real_universe(self, limit: int = 10, sector_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        """stock_dashboard DB(stock.db)에서 실제 상장 종목 유니버스 및 팩터 조회"""
+    def get_real_universe(
+        self,
+        limit: int = 10,
+        sector_filter: Optional[str] = None,
+        allow_fixture_fallback: bool = False
+    ) -> List[Dict[str, Any]]:
+        """stock_dashboard DB(stock.db)에서 실제 상장 종목 유니버스 및 팩터 조회.
+        DB가 없으면 기본값으로 빈 목록을 반환한다(missing 상태를 실데이터처럼 위장하지 않음).
+        allow_fixture_fallback=True를 명시한 데모 호출에서만 고정 샘플 종목을 반환한다."""
         if not os.path.exists(self.stock_db_path):
-            logger.warning(f"stock.db 파일 미발견: {self.stock_db_path}. 기본 폴백 유니버스 사용.")
+            logger.error(f"stock.db 파일 미발견: {self.stock_db_path}. 운영 경로는 빈 유니버스 반환(degraded).")
+            if not allow_fixture_fallback:
+                return []
+            logger.warning("allow_fixture_fallback=True: 데모용 고정 샘플 유니버스 반환 (실데이터 아님)")
             return [
-                {"code": "005930", "name": "삼성전자", "price": 180100.0, "market": "KOSPI", "sector": "IT", "per": 18.67, "roe": 12.5},
-                {"code": "000660", "name": "SK하이닉스", "price": 922000.0, "market": "KOSPI", "sector": "IT", "per": 13.74, "roe": 18.2},
-                {"code": "047810", "name": "한국항공우주", "price": 54200.0, "market": "KOSPI", "sector": "항공/방산", "per": 22.4, "roe": 8.9},
-                {"code": "012450", "name": "한화에어로스페이스", "price": 285000.0, "market": "KOSPI", "sector": "항공/방산", "per": 28.1, "roe": 14.3}
+                {"code": "005930", "name": "삼성전자", "price": 180100.0, "market": "KOSPI", "sector": "IT", "per": 18.67, "roe": 12.5, "is_fixture": True},
+                {"code": "000660", "name": "SK하이닉스", "price": 922000.0, "market": "KOSPI", "sector": "IT", "per": 13.74, "roe": 18.2, "is_fixture": True},
+                {"code": "047810", "name": "한국항공우주", "price": 54200.0, "market": "KOSPI", "sector": "항공/방산", "per": 22.4, "roe": 8.9, "is_fixture": True},
+                {"code": "012450", "name": "한화에어로스페이스", "price": 285000.0, "market": "KOSPI", "sector": "항공/방산", "per": 28.1, "roe": 14.3, "is_fixture": True}
             ]
 
         try:
@@ -62,7 +72,8 @@ class QuantTraderWorker:
                     "price": float(r["close"] or 0.0),
                     "market_cap": float(r["market_cap"] or 0.0),
                     "per": float(r["per"] or 0.0),
-                    "roe": float(r["roe"] or 0.0)
+                    "roe": float(r["roe"] or 0.0),
+                    "is_fixture": False
                 })
             return result
         except Exception as e:
@@ -70,26 +81,31 @@ class QuantTraderWorker:
             return []
 
     async def fetch_fnguide_consensus(self, stock_code: str) -> Dict[str, Any]:
-        """에프앤가이드(Fnguide) 컨센서스 및 목표가 조회"""
+        """에프앤가이드(Fnguide) 컨센서스 및 목표가 조회.
+        실제 Fnguide 연동이 구현되어 있지 않아 고정값을 반환한다 — 실시간 데이터가 아니다."""
         await asyncio.sleep(0.02)
-        # stock.db 컨센서스 테이블 또는 실시간 추정치
+        logger.warning(f"[미구현] fetch_fnguide_consensus({stock_code}): 실제 연동 없음, 고정값 반환")
         return {
             "stock_code": stock_code,
             "target_price": 220000 if stock_code == "005930" else 360000,
             "opinion": "BUY",
             "forward_per": 14.5,
             "forward_eps": 12500,
+            "data_source": "fixture_not_live",
             "fetched_at": datetime.now().isoformat()
         }
 
     async def fetch_ecos_macro_rate(self) -> Dict[str, Any]:
-        """한국은행 ECOS 기준금리 및 주요 거시지표 조회"""
+        """한국은행 ECOS 기준금리 및 주요 거시지표 조회.
+        실제 ECOS API 연동이 구현되어 있지 않아 고정값을 반환한다 — 실시간 데이터가 아니다."""
         await asyncio.sleep(0.02)
+        logger.warning("[미구현] fetch_ecos_macro_rate(): 실제 ECOS 연동 없음, 고정값 반환")
         return {
             "indicator_code": "ECOS_BASE_RATE",
             "indicator_name": "한국은행 기준금리",
             "val": 3.00,
             "unit": "%",
+            "data_source": "fixture_not_live",
             "fetched_at": datetime.now().isoformat()
         }
 
@@ -109,10 +125,30 @@ class QuantTraderWorker:
         quantity: int,
         strategy_name: str = "Quant_Rebalance_V2"
     ) -> Dict[str, Any]:
-        """증권사 API 또는 모의투자 환경으로 주문 전송 및 체결"""
+        """증권사 API 또는 모의투자 환경으로 주문 전송 및 체결.
+        실제 증권사 API 연동이 구현되어 있지 않으므로, 실제 체결 증거 없이 FILLED로 표시하지 않는다."""
         await asyncio.sleep(0.05)
         order_id = f"ORD_{datetime.now().strftime('%Y%m%d%H%M%S')}_{stock_code}"
-        
+
+        if not self.is_mock:
+            # is_mock=False라는 설정값만으로 실전 상태를 표기하지 않는다 - 실제 증권사 체결
+            # 연동이 없으므로 여기서 주문을 차단하고 사실대로 기록한다.
+            logger.error(f"[실전 주문 차단] {order_id}: 실제 증권사 API 연동 미구현 - 체결 처리 불가")
+            order_record = {
+                "order_id": order_id,
+                "stock_code": stock_code,
+                "stock_name": stock_name,
+                "order_type": order_type.upper(),
+                "price": price,
+                "quantity": quantity,
+                "status": "BLOCKED_NO_BROKER_INTEGRATION",
+                "strategy_name": strategy_name,
+                "is_mock": self.is_mock,
+                "filled_at": None
+            }
+            self.orders.append(order_record)
+            return order_record
+
         order_record = {
             "order_id": order_id,
             "stock_code": stock_code,
@@ -120,11 +156,11 @@ class QuantTraderWorker:
             "order_type": order_type.upper(),
             "price": price,
             "quantity": quantity,
-            "status": "FILLED",
+            "status": "SIMULATED_FILL",
             "strategy_name": strategy_name,
             "is_mock": self.is_mock,
             "filled_at": datetime.now().isoformat()
         }
         self.orders.append(order_record)
-        logger.info(f"[{'모의' if self.is_mock else '실전'}] 주문 체결 완료: {order_id} {stock_name}({stock_code}) {order_type} {quantity}주 @ {price:,.0f}원")
+        logger.info(f"[모의] 주문 시뮬레이션 완료(실제 체결 아님): {order_id} {stock_name}({stock_code}) {order_type} {quantity}주 @ {price:,.0f}원")
         return order_record

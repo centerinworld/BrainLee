@@ -66,7 +66,10 @@ class CodexBuilder:
             "patch_description": patch_description,
             "suggested_fix": suggested_fix,
             "target_file": target_file,
-            "status": "PATCH_GENERATED"
+            # suggested_fix는 주석 스캐폴드일 뿐 실행 가능한 diff가 아니므로, 이 값으로
+            # "패치 완료"를 표시하지 않는다. 실제 코드 diff 생성 전까지는 항상 False.
+            "has_code_change": False,
+            "status": "DRAFT_ONLY"
         }
 
     def execute_cli_command(self, cmd: str) -> Dict[str, Any]:

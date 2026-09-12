@@ -530,6 +530,13 @@ with tab4:
     st.json(status_info)
     
     if st.button("🧹 미사용 중복 포트 정리 및 프로세스 최적화", use_container_width=True):
-        cleaned = clean_redundant_ports()
-        st.success(f"정리 완료: {len(cleaned)}개 프로세스 최적화됨")
+        actions = clean_redundant_ports(dry_run=False)
+        killed = [a for a in actions if a["killed"]]
+        skipped = [a for a in actions if not a["owned"]]
+        if killed:
+            st.success(f"정리 완료: {len(killed)}개 프로세스 종료됨")
+        if skipped:
+            st.warning(f"소유권 미확인으로 건너뜀: {len(skipped)}개 (수동 확인 필요) — {skipped}")
+        if not actions:
+            st.info("정리 대상 포트 점유 프로세스 없음")
         st.rerun()

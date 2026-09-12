@@ -24,41 +24,56 @@ class DevOrchestrator:
         self.quant_trader = QuantTraderWorker(is_mock=is_mock)
         self.self_healing_logs: List[Dict[str, Any]] = []
 
-    async def run_trading_pipeline(self, universe: List[Dict[str, str]]) -> Dict[str, Any]:
+    async def run_trading_pipeline(self, universe: List[Dict[str, str]], execute_orders: bool = False) -> Dict[str, Any]:
         """
-        주식보드 정량 수집 -> 팩터 리밸런싱 -> 모의/실전 주문 체결 파이프라인
+        주식보드 정량 수집 -> 팩터 리밸런싱 -> (execute_orders=True인 경우에만) 모의 주문 체결 파이프라인.
+        분석 전용 요청(execute_orders=False)에서는 실행 없이 리밸런싱 비중만 산출한다.
         """
-        logger.info(f"[L1-A] 퀀트 트레이딩 파이프라인 개시 (유니버스 종목 수: {len(universe)})")
-        
+        logger.info(f"[L1-A] 퀀트 파이프라인 개시 (유니버스 종목 수: {len(universe)}, 주문 실행: {execute_orders})")
+
         # 1. 거시 지표 수집
         macro = await self.quant_trader.fetch_ecos_macro_rate()
-        
+
         # 2. 종목별 컨센서스 및 리밸런싱 비중 산출
         codes = [item["code"] for item in universe]
         weights = await self.quant_trader.calculate_rebalancing_weights(codes)
-        
-        # 3. 주문 실행
+
+        # 3. 주문 실행 (요청된 경우에만, 예산 부족 시 0주 - 강제 최소 1주 없음)
+        BUDGET_PER_REBALANCE_KRW = 10_000_000
         executed_orders = []
-        for item in universe:
-            code = item["code"]
-            name = item["name"]
-            price = item.get("price", 70000.0)
-            qty = max(1, int(10000000 * weights.get(code, 0.2) / price))
-            
-            order = await self.quant_trader.execute_order(
-                stock_code=code,
-                stock_name=name,
-                order_type="BUY",
-                price=price,
-                quantity=qty,
-                strategy_name="Quant_L1A_Rebalancer"
-            )
-            executed_orders.append(order)
+        if execute_orders:
+            for item in universe:
+                code = item["code"]
+                name = item["name"]
+                price = item.get("price", 0.0)
+                if price <= 0:
+                    executed_orders.append({
+                        "stock_code": code, "stock_name": name, "status": "SKIPPED_INVALID_PRICE"
+                    })
+                    continue
+
+                qty = int(BUDGET_PER_REBALANCE_KRW * weights.get(code, 0.0) / price)
+                if qty <= 0:
+                    executed_orders.append({
+                        "stock_code": code, "stock_name": name, "status": "SKIPPED_INSUFFICIENT_BUDGET", "quantity": qty
+                    })
+                    continue
+
+                order = await self.quant_trader.execute_order(
+                    stock_code=code,
+                    stock_name=name,
+                    order_type="BUY",
+                    price=price,
+                    quantity=qty,
+                    strategy_name="Quant_L1A_Rebalancer"
+                )
+                executed_orders.append(order)
 
         return {
             "status": "SUCCESS",
             "macro_indicator": macro,
             "rebalance_weights": weights,
+            "orders_executed": execute_orders,
             "executed_orders": executed_orders,
             "timestamp": datetime.now().isoformat()
         }
@@ -84,14 +99,21 @@ class DevOrchestrator:
         
         # 4. claude_reviewer 교차 검증
         review = self.claude_reviewer.validate_patch(patch)
-        
+
         # 5 & 6. 테스트 및 머지 판단
+        # is_auto_merged는 실제 코드 diff + 테스트 실행 + git 커밋/머지가 모두 확인된 경우에만
+        # True가 되어야 한다. 현재 codex_builder는 주석 스캐폴드만 생성하고(has_code_change=False),
+        # 이 오케스트레이터에는 테스트 실행/git 머지 절차가 구현되어 있지 않으므로 항상 False다.
         is_auto_merged = False
-        if review["approved"]:
-            is_auto_merged = True
-            logger.info(f"[L1-A Self-Healing] 패치 승인 완료 (점수: {review['score']}) -> 자동 머지 완료: {patch['branch_name']}")
+        if not patch.get("has_code_change"):
+            merge_blocked_reason = "생성된 패치가 주석 스캐폴드뿐이며 실행 가능한 diff가 없어 자동 머지 불가"
+            logger.warning(f"[L1-A Self-Healing] {merge_blocked_reason}: {patch['branch_name']}")
+        elif not review["approved"]:
+            merge_blocked_reason = f"패치 반려됨: {review['findings']}"
+            logger.error(f"[L1-A Self-Healing] {merge_blocked_reason}")
         else:
-            logger.error(f"[L1-A Self-Healing] 패치 반려됨: {review['findings']}")
+            merge_blocked_reason = "테스트 실행 및 git 커밋/머지 절차가 구현되지 않아 자동 머지 미수행 - 수동 검토 필요"
+            logger.warning(f"[L1-A Self-Healing] {merge_blocked_reason}: {patch['branch_name']}")
 
         healing_record = {
             "id": len(self.self_healing_logs) + 1,
@@ -104,6 +126,8 @@ class DevOrchestrator:
             "review_score": review["score"],
             "review_findings": review["findings"],
             "is_auto_merged": is_auto_merged,
+            "merge_blocked_reason": merge_blocked_reason,
+            "status": "PROPOSED_PATCH_PENDING_HUMAN_REVIEW",
             "timestamp": datetime.now().isoformat()
         }
         self.self_healing_logs.append(healing_record)
