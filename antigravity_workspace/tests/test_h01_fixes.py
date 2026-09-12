@@ -20,6 +20,8 @@ from agents.l2_workers.quant_trader import QuantTraderWorker
 from agents.l1_a_dev_orchestrator import DevOrchestrator
 from agents.l1_pm_owner import L1PMOwner
 from agents.l1_b_content_orchestrator import ContentOrchestrator
+from fastapi import HTTPException
+import bridge_api
 
 
 class TestA01ProcessWatchdog(unittest.TestCase):
@@ -125,6 +127,32 @@ class TestA06ContentDelivery(unittest.TestCase):
             if item.get("delivery_status") == "PREPARED_NOT_SENT":
                 self.assertFalse(item["is_notified_slack"])
                 self.assertFalse(item["is_published_notion"])
+
+
+class TestA05BridgeAuth(unittest.TestCase):
+    def test_trigger_blocked_when_no_server_key_configured(self):
+        """A05: 서버에 API 키가 설정되지 않으면 트리거는 무조건 차단(fail-closed)돼야 한다."""
+        with patch.object(bridge_api, "_BRIDGE_API_KEY", None):
+            with self.assertRaises(HTTPException) as ctx:
+                bridge_api._verify_bridge_api_key("무슨키든")
+            self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_trigger_blocked_with_wrong_key(self):
+        """A05: 잘못된 API 키는 거부된다."""
+        with patch.object(bridge_api, "_BRIDGE_API_KEY", "correct-key"):
+            with self.assertRaises(HTTPException) as ctx:
+                bridge_api._verify_bridge_api_key("wrong-key")
+            self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_trigger_allowed_with_correct_key(self):
+        """A05: 올바른 API 키는 통과해야 한다."""
+        with patch.object(bridge_api, "_BRIDGE_API_KEY", "correct-key"):
+            bridge_api._verify_bridge_api_key("correct-key")  # 예외 없이 통과
+
+    def test_cors_no_longer_wildcard(self):
+        """A05: CORS allow_origins가 더 이상 '*' 전체 허용이 아니다."""
+        self.assertNotIn("*", bridge_api._allowed_origins)
+        self.assertIn("https://newsinfo.cloud", bridge_api._allowed_origins)
 
 
 if __name__ == "__main__":
