@@ -28,6 +28,7 @@ from memory.vector_store import MemoryVectorStore
 from memory.state_ledger import StateLedger
 from memory.llm_usage_ledger import LLMUsageLedger
 from agents.l2_workers.defense_researcher import DefenseResearcherWorker
+from agents.l2_workers.claude_reviewer import ClaudeReviewer
 
 # config.env_loader가 import 시점에 stock_dashboard/runtime/.env의 실제 POSTGRES_DATABASE_URL을
 # 프로세스 환경에 심어두므로(A10), SQLite 폴백 경로를 테스트할 때는 이 값으로 명시적으로
@@ -113,6 +114,65 @@ class TestA02SelfHealing(unittest.TestCase):
         self.assertFalse(patch["has_code_change"])
         self.assertEqual(patch["status"], "DRAFT_ONLY")
         self.assertEqual(patch["status"], "DRAFT_ONLY")
+
+
+class TestClaudeReviewerDiffHandling(unittest.TestCase):
+    """2026-09-12 외부 검토에서 지적된 실제 버그: codex_builder가 진짜 unified diff를
+    반환하게 된 뒤, claude_reviewer가 그걸 그대로 ast.parse()해 항상 SyntaxError로
+    REJECTED 처리하고 있었다(diff의 @@ 헤더는 유효한 파이썬 구문이 아님)."""
+
+    def test_real_diff_is_not_misclassified_as_syntax_error(self):
+        reviewer = ClaudeReviewer()
+        diff = "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,2 @@\n+x = 1\n+y = 2\n"
+        result = reviewer.review_code_quality(diff, "f.py")
+        self.assertNotEqual(result["status"], "REJECTED")
+        self.assertEqual(result["status"], "PARTIAL_REVIEW_DIFF")
+        self.assertFalse(result["is_full_syntax_validated"])
+
+    def test_diff_with_hardcoded_secret_in_added_lines_is_flagged(self):
+        reviewer = ClaudeReviewer()
+        diff = '--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,2 @@\n+api_key = "sk-abcdefghijklmnopqrstuvwx"\n'
+        result = reviewer.review_code_quality(diff, "f.py")
+        self.assertFalse(result["approved"])
+
+    def test_diff_with_eval_in_added_lines_is_flagged(self):
+        reviewer = ClaudeReviewer()
+        diff = "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,2 @@\n+eval(user_input)\n"
+        result = reviewer.review_code_quality(diff, "f.py")
+        self.assertFalse(result["approved"])
+
+    def test_removed_lines_are_not_scanned_as_added_code(self):
+        """제거된(-) 줄에 있는 패턴은 '추가된' 걸로 오탐하면 안 된다."""
+        reviewer = ClaudeReviewer()
+        diff = '--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,1 @@\n-api_key = "sk-abcdefghijklmnopqrstuvwx"\n+api_key = os.getenv("API_KEY")\n'
+        result = reviewer.review_code_quality(diff, "f.py")
+        self.assertTrue(result["approved"])
+
+    def test_plain_python_code_still_uses_full_ast_check(self):
+        """diff가 아닌 일반 코드(주석 스캐폴드 등)는 기존처럼 전체 ast.parse() 검사를 받는다."""
+        reviewer = ClaudeReviewer()
+        result = reviewer.review_code_quality("# just a comment scaffold\n", "f.py")
+        self.assertIn(result["status"], ("APPROVED", "REJECTED"))
+        self.assertNotEqual(result["status"], "PARTIAL_REVIEW_DIFF")
+
+    def test_self_healing_loop_with_real_diff_does_not_falsely_reject_as_syntax_error(self):
+        """전체 경로 회귀: self_healing_loop가 진짜 diff를 만들었을 때 review_findings에
+        가짜 SyntaxError가 나오면 안 된다(머지는 여전히 A02 게이트로 항상 차단됨)."""
+        stub = unittest.mock.Mock()
+        stub.chat_completion_with_meta.return_value = {
+            "content": "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,2 @@\n+x = 1\n",
+            "provider": "deepseek", "model": "deepseek-chat",
+            "usage": {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70},
+            "is_fallback": False
+        }
+        builder = CodexBuilder(llm_client=stub)
+        dev = DevOrchestrator(is_mock=True, codex_builder=builder)
+        try:
+            raise ValueError("테스트용 에러")
+        except ValueError as e:
+            record = dev.self_healing_loop(e)
+        self.assertNotIn("SyntaxError", " ".join(record["review_findings"]))
+        self.assertFalse(record["is_auto_merged"])  # A02 게이트는 여전히 유효
 
 
 class TestA03QuantTrader(unittest.TestCase):

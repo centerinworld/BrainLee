@@ -21,6 +21,7 @@ Project Antigravity: 목표 완료 여부의 이중 AI 검증.
 
 import os
 import json
+import hashlib
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -142,6 +143,11 @@ class GoalVerifier:
                 }
 
         prompt = _build_verdict_prompt(goal, evidence)
+        # 2026-09-12 검토 지적(정확함) 수정: 두 검증자가 반드시 "같은 증거"에 대해 판정한
+        # 것으로 묶이도록 이 라운드의 evidence_hash를 한 번만 계산해 둘 다에게 공유한다.
+        # 이전에는 GoalsRegistry가 검증자별 evidence 텍스트 없이 해시를 자체 계산해,
+        # 서로 다른 시점/증거의 판정이 섞여 완료될 수 있었다.
+        evidence_hash = hashlib.sha256(evidence.encode("utf-8")).hexdigest()
 
         outcomes: List[Dict[str, Any]] = []
         for provider in providers:
@@ -154,9 +160,10 @@ class GoalVerifier:
                 verifier=f"{provider}:{raw.get('model')}",
                 verdict=parsed["verdict"],
                 confidence=parsed.get("confidence"),
-                evidence=parsed.get("reason", "")
+                evidence=parsed.get("reason", ""),
+                evidence_hash=evidence_hash
             )
             outcomes.append({"provider": provider, "verdict": parsed["verdict"], "confidence": parsed.get("confidence")})
 
         updated_goal = self.registry.get_goal(goal_id)
-        return {"goal_id": goal_id, "status": updated_goal["status"], "outcomes": outcomes}
+        return {"goal_id": goal_id, "status": updated_goal["status"], "outcomes": outcomes, "evidence_hash": evidence_hash}

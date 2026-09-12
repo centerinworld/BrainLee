@@ -11,6 +11,7 @@ Project Antigravity: 목표(Goals) 레지스트리 + 이중 AI 검증 완료 게
 """
 
 import os
+import hashlib
 import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -49,6 +50,7 @@ class GoalsRegistry:
                 verdict TEXT,
                 confidence REAL,
                 evidence TEXT,
+                evidence_hash TEXT,
                 created_at TEXT
             )
         """)
@@ -119,19 +121,27 @@ class GoalsRegistry:
 
     def record_verification(
         self, goal_id: str, verifier: str, verdict: str,
-        confidence: Optional[float] = None, evidence: str = ""
+        confidence: Optional[float] = None, evidence: str = "", evidence_hash: Optional[str] = None
     ) -> Dict[str, Any]:
-        """검증자 한 명의 판정을 기록한다. 이 호출로 완료 조건(핵심 목표: 서로 다른
-        검증자 2명 이상이 최신 판정에서 모두 COMPLETE_100)이 충족되면 자동으로
-        goals.status를 COMPLETED로 갱신한다."""
+        """검증자 한 명의 판정을 기록한다.
+
+        2026-09-12 검토 지적(정확함) 수정: 완료 조건은 "검증자 2명의 역대 최신 판정"이
+        아니라 "**같은 evidence_hash**에 대해 서로 다른 검증자 2명이 모두 COMPLETE_100"
+        이어야 한다. 이전 버전은 검증자 A가 오래된 증거로 승인한 기록과 검증자 B가
+        전혀 다른(더 약한) 새 증거로 승인한 기록이 섞여 완료 처리될 수 있었다 - 두 검증자가
+        같은 것을 보고 동의한 적이 없어도 완료됐다. evidence_hash가 주어지지 않으면
+        evidence 텍스트를 해시해 채운다(호출자가 매 verify() 호출마다 동일 해시를
+        両쪽 검증자에게 공유해야 "같은 라운드"로 묶인다)."""
+        if evidence_hash is None:
+            evidence_hash = hashlib.sha256((evidence or "").encode("utf-8")).hexdigest()
         conn = sqlite3.connect(self.db_path)
         conn.execute("""
-            INSERT INTO goal_verifications (goal_id, verifier, verdict, confidence, evidence, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (goal_id, verifier, verdict, confidence, evidence, datetime.now().isoformat()))
+            INSERT INTO goal_verifications (goal_id, verifier, verdict, confidence, evidence, evidence_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (goal_id, verifier, verdict, confidence, evidence, evidence_hash, datetime.now().isoformat()))
         conn.commit()
         conn.close()
-        return self._maybe_complete(goal_id)
+        return self._maybe_complete(goal_id, evidence_hash)
 
     def get_verifications(self, goal_id: str) -> List[Dict[str, Any]]:
         conn = sqlite3.connect(self.db_path)
@@ -142,14 +152,18 @@ class GoalsRegistry:
         conn.close()
         return [dict(r) for r in rows]
 
-    def _maybe_complete(self, goal_id: str) -> Dict[str, Any]:
+    def _maybe_complete(self, goal_id: str, evidence_hash: str) -> Dict[str, Any]:
+        """evidence_hash로 스코프를 좁혀, 서로 다른 검증자 2명이 **같은 증거**에 대해
+        모두 COMPLETE_100이라고 말했을 때만 완료 처리한다 - 서로 다른 라운드/증거의
+        판정을 섞어 완료시키지 않는다."""
         goal = self.get_goal(goal_id)
         if not goal or goal["status"] == "COMPLETED" or goal["is_continuous"]:
             return {"completed": False, "reason": "지속형 목표이거나 이미 종결됨" if goal else "존재하지 않는 목표"}
 
         verifications = self.get_verifications(goal_id)  # 최신순(DESC)
+        same_round = [v for v in verifications if v["evidence_hash"] == evidence_hash]
         latest_by_verifier: Dict[str, str] = {}
-        for v in verifications:
+        for v in same_round:  # 이미 최신순이므로 처음 만나는 것이 그 검증자의 이 라운드 내 최신 판정
             if v["verifier"] not in latest_by_verifier:
                 latest_by_verifier[v["verifier"]] = v["verdict"]
 

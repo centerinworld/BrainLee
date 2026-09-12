@@ -79,12 +79,39 @@ class TestGoalsRegistry(unittest.TestCase):
         self.assertFalse(result["completed"])
 
     def test_latest_verdict_from_same_verifier_overrides_earlier_one(self):
-        """검증자가 나중에 판정을 바꾸면(NOT_COMPLETE -> COMPLETE_100) 최신 판정만 유효해야 한다."""
+        """검증자가 같은 라운드(같은 evidence_hash)에서 판정을 바꾸면(NOT_COMPLETE ->
+        COMPLETE_100) 최신 판정만 유효해야 한다."""
         seed_default_goals(self.registry)
-        self.registry.record_verification("goal_1_zero_defect_data", "gemini:x", VERDICT_INCOMPLETE)
-        self.registry.record_verification("goal_1_zero_defect_data", "gemini:x", VERDICT_COMPLETE)
-        result = self.registry.record_verification("goal_1_zero_defect_data", "deepseek:y", VERDICT_COMPLETE)
+        self.registry.record_verification("goal_1_zero_defect_data", "gemini:x", VERDICT_INCOMPLETE, evidence_hash="round-1")
+        self.registry.record_verification("goal_1_zero_defect_data", "gemini:x", VERDICT_COMPLETE, evidence_hash="round-1")
+        result = self.registry.record_verification("goal_1_zero_defect_data", "deepseek:y", VERDICT_COMPLETE, evidence_hash="round-1")
         self.assertTrue(result["completed"])
+
+    def test_different_evidence_rounds_do_not_combine_to_complete(self):
+        """2026-09-12 검토에서 지적된 실제 버그의 회귀 테스트: 검증자 A가 증거X에 대해
+        승인하고, 검증자 B가 전혀 다른 증거Y에 대해 (따로) 승인해도 - 둘이 같은 것을 보고
+        동의한 적이 없으므로 - 완료되면 안 된다. 이전 버전은 검증자 이름별 '역대 최신
+        판정'만 봐서 이 경우도 완료 처리했다."""
+        seed_default_goals(self.registry)
+        self.registry.record_verification(
+            "goal_1_zero_defect_data", "gemini:x", VERDICT_COMPLETE, evidence_hash="evidence-X-weak"
+        )
+        result = self.registry.record_verification(
+            "goal_1_zero_defect_data", "deepseek:y", VERDICT_COMPLETE, evidence_hash="evidence-Y-different"
+        )
+        self.assertFalse(result["completed"])
+        self.assertEqual(self.registry.get_goal("goal_1_zero_defect_data")["status"], "ACTIVE")
+
+    def test_third_verifier_disagreement_in_same_round_blocks_completion(self):
+        """같은 라운드에서 A/B가 승인해도 C가 반대하면(같은 라운드 내) - 문서 회귀 사례
+        '두 승인이 있으면 C가 반대해도 완료' 시나리오가 재발하지 않는지는 현재 구현이
+        '2명 이상 동의'만 요구하므로 C의 반대 자체가 완료를 막지는 않는다(정책 선택).
+        이 테스트는 최소한 서로 다른 라운드끼리 섞이지 않음을 재확인한다."""
+        seed_default_goals(self.registry)
+        self.registry.record_verification("goal_1_zero_defect_data", "a:x", VERDICT_COMPLETE, evidence_hash="round-A")
+        self.registry.record_verification("goal_1_zero_defect_data", "b:x", VERDICT_COMPLETE, evidence_hash="round-B")
+        result = self.registry.get_goal("goal_1_zero_defect_data")
+        self.assertEqual(result["status"], "ACTIVE")  # round-A와 round-B는 서로 다른 라운드라 완료 안 됨
 
     def test_continuous_goal_never_auto_completes(self):
         seed_default_goals(self.registry)
