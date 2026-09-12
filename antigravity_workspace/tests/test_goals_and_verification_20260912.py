@@ -16,7 +16,12 @@ if workspace_root not in sys.path:
 
 from memory.goals_registry import GoalsRegistry, seed_default_goals, SEED_GOALS, VERDICT_COMPLETE, VERDICT_INCOMPLETE
 from memory.llm_usage_ledger import LLMUsageLedger
+from llm_client import AntigravityLLMClient
 from goal_verification import GoalVerifier
+
+# 실제로는 openai만 "verified" 등급이라(2026-09-12 저사양 모델 검증 대행 방지 조치),
+# provider_pair 명시 테스트에서는 verified 등급 가짜 provider 2개를 임시로 등록해 쓴다.
+VERIFIED_TEST_PROVIDERS = ("test_verified_a", "test_verified_b")
 
 
 class TestGoalsRegistry(unittest.TestCase):
@@ -128,20 +133,22 @@ class TestGoalVerifier(unittest.TestCase):
             }
 
         verifier = self._make_verifier(fake_call)
-        result = verifier.verify("goal_1_zero_defect_data", evidence="모든 검사 통과")
+        with patch.dict(AntigravityLLMClient.PROVIDER_TIER, {p: "verified" for p in VERIFIED_TEST_PROVIDERS}):
+            result = verifier.verify("goal_1_zero_defect_data", evidence="모든 검사 통과", provider_pair=VERIFIED_TEST_PROVIDERS)
         self.assertEqual(len(set(seen_providers)), 2)
         self.assertEqual(result["status"], "COMPLETED")
 
     def test_verify_with_one_disagreement_stays_active(self):
         def fake_call(messages, provider=None, **kwargs):
-            verdict = "COMPLETE_100" if provider == "gemini" else "NOT_COMPLETE"
+            verdict = "COMPLETE_100" if provider == VERIFIED_TEST_PROVIDERS[0] else "NOT_COMPLETE"
             return {
                 "content": f'{{"verdict": "{verdict}", "confidence": 0.8, "reason": "근거"}}',
                 "provider": provider, "model": f"{provider}-model", "usage": None, "is_fallback": False
             }
 
         verifier = self._make_verifier(fake_call)
-        result = verifier.verify("goal_2_800pct_strategy", evidence="단일 실행 결과뿐")
+        with patch.dict(AntigravityLLMClient.PROVIDER_TIER, {p: "verified" for p in VERIFIED_TEST_PROVIDERS}):
+            result = verifier.verify("goal_2_800pct_strategy", evidence="단일 실행 결과뿐", provider_pair=VERIFIED_TEST_PROVIDERS)
         self.assertEqual(result["status"], "ACTIVE")
 
     def test_verify_handles_malformed_response(self):
@@ -150,8 +157,10 @@ class TestGoalVerifier(unittest.TestCase):
                     "model": "x", "usage": None, "is_fallback": False}
 
         verifier = self._make_verifier(fake_call)
-        result = verifier.verify("goal_3_autotrading_ready", evidence="증거")
+        with patch.dict(AntigravityLLMClient.PROVIDER_TIER, {p: "verified" for p in VERIFIED_TEST_PROVIDERS}):
+            result = verifier.verify("goal_3_autotrading_ready", evidence="증거", provider_pair=VERIFIED_TEST_PROVIDERS)
         self.assertEqual(result["status"], "ACTIVE")
+        self.assertEqual(len(result["outcomes"]), 2)
         self.assertTrue(all(o["verdict"] is None for o in result["outcomes"]))
 
     def test_verify_handles_all_providers_failing(self):
@@ -159,7 +168,8 @@ class TestGoalVerifier(unittest.TestCase):
             return {"content": "", "provider": "none", "model": None, "usage": None, "is_fallback": True}
 
         verifier = self._make_verifier(fake_call)
-        result = verifier.verify("goal_1_zero_defect_data", evidence="증거")
+        with patch.dict(AntigravityLLMClient.PROVIDER_TIER, {p: "verified" for p in VERIFIED_TEST_PROVIDERS}):
+            result = verifier.verify("goal_1_zero_defect_data", evidence="증거", provider_pair=VERIFIED_TEST_PROVIDERS)
         self.assertEqual(result["status"], "ACTIVE")
 
     def test_verify_records_usage_for_each_call(self):
@@ -171,9 +181,39 @@ class TestGoalVerifier(unittest.TestCase):
             }
 
         verifier = self._make_verifier(fake_call)
-        verifier.verify("goal_1_zero_defect_data", evidence="증거")
+        with patch.dict(AntigravityLLMClient.PROVIDER_TIER, {p: "verified" for p in VERIFIED_TEST_PROVIDERS}):
+            verifier.verify("goal_1_zero_defect_data", evidence="증거", provider_pair=VERIFIED_TEST_PROVIDERS)
         summary = self.usage_ledger.summary()
         self.assertEqual(summary["total_calls"], 2)
+
+    def test_verify_refuses_draft_tier_provider_even_if_explicitly_named(self):
+        """2026-09-12 사고 재발 방지 핵심 테스트: draft 등급 provider를 provider_pair로
+        명시해도 목표 완료 검증에는 거부되어야 한다(저사양 모델이 최종 판단을 대행하지 못하게)."""
+        called = []
+        verifier = self._make_verifier(lambda *a, **k: called.append(1))
+        result = verifier.verify("goal_1_zero_defect_data", evidence="증거", provider_pair=("gemini", "deepseek"))
+        self.assertEqual(result["blocked_reason"], "PROVIDER_TIER_TOO_LOW:gemini")
+        self.assertEqual(called, [])  # LLM이 아예 호출되지 않아야 한다
+        self.assertEqual(self.registry.get_goal("goal_1_zero_defect_data")["status"], "ACTIVE")
+
+    def test_verify_blocks_when_fewer_than_two_verified_providers_configured(self):
+        """provider_pair를 안 주면 실제 verified 등급 provider(현재 openai 1개뿐)로
+        자동 선정을 시도하는데, 2개 미만이면 검증을 진행하지 않고 명시적으로 차단해야 한다
+        (gemini/deepseek 같은 draft 등급으로 조용히 대신하지 않는다)."""
+        called = []
+        verifier = self._make_verifier(lambda *a, **k: called.append(1))
+        result = verifier.verify("goal_1_zero_defect_data", evidence="증거")  # provider_pair 없음
+        self.assertEqual(result["blocked_reason"], "INSUFFICIENT_VERIFIED_PROVIDERS")
+        self.assertEqual(called, [])
+        self.assertEqual(self.registry.get_goal("goal_1_zero_defect_data")["status"], "ACTIVE")
+
+    def test_verify_refuses_same_provider_twice(self):
+        called = []
+        verifier = self._make_verifier(lambda *a, **k: called.append(1))
+        with patch.dict(AntigravityLLMClient.PROVIDER_TIER, {"test_verified_a": "verified"}):
+            result = verifier.verify("goal_1_zero_defect_data", evidence="증거", provider_pair=("test_verified_a", "test_verified_a"))
+        self.assertEqual(result["blocked_reason"], "VERIFIERS_NOT_DISTINCT")
+        self.assertEqual(called, [])
 
     def test_unknown_goal_id_raises(self):
         verifier = self._make_verifier(lambda *a, **k: {"content": "", "is_fallback": True, "provider": "none", "model": None, "usage": None})

@@ -172,13 +172,29 @@ class AntigravityLLMClient:
     # provider 이름 -> 시도 함수. 순서가 기본 캐스케이드 우선순위다.
     _PROVIDER_TRIERS = ("gemini", "grok", "deepseek", "openai")
 
+    # 2026-09-12 사고: stock_dashboard의 codex_pipeline_orchestrator.py가 "저가 모델
+    # (Qwen, 이 코드베이스에서는 grok tier로 Groq를 통해 서빙됨)"에게 최종 백테스트 수치
+    # 산출과 사실상의 최종 판단을 맡겼다가, 실제 실행 능력이 없는 그 모델이 결과를
+    # 통째로 지어냈다("에코프로 편중도 72.9%→23.4%" 등 조작). 소유자 지시: 저사양
+    # 모델이 고사양 모델의 몫(최종 판단/검증)을 이어받지 못하게 구조적으로 막을 것.
+    # "draft"는 초안/보조 작업(요약, 패치 초안)에 적합하고, "verified"만 최종 판단
+    # (목표 완료 검증, 코드 리뷰 승인, 실전 판단 등)에 쓸 수 있다.
+    PROVIDER_TIER = {
+        "gemini": "draft",
+        "grok": "draft",       # Groq로 서빙되는 Qwen 등 - 초안/실행 보조용, 최종 판단 금지
+        "deepseek": "draft",
+        "openai": "verified",
+    }
+    _TIER_RANK = {"draft": 0, "verified": 1}
+
     def chat_completion_with_meta(
         self,
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
         temperature: float = 0.3,
         max_tokens: int = 1500,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        min_tier: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         provider가 None이면 기본 4단계 지능형 캐스케이드(무료 우선):
@@ -189,6 +205,11 @@ class AntigravityLLMClient:
         이중검증처럼 "정말 서로 다른 두 모델"이 필요한 호출에서, 캐스케이드가 매번 같은
         1순위 provider로만 응답해 "이중검증"이 사실상 같은 모델을 두 번 부르는 것이 되는
         상황을 막는다.
+
+        min_tier="verified"를 지정하면 PROVIDER_TIER상 "draft" 등급인 provider는 아예
+        시도하지 않는다(캐스케이드에서도, provider로 명시해도) - 등급 미달이면 그 provider가
+        응답할 수 있어도 조용히 써주지 않고 폴백(is_fallback=True)으로 떨어진다. 저가
+        모델이 고신뢰 판단을 떠맡아 결과를 지어내는 사고를 API 레벨에서 막기 위함이다.
 
         반환값에 provider/model/usage(토큰수)/is_fallback을 함께 담아 실제 사용량 원장을
         만들 수 있게 한다 (기존에는 응답 문자열만 반환해 비용 추적이 불가능했다).
@@ -202,6 +223,14 @@ class AntigravityLLMClient:
         if provider and provider not in triers:
             logger.error(f"알 수 없는 provider 지정: {provider}")
             order = []
+
+        if min_tier:
+            required_rank = self._TIER_RANK.get(min_tier, 0)
+            filtered = [p for p in order if self._TIER_RANK.get(self.PROVIDER_TIER.get(p, "draft"), 0) >= required_rank]
+            dropped = set(order) - set(filtered)
+            if dropped:
+                logger.warning(f"min_tier={min_tier} 미달로 제외된 provider: {dropped} (저사양 모델의 고신뢰 판단 대행 방지)")
+            order = filtered
 
         for name in order:
             result = triers[name](messages, model, temperature, max_tokens)

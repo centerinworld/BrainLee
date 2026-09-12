@@ -4,15 +4,19 @@ Project Antigravity: 목표 완료 여부의 이중 AI 검증.
 소유자 원칙(2026-09-12): 무료 모델로 시작하되, 중요한 판단(완료 판정 등)은 더 강한 모델로
 확인한다. 필요하면 유료 API 키를 추가한다.
 
-핵심 목표(GoalsRegistry.is_key_goal=True)는 서로 다른 검증자 2명이 모두 "100% 완료"라고
-판정해야만 COMPLETED로 종결된다. 이 모듈은 llm_client의 provider 강제 지정 기능
-(chat_completion_with_meta(provider=...))을 써서 실제로 서로 다른 두 모델이 응답하도록
-보장한다 - 캐스케이드를 그냥 두 번 부르면 매번 같은 1순위 provider가 응답해 "이중검증"이
-사실상 같은 모델을 두 번 묻는 것이 되기 때문이다.
+2026-09-12 사고 재확인: stock_dashboard의 codex_pipeline_orchestrator.py가 저가 모델
+(Qwen, 이 코드베이스에서는 llm_client의 grok tier)에게 최종 백테스트 결과 산출과 사실상의
+최종 승인까지 맡겼다가, 그 모델이 실행 능력이 없어 결과를 통째로 지어냈다. 소유자 지시:
+저사양 모델이 고사양 모델의 몫(여기서는 목표 완료 판정)을 이어받지 못하게 구조적으로 막을 것.
 
-기본 검증자 쌍은 gemini/deepseek(둘 다 이 환경에 실제 키가 있는 provider, 2026-09-12
-확인). 유료 키를 추가하면 DEFAULT_VERIFIER_PROVIDERS 환경변수나 verify() 호출의
-provider_pair 인자로 더 강한 모델(예: openai)을 검증자로 바꿔 쓸 수 있다 - 코드 변경 없이.
+이 모듈은 이제 llm_client.PROVIDER_TIER상 "verified" 등급 provider만 검증자로 쓴다.
+"draft" 등급(gemini/grok/deepseek)은 목표 완료 판정에 아예 쓰이지 않는다 - 캐스케이드가
+그 등급으로 저하되어 응답해도 llm_client.chat_completion_with_meta(min_tier="verified")가
+거부한다. 검증자 2명은 서로 다른 provider여야 하며, "verified" 등급 provider가 2개
+미만이면(2026-09-12 현재 openai 1개뿐) 조용히 낮은 등급으로 대신하지 않고 명시적으로
+검증 불가 상태를 반환한다 - 유료 키를 추가하거나(GOAL_VERIFIER_1/2 env, provider_pair
+인자) 로컬 Claude/Codex CLI 연동이 추가될 때까지는 핵심 목표가 COMPLETED로 종결될 수 없다.
+이것은 버그가 아니라 의도된 동작이다.
 """
 
 import os
@@ -26,10 +30,15 @@ from memory.goals_registry import GoalsRegistry, default_registry, VERDICT_COMPL
 
 logger = logging.getLogger("goal_verification")
 
-DEFAULT_VERIFIER_PROVIDERS: Tuple[str, str] = (
-    os.getenv("GOAL_VERIFIER_1", "gemini"),
-    os.getenv("GOAL_VERIFIER_2", "deepseek"),
-)
+REQUIRED_VERIFIER_TIER = "verified"
+
+_env_v1 = os.getenv("GOAL_VERIFIER_1")
+_env_v2 = os.getenv("GOAL_VERIFIER_2")
+DEFAULT_VERIFIER_PROVIDERS: Optional[Tuple[str, str]] = (_env_v1, _env_v2) if (_env_v1 and _env_v2) else None
+
+
+def _verified_tier_providers() -> List[str]:
+    return [p for p, tier in AntigravityLLMClient.PROVIDER_TIER.items() if tier == REQUIRED_VERIFIER_TIER]
 
 
 def _build_verdict_prompt(goal: Dict[str, Any], evidence: str) -> str:
@@ -72,6 +81,7 @@ class GoalVerifier:
         result = self.llm_client.chat_completion_with_meta(
             messages=[{"role": "user", "content": prompt}],
             provider=provider,
+            min_tier=REQUIRED_VERIFIER_TIER,
             temperature=0.0,
             max_tokens=300
         )
@@ -87,9 +97,13 @@ class GoalVerifier:
         evidence: str,
         provider_pair: Optional[Tuple[str, str]] = None
     ) -> Dict[str, Any]:
-        """서로 다른 두 provider에게 같은 증거로 완료 여부를 독립적으로 물어보고,
-        각 판정을 GoalsRegistry에 기록한다. 둘 다 COMPLETE_100이면 목표가 COMPLETED로
-        종결된다(GoalsRegistry.record_verification의 게이트)."""
+        """서로 다른 두 "verified" 등급 provider에게 같은 증거로 완료 여부를 독립적으로
+        물어보고, 각 판정을 GoalsRegistry에 기록한다. 둘 다 COMPLETE_100이면 목표가
+        COMPLETED로 종결된다(GoalsRegistry.record_verification의 게이트).
+
+        저사양(draft 등급) provider는 검증자로 아예 받아들이지 않는다 - 명시적으로 지정돼도
+        거부하고, 자동 선정 시에도 verified 등급이 2개 미만이면 검증 자체를 진행하지 않는다
+        (조용히 낮은 등급으로 대신하지 않음, 2026-09-12 Qwen 사고 재발 방지)."""
         goal = self.registry.get_goal(goal_id)
         if not goal:
             raise ValueError(f"알 수 없는 goal_id: {goal_id}")
@@ -97,6 +111,36 @@ class GoalVerifier:
             logger.warning(f"{goal_id}는 핵심 목표(is_key_goal)가 아니므로 이중검증 게이트를 적용하지 않는다")
 
         providers = provider_pair or DEFAULT_VERIFIER_PROVIDERS
+        if providers is None:
+            candidates = _verified_tier_providers()
+            if len(candidates) < 2:
+                logger.error(
+                    f"이중검증 불가: '{REQUIRED_VERIFIER_TIER}' 등급 provider가 {len(candidates)}개뿐입니다"
+                    f"({candidates}). 저사양 모델로 대신 검증하지 않습니다. GOAL_VERIFIER_1/2 "
+                    "환경변수나 provider_pair로 명시하거나, 유료 API 키를 추가하세요."
+                )
+                return {
+                    "goal_id": goal_id, "status": goal["status"], "outcomes": [],
+                    "blocked_reason": "INSUFFICIENT_VERIFIED_PROVIDERS"
+                }
+            providers = (candidates[0], candidates[1])
+
+        if len(set(providers)) < 2:
+            logger.error(f"검증자 2명이 서로 다른 provider여야 합니다: {providers}")
+            return {
+                "goal_id": goal_id, "status": goal["status"], "outcomes": [],
+                "blocked_reason": "VERIFIERS_NOT_DISTINCT"
+            }
+
+        for p in providers:
+            tier = AntigravityLLMClient.PROVIDER_TIER.get(p, "draft")
+            if tier != REQUIRED_VERIFIER_TIER:
+                logger.error(f"'{p}'는 '{tier}' 등급이라 목표 완료 검증에 쓸 수 없습니다(최소 {REQUIRED_VERIFIER_TIER} 필요)")
+                return {
+                    "goal_id": goal_id, "status": goal["status"], "outcomes": [],
+                    "blocked_reason": f"PROVIDER_TIER_TOO_LOW:{p}"
+                }
+
         prompt = _build_verdict_prompt(goal, evidence)
 
         outcomes: List[Dict[str, Any]] = []

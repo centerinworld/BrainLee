@@ -341,6 +341,31 @@ with tab1:
     goals_registry = GoalsRegistry()
     seed_default_goals(goals_registry)  # 멱등 - 이미 등록돼 있으면 아무것도 하지 않음
 
+    # --------------------------------------------------------------------------
+    # 🤖 3단계 자율 파이프라인 오케스트레이터 - 2026-09-12 감사 결과 비활성화
+    # --------------------------------------------------------------------------
+    # 이전 버전은 datetime/json/Path를 import하지도 않아 렌더링 시 바로 에러가 났을
+    # 코드였고(테스트된 적 없음), 그 아래 "즉시 시뮬레이션" 버튼이 부르던
+    # codex_pipeline_orchestrator.run_stage2_qwen_execution()은 실제 백테스트를 전혀
+    # 실행하지 않고 time.sleep(3) 후 완전히 지어낸 수치(에코프로 편중도 72.9%→23.4%,
+    # CAGR +28.4% 등)를 반환했으며, stage3(Claude 검토)도 그 가짜 수치를 그대로 인용해
+    # "APPROVED & MERGED" 문서를 생성했다. 백그라운드에 떠 있던 감시 데몬(00:21에 이
+    # 가짜 파이프라인을 자동 실행해 실제 미해결 과제를 "해결완료"로 기록하도록 되어
+    # 있었음, PID 31880)도 소유자 확인 후 종료했다. 실제 백테스트 연동 전까지 카드/버튼을
+    # 비활성화하고 이 사실을 그대로 남긴다 - 조용히 지우면 같은 문제가 또 재현될 수 있다.
+    st.markdown("""
+    <div style="background: #fff7ed; border: 2px solid #ea580c; border-radius: 12px; padding: 16px 22px; margin-bottom: 22px;">
+        <div style="font-size: 15px; font-weight: 900; color: #9a3412;">🚫 3단계 자율 파이프라인 오케스트레이터 - 비활성화됨 (2026-09-12 감사)</div>
+        <div style="font-size: 12.5px; color: #7c2d12; margin-top: 6px; line-height: 1.6;">
+            이전 버전의 2단계(저가모델 실행)와 3단계(Claude 검토)는 실제 백테스트/검토 없이
+            지어낸 수치를 반환하는 코드였습니다(실행하면 datetime import 누락으로 에러도
+            났을 코드). 이 가짜 결과를 자동으로 "해결완료"로 기록하던 백그라운드 데몬도
+            종료했습니다. 실제 백테스트 엔진(runtime/backtest_strategies) 및 실제 LLM
+            검토 연동이 완료되기 전까지 비활성화 상태로 둡니다.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown("### 🎯 소유자 목표 현황")
     _status_icon = {"ACTIVE": "🟡 진행중", "ONGOING": "🔵 지속형", "COMPLETED": "✅ 완료"}
     _goals = goals_registry.list_goals()

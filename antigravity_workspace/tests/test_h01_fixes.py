@@ -451,6 +451,45 @@ class TestLLMWiring(unittest.TestCase):
         mock_deepseek.assert_called_once()
         self.assertEqual(result["provider"], "deepseek")
 
+    def test_min_tier_verified_skips_draft_tier_providers_in_cascade(self):
+        """2026-09-12 Qwen(저사양) 사고 재발 방지: min_tier='verified'를 주면 draft
+        등급 provider(gemini/grok/deepseek)는 캐스케이드에서도 아예 시도되지 않아야 한다."""
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_gemini") as mock_gemini, \
+             patch.object(client, "_try_grok") as mock_grok, \
+             patch.object(client, "_try_deepseek") as mock_deepseek, \
+             patch.object(client, "_try_openai", return_value=None) as mock_openai:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], min_tier="verified")
+        mock_gemini.assert_not_called()
+        mock_grok.assert_not_called()
+        mock_deepseek.assert_not_called()
+        mock_openai.assert_called_once()
+        self.assertTrue(result["is_fallback"])  # openai도 실패했으니 정직하게 폴백
+
+    def test_min_tier_verified_rejects_explicit_draft_provider(self):
+        """min_tier와 provider를 함께 줬는데 그 provider가 등급 미달이면, 그 provider가
+        실제로 응답할 수 있어도 아예 시도하지 않고 폴백해야 한다(저사양 모델이 고신뢰
+        판단을 조용히 대행하지 못하게)."""
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_gemini", return_value={
+            "content": "ok", "provider": "gemini", "model": "x", "usage": None, "is_fallback": False
+        }) as mock_gemini:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], provider="gemini", min_tier="verified")
+        mock_gemini.assert_not_called()
+        self.assertTrue(result["is_fallback"])
+
+    def test_min_tier_verified_allows_openai(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_openai", return_value={
+            "content": "ok", "provider": "openai", "model": "gpt-4o-mini", "usage": None, "is_fallback": False
+        }) as mock_openai:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], min_tier="verified")
+        mock_openai.assert_called_once()
+        self.assertFalse(result["is_fallback"])
+
 
 class TestEnvLoaderIncludesWorkspaceEnv(unittest.TestCase):
     def test_workspace_env_file_is_actually_loaded(self):
