@@ -424,6 +424,33 @@ class TestLLMWiring(unittest.TestCase):
         client = llm_client.AntigravityLLMClient()
         self.assertEqual(client.last_provider_used, "NONE")
 
+    def test_provider_targeting_does_not_fall_through_to_other_providers(self):
+        """목표 이중검증처럼 '정말 다른 두 모델'이 필요한 호출: provider를 지정하면 그
+        provider만 시도하고, 실패해도 다른 provider로 자동전환하지 않고 즉시 폴백해야 한다."""
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_gemini", return_value=None) as mock_gemini, \
+             patch.object(client, "_try_grok") as mock_grok, \
+             patch.object(client, "_try_deepseek") as mock_deepseek, \
+             patch.object(client, "_try_openai") as mock_openai:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], provider="gemini")
+        mock_gemini.assert_called_once()
+        mock_grok.assert_not_called()
+        mock_deepseek.assert_not_called()
+        mock_openai.assert_not_called()
+        self.assertTrue(result["is_fallback"])
+
+    def test_provider_targeting_returns_that_providers_result(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_deepseek", return_value={
+            "content": "ok", "provider": "deepseek", "model": "deepseek-chat", "usage": None, "is_fallback": False
+        }) as mock_deepseek, patch.object(client, "_try_gemini") as mock_gemini:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], provider="deepseek")
+        mock_gemini.assert_not_called()
+        mock_deepseek.assert_called_once()
+        self.assertEqual(result["provider"], "deepseek")
+
 
 class TestEnvLoaderIncludesWorkspaceEnv(unittest.TestCase):
     def test_workspace_env_file_is_actually_loaded(self):
@@ -494,10 +521,14 @@ class TestGoalIntakeDaemon(unittest.TestCase):
         self.assertEqual(self.ledger.list_domain("goal_intake"), [])
 
     def test_no_bot_token_refuses_to_run(self):
+        """bot_token=""은 falsy라 daemon이 os.getenv(GOAL_INTAKE_BOT_TOKEN)으로 폴백한다
+        (다른 생성자들의 or 패턴과 동일) - 실제 .env에 값이 들어있을 수 있으므로 그 값도
+        비운 상태로 격리해서 검증한다."""
         import goal_intake_daemon
-        daemon = goal_intake_daemon.GoalIntakeDaemon(bot_token="", allowed_chat_id="12345", ledger=self.ledger)
-        with self.assertRaises(RuntimeError):
-            daemon.fetch_updates()
+        with patch.dict(os.environ, {"GOAL_INTAKE_BOT_TOKEN": ""}):
+            daemon = goal_intake_daemon.GoalIntakeDaemon(bot_token="", allowed_chat_id="12345", ledger=self.ledger)
+            with self.assertRaises(RuntimeError):
+                daemon.fetch_updates()
 
     def test_offset_advances_past_processed_update(self):
         """같은 update를 다시 받지 않도록 offset이 update_id+1로 전진해야 한다."""
