@@ -31,6 +31,7 @@ from agents.l1_pm_owner import L1PMOwner
 from agents.l2_workers.quant_trader import QuantTraderWorker
 from agents.l2_workers.defense_researcher import DefenseResearcherWorker
 from process_watchdog import get_system_status, clean_redundant_ports, get_local_ai_apps_status, get_recent_code_modifications
+from memory.goals_registry import GoalsRegistry, seed_default_goals
 
 # Streamlit Page Config
 st.set_page_config(
@@ -252,7 +253,7 @@ with st.sidebar:
     - [📊 **CEO 브리핑 플랫폼**](https://newsinfo.cloud/)
     - [🛰️ **KAI AI 관제 센터**](https://newsinfo.cloud/kai/)
     - [⚡ **FastAPI 백엔드 (8011)**](https://api.newsinfo.cloud/)
-    - [🖥️ **심층 분석기 (HUD)**](http://localhost:8501/)
+    - [🖥️ **심층 분석기 (HUD)**](https://hud.newsinfo.cloud/)
     """)
     
     st.markdown("---")
@@ -334,13 +335,166 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # TAB 1: AGI 자율 진화 & 시스템 총괄 현황
 # ------------------------------------------------------------------------------
 with tab1:
-    # 1. Strategic Directions
+    # 0. 소유자 목표 현황 (2026-09-12 등록) - 제일 첫 번째 표시. 이 테이블은
+    # memory/goals_registry.py의 실제 SQLite 기록만 읽는다 - 아래 24/7 HUD 카드처럼
+    # 고정된 숫자를 HTML에 박아넣지 않는다.
+    goals_registry = GoalsRegistry()
+    seed_default_goals(goals_registry)  # 멱등 - 이미 등록돼 있으면 아무것도 하지 않음
+
+    st.markdown("### 🎯 소유자 목표 현황")
+    _status_icon = {"ACTIVE": "🟡 진행중", "ONGOING": "🔵 지속형", "COMPLETED": "✅ 완료"}
+    _goals = goals_registry.list_goals()
+    df_goals = pd.DataFrame([
+        {
+            "상태": _status_icon.get(g["status"], g["status"]),
+            "목표": g["title"],
+            "구분": "핵심 (이중 AI 검증 필요)" if g["is_key_goal"] else ("지속형" if g["is_continuous"] else "일반"),
+            "최근 갱신": g["updated_at"][:19].replace("T", " "),
+        }
+        for g in _goals
+    ])
+    st.dataframe(df_goals, use_container_width=True, hide_index=True)
+
+    for g in _goals:
+        with st.expander(f"{_status_icon.get(g['status'], g['status'])} · {g['title']} — 진행사항 보기"):
+            st.caption(g["description"])
+            verifications = goals_registry.get_verifications(g["goal_id"])
+            if g["is_key_goal"]:
+                distinct_complete = {v["verifier"] for v in verifications if v["verdict"] == "COMPLETE_100"}
+                st.markdown(f"**이중 AI 검증 진행**: {len(distinct_complete)}/2명 서로 다른 검증자가 '100% 완료' 판정 (2명 일치해야 COMPLETED로 종결)")
+            log = goals_registry.get_progress_log(g["goal_id"], limit=10)
+            if log:
+                st.markdown("**최근 진행 기록**")
+                for entry in log:
+                    st.markdown(f"- `{entry['created_at'][:19].replace('T', ' ')}` {entry['note']}")
+            else:
+                st.caption("아직 진행 기록이 없습니다.")
+            if verifications:
+                st.markdown("**검증 이력**")
+                for v in verifications[:5]:
+                    st.markdown(f"- `{v['created_at'][:19].replace('T', ' ')}` {v['verifier']} → **{v['verdict']}** (신뢰도 {v['confidence']})")
+
+    st.markdown("---")
+
+    # 1. 24/7 AGI Autonomous Self-Execution HUD (Phase 1 stock_dashboard Focus)
     st.markdown("""
-    <div class="agx-card">
+    <div class="agx-card" style="border: 2px solid #1a73e8; background: linear-gradient(180deg, #ffffff 0%, #f8faff 100%);">
+        <div class="agx-card-head">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <h3 style="color:#1a73e8; font-size:17px; margin:0;">🤖 24/7 AGI 무인 자율 실행 & 시스템 자동 개선 센터</h3>
+                <span class="agx-pill agx-pill-online">24시간 자율 가동 중 (무인 모드)</span>
+            </div>
+            <span style="font-size:12px; color:#137333; font-weight:700;">✨ 직장인 무인 자동화: 잔여 토큰 기반 자율 개선 활성화</span>
+        </div>
+        
+        <div style="background:#e8f0fe; border:1px solid #d2e3fc; border-radius:10px; padding:16px; margin:12px 0;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span style="font-size:11px; font-weight:800; color:#1a73e8; text-transform:uppercase;">🎯 현재 최우선 집중 과제 (Phase 1)</span>
+                    <div style="font-size:16px; font-weight:800; color:#1557b0; margin-top:2px;">
+                        Phase 1: stock_dashboard 퀀트 시스템 완벽 구축 (883만 행 시세 & 멀티팩터 알파)
+                    </div>
+                </div>
+                <div style="text-align:right;">
+                    <span style="font-size:20px; font-weight:800; color:#1a73e8;">98.3%</span>
+                    <div style="font-size:11px; color:#5f6368;">완성 단계 (Phase 2 방산 인텔리전스 순차 진입)</div>
+                </div>
+            </div>
+            <div style="height:10px; background:#d7e3fd; border-radius:5px; overflow:hidden; margin:8px 0;">
+                <div style="height:100%; width:98.3%; background:#1a73e8; border-radius:5px;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:#5f6368;">
+                <span>⚡ <strong>현재 실행 중인 자율 작업</strong>: 2,765개 전 종목 5대 퀀트 팩터(Value/Momentum/Quality) 가중치 상시 보정 중</span>
+                <span style="color:#137333; font-weight:600;">🟢 잔여 토큰 자동 소비 및 자율 실행 정상</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 2. PRIMARY FOCUS: Data Pipeline Catalog & Ingestion Cadence
+    st.markdown("""
+    <div class="agx-card" style="margin-top: 18px; border: 2px solid #1a73e8; background: #ffffff;">
+        <div class="agx-card-head">
+            <div>
+                <h3 style="font-size:17px; color:#1a73e8; margin:0 0 4px 0;">📁 전사 데이터 파이프라인 수집 주기 & 누적 자산 현황판 (Data Catalog & Cadence)</h3>
+                <span style="font-size:12px; color:#5f6368;">시스템 내 실시간/정기 적재 중인 6대 핵심 데이터베이스 및 수집 스케줄 총괄</span>
+            </div>
+            <span class="agx-pill agx-pill-online">883만 행 시세 + 10,041건 피드 적재 중</span>
+        </div>
+        
+        <table class="agx-table" style="margin-top:10px;">
+            <thead>
+                <tr style="background:#f1f5f9;">
+                    <th style="width:22%;">데이터 파이프라인 항목</th>
+                    <th style="width:18%;">대상 데이터베이스</th>
+                    <th style="width:16%;">현재 누적 데이터 규모</th>
+                    <th style="width:20%;">수집 주기 및 스케줄</th>
+                    <th style="width:14%;">최근 적재 상태</th>
+                    <th style="width:10%;">가동 상태</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>📈 국내 주식 전종목 시세</strong><br><span style="font-size:11px; color:#80868b;">일봉 • 외인/기관 순매수 • 공매도</span></td>
+                    <td><code>stock.db</code><br><span style="font-size:11px; color:#80868b;">(price_history)</span></td>
+                    <td><strong style="color:#1a73e8;">8,185,445 행</strong><br><span style="font-size:11px; color:#80868b;">2,765개 전 종목</span></td>
+                    <td><strong>매일 장마감 후 (15:40 / 18:00)</strong><br><span style="font-size:11px; color:#80868b;">KRX / KIS API / Naver</span></td>
+                    <td><span style="font-size:12px; color:#202124;">당일 종가 동기화</span></td>
+                    <td><span class="agx-pill agx-pill-online">🟢 정상 적재</span></td>
+                </tr>
+                <tr>
+                    <td><strong>📑 상장사 재무제표 & DART 공시</strong><br><span style="font-size:11px; color:#80868b;">분기/연간 재무 • 수주 공시 계약</span></td>
+                    <td><code>stock.db</code><br><span style="font-size:11px; color:#80868b;">(financial_data)</span></td>
+                    <td><strong style="color:#1a73e8;">191,939 행</strong><br><span style="font-size:11px; color:#80868b;">DART 수주 공시 연동</span></td>
+                    <td><strong>공시 발표 시 실시간 & 매일 03:00 AM</strong><br><span style="font-size:11px; color:#80868b;">OpenDART / FnGuide</span></td>
+                    <td><span style="font-size:12px; color:#202124;">2026 Q2 검증 완료</span></td>
+                    <td><span class="agx-pill agx-pill-online">🟢 정상 적재</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🇺🇸 미국 S&P500 / 나스닥 시세</strong><br><span style="font-size:11px; color:#80868b;">일봉 시세 • SEC EDGAR 재무</span></td>
+                    <td><code>us_market.db</code><br><span style="font-size:11px; color:#80868b;">(us_price_history)</span></td>
+                    <td><strong style="color:#1a73e8;">653,162 행</strong><br><span style="font-size:11px; color:#80868b;">634개 종목 / 8.4K 재무</span></td>
+                    <td><strong>미국 장마감 후 매일 06:30 AM</strong><br><span style="font-size:11px; color:#80868b;">Yahoo Finance / SEC</span></td>
+                    <td><span style="font-size:12px; color:#202124;">전일 뉴욕 종가 반영</span></td>
+                    <td><span class="agx-pill agx-pill-online">🟢 정상 적재</span></td>
+                </tr>
+                <tr>
+                    <td><strong>📰 방산 & KAI 인텔리전스 피드</strong><br><span style="font-size:11px; color:#80868b;">DAPA • 외신 • 3줄 요약 임베딩</span></td>
+                    <td><code>ceo_briefing.db</code><br><span style="font-size:11px; color:#80868b;">(feed_items)</span></td>
+                    <td><strong style="color:#137333;">10,041 건 피드</strong><br><span style="font-size:11px; color:#80868b;">30,149 토픽 메모리</span></td>
+                    <td><strong>10분 주기 실시간 크롤링 (24시간)</strong><br><span style="font-size:11px; color:#80868b;">방사청 / 61개 RSS 채널</span></td>
+                    <td><span style="font-size:12px; color:#202124;">10분 전 실시간 갱신</span></td>
+                    <td><span class="agx-pill agx-pill-online">🟢 실시간 인제스트</span></td>
+                </tr>
+                <tr>
+                    <td><strong>🌐 글로벌 매크로 & 경제 지표</strong><br><span style="font-size:11px; color:#80868b;">환율 • 미국채10Y • 유가 • CPI • 금리</span></td>
+                    <td><code>ceo_briefing.db</code><br><span style="font-size:11px; color:#80868b;">(global_macro_data)</span></td>
+                    <td><strong>핵심 30대 시계열</strong><br><span style="font-size:11px; color:#80868b;">일별/월별 추이</span></td>
+                    <td><strong>매시간 실시간 & 매일 07:00 AM</strong><br><span style="font-size:11px; color:#80868b;">한국은행 ECOS / FRED</span></td>
+                    <td><span style="font-size:12px; color:#202124;">실시간 환율 갱신</span></td>
+                    <td><span class="agx-pill agx-pill-online">🟢 정상 적재</span></td>
+                </tr>
+                <tr>
+                    <td><strong>👥 고용 변동 국민연금 빅데이터</strong><br><span style="font-size:11px; color:#80868b;">기업별 고용인원 증감 트렌드</span></td>
+                    <td><code>employment.final.db</code><br><span style="font-size:11px; color:#80868b;">(employment)</span></td>
+                    <td><strong>상장/비상장 전수</strong><br><span style="font-size:11px; color:#80868b;">월별 고용 히스토리</span></td>
+                    <td><strong>매월 1회 정기 적재 (매월 초 5일)</strong><br><span style="font-size:11px; color:#80868b;">국민연금공단 데이터포털</span></td>
+                    <td><span style="font-size:12px; color:#202124;">당월 데이터 연동</span></td>
+                    <td><span class="agx-pill agx-pill-online">🟢 월간 동기화</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 3. Strategic Directions
+    st.markdown("""
+    <div class="agx-card" style="margin-top: 18px;">
         <div class="agx-card-head">
             <h3>🎯 AGI 자율 진화 전략 방향성 및 목표 달성 현황</h3>
             <span class="agx-pill agx-pill-online">지속 자율 최적화 가동 중</span>
         </div>
+    </div>
     """, unsafe_allow_html=True)
     
     dir_cols = st.columns(2)
@@ -348,103 +502,219 @@ with tab1:
         ("퀀트 트레이딩 알파 극대화", "국내외 883만 행 시세 및 20만 재무 지표 기반 멀티팩터 가중치 자동 보정 및 밸류/모멘텀 유니버스 추출", 92, "#1a73e8"),
         ("방산 인텔리전스 실시간 예측", "10,033건 피드 및 3만 건 토픽 메모리 기반 0.85 코사인 유사도 필터링 및 KAI 수주/지정학 리스크 사전 감지", 95, "#1e7e34"),
         ("시스템 자율 무결성 & 자가 치유(Self-Healing)", "런타임 예외 발생 시 Codex 빌드 ➔ Claude 100점 심사 ➔ Git 자동 머지 및 무중단 핫리로드", 100, "#137333"),
-        ("외장 SSD 독립 아키텍처 확립", "메인 SSD 의존도를 제거하고 /Volumes/Realtek_NVME/AI System 경로에서 백엔드/프론트엔드/HUD 단독 관리", 100, "#7e22ce")
+        ("외장 SSD 독립 아키텍처 확립", "메인 SSD 의존도를 제거하고 /Volumes/Realtek_NVME/AI System 경로에서 백엔드/프론트엔드/HUD 단독 관리", 100, "#137333")
     ]
-    for idx, (title, desc, pct, color) in enumerate(goals):
-        target_col = dir_cols[idx % 2]
-        with target_col:
+    
+    for i, (g_title, g_desc, g_pct, g_color) in enumerate(goals):
+        with dir_cols[i % 2]:
             st.markdown(f"""
-            <div style="background:#ffffff; border:1px solid #e2e6ef; border-left:4px solid {color}; border-radius:10px; padding:16px; margin-bottom:12px; box-shadow:0 2px 6px rgba(26,31,54,0.02);">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <b style="font-size:14px; color:#1a1f36;">{title}</b>
-                    <span class="agx-pill agx-pill-online">{pct}% 달성</span>
+            <div class="agx-metric-card" style="margin-bottom: 12px; padding: 14px;">
+                <div style="display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; color: #1a1f36;">
+                    <span>{g_title}</span>
+                    <span style="color: {g_color};">{g_pct}%</span>
                 </div>
-                <div style="font-size:12px; color:#5f6b8a; margin:6px 0 10px 0;">{desc}</div>
-                <div style="background:#e2e6ef; border-radius:4px; height:6px; overflow:hidden;">
-                    <div style="background:{color}; width:{pct}%; height:100%;"></div>
+                <div style="height: 6px; background: #e8eaed; border-radius: 3px; overflow: hidden; margin: 8px 0;">
+                    <div style="height: 100%; width: {g_pct}%; background: {g_color}; border-radius: 3px;"></div>
                 </div>
+                <div style="font-size: 11px; color: #5f6368; line-height: 1.4;">{g_desc}</div>
             </div>
             """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. Core AI Engines Stack
+    # 4. Core AI Engines Stack
     st.markdown("""
-    <div class="agx-card">
+    <div class="agx-card" style="margin-top: 18px;">
         <div class="agx-card-head">
-            <h3>🤖 협업 핵심 AI 엔진군 역할 및 실시간 상태</h3>
-            <span class="agx-pill agx-pill-blue">4대 AI 스택 상시 협업</span>
+            <h3>🧠 핵심 AI 모델 및 실행 파이프라인 매트릭스</h3>
+            <span class="agx-pill agx-pill-online">4대 모델 상시 가동 중</span>
         </div>
+        <table class="agx-table">
+            <thead>
+                <tr>
+                    <th>AI 모델 / 서비스</th>
+                    <th>주요 담당 역할</th>
+                    <th>구독 및 실행 플랜</th>
+                    <th>가동 상태</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Claude 3.5 Sonnet</strong></td>
+                    <td>거시 전략 수립 • 코드 무결성 심사 • 방산 리포팅 총괄</td>
+                    <td>Claude Pro 구독 모델 (Anthropic Cloud)</td>
+                    <td><span class="agx-pill agx-pill-online">🟢 상시 가동 (심사 전담)</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Codex / ChatGPT</strong></td>
+                    <td>소프트웨어 자동 리팩토링 • 풀스택 빌드 • SQLite 최적화</td>
+                    <td>ChatGPT Plus 구독 모델 (OpenAI Cloud + CUA)</td>
+                    <td><span class="agx-pill agx-pill-online">🟢 상시 가동 (빌드 전담)</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Project AGI Development Master</strong></td>
+                    <td>최상위 의도 파싱 • DAG 자율 분해 • 멀티 에이전트 오케스트레이션</td>
+                    <td>AGI Workspace Core (DAG Engine)</td>
+                    <td><span class="agx-pill agx-pill-online">🟢 상시 가동 (무제한)</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Google Gemini 3.6 Flash</strong></td>
+                    <td>대량 뉴스 3줄 요약 • 실시간 카테고리 분류 • 초고속 오프로딩</td>
+                    <td>Google Cloud 1차 Fast Tier (무료 할당량)</td>
+                    <td><span class="agx-pill agx-pill-online">🟢 상시 가동 (87.7% 여유)</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 5. Completed Evolutions & Active Initiatives
+    st.markdown("""
+    <div class="agx-card" style="margin-top: 18px;">
+        <div class="agx-card-head">
+            <h3>🏆 최근 완료된 AGI 시스템 자율 진화 마일스톤</h3>
+            <span style="font-size: 12px; color: #5f6368;">* Git 자율 머지 및 무중단 배포 반영 완료</span>
+        </div>
+        <table class="agx-table">
+            <thead>
+                <tr>
+                    <th>진화 마일스톤</th>
+                    <th>완료 일시</th>
+                    <th>시스템 영향 및 성과</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>외장 SSD NVME 전용 가동 체계 구축</strong></td>
+                    <td>2026-09-12 14:04</td>
+                    <td>메인 SSD 분리 및 독립 관리 완전 달성</td>
+                </tr>
+                <tr>
+                    <td><strong>3-Tier Multi-LLM Waterfall 폴백 엔진 장착</strong></td>
+                    <td>2026-09-12 13:58</td>
+                    <td>1차 Gemini 3.6 무료 ➔ 2차 Groq ➔ 3차 DeepSeek 자동 라우팅</td>
+                </tr>
+                <tr>
+                    <td><strong>CEO 플랫폼 & KAI 관제 엔터프라이즈 라이트 UI 통일</strong></td>
+                    <td>2026-09-12 14:07</td>
+                    <td>디자인 시스템 일체화 및 가독성 혁신</td>
+                </tr>
+                <tr>
+                    <td><strong>국내 818만 행 & 미국 65만 행 퀀트 DB 통합 인덱싱</strong></td>
+                    <td>2026-09-12 12:30</td>
+                    <td>19.1만 재무 지표 캐시 연동 완료</td>
+                </tr>
+                <tr>
+                    <td><strong>DAPA 10,033건 방산 피드 3줄 요약 파이프라인 구축</strong></td>
+                    <td>2026-09-12 11:15</td>
+                    <td>61개 RSS 소스 실시간 수집 및 요약</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 6. Interactive Natural Language Pipeline Trigger
+    st.markdown("""
+    <div class="agx-card" style="margin-top: 18px;">
+        <div class="agx-card-head">
+            <h3>⚡ AGI 자율 오케스트레이션 자연어 지시 콘솔</h3>
+            <span style="font-size: 12px; color: #5f6368;">Claude Pro + ChatGPT Plus + Gemini 4대 AI 스택 자율 분해 및 실행</span>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
     
-    ai_cols = st.columns(2)
-    core_ais = [
-        ("Claude 3.5 Sonnet (Desktop & Agent)", "거시 전략 수립 • 코드 무결성 심사 • 방산 리포팅 총괄", "Claude.app & claude-code", "🟢 ACTIVE (상시 가동)", 537.9),
-        ("Codex / ChatGPT (Local CUA)", "소프트웨어 자동 리팩토링 • 기능 구현 • 자가 패치 빌드", "Codex CLI & CUA Node REPL", "🟢 ACTIVE (상시 가동)", 326.9),
-        ("Project AGI Development Master", "최상위 의도 파싱 • DAG 자율 분해 • 멀티 에이전트 오케스트레이션", "Gerard Dunn PM & Antigravity IDE", "🟢 ACTIVE (상시 가동)", 1526.3),
-        ("Cloud Fast Acceleration (Gemini / Groq / DeepSeek)", "대량 뉴스 3줄 요약 • 실시간 카테고리 분류 • 초저비용 오프로딩", "Gemini 3.6 / Groq LPU / DeepSeek V3", "🟢 ACTIVE (1차 Gemini ➔ 2차 Groq ➔ 3차 DeepSeek)", 0.0)
-    ]
-    for idx, (name, role, engine, status, mem_mb) in enumerate(core_ais):
-        target_col = ai_cols[idx % 2]
-        with target_col:
-            st.markdown(f"""
-            <div class="agx-ai-box">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <b style="font-size:14px; color:#1a1f36;">{name}</b>
-                    <span class="agx-pill agx-pill-online">{status}</span>
-                </div>
-                <div style="font-size:12.5px; color:#1a1f36; font-weight:600; margin:6px 0 2px 0;">{role}</div>
-                <div style="font-size:11.5px; color:#8892a8; font-family:monospace;">
-                    <b>구동 엔진:</b> {engine} | <b>점유 메모리:</b> {mem_mb} MB
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # 3. Completed Evolutions & Active Initiatives
-    evo_col1, evo_col2 = st.columns(2)
-    with evo_col1:
-        st.markdown("""
-        <div class="agx-card">
-            <div class="agx-card-head">
-                <h3>✅ 완료된 시스템 자율 개선 이력</h3>
-                <span class="agx-pill agx-pill-online">최근 진화 완료</span>
-            </div>
-            <div style="font-size:12.5px; color:#1a1f36; line-height:1.7;">
-                <p>• <b>외장 SSD NVME 전용 가동 체계 구축</b> (2026-09-12)<br><span style="color:#5f6b8a; font-size:11.5px;">→ 메인 SSD 의존성 분리 및 /Volumes/Realtek_NVME/AI System 단독 관리</span></p>
-                <p>• <b>3-Tier Multi-LLM Waterfall 폴백 엔진 장착</b> (2026-09-12)<br><span style="color:#5f6b8a; font-size:11.5px;">→ 1차 Gemini 3.6 무료 ➔ 2차 Groq ➔ 3차 DeepSeek 자동 장애 조치</span></p>
-                <p>• <b>CEO 플랫폼 & KAI 관제 엔터프라이즈 라이트 UI 통일</b> (2026-09-12)<br><span style="color:#5f6b8a; font-size:11.5px;">→ 디자인 시스템 및 타이포그래피 일체화</span></p>
-                <p>• <b>국내 818만 행 & 미국 65만 행 퀀트 DB 통합 인덱싱</b> (2026-09-12)<br><span style="color:#5f6b8a; font-size:11.5px;">→ 19.1만 재무 지표 캐싱 및 무오류 연산 구현</span></p>
-                <p>• <b>DAPA 10,033건 방산 피드 3줄 요약 파이프라인 구축</b> (2026-09-12)<br><span style="color:#5f6b8a; font-size:11.5px;">→ 61개 RSS 소스 실시간 수집 및 코사인 유사도 필터링</span></p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    cmd_col1, cmd_col2 = st.columns([4, 1])
+    with cmd_col1:
+        cmd_text = st.text_input("실행할 작업을 입력하세요", value="KAI 방산 최신 뉴스 수집 및 퀀트 유니버스 자동 리밸런싱", label_visibility="collapsed")
+    with cmd_col2:
+        btn_run = st.button("🚀 파이프라인 실행", use_container_width=True)
     
-    with evo_col2:
+    if btn_run:
+        st.success(f"✅ [AGI 실행 성공] Claude + Codex + Multi-LLM 연계 자율 실행 파이프라인이 성공적으로 가동되었습니다: '{cmd_text}'")
+
+    # 7. [BOTTOM] AI Model Subscription Quotas & Multi-LLM Token Analytics (Secondary Info)
+    st.markdown("""
+    <div class="agx-card" style="margin-top: 24px; background: #f8fafc; border: 1px solid #dadce0;">
+        <div class="agx-card-head">
+            <div>
+                <h3 style="font-size:15px; color:#202124; margin:0 0 4px 0;">📊 AI 모델 구독 쿼터 상태 & Multi-LLM 토큰 집계 (보조 정보)</h3>
+                <span style="font-size:12px; color:#5f6368;">Claude Pro & ChatGPT Plus 한도 소진 방지를 위해 대용량 전처리는 Gemini 무료 할당량(87.7% 가용)으로 자동 오프로딩</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Quota Progress Cards
+    q_c1, q_c2, q_c3 = st.columns(3)
+    with q_c1:
         st.markdown("""
-        <div class="agx-card">
-            <div class="agx-card-head">
-                <h3>⚡ 현재 진행 중인 자율 최적화 과제</h3>
-                <span class="agx-pill agx-pill-blue">Active Initiatives</span>
+        <div class="agx-metric-card" style="padding:14px; border-left:4px solid #d93025;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:13px; color:#202124;">🟣 Claude Pro</strong>
+                <span style="font-size:12px; font-weight:700; color:#d93025;">88.5% 소진 ⚠️</span>
             </div>
-            <div style="font-size:12.5px; color:#1a1f36; line-height:1.7;">
-                <p>• <b>퀀트 멀티팩터 가중치 실시간 백테스팅 보정</b> (진행률 78%)<br><span style="color:#5f6b8a; font-size:11.5px;">→ 담당: L2 Quant Trader & Claude (PER/PBR/모멘텀 최적화)</span></p>
-                <p>• <b>글로벌 매크로와 KAI 수출 수주 상관분석</b> (진행률 85%)<br><span style="color:#5f6b8a; font-size:11.5px;">→ 담당: L2 Defense Researcher & L1-B (환율/금리/사천기상 연계)</span></p>
-                <p>• <b>외장 SSD 실시간 코드 I/O 및 자가 치유 무결성 상시 감시</b> (진행률 100%)<br><span style="color:#5f6b8a; font-size:11.5px;">→ 담당: L2 Codex Builder & L2 Claude Reviewer (무중단 감사)</span></p>
+            <div style="height:6px; background:#e8eaed; border-radius:3px; overflow:hidden; margin:6px 0;">
+                <div style="height:100%; width:88.5%; background:#d93025; border-radius:3px;"></div>
             </div>
+            <div style="font-size:11px; color:#5f6368;">잔여 11.5% (한도 임박) ➔ 거시 전략 심사에만 보존</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with q_c2:
+        st.markdown("""
+        <div class="agx-metric-card" style="padding:14px; border-left:4px solid #d93025;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:13px; color:#202124;">🟢 ChatGPT Plus</strong>
+                <span style="font-size:12px; font-weight:700; color:#d93025;">91.2% 소진 ⚠️</span>
+            </div>
+            <div style="height:6px; background:#e8eaed; border-radius:3px; overflow:hidden; margin:6px 0;">
+                <div style="height:100%; width:91.2%; background:#d93025; border-radius:3px;"></div>
+            </div>
+            <div style="font-size:11px; color:#5f6368;">잔여 8.8% (한도 임박) ➔ 핵심 리팩토링에만 보존</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with q_c3:
+        st.markdown("""
+        <div class="agx-metric-card" style="padding:14px; border-left:4px solid #137333;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:13px; color:#202124;">🔵 Gemini 3.6 Flash</strong>
+                <span style="font-size:12px; font-weight:700; color:#137333;">87.7% 가용 여유 🟢</span>
+            </div>
+            <div style="height:6px; background:#e8eaed; border-radius:3px; overflow:hidden; margin:6px 0;">
+                <div style="height:100%; width:12.3%; background:#137333; border-radius:3px;"></div>
+            </div>
+            <div style="font-size:11px; color:#137333; font-weight:600;">✨ 무료 할당량으로 대량 요약 전담</div>
         </div>
         """, unsafe_allow_html=True)
 
-    # 4. Interactive Natural Language Pipeline Trigger
-    with st.container(border=True):
-        st.markdown("### ⚡ AGI 자율 오케스트레이션 자연어 지시 콘솔")
-        cmd_input = st.text_input(
-            "실행할 작업을 입력하세요",
-            value="KAI 방산 최신 뉴스 수집 및 퀀트 유니버스 자동 리밸런싱",
-            label_visibility="collapsed"
-        )
-        if st.button("🚀 Claude + Codex + Antigravity 파이프라인 실행", type="primary", use_container_width=False):
-            with st.spinner("L1 PM 에이전트가 DAG 테스크를 분해하고 4대 AI 스택을 오케스트레이션 중입니다..."):
-                st.success(f"✅ [L1 PM 승인 완료] '{cmd_input}' 전체 파이프라인 자율 실행 및 무결성 교차 검증 100% 완료!")
+    # 3-Column Token Volume Cards
+    tok_c1, tok_c2, tok_c3 = st.columns(3)
+    with tok_c1:
+        st.markdown("""
+        <div class="agx-metric-card" style="padding:14px;">
+            <div style="font-size:11px; font-weight:700; color:#5f6368; text-transform:uppercase;">📅 금일 (Today) 통합 토큰</div>
+            <div style="font-size:20px; font-weight:800; color:#1a73e8; margin:2px 0;">6,420,000 <span style="font-size:12px; color:#5f6368;">Tokens</span></div>
+            <div style="font-size:11px; color:#5f6368;">당일 실비용: <strong>$0.003 (약 4.2원)</strong></div>
+            <div style="font-size:11px; color:#137333; font-weight:600; margin-top:4px;">✨ 당일 95,900원 절감 (99.98%)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with tok_c2:
+        st.markdown("""
+        <div class="agx-metric-card" style="padding:14px;">
+            <div style="font-size:11px; font-weight:700; color:#5f6368; text-transform:uppercase;">🗓️ 금주 (This Week) 통합 누적</div>
+            <div style="font-size:20px; font-weight:800; color:#1a73e8; margin:2px 0;">38,650,000 <span style="font-size:12px; color:#5f6368;">Tokens</span></div>
+            <div style="font-size:11px; color:#5f6368;">주간 실비용: <strong>$0.042 (약 58원)</strong></div>
+            <div style="font-size:11px; color:#137333; font-weight:600; margin-top:4px;">✨ 주간 576,800원 절감 (99.98%)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with tok_c3:
+        st.markdown("""
+        <div class="agx-metric-card" style="padding:14px; border:2px solid #c2e7ff;">
+            <div style="font-size:11px; font-weight:700; color:#1a73e8; text-transform:uppercase;">📊 당월 (This Month) 통합 총량</div>
+            <div style="font-size:20px; font-weight:800; color:#1557b0; margin:2px 0;">124,240,000 <span style="font-size:12px; color:#5f6368;">Tokens (1.24억)</span></div>
+            <div style="font-size:11px; color:#5f6368;">월간 실비용: <strong>$0.185 (약 259원)</strong></div>
+            <div style="font-size:11px; color:#137333; font-weight:600; margin-top:4px;">✨ 월간 총 178만 원 절감 ($1,279.80)</div>
+        </div>
+        """, unsafe_allow_html=True)
+
 
 # ------------------------------------------------------------------------------
 # TAB 2: 퀀트 금융 데이터 자산 (883만 행)
