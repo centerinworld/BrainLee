@@ -26,6 +26,11 @@ import bridge_api
 from memory.vector_store import MemoryVectorStore
 from memory.state_ledger import StateLedger
 
+# config.env_loader가 import 시점에 stock_dashboard/runtime/.env의 실제 POSTGRES_DATABASE_URL을
+# 프로세스 환경에 심어두므로(A10), SQLite 폴백 경로를 테스트할 때는 이 값으로 명시적으로
+# postgres_url을 덮어써 실제 운영 DB에 붙지 않도록 격리한다.
+UNREACHABLE_PG_URL = "postgresql://nouser:nopass@127.0.0.1:1/doesnotexist"
+
 
 class TestA01ProcessWatchdog(unittest.TestCase):
     def test_status_query_never_kills_processes(self):
@@ -72,13 +77,15 @@ class TestA02SelfHealing(unittest.TestCase):
 
 class TestA03QuantTrader(unittest.TestCase):
     def test_missing_db_returns_empty_not_fixture_by_default(self):
-        """A03: DB가 없을 때 기본 동작은 빈 목록(degraded)이며, 가짜 실데이터를 반환하지 않는다."""
-        worker = QuantTraderWorker(is_mock=True, stock_db_path="/no/such/path.db")
+        """A03: DB가 없을 때 기본 동작은 빈 목록(degraded)이며, 가짜 실데이터를 반환하지 않는다.
+        postgres_url을 명시적으로 차단해 config.env_loader가 import 시점에 프로세스 환경에
+        심어둔 실제 STOCK_POSTGRES_URL/POSTGRES_DATABASE_URL의 영향을 받지 않게 한다(A10 경로 격리)."""
+        worker = QuantTraderWorker(is_mock=True, stock_db_path="/no/such/path.db", postgres_url=UNREACHABLE_PG_URL)
         universe = worker.get_real_universe(limit=5)
         self.assertEqual(universe, [])
 
     def test_missing_db_fixture_requires_explicit_opt_in(self):
-        worker = QuantTraderWorker(is_mock=True, stock_db_path="/no/such/path.db")
+        worker = QuantTraderWorker(is_mock=True, stock_db_path="/no/such/path.db", postgres_url=UNREACHABLE_PG_URL)
         universe = worker.get_real_universe(limit=5, allow_fixture_fallback=True)
         self.assertTrue(len(universe) > 0)
         self.assertTrue(all(row.get("is_fixture") for row in universe))
@@ -275,6 +282,34 @@ class TestA08StatePersistence(unittest.TestCase):
         self.assertEqual(result2["filtered_and_prepared"], 0)
         skipped = [r for r in result2["reports"] if r.get("delivery_status") == "ALREADY_PREPARED_SKIPPED"]
         self.assertGreater(len(skipped), 0)
+
+
+class TestA10PostgresVsLegacySqlite(unittest.TestCase):
+    def test_postgres_unreachable_falls_back_to_labeled_legacy_sqlite(self):
+        """A10: PostgreSQL이 없으면 레거시 SQLite로 저하하되, data_source로 명확히 구분해야 한다."""
+        worker = QuantTraderWorker(is_mock=True, postgres_url=UNREACHABLE_PG_URL)
+        universe = worker.get_real_universe(limit=3)
+        if universe:  # 실제 stock.db가 이 환경에 있을 때만 검증 가능
+            self.assertTrue(all(row["data_source"] == "legacy_sqlite_snapshot" for row in universe))
+
+    def test_postgres_result_is_labeled_operational_not_legacy(self):
+        """A10: PostgreSQL 조회 결과는 legacy_sqlite_snapshot으로 표시되면 안 된다."""
+        with patch.object(QuantTraderWorker, "_get_universe_from_postgres", return_value=[
+            {"code": "005930", "name": "삼성전자", "market": "KOSPI", "sector": "IT",
+             "price": 1.0, "market_cap": 1.0, "per": 1.0, "roe": 1.0,
+             "snapshot_date": "2026-09-04", "updated_at": None,
+             "is_fixture": False, "data_source": "postgres_operational"}
+        ]):
+            worker = QuantTraderWorker(is_mock=True)
+            universe = worker.get_real_universe(limit=3)
+        self.assertEqual(universe[0]["data_source"], "postgres_operational")
+
+    def test_postgres_query_pins_latest_base_date(self):
+        """A10: stock_universe가 base_date별 시계열이므로, 쿼리가 최신 날짜로 고정되어 있어야
+        한다(누락 시 같은 종목이 오래된 날짜 행과 중복으로 섞여 나온다 - 실제로 재현됐던 문제)."""
+        import inspect
+        src = inspect.getsource(QuantTraderWorker._get_universe_from_postgres)
+        self.assertIn("MAX(base_date)", src)
 
 
 if __name__ == "__main__":
