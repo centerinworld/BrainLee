@@ -24,6 +24,7 @@ from agents.l1_b_content_orchestrator import ContentOrchestrator
 from fastapi import HTTPException
 import bridge_api
 from memory.vector_store import MemoryVectorStore
+from memory.state_ledger import StateLedger
 
 
 class TestA01ProcessWatchdog(unittest.TestCase):
@@ -217,6 +218,63 @@ class TestA07VectorStoreDegraded(unittest.TestCase):
             emb2, threshold=0.5, text="KF-21 블록1 양산 계약 체결 관련 후속 보도"
         )
         self.assertTrue(is_dup)
+
+
+class TestA08StatePersistence(unittest.TestCase):
+    def setUp(self):
+        self.tmp_ledger = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
+        self.tmp_ledger.close()
+
+    def tearDown(self):
+        os.unlink(self.tmp_ledger.name)
+
+    def test_ledger_persists_across_instances(self):
+        """A08: 원장에 쓴 레코드는 새 StateLedger 인스턴스(재시작 시뮬레이션)에서도 읽힌다."""
+        ledger1 = StateLedger(db_path=self.tmp_ledger.name)
+        ledger1.upsert("orders", "ORD_TEST_1", {"status": "SIMULATED_FILL", "stock_code": "005930"})
+
+        ledger2 = StateLedger(db_path=self.tmp_ledger.name)
+        record = ledger2.get("orders", "ORD_TEST_1")
+        self.assertIsNotNone(record)
+        self.assertEqual(record["stock_code"], "005930")
+
+    def test_order_idempotency_key_prevents_duplicate_execution(self):
+        """A08: 같은 idempotency_key로 두 번 호출하면 두 번째는 재실행 없이 기존 주문을 반환한다."""
+        ledger = StateLedger(db_path=self.tmp_ledger.name)
+        worker = QuantTraderWorker(is_mock=True, ledger=ledger)
+
+        order1 = asyncio.run(worker.execute_order(
+            "005930", "삼성전자", "BUY", 70000.0, 10, idempotency_key="RUN_1_005930"
+        ))
+        order2 = asyncio.run(worker.execute_order(
+            "005930", "삼성전자", "BUY", 70000.0, 10, idempotency_key="RUN_1_005930"
+        ))
+        self.assertEqual(order1["order_id"], order2["order_id"])
+        # 두 번째 호출에서 self.orders 리스트에 새 레코드가 추가되지 않아야 한다.
+        self.assertEqual(len(worker.orders), 1)
+
+    def test_content_orchestrator_does_not_reprepare_same_item_after_restart(self):
+        """A08: 발행 원장(ledger)이 공유되면, 콘텐츠 dedup 이력(vector_store)이 없는
+        새 프로세스에서도 같은 (source, title) 항목을 다시 '발행 준비'로 집계하지 않는다."""
+        ledger = StateLedger(db_path=self.tmp_ledger.name)
+
+        def make_isolated_vector_store():
+            tmp = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
+            tmp.close()
+            self.addCleanup(os.unlink, tmp.name)
+            return MemoryVectorStore(db_url="postgresql://nouser:nopass@127.0.0.1:1/doesnotexist", fallback_db_path=tmp.name)
+
+        # 1회차: 콘텐츠 dedup 이력이 없는 새 vector_store
+        orchestrator1 = ContentOrchestrator(vector_store=make_isolated_vector_store(), ledger=ledger)
+        result1 = asyncio.run(orchestrator1.run_defense_intelligence_cycle())
+        self.assertGreater(result1["filtered_and_prepared"], 0)
+
+        # "재시작" 시뮬레이션: vector_store는 또 새 것(dedup 이력 없음)이지만 ledger는 공유
+        orchestrator2 = ContentOrchestrator(vector_store=make_isolated_vector_store(), ledger=ledger)
+        result2 = asyncio.run(orchestrator2.run_defense_intelligence_cycle())
+        self.assertEqual(result2["filtered_and_prepared"], 0)
+        skipped = [r for r in result2["reports"] if r.get("delivery_status") == "ALREADY_PREPARED_SKIPPED"]
+        self.assertGreater(len(skipped), 0)
 
 
 if __name__ == "__main__":

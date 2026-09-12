@@ -10,17 +10,21 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
+from memory.state_ledger import StateLedger
+
 logger = logging.getLogger("quant_trader")
 
 class QuantTraderWorker:
-    def __init__(self, is_mock: bool = True, stock_db_path: Optional[str] = None):
+    def __init__(self, is_mock: bool = True, stock_db_path: Optional[str] = None, ledger: Optional[StateLedger] = None):
         self.is_mock = is_mock
         self.stock_db_path = stock_db_path or os.getenv(
-            "STOCK_DB_PATH", 
+            "STOCK_DB_PATH",
             "/Volumes/Realtek_NVME/stock_dashboard/stock.db"
         )
         self.orders: List[Dict[str, Any]] = []
         self.rate_limit_delay = 1.0
+        # A08: 주문 기록을 재시작 후에도 남도록 영속 원장에 저장한다.
+        self.ledger = ledger or StateLedger()
 
     def get_real_universe(
         self,
@@ -123,12 +127,22 @@ class QuantTraderWorker:
         order_type: str,
         price: float,
         quantity: int,
-        strategy_name: str = "Quant_Rebalance_V2"
+        strategy_name: str = "Quant_Rebalance_V2",
+        idempotency_key: Optional[str] = None
     ) -> Dict[str, Any]:
         """증권사 API 또는 모의투자 환경으로 주문 전송 및 체결.
-        실제 증권사 API 연동이 구현되어 있지 않으므로, 실제 체결 증거 없이 FILLED로 표시하지 않는다."""
+        실제 증권사 API 연동이 구현되어 있지 않으므로, 실제 체결 증거 없이 FILLED로 표시하지 않는다.
+        idempotency_key를 넘기면 이미 기록된 주문이 있을 때 재실행 없이 기존 레코드를 반환한다
+        (재시작/재시도 시 중복 주문 방지, A08)."""
+        if idempotency_key:
+            existing = self.ledger.get("orders", idempotency_key)
+            if existing:
+                logger.info(f"[중복 방지] idempotency_key={idempotency_key} 기존 주문 반환 (재실행 안 함): {existing['order_id']}")
+                return existing
+
         await asyncio.sleep(0.05)
         order_id = f"ORD_{datetime.now().strftime('%Y%m%d%H%M%S')}_{stock_code}"
+        ledger_key = idempotency_key or order_id
 
         if not self.is_mock:
             # is_mock=False라는 설정값만으로 실전 상태를 표기하지 않는다 - 실제 증권사 체결
@@ -147,6 +161,7 @@ class QuantTraderWorker:
                 "filled_at": None
             }
             self.orders.append(order_record)
+            self.ledger.upsert("orders", ledger_key, order_record)
             return order_record
 
         order_record = {
@@ -162,5 +177,6 @@ class QuantTraderWorker:
             "filled_at": datetime.now().isoformat()
         }
         self.orders.append(order_record)
+        self.ledger.upsert("orders", ledger_key, order_record)
         logger.info(f"[모의] 주문 시뮬레이션 완료(실제 체결 아님): {order_id} {stock_name}({stock_code}) {order_type} {quantity}주 @ {price:,.0f}원")
         return order_record

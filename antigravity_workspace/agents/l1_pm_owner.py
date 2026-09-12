@@ -15,6 +15,7 @@ from datetime import datetime
 from agents.l1_a_dev_orchestrator import DevOrchestrator
 from agents.l1_b_content_orchestrator import ContentOrchestrator
 from memory.vector_store import MemoryVectorStore
+from memory.state_ledger import StateLedger
 
 # 로깅 설정
 logging.basicConfig(
@@ -31,6 +32,9 @@ class L1PMOwner:
         self.dev_orchestrator = DevOrchestrator(is_mock=True)
         self.content_orchestrator = ContentOrchestrator(vector_store=self.vector_store)
         self.tasks: List[Dict[str, Any]] = []
+        # A08: 작업 상태를 재시작 후에도 감사(audit)할 수 있도록 영속 원장에 기록한다.
+        # (자동 재개 실행기는 별도 범위 - 여기서는 상태 이력의 영속 기록만 보장한다)
+        self.ledger = StateLedger()
 
     def parse_founder_intent(self, user_prompt: str) -> List[Dict[str, Any]]:
         """
@@ -76,6 +80,8 @@ class L1PMOwner:
         if not tasks:
             logger.info(f"[L1 PM Intent Parsing] 주식/방산 도메인으로 분류되지 않은 요청 - 실행 태스크 생성 안 함: {user_prompt[:80]!r}")
 
+        for t in tasks:
+            self.ledger.upsert("tasks", t["task_id"], t)
         self.tasks.extend(tasks)
         logger.info(f"[L1 PM Intent Parsing] {len(tasks)}개의 실행 DAG 태스크 분해 완료")
         return tasks
@@ -90,8 +96,9 @@ class L1PMOwner:
         logger.info(f"[L1 Handoff] 태스크 '{task_id}' -> '{domain}' 오케스트레이터로 전달")
         
         task["status"] = "RUNNING"
+        self.ledger.upsert("tasks", task_id, task)
         result = {}
-        
+
         try:
             if domain == "dev_orchestrator":
                 universe = task["payload"].get("universe", [])
@@ -115,6 +122,7 @@ class L1PMOwner:
                 heal_res = self.dev_orchestrator.self_healing_loop(e)
                 task["healing_record"] = heal_res
 
+        self.ledger.upsert("tasks", task_id, task)
         return task
 
     def execution_qa(self, task: Dict[str, Any]) -> Dict[str, Any]:
