@@ -7,6 +7,7 @@ H01 회귀 테스트: 2026-09-12 핸드오프 문서 A01~A06 수정 사항 검�
 import os
 import sys
 import asyncio
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -22,6 +23,7 @@ from agents.l1_pm_owner import L1PMOwner
 from agents.l1_b_content_orchestrator import ContentOrchestrator
 from fastapi import HTTPException
 import bridge_api
+from memory.vector_store import MemoryVectorStore
 
 
 class TestA01ProcessWatchdog(unittest.TestCase):
@@ -153,6 +155,68 @@ class TestA05BridgeAuth(unittest.TestCase):
         """A05: CORS allow_origins가 더 이상 '*' 전체 허용이 아니다."""
         self.assertNotIn("*", bridge_api._allowed_origins)
         self.assertIn("https://newsinfo.cloud", bridge_api._allowed_origins)
+
+
+class TestA07VectorStoreDegraded(unittest.TestCase):
+    def setUp(self):
+        self.tmp_db = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
+        self.tmp_db.close()
+
+    def tearDown(self):
+        os.unlink(self.tmp_db.name)
+
+    def _make_store(self) -> MemoryVectorStore:
+        # 존재하지 않는 PostgreSQL DSN을 줘서 항상 degraded(use_fallback=True) 경로를 타게 한다.
+        return MemoryVectorStore(db_url="postgresql://nouser:nopass@127.0.0.1:1/doesnotexist", fallback_db_path=self.tmp_db.name)
+
+    def test_content_persists_across_restart(self):
+        """A07: PostgreSQL이 없어도 원문이 프로세스 재시작(새 인스턴스) 후에도 남아있어야 한다."""
+        store1 = MemoryVectorStore(db_url="postgresql://nouser:nopass@127.0.0.1:1/doesnotexist", fallback_db_path=self.tmp_db.name)
+        emb = store1.get_embedding("KF-21 양산 계약")
+        doc = store1.insert_defense_intelligence(
+            source="DAPA", title="KF-21 양산 계약", raw_content="본문 내용",
+            fact_summary="f", impact_summary="i", strategy_summary="s", embedding=emb
+        )
+        self.assertTrue(store1.use_fallback)
+        self.assertIsNotNone(doc["id"])
+
+        # "재시작" 시뮬레이션: 같은 파일을 가리키는 새 인스턴스
+        store2 = MemoryVectorStore(db_url="postgresql://nouser:nopass@127.0.0.1:1/doesnotexist", fallback_db_path=self.tmp_db.name)
+        results = store2.search_similar_intelligence("KF-21 양산", top_k=5)
+        self.assertTrue(any(r["title"] == "KF-21 양산 계약" for r in results))
+
+    def test_search_marks_degraded_mode(self):
+        store = self._make_store()
+        results = store.search_similar_intelligence("아무 질문")
+        self.assertEqual(results, [])  # 빈 저장소
+        store.insert_defense_intelligence(
+            source="X", title="테스트 제목 KF-21", raw_content="테스트 본문",
+            fact_summary="f", impact_summary="i", strategy_summary="s",
+            embedding=store.get_embedding("테스트")
+        )
+        results = store.search_similar_intelligence("KF-21")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["search_mode"], "degraded_keyword")
+
+    def test_check_duplicate_without_text_does_not_false_positive(self):
+        """A07: text 없이는(가짜 벡터로) 중복 판정을 내리지 않는다."""
+        store = self._make_store()
+        emb = store.get_embedding("아무 텍스트")
+        is_dup, matched, sim = store.check_duplicate(emb, threshold=0.85)
+        self.assertFalse(is_dup)
+
+    def test_check_duplicate_with_text_uses_keyword_overlap(self):
+        store = self._make_store()
+        store.insert_defense_intelligence(
+            source="DAPA", title="KF-21 블록1 양산 계약 체결", raw_content="방위사업청 KAI 계약",
+            fact_summary="f", impact_summary="i", strategy_summary="s",
+            embedding=store.get_embedding("KF-21 블록1 양산 계약 체결")
+        )
+        emb2 = store.get_embedding("KF-21 블록1 양산 계약 체결 관련 후속 보도")
+        is_dup, matched, sim = store.check_duplicate(
+            emb2, threshold=0.5, text="KF-21 블록1 양산 계약 체결 관련 후속 보도"
+        )
+        self.assertTrue(is_dup)
 
 
 if __name__ == "__main__":

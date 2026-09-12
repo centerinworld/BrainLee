@@ -110,7 +110,9 @@ class DefenseResearcherWorker:
             # 1. 임베딩 및 중복 검사
             if self.vector_store:
                 emb = self.vector_store.get_embedding(f"{title} {content}")
-                is_dup, matched, sim = self.vector_store.check_duplicate(emb, self.similarity_threshold)
+                is_dup, matched, sim = self.vector_store.check_duplicate(
+                    emb, self.similarity_threshold, text=f"{title} {content}"
+                )
                 if is_dup:
                     logger.info(f"중복/노이즈 기사 필터링 차단 (유사도 {sim:.2f} >= {self.similarity_threshold}): '{title}'")
                     continue
