@@ -47,8 +47,16 @@ class L1PMOwner:
         # 의도 분석 (키워드 및 도메인 매핑)
         # 일반 질문("전체"/방산 무관 문의 등)이 자동으로 주문 실행으로 이어지지 않도록,
         # 도메인 매칭(is_stock/is_defense)과 주문 실행 의도(is_order_intent)를 분리한다.
-        is_stock = any(k in user_prompt for k in ["주식", "매매", "수급", "포트폴리오", "트레이딩", "삼성전자", "퀀트", "가격", "재무"])
-        is_defense = any(k in user_prompt for k in ["방산", "KAI", "항공", "KF-21", "FA-50", "DAPA", "방사청", "국방", "한화에어로"])
+        # 2026-09-12 실제 텔레그램 테스트에서 "종목" 같은 흔한 표현이 빠져 있어 분류 실패가
+        # 발생함을 확인 - 명확히 주식/방산 도메인인 일반 명사를 보강한다(과도하게 일반적인
+        # 단어(예: 단순 "분석")는 무관한 요청까지 끌어들일 수 있어 제외).
+        is_stock = any(k in user_prompt for k in [
+            "주식", "매매", "수급", "포트폴리오", "트레이딩", "삼성전자", "퀀트", "가격", "재무",
+            "종목", "차트", "시황", "펀더멘털", "밸류에이션", "실적", "공시", "코스피", "코스닥"
+        ])
+        is_defense = any(k in user_prompt for k in [
+            "방산", "KAI", "항공", "KF-21", "FA-50", "DAPA", "방사청", "국방", "한화에어로", "전투기", "무기체계"
+        ])
         is_order_intent = any(k in user_prompt for k in ["매수", "매도", "주문", "리밸런싱 실행", "체결"])
 
         if is_stock or ("전체" in user_prompt and is_stock):
