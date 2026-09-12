@@ -434,5 +434,79 @@ class TestEnvLoaderIncludesWorkspaceEnv(unittest.TestCase):
         self.assertTrue(any(p.endswith("antigravity_workspace/.env") for p in loaded_paths))
 
 
+class TestGoalIntakeDaemon(unittest.TestCase):
+    def setUp(self):
+        self.tmp_ledger = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
+        self.tmp_ledger.close()
+        self.ledger = StateLedger(db_path=self.tmp_ledger.name)
+
+    def tearDown(self):
+        os.unlink(self.tmp_ledger.name)
+
+    def _make_daemon(self, pm_owner=None):
+        import goal_intake_daemon
+        return goal_intake_daemon.GoalIntakeDaemon(
+            bot_token="test-goal-bot-token",
+            allowed_chat_id="12345",
+            pm_owner=pm_owner or L1PMOwner(auto_heal=True),
+            ledger=self.ledger,
+        )
+
+    def test_message_from_disallowed_chat_id_is_ignored(self):
+        """소유자 확인: TELEGRAM_CHAT_ID 일치 발신만 명령으로 인정, 다른 chat_id는 무시."""
+        daemon = self._make_daemon()
+        with patch("goal_intake_daemon.requests.post") as mock_post:
+            result = daemon.handle_update({
+                "update_id": 1,
+                "message": {"chat": {"id": 99999}, "text": "삼성전자 퀀트 리밸런싱해줘"}
+            })
+        self.assertIsNone(result)
+        mock_post.assert_not_called()  # 무시된 메시지는 응답도 보내지 않는다
+        self.assertEqual(self.ledger.list_domain("goal_intake"), [])
+
+    def test_message_from_allowed_chat_id_creates_task_and_acks(self):
+        daemon = self._make_daemon()
+        with patch("goal_intake_daemon.requests.post") as mock_post:
+            mock_post.return_value.ok = True
+            tasks = daemon.handle_update({
+                "update_id": 2,
+                "message": {"chat": {"id": 12345}, "text": "삼성전자 퀀트 리밸런싱해줘"}
+            })
+        self.assertGreaterEqual(len(tasks), 1)
+        mock_post.assert_called_once()
+        sent_text = mock_post.call_args.kwargs["json"]["text"]
+        self.assertIn("접수 완료", sent_text)
+        ledger_tasks = self.ledger.list_domain("goal_intake")
+        self.assertEqual(len(ledger_tasks), len(tasks))
+        self.assertEqual(ledger_tasks[0]["chat_id"], "12345")
+
+    def test_unclassified_request_acks_without_creating_task(self):
+        daemon = self._make_daemon()
+        with patch("goal_intake_daemon.requests.post") as mock_post:
+            mock_post.return_value.ok = True
+            tasks = daemon.handle_update({
+                "update_id": 3,
+                "message": {"chat": {"id": 12345}, "text": "오늘 날씨 어때?"}
+            })
+        self.assertEqual(tasks, [])
+        mock_post.assert_called_once()
+        self.assertIn("이해하지 못했습니다", mock_post.call_args.kwargs["json"]["text"])
+        self.assertEqual(self.ledger.list_domain("goal_intake"), [])
+
+    def test_no_bot_token_refuses_to_run(self):
+        import goal_intake_daemon
+        daemon = goal_intake_daemon.GoalIntakeDaemon(bot_token="", allowed_chat_id="12345", ledger=self.ledger)
+        with self.assertRaises(RuntimeError):
+            daemon.fetch_updates()
+
+    def test_offset_advances_past_processed_update(self):
+        """같은 update를 다시 받지 않도록 offset이 update_id+1로 전진해야 한다."""
+        daemon = self._make_daemon()
+        with patch("goal_intake_daemon.requests.post") as mock_post:
+            mock_post.return_value.ok = True
+            daemon.handle_update({"update_id": 41, "message": {"chat": {"id": 12345}, "text": "오늘 날씨 어때?"}})
+        self.assertEqual(daemon._offset, 42)
+
+
 if __name__ == "__main__":
     unittest.main()
