@@ -1,0 +1,37 @@
+[
+  {
+    "id": "page1",
+    "title": "CEO 일정",
+    "description": "Google Calendar 연동 대상 CEO 캘린더",
+    "roles": ["ceo", "admin"],
+    "type": "calendar"
+  },
+  {
+    "id": "page2",
+    "title": "회사 주요일정",
+    "description": "회사 일정과 수정 요청 승인",
+    "roles": ["ceo", "admin", "staff"],
+    "type": "calendar"
+  },
+  {
+    "id": "page3",
+    "title": "회사관련 주요 기사",
+    "description": "로컬 선별 후 APP 전송",
+    "roles": ["ceo", "admin", "staff"],
+    "type": "feed"
+  },
+  {
+    "id": "page4",
+    "title": "타회사 동향 공유",
+    "description": "경쟁사 동향 선별 후 APP 전송",
+    "roles": ["ceo", "admin", "staff"],
+    "type": "feed"
+  },
+  {
+    "id": "page5",
+    "title": "페이지 관리",
+    "description": "확장 가능한 페이지/권한 레지스트리",
+    "roles": ["admin"],
+    "type": "admin"
+  }
+]

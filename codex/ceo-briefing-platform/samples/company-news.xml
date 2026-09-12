@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Sample Company Feed</title>
+    <link>https://example.com/company</link>
+    <description>Company feed sample</description>
+    <item>
+      <title>주요 사업부, 해외 수주 확대</title>
+      <link>https://example.com/company-1</link>
+      <description>해외 주요 고객사와 장기 계약 관련 기사입니다.</description>
+      <pubDate>Mon, 07 Apr 2026 08:00:00 +0900</pubDate>
+    </item>
+    <item>
+      <title>AI 기반 운영 효율화 계획 발표</title>
+      <link>https://example.com/company-2</link>
+      <description>운영 효율화 및 경영 의사결정 고도화 기사입니다.</description>
+      <pubDate>Mon, 07 Apr 2026 09:00:00 +0900</pubDate>
+    </item>
+  </channel>
+</rss>

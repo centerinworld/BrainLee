@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "CEO Briefing",
+    "slug": "ceo-briefing-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.codex.ceobriefing"
+    },
+    "ios": {
+      "bundleIdentifier": "com.codex.ceobriefing"
+    }
+  }
+}

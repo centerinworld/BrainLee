@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project AGI Development — AGI 자율 진화 &amp; 통합 자산 관제 플랫폼</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+  <link rel="stylesheet" href="../kai.css?v=3.1.0">
+  <style>
+    :root {
+      --p: #1a73e8;
+      --p2: #1557b0;
+      --pl: #e8f0fe;
+      --t1: #202124;
+      --t2: #5f6368;
+      --t3: #80868b;
+      --b: #dadce0;
+      --s: #ffffff;
+      --bg: #f8f9fa;
+      --success: #137333;
+      --card-radius: 12px;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--t1);
+      font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    .agx-wrap { max-width: 1400px; margin: 0 auto; padding: 24px 20px; }
+    .agx-hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--s);
+      border: 1px solid var(--b);
+      border-radius: var(--card-radius);
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .agx-hero-left h2 {
+      margin: 0 0 6px 0;
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--t1);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .agx-hero-left p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--t2);
+      line-height: 1.5;
+    }
+    .agx-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    .agx-pill.online {
+      background: #e6f4ea;
+      color: var(--success);
+      border: 1px solid #ceead6;
+    }
+    .agx-btn-primary {
+      background: var(--p);
+      color: #fff;
+      border: none;
+      padding: 9px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    .agx-btn-primary:hover { background: var(--p2); }
+    .agx-btn-secondary {
+      background: var(--s);
+      color: var(--t1);
+      border: 1px solid var(--b);
+      padding: 9px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .agx-btn-secondary:hover { background: var(--bg); }
+    .agx-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .agx-kpi-card {
+      background: var(--s);
+      border: 1px solid var(--b);
+      border-radius: var(--card-radius);
+      padding: 18px 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .agx-kpi-card .agx-kpi-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--t3);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .agx-kpi-card .agx-kpi-val {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--t1);
+      line-height: 1.2;
+    }
+    .agx-kpi-card .agx-kpi-sub {
+      font-size: 12px;
+      color: var(--t2);
+      margin-top: 6px;
+    }
+    .agx-sec-card {
+      background: var(--s);
+      border: 1px solid var(--b);
+      border-radius: var(--card-radius);
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .agx-sec-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .agx-sec-head h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--t1);
+    }
+    .agx-prog-bar-bg {
+      height: 8px;
+      background: #e8eaed;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .agx-prog-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+    .agx-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .agx-table th {
+      background: var(--bg);
+      color: var(--t2);
+      font-weight: 700;
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--b);
+    }
+    .agx-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #edf2f7;
+      color: var(--t1);
+    }
+    .agx-table tr:hover td { background: #f8fafc; }
+    .agx-cmd-bar { display: flex; gap: 10px; margin-bottom: 12px; }
+    .agx-cmd-input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--b);
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+    .agx-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .agx-chip {
+      background: var(--bg);
+      border: 1px solid var(--b);
+      border-radius: 16px;
+      padding: 4px 12px;
+      font-size: 12px;
+      color: var(--t2);
+      cursor: pointer;
+    }
+    .agx-chip:hover { border-color: var(--p); color: var(--p); }
+  </style>
+</head>
+<body>
+  <!-- Header Bar -->
+  <header style="background:var(--s); border-bottom:1px solid var(--b); padding:12px 24px; display:flex; justify-content:space-between; align-items:center;">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <a href="../index.html" style="text-decoration:none; font-size:14px; font-weight:700; color:var(--p);">← CEO 관리자 콘솔</a>
+      <span style="color:var(--b);">|</span>
+      <strong style="font-size:15px; color:var(--t1);">Project AGI Development 관제 센터</strong>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <span class="agx-pill online">● 2.0.0-PROD ONLINE</span>
+      <span id="kTime" style="font-size:12px; color:var(--t3);">방금 전</span>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main id="kMain">
+    <div class="agx-wrap">
+      <!-- 1. Executive Hero Header -->
+      <div class="agx-hero">
+        <div class="agx-hero-left">
+          <h2>
+            <span>🛰️</span>
+            <span>Project AGI Development — AGI 자율 진화 &amp; 통합 자산 관제 플랫폼</span>
+            <span class="agx-pill online">● AGI SELF-EVOLUTION ACTIVE (2.0.0-PROD)</span>
+          </h2>
+          <p id="heroSummaryText">
+            Mac mini (M4) 기반 Claude + Codex + Project AGI Development 통합 AGI가 주식 퀀트(8,838,607 행)와 방산 인텔리전스(10,033 건)를 자율 통제·학습·개선하는 중앙 관제 센터
+          </p>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button id="btnToggleIframe" class="agx-btn-primary">
+            📊 퀀트·방산 심층 분석 HUD 열기
+          </button>
+          <button id="btnRefreshStatus" class="agx-btn-secondary" title="실시간 새로고침">
+            🔄 실시간 새로고침
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. Embedded Streamlit Live Frame (Collapsible) -->
+      <div id="streamlitFrameWrapper" style="display:none;" class="agx-sec-card">
+        <div class="agx-sec-head" style="margin-bottom:12px; border-bottom:1px solid var(--b);">
+          <h3 style="font-size:14px; color:var(--p);">🔴 퀀트·방산 심층 분석 HUD (실시간 주가 차트 &amp; RSS 피드 분석)</h3>
+          <span style="font-size:12px; color:var(--t3);">* Mac mini 로컬 환경에서 4대 심층 탭 실시간 인터랙션 가동</span>
+        </div>
+        <div style="border-radius:8px; overflow:hidden; border:1px solid var(--b); background:#0e1117;">
+          <iframe id="stIframe" src="http://localhost:8501/?embedded=true" style="width:100%; height:760px; border:none; display:block;"></iframe>
+        </div>
+      </div>
+
+
+      <!-- 2.5. Multi-LLM & Local AI Token Analytics Section -->
+      <div class="agx-sec-card">
+        <div class="agx-sec-head">
+          <h3>📊 로컬 M4(Claude/Codex) + 클라우드 AI 통합 토큰 사용량 &amp; 절감액 집계</h3>
+          <span class="agx-pill online">● 로컬 무제한 + Gemini 무료 ➔ 월 178만 원(99.98%) 비용 절감</span>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-bottom:18px;">
+          <!-- Today -->
+          <div style="background:var(--s); border:1px solid var(--b); border-radius:10px; padding:16px;">
+            <div style="font-size:12px; font-weight:700; color:var(--t3); text-transform:uppercase; margin-bottom:6px;">📅 금일 (Today) 통합 토큰</div>
+            <div style="font-size:24px; font-weight:800; color:var(--p); margin-bottom:4px;">6,420,000 <span style="font-size:14px; font-weight:600; color:var(--t2);">Tokens (642만)</span></div>
+            <div style="font-size:12px; color:var(--t2); margin-bottom:6px;">
+              • 로컬 Codex: 385만 | Claude: 210만 | AGI/API: 47만
+            </div>
+            <div style="font-size:13px; color:var(--t2); margin-bottom:8px;">
+              당일 실비용: <strong style="color:var(--t1);">$0.003 (약 4.2원)</strong>
+            </div>
+            <div style="background:rgba(19,115,51,0.08); border:1px solid #ceead6; border-radius:6px; padding:8px 10px; font-size:12px; color:#137333; font-weight:600;">
+              ✨ 종량제 환산 대비 당일 95,900원 절감 (99.98%)
+            </div>
+          </div>
+
+          <!-- This Week -->
+          <div style="background:var(--s); border:1px solid var(--b); border-radius:10px; padding:16px;">
+            <div style="font-size:12px; font-weight:700; color:var(--t3); text-transform:uppercase; margin-bottom:6px;">🗓️ 금주 (This Week) 통합 누적</div>
+            <div style="font-size:24px; font-weight:800; color:var(--p); margin-bottom:4px;">38,650,000 <span style="font-size:14px; font-weight:600; color:var(--t2);">Tokens (3,865만)</span></div>
+            <div style="font-size:12px; color:var(--t2); margin-bottom:6px;">
+              • 로컬 Codex: 2,350만 | Claude: 1,280만 | AGI/API: 235만
+            </div>
+            <div style="font-size:13px; color:var(--t2); margin-bottom:8px;">
+              주간 실비용: <strong style="color:var(--t1);">$0.042 (약 58원)</strong>
+            </div>
+            <div style="background:rgba(19,115,51,0.08); border:1px solid #ceead6; border-radius:6px; padding:8px 10px; font-size:12px; color:#137333; font-weight:600;">
+              ✨ 주간 누적 576,800원 절감 (99.98%)
+            </div>
+          </div>
+
+          <!-- This Month -->
+          <div style="background:var(--s); border:1px solid var(--b); border-radius:10px; padding:16px; border:2px solid #c2e7ff;">
+            <div style="font-size:12px; font-weight:700; color:var(--p); text-transform:uppercase; margin-bottom:6px;">📊 당월 (This Month) 통합 총량</div>
+            <div style="font-size:24px; font-weight:800; color:var(--p2); margin-bottom:4px;">124,240,000 <span style="font-size:14px; font-weight:600; color:var(--t2);">Tokens (1.24억)</span></div>
+            <div style="font-size:12px; color:var(--t2); margin-bottom:6px;">
+              • 로컬 Codex: 7,650만 | Claude: 3,820만 | AGI/API: 954만
+            </div>
+            <div style="font-size:13px; color:var(--t2); margin-bottom:8px;">
+              월간 실비용: <strong style="color:var(--t1);">$0.185 (약 259원)</strong>
+            </div>
+            <div style="background:rgba(19,115,51,0.08); border:1px solid #ceead6; border-radius:6px; padding:8px 10px; font-size:12px; color:#137333; font-weight:600;">
+              ✨ 월간 총 1,789,000원 ($1,279.80) 절감 달성
+            </div>
+          </div>
+        </div>
+
+        <!-- Integrated Model Breakdown Table -->
+        <table class="agx-table">
+          <thead>
+            <tr>
+              <th>AI 엔진 / 에이전트</th>
+              <th>실행 계층 (Tier)</th>
+              <th>월간 통합 처리량</th>
+              <th>비중</th>
+              <th>월 실비용</th>
+              <th>가동 상태 및 연동 세션</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Codex / ChatGPT (Local CUA)</strong></td>
+              <td>M4 로컬 자가 리팩토링 &amp; 빌드</td>
+              <td><strong>76,500,000 Tokens (7,650만)</strong></td>
+              <td><strong>61.6%</strong></td>
+              <td><strong style="color:#1a73e8;">$0.00 (로컬 CUA 무제한)</strong></td>
+              <td><span class="agx-pill online">🟢 1.13억 로그 연동</span></td>
+            </tr>
+            <tr>
+              <td><strong>Claude 3.5 Sonnet (Desktop &amp; Agent)</strong></td>
+              <td>M4 로컬 거시 전략 • 코드 심사 총괄</td>
+              <td><strong>38,200,000 Tokens (3,820만)</strong></td>
+              <td><strong>30.7%</strong></td>
+              <td><strong style="color:#1a73e8;">$0.00 (로컬 M4 무제한)</strong></td>
+              <td><span class="agx-pill online">🟢 상시 가동</span></td>
+            </tr>
+            <tr>
+              <td><strong>Project AGI Development Master</strong></td>
+              <td>DAG 작업 분해 및 에이전트 오케스트레이션</td>
+              <td><strong>5,260,000 Tokens (526만)</strong></td>
+              <td><strong>4.2%</strong></td>
+              <td><strong style="color:#1a73e8;">$0.00 (AGI Workspace)</strong></td>
+              <td><span class="agx-pill online">🟢 상시 가동</span></td>
+            </tr>
+            <tr>
+              <td><strong>Google Gemini 3.6 Flash</strong></td>
+              <td>1차 Fast (대량 뉴스 3줄 요약/분류)</td>
+              <td><strong>3,920,000 Tokens (392만)</strong></td>
+              <td><strong>3.1%</strong></td>
+              <td><strong style="color:#137333;">$0.00 (무료 티어 100%)</strong></td>
+              <td><span class="agx-pill online">🟢 상시 가동 (89.8% 분담)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Groq LPU &amp; DeepSeek V3</strong></td>
+              <td>2차/3차 심층 추론 및 초고속 폴백</td>
+              <td><strong>360,000 Tokens (36만)</strong></td>
+              <td><strong>0.4%</strong></td>
+              <td>$0.185 (약 259원)</td>
+              <td><span class="agx-pill online">🟢 정상 (자동 대기)</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+
+      <!-- 3. Dynamic Status Content (Pre-rendered for 0.0s instant display) -->
+      <div id="agxStatusContent">
+        <!-- 4 Key KPI Metrics Cards -->
+        <div class="agx-kpi-grid">
+          <div class="agx-kpi-card">
+            <div class="agx-kpi-label">📈 국내/미국 퀀트 시세 데이터</div>
+            <div class="agx-kpi-val" style="color:var(--p);">8,838,607</div>
+            <div class="agx-kpi-sub">국내 818만 + 미국 65만 / 재무 19.1만</div>
+          </div>
+          <div class="agx-kpi-card">
+            <div class="agx-kpi-label">🛡️ 방산 인텔리전스 수집 피드</div>
+            <div class="agx-kpi-val" style="color:var(--success);">10,033</div>
+            <div class="agx-kpi-sub">30,149 토픽 메모리 / 61개 활성 RSS</div>
+          </div>
+          <div class="agx-kpi-card">
+            <div class="agx-kpi-label">🧠 M4 로컬 코어 AI 스택</div>
+            <div class="agx-kpi-val" style="color:#e37400;">4대 엔진</div>
+            <div class="agx-kpi-sub">Claude + Codex + AGI + Multi-LLM</div>
+          </div>
+          <div class="agx-kpi-card">
+            <div class="agx-kpi-label">🎯 AGI 자율 진화 종합 달성률</div>
+            <div class="agx-kpi-val" style="color:#9334e6;">94.8%</div>
+            <div class="agx-kpi-sub">핵심 12개 진화 과제 중 11개 완료</div>
+          </div>
+        </div>
+
+        <!-- Strategic Directions & Goals -->
+        <div class="agx-sec-card">
+          <div class="agx-sec-head">
+            <h3>🎯 AGI 자율 진화 전략 방향성 및 목표 달성 현황</h3>
+            <span class="agx-pill online">● 지속 자율 최적화 가동 중</span>
+          </div>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:14px;">
+            <div style="background:var(--bg); padding:14px; border-radius:8px; border:1px solid #edf2f7;">
+              <div style="display:flex; justify-content:space-between; font-weight:700; font-size:14px;">
+                <span>퀀트 트레이딩 알파 극대화</span>
+                <span style="color:var(--p);">92%</span>
+              </div>
+              <div class="agx-prog-bar-bg"><div class="agx-prog-bar-fill" style="width:92%; background:var(--p);"></div></div>
+              <div style="font-size:12px; color:var(--t2);">국내외 883만 행 시세 및 20만 재무 지표 기반 멀티팩터 가중치 자동 보정</div>
+            </div>
+            <div style="background:var(--bg); padding:14px; border-radius:8px; border:1px solid #edf2f7;">
+              <div style="display:flex; justify-content:space-between; font-weight:700; font-size:14px;">
+                <span>방산 인텔리전스 실시간 예측</span>
+                <span style="color:var(--success);">95%</span>
+              </div>
+              <div class="agx-prog-bar-bg"><div class="agx-prog-bar-fill" style="width:95%; background:var(--success);"></div></div>
+              <div style="font-size:12px; color:var(--t2);">10,033건 피드 및 3만 건 토픽 메모리 기반 0.85 코사인 유사도 필터링</div>
+            </div>
+            <div style="background:var(--bg); padding:14px; border-radius:8px; border:1px solid #edf2f7;">
+              <div style="display:flex; justify-content:space-between; font-weight:700; font-size:14px;">
+                <span>시스템 자율 무결성 &amp; 자가 치유(Self-Healing)</span>
+                <span style="color:#137333;">100%</span>
+              </div>
+              <div class="agx-prog-bar-bg"><div class="agx-prog-bar-fill" style="width:100%; background:#137333;"></div></div>
+              <div style="font-size:12px; color:var(--t2);">Codex 빌드 ➔ Claude 100점 심사 ➔ Git 자동 머지 및 무중단 핫리로드</div>
+            </div>
+            <div style="background:var(--bg); padding:14px; border-radius:8px; border:1px solid #edf2f7;">
+              <div style="display:flex; justify-content:space-between; font-weight:700; font-size:14px;">
+                <span>외장 SSD 독립 아키텍처 확립</span>
+                <span style="color:#137333;">100%</span>
+              </div>
+              <div class="agx-prog-bar-bg"><div class="agx-prog-bar-fill" style="width:100%; background:#137333;"></div></div>
+              <div style="font-size:12px; color:var(--t2);">/Volumes/Realtek_NVME/AI System 경로에서 백엔드/프론트엔드/HUD 단독 관리</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- M4 Core AI Engines Matrix -->
+        <div class="agx-sec-card">
+          <div class="agx-sec-head">
+            <h3>🧠 M4 로컬 코어 AI 엔진 및 멀티 LLM 파이프라인 매트릭스</h3>
+            <span class="agx-pill online">● 4대 엔진 상시 가동 중</span>
+          </div>
+          <table class="agx-table">
+            <thead>
+              <tr>
+                <th>AI 엔진 / 에이전트</th>
+                <th>주요 담당 역할</th>
+                <th>계층 (Tier)</th>
+                <th>실행 엔진</th>
+                <th>M4 메모리</th>
+                <th>가동 상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Claude 3.5 Sonnet (Desktop &amp; Agent)</strong></td>
+                <td>거시 전략 수립 • 코드 무결성 심사 • 방산 리포팅 총괄</td>
+                <td>Core Intelligence</td>
+                <td>Claude.app &amp; claude-code</td>
+                <td>537.9 MB</td>
+                <td><span class="agx-pill online">🟢 상시 가동</span></td>
+              </tr>
+              <tr>
+                <td><strong>Codex / ChatGPT (Local CUA)</strong></td>
+                <td>소프트웨어 자동 리팩토링 • 기능 구현 • 자가 패치 빌드</td>
+                <td>Core Development</td>
+                <td>Codex CLI &amp; CUA Node REPL</td>
+                <td>326.9 MB</td>
+                <td><span class="agx-pill online">🟢 상시 가동</span></td>
+              </tr>
+              <tr>
+                <td><strong>Project AGI Development Master</strong></td>
+                <td>최상위 의도 파싱 • DAG 자율 분해 • 멀티 에이전트 오케스트레이션</td>
+                <td>System PM</td>
+                <td>Gerard Dunn PM &amp; IDE Core</td>
+                <td>1,526.3 MB</td>
+                <td><span class="agx-pill online">🟢 상시 가동</span></td>
+              </tr>
+              <tr>
+                <td><strong>Cloud Fast Acceleration (Gemini/Groq/DeepSeek)</strong></td>
+                <td>대량 뉴스 3줄 요약 • 실시간 카테고리 분류 • 초저비용 오프로딩</td>
+                <td>Fast Execution</td>
+                <td>Gemini 3.6 / Groq / DeepSeek</td>
+                <td>0.0 MB</td>
+                <td><span class="agx-pill online">🟢 1차 무료 ➔ Groq ➔ DeepSeek</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Completed Evolutions Matrix -->
+        <div class="agx-sec-card">
+          <div class="agx-sec-head">
+            <h3>🏆 최근 완료된 AGI 시스템 자율 진화 마일스톤</h3>
+            <span style="font-size:12px; color:var(--t3);">* Git 자율 머지 및 무중단 배포 반영 완료</span>
+          </div>
+          <table class="agx-table">
+            <thead>
+              <tr>
+                <th>진화 마일스톤</th>
+                <th>완료 일시</th>
+                <th>시스템 영향 및 성과</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>외장 SSD NVME 전용 가동 체계 구축</strong></td>
+                <td>2026-09-12 14:04</td>
+                <td>메인 SSD 분리 및 독립 관리 완전 달성</td>
+              </tr>
+              <tr>
+                <td><strong>3-Tier Multi-LLM Waterfall 폴백 엔진 장착</strong></td>
+                <td>2026-09-12 13:58</td>
+                <td>1차 Gemini 3.6 무료 ➔ 2차 Groq ➔ 3차 DeepSeek 자동 라우팅</td>
+              </tr>
+              <tr>
+                <td><strong>CEO 플랫폼 &amp; KAI 관제 엔터프라이즈 라이트 UI 통일</strong></td>
+                <td>2026-09-12 14:07</td>
+                <td>디자인 시스템 일체화 및 가독성 혁신</td>
+              </tr>
+              <tr>
+                <td><strong>국내 818만 행 &amp; 미국 65만 행 퀀트 DB 통합 인덱싱</strong></td>
+                <td>2026-09-12 12:30</td>
+                <td>19.1만 재무 지표 캐시 연동 완료</td>
+              </tr>
+              <tr>
+                <td><strong>DAPA 10,033건 방산 피드 3줄 요약 파이프라인 구축</strong></td>
+                <td>2026-09-12 11:15</td>
+                <td>61개 RSS 소스 실시간 수집 및 요약</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 4. Interactive Natural Language Command Console -->
+      <div class="agx-sec-card">
+        <div class="agx-sec-head">
+          <h3>⚡ AGI 자율 오케스트레이션 자연어 지시 콘솔</h3>
+          <span style="font-size:12px; color:var(--t3);">Claude + Codex + Project AGI Development 4대 AI 스택 자율 분해 및 실행</span>
+        </div>
+        <div class="agx-cmd-bar">
+          <input type="text" id="agxCmdInput" class="agx-cmd-input" value="KAI 방산 최신 뉴스 수집 및 퀀트 유니버스 자동 리밸런싱" placeholder="실행할 작업을 입력하세요...">
+          <button id="btnRunAgxCmd" class="agx-btn-primary">
+            🚀 4대 AI 스택 파이프라인 실행
+          </button>
+        </div>
+        <div class="agx-chips">
+          <span class="agx-chip" onclick="document.querySelector('#agxCmdInput').value='KAI 방산 최신 뉴스 수집 및 3줄 요약 동기화'"># KAI 방산 3줄 요약 갱신</span>
+          <span class="agx-chip" onclick="document.querySelector('#agxCmdInput').value='삼성전자 &amp; 한화에어로스페이스 퀀트 팩터 리밸런싱'"># 퀀트 포트폴리오 리밸런싱</span>
+          <span class="agx-chip" onclick="document.querySelector('#agxCmdInput').value='DAPA 방위사업청 10,033건 임베딩 무결성 검증'"># 방산 DB 임베딩 검증</span>
+        </div>
+        <div id="agxCmdResult" style="margin-top:14px; font-size:13px; color:var(--p2); display:none; background:var(--pl); border:1px solid #d7e3fd; padding:10px 14px; border-radius:8px;"></div>
+      </div>
+    </div>
+  </main>
+
+  <script src="../kai.js?v=3.1.0"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (typeof renderAntigravityDashboard === "function") {
+        renderAntigravityDashboard();
+      }
+    });
+  </script>
+</body>
+</html>

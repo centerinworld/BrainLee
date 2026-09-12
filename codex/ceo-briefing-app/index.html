@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CEO Briefing Hub</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div>
+        <p class="eyebrow">Executive Workspace</p>
+        <h1>CEO Briefing Hub</h1>
+        <p class="sidebar-copy">CEO 일정, 회사 주요 일정, 기사, 경쟁사 동향을 역할별로 통제해서 공유하는 로컬 MVP입니다.</p>
+      </div>
+
+      <section class="panel">
+        <label for="roleSelect">현재 역할</label>
+        <select id="roleSelect"></select>
+        <p id="roleDescription" class="muted"></p>
+      </section>
+
+      <nav id="pageNav" class="nav"></nav>
+
+      <section class="panel subtle">
+        <h2>연동 상태</h2>
+        <ul class="status-list">
+          <li><span class="dot live"></span> Google Calendar 실시간 동기화 준비</li>
+          <li><span class="dot staged"></span> RSS/AI 파싱 데이터 수동 승인 전송</li>
+          <li><span class="dot paused"></span> 백엔드 API 연결 전: 로컬 더미 데이터 사용</li>
+        </ul>
+      </section>
+    </aside>
+
+    <main class="content">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Chairman & Admin Console</p>
+          <h2 id="pageTitle">페이지를 선택하세요</h2>
+          <p id="pageDescription" class="hero-copy"></p>
+        </div>
+        <div class="hero-actions">
+          <button id="syncButton" class="ghost-button">Mock Sync</button>
+        </div>
+      </header>
+
+      <section id="appMount"></section>
+    </main>
+  </div>
+
+  <template id="calendarPageTemplate">
+    <section class="grid two">
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow" data-calendar-source></p>
+            <h3 data-calendar-title></h3>
+          </div>
+          <span class="pill">Google Calendar Style</span>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>시간</th>
+              <th>제목</th>
+              <th>장소</th>
+              <th>담당</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody data-calendar-body></tbody>
+        </table>
+      </article>
+
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">관리 액션</p>
+            <h3 data-action-title></h3>
+          </div>
+        </div>
+        <div data-action-body></div>
+      </article>
+    </section>
+  </template>
+
+  <template id="feedPageTemplate">
+    <section class="grid two">
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">APP 노출 목록</p>
+            <h3 data-feed-title></h3>
+          </div>
+          <span class="pill">제목만 노출</span>
+        </div>
+        <div data-feed-list></div>
+      </article>
+
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">로컬 선별 페이지</p>
+            <h3 data-feed-console-title></h3>
+          </div>
+          <span class="pill alt">Local Frontend Queue</span>
+        </div>
+        <div data-feed-console></div>
+      </article>
+    </section>
+  </template>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

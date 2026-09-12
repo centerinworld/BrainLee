@@ -1,0 +1,141 @@
+:root {
+  --bg: #f6f0e6;
+  --surface: #fffdf9;
+  --ink: #20303f;
+  --muted: #667684;
+  --line: rgba(32, 48, 63, 0.12);
+  --brand: #0f4d5f;
+  --accent: #bf6b3b;
+  font-family: "Segoe UI", "Noto Sans KR", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(135deg, #f6f0e6, #ecdfcc);
+  color: var(--ink);
+}
+
+.page {
+  padding: 28px;
+}
+
+.hero,
+.panel,
+.item,
+.notice {
+  background: rgba(255, 253, 249, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.hero,
+.panel {
+  padding: 22px;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
+.hero h1,
+.panel h2 {
+  margin: 0;
+  font-family: Georgia, "Nanum Myeongjo", serif;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+.layout {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.panel-header {
+  margin-bottom: 14px;
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.item {
+  padding: 14px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.button,
+.button-outline {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 15px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.button {
+  background: var(--brand);
+  color: #fff;
+}
+
+.button-outline {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  background: #e4f0ec;
+  color: var(--brand);
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.notice {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+a {
+  color: var(--brand);
+}
+
+@media (max-width: 1024px) {
+  .hero,
+  .layout {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+}

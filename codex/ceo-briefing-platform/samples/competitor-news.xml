@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Sample Competitor Feed</title>
+    <link>https://example.com/competitor</link>
+    <description>Competitor feed sample</description>
+    <item>
+      <title>경쟁사 A, 북미 신제품 출시</title>
+      <link>https://example.com/competitor-1</link>
+      <description>프리미엄 라인업 확장과 현지 채널 강화 소식입니다.</description>
+      <pubDate>Mon, 07 Apr 2026 07:30:00 +0900</pubDate>
+    </item>
+    <item>
+      <title>경쟁사 B, 구조조정 가능성 보도</title>
+      <link>https://example.com/competitor-2</link>
+      <description>복수 매체에서 관련 가능성을 보도했습니다.</description>
+      <pubDate>Mon, 07 Apr 2026 10:15:00 +0900</pubDate>
+    </item>
+  </channel>
+</rss>

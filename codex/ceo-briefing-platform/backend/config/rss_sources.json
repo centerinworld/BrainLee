@@ -1,0 +1,14 @@
+{
+  "company": [
+    {
+      "name": "Sample Company Feed",
+      "url": "file:///C:/Users/LEE/Documents/codex/ceo-briefing-platform/samples/company-news.xml"
+    }
+  ],
+  "competitor": [
+    {
+      "name": "Sample Competitor Feed",
+      "url": "file:///C:/Users/LEE/Documents/codex/ceo-briefing-platform/samples/competitor-news.xml"
+    }
+  ]
+}

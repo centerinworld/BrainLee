@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>CEO 브리핑 플랫폼 - 관리자 콘솔</title>
+  <link rel="stylesheet" href="./styles.css?v=20260629_v3">
+</head>
+<body>
+  <div id="adminConsole">
+    <aside class="sidebar">
+      <div>
+        <p class="eyebrow">연결된 MVP</p>
+        <h1>CEO 브리핑 플랫폼</h1>
+        <p class="copy">캘린더 관리, RSS 소스, AI 요약 설정을 위한 관리자 콘솔입니다.</p>
+      </div>
+      <section class="panel">
+        <label for="apiBase">API 주소</label>
+        <input id="apiBase" value="http://127.0.0.1:8011">
+        <label for="roleSelect">콘솔 모드</label>
+        <select id="roleSelect" disabled>
+          <option value="admin" selected>관리자</option>
+        </select>
+      </section>
+      <nav id="pageNav" class="nav"></nav>
+      <!-- AI 관제 센터 & KAI News Center 링크 -->
+      <div style="margin-top: auto; padding: 16px; border-top: 1px solid var(--line);">
+        <a href="/kai/" style="display: flex; align-items: center; justify-content: space-between; text-decoration: none; background: var(--pl, #e8f0fe); color: var(--p, #1a73e8); padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #c8d8fb; transition: all 0.15s ease;">
+          <span style="display: flex; align-items: center; gap: 8px;">
+            <span>🛰️</span> AI 관제 센터 (KAI)
+          </span>
+          <span style="font-size: 11px; background: #fff; color: var(--p); padding: 2px 6px; border-radius: 4px; font-weight: 700;">8501 연동</span>
+        </a>
+      </div>
+    </aside>
+    <main class="content">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">운영 보기</p>
+          <h2 id="pageTitle">UI 로딩 중</h2>
+          <p id="pageDescription" class="copy"></p>
+        </div>
+        <button id="reloadButton" class="button outline">페이지 새로고침</button>
+      </header>
+      <section id="notice"></section>
+      <section id="app"></section>
+    </main>
+  </div>
+
+  <script src="./admin-console-runtime-v2.js?v=20260829_gemini_provider"></script>
+</body>
+</html>

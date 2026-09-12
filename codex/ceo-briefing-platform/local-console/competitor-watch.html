@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>로컬 선별 콘솔 · 타회사 동향</title>
+  <link rel="stylesheet" href="./console.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Local Frontend</p>
+        <h1>타회사 동향 선별 콘솔</h1>
+        <p>경쟁사 관련 파싱 결과 중 APP으로 전달할 항목만 선별하는 오프라인 페이지입니다.</p>
+      </div>
+      <button id="publishSelected" class="button">선택 항목 APP 전송</button>
+    </header>
+
+    <section class="layout">
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Parser Queue</p>
+            <h2>수집 후보</h2>
+          </div>
+        </div>
+        <div id="queueList" class="stack"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">APP Payload</p>
+            <h2>전송 예정 / 전송 완료</h2>
+          </div>
+        </div>
+        <div id="publishedList" class="stack"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    window.CONSOLE_PAGE_CONFIG = {
+      storageKey: "ceo-briefing-competitor-watch",
+      title: "타회사 동향",
+      seedQueue: [
+        {
+          id: "competitor-queue-1",
+          title: "경쟁사 A, 북미 신제품 출시",
+          summary: "프리미엄 라인업 확장 및 현지 채널 강화 관련 기사입니다.",
+          link: "https://example.com/competitor-1",
+          source: "Python Scraper",
+          selected: true
+        },
+        {
+          id: "competitor-queue-2",
+          title: "경쟁사 B, 구조조정 가능성 보도",
+          summary: "복수 언론에서 유사한 보도가 수집되었습니다.",
+          link: "https://example.com/competitor-2",
+          source: "AI Summarizer",
+          selected: true
+        },
+        {
+          id: "competitor-queue-3",
+          title: "경쟁사 C, 일본 JV 논의",
+          summary: "사실 확인 전 참고 자료로 유지할 후보입니다.",
+          link: "https://example.com/competitor-3",
+          source: "Local Feed",
+          selected: false
+        }
+      ]
+    };
+  </script>
+  <script src="./console.js"></script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>로컬 선별 콘솔 · 회사 주요 기사</title>
+  <link rel="stylesheet" href="./console.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Local Frontend</p>
+        <h1>회사 주요 기사 선별 콘솔</h1>
+        <p>파서가 모아온 후보 기사 중 APP으로 보낼 항목만 선별하는 오프라인 페이지입니다.</p>
+      </div>
+      <button id="publishSelected" class="button">선택 항목 APP 전송</button>
+    </header>
+
+    <section class="layout">
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Parser Queue</p>
+            <h2>수집 후보</h2>
+          </div>
+        </div>
+        <div id="queueList" class="stack"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">APP Payload</p>
+            <h2>전송 예정 / 전송 완료</h2>
+          </div>
+        </div>
+        <div id="publishedList" class="stack"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    window.CONSOLE_PAGE_CONFIG = {
+      storageKey: "ceo-briefing-company-news",
+      title: "회사 주요 기사",
+      seedQueue: [
+        {
+          id: "company-queue-1",
+          title: "주요 사업부 해외 수주 확대",
+          summary: "해외 주요 고객사와 장기 계약 논의가 진전되었다는 업계 보도입니다.",
+          link: "https://example.com/company-news-1",
+          source: "RSS Parser",
+          selected: true
+        },
+        {
+          id: "company-queue-2",
+          title: "신공장 투자 검토 기사",
+          summary: "투자 검토 초기 단계 관련 기사로 사실 확인이 더 필요합니다.",
+          link: "https://example.com/company-news-2",
+          source: "AI Summarizer",
+          selected: false
+        },
+        {
+          id: "company-queue-3",
+          title: "내부 AI 전환 계획 보도",
+          summary: "디지털 전환 및 운영 효율화 관련 기사입니다.",
+          link: "https://example.com/company-news-3",
+          source: "Local Feed",
+          selected: true
+        }
+      ]
+    };
+  </script>
+  <script src="./console.js"></script>
+</body>
+</html>
