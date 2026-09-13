@@ -6,6 +6,8 @@ Project Antigravity: 통합 클라우드 LLM 클라이언트 (DeepSeek / Claude 
 import os
 import json
 import logging
+import subprocess
+import tempfile
 from typing import Dict, Any, List, Optional
 import requests
 
@@ -56,6 +58,15 @@ class AntigravityLLMClient:
             or os.getenv("OPENAI_API_KEY")
             or ""
         ).strip('"').strip("'")
+
+        # 로컬 CLI (2026-09-13 추가): 소유자 지시 - 중요한 판단은 저사양 API 모델이
+        # 아니라 실제 구독 중인 Codex/Claude가 하도록 한다. 별도 API 키 없이 기존
+        # ChatGPT/Claude 구독 인증을 그대로 쓴다. 경로는 이 환경에서 실측 확인했다
+        # (`codex login status` -> "Logged in using ChatGPT").
+        self.codex_cli_path = os.getenv(
+            "CODEX_CLI_PATH", "/Applications/ChatGPT.app/Contents/Resources/codex"
+        )
+        self.claude_cli_path = os.getenv("CLAUDE_CLI_PATH", "/opt/homebrew/bin/claude")
 
         self.last_provider_used = "NONE"
 
@@ -169,8 +180,115 @@ class AntigravityLLMClient:
             logger.error(f"OpenAI API 호출 실패: {e}")
         return None
 
+    def _try_codex_cli(self, messages, model, temperature, max_tokens) -> Optional[Dict[str, Any]]:
+        """실제 ChatGPT 구독 인증(API 키 아님)으로 로컬 Codex CLI를 비대화형·읽기전용
+        샌드박스에서 호출한다. 2026-09-13 이 환경에서 실제로 성공 확인
+        (`codex login status` -> "Logged in using ChatGPT", 응답/토큰 사용량까지 수신).
+        읽기 전용 샌드박스(-s read-only)라 이 호출로는 파일/셸에 어떤 변경도 할 수 없다 -
+        중요 판단을 맡기는 이유가 바로 이 실행 능력(파일 검사 등)이지만, 부작용 없는
+        읽기 전용 판단으로 한정한다."""
+        if not os.path.exists(self.codex_cli_path):
+            return None
+        prompt = messages[-1]["content"] if messages else ""
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+                tmp_path = tmp.name
+            res = subprocess.run(
+                [self.codex_cli_path, "exec", "-s", "read-only", "--json", "-o", tmp_path, prompt],
+                capture_output=True, text=True, timeout=120
+            )
+            if res.returncode != 0:
+                logger.warning(f"codex_cli 실행 실패(exit={res.returncode}): {res.stderr[:300]}")
+                return None
+            usage = None
+            for line in res.stdout.splitlines():
+                try:
+                    event = json.loads(line)
+                except Exception:
+                    continue
+                if event.get("type") == "turn.completed":
+                    u = event.get("usage", {}) or {}
+                    usage = {
+                        "prompt_tokens": u.get("input_tokens"),
+                        "completion_tokens": u.get("output_tokens"),
+                        "total_tokens": (u.get("input_tokens") or 0) + (u.get("output_tokens") or 0)
+                    }
+            with open(tmp_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if not content:
+                logger.warning("codex_cli 응답이 비어있음")
+                return None
+            self.last_provider_used = "Codex CLI (ChatGPT 구독, read-only)"
+            logger.info(f"[Codex CLI 성공] 토큰 사용: {usage}")
+            return {
+                "content": content, "provider": "codex_cli", "model": "codex-cli-subscription",
+                "usage": usage, "is_fallback": False
+            }
+        except subprocess.TimeoutExpired:
+            logger.warning("codex_cli 호출 시간 초과(120초)")
+            return None
+        except Exception as e:
+            logger.warning(f"codex_cli 호출 오류: {e}")
+            return None
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+
+    def _try_claude_cli(self, messages, model, temperature, max_tokens) -> Optional[Dict[str, Any]]:
+        """로컬 Claude Code CLI 구독 인증 호출.
+
+        **중요한 한계(2026-09-13 확인)**: Claude Code는 다른 Claude Code 세션 내부에서
+        실행되는 것을 명시적으로 거부한다("Nested sessions share runtime resources and
+        will crash all active sessions"). 즉 이 함수를 Claude Code 세션 프로세스 안에서
+        호출하면(예: 이 antigravity_workspace 코드를 Claude Code가 직접 실행 중일 때)
+        아래 except에서 실패를 잡아 정직하게 is_fallback을 반환한다 - 크래시는 아니지만
+        성공도 아니다. 이 provider는 Claude Code가 아닌 독립 프로세스(예: launchd로 뜨는
+        검증 스케줄러)에서 호출될 때만 실제로 성공한다. 그 환경에서의 실제 성공 사례는
+        이번 세션에서 확인하지 못했다 - 문서화된 CLI 계약(`claude -p --output-format
+        json`)대로 작성했으나 독립 실행 검증이 필요하다."""
+        if not os.path.exists(self.claude_cli_path):
+            return None
+        prompt = messages[-1]["content"] if messages else ""
+        try:
+            res = subprocess.run(
+                [
+                    self.claude_cli_path, "-p", prompt, "--output-format", "json",
+                    "--disallowedTools", "Bash Edit Write NotebookEdit WebFetch WebSearch Task"
+                ],
+                capture_output=True, text=True, timeout=120
+            )
+            if res.returncode != 0:
+                logger.warning(f"claude_cli 실행 실패(exit={res.returncode}): {res.stderr[:300]}")
+                return None
+            data = json.loads(res.stdout)
+            content = data.get("result") or ""
+            if not content:
+                logger.warning("claude_cli 응답이 비어있음")
+                return None
+            self.last_provider_used = "Claude CLI (구독)"
+            return {
+                "content": content, "provider": "claude_cli",
+                "model": data.get("model", "claude-cli-subscription"),
+                "usage": data.get("usage"), "is_fallback": False
+            }
+        except subprocess.TimeoutExpired:
+            logger.warning("claude_cli 호출 시간 초과(120초)")
+            return None
+        except Exception as e:
+            logger.warning(f"claude_cli 호출 오류: {e}")
+            return None
+
     # provider 이름 -> 시도 함수. 순서가 기본 캐스케이드 우선순위다.
+    # codex_cli/claude_cli는 이 기본 캐스케이드에 넣지 않는다 - 실제 구독 쿼터를 쓰고
+    # 호출당 수만 토큰·수십 초가 드는 느린 경로라, 뉴스 요약·패치 초안 같은 흔한 draft
+    # 작업마다 자동으로 타면 안 된다. provider="codex_cli"/"claude_cli"로 명시 호출할
+    # 때만 쓴다(목표 완료 검증 등 정말 중요한 판단).
     _PROVIDER_TRIERS = ("gemini", "grok", "deepseek", "openai")
+    _EXPLICIT_ONLY_PROVIDERS = ("codex_cli", "claude_cli")
 
     # 2026-09-12 사고: stock_dashboard의 codex_pipeline_orchestrator.py가 "저가 모델
     # (Qwen, 이 코드베이스에서는 grok tier로 Groq를 통해 서빙됨)"에게 최종 백테스트 수치
@@ -182,8 +300,10 @@ class AntigravityLLMClient:
     PROVIDER_TIER = {
         "gemini": "draft",
         "grok": "draft",       # Groq로 서빙되는 Qwen 등 - 초안/실행 보조용, 최종 판단 금지
-        "deepseek": "draft",
+        "deepseek": "draft",   # 소유자 지시(2026-09-13): DeepSeek도 100% 신뢰하지 않음 - draft 유지
         "openai": "verified",
+        "codex_cli": "verified",   # 실제 ChatGPT 구독, 2026-09-13 이 환경에서 성공 확인
+        "claude_cli": "verified",  # 실제 Claude 구독 - 단, Claude Code 세션 내부 호출은 항상 실패(의도됨)
     }
     _TIER_RANK = {"draft": 0, "verified": 1}
 
@@ -216,7 +336,8 @@ class AntigravityLLMClient:
         """
         triers = {
             "gemini": self._try_gemini, "grok": self._try_grok,
-            "deepseek": self._try_deepseek, "openai": self._try_openai
+            "deepseek": self._try_deepseek, "openai": self._try_openai,
+            "codex_cli": self._try_codex_cli, "claude_cli": self._try_claude_cli
         }
 
         order = [provider] if provider else list(self._PROVIDER_TRIERS)

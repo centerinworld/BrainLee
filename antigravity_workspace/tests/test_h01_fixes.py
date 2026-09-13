@@ -6,7 +6,9 @@ H01 회귀 테스트: 2026-09-12 핸드오프 문서 A01~A06 수정 사항 검�
 
 import os
 import sys
+import json
 import asyncio
+import subprocess
 import tempfile
 import unittest
 import unittest.mock
@@ -549,6 +551,130 @@ class TestLLMWiring(unittest.TestCase):
             result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], min_tier="verified")
         mock_openai.assert_called_once()
         self.assertFalse(result["is_fallback"])
+
+
+class TestLocalCliProviders(unittest.TestCase):
+    """2026-09-13: 소유자 지시로 추가된 codex_cli/claude_cli provider.
+    실제 CLI를 호출하면 진짜 구독 쿼터를 쓰므로(codex exec 1회에 수천~수만 토큰 확인됨,
+    2026-09-13 이 환경에서 직접 테스트), subprocess.run을 전부 mock해 로직만 검증한다."""
+
+    def setUp(self):
+        import llm_client
+        self.client = llm_client.AntigravityLLMClient()
+
+    def test_codex_cli_not_registered_in_default_cascade(self):
+        """codex_cli/claude_cli는 명시 지정 없이는 절대 자동으로 안 불려야 한다
+        (뉴스 요약 같은 흔한 draft 호출마다 구독 쿼터를 쓰면 안 됨)."""
+        import llm_client
+        self.assertNotIn("codex_cli", llm_client.AntigravityLLMClient._PROVIDER_TRIERS)
+        self.assertNotIn("claude_cli", llm_client.AntigravityLLMClient._PROVIDER_TRIERS)
+
+    def test_codex_cli_and_claude_cli_are_verified_tier(self):
+        import llm_client
+        self.assertEqual(llm_client.AntigravityLLMClient.PROVIDER_TIER["codex_cli"], "verified")
+        self.assertEqual(llm_client.AntigravityLLMClient.PROVIDER_TIER["claude_cli"], "verified")
+
+    def test_codex_cli_parses_output_last_message_file_and_usage(self):
+        """codex exec --json 이벤트 스트림에서 usage를, -o 파일에서 최종 텍스트를 뽑는지 확인.
+        2026-09-13 실제 CLI로 검증한 실제 출력 형태를 그대로 흉내낸다."""
+        fake_jsonl = (
+            '{"type":"thread.started","thread_id":"t1"}\n'
+            '{"type":"turn.started"}\n'
+            '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"OK"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":16880,"cached_input_tokens":12928,'
+            '"cache_write_input_tokens":0,"output_tokens":28,"reasoning_output_tokens":0}}\n'
+        )
+
+        def fake_run(cmd, **kwargs):
+            # -o 뒤 인자가 output-last-message 파일 경로
+            out_path = cmd[cmd.index("-o") + 1]
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write('{"verdict": "COMPLETE_100", "confidence": 0.9, "reason": "test"}')
+            return unittest.mock.Mock(returncode=0, stdout=fake_jsonl, stderr="")
+
+        with patch("llm_client.os.path.exists", return_value=True), \
+             patch("llm_client.subprocess.run", side_effect=fake_run):
+            result = self.client._try_codex_cli([{"role": "user", "content": "x"}], None, 0.0, 300)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["provider"], "codex_cli")
+        self.assertFalse(result["is_fallback"])
+        self.assertIn("COMPLETE_100", result["content"])
+        self.assertEqual(result["usage"]["prompt_tokens"], 16880)
+        self.assertEqual(result["usage"]["completion_tokens"], 28)
+
+    def test_codex_cli_returns_none_on_nonzero_exit(self):
+        with patch("llm_client.os.path.exists", return_value=True), \
+             patch("llm_client.subprocess.run", return_value=unittest.mock.Mock(returncode=1, stdout="", stderr="auth error")):
+            result = self.client._try_codex_cli([{"role": "user", "content": "x"}], None, 0.0, 300)
+        self.assertIsNone(result)
+
+    def test_codex_cli_returns_none_on_timeout(self):
+        with patch("llm_client.os.path.exists", return_value=True), \
+             patch("llm_client.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="codex", timeout=120)):
+            result = self.client._try_codex_cli([{"role": "user", "content": "x"}], None, 0.0, 300)
+        self.assertIsNone(result)
+
+    def test_codex_cli_returns_none_when_binary_missing(self):
+        with patch("llm_client.os.path.exists", return_value=False):
+            result = self.client._try_codex_cli([{"role": "user", "content": "x"}], None, 0.0, 300)
+        self.assertIsNone(result)
+
+    def test_claude_cli_parses_json_result_field(self):
+        fake_stdout = json.dumps({
+            "result": '{"verdict": "NOT_COMPLETE", "confidence": 0.3, "reason": "부족"}',
+            "model": "claude-sonnet-5",
+            "usage": {"input_tokens": 100, "output_tokens": 40}
+        })
+        with patch("llm_client.os.path.exists", return_value=True), \
+             patch("llm_client.subprocess.run", return_value=unittest.mock.Mock(returncode=0, stdout=fake_stdout, stderr="")):
+            result = self.client._try_claude_cli([{"role": "user", "content": "x"}], None, 0.0, 300)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["provider"], "claude_cli")
+        self.assertIn("NOT_COMPLETE", result["content"])
+
+    def test_claude_cli_returns_none_on_nested_session_failure(self):
+        """실제로 이 세션 안에서 claude CLI를 부르면 '중첩 세션' 에러로 실패한다
+        (2026-09-13 직접 확인) - 이 경우 크래시가 아니라 None(is_fallback 처리)이어야 한다."""
+        with patch("llm_client.os.path.exists", return_value=True), \
+             patch("llm_client.subprocess.run", return_value=unittest.mock.Mock(
+                 returncode=1, stdout="",
+                 stderr="Error: Claude Code cannot be launched inside another Claude Code session."
+             )):
+            result = self.client._try_claude_cli([{"role": "user", "content": "x"}], None, 0.0, 300)
+        self.assertIsNone(result)
+
+    def test_claude_cli_disallows_mutating_tools(self):
+        """호출 커맨드에 파일/셸 수정 도구가 비허용 목록에 포함되는지 확인 - 검증
+        호출이 실수로 파일을 바꾸면 안 된다."""
+        captured_cmd = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            return unittest.mock.Mock(returncode=0, stdout=json.dumps({"result": "ok"}), stderr="")
+
+        with patch("llm_client.os.path.exists", return_value=True), \
+             patch("llm_client.subprocess.run", side_effect=fake_run):
+            self.client._try_claude_cli([{"role": "user", "content": "x"}], None, 0.0, 300)
+        disallowed_idx = captured_cmd.index("--disallowedTools")
+        disallowed_value = captured_cmd[disallowed_idx + 1]
+        for tool in ("Bash", "Edit", "Write"):
+            self.assertIn(tool, disallowed_value)
+
+    def test_codex_cli_uses_read_only_sandbox(self):
+        captured_cmd = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            out_path = cmd[cmd.index("-o") + 1]
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("ok")
+            return unittest.mock.Mock(returncode=0, stdout="", stderr="")
+
+        with patch("llm_client.os.path.exists", return_value=True), \
+             patch("llm_client.subprocess.run", side_effect=fake_run):
+            self.client._try_codex_cli([{"role": "user", "content": "x"}], None, 0.0, 300)
+        self.assertIn("read-only", captured_cmd)
 
 
 class TestEnvLoaderIncludesWorkspaceEnv(unittest.TestCase):

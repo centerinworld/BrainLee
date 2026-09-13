@@ -33,9 +33,13 @@ logger = logging.getLogger("goal_verification")
 
 REQUIRED_VERIFIER_TIER = "verified"
 
+# 소유자 지시(2026-09-13): "Deepseek도 100% 신뢰할 수 없으니 CODEX와 Claude가 무조건
+# 검토하도록 해." - "verified 등급 아무 provider 2개"가 아니라, 구체적으로 로컬 Codex
+# CLI(ChatGPT 구독)와 Claude CLI(Claude 구독)를 기본 검증자 쌍으로 못박는다. 둘 다
+# API 키가 아니라 이미 있는 구독 인증을 쓴다(llm_client._try_codex_cli/_try_claude_cli).
 _env_v1 = os.getenv("GOAL_VERIFIER_1")
 _env_v2 = os.getenv("GOAL_VERIFIER_2")
-DEFAULT_VERIFIER_PROVIDERS: Optional[Tuple[str, str]] = (_env_v1, _env_v2) if (_env_v1 and _env_v2) else None
+DEFAULT_VERIFIER_PROVIDERS: Tuple[str, str] = (_env_v1, _env_v2) if (_env_v1 and _env_v2) else ("codex_cli", "claude_cli")
 
 
 def _verified_tier_providers() -> List[str]:
@@ -98,13 +102,16 @@ class GoalVerifier:
         evidence: str,
         provider_pair: Optional[Tuple[str, str]] = None
     ) -> Dict[str, Any]:
-        """서로 다른 두 "verified" 등급 provider에게 같은 증거로 완료 여부를 독립적으로
-        물어보고, 각 판정을 GoalsRegistry에 기록한다. 둘 다 COMPLETE_100이면 목표가
-        COMPLETED로 종결된다(GoalsRegistry.record_verification의 게이트).
+        """기본적으로 codex_cli(ChatGPT 구독)와 claude_cli(Claude 구독) 두 곳에 같은
+        증거로 완료 여부를 독립적으로 물어보고, 각 판정을 GoalsRegistry에 기록한다.
+        둘 다 COMPLETE_100이면 목표가 COMPLETED로 종결된다
+        (GoalsRegistry.record_verification의 게이트, 같은 evidence_hash에 한함).
 
-        저사양(draft 등급) provider는 검증자로 아예 받아들이지 않는다 - 명시적으로 지정돼도
-        거부하고, 자동 선정 시에도 verified 등급이 2개 미만이면 검증 자체를 진행하지 않는다
-        (조용히 낮은 등급으로 대신하지 않음, 2026-09-12 Qwen 사고 재발 방지)."""
+        저사양(draft 등급, gemini/grok/deepseek 전부 포함) provider는 검증자로 아예
+        받아들이지 않는다 - 명시적으로 지정돼도 거부한다(2026-09-12 Qwen 사고,
+        2026-09-13 "Deepseek도 100% 신뢰 못함" 지시 반영). claude_cli는 이 프로세스가
+        Claude Code 세션 내부일 경우 항상 실패(is_fallback)한다 - 의도된 안전장치이며,
+        독립 프로세스(스케줄러 등)에서 실행할 때만 성공한다."""
         goal = self.registry.get_goal(goal_id)
         if not goal:
             raise ValueError(f"알 수 없는 goal_id: {goal_id}")
