@@ -677,6 +677,137 @@ class TestLocalCliProviders(unittest.TestCase):
         self.assertIn("read-only", captured_cmd)
 
 
+class TestReasoningCascadeAndCapabilityRank(unittest.TestCase):
+    """소유자 지시(2026-09-13): codex가 제일 높은 사고력, claude가 그 다음,
+    deepseek가 그 아래 - 이 순위를 REASONING_CASCADE로 명시했는지 검증한다."""
+
+    def test_capability_rank_orders_codex_above_claude_above_deepseek(self):
+        import llm_client
+        rank = llm_client.AntigravityLLMClient.CAPABILITY_RANK
+        self.assertGreater(rank["codex_cli"], rank["claude_cli"])
+        self.assertGreater(rank["claude_cli"], rank["deepseek"])
+        self.assertGreater(rank["deepseek"], rank["gemini"])
+
+    def test_reasoning_cascade_tries_codex_first_then_claude_then_deepseek(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_codex_cli", return_value=None) as mock_codex, \
+             patch.object(client, "_try_claude_cli", return_value=None) as mock_claude, \
+             patch.object(client, "_try_deepseek", return_value={
+                 "content": "ok", "provider": "deepseek", "model": "deepseek-flash", "usage": None, "is_fallback": False
+             }) as mock_deepseek, \
+             patch.object(client, "_try_gemini") as mock_gemini:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], use_reasoning_cascade=True)
+        mock_codex.assert_called_once()
+        mock_claude.assert_called_once()
+        mock_deepseek.assert_called_once()
+        mock_gemini.assert_not_called()  # 일반 draft 캐스케이드 provider는 이 경로에 안 섞인다
+        self.assertEqual(result["provider"], "deepseek")
+
+    def test_reasoning_cascade_stops_at_codex_if_it_succeeds(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_codex_cli", return_value={
+                "content": "ok", "provider": "codex_cli", "model": "codex-cli-subscription", "usage": None, "is_fallback": False
+             }) as mock_codex, \
+             patch.object(client, "_try_claude_cli") as mock_claude, \
+             patch.object(client, "_try_deepseek") as mock_deepseek:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], use_reasoning_cascade=True)
+        mock_codex.assert_called_once()
+        mock_claude.assert_not_called()
+        mock_deepseek.assert_not_called()
+        self.assertEqual(result["provider"], "codex_cli")
+
+    def test_default_cascade_unaffected_when_reasoning_cascade_not_requested(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_gemini", return_value={
+                "content": "ok", "provider": "gemini", "model": "gemini-3.6-flash", "usage": None, "is_fallback": False
+             }) as mock_gemini, \
+             patch.object(client, "_try_codex_cli") as mock_codex:
+            client.chat_completion_with_meta([{"role": "user", "content": "x"}])
+        mock_gemini.assert_called_once()
+        mock_codex.assert_not_called()
+
+
+class TestDeepseekMonthlyBudget(unittest.TestCase):
+    """소유자 지시(2026-09-13): 토큰 절약을 위해 DeepSeek도 월 1만원 이내로 활용."""
+
+    def setUp(self):
+        from memory.llm_usage_ledger import LLMUsageLedger
+        self.tmp_db = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
+        self.tmp_db.close()
+        self.ledger = LLMUsageLedger(db_path=self.tmp_db.name)
+
+    def tearDown(self):
+        os.unlink(self.tmp_db.name)
+
+    def _make_client(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient(usage_ledger=self.ledger)
+        client.deepseek_key = "sk-real-looking-test-key-not-a-placeholder"
+        return client
+
+    def test_deepseek_called_when_under_budget(self):
+        client = self._make_client()
+        with patch("llm_client.requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {
+                "choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5}
+            }
+            result = client._try_deepseek([{"role": "user", "content": "x"}], None, 0.3, 300)
+        self.assertIsNotNone(result)
+        mock_post.assert_called_once()
+
+    def test_deepseek_skipped_when_over_monthly_budget(self):
+        import llm_client
+        # 이번 달에 이미 예산을 초과하는 가짜 사용 기록을 심어둔다
+        # (deepseek 단가 $0.30/$1.20 per 1M 기준, 8M+8M 토큰 = $12.0 > 예산 약 $7.14).
+        self.ledger.record("test", {
+            "provider": "deepseek", "model": "deepseek-flash",
+            "usage": {"prompt_tokens": 8_000_000, "completion_tokens": 8_000_000, "total_tokens": 16_000_000},
+            "is_fallback": False
+        })
+        spent = self.ledger.cost_this_month_usd("deepseek")
+        self.assertGreaterEqual(spent, llm_client.DEEPSEEK_MONTHLY_BUDGET_USD)  # 이 테스트 전제 확인
+
+        client = self._make_client()
+        with patch("llm_client.requests.post") as mock_post:
+            result = client._try_deepseek([{"role": "user", "content": "x"}], None, 0.3, 300)
+        self.assertIsNone(result)
+        mock_post.assert_not_called()
+
+    def test_deepseek_budget_check_is_per_provider(self):
+        """다른 provider(openai 등)의 지출은 DeepSeek 예산에 영향을 주면 안 된다."""
+        self.ledger.record("test", {
+            "provider": "openai", "model": "gpt-4o-mini",
+            "usage": {"prompt_tokens": 1_000_000, "completion_tokens": 1_000_000, "total_tokens": 2_000_000},
+            "is_fallback": False
+        })
+        client = self._make_client()
+        with patch("llm_client.requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {
+                "choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 10, "completion_tokens": 5}
+            }
+            result = client._try_deepseek([{"role": "user", "content": "x"}], None, 0.3, 300)
+        self.assertIsNotNone(result)
+
+    def test_cost_this_month_usd_ignores_other_months(self):
+        import datetime
+        old_date = (datetime.datetime.now().replace(day=1) - datetime.timedelta(days=40)).isoformat()
+        conn_ledger = self.ledger
+        import sqlite3
+        conn = sqlite3.connect(conn_ledger.db_path)
+        conn.execute(
+            "INSERT INTO llm_usage_log (caller, provider, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, is_fallback, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            ("test", "deepseek", "deepseek-flash", 1000000, 1000000, 2000000, 999.0, 0, old_date)
+        )
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.ledger.cost_this_month_usd("deepseek"), 0.0)
+
+
 class TestEnvLoaderIncludesWorkspaceEnv(unittest.TestCase):
     def test_workspace_env_file_is_actually_loaded(self):
         """이전에는 antigravity_workspace/.env 자체가 후보 목록에 없어서, 이 워크스페이스에

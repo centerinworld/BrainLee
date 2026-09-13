@@ -20,8 +20,16 @@ DEFAULT_USAGE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 ESTIMATED_COST_PER_1M_TOKENS_USD = {
     "gemini": {"input": 0.0, "output": 0.0},       # 무료 티어 가정. 유료 승급 시 갱신 필요.
     "grok": {"input": 0.0, "output": 0.0},          # Groq 무료 티어 가정.
-    "deepseek": {"input": 0.14, "output": 0.28},
+    # 2026-09-13 DeepSeek 공식 가격 문서 재확인 결과 갱신 (deepseek-flash, cache-miss 기준
+    # 보수적 상한값 사용 - 실제로는 cache-hit/할인시간대에 더 저렴할 수 있음).
+    # https://api-docs.deepseek.com/quick_start/pricing/
+    "deepseek": {"input": 0.30, "output": 1.20},
     "openai": {"input": 0.15, "output": 0.60},      # gpt-4o-mini 근사치.
+    # codex_cli/claude_cli는 종량제 API가 아니라 기존 구독(ChatGPT/Claude Pro)을 쓴다.
+    # 구독 토큰에 API 단가를 곱해 청구액처럼 표시하지 않는다(2026-09-12 검토 지적) -
+    # 토큰수는 기록하되 추정비용은 0으로 둔다. 실제 구독 한도 소진 여부는 별도 관찰 필요.
+    "codex_cli": {"input": 0.0, "output": 0.0},
+    "claude_cli": {"input": 0.0, "output": 0.0},
     "none": {"input": 0.0, "output": 0.0},
 }
 
@@ -79,6 +87,21 @@ class LLMUsageLedger:
             "provider": provider, "total_tokens": total_tokens,
             "estimated_cost_usd": estimated_cost, "is_fallback": bool(result.get("is_fallback"))
         }
+
+    def cost_this_month_usd(self, provider: str, now: Optional[datetime] = None) -> float:
+        """이번 달(자연월) 해당 provider의 누적 추정비용(USD)을 반환한다.
+        DeepSeek 월 예산 한도 확인 등 사전 지출 통제에 쓴다(2026-09-13 소유자 지시)."""
+        now = now or datetime.now()
+        month_prefix = now.strftime("%Y-%m")
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT SUM(estimated_cost_usd) FROM llm_usage_log WHERE provider=? AND substr(created_at, 1, 7)=?",
+                (provider, month_prefix)
+            ).fetchone()
+            return float(row[0]) if row and row[0] is not None else 0.0
+        finally:
+            conn.close()
 
     def summary(self) -> Dict[str, Any]:
         """실제 누적 사용량 - 대시보드가 하드코딩된 숫자 대신 이걸 조회하도록 다음 단계에서 연결한다."""

@@ -16,10 +16,21 @@ try:
 except ImportError:
     pass
 
+try:
+    from memory.llm_usage_ledger import LLMUsageLedger
+except ImportError:
+    LLMUsageLedger = None
+
 logger = logging.getLogger("llm_client")
 
+# 소유자 지시(2026-09-13): 토큰 절약을 위해 DeepSeek도 월 1만원 이내로만 쓴다.
+# 환율은 정확한 청구 환산이 아니라 예산 상한을 대략적으로 정하기 위한 근사치다.
+DEEPSEEK_MONTHLY_BUDGET_KRW = float(os.getenv("DEEPSEEK_MONTHLY_BUDGET_KRW", "10000"))
+_KRW_PER_USD_APPROX = float(os.getenv("KRW_PER_USD_APPROX", "1400"))
+DEEPSEEK_MONTHLY_BUDGET_USD = DEEPSEEK_MONTHLY_BUDGET_KRW / _KRW_PER_USD_APPROX
+
 class AntigravityLLMClient:
-    def __init__(self):
+    def __init__(self, usage_ledger=None):
         # 1차 (1순위): Google Gemini API (무료 Gemini 우선)
         self.gemini_key = (
             os.getenv("GEMINI_API_KEY")
@@ -47,10 +58,14 @@ class AntigravityLLMClient:
             self.grok_model = os.getenv("GROK_MODEL", "grok-2-latest")
             self.grok_label = "xAI Grok"
 
-        # 3차 (3순위): DeepSeek API (초저비용 $0.14/1M 백업)
+        # 3차 (3순위): DeepSeek API. 2026-09-13 공식 가격 문서 재확인 결과 "deepseek-chat"은
+        # 현재 라인업에 없고 deepseek-flash/deepseek-v4-pro만 있어 기본값을 갱신했다.
+        # 소유자 지시: 월 예산(기본 1만원, DEEPSEEK_MONTHLY_BUDGET_KRW) 초과 시 이 provider는
+        # 건너뛴다 - 아래 _try_deepseek에서 usage_ledger로 이번 달 누적 추정비용을 확인한다.
         self.deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip('"').strip("'")
         self.deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-        self.deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        self.deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
+        self.usage_ledger = usage_ledger or (LLMUsageLedger() if LLMUsageLedger else None)
 
         # 4차 (비상 안전망): OpenAI API
         self.openai_key = (
@@ -139,6 +154,18 @@ class AntigravityLLMClient:
     def _try_deepseek(self, messages, model, temperature, max_tokens) -> Optional[Dict[str, Any]]:
         if not (self.deepseek_key and not self.deepseek_key.startswith("your_")):
             return None
+        # 소유자 지시(2026-09-13): DeepSeek은 월 예산(기본 1만원) 안에서만 쓴다. 예산을
+        # 넘으면 이 provider를 건너뛰고(다른 provider로 폴백) 명확히 로그를 남긴다 -
+        # 예산을 넘겨도 조용히 계속 쓰지 않는다.
+        if self.usage_ledger is not None:
+            spent_usd = self.usage_ledger.cost_this_month_usd("deepseek")
+            if spent_usd >= DEEPSEEK_MONTHLY_BUDGET_USD:
+                logger.warning(
+                    f"DeepSeek 월 예산 소진(이번 달 추정 ${spent_usd:.4f} / 상한 "
+                    f"${DEEPSEEK_MONTHLY_BUDGET_USD:.4f} ≈ ₩{DEEPSEEK_MONTHLY_BUDGET_KRW:,.0f}) - "
+                    "이번 호출은 건너뜁니다."
+                )
+                return None
         try:
             target_model = model if model and "deepseek" in model else self.deepseek_model
             headers = {"Authorization": f"Bearer {self.deepseek_key}", "Content-Type": "application/json"}
@@ -147,7 +174,7 @@ class AntigravityLLMClient:
             if res.status_code == 200:
                 data = res.json()
                 self.last_provider_used = f"DeepSeek ({target_model})"
-                logger.info("[DeepSeek 성공] API 응답 완료 (초저비용: $0.14/1M)")
+                logger.info(f"[DeepSeek 성공] API 응답 완료 (모델: {target_model})")
                 return {
                     "content": data["choices"][0]["message"]["content"],
                     "provider": "deepseek", "model": target_model,
@@ -307,6 +334,15 @@ class AntigravityLLMClient:
     }
     _TIER_RANK = {"draft": 0, "verified": 1}
 
+    # 소유자 지시(2026-09-13): "codex가 제일 높은 사고력, claude가 그 다음, deepseek가
+    # 그 아래"라는 능력 순위를 명시적으로 둔다. 이건 PROVIDER_TIER(검증 자격)와는 별개
+    # 개념이다 - deepseek는 이 순위에서 3번째로 능력을 인정받지만, 여전히 "verified"
+    # 등급이 아니므로(위 PROVIDER_TIER) 목표 완료 같은 최종 판단의 검증자로는 못 쓴다.
+    # 이 순위는 "중요하지만 이중검증까지는 필요 없는, 더 강한 추론이 필요한" 작업에
+    # use_reasoning_cascade=True로 opt-in할 때만 쓰인다 - 일반 draft 캐스케이드와 무관.
+    CAPABILITY_RANK = {"codex_cli": 3, "claude_cli": 2, "deepseek": 1, "openai": 1, "grok": 0, "gemini": 0}
+    REASONING_CASCADE = ("codex_cli", "claude_cli", "deepseek")
+
     def chat_completion_with_meta(
         self,
         messages: List[Dict[str, str]],
@@ -314,17 +350,23 @@ class AntigravityLLMClient:
         temperature: float = 0.3,
         max_tokens: int = 1500,
         provider: Optional[str] = None,
-        min_tier: Optional[str] = None
+        min_tier: Optional[str] = None,
+        use_reasoning_cascade: bool = False
     ) -> Dict[str, Any]:
         """
-        provider가 None이면 기본 4단계 지능형 캐스케이드(무료 우선):
-        Gemini -> Groq/xAI Grok -> DeepSeek -> OpenAI -> 결정론적 폴백.
+        provider가 None이고 use_reasoning_cascade=False(기본)이면 4단계 무료우선
+        캐스케이드: Gemini -> Groq/xAI Grok -> DeepSeek -> OpenAI -> 결정론적 폴백.
 
-        provider를 명시하면("gemini"/"grok"/"deepseek"/"openai") 그 provider만 시도하고,
-        실패하면 다른 provider로 자동 전환하지 않고 곧바로 폴백을 반환한다 - 목표 완료
-        이중검증처럼 "정말 서로 다른 두 모델"이 필요한 호출에서, 캐스케이드가 매번 같은
-        1순위 provider로만 응답해 "이중검증"이 사실상 같은 모델을 두 번 부르는 것이 되는
-        상황을 막는다.
+        use_reasoning_cascade=True면 대신 REASONING_CASCADE(Codex CLI -> Claude CLI ->
+        DeepSeek, 능력 순)를 시도한다 - 소유자가 지시한 "codex가 제일 높은 사고력, claude가
+        그 다음, deepseek가 그 아래" 순서. 뉴스 요약처럼 흔한 draft 작업에는 쓰지 않고,
+        중요하지만 이중검증까지는 필요 없는 작업에서 opt-in으로만 쓴다 - 구독 쿼터(codex_cli/
+        claude_cli)와 월 예산(deepseek)을 아낀다.
+
+        provider를 명시하면 그 provider만 시도하고, 실패하면 다른 provider로 자동
+        전환하지 않고 곧바로 폴백을 반환한다 - 목표 완료 이중검증처럼 "정말 서로 다른 두
+        모델"이 필요한 호출에서, 캐스케이드가 매번 같은 1순위 provider로만 응답해
+        "이중검증"이 사실상 같은 모델을 두 번 부르는 것이 되는 상황을 막는다.
 
         min_tier="verified"를 지정하면 PROVIDER_TIER상 "draft" 등급인 provider는 아예
         시도하지 않는다(캐스케이드에서도, provider로 명시해도) - 등급 미달이면 그 provider가
@@ -340,7 +382,13 @@ class AntigravityLLMClient:
             "codex_cli": self._try_codex_cli, "claude_cli": self._try_claude_cli
         }
 
-        order = [provider] if provider else list(self._PROVIDER_TRIERS)
+        if provider:
+            order = [provider]
+        elif use_reasoning_cascade:
+            order = list(self.REASONING_CASCADE)
+        else:
+            order = list(self._PROVIDER_TRIERS)
+
         if provider and provider not in triers:
             logger.error(f"알 수 없는 provider 지정: {provider}")
             order = []
