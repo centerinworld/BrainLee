@@ -11,6 +11,7 @@ domain+record_key로 레코드를 저장해 재시작 후에도 남게 하고, �
 import os
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -42,6 +43,7 @@ class StateLedger:
         now = datetime.now().isoformat()
         conn = sqlite3.connect(self.db_path)
         try:
+            conn.execute("BEGIN IMMEDIATE")
             cur = conn.execute(
                 "SELECT payload_json FROM ledger_records WHERE domain=? AND record_key=?",
                 (domain, record_key)
@@ -89,3 +91,23 @@ class StateLedger:
             return [json.loads(r[0]) for r in rows]
         finally:
             conn.close()
+
+    def compare_and_update(self, domain, record_key, expected, patch):
+        """Atomically check selected fields and merge a patch; return None on conflict."""
+        with closing(sqlite3.connect(self.db_path, timeout=30)) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT payload_json FROM ledger_records WHERE domain=? AND record_key=?",
+                (domain, record_key),
+            ).fetchone()
+            if row is None:
+                return None
+            payload = json.loads(row[0])
+            if any(payload.get(key) != value for key, value in expected.items()):
+                return None
+            payload.update(patch)
+            conn.execute(
+                "UPDATE ledger_records SET payload_json=?, updated_at=? WHERE domain=? AND record_key=?",
+                (json.dumps(payload, ensure_ascii=False, default=str), datetime.now().isoformat(), domain, record_key),
+            )
+            return payload

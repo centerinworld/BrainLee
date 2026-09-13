@@ -563,14 +563,16 @@ class TestLocalCliProviders(unittest.TestCase):
         self.client = llm_client.AntigravityLLMClient()
 
     def test_codex_cli_not_registered_in_default_cascade(self):
-        """codex_cli/claude_cli는 명시 지정 없이는 절대 자동으로 안 불려야 한다
+        """로컬 SDK/CLI는 명시 지정 없이는 절대 자동으로 안 불려야 한다
         (뉴스 요약 같은 흔한 draft 호출마다 구독 쿼터를 쓰면 안 됨)."""
         import llm_client
+        self.assertNotIn("codex_sdk", llm_client.AntigravityLLMClient._PROVIDER_TRIERS)
         self.assertNotIn("codex_cli", llm_client.AntigravityLLMClient._PROVIDER_TRIERS)
         self.assertNotIn("claude_cli", llm_client.AntigravityLLMClient._PROVIDER_TRIERS)
 
     def test_codex_cli_and_claude_cli_are_verified_tier(self):
         import llm_client
+        self.assertEqual(llm_client.AntigravityLLMClient.PROVIDER_TIER["codex_sdk"], "verified")
         self.assertEqual(llm_client.AntigravityLLMClient.PROVIDER_TIER["codex_cli"], "verified")
         self.assertEqual(llm_client.AntigravityLLMClient.PROVIDER_TIER["claude_cli"], "verified")
 
@@ -691,13 +693,15 @@ class TestReasoningCascadeAndCapabilityRank(unittest.TestCase):
     def test_reasoning_cascade_tries_codex_first_then_claude_then_deepseek(self):
         import llm_client
         client = llm_client.AntigravityLLMClient()
-        with patch.object(client, "_try_codex_cli", return_value=None) as mock_codex, \
+        with patch.object(client, "_try_codex_sdk", return_value=None) as mock_sdk, \
+             patch.object(client, "_try_codex_cli", return_value=None) as mock_codex, \
              patch.object(client, "_try_claude_cli", return_value=None) as mock_claude, \
              patch.object(client, "_try_deepseek", return_value={
                  "content": "ok", "provider": "deepseek", "model": "deepseek-flash", "usage": None, "is_fallback": False
              }) as mock_deepseek, \
              patch.object(client, "_try_gemini") as mock_gemini:
             result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], use_reasoning_cascade=True)
+        mock_sdk.assert_called_once()
         mock_codex.assert_called_once()
         mock_claude.assert_called_once()
         mock_deepseek.assert_called_once()
@@ -707,16 +711,18 @@ class TestReasoningCascadeAndCapabilityRank(unittest.TestCase):
     def test_reasoning_cascade_stops_at_codex_if_it_succeeds(self):
         import llm_client
         client = llm_client.AntigravityLLMClient()
-        with patch.object(client, "_try_codex_cli", return_value={
-                "content": "ok", "provider": "codex_cli", "model": "codex-cli-subscription", "usage": None, "is_fallback": False
-             }) as mock_codex, \
+        with patch.object(client, "_try_codex_sdk", return_value={
+                "content": "ok", "provider": "codex_sdk", "model": "codex-sdk-subscription", "usage": None, "is_fallback": False
+             }) as mock_sdk, \
+             patch.object(client, "_try_codex_cli") as mock_codex, \
              patch.object(client, "_try_claude_cli") as mock_claude, \
              patch.object(client, "_try_deepseek") as mock_deepseek:
             result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], use_reasoning_cascade=True)
-        mock_codex.assert_called_once()
+        mock_sdk.assert_called_once()
+        mock_codex.assert_not_called()
         mock_claude.assert_not_called()
         mock_deepseek.assert_not_called()
-        self.assertEqual(result["provider"], "codex_cli")
+        self.assertEqual(result["provider"], "codex_sdk")
 
     def test_default_cascade_unaffected_when_reasoning_cascade_not_requested(self):
         import llm_client
@@ -758,6 +764,12 @@ class TestDeepseekMonthlyBudget(unittest.TestCase):
             result = client._try_deepseek([{"role": "user", "content": "x"}], None, 0.3, 300)
         self.assertIsNotNone(result)
         mock_post.assert_called_once()
+        self.assertTrue(result["_usage_recorded"])
+
+        # 기존 호출자가 다시 record()해도 예약 정산과 중복으로 저장되지 않는다.
+        client.usage_ledger.record("caller", result)
+        summary = client.usage_ledger.summary()["by_provider"]["deepseek"]
+        self.assertEqual(summary["call_count"], 1)
 
     def test_deepseek_skipped_when_over_monthly_budget(self):
         import llm_client
@@ -806,6 +818,14 @@ class TestDeepseekMonthlyBudget(unittest.TestCase):
         conn.commit()
         conn.close()
         self.assertEqual(self.ledger.cost_this_month_usd("deepseek"), 0.0)
+
+    def test_atomic_reservations_prevent_concurrent_budget_overshoot(self):
+        first = self.ledger.reserve_monthly_budget("deepseek", 0.6, 1.0)
+        second = self.ledger.reserve_monthly_budget("deepseek", 0.6, 1.0)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.ledger.release_reservation(first)
+        self.assertIsNotNone(self.ledger.reserve_monthly_budget("deepseek", 0.6, 1.0))
 
 
 class TestEnvLoaderIncludesWorkspaceEnv(unittest.TestCase):
@@ -893,6 +913,82 @@ class TestGoalIntakeDaemon(unittest.TestCase):
             mock_post.return_value.ok = True
             daemon.handle_update({"update_id": 41, "message": {"chat": {"id": 12345}, "text": "오늘 날씨 어때?"}})
         self.assertEqual(daemon._offset, 42)
+
+
+class TestGoalIntakeDaemonHardening(unittest.TestCase):
+    """2026-09-13 검수(handoff/CLAUDE_IMPLEMENTATION_REVIEW_2026-09-13.md) 지적 보완 검증:
+    fail-closed 인증, update_id 기반 멱등 처리, offset 영속화, 원문 보존."""
+
+    def setUp(self):
+        self.tmp_ledger = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
+        self.tmp_ledger.close()
+        self.ledger = StateLedger(db_path=self.tmp_ledger.name)
+
+    def tearDown(self):
+        os.unlink(self.tmp_ledger.name)
+
+    def _make_daemon(self, allowed_chat_id="12345", pm_owner=None):
+        import goal_intake_daemon
+        return goal_intake_daemon.GoalIntakeDaemon(
+            bot_token="test-goal-bot-token",
+            allowed_chat_id=allowed_chat_id,
+            pm_owner=pm_owner or L1PMOwner(auto_heal=True),
+            ledger=self.ledger,
+        )
+
+    def test_empty_allowed_chat_id_fails_closed_not_open(self):
+        """TELEGRAM_CHAT_ID 미설정(빈 문자열)이면 예전엔 '제한 없음'으로 열렸다 - 이제는
+        모든 발신자를 거부해야 한다(fail-closed)."""
+        daemon = self._make_daemon(allowed_chat_id="")
+        with patch("goal_intake_daemon.requests.post") as mock_post:
+            result = daemon.handle_update({
+                "update_id": 1,
+                "message": {"chat": {"id": 12345}, "text": "삼성전자 퀀트 리밸런싱해줘"}
+            })
+        self.assertIsNone(result)
+        mock_post.assert_not_called()
+        self.assertEqual(self.ledger.list_domain("goal_intake"), [])
+
+    def test_redelivered_update_id_does_not_create_duplicate_task(self):
+        """오프셋 유실 등으로 같은 update가 재전송돼도 태스크를 중복 생성하지 않는다."""
+        daemon = self._make_daemon()
+        update = {"update_id": 7, "message": {"chat": {"id": 12345}, "text": "삼성전자 퀀트 리밸런싱해줘"}}
+        with patch("goal_intake_daemon.requests.post") as mock_post:
+            mock_post.return_value.ok = True
+            first = daemon.handle_update(update)
+            second = daemon.handle_update(update)
+        self.assertGreaterEqual(len(first), 1)
+        self.assertIsNone(second)  # 재전송분은 처리하지 않음
+        self.assertEqual(mock_post.call_count, 1)  # ack도 한 번만
+        self.assertEqual(len(self.ledger.list_domain("goal_intake")), len(first))
+
+    def test_offset_persists_across_daemon_restarts(self):
+        """데몬을 재생성해도(프로세스 재시작 시뮬레이션) 이미 처리한 지점부터 이어받는다."""
+        daemon1 = self._make_daemon()
+        with patch("goal_intake_daemon.requests.post") as mock_post:
+            mock_post.return_value.ok = True
+            daemon1.handle_update({"update_id": 99, "message": {"chat": {"id": 12345}, "text": "오늘 날씨 어때?"}})
+        self.assertEqual(daemon1._offset, 100)
+
+        daemon2 = self._make_daemon()  # 같은 ledger로 새로 생성 = 재시작 시뮬레이션
+        self.assertEqual(daemon2._offset, 100)
+
+    def test_source_text_is_preserved_in_goal_intake_and_tasks_records(self):
+        """고정 파이프라인 payload에는 원문이 없으므로, 원장 레코드에 원문을 별도 보존한다(R05 감사용)."""
+        daemon = self._make_daemon()
+        original_text = "삼성전자 퀀트 리밸런싱해줘"
+        with patch("goal_intake_daemon.requests.post") as mock_post:
+            mock_post.return_value.ok = True
+            tasks = daemon.handle_update({
+                "update_id": 55, "message": {"chat": {"id": 12345}, "text": original_text}
+            })
+        self.assertGreaterEqual(len(tasks), 1)
+        task_id = tasks[0]["task_id"]
+        intake_record = self.ledger.get("goal_intake", task_id)
+        task_record = self.ledger.get("tasks", task_id)
+        self.assertEqual(intake_record["source_text"], original_text)
+        self.assertEqual(intake_record["source_update_id"], 55)
+        self.assertEqual(task_record["source_text"], original_text)
 
 
 if __name__ == "__main__":
