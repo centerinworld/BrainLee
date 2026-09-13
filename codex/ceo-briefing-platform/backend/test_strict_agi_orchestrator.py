@@ -44,6 +44,78 @@ class StrictOrchestratorTests(unittest.TestCase):
         self.assertEqual(saved["status"], "WAITING_QUOTA")
         self.assertFalse(saved["stage1_output"])
 
+    def test_stage1_falls_back_to_claude_when_codex_quota_exhausted(self):
+        """소유자 지시(2026-09-14): GPT(Codex/Astra) 한도가 자주 소진돼도 자율 루프가
+        멈추지 않도록, 1단계(계획)만 Claude로 대체 가능해야 한다."""
+        ready = {
+            "codex": {"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
+            "claude": {"auth_ready": True, "status": "AVAILABLE_QUOTA_UNKNOWN", "reset_at": None},
+        }
+        with patch.object(self.manager, "refresh_providers", return_value=ready), \
+             patch.object(self.manager, "_claude_plan_fallback", return_value="claude plan") as mock_fallback, \
+             patch.object(self.manager, "_codex") as mock_codex:
+            task = self.manager.dispatch("fallback test")
+            self.wait_idle()
+        mock_fallback.assert_called_once()
+        mock_codex.assert_not_called()
+        saved = self.manager.get_task(task["task_id"])
+        self.assertEqual(saved["current_stage"], 2)
+        self.assertEqual(saved["stage1_output"], "claude plan")
+        self.assertEqual(saved["artifacts"][0]["provider"], "claude_plan_fallback")
+        self.assertNotEqual(saved["status"], "WAITING_QUOTA")
+
+    def test_stage1_still_blocks_when_both_codex_and_claude_unavailable(self):
+        ready = {
+            "codex": {"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
+            "claude": {"auth_ready": False, "status": "WAITING_AUTH", "reset_at": None},
+        }
+        with patch.object(self.manager, "refresh_providers", return_value=ready), \
+             patch.object(self.manager, "_claude_plan_fallback") as mock_fallback:
+            task = self.manager.dispatch("no fallback available")
+            self.wait_idle()
+        mock_fallback.assert_not_called()
+        saved = self.manager.get_task(task["task_id"])
+        self.assertEqual(saved["current_stage"], 1)
+        self.assertFalse(saved["stage1_output"])
+
+    def test_stage5_never_falls_back_to_claude_even_if_codex_is_down(self):
+        """완료 판정(5단계)은 자기 인증 방지 원칙상 Claude로 대체하면 안 된다 -
+        Codex가 막혀 있으면 Claude가 대신 계획을 세웠더라도 최종검수는 그대로 정지해야 한다.
+
+        _run()이 끝에서 부르는 self._launch(tid)는 같은 스레드 안에서는 self.active에
+        아직 tid가 남아 있어 no-op이다(설계상 "한 번에 과업 하나만 실행" 재진입 방지) -
+        실제로는 monitor 루프(check_and_resume)가 밖에서 반복 호출해 다음 단계로 넘긴다.
+        그래서 이 테스트도 단계마다 _launch를 직접 호출해 한 단계씩 진행시킨다."""
+        ready_for_plan = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "deepseek", "claude")}
+        with patch.object(self.manager, "refresh_providers", return_value=ready_for_plan), \
+             patch.object(self.manager, "_codex", return_value="plan"), \
+             patch.object(self.manager, "_gemini", return_value="evidence"), \
+             patch.object(self.manager, "_qwen", return_value="qwen out"), \
+             patch.object(self.manager, "_deepseek", return_value="deepseek out"), \
+             patch.object(self.manager, "_claude", return_value="claude review"):
+            task = self.manager.dispatch("reach stage 5")
+            self.wait_idle()
+            for _ in range(3):  # 2,3,4단계를 하나씩 밖에서 진행시켜 5단계 직전까지 이동
+                self.manager._launch(task["task_id"])
+                self.wait_idle()
+        saved = self.manager.get_task(task["task_id"])
+        self.assertEqual(saved["current_stage"], 5)
+
+        codex_down = {
+            "codex": {"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
+            "claude": {"auth_ready": True, "status": "AVAILABLE_QUOTA_UNKNOWN", "reset_at": None},
+        }
+        with patch.object(self.manager, "refresh_providers", return_value=codex_down), \
+             patch.object(self.manager, "_claude_plan_fallback") as mock_fallback, \
+             patch.object(self.manager, "_codex") as mock_codex:
+            self.manager._launch(task["task_id"])
+            self.wait_idle()
+        mock_fallback.assert_not_called()  # 5단계는 절대 Claude로 대체되지 않는다
+        mock_codex.assert_not_called()  # 게이트에서 막혀 아예 호출되지 않아야 함
+        saved = self.manager.get_task(task["task_id"])
+        self.assertEqual(saved["status"], "WAITING_QUOTA")
+        self.assertEqual(saved["current_stage"], 5)
+
     def test_each_artifact_is_required_before_next_stage(self):
         ready={n:{"auth_ready":True,"status":"AVAILABLE","reset_at":None} for n in ("codex","gemini","qwen","deepseek","claude")}
         with patch.object(self.manager,"refresh_providers",return_value=ready), patch.object(self.manager,"_codex",return_value="plan"):

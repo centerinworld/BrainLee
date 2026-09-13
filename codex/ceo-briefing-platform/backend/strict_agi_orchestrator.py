@@ -212,8 +212,10 @@ class StrictAGIOrchestrator:
   for n in range(1,6):
    if t.get(f"stage{n}_output"):p.append(f"\n## 단계 {n}\n{t[f'stage{n}_output']}")
   return "\n".join(p)
+ def _plan_prompt(self,t):
+  return "최고 수준 사고로 실행 계획과 완료 기준을 수립하라. Gemini는 근거 수집, Qwen은 분류·중복 제거·필드 추출·형식 변환만, DeepSeek는 그 전처리 점검, Claude는 독립 검증·보강을 담당하도록 지시하라. 사용자에게 질문하거나 승인을 기다리지 말고, 미정값은 명시적 가정과 추후 검증 항목으로 기록하라. 직접 완료라 하지 마라.\n\n"+t["description"]
  def _codex(self,t,final=False):
-  prompt=("최고 수준 사고로 전체 산출물을 최종 검수하라. 첫 줄에 PASS 또는 REVISE. 요구 충족·근거·실행검증·위험을 확인하고 미실행을 완료라 하지 마라. 사용자에게 질문하지 말고 미정값은 가정과 한계로 기록하라.\n\n"+self._prior(t)) if final else ("최고 수준 사고로 실행 계획과 완료 기준을 수립하라. Gemini는 근거 수집, Qwen은 분류·중복 제거·필드 추출·형식 변환만, DeepSeek는 그 전처리 점검, Claude는 독립 검증·보강을 담당하도록 지시하라. 사용자에게 질문하거나 승인을 기다리지 말고, 미정값은 명시적 가정과 추후 검증 항목으로 기록하라. 직접 완료라 하지 마라.\n\n"+t["description"])
+  prompt=("최고 수준 사고로 전체 산출물을 최종 검수하라. 첫 줄에 PASS 또는 REVISE. 요구 충족·근거·실행검증·위험을 확인하고 미실행을 완료라 하지 마라. 사용자에게 질문하지 말고 미정값은 가정과 한계로 기록하라.\n\n"+self._prior(t)) if final else self._plan_prompt(t)
   import sys
   ag=ROOT/"antigravity_workspace"
   if str(ag) not in sys.path:sys.path.insert(0,str(ag))
@@ -271,6 +273,20 @@ class StrictAGIOrchestrator:
   c=str(json.loads(p.stdout or "{}").get("result","")).strip()
   if not c:raise RuntimeError("Claude 결과 없음")
   return c
+ def _claude_plan_fallback(self,t):
+  # 소유자 지시(2026-09-14): GPT(Codex/Astra) 한도가 크게 줄어 매 반복마다 쓰기 어려우니,
+  # 1단계(계획)만큼은 Codex가 막혀 있어도 Claude가 대신 세워 자율 루프가 멈추지 않게
+  # 한다. 다만 이건 "완료 판정"이 아니라 "계획 초안"이므로, 5단계 최종검수는 여전히
+  # Codex 전용으로 남겨 Claude가 스스로 완료를 인증하지 못하게 한다(듀얼채널이되 완료는
+  # 단일 채널). stage1_provider 기록으로 어느 채널이 계획을 세웠는지 항상 감사 가능하다.
+  prompt=self._plan_prompt(t)+"\n\n(참고: GPT/Codex 한도 소진으로 Claude가 대신 계획을 수립합니다. 이 계획은 초안이며, 5단계 최종검수는 GPT/Codex 한도 복구 후에만 통과합니다.)"
+  p=subprocess.run([str(BINS['claude']),"-p",prompt,"--output-format","json","--max-turns","4","--effort","high","--permission-mode","plan"],cwd=ROOT,capture_output=True,text=True,timeout=600)
+  if p.returncode:raise RuntimeError((p.stderr or p.stdout)[:3000])
+  c=str(json.loads(p.stdout or "{}").get("result","")).strip()
+  if not c:raise RuntimeError("Claude 계획 대체 결과 없음")
+  return c
+ def _ready(self,ps,name):
+  return bool(ps.get(name,{}).get("auth_ready")) and ps.get(name,{}).get("status") not in {"WAITING_QUOTA","WAITING_AUTH","UNAVAILABLE"}
  def _finish_stage(self,t,stage,provider,content):
   self.artifact_dir.mkdir(parents=True,exist_ok=True);path=self.artifact_dir/f"{t['task_id']}_s{stage}_{provider}.md";path.write_text(content);a={"stage":stage,"provider":provider,"path":str(path),"hash":hashlib.sha256(content.encode()).hexdigest(),"created_at":iso(),"preview":content[:1000]};arts=list(t["artifacts"])+[a]
   if stage==5:
@@ -287,18 +303,25 @@ class StrictAGIOrchestrator:
   ps=self.refresh_providers();t=self.get_task(tid)
   if not t or t["status"] in FINAL or t["status"]=="NEEDS_RECONCILIATION":return
   st=int(t["current_stage"]);name=PIPELINE[st-1][1];need=["qwen","deepseek"] if name=="qwen_deepseek" else [name]
-  for n in need:
-   if not ps[n]["auth_ready"] or ps[n]["status"] in {"WAITING_QUOTA","WAITING_AUTH","UNAVAILABLE"}:self._update(tid,event=f"{n} 게이트 차단",status="WAITING_QUOTA" if ps[n]["status"]=="WAITING_QUOTA" else "WAITING_AUTH",stage_label=f"{st}/5 {n} 사용 불가 · 이 단계에서 정지",next_retry_at=ps[n].get("reset_at"));return
-  self._update(tid,event=f"{st}단계 시작",status=f"RUNNING_STAGE_{st}",stage_label=f"{st}/5 {PIPELINE[st-1][2]} 실행 중");t=self.get_task(tid)
+  # 소유자 지시(2026-09-14): GPT/Codex 한도가 자주 소진돼도 자율 루프가 멈추지 않도록,
+  # 1단계(계획)만 Codex 불가 시 Claude로 대체한다("듀얼 채널"). 5단계(최종검수)는 완료
+  # 판정 자체이므로 대체하지 않고 그대로 Codex 전용 게이트를 유지한다 - Claude가 스스로
+  # 계획 세우고 스스로 완료 인증까지 하는 것은 금지(자기 인증 방지 원칙, R05/R09와 동일).
+  use_claude_plan_fallback = st==1 and not self._ready(ps,"codex") and self._ready(ps,"claude")
+  if not use_claude_plan_fallback:
+   for n in need:
+    if not self._ready(ps,n):self._update(tid,event=f"{n} 게이트 차단",status="WAITING_QUOTA" if ps[n]["status"]=="WAITING_QUOTA" else "WAITING_AUTH",stage_label=f"{st}/5 {n} 사용 불가 · 이 단계에서 정지",next_retry_at=ps[n].get("reset_at"));return
+  self._update(tid,event=f"{st}단계 시작"+(" (Claude 계획 대체)" if use_claude_plan_fallback else ""),status=f"RUNNING_STAGE_{st}",stage_label=f"{st}/5 "+("Claude 계획 대체 실행 중" if use_claude_plan_fallback else f"{PIPELINE[st-1][2]} 실행 중"));t=self.get_task(tid)
   try:
-   if st==1:c=self._codex(t)
+   if st==1:c=self._claude_plan_fallback(t) if use_claude_plan_fallback else self._codex(t)
    elif st==2:c=self._gemini(t)
    elif st==3:q=self._qwen(t);c=f"## Qwen 단순 전처리\n\n{q}\n\n## DeepSeek 전처리 점검\n\n{self._deepseek(q)}"
    elif st==4:c=self._claude(t)
    else:c=self._codex(t,True)
   except Exception as e:
-   p=self._failure(need[-1] if st==3 else name,str(e));self._update(tid,event=f"{name} 단계 정지",status=p["status"],stage_label=f"{st}/5 {name} {p['status']} · 다음 단계 진입 금지",next_retry_at=p.get("reset_at") or (iso(now()+timedelta(minutes=5)) if p["status"]=="EXECUTION_ERROR" else None));return
-  self._finish_stage(t,st,name,c);self._launch(tid)
+   failed_provider="claude" if use_claude_plan_fallback else (need[-1] if st==3 else name)
+   p=self._failure(failed_provider,str(e));self._update(tid,event=f"{name} 단계 정지",status=p["status"],stage_label=f"{st}/5 {name} {p['status']} · 다음 단계 진입 금지",next_retry_at=p.get("reset_at") or (iso(now()+timedelta(minutes=5)) if p["status"]=="EXECUTION_ERROR" else None));return
+  self._finish_stage(t,st,"claude_plan_fallback" if use_claude_plan_fallback else name,c);self._launch(tid)
  def check_and_resume(self):
   self.refresh_providers();launched=self.maintain_goals()
   for t in self.list_tasks():
