@@ -64,6 +64,54 @@ class StrictOrchestratorTests(unittest.TestCase):
         self.assertNotEqual(cmd[cmd.index("--model") + 1], "gemini-3.6-flash")
         self.assertEqual(captured["env"].get("GEMINI_API_KEY"), "fake-gemini-key")
 
+    def _advance_to_stage3(self, ready):
+        with patch.object(self.manager, "refresh_providers", return_value=ready), \
+             patch.object(self.manager, "_codex", return_value="plan"), \
+             patch.object(self.manager, "_gemini", return_value="evidence"):
+            task = self.manager.dispatch("reach stage 3")
+            self.wait_idle()
+            self.manager._launch(task["task_id"])
+            self.wait_idle()
+        saved = self.manager.get_task(task["task_id"])
+        self.assertEqual(saved["current_stage"], 3)
+        return task
+
+    def test_stage3_falls_back_to_gemini_when_deepseek_unavailable(self):
+        """소유자 지시(2026-09-14): "DeepSeek는 중요한 AI가 아니니 Gemini가 대체하도록
+        해" - DeepSeek 계정/한도 문제로 3단계가 막히면 Gemini가 그 점검을 대신해야 한다."""
+        ready = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "claude")}
+        task = self._advance_to_stage3(ready)
+
+        deepseek_down = dict(ready, deepseek={"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"})
+        with patch.object(self.manager, "refresh_providers", return_value=deepseek_down), \
+             patch.object(self.manager, "_qwen", return_value="qwen out"), \
+             patch.object(self.manager, "_gemini_qc", return_value="gemini qc out") as mock_gemini_qc, \
+             patch.object(self.manager, "_deepseek") as mock_deepseek:
+            self.manager._launch(task["task_id"])
+            self.wait_idle()
+        mock_gemini_qc.assert_called_once_with("qwen out")
+        mock_deepseek.assert_not_called()
+        saved = self.manager.get_task(task["task_id"])
+        self.assertEqual(saved["current_stage"], 4)
+        self.assertIn("Gemini 전처리 점검(DeepSeek 대체)", saved["stage3_output"])
+        self.assertEqual(saved["artifacts"][-1]["provider"], "qwen+gemini_qc_fallback")
+
+    def test_stage3_still_blocks_when_both_deepseek_and_gemini_unavailable(self):
+        ready = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "claude")}
+        task = self._advance_to_stage3(ready)
+
+        both_down = dict(ready,
+                          deepseek={"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
+                          gemini={"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"})
+        with patch.object(self.manager, "refresh_providers", return_value=both_down), \
+             patch.object(self.manager, "_gemini_qc") as mock_gemini_qc:
+            self.manager._launch(task["task_id"])
+            self.wait_idle()
+        mock_gemini_qc.assert_not_called()
+        saved = self.manager.get_task(task["task_id"])
+        self.assertEqual(saved["current_stage"], 3)
+        self.assertFalse(saved["stage3_output"])
+
     def test_stage1_falls_back_to_claude_when_codex_quota_exhausted(self):
         """소유자 지시(2026-09-14): GPT(Codex/Astra) 한도가 자주 소진돼도 자율 루프가
         멈추지 않도록, 1단계(계획)만 Claude로 대체 가능해야 한다."""

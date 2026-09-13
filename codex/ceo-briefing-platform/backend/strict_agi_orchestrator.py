@@ -227,22 +227,25 @@ class StrictAGIOrchestrator:
   out=Path(result["artifact_path"]);c=out.read_text().strip() if out.exists() else ""
   if not c:raise RuntimeError("Codex 결과 없음")
   return c
- def _gemini(self,t):
+ def _gemini_call(self,prompt,timeout=300):
   # 2026-09-14 소유자 지적("Gemini 한도에 왜 걸렸지? 거의 안 썼는데") 조사 결과: API 키를
   # 서브프로세스 환경에 넘기지 않았고 모델도 지정하지 않아, gemini CLI가 기본값
   # gemini-3.6-flash로 익명 무료 등급(하루 20회 한도)에 걸려 실제로는 API 키의 정식
   # 쿼터(1,500 RPD)를 전혀 못 쓰고 있었다. RSS 파이프라인이 실제로 문제없이 쓰고 있는
-  # gemini-3.7-flash + 키 전달로 맞춘다.
-  prompt="GPT 계획에 필요한 대용량 근거와 컨텍스트를 정리하라. 사실/추정/미확인을 나누고 다음 실행용 입력을 작성하라.\n\n"+self._prior(t)
+  # gemini-3.7-flash + 키 전달로 맞춘다. _gemini()/_gemini_qc() 공용 호출부.
   gemini_env=dict(os.environ);gemini_key=secret("GEMINI_API_KEY")
   if gemini_key:gemini_env["GEMINI_API_KEY"]=gemini_key
   model=secret("AGI_GEMINI_MODEL") or "gemini-3.7-flash"
-  p=subprocess.run([str(BINS['gemini']),"--prompt",prompt,"--model",model,"--approval-mode","plan","--output-format","json"],cwd=ROOT,capture_output=True,text=True,timeout=300,env=gemini_env)
+  p=subprocess.run([str(BINS['gemini']),"--prompt",prompt,"--model",model,"--approval-mode","plan","--output-format","json"],cwd=ROOT,capture_output=True,text=True,timeout=timeout,env=gemini_env)
   if p.returncode:raise RuntimeError((p.stderr or p.stdout)[:3000])
   try:d=json.loads(p.stdout);c=str(d.get("response") or d.get("result") or d.get("content") or "")
   except json.JSONDecodeError:c=p.stdout
-  if not c.strip():raise RuntimeError("Gemini 결과 없음")
   return c.strip()
+ def _gemini(self,t):
+  prompt="GPT 계획에 필요한 대용량 근거와 컨텍스트를 정리하라. 사실/추정/미확인을 나누고 다음 실행용 입력을 작성하라.\n\n"+self._prior(t)
+  c=self._gemini_call(prompt)
+  if not c:raise RuntimeError("Gemini 결과 없음")
+  return c
  def _qwen(self,t):
   body=json.dumps({"model":"qwen2.5-coder:7b","prompt":"다음 자료에서 항목 분류, 중복 제거, 필드 추출, 체크리스트 변환만 수행하라. 설계·판단·코딩·완료 판정·후속 승계를 하지 마라.\n\n"+self._prior(t),"stream":False,"options":{"temperature":.1,"num_predict":900}}).encode()
   with urlopen(Request("http://127.0.0.1:11434/api/generate",data=body,headers={"Content-Type":"application/json"}),timeout=300) as r:c=json.loads(r.read()).get("response","")
@@ -267,6 +270,15 @@ class StrictAGIOrchestrator:
    return content
   finally:
    if reservation:ledger.release_reservation(reservation)
+ def _gemini_qc(self,q):
+  # 소유자 지시(2026-09-14): "DeepSeek는 중요한 AI가 아니니 Gemini가 대체하도록 해."
+  # DeepSeek 계정 잔액 소진(402) 등으로 사용 불가할 때, 3단계의 DeepSeek 점검 역할을
+  # Gemini가 대신한다(핵심 판단자인 Codex/Claude 자리는 대체 대상이 아님 - 이건 그
+  # 아래 draft 등급 전처리 점검 역할만 이관하는 것).
+  prompt="Qwen의 단순 전처리 결과에서 누락·분류 오류·근거 없는 주장을 점검하고 Claude가 검토할 입력 묶음으로 정리하라. 최종 판단이나 완료 판정을 하지 마라. (DeepSeek 계정/한도 문제로 Gemini가 이 점검을 대신 수행합니다.)\n\n"+q[:24000]
+  c=self._gemini_call(prompt,timeout=120)
+  if not c:raise RuntimeError("Gemini(DeepSeek 대체) 결과 없음")
+  return c
  def deepseek_budget_status(self):
   import sys
   ag=ROOT/"antigravity_workspace"
@@ -317,20 +329,32 @@ class StrictAGIOrchestrator:
   # 판정 자체이므로 대체하지 않고 그대로 Codex 전용 게이트를 유지한다 - Claude가 스스로
   # 계획 세우고 스스로 완료 인증까지 하는 것은 금지(자기 인증 방지 원칙, R05/R09와 동일).
   use_claude_plan_fallback = st==1 and not self._ready(ps,"codex") and self._ready(ps,"claude")
-  if not use_claude_plan_fallback:
-   for n in need:
-    if not self._ready(ps,n):self._update(tid,event=f"{n} 게이트 차단",status="WAITING_QUOTA" if ps[n]["status"]=="WAITING_QUOTA" else "WAITING_AUTH",stage_label=f"{st}/5 {n} 사용 불가 · 이 단계에서 정지",next_retry_at=ps[n].get("reset_at"));return
-  self._update(tid,event=f"{st}단계 시작"+(" (Claude 계획 대체)" if use_claude_plan_fallback else ""),status=f"RUNNING_STAGE_{st}",stage_label=f"{st}/5 "+("Claude 계획 대체 실행 중" if use_claude_plan_fallback else f"{PIPELINE[st-1][2]} 실행 중"));t=self.get_task(tid)
+  # 소유자 지시(2026-09-14): "DeepSeek는 중요한 AI가 아니니 Gemini가 대체하도록 해" -
+  # DeepSeek 계정 잔액 소진 등으로 3단계 점검이 막히면 Gemini가 그 역할을 대신한다.
+  # Qwen 자체는 대체 대상이 아니므로 need에 그대로 남겨 게이트를 통과해야 한다.
+  use_gemini_for_deepseek = st==3 and not self._ready(ps,"deepseek") and self._ready(ps,"gemini")
+  if use_claude_plan_fallback:need=[]
+  elif use_gemini_for_deepseek:need=["qwen"]
+  for n in need:
+   if not self._ready(ps,n):self._update(tid,event=f"{n} 게이트 차단",status="WAITING_QUOTA" if ps[n]["status"]=="WAITING_QUOTA" else "WAITING_AUTH",stage_label=f"{st}/5 {n} 사용 불가 · 이 단계에서 정지",next_retry_at=ps[n].get("reset_at"));return
+  fallback_note=" (Claude 계획 대체)" if use_claude_plan_fallback else (" (Gemini가 DeepSeek 대체)" if use_gemini_for_deepseek else "")
+  self._update(tid,event=f"{st}단계 시작"+fallback_note,status=f"RUNNING_STAGE_{st}",stage_label=f"{st}/5 {PIPELINE[st-1][2]} 실행 중"+fallback_note);t=self.get_task(tid)
   try:
    if st==1:c=self._claude_plan_fallback(t) if use_claude_plan_fallback else self._codex(t)
    elif st==2:c=self._gemini(t)
-   elif st==3:q=self._qwen(t);c=f"## Qwen 단순 전처리\n\n{q}\n\n## DeepSeek 전처리 점검\n\n{self._deepseek(q)}"
+   elif st==3:
+    q=self._qwen(t)
+    if use_gemini_for_deepseek:c=f"## Qwen 단순 전처리\n\n{q}\n\n## Gemini 전처리 점검(DeepSeek 대체)\n\n{self._gemini_qc(q)}"
+    else:c=f"## Qwen 단순 전처리\n\n{q}\n\n## DeepSeek 전처리 점검\n\n{self._deepseek(q)}"
    elif st==4:c=self._claude(t)
    else:c=self._codex(t,True)
   except Exception as e:
-   failed_provider="claude" if use_claude_plan_fallback else (need[-1] if st==3 else name)
+   if use_claude_plan_fallback:failed_provider="claude"
+   elif use_gemini_for_deepseek:failed_provider="gemini"
+   else:failed_provider=need[-1] if st==3 else name
    p=self._failure(failed_provider,str(e));self._update(tid,event=f"{name} 단계 정지",status=p["status"],stage_label=f"{st}/5 {name} {p['status']} · 다음 단계 진입 금지",next_retry_at=p.get("reset_at") or (iso(now()+timedelta(minutes=5)) if p["status"]=="EXECUTION_ERROR" else None));return
-  self._finish_stage(t,st,"claude_plan_fallback" if use_claude_plan_fallback else name,c);self._launch(tid)
+  provider_label="claude_plan_fallback" if use_claude_plan_fallback else ("qwen+gemini_qc_fallback" if use_gemini_for_deepseek else name)
+  self._finish_stage(t,st,provider_label,c);self._launch(tid)
  def check_and_resume(self):
   self.refresh_providers();launched=self.maintain_goals()
   for t in self.list_tasks():
