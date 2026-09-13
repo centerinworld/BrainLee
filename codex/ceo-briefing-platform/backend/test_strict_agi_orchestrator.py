@@ -44,6 +44,26 @@ class StrictOrchestratorTests(unittest.TestCase):
         self.assertEqual(saved["status"], "WAITING_QUOTA")
         self.assertFalse(saved["stage1_output"])
 
+    def test_gemini_call_uses_generous_model_and_passes_api_key(self):
+        """2026-09-14 소유자 지적: Gemini를 거의 안 썼는데 한도에 걸림 - 원인은 API 키를
+        서브프로세스에 안 넘기고 모델도 지정 안 해 gemini CLI가 기본 모델(하루 20회
+        무료 한도)로 떨어졌기 때문이었다. 올바른 모델/키가 실제로 전달되는지 검증."""
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["env"] = kwargs.get("env")
+            return type("R", (), {"returncode": 0, "stdout": '{"response":"ok"}', "stderr": ""})()
+
+        with patch.object(_module.subprocess, "run", side_effect=fake_run), \
+             patch.object(_module, "secret", side_effect=lambda name: "fake-gemini-key" if name == "GEMINI_API_KEY" else ""):
+            result = self.manager._gemini({"title": "t", "description": "d", "artifacts": [], "stage1_output": "", "stage2_output": "", "stage3_output": "", "stage4_output": ""})
+        self.assertEqual(result, "ok")
+        cmd = captured["cmd"]
+        self.assertIn("--model", cmd)
+        self.assertNotEqual(cmd[cmd.index("--model") + 1], "gemini-3.6-flash")
+        self.assertEqual(captured["env"].get("GEMINI_API_KEY"), "fake-gemini-key")
+
     def test_stage1_falls_back_to_claude_when_codex_quota_exhausted(self):
         """소유자 지시(2026-09-14): GPT(Codex/Astra) 한도가 자주 소진돼도 자율 루프가
         멈추지 않도록, 1단계(계획)만 Claude로 대체 가능해야 한다."""

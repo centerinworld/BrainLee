@@ -228,7 +228,16 @@ class StrictAGIOrchestrator:
   if not c:raise RuntimeError("Codex 결과 없음")
   return c
  def _gemini(self,t):
-  prompt="GPT 계획에 필요한 대용량 근거와 컨텍스트를 정리하라. 사실/추정/미확인을 나누고 다음 실행용 입력을 작성하라.\n\n"+self._prior(t);p=subprocess.run([str(BINS['gemini']),"--prompt",prompt,"--approval-mode","plan","--output-format","json"],cwd=ROOT,capture_output=True,text=True,timeout=300)
+  # 2026-09-14 소유자 지적("Gemini 한도에 왜 걸렸지? 거의 안 썼는데") 조사 결과: API 키를
+  # 서브프로세스 환경에 넘기지 않았고 모델도 지정하지 않아, gemini CLI가 기본값
+  # gemini-3.6-flash로 익명 무료 등급(하루 20회 한도)에 걸려 실제로는 API 키의 정식
+  # 쿼터(1,500 RPD)를 전혀 못 쓰고 있었다. RSS 파이프라인이 실제로 문제없이 쓰고 있는
+  # gemini-3.7-flash + 키 전달로 맞춘다.
+  prompt="GPT 계획에 필요한 대용량 근거와 컨텍스트를 정리하라. 사실/추정/미확인을 나누고 다음 실행용 입력을 작성하라.\n\n"+self._prior(t)
+  gemini_env=dict(os.environ);gemini_key=secret("GEMINI_API_KEY")
+  if gemini_key:gemini_env["GEMINI_API_KEY"]=gemini_key
+  model=secret("AGI_GEMINI_MODEL") or "gemini-3.7-flash"
+  p=subprocess.run([str(BINS['gemini']),"--prompt",prompt,"--model",model,"--approval-mode","plan","--output-format","json"],cwd=ROOT,capture_output=True,text=True,timeout=300,env=gemini_env)
   if p.returncode:raise RuntimeError((p.stderr or p.stdout)[:3000])
   try:d=json.loads(p.stdout);c=str(d.get("response") or d.get("result") or d.get("content") or "")
   except json.JSONDecodeError:c=p.stdout
