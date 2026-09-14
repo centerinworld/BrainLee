@@ -1,4 +1,5 @@
 import tempfile, time, unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +21,10 @@ StrictAGIOrchestrator = _module.StrictAGIOrchestrator
 
 class StrictOrchestratorTests(unittest.TestCase):
     def setUp(self):
+        for obj, attr in ((_module.subprocess, "run"), (_module, "urlopen")):
+            guard = patch.object(obj, attr, side_effect=AssertionError("Unmocked external I/O"))
+            guard.start()
+            self.addCleanup(guard.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.manager = StrictAGIOrchestrator(Path(self.tmp.name) / "state.json", 999)
 
@@ -32,6 +37,37 @@ class StrictOrchestratorTests(unittest.TestCase):
             if not self.manager.active:
                 return
             time.sleep(.01)
+
+    def test_retry_parses_absolute_clock_time_instead_of_blind_five_hours(self):
+        """2026-09-14 진단(D03): Claude가 실제로 보내는 "resets 9:40am (Asia/Seoul)" 같은
+        절대 시각은 예전 정규식(상대 시간만 인식)이 못 잡아 전부 현재+5시간으로 떨어졌다.
+        실측(오늘 세션)으로 확인됨: Claude가 이미 다시 쓸 수 있는데도 그 임의의 5시간
+        기본값 때문에 next_retry_at이 몇 시간이나 더 뒤로 잡혀 있었다."""
+        with patch.object(_module, "now", return_value=datetime(2026, 9, 14, 20, 0, 0, tzinfo=timezone.utc)):
+            r, confirmed = self.manager._retry("You've hit your limit · resets 9:40am (Asia/Seoul)")
+        self.assertTrue(confirmed)
+        self.assertEqual((r.hour, r.minute), (9, 40))
+        # 20:00에 "9:40am"을 보면 오늘 9:40은 이미 지났으므로 다음날로 넘어가야 한다.
+        self.assertEqual(r.date(), datetime(2026, 9, 15).date())
+
+    def test_retry_unparseable_message_uses_short_unconfirmed_backoff(self):
+        with patch.object(_module, "now", return_value=datetime(2026, 9, 14, 20, 0, 0, tzinfo=timezone.utc)):
+            r, confirmed = self.manager._retry("something went wrong, no timing info at all")
+        self.assertFalse(confirmed)
+        self.assertLessEqual(r - datetime(2026, 9, 14, 20, 0, 0, tzinfo=timezone.utc), timedelta(minutes=30))
+
+    def test_failure_note_distinguishes_confirmed_from_estimated_reset(self):
+        ready = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "deepseek", "claude")}
+        with patch.object(self.manager, "refresh_providers", return_value=ready):
+            self.manager._failure("claude", "usage limit exceeded, resets 11:15pm")
+        providers = self.manager._load()["providers"]
+        self.assertIn("실제 한도 감지", providers["claude"]["note"])
+
+        with patch.object(self.manager, "refresh_providers", return_value=ready):
+            self.manager._failure("gemini", "usage limit exceeded, no reset info")
+        providers = self.manager._load()["providers"]
+        self.assertIn("추정", providers["gemini"]["note"])
+        self.assertFalse(providers["gemini"]["quota_observed"])
 
     def test_missing_stage_provider_blocks_without_advancing(self):
         with patch.object(self.manager, "refresh_providers", return_value={
@@ -64,17 +100,6 @@ class StrictOrchestratorTests(unittest.TestCase):
         self.assertNotEqual(cmd[cmd.index("--model") + 1], "gemini-3.6-flash")
         self.assertEqual(captured["env"].get("GEMINI_API_KEY"), "fake-gemini-key")
 
-    def _advance_to_stage3(self, ready):
-        with patch.object(self.manager, "refresh_providers", return_value=ready), \
-             patch.object(self.manager, "_codex", return_value="plan"), \
-             patch.object(self.manager, "_gemini", return_value="evidence"):
-            task = self.manager.dispatch("reach stage 3")
-            self.wait_idle()
-            self.manager._launch(task["task_id"])
-            self.wait_idle()
-        saved = self.manager.get_task(task["task_id"])
-        self.assertEqual(saved["current_stage"], 3)
-        return task
 
     def test_deepseek_raises_when_content_is_empty_despite_200_response(self):
         """2026-09-14 발견: deepseek-flash는 추론 모델이라 reasoning_content에 사고
@@ -110,68 +135,8 @@ class StrictOrchestratorTests(unittest.TestCase):
                 self.manager._deepseek("qwen output")
         self.assertIn("결과 없음", str(ctx.exception))
 
-    def test_stage3_falls_back_to_gemini_when_deepseek_call_fails_at_runtime(self):
-        """소유자 지시(2026-09-14): "DeepSeek는 중요한 AI가 아니니 Gemini가 대체하도록
-        해." DeepSeek 계정 잔액 소진(402)처럼 키는 있지만 실제 호출이 실패하는 경우는
-        사전 probe(키 존재 여부만 확인)로는 못 잡는다 - 실제 호출이 실패한 시점에
-        Gemini로 대체해야 한다."""
-        ready = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "claude")}
-        task = self._advance_to_stage3(ready)
 
-        # deepseek는 probe상 "정상"으로 보이지만(실제로 이런 잔액 문제는 probe가 못 잡음),
-        # 실제 호출은 402로 실패한다.
-        ready_with_deepseek = dict(ready, deepseek={"auth_ready": True, "status": "AVAILABLE_BUDGET_GUARDED", "reset_at": None})
-        with patch.object(self.manager, "refresh_providers", return_value=ready_with_deepseek), \
-             patch.object(self.manager, "_qwen", return_value="qwen out"), \
-             patch.object(self.manager, "_deepseek", side_effect=RuntimeError("HTTPError 402: Payment Required")), \
-             patch.object(self.manager, "_gemini_qc", return_value="gemini qc out") as mock_gemini_qc:
-            self.manager._launch(task["task_id"])
-            self.wait_idle()
-        mock_gemini_qc.assert_called_once_with("qwen out")
-        saved = self.manager.get_task(task["task_id"])
-        self.assertEqual(saved["current_stage"], 4)
-        self.assertIn("Gemini 전처리 점검(DeepSeek 대체", saved["stage3_output"])
-        self.assertIn("402", saved["stage3_output"])
-        self.assertEqual(saved["artifacts"][-1]["provider"], "qwen+gemini_qc_fallback")
 
-    def test_stage3_fails_normally_when_deepseek_fails_and_gemini_also_unavailable(self):
-        ready = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "claude")}
-        task = self._advance_to_stage3(ready)
-
-        no_gemini_fallback = dict(ready,
-                                   deepseek={"auth_ready": True, "status": "AVAILABLE_BUDGET_GUARDED", "reset_at": None},
-                                   gemini={"auth_ready": False, "status": "WAITING_AUTH", "reset_at": None})
-        with patch.object(self.manager, "refresh_providers", return_value=no_gemini_fallback), \
-             patch.object(self.manager, "_qwen", return_value="qwen out"), \
-             patch.object(self.manager, "_deepseek", side_effect=RuntimeError("HTTPError 402: Payment Required")), \
-             patch.object(self.manager, "_gemini_qc") as mock_gemini_qc:
-            self.manager._launch(task["task_id"])
-            self.wait_idle()
-        mock_gemini_qc.assert_not_called()
-        saved = self.manager.get_task(task["task_id"])
-        self.assertEqual(saved["current_stage"], 3)
-        self.assertFalse(saved["stage3_output"])
-        self.assertEqual(saved["status"], "EXECUTION_ERROR")
-
-    def test_stage1_falls_back_to_claude_when_codex_quota_exhausted(self):
-        """소유자 지시(2026-09-14): GPT(Codex/Astra) 한도가 자주 소진돼도 자율 루프가
-        멈추지 않도록, 1단계(계획)만 Claude로 대체 가능해야 한다."""
-        ready = {
-            "codex": {"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
-            "claude": {"auth_ready": True, "status": "AVAILABLE_QUOTA_UNKNOWN", "reset_at": None},
-        }
-        with patch.object(self.manager, "refresh_providers", return_value=ready), \
-             patch.object(self.manager, "_claude_plan_fallback", return_value="claude plan") as mock_fallback, \
-             patch.object(self.manager, "_codex") as mock_codex:
-            task = self.manager.dispatch("fallback test")
-            self.wait_idle()
-        mock_fallback.assert_called_once()
-        mock_codex.assert_not_called()
-        saved = self.manager.get_task(task["task_id"])
-        self.assertEqual(saved["current_stage"], 2)
-        self.assertEqual(saved["stage1_output"], "claude plan")
-        self.assertEqual(saved["artifacts"][0]["provider"], "claude_plan_fallback")
-        self.assertNotEqual(saved["status"], "WAITING_QUOTA")
 
     def test_stage1_still_blocks_when_both_codex_and_claude_unavailable(self):
         ready = {
@@ -187,47 +152,10 @@ class StrictOrchestratorTests(unittest.TestCase):
         self.assertEqual(saved["current_stage"], 1)
         self.assertFalse(saved["stage1_output"])
 
-    def test_stage5_never_falls_back_to_claude_even_if_codex_is_down(self):
-        """완료 판정(5단계)은 자기 인증 방지 원칙상 Claude로 대체하면 안 된다 -
-        Codex가 막혀 있으면 Claude가 대신 계획을 세웠더라도 최종검수는 그대로 정지해야 한다.
-
-        _run()이 끝에서 부르는 self._launch(tid)는 같은 스레드 안에서는 self.active에
-        아직 tid가 남아 있어 no-op이다(설계상 "한 번에 과업 하나만 실행" 재진입 방지) -
-        실제로는 monitor 루프(check_and_resume)가 밖에서 반복 호출해 다음 단계로 넘긴다.
-        그래서 이 테스트도 단계마다 _launch를 직접 호출해 한 단계씩 진행시킨다."""
-        ready_for_plan = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "deepseek", "claude")}
-        with patch.object(self.manager, "refresh_providers", return_value=ready_for_plan), \
-             patch.object(self.manager, "_codex", return_value="plan"), \
-             patch.object(self.manager, "_gemini", return_value="evidence"), \
-             patch.object(self.manager, "_qwen", return_value="qwen out"), \
-             patch.object(self.manager, "_deepseek", return_value="deepseek out"), \
-             patch.object(self.manager, "_claude", return_value="claude review"):
-            task = self.manager.dispatch("reach stage 5")
-            self.wait_idle()
-            for _ in range(3):  # 2,3,4단계를 하나씩 밖에서 진행시켜 5단계 직전까지 이동
-                self.manager._launch(task["task_id"])
-                self.wait_idle()
-        saved = self.manager.get_task(task["task_id"])
-        self.assertEqual(saved["current_stage"], 5)
-
-        codex_down = {
-            "codex": {"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
-            "claude": {"auth_ready": True, "status": "AVAILABLE_QUOTA_UNKNOWN", "reset_at": None},
-        }
-        with patch.object(self.manager, "refresh_providers", return_value=codex_down), \
-             patch.object(self.manager, "_claude_plan_fallback") as mock_fallback, \
-             patch.object(self.manager, "_codex") as mock_codex:
-            self.manager._launch(task["task_id"])
-            self.wait_idle()
-        mock_fallback.assert_not_called()  # 5단계는 절대 Claude로 대체되지 않는다
-        mock_codex.assert_not_called()  # 게이트에서 막혀 아예 호출되지 않아야 함
-        saved = self.manager.get_task(task["task_id"])
-        self.assertEqual(saved["status"], "WAITING_QUOTA")
-        self.assertEqual(saved["current_stage"], 5)
 
     def test_each_artifact_is_required_before_next_stage(self):
         ready={n:{"auth_ready":True,"status":"AVAILABLE","reset_at":None} for n in ("codex","gemini","qwen","deepseek","claude")}
-        with patch.object(self.manager,"refresh_providers",return_value=ready), patch.object(self.manager,"_codex",return_value="plan"):
+        with patch.object(self.manager,"refresh_providers",return_value=ready), patch.object(self.manager,"_gemini_call",return_value="plan"):
             task=self.manager.dispatch("stage test");self.wait_idle()
         saved=self.manager.get_task(task["task_id"])
         self.assertEqual(saved["current_stage"],2)
@@ -337,6 +265,84 @@ class StrictOrchestratorTests(unittest.TestCase):
                 with patch.object(self.manager, "refresh_providers", return_value={}):
                     result = self.manager.check_and_resume()
                 self.assertNotIn(task["task_id"], result["resumed_task_ids"])
+
+    def make_task(self, stage=1, core=None):
+        with patch.object(self.manager, "_launch"):
+            task=self.manager.dispatch("test", core_review_reason=core)
+        self.manager._update(task["task_id"], current_stage=stage)
+        return self.manager.get_task(task["task_id"])
+
+    def ready(self):
+        return {n:{"auth_ready":True,"status":"AVAILABLE"} for n in ("gemini","deepseek","claude","codex")}
+
+    def test_ordinary_work_never_uses_premium_models(self):
+        task=self.make_task()
+        with patch.object(self.manager,"refresh_providers",return_value=self.ready()), \
+             patch.object(self.manager,"_gemini_call",return_value="facts") as gemini, \
+             patch.object(self.manager,"_deepseek",return_value="draft") as deepseek, \
+             patch.object(self.manager,"_claude") as claude, patch.object(self.manager,"_codex") as codex:
+            for _ in range(5):self.manager._run(task["task_id"])
+        self.assertEqual(gemini.call_count,2)
+        self.assertEqual(deepseek.call_count,2)
+        claude.assert_not_called();codex.assert_not_called()
+        self.assertEqual(self.manager.get_task(task["task_id"])["status"],"DRAFT_READY")
+
+    def test_deepseek_runtime_failure_uses_gemini_not_claude(self):
+        task=self.make_task(3)
+        with patch.object(self.manager,"refresh_providers",return_value=self.ready()), \
+             patch.object(self.manager,"_deepseek",side_effect=RuntimeError("402")), \
+             patch.object(self.manager,"_gemini_call",return_value="fallback") as gemini, \
+             patch.object(self.manager,"_claude") as claude:
+            self.manager._run(task["task_id"])
+        gemini.assert_called_once();claude.assert_not_called()
+        self.assertEqual(self.manager.get_task(task["task_id"])["current_stage"],4)
+
+    def test_core_review_is_reserved_once_per_evidence(self):
+        task=self.make_task(4,"security_change")
+        self.assertTrue(self.manager._reserve_core_review(task,"claude"))
+        self.assertFalse(self.manager._reserve_core_review(task,"claude"))
+        other=StrictAGIOrchestrator(self.manager.state_file,999)
+        self.assertFalse(other._reserve_core_review(task,"claude"))
+
+    def test_daily_core_cap_survives_restart(self):
+        for _ in range(4):self.assertTrue(self.manager._reserve_core_review(self.make_task(4,"security_change"),"claude"))
+        other=StrictAGIOrchestrator(self.manager.state_file,999)
+        self.assertFalse(other._reserve_core_review(self.make_task(4,"security_change"),"claude"))
+
+    def test_core_failure_is_not_repeated(self):
+        task=self.make_task(4,"security_change")
+        with patch.object(self.manager,"refresh_providers",return_value=self.ready()), \
+             patch.object(self.manager,"_claude",side_effect=RuntimeError("failed")) as claude:
+            self.manager._run(task["task_id"]);self.manager._run(task["task_id"])
+        claude.assert_called_once()
+        self.assertEqual(self.manager.get_task(task["task_id"])["status"],"WAITING_REPAIR")
+
+    def test_review_context_has_bounded_size_and_provenance(self):
+        task=self.make_task(4,"security_change")
+        task["stage3_output"]="x"*100000
+        task["artifacts"]=[{"stage":3,"path":"/evidence","hash":"abc"}]
+        context=self.manager._review_context(task)
+        self.assertLessEqual(len(context),6000)
+        self.assertIn("/evidence",context)
+
+    def test_waiting_goal_does_not_block_other_goal(self):
+        first=self.manager.upsert_goal("first",auto_continue=False)
+        second=self.manager.upsert_goal("second",auto_continue=False)
+        with patch.object(self.manager,"_launch"):
+            task=self.manager.dispatch("blocked",goal_id=first["goal_id"])
+            self.manager._update(task["task_id"],status="WAITING_QUOTA",next_retry_at="2099-01-01T00:00:00+09:00")
+            result=self.manager.set_goal_auto(second["goal_id"],True)
+        self.assertEqual(len(result["launched_task_ids"]),1)
+
+    def test_premium_unavailable_does_not_block_ordinary_plan(self):
+        task=self.make_task()
+        ready={"gemini":{"auth_ready":True,"status":"AVAILABLE"}}
+        with patch.object(self.manager,"refresh_providers",return_value=ready), \
+             patch.object(self.manager,"_gemini_call",return_value="plan"), \
+             patch.object(self.manager,"_claude_plan_fallback") as fallback:
+            self.manager._run(task["task_id"])
+        fallback.assert_not_called()
+        self.assertEqual(self.manager.get_task(task["task_id"])["current_stage"],2)
 
 
 if __name__ == "__main__":
