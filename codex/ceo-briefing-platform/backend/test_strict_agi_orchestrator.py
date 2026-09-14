@@ -76,34 +76,74 @@ class StrictOrchestratorTests(unittest.TestCase):
         self.assertEqual(saved["current_stage"], 3)
         return task
 
-    def test_stage3_falls_back_to_gemini_when_deepseek_unavailable(self):
+    def test_deepseek_raises_when_content_is_empty_despite_200_response(self):
+        """2026-09-14 발견: deepseek-flash는 추론 모델이라 reasoning_content에 사고
+        과정을 다 쓰고 나면 content(최종 답변)가 빈 문자열인 채 HTTP 200이 올 수 있다.
+        예전엔 이걸 그대로 성공으로 반환해 3단계에 빈 검토 결과가 조용히 박혔다."""
+        import sys as _sys, json as _json
+        ag_path = str(Path("/Volumes/Realtek_NVME/AI System/antigravity_workspace"))
+        if ag_path not in _sys.path:_sys.path.insert(0, ag_path)
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self._payload = _json.dumps(payload).encode()
+            def read(self):
+                return self._payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        fake_payload = {
+            "choices": [{"message": {"role": "assistant", "content": "", "reasoning_content": "..."}, "finish_reason": "length"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 16000},
+        }
+        fake_ledger = type("FakeLedger", (), {
+            "reserve_monthly_budget": lambda self, *a, **k: "fake-reservation-id",
+            "release_reservation": lambda self, *a, **k: None,
+            "finalize_reservation": lambda self, *a, **k: None,
+        })()
+        with patch.object(_module, "secret", side_effect=lambda name: "fake-deepseek-key" if name == "DEEPSEEK_API_KEY" else ("10000" if name == "DEEPSEEK_MONTHLY_BUDGET_KRW" else "")), \
+             patch.object(_module, "urlopen", return_value=FakeResponse(fake_payload)), \
+             patch("memory.llm_usage_ledger.LLMUsageLedger", return_value=fake_ledger):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.manager._deepseek("qwen output")
+        self.assertIn("결과 없음", str(ctx.exception))
+
+    def test_stage3_falls_back_to_gemini_when_deepseek_call_fails_at_runtime(self):
         """소유자 지시(2026-09-14): "DeepSeek는 중요한 AI가 아니니 Gemini가 대체하도록
-        해" - DeepSeek 계정/한도 문제로 3단계가 막히면 Gemini가 그 점검을 대신해야 한다."""
+        해." DeepSeek 계정 잔액 소진(402)처럼 키는 있지만 실제 호출이 실패하는 경우는
+        사전 probe(키 존재 여부만 확인)로는 못 잡는다 - 실제 호출이 실패한 시점에
+        Gemini로 대체해야 한다."""
         ready = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "claude")}
         task = self._advance_to_stage3(ready)
 
-        deepseek_down = dict(ready, deepseek={"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"})
-        with patch.object(self.manager, "refresh_providers", return_value=deepseek_down), \
+        # deepseek는 probe상 "정상"으로 보이지만(실제로 이런 잔액 문제는 probe가 못 잡음),
+        # 실제 호출은 402로 실패한다.
+        ready_with_deepseek = dict(ready, deepseek={"auth_ready": True, "status": "AVAILABLE_BUDGET_GUARDED", "reset_at": None})
+        with patch.object(self.manager, "refresh_providers", return_value=ready_with_deepseek), \
              patch.object(self.manager, "_qwen", return_value="qwen out"), \
-             patch.object(self.manager, "_gemini_qc", return_value="gemini qc out") as mock_gemini_qc, \
-             patch.object(self.manager, "_deepseek") as mock_deepseek:
+             patch.object(self.manager, "_deepseek", side_effect=RuntimeError("HTTPError 402: Payment Required")), \
+             patch.object(self.manager, "_gemini_qc", return_value="gemini qc out") as mock_gemini_qc:
             self.manager._launch(task["task_id"])
             self.wait_idle()
         mock_gemini_qc.assert_called_once_with("qwen out")
-        mock_deepseek.assert_not_called()
         saved = self.manager.get_task(task["task_id"])
         self.assertEqual(saved["current_stage"], 4)
-        self.assertIn("Gemini 전처리 점검(DeepSeek 대체)", saved["stage3_output"])
+        self.assertIn("Gemini 전처리 점검(DeepSeek 대체", saved["stage3_output"])
+        self.assertIn("402", saved["stage3_output"])
         self.assertEqual(saved["artifacts"][-1]["provider"], "qwen+gemini_qc_fallback")
 
-    def test_stage3_still_blocks_when_both_deepseek_and_gemini_unavailable(self):
+    def test_stage3_fails_normally_when_deepseek_fails_and_gemini_also_unavailable(self):
         ready = {n: {"auth_ready": True, "status": "AVAILABLE", "reset_at": None} for n in ("codex", "gemini", "qwen", "claude")}
         task = self._advance_to_stage3(ready)
 
-        both_down = dict(ready,
-                          deepseek={"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
-                          gemini={"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"})
-        with patch.object(self.manager, "refresh_providers", return_value=both_down), \
+        no_gemini_fallback = dict(ready,
+                                   deepseek={"auth_ready": True, "status": "AVAILABLE_BUDGET_GUARDED", "reset_at": None},
+                                   gemini={"auth_ready": False, "status": "WAITING_AUTH", "reset_at": None})
+        with patch.object(self.manager, "refresh_providers", return_value=no_gemini_fallback), \
+             patch.object(self.manager, "_qwen", return_value="qwen out"), \
+             patch.object(self.manager, "_deepseek", side_effect=RuntimeError("HTTPError 402: Payment Required")), \
              patch.object(self.manager, "_gemini_qc") as mock_gemini_qc:
             self.manager._launch(task["task_id"])
             self.wait_idle()
@@ -111,6 +151,7 @@ class StrictOrchestratorTests(unittest.TestCase):
         saved = self.manager.get_task(task["task_id"])
         self.assertEqual(saved["current_stage"], 3)
         self.assertFalse(saved["stage3_output"])
+        self.assertEqual(saved["status"], "EXECUTION_ERROR")
 
     def test_stage1_falls_back_to_claude_when_codex_quota_exhausted(self):
         """소유자 지시(2026-09-14): GPT(Codex/Astra) 한도가 자주 소진돼도 자율 루프가

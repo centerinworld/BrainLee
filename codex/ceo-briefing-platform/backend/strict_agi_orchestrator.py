@@ -262,10 +262,17 @@ class StrictAGIOrchestrator:
   reservation=ledger.reserve_monthly_budget("deepseek",.015,limit_usd)
   if not reservation:raise RuntimeError(f"DeepSeek 월 {limit_krw:,}원 예산 상한 도달")
   model=secret("DEEPSEEK_MODEL") or "deepseek-flash"
-  body=json.dumps({"model":model,"messages":[{"role":"user","content":"Qwen의 단순 전처리 결과에서 누락·분류 오류·근거 없는 주장을 점검하고 Claude가 검토할 입력 묶음으로 정리하라. 최종 판단이나 완료 판정을 하지 마라.\n\n"+q[:24000]}],"temperature":.1,"max_tokens":1200}).encode()
+  # 2026-09-14 발견: deepseek-flash는 추론 모델이라 reasoning_content에 사고 과정을 먼저
+  # 쓰는데, max_tokens=1200으로는 그 추론만으로 예산이 소진돼 정작 content(최종 답변)가
+  # 빈 문자열로 오는 경우가 실제로 있었다(계정 잔액 문제와는 별개 - 200 응답이지만
+  # 내용이 비어 있었음). 실측 결과 이 검토 프롬프트 하나에 reasoning_tokens만 6,800개
+  # 넘게 쓰는 경우가 있어(내용 3,394자 기준 총 8,680 completion 토큰) 16000으로 올린다.
+  # 그래도 비면 명시적으로 실패 처리해 위(3단계 호출부)의 Gemini 대체가 발동하게 한다.
+  body=json.dumps({"model":model,"messages":[{"role":"user","content":"Qwen의 단순 전처리 결과에서 누락·분류 오류·근거 없는 주장을 점검하고 Claude가 검토할 입력 묶음으로 정리하라. 최종 판단이나 완료 판정을 하지 마라.\n\n"+q[:24000]}],"temperature":.1,"max_tokens":16000}).encode()
   try:
    with urlopen(Request("https://api.deepseek.com/chat/completions",data=body,headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"}),timeout=120) as r:d=json.loads(r.read())
-   content=d["choices"][0]["message"]["content"].strip()
+   content=(d["choices"][0]["message"].get("content") or "").strip()
+   if not content:raise RuntimeError(f"DeepSeek 결과 없음(finish_reason={d['choices'][0].get('finish_reason')} - 추론 토큰 소진 가능성)")
    ledger.finalize_reservation(reservation,"strict_agi_orchestrator",{"provider":"deepseek","model":model,"usage":d.get("usage") or {},"is_fallback":False});reservation=None
    return content
   finally:
@@ -329,31 +336,38 @@ class StrictAGIOrchestrator:
   # 판정 자체이므로 대체하지 않고 그대로 Codex 전용 게이트를 유지한다 - Claude가 스스로
   # 계획 세우고 스스로 완료 인증까지 하는 것은 금지(자기 인증 방지 원칙, R05/R09와 동일).
   use_claude_plan_fallback = st==1 and not self._ready(ps,"codex") and self._ready(ps,"claude")
-  # 소유자 지시(2026-09-14): "DeepSeek는 중요한 AI가 아니니 Gemini가 대체하도록 해" -
-  # DeepSeek 계정 잔액 소진 등으로 3단계 점검이 막히면 Gemini가 그 역할을 대신한다.
-  # Qwen 자체는 대체 대상이 아니므로 need에 그대로 남겨 게이트를 통과해야 한다.
-  use_gemini_for_deepseek = st==3 and not self._ready(ps,"deepseek") and self._ready(ps,"gemini")
+  # 소유자 지시(2026-09-14): "DeepSeek는 중요한 AI가 아니니 Gemini가 대체하도록 해."
+  # DeepSeek 계정 잔액 소진(402) 같은 실패는 키 존재 여부만 보는 사전 probe로는 안
+  # 잡힌다(_failure()도 이런 비-한도성 오류엔 reset_at을 안 걸어 다음 refresh_providers가
+  # 바로 "정상"으로 덮어써 버린다) - 그래서 게이트가 아니라 실제 호출 실패 시점에
+  # Gemini로 대체한다. Qwen 자체는 대체 대상이 아니므로 게이트에 그대로 남긴다.
   if use_claude_plan_fallback:need=[]
-  elif use_gemini_for_deepseek:need=["qwen"]
+  elif st==3:need=["qwen"]
   for n in need:
    if not self._ready(ps,n):self._update(tid,event=f"{n} 게이트 차단",status="WAITING_QUOTA" if ps[n]["status"]=="WAITING_QUOTA" else "WAITING_AUTH",stage_label=f"{st}/5 {n} 사용 불가 · 이 단계에서 정지",next_retry_at=ps[n].get("reset_at"));return
-  fallback_note=" (Claude 계획 대체)" if use_claude_plan_fallback else (" (Gemini가 DeepSeek 대체)" if use_gemini_for_deepseek else "")
+  fallback_note=" (Claude 계획 대체)" if use_claude_plan_fallback else ""
   self._update(tid,event=f"{st}단계 시작"+fallback_note,status=f"RUNNING_STAGE_{st}",stage_label=f"{st}/5 {PIPELINE[st-1][2]} 실행 중"+fallback_note);t=self.get_task(tid)
+  used_gemini_for_deepseek=False
   try:
    if st==1:c=self._claude_plan_fallback(t) if use_claude_plan_fallback else self._codex(t)
    elif st==2:c=self._gemini(t)
    elif st==3:
     q=self._qwen(t)
-    if use_gemini_for_deepseek:c=f"## Qwen 단순 전처리\n\n{q}\n\n## Gemini 전처리 점검(DeepSeek 대체)\n\n{self._gemini_qc(q)}"
-    else:c=f"## Qwen 단순 전처리\n\n{q}\n\n## DeepSeek 전처리 점검\n\n{self._deepseek(q)}"
+    try:
+     c=f"## Qwen 단순 전처리\n\n{q}\n\n## DeepSeek 전처리 점검\n\n{self._deepseek(q)}"
+    except Exception as deepseek_err:
+     if not self._ready(ps,"gemini"):raise
+     self._failure("deepseek",str(deepseek_err))  # 실패 사유를 기록해두되, 이 스테이지는 대체로 계속 진행
+     used_gemini_for_deepseek=True
+     c=f"## Qwen 단순 전처리\n\n{q}\n\n## Gemini 전처리 점검(DeepSeek 대체 · 원인: {str(deepseek_err)[:200]})\n\n{self._gemini_qc(q)}"
    elif st==4:c=self._claude(t)
    else:c=self._codex(t,True)
   except Exception as e:
    if use_claude_plan_fallback:failed_provider="claude"
-   elif use_gemini_for_deepseek:failed_provider="gemini"
-   else:failed_provider=need[-1] if st==3 else name
+   elif st==3:failed_provider="gemini" if used_gemini_for_deepseek else "deepseek"
+   else:failed_provider=name
    p=self._failure(failed_provider,str(e));self._update(tid,event=f"{name} 단계 정지",status=p["status"],stage_label=f"{st}/5 {name} {p['status']} · 다음 단계 진입 금지",next_retry_at=p.get("reset_at") or (iso(now()+timedelta(minutes=5)) if p["status"]=="EXECUTION_ERROR" else None));return
-  provider_label="claude_plan_fallback" if use_claude_plan_fallback else ("qwen+gemini_qc_fallback" if use_gemini_for_deepseek else name)
+  provider_label="claude_plan_fallback" if use_claude_plan_fallback else ("qwen+gemini_qc_fallback" if used_gemini_for_deepseek else name)
   self._finish_stage(t,st,provider_label,c);self._launch(tid)
  def check_and_resume(self):
   self.refresh_providers();launched=self.maintain_goals()
