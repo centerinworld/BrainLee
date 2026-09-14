@@ -274,8 +274,18 @@ class StrictAGIOrchestrator:
   # gemini-3.6-flash로 익명 무료 등급(하루 20회 한도)에 걸려 실제로는 API 키의 정식
   # 쿼터(1,500 RPD)를 전혀 못 쓰고 있었다. RSS 파이프라인이 실제로 문제없이 쓰고 있는
   # gemini-3.7-flash + 키 전달로 맞춘다. _gemini()/_gemini_qc() 공용 호출부.
-  gemini_env=dict(os.environ);gemini_key=secret("GEMINI_API_KEY")
-  if gemini_key:gemini_env["GEMINI_API_KEY"]=gemini_key
+  #
+  # 2026-09-14 추가 소유자 지적("CLI로 어제 연결 다 했는데"): gemini CLI는 API 키 외에
+  # "Login with Google" OAuth 방식도 있고(조직 유료 Code Assist 라이선스가 있으면 그
+  # 쪽이 진짜 유료 쿼터), 이 저장소 실측 결과 ~/.gemini/settings.json이 아예 없어
+  # 지금은 OAuth가 설정돼 있지 않았다. 다만 소유자가 그 OAuth 로그인을 나중에 완료할
+  # 경우를 대비해, 그 설정 파일이 있으면 API 키를 강제로 덮어쓰지 않고 CLI 자체의
+  # 인증 우선순위(보통 이미 로그인된 세션 우선)를 그대로 따르게 한다.
+  gemini_settings_exists=(Path.home()/".gemini"/"settings.json").exists()
+  gemini_env=dict(os.environ)
+  if not gemini_settings_exists:
+   gemini_key=secret("GEMINI_API_KEY")
+   if gemini_key:gemini_env["GEMINI_API_KEY"]=gemini_key
   model=secret("AGI_GEMINI_MODEL") or "gemini-3.7-flash"
   p=subprocess.run([str(BINS['gemini']),"--prompt",prompt,"--model",model,"--approval-mode","plan","--output-format","json"],cwd=ROOT,capture_output=True,text=True,timeout=timeout,env=gemini_env)
   if p.returncode:raise RuntimeError((p.stderr or p.stdout)[:3000])
@@ -420,4 +430,4 @@ class StrictAGIOrchestrator:
  def active_sessions(self):
   s=self.status();purpose={"codex":"계획·최종검수","gemini":"근거·대용량 컨텍스트","qwen":"로컬 실행","deepseek":"독립 검증","claude":"확인·보강·마무리"};return [{"session_id":f"monitor-{n}","agent":p["display_name"],"timestamp":p["last_checked_at"],"status":p["status"],"status_label":p["note"],"traffic_light":"RED" if p["status"] in {"WAITING_QUOTA","WAITING_AUTH","UNAVAILABLE"} else "GREEN","window_desc":"실제 요청 기반 감지","exhaustion_pct":None,"reset_at":p.get("reset_at"),"quota_purpose":purpose[n],"work_status":"단계 감시","current_action":purpose[n],"tokens_today":None,"tokens_month":None,"tokens_share_pct":None,"cost_str":"실측 없음","last_worked_file":"","active_topic":"5단계 하드 게이트","pending_tasks":[]} for n,p in s["providers"].items()]
 
-strict_agi_orchestrator=StrictAGIOrchestrator();strict_agi_orchestrator.start()
+strict_agi_orchestrator=StrictAGIOrchestrator();strict_agi_orchestrator.start() if os.getenv("CEO_BACKGROUND_JOBS", "1") != "0" else None
