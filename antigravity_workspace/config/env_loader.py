@@ -26,17 +26,30 @@ def load_unified_env():
 
     loaded_paths = []
     for p in candidates:
-        if p.exists():
-            with open(p, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        k = k.strip()
-                        v = v.strip().strip("'").strip('"')
-                        # 이미 설정된 환경변수가 아니거나 비어있을 때 우선 주입
-                        if k not in os.environ or not os.environ[k]:
-                            os.environ[k] = v
+        # 2026-09-18 발견(실사용 중 재현): approved_code_jobs.py의 테스트 샌드박스는
+        # 보안을 위해 모든 .env* 경로 읽기를 OS 수준에서 거부한다. Path.exists()는
+        # Python 3.8+부터 PermissionError를 삼키지 않고 그대로 올려보내므로(의도된
+        # 동작 - 조용히 False로 취급하면 진짜 권한 문제를 숨길 수 있음), 이 모듈을
+        # import하는 모든 코드가 그 샌드박스 안에서는 무조건 크래시했다. 여기서는
+        # 권한 거부를 "이 후보는 못 읽는다"로 취급하고 다음 후보로 넘어간다.
+        try:
+            exists = p.exists()
+        except PermissionError:
+            continue
+        if exists:
+            try:
+                with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("'").strip('"')
+                            # 이미 설정된 환경변수가 아니거나 비어있을 때 우선 주입
+                            if k not in os.environ or not os.environ[k]:
+                                os.environ[k] = v
+            except PermissionError:
+                continue
             loaded_paths.append(str(p))
 
     return loaded_paths
