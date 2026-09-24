@@ -1,0 +1,8 @@
+{
+  "last_processed_id": 0,
+  "total_reports_processed": 142,
+  "daily_quota_used": 45,
+  "daily_quota_limit": 1500,
+  "last_run_timestamp": "2026-09-12 16:28:18",
+  "status": "🟢 정상 가동 중 (Gemini 무료 할당량 내 무인 배치 분석)"
+}

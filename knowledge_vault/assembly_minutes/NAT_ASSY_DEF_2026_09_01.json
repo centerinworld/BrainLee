@@ -1,0 +1,13 @@
+{
+  "minute_id": "NAT_ASSY_DEF_2026_09_01",
+  "committee_name": "국회 국방위원회",
+  "meeting_date": "2026-09-08",
+  "agenda_title": "2027년도 국방중기계획 및 항공우주 전력 확보 예산안 심사",
+  "speaker_name": "국방위원장 및 방위사업청장",
+  "speaker_role": "국회 국방위원회 / 정부위원",
+  "statement_summary": "KF-21 블록1 양산 1차 사업 20대 계약 이행 상태 점검 및 블록2 공대지/공대함 무장 개발 국방 예산 2,850억원 증액 확정.",
+  "full_statement": "[방위사업청장 보고] KF-21 블록1 초도 양산기 조립이 KAI 사천 공장에서 일정 지연 없이 순항 중이며, 2026년 하반기 1호기 인도 후 공군 전력화가 차질 없이 진행될 것입니다.\n[위원 질의] 인도네시아 분담금 감액(1.6조원 ➔ 6,000억원)에 따른 부족분 1조원의 정부 재정 투입 계획은 차질이 없는가?\n[청장 답변] 부족 연구개발비는 국비 증액 및 후속 무장 확장 예산으로 전액 반영하여 KAI의 개발 리스크를 정부가 전면 흡수하였습니다. 아울러 폴란드, 말레이시아에 이어 중동(UAE, 사우디)향 다목적 수송기 공동개발 및 FA-50 추가 수출 패키지 금융 지원 법령을 완비하였습니다.",
+  "kai_impact_analysis": "KF-21 인도네시아 분담금 정부 전액 보전 확정으로 KAI 재무적 불확실성 100% 해소. 블록2 무장확장 예산 증액으로 2027~2030년 체계개발 매출 연속성 완벽 담보.",
+  "cross_verification_sources": "[{\"source\": \"Jane's Defence Weekly (2026.09.09)\", \"content\": \"South Korea secures domestic budget backfill for KF-21, clearing export hurdles to Middle East.\"}, {\"source\": \"한국국방연구원(KIDA) 정책보고서 (2026.08)\", \"content\": \"KF-21 양산 단가 안정화 및 FA-50 후속 물류지원(PBL) 마진율 15% 이상 유지 가능성 확인.\"}]",
+  "confidence_level": "VERY_HIGH"
+}

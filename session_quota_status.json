@@ -1,0 +1,32 @@
+{
+  "claude_pro": {
+    "model": "Claude 3.5 Sonnet (Claude Pro)",
+    "window_type": "5시간 롤링 윈도우 (45 msgs cap)",
+    "session_status": "⚠️ 5시간 단기 한도 일시 도달 (Rate Limit 쿨다운 중)",
+    "is_locked": true,
+    "next_reset_time": "16:36",
+    "weekly_quota_status": "주간 한도는 11.5% 잔여 (안전)",
+    "auto_fallback_action": "Google Gemini 3.6 Flash(무료) 및 DeepSeek으로 자동 우회 중"
+  },
+  "chatgpt_plus": {
+    "model": "Codex / GPT-4o (ChatGPT Plus)",
+    "window_type": "3시간 롤링 윈도우 (40~80 msgs cap)",
+    "session_status": "⚠️ 3시간 단기 한도 일시 도달 (Rate Limit 쿨다운 중)",
+    "is_locked": true,
+    "next_reset_time": "16:19",
+    "weekly_quota_status": "주간 한도는 8.8% 잔여 (안전)",
+    "auto_fallback_action": "GPT-4o Astra 캐시 계획 및 Gemini Flash로 자동 오프로드"
+  },
+  "deepseek_api": {
+    "model": "DeepSeek V3 / R1 (종량제 API)",
+    "status": "🟢 정상 가동 (일일 $1.00 예산 스로틀러 보호)",
+    "is_locked": false,
+    "cost_today_usd": 0.0034
+  },
+  "gemini_free": {
+    "model": "Google Gemini 3.6 Flash (무료 티어)",
+    "status": "🟢 무제한 상시 가용 (87.7% 가용 여유)",
+    "is_locked": false,
+    "role": "대용량 전처리 및 단기 한도 락아웃 시 메인 서브에이전트 전담"
+  }
+}

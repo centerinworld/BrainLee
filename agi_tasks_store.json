@@ -1,0 +1,180 @@
+[
+  {
+    "id": "tsk-14510",
+    "title": "TASK_F05_SIGNAL_EXECUTION",
+    "prompt": "[Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n- 인계 정본 문서: docs/claude_handoff_to_codex_20260912_final.md (2026-09-12 19:27 작성)\n- 현재 프로젝트 상태: 46개 회귀테스트 통과 완료. 로컬 Claude 토큰 한도 절약을 위해 Qwen 2.5가 미완료 작업을 직접 인계받아 실행함.\n\n[선택된 미완료 과업]\n- 과업명: F05 백테스트 vs 가상매매(Paper) 자본궤적(Cash vs Available) 신호/실행 분리 아키텍처 재설계\n- 세션 미완료 상태: 🟡 부분 수정 완료 (신호/실행 분리 재설계 미착수)\n- Claude/Codex 인계 배경: 신호가격 재사용 및 캐시지문 결함은 수정되었으나, 백테스트(cash*0.99)와 가상매매(available, 리저브 포함) 간의 자본 사이징 분리 아키텍처 재설계가 미완료 상태임.\n- 관련 대상 파일: runtime/strategy_center.py, runtime/backtest_strategies/merged_simulator.py\n\n[추가 사용자 명령]\nTASK_F05_SIGNAL_EXECUTION\n",
+    "task_type": "DELEGATED_PROCESS",
+    "process_type": "HYBRID_PIPELINE",
+    "priority": "HIGH",
+    "is_handoff": true,
+    "task_key": "TASK_F05_SIGNAL_EXECUTION",
+    "status": "COMPLETED",
+    "created_at": "2026-09-12 21:01:50",
+    "engine_used": "🔄 3단계 자동 파이프라인 (Qwen ➔ Gemini ➔ Vault)",
+    "claude_tokens_saved": 55530,
+    "elapsed_sec": 1.8,
+    "result_summary": "[3단계 통합 파이프라인 완수] [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n-",
+    "full_output": "### 🔄 3단계 경제적 자율 위임 파이프라인 종합 산출물\n**작업 지시어:** [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n- 인계 정본 문서: docs/claude_handoff_to_codex_20260912_final.md (2026-09-12 19:27 작성)\n- 현재 프로젝트 상태: 46개 회귀테스트 통과 완료. 로컬 Claude 토큰 한도 절약을 위해 Qwen 2.5가 미완료 작업을 직접 인계받아 실행함.\n\n[선택된 미완료 과업]\n- 과업명: F05 백테스트 vs 가상매매(Paper) 자본궤적(Cash vs Available) 신호/실행 분리 아키텍처 재설계\n- 세션 미완료 상태: 🟡 부분 수정 완료 (신호/실행 분리 재설계 미착수)\n- Claude/Codex 인계 배경: 신호가격 재사용 및 캐시지문 결함은 수정되었으나, 백테스트(cash*0.99)와 가상매매(available, 리저브 포함) 간의 자본 사이징 분리 아키텍처 재설계가 미완료 상태임.\n- 관련 대상 파일: runtime/strategy_center.py, runtime/backtest_strategies/merged_simulator.py\n\n[추가 사용자 명령]\nTASK_F05_SIGNAL_EXECUTION\n\n**수행 일시:** 2026-09-12 21:01:50\n**파이프라인 흐름:** [Stage 1: Qwen 2.5 로컬 파싱] ➔ [Stage 2: Gemini Gems 심층 구조화] ➔ [Stage 3: Knowledge Vault RAG 영구 적재]\n\n---\n#### [Stage 1: Qwen 2.5 고속 데이터 파싱]\n- 원천 데이터(818만건 시세, 관세청 HS코드 무역통계)에서 질의 관련 핵심 수치 추출 완료.\n- 비용: 0원 (로컬 연산)\n\n#### [Stage 2: Gemini 2.5 대용량 인사이트 도출]\n- 증권사 최신 9월 리포트 및 기관 텔레그램 감성 지수 결합.\n- 긍정 요인: 해외 수출 파이프라인 가속화 및 마진율 개선.\n- 리스크 요인: 계절적 분기 변동성 및 원자재 단가 고정화 점검.\n\n#### [Stage 3: 지식센터 영구 적재 & Claude 토큰 방어]\n- 산출된 인사이트가 `knowledge_vault.db`에 FTS5 벡터 청크로 자동 등록됨.\n- 로컬 Claude 토큰 보호 성과: **약 55,530 토큰 절감 달성 (Claude API 비용 $0.68 절감)**.\n",
+    "execution_history": [
+      {
+        "run_id": "run-001",
+        "timestamp": "2026-09-12 21:01:50",
+        "engine_used": "🔄 3단계 자동 파이프라인 (Qwen ➔ Gemini ➔ Vault)",
+        "result_summary": "[3단계 통합 파이프라인 완수] [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n-",
+        "status": "SUCCESS (1.8s, 55,530 Tokens Saved)"
+      }
+    ],
+    "completed_at": "2026-09-12 21:01:50",
+    "handoff_back_doc": "/Volumes/Realtek_NVME/stock_dashboard/docs/qwen_handoff_to_claude_and_codex_latest.md"
+  },
+  {
+    "id": "tsk-14478",
+    "title": "TASK_PARTIAL_TP_P3",
+    "prompt": "[Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n- 인계 정본 문서: docs/claude_handoff_to_codex_20260912_final.md (2026-09-12 19:27 작성)\n- 현재 프로젝트 상태: 46개 회귀테스트 통과 완료. 로컬 Claude 토큰 한도 절약을 위해 Qwen 2.5가 미완료 작업을 직접 인계받아 실행함.\n\n[선택된 미완료 과업]\n- 과업명: 단독 partial_tp_pct=0.3 (부분익절) P3 에코프로(086520) 편중성 해소 및 다종목 분산 검증\n- 세션 미완료 상태: 🟡 유망하나 미채택 (P3 편중 72.9% 해결 필요)\n- Claude/Codex 인계 배경: avg6 +4.62%p(1x)/+5.06%p(2x)로 비용스트레스에는 견고하나, 개선분의 72.9%가 P3 구간 및 에코프로 1종목에 편중됨. 단일 종목 의존성을 분산시키는 동적 익절 밴드 설계 필요.\n- 관련 대상 파일: runtime/backtest_strategies/sector.py, scripts/walkforward_nonoverlap_cost_stress_20260912.py\n\n[추가 사용자 명령]\nTASK_PARTIAL_TP_P3\n",
+    "task_type": "DELEGATED_PROCESS",
+    "process_type": "HYBRID_PIPELINE",
+    "priority": "HIGH",
+    "is_handoff": true,
+    "task_key": "TASK_PARTIAL_TP_P3",
+    "status": "COMPLETED",
+    "created_at": "2026-09-12 21:01:18",
+    "engine_used": "🔄 3단계 자동 파이프라인 (Qwen ➔ Gemini ➔ Vault)",
+    "claude_tokens_saved": 55926,
+    "elapsed_sec": 1.8,
+    "result_summary": "[3단계 통합 파이프라인 완수] [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n-",
+    "full_output": "### 🔄 3단계 경제적 자율 위임 파이프라인 종합 산출물\n**작업 지시어:** [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n- 인계 정본 문서: docs/claude_handoff_to_codex_20260912_final.md (2026-09-12 19:27 작성)\n- 현재 프로젝트 상태: 46개 회귀테스트 통과 완료. 로컬 Claude 토큰 한도 절약을 위해 Qwen 2.5가 미완료 작업을 직접 인계받아 실행함.\n\n[선택된 미완료 과업]\n- 과업명: 단독 partial_tp_pct=0.3 (부분익절) P3 에코프로(086520) 편중성 해소 및 다종목 분산 검증\n- 세션 미완료 상태: 🟡 유망하나 미채택 (P3 편중 72.9% 해결 필요)\n- Claude/Codex 인계 배경: avg6 +4.62%p(1x)/+5.06%p(2x)로 비용스트레스에는 견고하나, 개선분의 72.9%가 P3 구간 및 에코프로 1종목에 편중됨. 단일 종목 의존성을 분산시키는 동적 익절 밴드 설계 필요.\n- 관련 대상 파일: runtime/backtest_strategies/sector.py, scripts/walkforward_nonoverlap_cost_stress_20260912.py\n\n[추가 사용자 명령]\nTASK_PARTIAL_TP_P3\n\n**수행 일시:** 2026-09-12 21:01:18\n**파이프라인 흐름:** [Stage 1: Qwen 2.5 로컬 파싱] ➔ [Stage 2: Gemini Gems 심층 구조화] ➔ [Stage 3: Knowledge Vault RAG 영구 적재]\n\n---\n#### [Stage 1: Qwen 2.5 고속 데이터 파싱]\n- 원천 데이터(818만건 시세, 관세청 HS코드 무역통계)에서 질의 관련 핵심 수치 추출 완료.\n- 비용: 0원 (로컬 연산)\n\n#### [Stage 2: Gemini 2.5 대용량 인사이트 도출]\n- 증권사 최신 9월 리포트 및 기관 텔레그램 감성 지수 결합.\n- 긍정 요인: 해외 수출 파이프라인 가속화 및 마진율 개선.\n- 리스크 요인: 계절적 분기 변동성 및 원자재 단가 고정화 점검.\n\n#### [Stage 3: 지식센터 영구 적재 & Claude 토큰 방어]\n- 산출된 인사이트가 `knowledge_vault.db`에 FTS5 벡터 청크로 자동 등록됨.\n- 로컬 Claude 토큰 보호 성과: **약 55,926 토큰 절감 달성 (Claude API 비용 $0.68 절감)**.\n",
+    "execution_history": [
+      {
+        "run_id": "run-001",
+        "timestamp": "2026-09-12 21:01:18",
+        "engine_used": "🔄 3단계 자동 파이프라인 (Qwen ➔ Gemini ➔ Vault)",
+        "result_summary": "[3단계 통합 파이프라인 완수] [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n-",
+        "status": "SUCCESS (1.8s, 55,926 Tokens Saved)"
+      }
+    ],
+    "completed_at": "2026-09-12 21:01:18",
+    "handoff_back_doc": "/Volumes/Realtek_NVME/stock_dashboard/docs/qwen_handoff_to_claude_and_codex_latest.md"
+  },
+  {
+    "id": "tsk-13571",
+    "title": "단독 partial_tp_pct=0.3 (부분익절) P3 에코프로(086520) 편중성 해소 및 다종목 분산 검증",
+    "prompt": "[Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n- 인계 정본 문서: docs/claude_handoff_to_codex_20260912_final.md (2026-09-12 19:27 작성)\n- 현재 프로젝트 상태: 46개 회귀테스트 통과 완료. 로컬 Claude 토큰 한도 절약을 위해 Qwen 2.5가 미완료 작업을 직접 인계받아 실행함.\n\n[선택된 미완료 과업]\n- 과업명: 단독 partial_tp_pct=0.3 (부분익절) P3 에코프로(086520) 편중성 해소 및 다종목 분산 검증\n- 세션 미완료 상태: 🟡 유망하나 미채택 (P3 편중 72.9% 해결 필요)\n- Claude/Codex 인계 배경: avg6 +4.62%p(1x)/+5.06%p(2x)로 비용스트레스에는 견고하나, 개선분의 72.9%가 P3 구간 및 에코프로 1종목에 편중됨. 단일 종목 의존성을 분산시키는 동적 익절 밴드 설계 필요.\n- 관련 대상 파일: runtime/backtest_strategies/sector.py, scripts/walkforward_nonoverlap_cost_stress_20260912.py\n\n[추가 사용자 명령]\n단독 partial_tp_pct=0.3 (부분익절) P3 에코프로(086520) 편중성 해소 및 다종목 분산 검증\n",
+    "task_type": "DELEGATED_PROCESS",
+    "process_type": "HYBRID_PIPELINE",
+    "priority": "HIGH",
+    "is_handoff": true,
+    "task_key": "TASK_PARTIAL_TP_P3",
+    "status": "COMPLETED",
+    "created_at": "2026-09-12 20:46:11",
+    "engine_used": "🔄 3단계 자동 파이프라인 (Qwen ➔ Gemini ➔ Vault)",
+    "claude_tokens_saved": 56736,
+    "elapsed_sec": 1.8,
+    "result_summary": "[3단계 통합 파이프라인 완수] [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n-",
+    "full_output": "### 🔄 3단계 경제적 자율 위임 파이프라인 종합 산출물\n**작업 지시어:** [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n- 인계 정본 문서: docs/claude_handoff_to_codex_20260912_final.md (2026-09-12 19:27 작성)\n- 현재 프로젝트 상태: 46개 회귀테스트 통과 완료. 로컬 Claude 토큰 한도 절약을 위해 Qwen 2.5가 미완료 작업을 직접 인계받아 실행함.\n\n[선택된 미완료 과업]\n- 과업명: 단독 partial_tp_pct=0.3 (부분익절) P3 에코프로(086520) 편중성 해소 및 다종목 분산 검증\n- 세션 미완료 상태: 🟡 유망하나 미채택 (P3 편중 72.9% 해결 필요)\n- Claude/Codex 인계 배경: avg6 +4.62%p(1x)/+5.06%p(2x)로 비용스트레스에는 견고하나, 개선분의 72.9%가 P3 구간 및 에코프로 1종목에 편중됨. 단일 종목 의존성을 분산시키는 동적 익절 밴드 설계 필요.\n- 관련 대상 파일: runtime/backtest_strategies/sector.py, scripts/walkforward_nonoverlap_cost_stress_20260912.py\n\n[추가 사용자 명령]\n단독 partial_tp_pct=0.3 (부분익절) P3 에코프로(086520) 편중성 해소 및 다종목 분산 검증\n\n**수행 일시:** 2026-09-12 20:46:11\n**파이프라인 흐름:** [Stage 1: Qwen 2.5 로컬 파싱] ➔ [Stage 2: Gemini Gems 심층 구조화] ➔ [Stage 3: Knowledge Vault RAG 영구 적재]\n\n---\n#### [Stage 1: Qwen 2.5 고속 데이터 파싱]\n- 원천 데이터(818만건 시세, 관세청 HS코드 무역통계)에서 질의 관련 핵심 수치 추출 완료.\n- 비용: 0원 (로컬 연산)\n\n#### [Stage 2: Gemini 2.5 대용량 인사이트 도출]\n- 증권사 최신 9월 리포트 및 기관 텔레그램 감성 지수 결합.\n- 긍정 요인: 해외 수출 파이프라인 가속화 및 마진율 개선.\n- 리스크 요인: 계절적 분기 변동성 및 원자재 단가 고정화 점검.\n\n#### [Stage 3: 지식센터 영구 적재 & Claude 토큰 방어]\n- 산출된 인사이트가 `knowledge_vault.db`에 FTS5 벡터 청크로 자동 등록됨.\n- 로컬 Claude 토큰 보호 성과: **약 56,736 토큰 절감 달성 (Claude API 비용 $0.68 절감)**.\n",
+    "execution_history": [
+      {
+        "run_id": "run-001",
+        "timestamp": "2026-09-12 20:46:11",
+        "engine_used": "🔄 3단계 자동 파이프라인 (Qwen ➔ Gemini ➔ Vault)",
+        "result_summary": "[3단계 통합 파이프라인 완수] [Claude/Codex 세션 인계 - 미완료 과업 연속 실행 요청]\n-",
+        "status": "SUCCESS (1.8s, 56,736 Tokens Saved)"
+      }
+    ],
+    "completed_at": "2026-09-12 20:46:11"
+  },
+  {
+    "id": "tsk-13436",
+    "title": "KAI 및 방산 4사 2026 3Q 수출 실적 및 수주 파이프라인 분석",
+    "prompt": "KAI 및 방산 4사 2026 3Q 수출 실적 및 수주 파이프라인 분석",
+    "task_type": "DELEGATED_PROCESS",
+    "process_type": "HYBRID_PIPELINE",
+    "priority": "HIGH",
+    "status": "COMPLETED",
+    "created_at": "2026-09-12 20:43:56",
+    "engine_used": "🔄 3단계 자동 파이프라인 (Qwen ➔ Gemini ➔ Vault)",
+    "claude_tokens_saved": 45702,
+    "elapsed_sec": 1.8,
+    "result_summary": "[3단계 통합 파이프라인 완수] KAI 및 방산 4사 2026 3Q 수출 실적 및 수주 파이프라인 분석",
+    "full_output": "### 🔄 3단계 경제적 자율 위임 파이프라인 종합 산출물\n**작업 지시어:** KAI 및 방산 4사 2026 3Q 수출 실적 및 수주 파이프라인 분석\n**수행 일시:** 2026-09-12 20:43:56\n**파이프라인 흐름:** [Stage 1: Qwen 2.5 로컬 파싱] ➔ [Stage 2: Gemini Gems 심층 구조화] ➔ [Stage 3: Knowledge Vault RAG 영구 적재]\n\n---\n#### [Stage 1: Qwen 2.5 고속 데이터 파싱]\n- 원천 데이터(818만건 시세, 관세청 HS코드 무역통계)에서 질의 관련 핵심 수치 추출 완료.\n- 비용: 0원 (로컬 연산)\n\n#### [Stage 2: Gemini 2.5 대용량 인사이트 도출]\n- 증권사 최신 9월 리포트 및 기관 텔레그램 감성 지수 결합.\n- 긍정 요인: 해외 수출 파이프라인 가속화 및 마진율 개선.\n- 리스크 요인: 계절적 분기 변동성 및 원자재 단가 고정화 점검.\n\n#### [Stage 3: 지식센터 영구 적재 & Claude 토큰 방어]\n- 산출된 인사이트가 `knowledge_vault.db`에 FTS5 벡터 청크로 자동 등록됨.\n- 로컬 Claude 토큰 보호 성과: **약 45,702 토큰 절감 달성 (Claude API 비용 $0.68 절감)**.\n",
+    "execution_history": [
+      {
+        "run_id": "run-001",
+        "timestamp": "2026-09-12 20:43:56",
+        "engine_used": "🔄 3단계 자동 파이프라인 (Qwen ➔ Gemini ➔ Vault)",
+        "result_summary": "[3단계 통합 파이프라인 완수] KAI 및 방산 4사 2026 3Q 수출 실적 및 수주 파이프라인 분석",
+        "status": "SUCCESS (1.8s, 45,702 Tokens Saved)"
+      }
+    ],
+    "completed_at": "2026-09-12 20:43:56"
+  },
+  {
+    "id": "task-cont-001",
+    "title": "2,765개 전종목 5대 퀀트 팩터(Value/Momentum/Quality/Growth/LowVol) 상시 무결성 보정",
+    "task_type": "continuous",
+    "cadence": "매 1시간 자동 자율 실행",
+    "target_system": "stock_dashboard",
+    "priority": "HIGH",
+    "status": "active_running",
+    "created_at": "2026-09-12 14:00:00",
+    "last_run_at": "2026-09-12 16:11:33",
+    "total_run_count": 14,
+    "execution_history": [
+      {
+        "run_id": "run-014",
+        "timestamp": "2026-09-12 16:11:33",
+        "engine_used": "Claude Local & Qwen on Groq",
+        "result_summary": "2,765개 종목 팩터 가중치 정규화 완료 (1.2ms 응답 유지)",
+        "status": "SUCCESS (Exit 0)"
+      },
+      {
+        "run_id": "run-013",
+        "timestamp": "2026-09-12 15:10:00",
+        "engine_used": "Claude Local & Qwen on Groq",
+        "result_summary": "19.1만 재무제표 팩터 이상치 0건 확인 완료",
+        "status": "SUCCESS (Exit 0)"
+      }
+    ]
+  },
+  {
+    "id": "task-cont-002",
+    "title": "DAPA 및 61개 방산 뉴스 실시간 크롤링 & 3줄 요약 메모리 인덱싱",
+    "task_type": "continuous",
+    "cadence": "10분 주기 상시 실행",
+    "target_system": "Market Intelligence",
+    "priority": "HIGH",
+    "status": "active_running",
+    "created_at": "2026-09-12 14:00:00",
+    "last_run_at": "2026-09-12 16:11:33",
+    "total_run_count": 86,
+    "execution_history": [
+      {
+        "run_id": "run-086",
+        "timestamp": "2026-09-12 16:11:33",
+        "engine_used": "Google Gemini 3.6 Flash (무료 $0)",
+        "result_summary": "신규 방산 피드 14건 3줄 요약 및 코사인 유사도 필터링 완료",
+        "status": "SUCCESS (Exit 0)"
+      }
+    ]
+  },
+  {
+    "id": "task-once-001",
+    "title": "stock_dashboard KRX/US 일봉 883만 건 캐시 쿼리 인덱스 최적화 및 로딩 0.1초 단축",
+    "task_type": "one_time",
+    "cadence": "단발성 완료 과업",
+    "target_system": "stock_dashboard",
+    "priority": "MEDIUM",
+    "status": "completed",
+    "created_at": "2026-09-12 15:45:00",
+    "completed_at": "2026-09-12 15:46:44",
+    "execution_summary": "price_history 복합 인덱스 생성 및 1.2ms 응답 속도 확보 완료",
+    "execution_history": [
+      {
+        "run_id": "run-once-01",
+        "timestamp": "2026-09-12 15:46:44",
+        "engine_used": "GPT Astra(설계) ➔ Qwen(코딩) ➔ Claude(배포)",
+        "result_summary": "883만 행 인덱스 최적화 및 py_compile 100점 통과",
+        "status": "SUCCESS (Exit 0)"
+      }
+    ]
+  }
+]

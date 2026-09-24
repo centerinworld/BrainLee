@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-12",
+  "engine": "Qwen 2.5 Coder 32B on Groq LPU",
+  "speed": "320 tokens/sec (초광속 가속)",
+  "monthly_budget_krw": 10000,
+  "monthly_budget_usd": 7.5,
+  "daily_usd_cap": 0.25,
+  "daily_token_cap": 2000000,
+  "tokens_used_today": 18200,
+  "cost_usd_today": 0.0018,
+  "cost_krw_today": 2.5,
+  "remaining_usd_today": 0.2482,
+  "remaining_tokens_today": 1981800,
+  "status": "🟢 정상 가용 (Groq 무료 쿼터 우선 소진 & 월 1만원 예산 보호 중)"
+}

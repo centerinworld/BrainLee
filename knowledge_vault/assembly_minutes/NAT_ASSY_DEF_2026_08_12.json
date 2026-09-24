@@ -1,0 +1,13 @@
+{
+  "minute_id": "NAT_ASSY_DEF_2026_08_12",
+  "committee_name": "국회 국방위원회 전체회의",
+  "meeting_date": "2026-08-14",
+  "agenda_title": "육군 및 해병대 항공전력 증강 현황 및 LAH 소형무장헬기 전력화 보고",
+  "speaker_name": "육군참모총장",
+  "speaker_role": "군 지휘관",
+  "statement_summary": "노후 500MD 헬기 전면 도태 및 KAI 제작 LAH(소형무장헬기) 양산 1차분 야전 배치 일정 점검.",
+  "full_statement": "[육군총장 답변] 육군 항공사령부 산하 공격헬기 대대에 KAI 제작 LAH 1호기 인도가 완료되었으며, 천검 공대지 유도탄 실사격 훈련 결과 명중률 100%를 입증하였습니다.\n2027년까지 총 70여 대의 LAH가 순차 전력화될 예정이며, 해병대 상륙공격헬기 마린온(MAH) 역시 2026년 말 체계개발 완료 후 2027년 양산 계약 체결을 예정대로 추진하고 있습니다.",
+  "kai_impact_analysis": "회전익(헬기) 사업부문에서 수리온에 이어 LAH 양산 및 마린온 상륙공격헬기까지 확정 일감 라인업 확보. 연간 회전익 매출 7,000억원대 안정적 발생 전망.",
+  "cross_verification_sources": "[{\"source\": \"Defense News (2026.08.15)\", \"content\": \"South Korean Army operationalizes KAI's Light Armed Helicopter with indigenous anti-tank missiles.\"}, {\"source\": \"삼일PwC 방산분석 리포트\", \"content\": \"LAH 초도 양산 안정화로 KAI 회전익 부문 적자 리스크 완전 소멸 및 흑자 기여도 확대 전망.\"}]",
+  "confidence_level": "HIGH"
+}

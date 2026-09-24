@@ -1,0 +1,13 @@
+{
+  "minute_id": "NAT_ASSY_DEF_2026_08_25",
+  "committee_name": "국회 국방위원회 법률안심사소위원회",
+  "meeting_date": "2026-08-28",
+  "agenda_title": "방위사업법 일부개정법률안 및 방산수출금융 특례 검토",
+  "speaker_name": "국방위 간사",
+  "speaker_role": "국회의원",
+  "statement_summary": "K-방산 완제기 대규모 수출 계약 시 정부 정책금융 지원 한도 완화 및 절충교역 지원 제도 개정.",
+  "full_statement": "[검토보고] 최근 항공우주 체계 수출 단위가 조 단위로 대형화됨에 따라 수은법 2차 개정안 통과 이후속 조치로 방위사업청 산하 방산수출전략지원단과 민간 수출기업(KAI, 한화 등) 간의 원스톱 정부 보증 패키지 법률안이 소위를 통과함.\n특히 미 해군 전술훈련기(UJTS) 500대 사업 입찰에 참여 중인 록히드마틴-KAI 컨소시엄에 대한 정부 차원의 보증 각서 발급 조항이 신설됨.",
+  "kai_impact_analysis": "미국 UJTS 훈련기 입찰 및 동유럽 2차 완제기 수출에 대한 금융 패키지 법적 기반 확충으로 해외 수주 경쟁력 최고조 도달.",
+  "cross_verification_sources": "[{\"source\": \"Reuters (2026.08.29)\", \"content\": \"South Korea passes landmark defense export support decree, boosting KAI's US jet trainer bid with Lockheed.\"}, {\"source\": \"산업연구원(KIET) 방위산업동향\", \"content\": \"방산 정책금융 지원책 확대로 완제기 수출 시 금융 조달비용 1.2%p 절감 효과 확인.\"}]",
+  "confidence_level": "VERY_HIGH"
+}
