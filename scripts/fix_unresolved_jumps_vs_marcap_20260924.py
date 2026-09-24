@@ -47,19 +47,42 @@ def main(apply: bool) -> None:
     j = j[(j.mec / j.mpc >= j.lo - 1e-9) & (j.mec / j.mpc <= j.hi + 1e-9)]
     targets = pd.concat([j[["code", "d"]].rename(columns={"d": "date"}),
                          j[["code", "pd"]].rename(columns={"pd": "date"})]).drop_duplicates()
-    tgt = targets.merge(m.rename(columns={"Code": "code", "Date": "date"}), on=["code", "date"])
+    mm = m.rename(columns={"Code": "code", "Date": "date"})
+    tgt = targets.merge(mm, on=["code", "date"])
+    tgt["is_t"] = True
+    # A wrong-scale run is bounded by flagged events; fixing only the boundary rows just moves the
+    # jump inward (001790: 10x-low rows from 2015-01-02). Extend each target to the CONTIGUOUS run of
+    # rows around it whose close is >10% off marcap (stops at the first row that agrees).
+    codes = sorted(tgt.code.unique())
+    db = pd.DataFrame([tuple(r) for r in conn.execute(
+        "SELECT stock_code,date,close FROM price_history WHERE stock_code = ANY(?) AND date>='2010-01-01'",
+        (codes,)).fetchall()], columns=["code", "date", "dbc"])
+    cmp = db.merge(mm[["code", "date", "Close"]], on=["code", "date"]).sort_values(["code", "date"]).reset_index(drop=True)
+    cmp["off"] = (cmp.dbc / cmp.Close - 1).abs() > 0.10
+    cmp["run"] = (cmp.off != cmp.groupby("code").off.shift()).cumsum()
+    tset = set(zip(tgt.code, tgt.date))
+    cmp["near_t"] = [(c, d) in tset for c, d in zip(cmp.code, cmp.date)]
+    off_runs = cmp[cmp.off].groupby("run").agg(has_t=("near_t", "any"), n=("near_t", "size"))
+    # Long off-runs are a legitimately different basis for that code (adjusted history), not a glitch.
+    good = off_runs[off_runs.has_t & (off_runs.n <= 60)].index
+    sel = cmp[cmp.off & cmp.run.isin(good)][["code", "date"]]
+    win = sel.merge(mm, on=["code", "date"]).merge(tgt[["code", "date"]], on=["code", "date"], how="left", indicator=True)
+    win = win[win["_merge"] == "left_only"].drop(columns="_merge")
+    win["is_t"] = False
+    tgt = pd.concat([tgt, win], ignore_index=True)
     print({"events_with_smooth_marcap": len(j), "target_rows": len(tgt)})
 
     conn.execute("DROP TABLE IF EXISTS unres_fix_staging")
     conn.execute("""CREATE TEMP TABLE unres_fix_staging (stock_code TEXT, date TEXT, open DOUBLE PRECISION,
-        high DOUBLE PRECISION, low DOUBLE PRECISION, close DOUBLE PRECISION, volume DOUBLE PRECISION)""")
+        high DOUBLE PRECISION, low DOUBLE PRECISION, close DOUBLE PRECISION, volume DOUBLE PRECISION, is_t BOOLEAN)""")
     cur_ = conn._connection.cursor()
     with cur_.copy("COPY unres_fix_staging FROM STDIN") as cp:
-        for row in tgt[["code", "date", "Open", "High", "Low", "Close", "Volume"]].itertuples(index=False, name=None):
+        for row in tgt[["code", "date", "Open", "High", "Low", "Close", "Volume", "is_t"]].itertuples(index=False, name=None):
             cp.write_row(row)
     conn.execute("CREATE INDEX ON unres_fix_staging (stock_code, date)")
     frm = """FROM price_history ph JOIN unres_fix_staging m ON m.stock_code=ph.stock_code AND m.date=ph.date
-             WHERE ph.open<>m.open OR ph.high<>m.high OR ph.low<>m.low OR ph.close<>m.close"""
+             WHERE (ph.open<>m.open OR ph.high<>m.high OR ph.low<>m.low OR ph.close<>m.close)
+               AND (m.is_t OR ABS(ph.close/m.close-1)>0.10)"""
     n = conn.execute(f"SELECT count(*) {frm}").fetchone()[0]
     print({"rows_to_fix": n, "apply": apply})
     if apply and n:
@@ -74,7 +97,8 @@ def main(apply: bool) -> None:
         conn.execute("SELECT set_config('app.price_basis_checked','1',true)")
         conn.execute("""UPDATE price_history ph SET open=m.open,high=m.high,low=m.low,close=m.close,volume=m.volume
             FROM unres_fix_staging m WHERE m.stock_code=ph.stock_code AND m.date=ph.date
-              AND (ph.open<>m.open OR ph.high<>m.high OR ph.low<>m.low OR ph.close<>m.close)""")
+              AND (ph.open<>m.open OR ph.high<>m.high OR ph.low<>m.low OR ph.close<>m.close)
+              AND (m.is_t OR ABS(ph.close/m.close-1)>0.10)""")
         conn.execute(
             """INSERT INTO data_fix_log (fixed_at,table_name,scope,row_count,fix_rule,old_value_summary,
                  new_value_summary,source,run_id) VALUES(?,?,?,?,?,?,?,?,?)""",
