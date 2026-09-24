@@ -1746,3 +1746,9 @@ ETF/naver 기준 복구(451K+156K행)를 별도로 수행함.
    전략 감사 23개 통과/4개 실패, golden_cross 비율 3.57%→**1.95%**. 테스트 293 passed.
 5. **남은 것**: unresolved 3,711건(실제 분할 등 미등록 corporate action 가능), 소수점 잔존 8,396행,
    coverage_gap 16,592건(별개 문제), 원인 스크립트(archive)는 가드로 재발 차단됨.
+
+### 추가 (2026-09-24 오후): unresolved 점프 marcap 대조 복구
+`scripts/fix_unresolved_jumps_vs_marcap_20260924.py` — unresolved 3,711건 중 marcap 원본 시계열은 가격제한폭 이내로
+매끄러운데 우리 DB 행만 튀는 2,960건의 2,783행을 marcap OHLCV로 교체(run_id unresolved_jump_marcap_fix_20260924_113858).
+재감사: 점프 23,166→**22,001**, unresolved 3,711→**2,547**. 남은 건은 marcap도 같은 점프를 보이는 실제 사건
+(액면분할/감자 등 미등록 corporate action 가능)이거나 marcap 미커버 종목 — 데이터 수정 대상이 아니라 분류 대상.

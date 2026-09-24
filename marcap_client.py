@@ -73,3 +73,42 @@ def shares_history(code: str, start_year: int, end_year: int) -> pd.DataFrame:
     """Date/Close/Stocks series for one stock, for cheap discontinuity scanning."""
     df = marcap_data(f"{start_year}-01-01", f"{end_year}-12-31", code=code)
     return df[["Date", "Close", "Stocks"]].reset_index(drop=True)
+
+
+@functools.lru_cache(maxsize=1)
+def _share_series() -> dict:
+    frames = []
+    for y in range(2010, 2027):
+        df = _load_year(y)[["Code", "Date", "Close", "Stocks"]].dropna()
+        df["Date"] = df["Date"].str[:10]
+        frames.append(df)
+    full = pd.concat(frames, ignore_index=True).sort_values(["Code", "Date"])
+    return {code: g.reset_index(drop=True) for code, g in full.groupby("Code")}
+
+
+def share_count_evidence(code: str, event_date: str, price_ratio: float,
+                         window_days: int = 10, min_share_change: float = 0.15,
+                         tolerance: float = 0.10) -> dict | None:
+    """Independent corporate-action evidence for a price jump: shares outstanding (marcap,
+    KRX-sourced) changed around the event by a factor s with s * price_ratio ~= 1, i.e. market
+    cap is continuous while price and share count moved in opposite directions (split, reverse
+    split, capital reduction, large bonus/rights issue). Returns None when marcap has no series
+    or the pattern is absent - never guesses."""
+    g = _share_series().get(code)
+    if g is None or not price_ratio or price_ratio <= 0:
+        return None
+    day = pd.Timestamp(event_date)
+    lo = (day - pd.Timedelta(days=window_days)).strftime("%Y-%m-%d")
+    hi = (day + pd.Timedelta(days=window_days)).strftime("%Y-%m-%d")
+    before = g[g["Date"] < lo].tail(1)
+    after = g[g["Date"] > hi].head(1)
+    if before.empty or after.empty:
+        return None
+    b, a = float(before["Stocks"].iloc[0]), float(after["Stocks"].iloc[0])
+    if b <= 0 or a <= 0:
+        return None
+    s = a / b
+    if abs(s - 1) < min_share_change or abs(s * price_ratio - 1) > tolerance:
+        return None
+    return {"shares_before": b, "shares_after": a, "share_ratio": s,
+            "before_date": before["Date"].iloc[0], "after_date": after["Date"].iloc[0]}

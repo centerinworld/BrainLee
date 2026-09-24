@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from config import IS_POSTGRES  # noqa: E402
 from db_utils import connect_stock_db  # noqa: E402
+from marcap_client import share_count_evidence  # noqa: E402
 from price_integrity import native_script, ensure_schema, refresh_calendar, rebuild_views, outside_band, install_write_guard  # noqa: E402
 DB = ROOT / "stock.db"
 OUT = ROOT / "research_outputs" / "price_basis_audit_20260712.json"
@@ -172,6 +173,15 @@ def run(conn: sqlite3.Connection) -> dict:
         elif disclosure:
             classification, usable = "corporate_action_or_delisting_nearby", 0
             evidence = f"Nearby disclosure: {disclosure['report_nm']}"
+        elif ratio is not None and (share_ev := share_count_evidence(code, event_date, ratio)):
+            # 2026-09-24: KRX-sourced (marcap) shares outstanding moved by ~1/price_ratio around
+            # the jump, so market cap is continuous - a split/merge/capital change without a
+            # factor_confirmed row. Still return_usable=0 and NOT counted as confirmed_corporate_action
+            # (allow_confirmed_corporate_actions gates require the factor-confirmed evidence).
+            classification, usable = "corporate_action_share_count_evidence", 0
+            evidence = (f"marcap shares {share_ev['shares_before']:.0f}({share_ev['before_date']}) -> "
+                        f"{share_ev['shares_after']:.0f}({share_ev['after_date']}), x{share_ev['share_ratio']:.4f} "
+                        f"vs price ratio {ratio:.4f}")
         elif raw_ratio is not None and ratio is not None and abs(raw_ratio-ratio)/max(abs(ratio), 0.01) <= 0.005:
             classification, usable = "raw_source_confirmed_jump_review", 0
             evidence = f"Public raw series confirms ratio {raw_ratio:.4f}"
