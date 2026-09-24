@@ -209,8 +209,8 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 | `report_files` | 2691 | stock_code, sector, report_date, file_path | 섹터 보고서 |
 | `backtest_runs` | 2 | run_id, status, total_return_pct, trades_json | 백테스트 결과 |
 | `strategy_feature_snapshot` | 189,561 | snapshot_date, stock_code, close_price, market_cap_억, per, pbr, ret_20d/60d/120d, dist_high_252, vol_ratio_20d, supply_20d_억, label_2x/3x_6m/12m, **forward_max_ret_24m/36m, label_3x/5x/10x_24m, label_5x/10x_36m**, heuristic_score, model_score_6m/12m | 전략 연구용 월말 피처 스냅샷 + forward 라벨 + 휴리스틱/ML 점수. `scripts/build_strategy_research_dataset.py`가 생성/전량 재구축. ★신규(2026-07-05) / **2026-08-08 24·36개월 라벨 7컬럼 추가** — 실제 10배 종목은 중위 609일(1.7년) 소요라 기존 12개월 창으로는 86.9%가 관측 불가였음. 라벨 유효구간: 24m는 스냅샷 ≤2024-08-07(126,879행), 36m는 ≤2023-08-08(97,188행). 기준율 label_10x_24m 1.50% / label_10x_36m 2.37%. **모든 라벨은 비율 스케일(1.0=+100%) — 3배=2.0, 5배=4.0, 10배=9.0** |
-| `investor_trading_daily` | ~수집중 | bas_dt, stock_code, indv_net, inst_net, frgn_net | ✅ 키움 ka10059로 수집 중 (DART recollect 완료 후) |
-| `foreign_holding_daily` | 0 | bas_dt, stock_code, frgn_hold_pct | ⚠️ 미수집 |
+| `investor_trading_daily` | 450만(2026-07-10 정지) | bas_dt, stock_code, indv_net, inst_net, frgn_net | ⚠️ deprecated — 원천 API 폐지, 매수전용 오염값. 사용 금지(대체: `kiwoom_investor_daily`, 섹션 9 참조) |
+| `foreign_holding_daily` | ~10.8만 | bas_dt, stock_code, frgn_hold_pct | ✅ Kiwoom ka10008 경유 적재 중 |
 | `kiwoom_investor_daily` | ~수집중 | stock_code, dt, ind_invsr, frgnr_invsr, orgn + 세부기관분류 | ✅ 키움 ka10059 (개인/외국인/기관 + 10개 기관세부) |
 | `financial_source_snapshot` | ~25만 | stock_code, year, is_annual, report_type, data_source('fnguide'), revenue, op_profit, net_income, verification_status | FnGuide 원본 스냅샷 (마스터) |
 | `financial_anomalies` | 3181 | stock_code, anomaly_type, severity, is_resolved | 재무 이상 분류 (unit_error/cfs_ofs/large_discrepancy 등) |
@@ -750,7 +750,7 @@ PUBLIC_DATA_API_KEY=93b5be...         # 공공데이터포털 (주가 OK, 투자
 DART_API_KEY / DART_API_KEY2 / DART_API_KEY3  # DART 3-key 로테이션 필수
 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
 TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_PHONE
-KIWOOM_ENABLED=false
+KIWOOM_ENABLED=true                   # 키움 REST는 호출 IP 등록 필수(미등록 시 8050 오류)
 KIWOOM_APP_KEY / KIWOOM_SECRET_KEY
 KIWOOM_BASE_URL=https://api.kiwoom.com
 KIWOOM_WS_URL=
@@ -979,7 +979,7 @@ EOF
 | `ka10013` | 신용거래동향 (신용잔고 추이) | stk_cd, dt, qry_tp |
 | `ka10015` | 일별거래상세 (거래량·투자자 수급 포함) | stk_cd, strt_dt, end_dt |
 | `ka10058` | 투자자별매매상위종목 (invsr_tp별 순매수상위) | trde_tp, mrkt_tp, strt_dt, end_dt, invsr_tp, stex_tp |
-| `ka10059` | **종목별투자자일별순매수** (개인/외국인/기관+10개 세부기관, 100행/page) | stk_cd, amt_qty_tp, trde_tp, dt, unit_tp | ⚠️ 수집기 파라미터 버그: `trde_tp='1'`이 순매수가 아닌 **매수(buy-only)** 반환, `amt_qty_tp='1'`이 수량 아닌 **금액(백만원)** 반환. 검증: `ind+frgn+orgn+natfor+etc_corp=acc_trde_prica(총거래대금)`. 기존 4.5M행은 **매수금액** 저장 상태. 순매수로 해석/사용 금지. |
+| `ka10059` | **종목별투자자일별순매수** (개인/외국인/기관+10개 세부기관, 100행/page) | stk_cd, amt_qty_tp, trde_tp, dt, unit_tp | ✅ 수집기 정상(2026-07-21 수정, 2026-09-24 재실측): `trde_tp='0'`=순매수, `'1'`=매수, `'2'`=매도, `amt_qty_tp='1'`=금액(백만원)/`'2'`=수량. 005930 2026-09-23 순매수 = `price_history` 순매수와 1% 이내 일치. |
 | `ka10095` | 관심종목 현재 시세 (복수 종목 동시 조회) | stk_cd |
 | `ka10100` | 종목 상장기본정보 (상장일, 감사의견, 업종, 대형/중형/소형주) | stk_cd |
 
@@ -1477,3 +1477,5 @@ PostgreSQL cutover 최종 재검증: `dart_insider_holdings`의 SQLite 물리 �
 - 2단계: 소스에만 있던 tracked 파일 80개를 덮어쓰기 없이 이식(`73965d5`) — `routes/peer_compare.py`, `collectors/dart_product_mix_collector.py`, `frontend/src/views/PeerCompareView.jsx`, `antigravity_workspace/`, agi/gemini 도구 등. peer_compare는 같은 날 등록 완료(`aedc284`): `main.py`에 `/api/peer-compare` 라우터, `App.jsx`에 `peer_compare` 탭(NAV '동종기업 비교', 섹터 로테이션 아래), 라우트는 `connect_primary_db` 사용(PostgreSQL `company_product_mix` 14,482행), 프론트 빌드+`launchctl kickstart -k` 재시작 후 3종목 응답 확인.
 - 소스 폴더 의존 잔존: crontab `gemini_gems_worker.py`(매일 06:00, 소스 경로에서 실행), `ai.hermes.gateway.plist` PATH의 `antigravity_workspace/venv`. 이 둘을 옮기기 전에는 소스 폴더를 폐기하지 않는다.
 - 2026-09-24 소스 저장소 은퇴: `/Volumes/Realtek_NVME/stock_dashboard/.git`(133GB, 원격에 없던 14커밋 포함)을 `.git.retired`로 이름 변경(삭제 아님, 되돌리려면 `mv .git.retired .git`). 원격 미푸시 14커밋은 `runtime/backups/source_repo_unpushed_14commits_20260924.bundle`(15MB)에 보존. 상위 폴더는 공용 데이터 루트(`postgresql16/`·`stock.db`·`reports/`·`logs/`·`browser_profiles/`)이므로 삭제 금지. gemini_gems_worker 크론은 runtime 경로·PostgreSQL로 이전 완료. 이후 git 작업은 `runtime/`에서만.
+
+- 2026-09-24 키움 REST 점검: IP 등록 후 토큰/ka10001/ka10059 정상 확인(공인 IP는 유동일 수 있음). 등록 전 실패분(프로그램매매 9/22~23, 신용/대주 잔고 9/21~)은 `logs/backfill_kiwoom_20260924.sh`로 백필. **재발 대비**: `scheduler._job_kiwoom_health`(10분)가 8050 감지 시 현재 공인 IP를 로그+텔레그램(IP당 1회)으로 알림, `KiwoomCollector.health_check()`에 `error` 필드 추가. 8050 알림이 오면 키움 REST 포털에 표시된 IP를 등록하면 된다. 이전에 "kiwoom_investor_daily 백필 금지"로 적혀 있던 주의는 낡은 문서 기준이었고 실제로는 수정 완료 상태(백필 가능).

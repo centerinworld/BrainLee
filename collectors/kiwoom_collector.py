@@ -170,8 +170,10 @@ class KiwoomCollector(BaseCollector):
             return True
         res = self.issue_token()
         if not res.get("ok"):
+            self._last_token_error = res
             logger.warning(f"[KIWOOM] 토큰 발급 실패: {res}")
             return False
+        self._last_token_error = None
         return True
 
     def health_check(self) -> dict[str, Any]:
@@ -182,6 +184,7 @@ class KiwoomCollector(BaseCollector):
         ok = self.ensure_token()
         return {
             "ok": ok,
+            "error": None if ok else getattr(self, "_last_token_error", None),
             "enabled": True,
             "token_alive": self._token_alive(),
             "base_url": self.base_url,

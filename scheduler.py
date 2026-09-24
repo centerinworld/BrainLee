@@ -2717,6 +2717,20 @@ class CollectionScheduler:
                 logger.info("[키움연결체크] OK")
             else:
                 logger.warning(f"[키움연결체크] 대기/오류: {st}")
+                # 2026-09-24: 8050(IP 미등록) 오류 시 현재 공인 IP를 알려 재등록을 돕는다(유동 IP 대비).
+                # IP 하나당 1회만 텔레그램 발송(notifier key 중복차단).
+                if "8050" in str((st.get("error") or {}).get("raw", "")):
+                    try:
+                        import requests as _rq
+                        ip = _rq.get("https://api.ipify.org", timeout=8).text.strip()
+                    except Exception:
+                        ip = "확인불가"
+                    logger.error(f"[키움연결체크] IP 미등록(8050) — 키움 REST 포털에 현재 공인 IP 등록 필요: {ip}")
+                    try:
+                        import notifier as _nt
+                        _nt.send(f"⚠️ <b>키움 REST 인증 실패(8050)</b>\n현재 공인 IP <code>{ip}</code> 가 등록되지 않았습니다.\n키움 REST API 포털에서 IP를 등록해 주세요.", key=f"kiwoom_ip_8050_{ip}")
+                    except Exception as _e:
+                        logger.warning(f"[키움연결체크] 텔레그램 알림 실패: {_e}")
         except Exception as e:
             logger.error(f"[키움연결체크] 오류: {e}", exc_info=True)
 
