@@ -48,7 +48,8 @@ def _all_selected_specs(only: set[str] | None = None) -> dict[str, list[dict]]:
     return grouped
 
 
-def run(only: set[str], workers: int = 4) -> dict:
+def run(only: set[str], workers: int = 4, selected_by: str = "audit_rebuild_20260823",
+        note: str = "Recomputed after stale price_jump_audit rebuild (2026-08-07 -> current)") -> dict:
     from datetime import datetime
     selected = _all_selected_specs(only)
     result = {"started_at": datetime.now().isoformat(timespec="seconds"), "strategies": {}}
@@ -71,8 +72,7 @@ def run(only: set[str], workers: int = 4) -> dict:
             suite = register_run_set(strategy, "strategy_center", members)
             selected_suite = select_run(
                 strategy, "strategy_center", suite["suite_hash"],
-                selected_by="audit_rebuild_20260823",
-                note="Recomputed after stale price_jump_audit rebuild (2026-08-07 -> current)",
+                selected_by=selected_by, note=note,
             )
             item.update({"status": "selected", "new_suite": suite["suite_hash"],
                          "verification": selected_suite.get("verification")})
@@ -89,6 +89,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategies", default="")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--selected-by", default="audit_rebuild_20260823")
+    parser.add_argument("--note", default="Recomputed after stale price_jump_audit rebuild (2026-08-07 -> current)")
     args = parser.parse_args()
     only = {v.strip() for v in args.strategies.split(",") if v.strip()}
-    print(json.dumps(run(only, args.workers), ensure_ascii=False, indent=2))
+    print(json.dumps(run(only, args.workers, args.selected_by, args.note), ensure_ascii=False, indent=2))
