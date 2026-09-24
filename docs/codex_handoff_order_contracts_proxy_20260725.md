@@ -248,6 +248,27 @@
   - `verified`는 1건으로 집계됐지만 감사 경고 기준에는 영향이 없었다.
   - critical/warning 이슈가 없어 코드 수정은 하지 않았다.
 
+## 2026-09-04 감사 경로 수정
+- 증상:
+  - `runtime_pg_bootstrap/sitecustomize.py`가 서비스용 `sqlite3.connect(stock.db)` 호출을 PostgreSQL로 라우팅하는 환경에서, `scripts/audit_order_contracts_proxy.py`가 `routes.order_contracts.collect_recent_disclosures()` 재사용 중 `127.0.0.1:5432` 연결을 시도하다 중단됐다.
+  - 실제 오류는 `psycopg.OperationalError: connection to server at "127.0.0.1", port 5432 failed: could not receive data from server: Connection refused`.
+- 수정:
+  - `scripts/audit_order_contracts_proxy.py`에 `force_local_sqlite_primary()`를 추가해 감사 시작 시 `db_compat._ORIGINAL_SQLITE_CONNECT`로 `sqlite3.connect`를 복원하도록 변경.
+  - 이 자동화는 서비스 primary 상태와 무관하게 repo-local `stock.db` 스냅샷을 기준으로 감사/보정/산출물 생성을 계속 수행한다.
+- 2026-09-04 감사 결과:
+  - 산출물: `research_outputs/order_contracts_proxy_audit_20260904.md/json`
+  - 최근 DART catch-up 구간 `20260829~20260904`에서 120건 스캔, 120건 신규 저장.
+  - `order_contracts` 10,316건, `dart_contracts` 10,279건, sync ratio 100.36%, 최신일자 2026-09-04.
+  - 최근 7일 `parse_ok` 96.0%, 금액 누락 4.0%, 미설명 파싱 누락 3건(`other_parse_miss`)이며 경고 기준에는 미달.
+  - `/api/order-contracts/screener/surge` 후보 197건 계산 정상, 수집 경로는 계속 `list.json` 페이지 순회이며 `kind='I'` 회귀는 없음.
+
+## 2026-09-05 (Claude) — 위 bypass 자체를 제거(SQLite로 폴백하는 설계가 원천적으로 잘못됨)
+- 증상: 2026-09-04 수정이 `force_local_sqlite_primary()`를 **무조건** 호출하도록 만들어, Postgres가 정상 복구된 뒤에도 이 감사가 계속 repo-local `stock.db`(고아 스냅샷)에만 기록됨. `collect_recent_disclosures()`가 이 감사 실행 중 실제 DART 신규공시 77건을 수집·저장했지만 전부 로컬 파일에만 남고 실서비스 PostgreSQL에는 전혀 반영되지 않았음(발견 당시 order_contracts: local 10,316건 vs PG 10,268건, 최신일자도 PG가 하루 뒤처짐).
+- 1차 조치(같은 날 오후, 이후 폐기): `force_local_sqlite_primary()`를 조건부(프로브 실패 시에만 폴백)로 변경.
+- **사용자 지적으로 1차 조치도 근본적으로 틀렸다고 재판단, 최종 수정**: "SQLite는 프로덕션에서 아예 쓰지 않는데, 왜 실패 시 거기로 우회시키나?"라는 질문이 맞다 — 로컬 `stock.db` 파일은 실서비스가 절대 읽지 않으므로, 조건부든 무조건부든 "폴백"이라는 개념 자체가 성립하지 않는다(누구도 안 보는 곳에 조용히 쓰는 것과 같음). `force_local_sqlite_primary()`를 완전히 제거하고 `require_postgres_primary()`로 교체 — Postgres가 살아있는지 프로브만 하고, 실패하면 그대로 예외를 던져 감사 전체가 fail-fast로 죽도록 함(SQLite로의 전환 경로 자체가 코드에서 사라짐). Postgres가 죽어있으면 이 감사는 그냥 못 돈다 — 그게 맞는 동작이다.
+- 이미 로컬에만 있던 77건(+ 추가로 발견된 62건, 총 139건)은 로컬 파일을 복사하지 않고 DART 원문을 Postgres에 대고 재수집해 정식 반영 완료(원 공시 매칭 컨텍스트가 완전한 Postgres 기준으로 다시 매칭하기 위함). 검증 결과 두 DB의 rcept_no 집합이 완전히 일치.
+- 향후 원칙: 이런 종류의 자동화에 "서비스 라우터를 우회해 다른 DB에 쓰는" 폴백을 절대 넣지 말 것. 프로덕션이 특정 DB(현재 PostgreSQL) 하나로 확정된 이상, 그 DB가 불가용하면 실패하는 것이 유일하게 안전한 동작이다.
+
 ## 2026-08-22 감사 결과 및 수정
 - 장애 원인:
   - `order_contracts`와 `dart_contracts` 최신일자가 모두 2026-08-10에 멈춰 있었다.
