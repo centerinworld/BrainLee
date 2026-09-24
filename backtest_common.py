@@ -589,17 +589,54 @@ def _load_corp_action_factors(conn, stock_codes: list, data_asof_ts: str = None)
     placeholders = ",".join("?" for _ in stock_codes)
     asof_clause = " AND updated_at <= ?" if data_asof_ts else ""
     params = list(stock_codes) + ([data_asof_ts] if data_asof_ts else [])
+    # 2026-09-24: 권리락이 없는 유상증자(제3자배정·일반공모)는 가격 조정 대상이 아니다 — corporate_action_no_price_effect
+    # 등재 이벤트는 제외(이벤트 ±1일 가격단절 9.4% ≈ 무작위 7.4%로 실증, 계수 평균 0.839라 진입가 보정 왜곡이 컸음).
+    conn.execute("CREATE TABLE IF NOT EXISTS corporate_action_no_price_effect (event_id BIGINT PRIMARY KEY, stock_code TEXT, "
+                 "event_date TEXT, method TEXT, reason TEXT, evidence_rcept_no TEXT, classified_at TEXT)")
     rows = conn.execute(
-        f"""SELECT stock_code, event_date, backward_price_factor
+        f"""SELECT stock_code, event_date, backward_price_factor, source, confidence, id
             FROM corporate_action_events
             WHERE stock_code IN ({placeholders})
               AND adjustment_status='factor_confirmed'
               AND backward_price_factor IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM corporate_action_no_price_effect x WHERE x.event_id=corporate_action_events.id)
               {asof_clause}""",
         params,
     ).fetchall()
-    for code, edate, factor in rows:
-        out.setdefault(code, []).append((str(edate)[:10], float(factor)))
+    # 2026-09-24: 같은 사건의 계수가 이중·다중 적용되고 있었다 — stock_price_daily_adjusted_v와 같은 규칙:
+    # (1) 유상증자 정정공시마다 동일 계수가 날짜만 달리 확정된 경우(62종목 277쌍, 예 001140 0.7905×7회
+    #     → 누적 0.19): 60일 안에 같은 계수가 뒤에 또 있으면 앞 건 제외(가장 늦은 건 유지).
+    # (2) 같은 날 같은 방향(희석<1/병합>1) 사건이 여러 파이프라인에서 각각 확정된 경우(40건, 예 002630
+    #     2020-09-04 0.914 두 번): DART 출처 우선 → confidence 높은 순으로 1건.
+    from datetime import date as _date
+    evs = []
+    for code, edate, factor, source, conf, rid in rows:
+        f = float(factor)
+        if f > 0:
+            evs.append((code, str(edate)[:10], f, source, conf, rid or 0))
+    by_code: dict = {}
+    for ev in evs:
+        by_code.setdefault(ev[0], []).append(ev)
+    kept = []
+    for code, lst in by_code.items():
+        for e in lst:
+            d_e = _date.fromisoformat(e[1])
+            superseded = any(
+                l is not e and abs(l[2] - e[2]) <= 1e-6 * e[2]
+                and (l[1] > e[1] or (l[1] == e[1] and l[5] > e[5]))
+                and (_date.fromisoformat(l[1]) - d_e).days <= 60
+                for l in lst
+            )
+            if not superseded:
+                kept.append(e)
+    best: dict = {}
+    for code, edate, f, source, conf, rid in kept:
+        key = (code, edate, f > 1)
+        rank = (0 if str(source or "").startswith("DART") else 1, -float(conf or 0), rid or 0)
+        if key not in best or rank < best[key][0]:
+            best[key] = (rank, f)
+    for (code, edate, _), (_, f) in best.items():
+        out.setdefault(code, []).append((edate, f))
     for code in out:
         out[code].sort(key=lambda x: x[0])
     return out

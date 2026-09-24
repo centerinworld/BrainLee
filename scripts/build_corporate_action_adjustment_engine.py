@@ -44,15 +44,47 @@ CREATE TABLE IF NOT EXISTS corporate_action_events (
 );
 CREATE INDEX IF NOT EXISTS idx_cae_code_date ON corporate_action_events(stock_code, event_date);
 CREATE INDEX IF NOT EXISTS idx_cae_status ON corporate_action_events(adjustment_status, event_type);
-CREATE VIEW IF NOT EXISTS stock_price_daily_adjusted_v AS
-WITH base AS (
+CREATE TABLE IF NOT EXISTS corporate_action_no_price_effect (
+  event_id BIGINT PRIMARY KEY, stock_code TEXT, event_date TEXT, method TEXT, reason TEXT, evidence_rcept_no TEXT, classified_at TEXT
+);
+CREATE VIEW stock_price_daily_adjusted_v AS
+WITH ev0 AS (
+  -- 2026-09-24: 권리락 없는 유상증자(제3자배정·일반공모)는 가격 조정 제외(corporate_action_no_price_effect)
+  SELECT id, stock_code, event_date, backward_price_factor, source, confidence
+  FROM corporate_action_events
+  WHERE adjustment_status='factor_confirmed' AND backward_price_factor>0
+    AND NOT EXISTS (SELECT 1 FROM corporate_action_no_price_effect x WHERE x.event_id=corporate_action_events.id)
+),
+ev1 AS (
+  -- (1) 같은 유상증자의 정정공시마다 동일 계수가 날짜만 달리 확정된 경우(2026-09-24: 62종목
+  --     277쌍, 예 001140 0.7905×7회)를 1건으로: 60일 안에 같은 계수가 뒤에 또 있으면 앞 건 제외
+  --     (정정공시는 권리락일 이전이므로 가장 늦은 건을 남긴다).
+  SELECT e.* FROM ev0 e
+  WHERE NOT EXISTS (
+    SELECT 1 FROM ev0 l
+    WHERE l.stock_code=e.stock_code AND l.id<>e.id
+      AND ABS(l.backward_price_factor-e.backward_price_factor) <= 1e-6*e.backward_price_factor
+      AND (l.event_date > e.event_date OR (l.event_date = e.event_date AND l.id > e.id))
+      AND CAST(l.event_date AS DATE) <= CAST(e.event_date AS DATE) + 60
+  )
+),
+ev AS (
+  -- (2) 같은 날 같은 방향(희석<1 / 병합>1) 사건이 여러 파이프라인에서 각각 확정된 경우(40건)도
+  --     1건만: DART 출처 우선 → confidence 높은 순.
+  SELECT stock_code, event_date, backward_price_factor,
+         ROW_NUMBER() OVER (
+           PARTITION BY stock_code, event_date, CASE WHEN backward_price_factor>1 THEN 1 ELSE 0 END
+           ORDER BY CASE WHEN source LIKE 'DART%' THEN 0 ELSE 1 END, confidence DESC, id
+         ) AS dn
+  FROM ev1
+),
+base AS (
   SELECT s.*,
          COALESCE((
            SELECT EXP(SUM(LN(e.backward_price_factor)))
-           FROM corporate_action_events e
+           FROM ev e
            WHERE e.stock_code=s.stock_code
-             AND e.adjustment_status='factor_confirmed'
-             AND e.backward_price_factor>0
+             AND e.dn=1
              AND e.event_date > substr(s.bas_dt,1,4)||'-'||substr(s.bas_dt,5,2)||'-'||substr(s.bas_dt,7,2)
          ), 1.0) AS adjustment_factor
   FROM stock_price_daily s
@@ -88,9 +120,12 @@ def _classify_by_report(name: str) -> str | None:
 
 
 def _nearest_disclosure(conn: sqlite3.Connection, code: str, event_date: str) -> sqlite3.Row | None:
+    # 2026-09-24: dart_disclosures.rcept_dt는 'YYYY-MM-DD'인데 예전엔 'YYYYMMDD' 범위로 BETWEEN 해서
+    # 같은 해 구간은 항상 0건(예 '2026-08-01' >= '20260715'가 거짓) → 공시 매칭이 전혀 안 돼
+    # 분할·병합이 전부 unclassified로 떨어졌다. 대시 형식으로 조회하고 거리 정렬은 파이썬에서 한다.
     d = datetime.strptime(event_date, "%Y-%m-%d")
-    lo = (d - timedelta(days=45)).strftime("%Y%m%d")
-    hi = (d + timedelta(days=10)).strftime("%Y%m%d")
+    lo = (d - timedelta(days=45)).strftime("%Y-%m-%d")
+    hi = (d + timedelta(days=10)).strftime("%Y-%m-%d")
     rows = conn.execute(
         """
         SELECT rcept_dt, report_nm, rcept_no, dart_url
@@ -100,18 +135,33 @@ def _nearest_disclosure(conn: sqlite3.Connection, code: str, event_date: str) ->
                OR report_nm LIKE '%무상증자%' OR report_nm LIKE '%유상증자%'
                OR report_nm LIKE '%감자%' OR report_nm LIKE '%자본감소%')
           AND report_nm NOT LIKE '%종속회사%'
-        ORDER BY ABS(julianday(substr(rcept_dt,1,4)||'-'||substr(rcept_dt,5,2)||'-'||substr(rcept_dt,7,2))-julianday(?)),
-                 CASE WHEN report_nm LIKE '[%' THEN 1 ELSE 0 END,
-                 rcept_dt DESC
-        LIMIT 1
         """,
-        (code, lo, hi, event_date),
-    ).fetchone()
-    return rows
+        (code, lo, hi),
+    ).fetchall()
+    if not rows:
+        return None
+
+    def _rank(r):
+        # 날짜 거리 → 정정공시([...]) 후순위 → 최신 공시 우선 (예전 ORDER BY와 동일)
+        try:
+            rd = datetime.strptime(str(r["rcept_dt"])[:10], "%Y-%m-%d")
+        except ValueError:
+            return (10**6, 1, 0)
+        return (abs((rd - d).days), 1 if str(r["report_nm"]).startswith("[") else 0, -rd.toordinal())
+
+    return sorted(rows, key=_rank)[0]
 
 
 def build(conn: sqlite3.Connection, dry_run: bool = False) -> dict:
     conn.row_factory = sqlite3.Row
+    # 2026-09-24: DDL이 SQLite 전용 `CREATE VIEW IF NOT EXISTS`여서 PostgreSQL에서 매일
+    # SyntaxError → 2026-08-07 이후 이 잡과 후속 체인(시장국면·설명형신호·전진신호·
+    # 신호사후성과·전진검증감사)이 전부 멈췄고, 위 DROP만 성공해 뷰도 사라져 있었다.
+    # 뷰는 직전에 DROP하므로 plain CREATE VIEW로 충분하다.
+    #
+    # ON CONFLICT 갱신은 이 스크립트가 만든 원행(source=stock_price_daily_shares[+DART])만
+    # 대상으로 하고, 후속 매칭(terp/ratio_reduction/marcap/DART 파이프라인)이 이미
+    # factor_confirmed로 확정한 행을 review_required로 되돌리지 않는다.
     conn.execute("DROP VIEW IF EXISTS stock_price_daily_adjusted_v")
     conn.executescript(DDL)
     from price_integrity import ensure_schema, rebuild_views, native_script
@@ -204,7 +254,10 @@ def build(conn: sqlite3.Connection, dry_run: bool = False) -> dict:
                  old_shares=excluded.old_shares,new_shares=excluded.new_shares,share_ratio=excluded.share_ratio,
                  backward_price_factor=excluded.backward_price_factor,evidence_report_name=excluded.evidence_report_name,
                  evidence_rcept_no=excluded.evidence_rcept_no,evidence_url=excluded.evidence_url,source=excluded.source,
-                 confidence=excluded.confidence,adjustment_status=excluded.adjustment_status,note=excluded.note,updated_at=excluded.updated_at""",
+                 confidence=excluded.confidence,adjustment_status=excluded.adjustment_status,note=excluded.note,updated_at=excluded.updated_at
+               WHERE corporate_action_events.source IN ('stock_price_daily_shares','stock_price_daily_shares+DART')
+                 AND (corporate_action_events.adjustment_status <> 'factor_confirmed'
+                      OR excluded.adjustment_status = 'factor_confirmed')""",
             events,
         )
         conn.commit()

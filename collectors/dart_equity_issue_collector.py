@@ -193,6 +193,18 @@ def _prev_kr_trading_day(value: str) -> str:
     return d.isoformat()
 
 
+def _rights_issue_no_price_effect_method(t: str) -> Optional[str]:
+    """유상증자결정 원문의 증자방식이 제3자배정/일반공모(권리락 없음)면 그 방식명, 아니면 None.
+    2026-09-24: 이런 이벤트의 조정계수는 실제 가격 단절이 없어(±1일 단절 9.4% ≈ 무작위 7.4%) 가격 조정에서 제외한다."""
+    m = re.search(r"증자방식\s*[:：]?\s*([가-힣0-9 ()·/]{2,30}?)(?= \d| [0-9]\.|$)", t) or re.search(r"증자방식[^가-힣]{0,6}([가-힣 ]{2,20})", t)
+    s = (m.group(1) if m else "").replace(" ", "")
+    if s.startswith("제") or "제3자" in s:
+        return "제3자배정"
+    if "일반공모" in s and "주주" not in s:
+        return "일반공모"
+    return None
+
+
 def _plausible_event_date(value: Optional[str], disclosed_at: str) -> Optional[str]:
     if not value:
         return None
@@ -502,6 +514,21 @@ def collect_equity_issue_events(
                         confidence, "factor_confirmed" if backward_factor else "review_required", note, now, now,
                     ),
                 )
+
+                # 권리락 없는 유상증자(제3자배정·일반공모)는 가격 조정 제외 목록에 등재(corporate_action_no_price_effect)
+                if ca_type == "rights_issue" and t:
+                    _m = _rights_issue_no_price_effect_method(t)
+                    if _m:
+                        try:
+                            conn.execute("CREATE TABLE IF NOT EXISTS corporate_action_no_price_effect (event_id BIGINT PRIMARY KEY, stock_code TEXT, "
+                                         "event_date TEXT, method TEXT, reason TEXT, evidence_rcept_no TEXT, classified_at TEXT)")
+                            _row = conn.execute("SELECT id FROM corporate_action_events WHERE stock_code=? AND event_date=? AND event_type=?",
+                                                (sc, action_date, ca_type)).fetchone()
+                            if _row:
+                                conn.execute("INSERT INTO corporate_action_no_price_effect VALUES (?,?,?,?,?,?,?) ON CONFLICT (event_id) DO NOTHING",
+                                             (_row[0], sc, action_date, _m, f"DART 유상증자결정 증자방식={_m}: 권리락 없음 → 가격 조정 제외", rno, now))
+                        except Exception as _e:
+                            logger.warning(f"[유상증자 방식분류] {sc} {rno} 등재 실패(무시): {_e}")
 
                 saved += 1
                 if saved % 100 == 0:
