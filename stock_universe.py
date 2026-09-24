@@ -509,6 +509,14 @@ def fetch_krx_universe(trade_date: str | None = None) -> pd.DataFrame:
     return result
 
 
+# 새 기준일 스냅샷 생성 시 직전 스냅샷에서 이어받는 정적 필드(시세 소스가 제공하지 않음).
+# market_cap/per/pbr 등 시세·지표는 상속하면 stale 값이 최신처럼 보이므로 제외한다.
+_INHERITED_STATIC_FIELDS = (
+    "stock_name", "market", "stock_type", "listed_date", "settlement_month", "face_value",
+    "sector_large", "sector_mid", "sector_small",
+)
+
+
 def update_from_krx(trade_date: str | None = None) -> int:
     """
     전종목 데이터 → stock_universe UPSERT.
@@ -541,6 +549,18 @@ def update_from_krx(trade_date: str | None = None) -> int:
             ).first()
             if obj is None:
                 obj = StockUniverse(stock_code=code, base_date=td_date)
+                # 2026-09-24: 새 기준일 행은 비어 있는 채로 생성돼 섹터·상장일 등이 전부 NULL이었다
+                # (2026-09-04 스냅샷 2,765행 sector_large 0건 → 이 행을 먼저 집는 쿼리의 섹터 신호가
+                # 통째로 비었음). 네이버/FDR는 이 필드를 주지 않으므로 직전 스냅샷에서 상속한다.
+                prev = db.query(StockUniverse).filter(
+                    StockUniverse.stock_code == code,
+                    StockUniverse.base_date < td_date,
+                ).order_by(StockUniverse.base_date.desc()).first()
+                if prev is not None:
+                    for attr in _INHERITED_STATIC_FIELDS:
+                        v = getattr(prev, attr, None)
+                        if v not in (None, "", "nan"):
+                            setattr(obj, attr, v)
                 db.add(obj)
 
             name = str(row.get("_name","") or "").strip()
@@ -583,6 +603,14 @@ def update_from_krx(trade_date: str | None = None) -> int:
         raise
     finally:
         db.close()
+
+    # 새 스냅샷 생성·정적 필드 상속이 끝난 뒤, 종목당 1행만 남기고 과거 스냅샷을 history 로 이관
+    # (228개 파일이 base_date 없이 조회하므로 본 테이블은 종목당 1행이어야 함 — stock_universe_history.py)
+    try:
+        from stock_universe_history import archive_superseded_snapshots
+        archive_superseded_snapshots()
+    except Exception as e:
+        logger.warning(f"[stock_universe] 스냅샷 history 이관 실패(다음 갱신 때 재시도): {e}")
 
     return upserted
 

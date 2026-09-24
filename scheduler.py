@@ -367,6 +367,14 @@ class CollectionScheduler:
         self._start_lock = threading.Lock()
         self._started = False
         self._kiwoom_rt_cursor = 0
+        # 2026-09-24: 토큰 실패(8050 등)로 매 사이클 0건을 저장하고도 잡이 'success'로 남던
+        # 침묵 실패 감시용 카운터. 실측: 09-22·09-23 장중 피드가 통째로 비었는데 원장에는
+        # success 386/387건만 남았다.
+        self._kiwoom_rt_zero_cycles = 0
+        self._kiwoom_rt_last_gate: str | None = None
+        # 2026-09-24: 같은 클래스의 침묵 실패가 '키움대량체결'에도 있었다 — 09-22·09-23 success 79건
+        # / 테이블 0행. ka00190 응답이 ok=True·saved=0 이어도 통과하지 않도록 감시하는 카운터.
+        self._kiwoom_ltr_zero_cycles = 0
         self._namu_exec_cursor = 0
 
     # ══════════════════════════════════════════════════════════
@@ -433,6 +441,7 @@ class CollectionScheduler:
             ("전략센터상위5가상매매", self._loop_combo_daily),          # ★ 매일 18:35 전략센터 현재 상위 5개를 재선정해 가상매매
             ("키움연결체크",   self._loop_kiwoom_health),            # ★ 키움 REST 연결 상태 점검(장중 10분)
             ("키움IP감시",    self._loop_kiwoom_ip_watch),          # ★ 24시간 10분마다 공인 IP 변경 감시 → 변경 시 키움 인증 재확인+텔레그램 알림
+            ("가상매매공통손절", self._loop_vt_common_stop),           # ★ 장중 5분 전 전략 공통 하드스탑(-10%)+본전스톱(+10% 도달 후) — 2026-07-23 V14/V18 루프 삭제로 미실행되던 것 복구
             ("키움실시간스냅샷", self._loop_kiwoom_realtime),         # ★ 장중 1분 키움 실시간 스냅샷 수집
             ("나무체결강도",   self._loop_namu_execution_strength), # 관심/보유 종목 체결강도 이력
             ("키움조건검색",   self._loop_kiwoom_condition_snapshot), # ★ 장중 조건식 현재 편입 + 편입/편출 이력
@@ -2706,6 +2715,36 @@ class CollectionScheduler:
             else:
                 self._wait_secs(120)
 
+    def _loop_vt_common_stop(self) -> None:
+        """평일 장중 5분마다 가상매매 공통 손절(하드스탑 -10% + 본전스톱) 실행.
+        2026-09-24 발견: `_auto_hardstop_all_strategies`는 V18 추천 빌드 안에서만 호출되는데 V14/V18 장중 루프가
+        2026-07-23 삭제되면서 스케줄러에서 한 번도 실행되지 않았다(value -24~-45% 방치의 원인)."""
+        self._wait_secs(260)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            hm = now.hour * 60 + now.minute
+            if is_kr_trading_day(now.date()) and (9 * 60 + 2) <= hm <= (15 * 60 + 45):
+                _run_job_safe("가상매매공통손절", self._job_vt_common_stop)
+                self._wait_secs(300)
+            else:
+                self._wait_secs(120)
+
+    def _job_vt_common_stop(self) -> None:
+        try:
+            import sys as _sys
+            if "/Volumes/Realtek_NVME/stock_dashboard/runtime" not in _sys.path:
+                _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
+            from routes.trend import _auto_hardstop_all_strategies, _db
+            conn = _db()
+            try:
+                sold = _auto_hardstop_all_strategies(conn)
+            finally:
+                conn.close()
+            if sold:
+                logger.info(f"[가상매매공통손절] {sold}건 청산")
+        except Exception as e:
+            logger.error(f"[가상매매공통손절] 오류: {e}", exc_info=True)
+
     def _loop_kiwoom_ip_watch(self) -> None:
         """24시간 10분마다 공인 IP 변경을 감시한다(키움 REST는 등록 IP에서만 인증됨)."""
         self._wait_secs(150)
@@ -2788,22 +2827,45 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[키움연결체크] 오류: {e}", exc_info=True)
 
+    @staticmethod
+    def _kiwoom_rt_in_session(now: datetime) -> bool:
+        """09:00~15:30 KR 거래일 장중 여부 (평일 공휴일 포함 판정)."""
+        return is_kr_trading_day(now.date()) and (9 * 60) <= (now.hour * 60 + now.minute) <= (15 * 60 + 30)
+
+    def _log_kiwoom_rt_gate(self, state: str) -> None:
+        """게이트 상태 전이만 1회 기록한다.
+
+        2026-09-24: 장외/휴장 스킵 경로가 아무 로그도 남기지 않아, 로그에
+        '[키움실시간스냅샷]'이 없는 것이 '잡 미호출'인지 '장외 스킵'인지 구분할 수 없었다
+        (휴장일 진단 오판의 원인). 상태가 바뀔 때만 남겨 소음 없이 구분 가능하게 한다.
+        """
+        if state == self._kiwoom_rt_last_gate:
+            return
+        self._kiwoom_rt_last_gate = state
+        if state == "in_session":
+            logger.info("[키움실시간스냅샷] 장중 진입 — 60초 주기 수집 시작")
+        elif state == "disabled":
+            logger.warning("[키움실시간스냅샷] KIWOOM_RT_ENABLED=False — 잡 비활성(스킵)")
+        else:
+            logger.info("[키움실시간스냅샷] 장외/휴장 — 수집 스킵 (다음 거래일 09:00 재개)")
+
     def _loop_kiwoom_realtime(self) -> None:
         """평일 장중 1분마다 키움 실시간 스냅샷 수집 (옵션)."""
         self._wait_secs(90)
         while not self._stop_event.is_set():
             try:
                 if not getattr(config, "KIWOOM_RT_ENABLED", False):
+                    self._log_kiwoom_rt_gate("disabled")
                     self._wait_secs(180)
                     continue
                 now = datetime.now()
-                is_weekday = is_kr_trading_day(now.date())  # 2026-09-05: 주말만 걸러지고 평일 공휴일은 그대로 통과하던 것 수정
-                hm = now.hour * 60 + now.minute
-                in_session = (9 * 60) <= hm <= (15 * 60 + 30)
-                if is_weekday and in_session:
+                # 2026-09-05: 주말만 걸러지고 평일 공휴일은 그대로 통과하던 것을 is_kr_trading_day로 수정
+                if self._kiwoom_rt_in_session(now):
+                    self._log_kiwoom_rt_gate("in_session")
                     _run_job_safe("키움실시간스냅샷", self._job_kiwoom_realtime)
                     self._wait_secs(60)
                 else:
+                    self._log_kiwoom_rt_gate("closed")
                     self._wait_secs(120)
             except Exception as e:
                 logger.warning(f"[키움실시간스냅샷] 루프 오류: {e}")
@@ -2845,6 +2907,7 @@ class CollectionScheduler:
             ws_saved = 0
             chunks_done = 0
             covered = 0
+            failures: list[str] = []
 
             for _ in range(batches_per_cycle):
                 start = self._kiwoom_rt_cursor
@@ -2859,6 +2922,10 @@ class CollectionScheduler:
                     break
 
                 ws_result = kc.collect_realtime_snapshot(stock_codes=batch, types=types, duration_sec=dur)
+                # 2026-09-24: ok=False(token_fail/ws_login_fail/reg_fail)를 그냥 0건으로 더하면
+                # 잡이 정상 종료로 보인다. 실패는 아래에서 예외로 승격해 원장에 'failed'로 남긴다.
+                if not ws_result.get("ok"):
+                    failures.append(str(ws_result.get("reason") or "unknown"))
                 ws_saved += int(ws_result.get("saved") or 0)
                 chunks_done += 1
                 covered += len(batch)
@@ -2880,8 +2947,34 @@ class CollectionScheduler:
                 f"[키움실시간스냅샷] universe={total} covered={covered} chunks={chunks_done} "
                 f"ws_saved={ws_saved} cursor={self._kiwoom_rt_cursor} flow_ok={flow_ok}/{flow_try}"
             )
+
+            if failures:
+                # 실측(2026-09-22·09-23): 토큰 발급 실패(8050)로 6청크 전부 saved=0이었는데도
+                # 원장에는 success 386/387건만 남아 장중 피드 이틀치 공백이 무경보로 통과했다.
+                raise RuntimeError(
+                    f"키움 실시간 수집 실패 {len(failures)}/{chunks_done}청크: "
+                    f"{sorted(set(failures))[:3]} (universe={total} ws_saved={ws_saved})"
+                )
+            if ws_saved <= 0:
+                self._kiwoom_rt_zero_cycles += 1
+                logger.error(
+                    f"[키움실시간스냅샷] 저장 0건 (연속 {self._kiwoom_rt_zero_cycles}회) — "
+                    f"토큰/WS 경로 점검 필요 (universe={total} chunks={chunks_done})"
+                )
+                if self._kiwoom_rt_zero_cycles >= 3:
+                    # ok=True인데 3사이클 연속 0건 = 조용한 데이터 유실. 3분에 1회만 실패로 승격한다.
+                    self._kiwoom_rt_zero_cycles = 0
+                    raise RuntimeError(
+                        f"키움 실시간 스냅샷 3사이클 연속 저장 0건 "
+                        f"(universe={total} chunks={chunks_done})"
+                    )
+            else:
+                self._kiwoom_rt_zero_cycles = 0
         except Exception as e:
+            # 2026-09-24: 그동안 여기서 예외를 삼켜 _run_job_safe가 항상 success를 기록했다.
+            # 원장(collection_job_runs)이 실패를 드러내도록 반드시 다시 올린다.
             logger.error(f"[키움실시간스냅샷] 오류: {e}", exc_info=True)
+            raise
 
     def _loop_kiwoom_condition_snapshot(self) -> None:
         """Persist each saved Hero4 condition's current members and IN/OUT deltas."""
@@ -3427,18 +3520,39 @@ class CollectionScheduler:
         logger.info("[키움대량체결] 루프 종료")
 
     def _job_kiwoom_large_trade_rank(self) -> None:
-        """주문 없이 키움 대량체결 원본 순위를 수집한다."""
-        try:
-            from collectors.kiwoom_collector import KiwoomCollector
+        """주문 없이 키움 대량체결 원본 순위를 수집한다.
 
-            collector = KiwoomCollector()
-            results = {
-                "buy": collector.fetch_large_trade_rank(rank_type="buy"),
-                "sell": collector.fetch_large_trade_rank(rank_type="sell"),
-            }
-            logger.info("[키움대량체결] 완료: %s", results)
-        except Exception as exc:
-            logger.error("[키움대량체결] 잡 오류: %s", exc, exc_info=True)
+        2026-09-24 실측: 09-22·09-23(둘 다 거래일)에 이 잡은 원장(`collection_job_runs`)에
+        success 79건을 남겼지만 `kiwoom_large_trade_rank`는 **0행**(`snapshot_at` MAX = NULL)이었다.
+        `fetch_large_trade_rank`가 `ok=False`(토큰 실패 등)를 돌려주거나 `ok=True, saved=0`
+        (필터/응답 필드 불일치)이어도 그대로 통과시키고, 예외까지 스스로 삼켜
+        `_run_job_safe`가 success를 기록했기 때문이다 — `키움실시간스냅샷`과 동일한 침묵 실패
+        클래스라 같은 방식으로 막는다: 실패는 즉시 RuntimeError, 0건은 2사이클 연속이면 RuntimeError
+        (10분 주기이므로 20분 = 한 번의 일시적 빈 응답은 넘긴다).
+        """
+        from collectors.kiwoom_collector import KiwoomCollector
+
+        collector = KiwoomCollector()
+        results = {
+            "buy": collector.fetch_large_trade_rank(rank_type="buy"),
+            "sell": collector.fetch_large_trade_rank(rank_type="sell"),
+        }
+        failed = {key: str(value.get("reason")) for key, value in results.items() if not value.get("ok")}
+        if failed:
+            raise RuntimeError(f"키움대량체결 수집 실패: {failed}")
+        logger.info("[키움대량체결] 완료: %s", results)
+        saved = sum(int(value.get("saved") or 0) for value in results.values())
+        if saved > 0:
+            self._kiwoom_ltr_zero_cycles = 0
+            return
+        self._kiwoom_ltr_zero_cycles = getattr(self, "_kiwoom_ltr_zero_cycles", 0) + 1
+        if self._kiwoom_ltr_zero_cycles >= 2:
+            self._kiwoom_ltr_zero_cycles = 0
+            raise RuntimeError(
+                "키움대량체결 2사이클 연속 0건 — ka00190 응답 필드/필터 확인 필요 "
+                f"(return_code={results['buy'].get('return_code')}, "
+                f"response_keys={results['buy'].get('response_keys')})"
+            )
 
     # ── 외국인 지분율 (매일 19:15) ─────────────────────────────────────────
     def _loop_kiwoom_foreign_hold(self) -> None:

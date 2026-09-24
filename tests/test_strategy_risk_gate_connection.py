@@ -8,8 +8,9 @@ from routes.kis_trading import authorize_strategy_order
 
 
 class StrategyRiskGateConnectionTest(unittest.TestCase):
+    @patch("virtual_trade_guards.check_entry", return_value={"allowed": True, "reasons": []})
     @patch("routes.kis_trading.authorize_strategy_order")
-    def test_virtual_buy_uses_strict_execution_gate(self, evaluate):
+    def test_virtual_buy_uses_strict_execution_gate(self, evaluate, _guard):
         evaluate.return_value = {"decision": "BUY_ALLOWED", "reasons": []}
 
         result = _paper_buy_gate("005930", "v_gc", 3, 70_000)
@@ -19,6 +20,14 @@ class StrategyRiskGateConnectionTest(unittest.TestCase):
             "005930", "buy", 3, 70_000.0, "v_gc",
             decision_source="strategy_virtual_execution",
         )
+
+    @patch("virtual_trade_guards.check_entry", return_value={"allowed": False, "reasons": ["regime_filter: test"]})
+    @patch("routes.kis_trading.authorize_strategy_order")
+    def test_virtual_trade_guard_block_short_circuits_before_kis_gate(self, evaluate, _guard):
+        result = _paper_buy_gate("005930", "v_gc", 3, 70_000)
+        self.assertEqual(result["decision"], "BLOCKED_RISK")
+        self.assertEqual(result["reasons"], ["regime_filter: test"])
+        evaluate.assert_not_called()
 
     def test_invalid_virtual_order_is_blocked_before_gate(self):
         result = _paper_buy_gate("", "v_gc", 0, 0)

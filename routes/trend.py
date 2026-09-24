@@ -117,6 +117,18 @@ def _paper_buy_gate(stock_code: str, strategy: str, qty: int, price: float) -> d
     """Use the same fail-closed gate as the order API before every paper buy."""
     if len(str(stock_code or "")) != 6 or qty <= 0 or price <= 0:
         return {"decision": "BLOCKED_RISK", "reasons": ["invalid paper order inputs"]}
+    # 2026-09-24 수익률 개선: 시장국면 필터·종목/섹터 노출 한도 (virtual_trade_guards.py, 환경변수로 개별 해제 가능)
+    try:
+        from virtual_trade_guards import check_entry
+        _gconn = connect_stock_db(timeout=5)  # 락/부하 시 5초 후 타임아웃 → 아래 except에서 fail-open (매수 요청이 오래 매달리지 않게)
+        try:
+            _g = check_entry(_gconn, str(stock_code), strategy, int(qty), float(price))
+        finally:
+            _gconn.close()
+        if not _g["allowed"]:
+            return {"decision": "BLOCKED_RISK", "reasons": _g["reasons"]}
+    except Exception as _e:  # 가드 자체 오류는 매매를 막지 않는다(fail-open) — 로그로만 남김
+        logger.warning("[가상매수 가드] 판정 오류(무시): %s", _e)
     from routes.kis_trading import authorize_strategy_order
 
     return authorize_strategy_order(
@@ -438,6 +450,44 @@ def _count_kospi_below_ma60_days(conn) -> int:
 
 GLOBAL_HARD_STOP_PCT = -10.0   # 전 전략 공통 하드스탑 (V18 전략은 자체 로직 우선)
 
+# KRX 일일 가격제한폭은 ±30%. 보유기간 중 종가 대 종가가 이 범위를 벗어나면 실제 손익이 아니라
+# 액면분할·병합·감자 등 기업행위(또는 원천 가격 오류)로 가격 기준이 바뀐 것이다.
+# 2026-08-28 코람코더원리츠(417310) 10,930→2,290 분할일에 v_gc가 -78.6% "손절"을 기록한 사고 재발 방지.
+_PRICE_LIMIT_RATIO_LO = 0.69
+_PRICE_LIMIT_RATIO_HI = 1.31
+
+
+def _price_basis_break_since(conn, stock_code: str, entry_date) -> str | None:
+    """entry_date 이후 가격제한폭(±30%)을 넘는 종가 불연속이 있으면 그 날짜를, 없으면 None."""
+    try:
+        rows = conn.execute(
+            "SELECT date, close FROM price_history WHERE stock_code=? AND close>0 AND date >= ? ORDER BY date",
+            (stock_code, str(entry_date)[:10]),
+        ).fetchall()
+    except Exception:
+        return None
+    prev = None
+    for d, c in rows:
+        c = float(c or 0)
+        if prev and prev > 0 and c > 0:
+            r = c / prev
+            if r < _PRICE_LIMIT_RATIO_LO or r > _PRICE_LIMIT_RATIO_HI:
+                return str(d)[:10]
+        prev = c
+    return None
+
+
+def _stop_blocked_by_basis_break(conn, stock_code: str, name: str, strategy: str, entry_date, pct: float) -> bool:
+    """손절 판단 직전 호출: 가격 기준 불연속이면 자동 손절을 막고 경고만 남긴다(수동 확인 대상)."""
+    brk = _price_basis_break_since(conn, stock_code, entry_date)
+    if brk:
+        logger.warning(
+            f"[손절보류] {name}({stock_code}, {strategy}) {pct*100:.1f}% — "
+            f"{brk} 종가 불연속(±30% 초과, 기업행위/가격오류 의심) → 자동손절 대신 수동 확인 필요"
+        )
+        return True
+    return False
+
 def _auto_hardstop_all_strategies(conn) -> int:
     """
     gpt_v18 이외 전략(ai_combo, peak, value 등) 포지션에 대해
@@ -449,14 +499,14 @@ def _auto_hardstop_all_strategies(conn) -> int:
     now_ts = _now_dt.now().strftime("%Y-%m-%d %H:%M:%S")
 
     rows = conn.execute("""
-        SELECT ph.id, ph.stock_code, ph.stock_name, ph.buy_price, ph.quantity, ph.strategy
+        SELECT ph.id, ph.stock_code, ph.stock_name, ph.buy_price, ph.quantity, ph.strategy, ph.entry_date
         FROM peak_holding ph
         WHERE ph.is_active = 1
           AND ph.strategy != 'gpt_v18'
     """).fetchall()
 
     sold = 0
-    for h_id, code, name, buy_price, qty, strategy in rows:
+    for h_id, code, name, buy_price, qty, strategy, entry_date in rows:
         price_row = conn.execute(
             "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
             (code,)
@@ -468,12 +518,23 @@ def _auto_hardstop_all_strategies(conn) -> int:
         if bp <= 0:
             continue
         pct = (cur - bp) / bp * 100.0
-        if pct > GLOBAL_HARD_STOP_PCT:
+        # 2026-09-24: +10% 도달 후 본전 이탈 시 청산(이익 반납 방지) — virtual_trade_guards.breakeven_exit
+        _stop_kind = "하드스탑" if pct <= GLOBAL_HARD_STOP_PCT else None
+        if _stop_kind is None:
+            try:
+                from virtual_trade_guards import breakeven_exit
+                if breakeven_exit(conn, code, strategy, entry_date, bp, cur):
+                    _stop_kind = "본전스톱"
+            except Exception as _e:
+                logger.warning("[본전스톱] 판정 오류(무시): %s", _e)
+        if _stop_kind is None:
             # 손절 아직 불필요 → current_price/profit_pct만 업데이트
             conn.execute(
                 "UPDATE peak_holding SET current_price=?, profit_pct=?, updated_at=? WHERE id=?",
                 (cur, round(pct, 2), now_ts, h_id)
             )
+            continue
+        if _stop_blocked_by_basis_break(conn, code, name, strategy, entry_date, pct / 100.0):
             continue
         # 하드스탑 발동
         qty_int = int(qty or 0)
@@ -487,7 +548,7 @@ def _auto_hardstop_all_strategies(conn) -> int:
             INSERT INTO peak_trade (stock_name,tx_type,price,quantity,total_amount,profit,profit_pct,tx_at,strategy)
             VALUES (?,?,?,?,?,?,?,?,?)
         """, (name, "sell", cur, qty_int, round(cur * qty_int), profit, round(pct, 2), now_ts, strategy))
-        logger.info(f"[하드스탑] {name} ({strategy}) {pct:.1f}% → 자동손절 {cur:,.0f}원")
+        logger.info(f"[{_stop_kind}] {name} ({strategy}) {pct:.1f}% → 자동청산 {cur:,.0f}원")
         sold += 1
 
     if sold > 0:
@@ -1396,7 +1457,8 @@ def _build_gc_recommendations(conn) -> dict:
 
         # 하드스탑 -12%
         if pct <= GC_STOP_PCT:
-            sell_reason = f"손절(-12%): {pct*100:.1f}%"
+            if not _stop_blocked_by_basis_break(conn, code, name, GC_STRATEGY, entry_date, pct):
+                sell_reason = f"손절(-12%): {pct*100:.1f}%"
 
         # 트레일 손절: 이익 50%+ 이면 -30%, 그 외 이익 5%+ 이면 -25%
         elif pct >= 0.50 and trail_from_peak <= GC_TRAIL_BIG:
@@ -1810,7 +1872,8 @@ def _build_cm_recommendations(conn) -> dict:
 
         sell_reason = None
         if pct <= CM_STOP_PCT:
-            sell_reason = f"손절({CM_STOP_PCT*100:.0f}%): {pct*100:.1f}%"
+            if not _stop_blocked_by_basis_break(conn, code, name, "v_contract_momentum", entry_date, pct):
+                sell_reason = f"손절({CM_STOP_PCT*100:.0f}%): {pct*100:.1f}%"
         elif pct > CM_TRAIL_ACTIVATE_PCT and trail_from_peak <= CM_TRAIL_PCT:
             sell_reason = f"트레일: 고점대비 {trail_from_peak*100:.1f}%"
         elif hold_days >= CM_MAX_HOLD_DAYS:
@@ -2111,7 +2174,8 @@ def _build_rec_recommendations(conn) -> dict:
 
         sell_reason = None
         if pct <= REC_STOP_PCT:
-            sell_reason = f"손절({REC_STOP_PCT*100:.0f}%): {pct*100:.1f}%"
+            if not _stop_blocked_by_basis_break(conn, code, name, "v_recovery", entry_date, pct):
+                sell_reason = f"손절({REC_STOP_PCT*100:.0f}%): {pct*100:.1f}%"
         elif pct >= REC_TP_PCT:
             sell_reason = f"익절(+{REC_TP_PCT*100:.0f}%): {pct*100:.1f}%"
         elif trail_from_peak <= (REC_TRAIL_BIG if pct >= 0.50 else REC_TRAIL_PCT):
