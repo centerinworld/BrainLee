@@ -19,6 +19,7 @@ from backtest_common import (
     _chart_bottom_confluence,
     _chart_prep,
     _chart_top_confluence,
+    _final_liquidation_quote_for_code,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
@@ -123,7 +124,7 @@ def run_backtest_deep_recovery(
                 LEFT JOIN stock_universe su ON p.stock_code=su.stock_code
                 WHERE p.date BETWEEN ? AND ? AND p.close>0
                   AND LENGTH(p.stock_code)=6
-                  AND p.stock_code GLOB '[0-9]*'
+                  AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             """, (start_date, end_date)).fetchall()
         else:
             codes = conn.execute("""
@@ -134,7 +135,7 @@ def run_backtest_deep_recovery(
                   AND su.market_cap >= 300
                   AND su.market IN ('KOSPI','KOSDAQ')
                   AND LENGTH(p.stock_code)=6
-                  AND p.stock_code GLOB '[0-9]*'
+                  AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             """, (start_date, end_date)).fetchall()
 
         share_intervals: Dict[str, list] = {}
@@ -207,8 +208,8 @@ def run_backtest_deep_recovery(
                 del pending_sells[code]
 
             marked_equity = cash + sum(
-                p['shares'] * sd[code]['c'][didx[code][day]]
-                for code, p in pos.items() if day in didx[code]
+                p['shares'] * (sd[code]['c'][didx[code][day]] if day in didx[code] else p['entry'])
+                for code, p in pos.items()
             )
             position_limit = max(max_positions, int(marked_equity // per_stock))
             for code in list(pending_buys):
@@ -331,21 +332,17 @@ def run_backtest_deep_recovery(
 
         # 최종 청산
         final_val = cash
+        last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in pos.items():
-            last_c = None
-            for d in reversed(sim_dates):
-                i = didx[code].get(d)
-                if i is not None and sd[code]['c'][i] > 0:
-                    last_c = sd[code]['c'][i]; break
-            if last_c:
-                pnl, net_pct = _net_profit(p['entry'], last_c, p['shares'], p.get('mkt_cap_억', 300))
-                final_val += p['shares'] * p['entry'] + pnl
-                trades.append({
-                    'code': code, 'buy_date': p['buy_date'], 'sell_date': sim_dates[-1],
-                    'entry': p['entry'], 'exit': last_c,
-                    'pnl_pct': net_pct, 'reason': 'final',
-                    'pnl': round(pnl, 0),
-                })
+            last_c, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]['c'])
+            pnl, net_pct = _net_profit(p['entry'], last_c, p['shares'], p.get('mkt_cap_억', 300))
+            final_val += p['shares'] * p['entry'] + pnl
+            trades.append({
+                'code': code, 'buy_date': p['buy_date'], 'sell_date': last_day,
+                'entry': p['entry'], 'exit': last_c,
+                'pnl_pct': net_pct, 'reason': final_reason,
+                'pnl': round(pnl, 0),
+            })
 
         init_cap = per_stock * max_positions
         total_ret = (final_val - init_cap) / init_cap * 100
@@ -381,7 +378,6 @@ def run_backtest_deep_recovery(
         except Exception:
             pass
         raise
-
 
 
 

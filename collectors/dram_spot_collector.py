@@ -8,6 +8,7 @@ stock_dashboard quant catalog and Global Intelligence use the same source.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import re
 import sqlite3
@@ -16,9 +17,10 @@ from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 SOURCE_URL = "https://www.trendforce.com/price/dram/dram_spot"
 
 
@@ -107,7 +109,7 @@ def collect_dram_spot() -> int:
         _log("warning", 0, "TrendForce DRAM spot table returned no rows")
         return 0
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executemany(
         """
@@ -231,7 +233,7 @@ def collect_dram_spot() -> int:
 
 def _log(status: str, records: int, message: str = "") -> None:
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.execute(
             """
             INSERT INTO global_macro_collection_log (source, status, records, message)

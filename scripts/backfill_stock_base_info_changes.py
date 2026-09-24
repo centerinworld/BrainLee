@@ -2,6 +2,7 @@
 """Seed stock_base_info_changes from normalized listed-share history."""
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import sqlite3
 from pathlib import Path
 
@@ -16,7 +17,7 @@ def ensure_column(conn: sqlite3.Connection, name: str, ddl: str) -> None:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     ensure_column(conn, "source", "TEXT")
     ensure_column(conn, "confidence", "REAL")
     ensure_column(conn, "evidence_report_name", "TEXT")

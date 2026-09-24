@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -44,7 +45,7 @@ def rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
 
 
 def build_report() -> dict:
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     try:
         summary = one(

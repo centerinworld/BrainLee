@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime, timedelta
@@ -13,7 +14,7 @@ OUT = ROOT / "research_outputs" / "integrity_repair_20260727"
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=120000")
     return conn

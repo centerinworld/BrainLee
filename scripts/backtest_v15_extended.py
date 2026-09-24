@@ -13,6 +13,7 @@ V15 로직 변경사항:
 """
 from __future__ import annotations
 import json, sqlite3
+from db_compat import connect_primary_db
 from collections import defaultdict, deque
 from datetime import date, timedelta
 from typing import Any
@@ -72,7 +73,7 @@ def resolve_source_key(day: date) -> tuple[str, str]:
 
 def load_all_trades(db_path: str) -> dict[tuple[str, str], dict[str, list[dict]]]:
     """AUTO runs (5개 원본 윈도우) + AUDIT/rotation (6번째 윈도우) 로드."""
-    conn = sqlite3.connect(db_path)
+    conn = connect_primary_db() if db_path == DB else sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
     mat: dict[tuple, dict] = defaultdict(dict)

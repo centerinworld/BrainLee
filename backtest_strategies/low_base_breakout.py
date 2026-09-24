@@ -19,6 +19,7 @@ from backtest_common import (
     _chart_bottom_confluence,
     _chart_prep,
     _chart_top_confluence,
+    _final_liquidation_quote_for_code,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
@@ -193,8 +194,8 @@ def run_backtest_low_base_breakout(
                 del pending_sells[code]
 
             marked_equity = cash + sum(
-                p['qty'] * sd[code]['c'][didx[code][day]]
-                for code, p in pos.items() if day in didx[code]
+                p['qty'] * (sd[code]['c'][didx[code][day]] if day in didx[code] else p['entry'])
+                for code, p in pos.items()
             )
             position_limit = max(max_positions, int(marked_equity // per_stock))
             for code in list(pending_buys):
@@ -307,13 +308,11 @@ def run_backtest_low_base_breakout(
         # 미청산 포지션 강제 청산
         last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in list(pos.items()):
-            i = didx[code].get(last_day)
-            curr = sd[code]['c'][i] if i is not None else p['entry']
-            if curr <= 0: curr = p['entry']
+            curr, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]['c'])
             pnl, net_pct = _net_profit(p['entry'], curr, p['qty'], p['mkt_cap_억'])
             cash += p['invested'] + pnl
             trades.append({'code': code, 'entry': p['entry'], 'exit': curr,
-                           'ret': net_pct, 'reason': 'force_close',
+                           'ret': net_pct, 'reason': final_reason,
                            'hold': p['hold'], 'pnl': pnl,
                            'entry_date': p['entry_date'], 'exit_date': last_day})
             pos.pop(code, None)
@@ -373,6 +372,5 @@ def run_backtest_low_base_breakout(
 
 
 # ─── V-TURNAROUND 흑자전환 특화 전략 ────────────────────────────────────────
-
 
 

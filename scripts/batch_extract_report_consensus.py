@@ -7,6 +7,7 @@ page through /api/reports/extracts/{stock_code}.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import os
@@ -42,7 +43,7 @@ def load_dotenv(path: Path) -> None:
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 

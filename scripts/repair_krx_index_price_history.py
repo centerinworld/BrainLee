@@ -10,6 +10,7 @@ table, then upserts official KRX OHLCV values.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 import sys
@@ -121,7 +122,7 @@ def main() -> None:
     parser.add_argument("--sleep", type=float, default=0.08)
     args = parser.parse_args()
 
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     backup_table = backup_existing(conn, args.start, args.end)
 
     saved = 0

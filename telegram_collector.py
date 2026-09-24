@@ -25,6 +25,7 @@ telegram_collector.py — 텔레그램 채널 보고서 자동 수집
   python3 telegram_collector.py --channel @채널명
 """
 
+from db_compat import connect_primary_db
 import sys, os, asyncio, sqlite3, logging, logging.handlers, argparse, re, time, unicodedata
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -169,14 +170,14 @@ def _load_stock_name_candidates(conn) -> list[tuple[str, str, str]]:
             SELECT stock_code, stock_name, market
             FROM stock_universe
             WHERE stock_code IS NOT NULL AND stock_name IS NOT NULL
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
               AND market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
               AND COALESCE(stock_type, '보통주')='보통주'
             UNION
             SELECT stock_code, stock_name, market
             FROM stock_meta
             WHERE stock_code IS NOT NULL AND stock_name IS NOT NULL
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
               AND UPPER(COALESCE(market, '')) IN ('KOSPI', 'KOSDAQ')
         )
         SELECT stock_code, stock_name, MAX(market)
@@ -554,7 +555,7 @@ async def run_collect(channels: list, limit: int = 500, since_days: int = None):
     if any(ch.get("entity_hint") for ch in channels):
         await client.get_dialogs()
 
-    conn = sqlite3.connect(str(DB_PATH), timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA busy_timeout=120000")
     total = 0
     for ch in channels:
@@ -612,7 +613,7 @@ def main():
     if args.setup_cron:
         setup_cron(); return
 
-    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA busy_timeout=30000")
     init_db(conn)
 

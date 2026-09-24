@@ -9,7 +9,9 @@ from typing import Dict, Optional
 
 from backtest_common import (
     DB_PATH,
+    _final_liquidation_quote_for_code,
     _net_profit,
+    _max_drawdown_pct,
     _record_run_spec,
     _register_execution_artifacts,
     init_backtest_db,
@@ -32,6 +34,7 @@ def run_backtest_magic_formula(
     cooldown_days: int = 63,
     run_name: Optional[str] = None,
     run_id: Optional[str] = None,
+    data_asof_ts: Optional[str] = None,
 ) -> str:
     """Buy high earnings-yield/high capital-return stocks at the next open.
 
@@ -42,6 +45,7 @@ def run_backtest_magic_formula(
     annual statements whose ``avail_date`` is already known on that date.
     """
     init_backtest_db()
+    effective_data_asof_ts = data_asof_ts or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     run_name = run_name or f"V-MAGIC-FORMULA {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
     _record_run_spec(
@@ -61,6 +65,7 @@ def run_backtest_magic_formula(
             "cooldown_days": cooldown_days,
             "start": start_date,
             "end": end_date,
+            "data_asof_ts": effective_data_asof_ts,
         },
         signal_timing="close_D",
         execution_timing="next_open",
@@ -96,10 +101,11 @@ def run_backtest_magic_formula(
             LEFT JOIN fin_disclosure_dates d
               ON d.stock_code=f.stock_code AND d.year=f.year
              AND d.quarter=4 AND d.is_annual=1
-            WHERE f.is_annual=1 AND f.year BETWEEN 2016 AND 2025
+            WHERE f.is_annual=1 AND f.year BETWEEN 2016 AND 2025 AND f.updated_at<=?
             ORDER BY f.stock_code, f.year,
                      CASE f.report_type WHEN 'CFS' THEN 0 ELSE 1 END
-            """
+            """,
+            (effective_data_asof_ts,),
         ).fetchall()
         annual_by_code: Dict[str, list] = defaultdict(list)
         seen = set()
@@ -295,6 +301,7 @@ def run_backtest_magic_formula(
         pending_buys = []
         pending_sells: Dict[str, str] = {}
         last_exit_index: Dict[str, int] = {}
+        equity_curve = []
 
         for day_index, day in enumerate(market_dates):
             for code, reason in list(pending_sells.items()):
@@ -395,11 +402,21 @@ def run_backtest_magic_formula(
                     for code in candidate_pool.get(day, [])
                     if code not in positions and code not in pending_sells
                 ]
+            equity_curve.append(
+                {
+                    "date": day,
+                    "equity": round(cash + sum(
+                        position["shares"] * (
+                            sd[code]["c"][didx[code][day]] if day in didx[code] else position["entry"]
+                        )
+                        for code, position in positions.items()
+                    )),
+                }
+            )
 
         last_day = market_dates[-1] if market_dates else end_date
         for code, position in list(positions.items()):
-            i = didx[code].get(last_day)
-            close = sd[code]["c"][i] if i is not None else position["entry"]
+            close, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]["c"])
             pnl, net_pct = _net_profit(
                 position["entry"], close, position["shares"], position["mktcap_억"]
             )
@@ -413,7 +430,7 @@ def run_backtest_magic_formula(
                     "exit": close,
                     "pnl_pct": net_pct,
                     "pnl": round(pnl),
-                    "reason": "final",
+                    "reason": final_reason,
                     "signal_year": position["signal_year"],
                     "earnings_yield_pct": round(position["earnings_yield"] * 100, 2),
                     "capital_return_pct": round(position["capital_return"] * 100, 2),
@@ -422,6 +439,7 @@ def run_backtest_magic_formula(
             )
 
         total_return = (cash - total_capital) / total_capital * 100
+        max_drawdown = _max_drawdown_pct([point["equity"] for point in equity_curve])
         win_rate = (
             sum(1 for trade in trades if trade["pnl_pct"] > 0) / len(trades) * 100
             if trades
@@ -430,14 +448,15 @@ def run_backtest_magic_formula(
         conn.execute(
             """
             UPDATE backtest_runs
-            SET status='done',total_return_pct=?,total_trades=?,win_rate=?,trades_json=?
+            SET status='done',total_return_pct=?,total_trades=?,win_rate=?,max_drawdown_pct=?,trades_json=?
             WHERE run_id=?
             """,
             (
                 round(total_return, 2),
                 len(trades),
                 round(win_rate, 1),
-                json.dumps({"trades": trades}, ensure_ascii=False),
+                max_drawdown,
+                json.dumps({"trades": trades, "equity_curve": equity_curve}, ensure_ascii=False),
                 run_id,
             ),
         )

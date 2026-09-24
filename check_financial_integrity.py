@@ -16,6 +16,7 @@ check_financial_integrity.py — 재무제표/현금흐름표 무결점 자동 �
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import os
@@ -67,7 +68,7 @@ FNGUIDE_CF_A  = "https://comp.fnguide.com/SVO2/ASP/SVD_Finance.asp?pGB=1&gicode=
 
 # ─── DB 유틸 ──────────────────────────────────────────────────────────────────
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=60000")

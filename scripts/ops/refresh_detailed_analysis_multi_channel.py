@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import os
@@ -22,7 +23,7 @@ SECTION_HEADER = "## 타채널 맥락 요약 (GPT mini)"
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=120000")
     return conn

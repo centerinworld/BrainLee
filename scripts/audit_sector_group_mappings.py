@@ -8,6 +8,7 @@ feeds sector signals or backtests.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -62,7 +63,7 @@ def main() -> None:
         sys.path.insert(0, str(ROOT))
     from routes.sector_rotation import SECTOR_GROUPS
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     snapshot = _latest_snapshot(conn)
     if not snapshot:
         raise SystemExit("No StockEasy sector snapshot found")

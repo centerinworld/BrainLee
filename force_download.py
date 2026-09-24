@@ -1,10 +1,11 @@
+from db_compat import connect_primary_db
 import sys
 import sqlite3
 from datetime import datetime
 from kis_client import KISClient
 
 kis = KISClient()
-db = sqlite3.connect("stock.db")
+db = connect_primary_db()
 db.row_factory = sqlite3.Row
 
 # Get top 300 stocks by market cap

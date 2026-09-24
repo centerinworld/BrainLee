@@ -11,6 +11,7 @@ This repair is intentionally narrow:
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -215,7 +216,7 @@ def fix_cashflow(c: sqlite3.Connection, run_id: str) -> tuple[int, str]:
 
 def main() -> int:
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     try:
         ensure_log(conn)
         create_temp_scope(conn)

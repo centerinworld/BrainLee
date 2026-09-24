@@ -2,6 +2,7 @@
 """Link indicator changes to stocks using verified business exposure."""
 from __future__ import annotations
 import json,sqlite3
+from db_compat import connect_primary_db
 from datetime import datetime
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];DB=ROOT/'stock.db'
@@ -14,7 +15,7 @@ DDL='''CREATE TABLE IF NOT EXISTS explainable_stock_signals(
  PRIMARY KEY(stock_code,indicator_key,period));
 CREATE INDEX IF NOT EXISTS idx_ess_stock_period ON explainable_stock_signals(stock_code,period,signal_strength);'''
 def main():
- c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;c.executescript(DDL);now=datetime.now().isoformat(timespec='seconds')
+ c=connect_primary_db();c.row_factory=sqlite3.Row;c.executescript(DDL);now=datetime.now().isoformat(timespec='seconds')
  rows=c.execute('''WITH ranked AS (SELECT indicator_key,period,value,quality,ROW_NUMBER() OVER(PARTITION BY indicator_key ORDER BY period DESC,id DESC) rn FROM quant_major_indicator_series WHERE value IS NOT NULL),
  latest AS (SELECT a.indicator_key,a.period,a.value latest_value,b.value previous_value,a.quality FROM ranked a LEFT JOIN ranked b ON b.indicator_key=a.indicator_key AND b.rn=2 WHERE a.rn=1)
  SELECT m.*,l.period,l.latest_value,l.previous_value,l.quality,

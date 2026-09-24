@@ -7,6 +7,7 @@ collect_today.py — 오늘 가격 데이터 즉시 수집 (KRX + Yahoo Finance)
 
 용도: 서버 다운으로 KRX 18:00 잡이 누락됐을 때 수동 실행
 """
+from db_compat import connect_primary_db
 import sys, os, sqlite3, time, logging
 from datetime import date, datetime, timedelta
 
@@ -22,7 +23,7 @@ def wait_db(max_wait=30):
     """DB 락 해제 대기 (최대 max_wait초)"""
     for attempt in range(max_wait):
         try:
-            conn = sqlite3.connect(DB_PATH, timeout=3)
+            conn = connect_primary_db(timeout=3)
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("ROLLBACK")
             conn.close()
@@ -37,7 +38,7 @@ def wait_db(max_wait=30):
     return False
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=120000")
     return conn
@@ -101,7 +102,7 @@ def collect_krx_today():
                 DELETE FROM price_history
                 WHERE date = '{today_str}'
                   AND length(stock_code) = 6
-                  AND stock_code GLOB '[0-9]*'
+                  AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND stock_code IN (
                     SELECT p6.stock_code
                     FROM price_history p6
@@ -301,7 +302,7 @@ def print_summary():
             print(f"  {mark} {name:<10} {val}")
 
         kr = conn.execute(
-            f"SELECT COUNT(*) FROM price_history WHERE date='{today}' AND length(stock_code)=6 AND stock_code GLOB '[0-9]*'"
+            f"SELECT COUNT(*) FROM price_history WHERE date='{today}' AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
         ).fetchone()[0]
         print(f"\n  한국종목 오늘({today}): {kr:,}개")
         if kr >= 1000:

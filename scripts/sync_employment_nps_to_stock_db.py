@@ -15,6 +15,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from db_compat import connect_primary_db
+
 
 ROOT = Path(__file__).resolve().parents[1]
 STOCK_DB = ROOT / "stock.db"
@@ -22,64 +24,62 @@ EMP_DB = ROOT / "employment_monitor" / "employment.db"
 
 
 def sync(limit: int = 0) -> dict[str, int | str]:
-    stock = sqlite3.connect(STOCK_DB, timeout=60)
-    stock.row_factory = sqlite3.Row
-    stock.execute("PRAGMA busy_timeout=60000")
-    stock.execute(f"ATTACH DATABASE '{EMP_DB}' AS empdb")
-
+    # employment.db is intentionally an independent SQLite store.  The primary
+    # stock database can be PostgreSQL, where SQLite ATTACH is unavailable.
+    source = sqlite3.connect(EMP_DB)
+    source.row_factory = sqlite3.Row
     query = """
         SELECT
-            n.data_ym AS ym,
-            n.stock_code,
-            COALESCE(su.stock_name, n.stock_code) AS stock_name,
-            n.new_hires,
-            n.terminations,
-            n.net_change,
-            n.wkpl_count,
-            n.fetched_at
-        FROM empdb.nps_monthly n
-        LEFT JOIN stock_universe su ON su.stock_code = n.stock_code
-        WHERE n.data_ym IS NOT NULL
-          AND n.stock_code IS NOT NULL
-        ORDER BY n.data_ym, n.stock_code
+            data_ym AS ym, stock_code, new_hires, terminations,
+            net_change, wkpl_count, fetched_at
+        FROM nps_monthly
+        WHERE data_ym IS NOT NULL AND stock_code IS NOT NULL
+        ORDER BY data_ym, stock_code
     """
     if limit > 0:
         query += f" LIMIT {int(limit)}"
+    rows = source.execute(query).fetchall()
+    source.close()
 
-    rows = stock.execute(query).fetchall()
-    inserted = 0
-    for r in rows:
-        raw = {
-            "source": "employment_db.nps_monthly",
-            "net_change": r["net_change"],
-            "wkpl_count": r["wkpl_count"],
-            "source_fetched_at": r["fetched_at"],
-            "synced_at": datetime.now().isoformat(timespec="seconds"),
+    stock = connect_primary_db()
+    try:
+        names = {
+            row[0]: row[1]
+            for row in stock.execute(
+                "SELECT stock_code, stock_name FROM stock_universe"
+            ).fetchall()
         }
-        stock.execute(
-            """
-            INSERT OR REPLACE INTO nps_workplace_monthly
-            (ym, stock_code, stock_name, seq, wkpl_nm, bzowr_rgst_no,
-             nw_acqzr_cnt, lss_jnngp_cnt, raw_base_json, fetched_at)
-            VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                r["ym"],
-                r["stock_code"],
-                r["stock_name"],
-                r["stock_name"],
-                int(r["new_hires"] or 0),
-                int(r["terminations"] or 0),
-                json.dumps(raw, ensure_ascii=False),
-            ),
-        )
-        inserted += 1
+        inserted = 0
+        for r in rows:
+            stock_name = names.get(r["stock_code"], r["stock_code"])
+            raw = {
+                "source": "employment_db.nps_monthly",
+                "net_change": r["net_change"],
+                "wkpl_count": r["wkpl_count"],
+                "source_fetched_at": r["fetched_at"],
+                "synced_at": datetime.now().isoformat(timespec="seconds"),
+            }
+            stock.execute(
+                """
+                INSERT OR REPLACE INTO nps_workplace_monthly
+                (ym, stock_code, stock_name, seq, wkpl_nm, bzowr_rgst_no,
+                 nw_acqzr_cnt, lss_jnngp_cnt, raw_base_json, fetched_at)
+                VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    r["ym"], r["stock_code"], stock_name, stock_name,
+                    int(r["new_hires"] or 0), int(r["terminations"] or 0),
+                    json.dumps(raw, ensure_ascii=False),
+                ),
+            )
+            inserted += 1
 
-    stock.commit()
-    total = stock.execute("SELECT COUNT(*) FROM nps_workplace_monthly").fetchone()[0]
-    stocks = stock.execute("SELECT COUNT(DISTINCT stock_code) FROM nps_workplace_monthly").fetchone()[0]
-    min_ym, max_ym = stock.execute("SELECT MIN(ym), MAX(ym) FROM nps_workplace_monthly").fetchone()
-    stock.close()
+        stock.commit()
+        total = stock.execute("SELECT COUNT(*) FROM nps_workplace_monthly").fetchone()[0]
+        stocks = stock.execute("SELECT COUNT(DISTINCT stock_code) FROM nps_workplace_monthly").fetchone()[0]
+        min_ym, max_ym = stock.execute("SELECT MIN(ym), MAX(ym) FROM nps_workplace_monthly").fetchone()
+    finally:
+        stock.close()
     return {
         "source_rows": len(rows),
         "upserted": inserted,

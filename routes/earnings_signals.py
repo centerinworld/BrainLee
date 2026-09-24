@@ -5,6 +5,7 @@ routes/earnings_signals.py  →  /api/earnings-signals/*
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
@@ -12,7 +13,6 @@ from typing import Optional
 from fastapi import APIRouter, Query
 
 router = APIRouter()
-DB_PATH = "stock.db"
 
 SIGNAL_META = {
     "TTM_OP_INFLECT":  {"label": "TTM 영업이익 흑자전환", "emoji": "🔄", "avg_ratio": 6.14, "priority": "P1", "color": "#34d399"},
@@ -24,7 +24,7 @@ SIGNAL_META = {
 
 
 def _conn():
-    c = sqlite3.connect(DB_PATH, timeout=30)
+    c = connect_primary_db(timeout=30)
     c.row_factory = sqlite3.Row
     return c
 

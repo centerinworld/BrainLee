@@ -13,6 +13,7 @@ BLD: MDCSTAT05301 = 프로그램매매 추이(코스피)
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import logging
@@ -51,7 +52,7 @@ KRX_DATA_PASS = _ENV.get("KRX_DATA_PASS", "")
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     return conn
 

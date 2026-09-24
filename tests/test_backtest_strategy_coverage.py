@@ -9,7 +9,7 @@ from routes.backtest import ALL_STRATEGIES_EX, STRATEGY_RUN_FUNCS
 class BacktestStrategyCoverageTest(unittest.TestCase):
     def test_all_strategy_center_strategies_have_rerun_functions(self):
         self.assertEqual(set(ALL_STRATEGIES_EX), set(STRATEGY_RUN_FUNCS))
-        self.assertEqual(len(ALL_STRATEGIES_EX), 26)
+        self.assertEqual(len(ALL_STRATEGIES_EX), 27)  # 2026-09-19: +minervini
         for function_name in STRATEGY_RUN_FUNCS.values():
             self.assertTrue(callable(getattr(backtest, function_name, None)), function_name)
 

@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import sqlite3
@@ -52,7 +53,7 @@ def _save_state(state: dict) -> None:
 
 
 def missing_dates(start: str, end: str, min_rows: int) -> list[str]:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     try:
         rows = conn.execute(
             """

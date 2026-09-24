@@ -13,6 +13,7 @@ portfolio simulations.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import bisect
 import csv
 import json
@@ -161,7 +162,7 @@ def monthly_top(enriched: list[dict], score_fn, top_n: int = 20, predicate=None)
 
 
 def main() -> int:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     snapshots = [dict(r) for r in conn.execute("""
         SELECT *

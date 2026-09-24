@@ -12,6 +12,7 @@ data_integrity_check.py — 4중 검증 체계가 놓치는 영역 전수 검사
   I7. EPS 일관성   EPS vs 순이익/주식수 50%+ 괴리
   I8. 중복 연간행   동일 종목·연도·CFS 연간 행 2개 이상
 """
+from db_compat import connect_primary_db
 import sqlite3, json, os, sys
 from datetime import datetime
 
@@ -410,7 +411,7 @@ def main():
     _parser.add_argument("--out-dir", default=f"{ROOT}/scratch/qa_logs")
     _args = _parser.parse_args()
 
-    conn = sqlite3.connect(DB, timeout=300)
+    conn = connect_primary_db(timeout=300)
     conn.execute("PRAGMA busy_timeout=300000")
     conn.row_factory = sqlite3.Row
 

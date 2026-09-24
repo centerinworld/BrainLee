@@ -1,6 +1,7 @@
+from db_compat import connect_primary_db
 import sqlite3
 
-db = sqlite3.connect("stock.db")
+db = connect_primary_db()
 
 # (Code, 04-09 Price, 04-10 Price)
 prices = [

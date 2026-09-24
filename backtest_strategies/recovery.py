@@ -22,6 +22,7 @@ from backtest_common import (
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
+    _final_liquidation_quote_for_code,
     init_backtest_db,
     logger,
     sqlite3,
@@ -156,7 +157,7 @@ def run_backtest_recovery(
               AND su.market_cap >= ?
               AND su.market IN ('KOSPI','KOSDAQ')
               AND LENGTH(p.stock_code)=6
-              AND p.stock_code GLOB '[0-9]*'
+              AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         """, (start_date, end_date, _rec_mktcap_min)).fetchall()
 
         # 2026-08-12: 발행주식수를 stock_universe.shares_issued(현재값 고정)로 쓰던
@@ -678,14 +679,16 @@ def run_backtest_recovery(
 
         # ── 최종 청산 ──
         sell_trades = [t for t in trades if 'sell_date' in t]
+        last_date = sim_dates[-1] if sim_dates else end_date
         for code, p in pos.items():
-            last_date = end_date
-            last_price = sd[code]['c'][-1] if sd[code]['c'] else p['entry']
+            idx_map = {day: idx for idx, day in enumerate(sd.get(code, {}).get('d', []))}
+            last_price, final_reason = _final_liquidation_quote_for_code(conn, code, 
+                last_date, idx_map, sd.get(code, {}).get('c', []))
             pnl, net_pct = _net_profit(p['entry'], last_price, p['shares'], p.get('mkt_cap_억', 300))
             sell_trades.append({
                 'code': code, 'buy_date': p['buy_date'], 'sell_date': last_date,
                 'entry': p['entry'], 'exit': last_price,
-                'pnl_pct': net_pct, 'reason': 'end',
+                'pnl_pct': net_pct, 'reason': final_reason,
                 'pnl': round(pnl, 0),
             })
             cash += p['shares'] * p['entry'] + pnl
@@ -730,6 +733,5 @@ def run_backtest_recovery(
 
 
 # ─── V13 고수익 집중 백테스트 ──────────────────────────────────────────────
-
 
 

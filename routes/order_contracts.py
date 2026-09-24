@@ -22,6 +22,7 @@ DART에는 "수주잔고" 표준 필드가 없다. 대신 기업이 수시로 �
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import asyncio
 import logging
 import sqlite3 as _sl
@@ -72,7 +73,7 @@ _CORRECTION_COLUMNS = {
 
 
 def _db():
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = _sl.Row
     conn.execute(_CREATE_TABLE)
     conn.execute(_CREATE_INDEX)
@@ -118,17 +119,41 @@ def _latest_order_contract_date(conn) -> date | None:
         return None
 
 
-def _find_original_order_contract(conn, stock_code: str, corrects_disclosed_at: str) -> str | None:
-    """정정공시가 가리키는 원 공시(rcept_no)를 stock_code+공시일로 찾는다."""
-    if not stock_code or not corrects_disclosed_at:
+def _find_original_order_contract(
+    conn, stock_code: str, corrects_disclosed_at: str,
+    correction_amount_before: float | None = None,
+    fallback_amount: float | None = None,
+) -> str | None:
+    """정정공시가 가리키는 원 공시(rcept_no)를 찾는다.
+    1순위 stock_code+공시일, 2순위 "정정전" 계약금액 정확일치, 3순위(최후 폴백) 이 문서의
+    최종 채택 계약금액(계약금액 자체는 안 바뀐 정정 — 예: 계약기간만 변경 — 인 경우 대비).
+    2026-09 실측: 일부 DART 정정신고서가 정정관련 공시서류제출일에 자기 자신의
+    제출일을 잘못 기재하는 사례가 실재해(collectors/dart_contract_collector.py의
+    _find_original_contract 참조) 날짜매칭만으로는 부족하다."""
+    if not stock_code:
         return None
-    row = conn.execute(
-        """SELECT rcept_no FROM order_contracts
-           WHERE stock_code=? AND COALESCE(is_correction,0)=0 AND rcept_dt=?
-           ORDER BY rcept_no DESC LIMIT 1""",
-        (stock_code, corrects_disclosed_at),
-    ).fetchone()
-    return row[0] if row else None
+    if corrects_disclosed_at:
+        row = conn.execute(
+            """SELECT rcept_no FROM order_contracts
+               WHERE stock_code=? AND COALESCE(is_correction,0)=0 AND rcept_dt=?
+               ORDER BY rcept_no DESC LIMIT 1""",
+            (stock_code, corrects_disclosed_at),
+        ).fetchone()
+        if row:
+            return row[0]
+    for amt in (correction_amount_before, fallback_amount):
+        if not amt:
+            continue
+        row = conn.execute(
+            """SELECT rcept_no FROM order_contracts
+               WHERE stock_code=? AND COALESCE(is_correction,0)=0
+                 AND contract_amount IS NOT NULL AND ABS(contract_amount - ?) < 1
+               ORDER BY rcept_no DESC LIMIT 1""",
+            (stock_code, amt),
+        ).fetchone()
+        if row:
+            return row[0]
+    return None
 
 
 async def _save_disclosure(conn, dart, item: dict) -> bool:
@@ -150,20 +175,33 @@ async def _save_disclosure(conn, dart, item: dict) -> bool:
     corrects_rcept_no = None
     if parsed.get("is_correction"):
         corrects_rcept_no = _find_original_order_contract(
-            conn, stock_code, parsed.get("corrects_disclosed_at") or ""
+            conn, stock_code, parsed.get("corrects_disclosed_at") or "",
+            parsed.get("correction_amount_before"),
+            parsed.get("contract_amount"),
         )
         if corrects_rcept_no:
-            conn.execute(
-                """UPDATE order_contracts SET
-                       contract_amount=?, revenue_ratio_pct=?, recent_revenue=?,
-                       contract_end=?, corrected_by_rcept_no=?, updated_at=CURRENT_TIMESTAMP
-                   WHERE rcept_no=?""",
-                (
-                    parsed.get("contract_amount"), parsed.get("revenue_ratio_pct"),
-                    parsed.get("recent_revenue"), parsed.get("contract_end"),
-                    rcept_no, corrects_rcept_no,
-                ),
-            )
+            # 2026-09 수정: 같은 원 공시에 정정이 같은 날 2건 이상 들어올 수 있어(336260
+            # "공시유보 해제" 사례 실측 — 서로 다른 세부계약이 각각 별도 정정으로 공개됨),
+            # 처리 순서가 DART 제출 순서와 다르면 무조건 덮어쓰기가 더 이른 정정으로
+            # 최신 상태를 되돌릴 수 있다 — rcept_no가 더 큰(=더 늦게 제출된) 정정이 이미
+            # 적용돼 있으면 이번 갱신을 건너뛴다.
+            prev = conn.execute(
+                "SELECT corrected_by_rcept_no FROM order_contracts WHERE rcept_no=?",
+                (corrects_rcept_no,),
+            ).fetchone()
+            already_corrected_by = prev[0] if prev else None
+            if not (already_corrected_by and already_corrected_by >= rcept_no):
+                conn.execute(
+                    """UPDATE order_contracts SET
+                           contract_amount=?, revenue_ratio_pct=?, recent_revenue=?,
+                           contract_end=?, corrected_by_rcept_no=?, updated_at=CURRENT_TIMESTAMP
+                       WHERE rcept_no=?""",
+                    (
+                        parsed.get("contract_amount"), parsed.get("revenue_ratio_pct"),
+                        parsed.get("recent_revenue"), parsed.get("contract_end"),
+                        rcept_no, corrects_rcept_no,
+                    ),
+                )
 
     conn.execute(
         """INSERT OR IGNORE INTO order_contracts

@@ -27,7 +27,8 @@ import ast
 import re
 from pathlib import Path
 
-BACKTEST_PY = Path(__file__).resolve().parents[1] / "backtest.py"
+ROOT = Path(__file__).resolve().parents[1]
+BACKTEST_PATHS = [ROOT / "backtest.py", *sorted((ROOT / "backtest_strategies").glob("*.py"))]
 
 MKTCAP_SQL_RE = re.compile(
     r"(su\.market_cap|market_cap\s+FROM\s+stock_universe|stock_universe\.market_cap)",
@@ -51,7 +52,7 @@ def _function_source_lines(node: ast.FunctionDef, src_lines: list[str]) -> list[
     return src_lines[node.lineno - 1: (node.end_lineno or node.lineno)]
 
 
-def audit(path: Path = BACKTEST_PY) -> list[dict]:
+def audit(path: Path) -> list[dict]:
     src = path.read_text()
     src_lines = src.splitlines()
     tree = ast.parse(src)
@@ -110,6 +111,7 @@ def audit(path: Path = BACKTEST_PY) -> list[dict]:
             reasons.append("발행주식수를 stock_universe.shares_issued(현재값 고정)로 조회 — security_share_history 기반 as-of 발행주식수가 아님(조잡한 근사)")
 
         findings.append({
+            "file": str(path.relative_to(ROOT)),
             "function": node.name,
             "lineno": node.lineno,
             "has_asof_param": has_asof_param,
@@ -123,24 +125,33 @@ def audit(path: Path = BACKTEST_PY) -> list[dict]:
 
 
 def main() -> None:
-    findings = audit()
+    findings = []
+    parse_errors = []
+    for path in BACKTEST_PATHS:
+        try:
+            findings.extend(audit(path))
+        except SyntaxError as exc:
+            parse_errors.append({"file": str(path.relative_to(ROOT)), "error": str(exc)})
     warns = [f for f in findings if f["severity"] == "warn"]
     infos = [f for f in findings if f["severity"] == "info"]
-    print(f"=== market_cap 룩어헤드 감사 결과 ({BACKTEST_PY.name}) ===")
+    print(f"=== market_cap 룩어헤드 감사 결과 ({len(BACKTEST_PATHS)} files) ===")
     print(f"시총 필터를 쓰는 run_backtest_* 함수: {len(findings)}개  (경고 {len(warns)}건 / 참고 {len(infos)}건)\n")
     for group_name, group in (("⚠️  경고(직접 확인 필요)", warns), ("ℹ️  참고(기존에 검증/기각된 것으로 추정)", infos)):
         if not group:
             continue
         print(f"--- {group_name} ---")
         for f in group:
-            print(f"  {f['function']} (L{f['lineno']}): "
+            print(f"  {f['file']}::{f['function']} (L{f['lineno']}): "
                   f"asof_param={f['has_asof_param']} default={f['asof_default']} "
                   f"asof_ref={f['has_asof_safe_ref']} mktcap참조={f['mktcap_reference_count']}건")
             for r in f["reasons"]:
                 print(f"    -> {r}")
         print()
-    if warns:
+    if parse_errors:
+        print(f"ERROR: AST parse failures: {parse_errors}")
+    if warns or parse_errors:
         print(f"⚠️  {len(warns)}개 함수는 사람이 직접 코드를 열어 확인할 것을 권장합니다.")
+        raise SystemExit(1)
     else:
         print("✅ 경고 없음 — 시총 필터를 쓰는 함수는 전부 asof_mktcap 분기 처리가 확인됩니다.")
 

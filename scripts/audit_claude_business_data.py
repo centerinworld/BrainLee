@@ -10,6 +10,7 @@ Outputs JSON evidence for handoff documentation. This script is read-only.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from pathlib import Path
@@ -282,7 +283,7 @@ def audit_segment_revenue(con: sqlite3.Connection) -> dict:
 
 def main() -> None:
     OUT.parent.mkdir(exist_ok=True)
-    con = sqlite3.connect(DB)
+    con = connect_primary_db()
     con.row_factory = sqlite3.Row
     result = {
         "generated_at": pd.Timestamp.now(tz="Asia/Seoul").isoformat(),

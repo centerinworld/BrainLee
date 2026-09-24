@@ -10,6 +10,7 @@ migrate_insider.py — C안용 스키마 추가
     python3 migrate_insider.py
 """
 
+from db_compat import connect_primary_db
 import sqlite3
 from pathlib import Path
 
@@ -17,7 +18,7 @@ DB_PATH = Path(__file__).resolve().parent / "stock.db"
 
 
 def main():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cur = conn.cursor()
 
     # ── 1) 대량보유상황보고서 (5%+) ────────────────────────────

@@ -31,6 +31,13 @@ _KR_REMOVED = {
 }
 
 
+
+def _is_kr_exchange_only_closure(d: date) -> bool:
+    """Return closures specific to KRX rather than Korean public holidays."""
+    # The holidays package models statutory holidays, not KRX-specific closures.
+    return d.month == 12 and d.day == 31 and d.weekday() < 5
+
+
 @lru_cache(maxsize=16)
 def _get_holiday_set(market: Market, year: int) -> frozenset[date]:
     """연도별 휴장일 집합 (캐시됨)."""
@@ -62,6 +69,8 @@ def is_trading_day(d: date | None = None, market: Market = "KR") -> bool:
         d = date.today()
     if d.weekday() >= 5:          # 토=5, 일=6
         return False
+    if market == "KR" and _is_kr_exchange_only_closure(d):
+        return False
     return d not in _get_holiday_set(market, d.year)
 
 
@@ -84,6 +93,8 @@ def get_holiday_name(d: date, market: Market = "KR") -> str | None:
     """해당 날짜의 휴일 이름 반환. 거래일이면 None."""
     if d.weekday() >= 5:
         return "주말"
+    if market == "KR" and _is_kr_exchange_only_closure(d):
+        return "KRX 연말 휴장"
     if market == "KR":
         raw = _holidays.KR(years=d.year)
         if (d.month, d.day) in _KR_REMOVED:

@@ -11,6 +11,7 @@ be re-normalized later without re-downloading the source data.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import hashlib
 import json
@@ -532,7 +533,7 @@ def import_ui_crawl(args: argparse.Namespace) -> dict[str, int]:
 
     payload = json.loads(crawl_path.read_text(encoding="utf-8"))
     items = payload.get("items") or []
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     init_db(conn)
 
@@ -676,7 +677,7 @@ def load_catalog_seed(seed_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def seed_catalog(args: argparse.Namespace) -> dict[str, int]:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     init_db(conn)
 
@@ -774,7 +775,7 @@ def sync(args: argparse.Namespace) -> dict[str, int]:
             "Run with --init-only to create tables without downloading."
         )
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     init_db(conn)
     if args.init_only:

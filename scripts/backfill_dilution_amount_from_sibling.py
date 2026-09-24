@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import re
@@ -39,7 +40,7 @@ def _is_issuance_target(report_nm: str | None) -> bool:
 
 
 def backfill(window_days: int = 120, dry_run: bool = True) -> dict:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
 
     donors = conn.execute("""

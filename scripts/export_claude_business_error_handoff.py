@@ -8,6 +8,7 @@ to rediscover the failure modes.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import csv
 import json
 import re
@@ -76,7 +77,7 @@ def with_category(data: list[dict[str, Any]], category: str) -> list[dict[str, A
 
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    con = connect_primary_db()
     con.row_factory = sqlite3.Row
 
     summary: dict[str, Any] = {

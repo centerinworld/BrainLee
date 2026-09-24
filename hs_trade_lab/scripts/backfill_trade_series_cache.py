@@ -64,7 +64,7 @@ def main() -> None:
         '{{"source":"customs_monthly_record","endpoint":"itemtrade"}}' AS raw_json
     FROM customs_monthly_record
     WHERE endpoint='itemtrade'
-      AND hs_code GLOB '[0-9]*'
+      AND hs_code NOT GLOB '*[^0-9]*'
       AND LENGTH(hs_code)=10
       AND period_ym LIKE '____-__'
       {where_hs}

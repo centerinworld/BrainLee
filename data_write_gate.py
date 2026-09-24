@@ -111,6 +111,15 @@ def _log(conn: sqlite3.Connection, table_name: str, p: Dict[str, Any], level: st
 
 def gate_financial_row(conn: sqlite3.Connection, p: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
     q = dict(p)
+    canonical_fields = (
+        "revenue", "operating_profit", "net_income", "total_assets",
+        "total_liabilities", "total_equity", "capital_stock", "eps",
+        "bps", "dps", "roe",
+    )
+    if all(q.get(field) is None for field in canonical_fields):
+        _log(conn, "financial_data", q, "critical", "EMPTY_FINANCIAL_ROW", "표준화 가능한 재무 지표가 모두 누락")
+        return False, q, "EMPTY_FINANCIAL_ROW"
+
     revenue = q.get("revenue")
     operating_profit = q.get("operating_profit")
 

@@ -126,6 +126,13 @@ def yq_to_date_range(year: int, quarter: int) -> tuple[str, str]:
     return start, f"{year:04d}-{end_month:02d}-{end_day:02d}"
 
 
+def period_is_publicly_available(year: int, quarter: int, as_of: date | None = None) -> bool:
+    earliest_month = {1: 5, 2: 8, 3: 11, 4: 3}.get(quarter)
+    if earliest_month is None:
+        return False
+    return (as_of or date.today()) >= date(year + (quarter == 4), earliest_month, 1)
+
+
 def load_inventory(conn: sqlite3.Connection, since_year: int) -> dict:
     rows = conn.execute(
         """
@@ -151,6 +158,8 @@ def load_inventory(conn: sqlite3.Connection, since_year: int) -> dict:
     # 이후 재등장은 신호 산출에서 제외한다(근본 재수집 전까지의 방어 조치).
     by_stock: dict[str, list] = defaultdict(list)
     for r in rows:
+        if not period_is_publicly_available(int(r["fiscal_year"]), int(r["fiscal_quarter"])):
+            continue
         by_stock[r["stock_code"]].append(r)
 
     out = {}

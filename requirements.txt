@@ -13,12 +13,14 @@ requests
 
 # ── Data / Analysis ───────────────────────────────────────────
 pandas
+pyarrow  # marcap_client.py parquet reader (2026-09-21)
 pydantic
 
 # ── Korean Market Data ────────────────────────────────────────
 yfinance
 OpenDartReader
 pykrx
+finance-datareader  # installed 2026-09-20 (import name: FinanceDataReader), missing from this file until now
 
 # ── Config ────────────────────────────────────────────────────
 python-dotenv

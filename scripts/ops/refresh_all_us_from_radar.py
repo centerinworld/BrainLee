@@ -8,10 +8,11 @@ import sys
 
 sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 import main
+from db_compat import connect_primary_db
 
 
 def main_run():
-    conn = sqlite3.connect('/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db')
+    conn = connect_primary_db()
     try:
         rows = conn.execute(
             """

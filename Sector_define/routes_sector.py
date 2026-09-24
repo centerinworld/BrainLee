@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 import sqlite3
 import os
@@ -31,7 +32,7 @@ class PostDetail(BaseModel):
     stocks: List[StockInfo]
 
 def get_db_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     return conn
 

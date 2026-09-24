@@ -6,6 +6,7 @@ plus the five commodity sub-indices in global_macro_data.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import csv
 import html
 import io
@@ -13,8 +14,9 @@ import logging
 import re
 import sqlite3
 import urllib.request
+from pathlib import Path
 
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 PAGE_URL = "https://www.fao.org/worldfoodsituation/foodpricesindex/en/"
 logger = logging.getLogger(__name__)
 
@@ -70,7 +72,7 @@ def collect_fao_food_prices() -> int:
         if name in COLUMN_MAP
     }
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     total = 0
     last_values: dict[str, float] = {}
     for row in rows[header_idx + 1:]:

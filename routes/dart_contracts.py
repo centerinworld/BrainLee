@@ -9,6 +9,7 @@ routes/dart_contracts.py — DART 수주·공급계약 공시 API
   GET  /api/dart-contracts/stats        # 통계 요약
 """
 
+from db_compat import connect_primary_db
 import json
 import logging
 import sqlite3
@@ -24,7 +25,7 @@ DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 
 def _db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 

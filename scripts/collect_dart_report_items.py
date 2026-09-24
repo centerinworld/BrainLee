@@ -13,6 +13,7 @@ Examples:
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import io
 import json
@@ -652,7 +653,7 @@ def main() -> int:
     args = parse_args()
     client = DartClient()
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=60000")
     init_tables(conn)

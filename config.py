@@ -116,29 +116,59 @@ TELEGRAM_API_ID    = _require_env("TELEGRAM_API_ID")
 TELEGRAM_API_HASH  = _require_env("TELEGRAM_API_HASH")
 TELEGRAM_PHONE     = _require_env("TELEGRAM_PHONE")
 
-# ── AI / LLM ───────────────────────────────────────────────────
-AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek").lower()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# ── AI / LLM 3-Tier Cascading Engine ───────────────────────────
+AI_PROVIDER = os.getenv("AI_PROVIDER", "cascade").lower()
+
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_AI_STUDIO_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip("\"'")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip("\"'")
+
+GROK_API_KEY = (os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY") or "").strip("\"'")
+GROK_MODEL = os.getenv("GROK_MODEL", "grok-2-latest").strip("\"'")
+GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1").strip("\"'").rstrip("/")
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip("\"'")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash").strip("\"'")
-# Legacy callers still read this identifier, but no Gemini key or API is used.
-GEMINI_API_KEY = DEEPSEEK_API_KEY
-DEEPSEEK_FLASH_MODEL = os.getenv("DEEPSEEK_FLASH_MODEL", "deepseek-v4-flash").strip("\"'")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip("\"'")
+DEEPSEEK_FLASH_MODEL = os.getenv("DEEPSEEK_FLASH_MODEL", "deepseek-chat").strip("\"'")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip("\"'").rstrip("/")
 if DEEPSEEK_BASE_URL.endswith("/chat/completions"):
     DEEPSEEK_BASE_URL = DEEPSEEK_BASE_URL.rsplit("/chat/completions", 1)[0]
+
+OPENAI_API_KEY = (os.getenv("OpenAI_GPT_KEY") or os.getenv("OPENAI_API_KEY") or "").strip("\"'")
 
 
 def get_ai_client(timeout: float = 30.0, max_retries: int = 1):
     """
     Returns (client, default_model_name).
-    Uses DeepSeek if DEEPSEEK_API_KEY is available (or AI_PROVIDER == 'deepseek'),
-    otherwise falls back to OpenAI.
+    연쇄 우선순위 (Cascading Priority):
+    1차 (1순위): Google Gemini API (무료 Gemini 우선)
+    2차 (2순위): xAI Grok API (grok-2 / grok-beta)
+    3차 (3순위): DeepSeek API ($0.14/1M 토큰 백업)
+    4차 (4순위): OpenAI GPT-4o-mini
     """
     import openai
 
-    use_deepseek = (AI_PROVIDER == "deepseek" or not OPENAI_API_KEY) and bool(DEEPSEEK_API_KEY)
-    if use_deepseek:
+    # 1차: Google Gemini API
+    if GEMINI_API_KEY and not GEMINI_API_KEY.startswith("your_"):
+        client = openai.OpenAI(
+            api_key=GEMINI_API_KEY,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+        return client, GEMINI_MODEL
+
+    # 2차: xAI Grok API
+    if GROK_API_KEY and not GROK_API_KEY.startswith("your_"):
+        client = openai.OpenAI(
+            api_key=GROK_API_KEY,
+            base_url=GROK_BASE_URL,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+        return client, GROK_MODEL
+
+    # 3차: DeepSeek API
+    if DEEPSEEK_API_KEY and not DEEPSEEK_API_KEY.startswith("your_"):
         client = openai.OpenAI(
             api_key=DEEPSEEK_API_KEY,
             base_url=DEEPSEEK_BASE_URL,
@@ -146,15 +176,17 @@ def get_ai_client(timeout: float = 30.0, max_retries: int = 1):
             max_retries=max_retries,
         )
         return client, DEEPSEEK_MODEL
-    elif OPENAI_API_KEY:
+
+    # 4차: OpenAI API
+    if OPENAI_API_KEY and not OPENAI_API_KEY.startswith("your_"):
         client = openai.OpenAI(
             api_key=OPENAI_API_KEY,
             timeout=timeout,
             max_retries=max_retries,
         )
         return client, "gpt-4o-mini"
-    else:
-        return None, ""
+
+    return None, ""
 
 # ── 기타 ───────────────────────────────────────────────────────
 STOCKEASY_EMAIL    = os.getenv("STOCKEASY_EMAIL", "")

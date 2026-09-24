@@ -10,6 +10,7 @@ deleting each stock's older history.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 import time
@@ -133,7 +134,7 @@ def main() -> int:
     if not keys:
         raise SystemExit("No DART API key configured")
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute(DDL)
     conn.commit()
 

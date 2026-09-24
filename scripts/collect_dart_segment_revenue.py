@@ -11,6 +11,7 @@ DART 사업보고서 HTML에서 사업부문별 매출액을 추출해 segment_r
   B. [부문명|매출액|비중|...]   → rowspan 없는 단순형
   C. [부문명|매출액/영업이익/총자산|금액|...]  → 현대차 rowspan형 (매출액 행만 추출)
 """
+from db_compat import connect_primary_db
 import argparse, io, logging, os, re, sqlite3, time, warnings, zipfile
 from typing import Optional
 
@@ -416,7 +417,7 @@ def main():
 
     years = [int(y) for y in args.years.split(',')]
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA busy_timeout=60000")
     conn.row_factory = sqlite3.Row
 

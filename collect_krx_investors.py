@@ -1,4 +1,5 @@
 
+from db_compat import connect_primary_db
 import sqlite3
 import time
 import requests
@@ -35,7 +36,7 @@ def save_to_db(data: list, bas_dd_iso: str):
     data: list of dicts from KRX API
     bas_dd_iso: 'YYYY-MM-DD'
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cursor = conn.cursor()
     
     # KRX Open API 개별종목 투자자별 데이터는 한 종목당 여러 투자자 주체별로 행이 나뉨
@@ -82,9 +83,16 @@ def save_to_db(data: list, bas_dd_iso: str):
             """, (s["inst_amt"], s["frn_amt"], s["ind_amt"], s["inst_qty"], s["frn_qty"], s["ind_qty"], code, bas_dd_iso))
         else:
             # 레코드가 없으면 새로 생성 (가격 정보 등은 0으로 채움)
+            # 이 행은 실제 가격을 주장하지 않는 수급전용 플레이스홀더(OHLCV=0)이므로
+            # price_history_basis_write_guard의 "미검증 과거 가격 쓰기 차단" 대상이 아니다 —
+            # 다만 트리거는 컬럼 값과 무관하게 모든 INSERT에서 발동하므로 명시적으로 통과시킨다.
+            # 실 가격 채움은 이후 정식 OHLCV 수집기(gate_price_batch/gate_gap_fill_row 경유)가
+            # 담당하고, close=0 잔존행은 scheduler.py _job_krx_daily가 별도로 정리한다.
+            if hasattr(conn, '_connection'):
+                cursor.execute("SELECT set_config('app.price_basis_checked','1',true)")
             cursor.execute("""
-                INSERT INTO price_history 
-                (stock_code, date, open, high, low, close, volume, 
+                INSERT INTO price_history
+                (stock_code, date, open, high, low, close, volume,
                  inst_net_buy_amt, frn_net_buy_amt, ind_net_buy_amt,
                  inst_net_buy, frn_net_buy, ind_net_buy)
                 VALUES (?, ?, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?, ?)

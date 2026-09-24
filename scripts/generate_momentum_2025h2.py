@@ -12,6 +12,7 @@
   - 생성 trade를 backtest_runs에 저장 → 메타 시뮬레이터에서 활용
 """
 from __future__ import annotations
+from db_compat import connect_primary_db
 import sqlite3, json, uuid
 from datetime import date, timedelta
 from typing import Any
@@ -187,7 +188,7 @@ def generate_monthly_entries(
 
 
 def main():
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
 
     print(f"=== V_MOMENTUM_2025H2 신호 생성 ({PERIOD_START}~{PERIOD_END}) ===\n")

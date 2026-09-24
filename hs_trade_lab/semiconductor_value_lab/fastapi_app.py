@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import logging
 import sqlite3
@@ -27,7 +28,7 @@ def db_conn() -> sqlite3.Connection:
 
 
 def root_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(ROOT_STOCK_DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     return conn
 

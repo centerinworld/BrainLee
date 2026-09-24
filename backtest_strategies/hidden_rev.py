@@ -86,7 +86,8 @@ def run_backtest_hidden_rev(start_date: str, end_date: str,
                            run_name: str = None, run_id: str = None,
                            exit_mode: str = 'trail20',
                            chart_confluence: bool = False,
-                           sell_signal_fn=None) -> str:
+                           sell_signal_fn=None,
+                           data_asof_ts: str = None) -> str:
     """
     52주 강세 돌파 모멘텀 (Breakout Momentum)
     실증 근거: 2020~2025 982,889 샘플 분석 — 52W 고점 근처 + MA위 + 거래량 조합 1.64x 리프트
@@ -117,8 +118,8 @@ def run_backtest_hidden_rev(start_date: str, end_date: str,
         use_market_filter=True,   # 추세 전략 — 시장 필터 적용
         strategy_key='vbr',
         sell_signal_fn=sell_signal_fn,
+        data_asof_ts=data_asof_ts,
     )
-
 
 
 

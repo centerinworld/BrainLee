@@ -6,6 +6,7 @@ DART API에서 CH시트 데이터 수집:
 
 실행: python3 scripts/collect_dart_ch_data.py [--codes 005930] [--limit 500]
 """
+from db_compat import connect_primary_db
 import sqlite3, os, time, requests, sys, argparse, logging
 from datetime import datetime
 
@@ -265,7 +266,7 @@ def main():
     p.add_argument("--employee-only", action="store_true", help="dart_employee_count만 수집")
     args = p.parse_args()
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=60000")
     conn.execute("""

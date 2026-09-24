@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
-import sqlite3
 import sys
 import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config  # noqa: E402
+from db_utils import connect_stock_db  # noqa: E402
 from kis_client import kis_client  # noqa: E402
 
 
@@ -67,23 +68,100 @@ def ensure_schema(conn):
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_forward_estimates_code_est ON forward_estimates(stock_code, is_estimate, period)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_forward_estimates_collected ON forward_estimates(collected_at)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS forward_estimate_snapshots AS
+        SELECT stock_code, stock_name, period, is_estimate,
+               revenue_억원, revenue_growth_pct,
+               operating_profit_억원, operating_profit_growth_pct,
+               net_income_억원, net_income_growth_pct,
+               ebitda_십억원, eps_원, eps_growth_pct, per, ev_ebitda,
+               roe_pct, debt_ratio_pct, interest_coverage,
+               analyst, estimate_date, opinion, source, raw_message,
+               COALESCE(
+                   substr(collected_at, 1, 10),
+                   CASE WHEN length(estimate_date) = 8 THEN
+                       substr(estimate_date, 1, 4) || '-' ||
+                       substr(estimate_date, 5, 2) || '-' ||
+                       substr(estimate_date, 7, 2)
+                   END,
+                   CAST(CURRENT_DATE AS TEXT)
+               ) AS snapshot_date
+        FROM forward_estimates WHERE 1=0
+    """)
+    conn.execute("""CREATE UNIQUE INDEX IF NOT EXISTS uq_forward_estimate_snapshot
+                    ON forward_estimate_snapshots(stock_code, period, source, snapshot_date)""")
+    conn.execute("""
+        UPDATE forward_estimate_snapshots
+        SET snapshot_date = COALESCE(
+            CASE WHEN length(estimate_date) = 8 THEN
+                substr(estimate_date, 1, 4) || '-' ||
+                substr(estimate_date, 5, 2) || '-' ||
+                substr(estimate_date, 7, 2)
+            END,
+            CAST(CURRENT_DATE AS TEXT)
+        )
+        WHERE snapshot_date IS NULL OR trim(snapshot_date) = ''
+    """)
+    conn.execute("""
+        INSERT INTO forward_estimate_snapshots
+        SELECT stock_code, stock_name, period, is_estimate,
+               revenue_억원, revenue_growth_pct,
+               operating_profit_억원, operating_profit_growth_pct,
+               net_income_억원, net_income_growth_pct,
+               ebitda_십억원, eps_원, eps_growth_pct, per, ev_ebitda,
+               roe_pct, debt_ratio_pct, interest_coverage,
+               analyst, estimate_date, opinion, source, raw_message,
+               COALESCE(
+                   substr(collected_at, 1, 10),
+                   CASE WHEN length(estimate_date) = 8 THEN
+                       substr(estimate_date, 1, 4) || '-' ||
+                       substr(estimate_date, 5, 2) || '-' ||
+                       substr(estimate_date, 7, 2)
+                   END,
+                   CAST(CURRENT_DATE AS TEXT)
+               )
+        FROM forward_estimates
+        ON CONFLICT(stock_code, period, source, snapshot_date) DO NOTHING
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS forward_estimate_collection_status (
+            stock_code TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            message TEXT,
+            last_checked_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
     conn.commit()
 
 
-def universe(conn, limit=None):
+def universe(conn, limit=None, stale_days=7):
+    cutoff = (datetime.now() - timedelta(days=max(1, int(stale_days)))).isoformat(timespec="seconds")
     sql = """
-        SELECT stock_code, stock_name
-        FROM stock_universe
-        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
-          AND COALESCE(secugrp_nm, '') NOT LIKE '%ETF%'
-          AND COALESCE(secugrp_nm, '') NOT LIKE '%ETN%'
-          AND COALESCE(kind_stkcert_nm, '') NOT LIKE '%ETF%'
-          AND COALESCE(kind_stkcert_nm, '') NOT LIKE '%ETN%'
-        ORDER BY market_cap DESC NULLS LAST, stock_code
+        SELECT u.stock_code, MAX(u.stock_name) AS stock_name
+        FROM stock_universe u
+        WHERE LENGTH(u.stock_code) = 6
+          AND u.stock_code BETWEEN '000000' AND '999999'
+          AND COALESCE(u.secugrp_nm, '') NOT LIKE '%ETF%'
+          AND COALESCE(u.secugrp_nm, '') NOT LIKE '%ETN%'
+          AND COALESCE(u.kind_stkcert_nm, '') NOT LIKE '%ETF%'
+          AND COALESCE(u.kind_stkcert_nm, '') NOT LIKE '%ETN%'
+          AND NOT EXISTS (
+              SELECT 1 FROM forward_estimates f
+              WHERE f.stock_code = u.stock_code
+                AND f.source = 'KIS 국내주식 종목추정실적'
+                AND f.collected_at >= ?
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM forward_estimate_collection_status s
+              WHERE s.stock_code = u.stock_code
+                AND s.last_checked_at >= ?
+          )
+        GROUP BY u.stock_code
+        ORDER BY MAX(u.market_cap) DESC NULLS LAST, u.stock_code
     """
     if limit:
         sql += f" LIMIT {int(limit)}"
-    return conn.execute(sql).fetchall()
+    return conn.execute(sql, (cutoff, cutoff)).fetchall()
 
 
 def fetch_estimate(stock_code, token):
@@ -176,25 +254,62 @@ def upsert(conn, rows):
             raw_message=excluded.raw_message,
             collected_at=datetime('now','localtime')
     """, [tuple(r.get(c) for c in cols) for r in rows])
+    snapshot_cols = cols + ["snapshot_date"]
+    snapshot_values = [tuple(r.get(c) for c in cols) + (date.today().isoformat(),) for r in rows]
+    conn.executemany(f"""
+        INSERT INTO forward_estimate_snapshots ({",".join(snapshot_cols)})
+        VALUES ({",".join("?" for _ in snapshot_cols)})
+        ON CONFLICT(stock_code, period, source, snapshot_date) DO UPDATE SET
+            stock_name=excluded.stock_name,
+            is_estimate=excluded.is_estimate,
+            revenue_억원=excluded.revenue_억원,
+            revenue_growth_pct=excluded.revenue_growth_pct,
+            operating_profit_억원=excluded.operating_profit_억원,
+            operating_profit_growth_pct=excluded.operating_profit_growth_pct,
+            net_income_억원=excluded.net_income_억원,
+            net_income_growth_pct=excluded.net_income_growth_pct,
+            eps_원=excluded.eps_원,
+            eps_growth_pct=excluded.eps_growth_pct,
+            per=excluded.per,
+            ev_ebitda=excluded.ev_ebitda,
+            roe_pct=excluded.roe_pct,
+            debt_ratio_pct=excluded.debt_ratio_pct,
+            interest_coverage=excluded.interest_coverage,
+            estimate_date=excluded.estimate_date,
+            opinion=excluded.opinion,
+            raw_message=excluded.raw_message
+    """, snapshot_values)
     conn.commit()
     return len(rows)
 
 
+def record_status(conn, stock_code, status, message=None):
+    conn.execute("""
+        INSERT INTO forward_estimate_collection_status(stock_code,status,message,last_checked_at)
+        VALUES(?,?,?,datetime('now','localtime'))
+        ON CONFLICT(stock_code) DO UPDATE SET
+            status=excluded.status,
+            message=excluded.message,
+            last_checked_at=datetime('now','localtime')
+    """, (stock_code, status, str(message or "")[:500]))
+    conn.commit()
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--sleep", type=float, default=0.12)
+    ap.add_argument("--limit", type=int, default=450)
+    ap.add_argument("--stale-days", type=int, default=7)
+    ap.add_argument("--sleep", type=float, default=0.15)
     args = ap.parse_args()
 
     token = kis_client.get_token()
     if not token:
         raise SystemExit("KIS 토큰 발급 실패")
 
-    conn = sqlite3.connect(ROOT / "stock.db", timeout=30)
-    conn.row_factory = sqlite3.Row
+    conn = connect_stock_db(timeout=30)
     ensure_schema(conn)
 
-    codes = universe(conn, args.limit)
+    codes = universe(conn, args.limit, args.stale_days)
     ok = saved = no_data = err = 0
     for i, row in enumerate(codes, start=1):
         code = row["stock_code"]
@@ -202,10 +317,12 @@ def main():
             rows, msg = fetch_estimate(code, token)
             if rows:
                 n = upsert(conn, rows)
+                record_status(conn, code, "ok", msg)
                 ok += 1
                 saved += n
                 print(f"[{i}/{len(codes)}] {code} saved={n}")
             else:
+                record_status(conn, code, "no_data", msg)
                 no_data += 1
                 print(f"[{i}/{len(codes)}] {code} no_data {msg or ''}")
         except Exception as exc:

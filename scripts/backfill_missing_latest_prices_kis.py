@@ -15,10 +15,18 @@ if str(ROOT) not in sys.path:
 
 from db_utils import connect_stock_db  # noqa: E402
 from kis_client import kis_client  # noqa: E402
+from trading_calendar import is_kr_trading_day  # noqa: E402
 
 
 def run(limit: int = 0) -> dict:
-    today = date.today().isoformat()
+    today_date = date.today()
+    today = today_date.isoformat()
+    if not is_kr_trading_day(today_date):
+        return {
+            "date": today, "candidates": 0, "inserted": 0,
+            "no_trade": [], "unavailable": [],
+            "skipped": "한국 증시 휴장일에는 현재가로 가격/거래제한을 판정하지 않음",
+        }
     conn = connect_stock_db()
     try:
         rows = conn.execute(

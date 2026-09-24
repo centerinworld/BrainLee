@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -26,7 +27,7 @@ def scalar(conn: sqlite3.Connection, sql: str) -> int:
 
 
 def main() -> int:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     try:
         before_rows = scalar(conn, "SELECT COUNT(*) FROM consensus_targets")
         before_keys = scalar(conn, f"SELECT COUNT(DISTINCT {DEDUP_KEY}) FROM consensus_targets")

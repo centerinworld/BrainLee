@@ -25,7 +25,8 @@ def run_backtest_v11(start_date: str, end_date: str,
                      per_stock: float = 10_000_000,
                      max_positions: int = 10,
                      chart_confluence: bool = False,
-                    run_name: str = None, run_id: str = None) -> str:
+                    run_name: str = None, run_id: str = None,
+                    data_asof_ts: str = None) -> str:
     return _run_generic_backtest(
         chart_confluence=chart_confluence,
         version='V11', signal_fn=_is_buy_v11,
@@ -38,6 +39,7 @@ def run_backtest_v11(start_date: str, end_date: str,
         max_new_per_month=8,
         use_market_filter=True,               # ★ 하락장 진입 차단
         strategy_key='v11',
+        data_asof_ts=data_asof_ts,
         # sell_signal_fn=_sell_signal_v7,  # 가속스톨 테스트: +17.0%→+7.4% 하락 — 기본값 사용
     )
 
@@ -64,7 +66,6 @@ def _sell_signal_v7(i: int, sd: dict, pos: dict) -> Optional[str]:
         if ma20 and curr < ma20:
             return "가속스톨(V7)"
     return None
-
 
 
 

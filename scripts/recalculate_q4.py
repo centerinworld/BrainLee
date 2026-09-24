@@ -22,6 +22,7 @@ recalculate_q4.py — Q4 분기 데이터 강제 재계산
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import sqlite3
@@ -35,7 +36,7 @@ _CF_FIELDS  = ["operating_cf", "investing_cf", "financing_cf", "capex"]
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, timeout=120)
+    c = connect_primary_db(timeout=120)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA busy_timeout=120000")

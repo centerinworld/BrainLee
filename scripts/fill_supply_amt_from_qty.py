@@ -13,6 +13,7 @@ inst_net_buy_amt / frn_net_buy_amt 가 0이거나 NULL인 행을 채운다.
     python3 scripts/fill_supply_amt_from_qty.py --dry-run   # 몇 건인지만 확인
 """
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 import time
@@ -21,7 +22,7 @@ from datetime import datetime
 DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 def run(year_filter=None, dry_run=False):
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=60000")
 

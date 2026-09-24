@@ -9,6 +9,8 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
+from db_compat import connect_primary_db
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EMP_DB = ROOT / "employment_monitor" / "employment.db"
@@ -156,12 +158,24 @@ def audit_employment_data(
             }
 
         coverage = None
-        if stock_db and Path(stock_db).exists():
+        if stock_db and (str(stock_db) == str(DEFAULT_STOCK_DB) or Path(stock_db).exists()):
             try:
-                conn.execute("ATTACH DATABASE ? AS stock_src", (str(stock_db),))
-                universe = conn.execute(
-                    "SELECT COUNT(DISTINCT stock_code) FROM stock_src.stock_universe WHERE secugrp_nm='주권'"
-                ).fetchone()[0]
+                # stock.db는 employment.db와 별도 물리 DB(Postgres 운영 시)라 ATTACH로
+                # 조인할 수 없음 — 기본 경로면 connect_primary_db()로 별도 조회하고,
+                # 명시적으로 다른 스냅샷 파일을 넘긴 경우에만 레거시 ATTACH를 유지한다.
+                if str(stock_db) == str(DEFAULT_STOCK_DB):
+                    stock_conn = connect_primary_db()
+                    try:
+                        universe = stock_conn.execute(
+                            "SELECT COUNT(DISTINCT stock_code) FROM stock_universe WHERE secugrp_nm='주권'"
+                        ).fetchone()[0]
+                    finally:
+                        stock_conn.close()
+                else:
+                    conn.execute("ATTACH DATABASE ? AS stock_src", (str(stock_db),))
+                    universe = conn.execute(
+                        "SELECT COUNT(DISTINCT stock_code) FROM stock_src.stock_universe WHERE secugrp_nm='주권'"
+                    ).fetchone()[0]
                 wlb_stocks = conn.execute(
                     "SELECT COUNT(DISTINCT stock_code) FROM wlb_monthly WHERE data_ym=?", (latest_wlb,)
                 ).fetchone()[0]

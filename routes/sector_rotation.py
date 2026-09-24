@@ -2,18 +2,20 @@
 섹터 로테이션 조기 포착 시스템
 주도섹터를 RS + 거래량확장 + 기관수급 + 수출선행지표로 감지
 """
+from db_compat import connect_primary_db
 from fastapi import APIRouter
 import json
 import sqlite3
 from datetime import datetime, timedelta
 from collections import defaultdict
 from trading_calendar import is_kr_trading_day
+from pathlib import Path
 
 router = APIRouter()
-DB = "stock.db"
+DB = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 def _conn():
-    c = sqlite3.connect(DB, timeout=30)
+    c = connect_primary_db(timeout=30)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA busy_timeout=30000")
     return c
@@ -104,12 +106,14 @@ def refresh_sector_rotation_cache(force: bool = True):
         scores = _compute_sector_scores(conn, as_of)
         leadership = _compute_sector_leadership(conn, as_of=as_of, months=36, top_n=3)
         rotation_map = _compute_rotation_map(conn, as_of=as_of)
-        for payload in (scores, leadership, rotation_map):
+        dashboard_summary = _compute_dashboard_summary(conn, as_of)
+        for payload in (scores, leadership, rotation_map, dashboard_summary):
             payload["meta"] = dict(meta)
 
         _write_cache(conn, "scores", scores, as_of, market_status)
         _write_cache(conn, "leadership", leadership, as_of, market_status)
         _write_cache(conn, "rotation-map", rotation_map, as_of, market_status)
+        _write_cache(conn, "dashboard-summary", dashboard_summary, as_of, market_status)
         conn.commit()
         return {
             "ok": True,
@@ -291,6 +295,32 @@ def _get_sector_breadth(conn, codes, as_of):
                 near_high += 1
     return near_high / total if total > 0 else 0.0
 
+def _get_sector_drawdown(conn, codes, as_of):
+    """섹터 평균 '1년 고점 대비 현재가 낙폭 %' (전략2 낙폭과대 반등용).
+
+    개별 종목 낙폭의 단순평균 — _leader_picks_for_sector와 동일한 개별 루프 스타일.
+    """
+    if not codes:
+        return None
+    d_1y = (datetime.strptime(as_of, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
+    drawdowns = []
+    for code in codes:
+        hi = conn.execute(
+            "SELECT MAX(high) FROM price_history WHERE stock_code=? AND date>=? AND date<=? "
+            "AND close>0 AND high IS NOT NULL",
+            (code, d_1y, as_of)
+        ).fetchone()
+        cur = conn.execute(
+            "SELECT close FROM price_history WHERE stock_code=? AND date<=? AND close>0 ORDER BY date DESC LIMIT 1",
+            (code, as_of)
+        ).fetchone()
+        high_1y = float(hi[0]) if hi and hi[0] else None
+        cur_price = float(cur[0]) if cur else None
+        if high_1y and cur_price and high_1y > 0:
+            drawdowns.append((high_1y - cur_price) / high_1y * 100)
+    return sum(drawdowns) / len(drawdowns) if drawdowns else None
+
+
 def _get_sector_investor_flow(conn, codes, as_of, days=90):
     """섹터 3개월 기관+외국인 순매수 (억원) — price_history 기반
 
@@ -375,7 +405,7 @@ def _get_hs_export_yoy(sector_info, as_of):
         return None
 
     # quant_major_indicator_series 사용: 최근 유효 3개월 평균 vs 전년 동일 3개월 평균
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     rows = conn.execute(
         f"""SELECT period, SUM(value) as val FROM quant_major_indicator_series
         WHERE indicator_key IN ({','.join('?'*len(hs_keys))})
@@ -408,6 +438,25 @@ def _get_sector_earnings_yoy(conn, codes, as_of):
         avail_q = 4
         avail_year -= 1
 
+    # 2026-09-08 수정: report_type(CFS/OFS) 타이브레이크 없이 AVG()하면 CFS/OFS를 둘 다
+    # 보유한 종목이 사실상 두 표본으로 잡혀 섹터 평균이 왜곡된다(그런 종목 쪽으로
+    # 쏠리거나, 한쪽만 보고하는 종목과 가중치가 달라짐) — se_momentum.py에서 발견된
+    # 것과 동일 부류의 버그. 종목당 CFS우선 1행만 남긴 뒤 평균낸다.
+    _dedup_sql = f"""
+        SELECT AVG(operating_profit) FROM (
+            SELECT stock_code, operating_profit,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY stock_code
+                       ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                   ) AS rt_rn
+            FROM financial_data
+            WHERE stock_code IN ({','.join('?'*len(codes))})
+            AND year=? AND quarter=? AND is_annual=0
+            AND operating_profit IS NOT NULL AND operating_profit > 0
+        ) dedup
+        WHERE rt_rn = 1
+    """
+
     best_yoy = None
     for offset in [0, 1]:
         q = avail_q - offset
@@ -415,20 +464,8 @@ def _get_sector_earnings_yoy(conn, codes, as_of):
         if q <= 0:
             q += 4
             y -= 1
-        cur = conn.execute(
-            f"""SELECT AVG(operating_profit) FROM financial_data
-            WHERE stock_code IN ({','.join('?'*len(codes))})
-            AND year=? AND quarter=? AND is_annual=0
-            AND operating_profit IS NOT NULL AND operating_profit > 0""",
-            codes + [y, q]
-        ).fetchone()[0]
-        prv = conn.execute(
-            f"""SELECT AVG(operating_profit) FROM financial_data
-            WHERE stock_code IN ({','.join('?'*len(codes))})
-            AND year=? AND quarter=? AND is_annual=0
-            AND operating_profit IS NOT NULL AND operating_profit > 0""",
-            codes + [y - 1, q]
-        ).fetchone()[0]
+        cur = conn.execute(_dedup_sql, codes + [y, q]).fetchone()[0]
+        prv = conn.execute(_dedup_sql, codes + [y - 1, q]).fetchone()[0]
         if cur and prv and prv > 0:
             yoy = (cur - prv) / prv * 100
             if best_yoy is None or yoy > best_yoy:
@@ -566,6 +603,136 @@ def _score_sector(conn, sect_key, sector_info, as_of):
         "detail": detail,
         "codes": codes,
     }
+
+
+def _score_bottom_reversal(conn, sect_key, sector_info, as_of):
+    """낙폭과대 반등 스코어 (0~100점) — 전략2: 많이 빠진 섹터가 바닥을 다지고 돌아설 때 포착.
+
+    _score_sector(추세추종/전략1)와는 반대 방향 신호 — 여기서는 RS가 아직 마이너스인 상태에서
+    '단기가 장기보다 얼마나 덜 나쁜가(반전 조짐)'를 본다. 2026-09-07 바이오 실데이터로 캘리브레이션:
+    현재 바이오는 낙폭은 크지만(-26~-72%) 4주 RS가 아직 -10~-35%p로 자유낙하 중이라
+    BOTTOM_ENTRY가 아니라 WATCH 이하로 나와야 정합적 (아직 바닥 확정 아님).
+    """
+    codes = _valid_codes(sector_info["codes"])
+    dt = datetime.strptime(as_of, "%Y-%m-%d")
+    score = 0
+    detail = {}
+
+    # ── [A] 낙폭과대 (30점) ──────────────────────────────────────────
+    drawdown = _get_sector_drawdown(conn, codes, as_of)
+    detail["drawdown_pct"] = round(drawdown, 1) if drawdown is not None else None
+    if drawdown is not None:
+        if drawdown >= 50:   score += 30
+        elif drawdown >= 40: score += 24
+        elif drawdown >= 30: score += 18
+        elif drawdown >= 20: score += 10
+
+    # ── [B] 반전 조짐 (30점) — 단기 RS가 장기 RS보다 얼마나 개선됐는가 ──
+    kospi_4w = _get_price_returns(conn, ['^KS11'],
+        (dt - timedelta(weeks=4)).strftime("%Y-%m-%d"), as_of) or 0
+    kospi_12w = _get_price_returns(conn, ['^KS11'],
+        (dt - timedelta(weeks=12)).strftime("%Y-%m-%d"), as_of) or 0
+    rs4 = _get_price_returns(conn, codes, (dt - timedelta(weeks=4)).strftime("%Y-%m-%d"), as_of)
+    rs12 = _get_price_returns(conn, codes, (dt - timedelta(weeks=12)).strftime("%Y-%m-%d"), as_of)
+    rs4_ex = (rs4 - kospi_4w) if rs4 is not None else None
+    rs12_ex = (rs12 - kospi_12w) if rs12 is not None else None
+    detail["rs4w_excess"] = round(rs4_ex, 1) if rs4_ex is not None else None
+    detail["rs12w_excess"] = round(rs12_ex, 1) if rs12_ex is not None else None
+    if rs4_ex is not None and rs12_ex is not None:
+        delta = rs4_ex - rs12_ex
+        detail["rs_delta"] = round(delta, 1)
+        if rs4_ex < -15:
+            score -= 10   # 아직 자유낙하 중 — 반전 조짐 아님
+        elif delta > 15 and rs4_ex > -5:
+            score += 30
+        elif delta > 10 and rs4_ex > -10:
+            score += 20
+        elif delta > 5:
+            score += 10
+
+    # ── [C] 수급 전환 (25점) — 최근 30일 순매수 vs 그 이전 60일 ────────
+    recent_frn, recent_inst = _get_sector_investor_flow(conn, codes, as_of, days=30)
+    prior_as_of = (dt - timedelta(days=30)).strftime("%Y-%m-%d")
+    prior_frn, prior_inst = _get_sector_investor_flow(conn, codes, prior_as_of, days=60)
+    recent_sum = recent_frn + recent_inst
+    prior_sum = prior_frn + prior_inst
+    detail["recent30_flow_억"] = round(recent_sum)
+    detail["prior60_flow_억"] = round(prior_sum)
+    if recent_sum > 0 and prior_sum < 0:
+        score += 25
+        detail["flow_pattern"] = "매도→매수 전환★"
+    elif recent_sum > 0:
+        score += 12
+
+    # ── [D] 밸류 트로프 (15점) ──────────────────────────────────────
+    pbrs = []
+    for code in codes:
+        pb = conn.execute("SELECT pbr FROM stock_universe WHERE stock_code=? AND pbr>0 AND pbr<50", (code,)).fetchone()
+        if pb:
+            pbrs.append(float(pb[0]))
+    avg_pbr = sum(pbrs) / len(pbrs) if pbrs else None
+    detail["avg_pbr"] = round(avg_pbr, 2) if avg_pbr is not None else None
+    if avg_pbr is not None:
+        if avg_pbr < 1.2:   score += 15
+        elif avg_pbr < 2.0: score += 8
+
+    score = max(0, min(score, 100))
+    rs_delta = detail.get("rs_delta")
+
+    # BOTTOM_ENTRY는 낙폭+수급만으로는 부족 — [B] 반전 조짐(delta>5)이 실제로 점수를 받았을 때만 '반등 확정'으로 승격.
+    # (전략1 _score_sector의 "가격 확인 없이는 BUY로 승격하지 않음" 원칙과 동일한 취지)
+    if (
+        drawdown is not None and drawdown >= 30 and score >= 55
+        and (rs4_ex or -999) > -5 and rs_delta is not None and rs_delta > 5
+    ):
+        stage = "BOTTOM_ENTRY"
+    elif drawdown is not None and drawdown >= 25 and score >= 30:
+        stage = "BOTTOM_WATCH"
+    elif drawdown is not None and drawdown >= 25:
+        # 낙폭 자체는 '낙폭과대' 기준을 충족하지만, 아직 반전 조짐/수급전환 등 어느 것도 없어
+        # 종합점수가 낮은 경우 — "안 빠졌다"는 뜻이 아니라 "빠졌지만 아직 하락이 안 멈췄다"는 뜻.
+        # 화면에서 숨기지 않고 별도 상태로 명시(진입 금지 경고).
+        stage = "STILL_FALLING"
+    else:
+        stage = "NONE"
+
+    return {
+        "sector": sect_key,
+        "label": sector_info["label"],
+        "color": sector_info["color"],
+        "score": score,
+        "stage": stage,
+        "detail": detail,
+    }
+
+
+def _bottom_reversal_reasons(scored):
+    d = scored.get("detail") or {}
+    stage = scored.get("stage")
+    reasons = []
+    if d.get("drawdown_pct") is not None:
+        reasons.append(f"1년 고점 대비 -{d['drawdown_pct']:.0f}%")
+    if stage == "STILL_FALLING":
+        # '낙폭과대'는 맞지만 아직 반등 조짐이 전혀 없다는 걸 명시적으로 알려줌
+        # (숨기면 "안 빠진 섹터"로 오해할 수 있음 — 반드시 사유를 표시)
+        if d.get("rs4w_excess") is not None and d["rs4w_excess"] < -15:
+            reasons.append(f"최근 4주 아직 자유낙하 중({d['rs4w_excess']:.1f}%p) — 진입 금지")
+        elif d.get("recent30_flow_억") is not None and d["recent30_flow_억"] <= 0:
+            reasons.append("수급 아직 순매도 — 반등 조짐 없음")
+        else:
+            reasons.append("반등 조짐 미확인 — 진입 금지")
+        return reasons[:4]
+    if d.get("rs_delta") is not None and d["rs_delta"] > 5:
+        reasons.append(f"단기 RS 개선 +{d['rs_delta']:.1f}%p")
+    if d.get("flow_pattern"):
+        reasons.append(d["flow_pattern"])
+    elif d.get("recent30_flow_억") and d["recent30_flow_억"] > 0:
+        reasons.append(f"최근 30일 수급 +{d['recent30_flow_억']:,}억")
+    if d.get("avg_pbr") is not None and d["avg_pbr"] < 2.0:
+        reasons.append(f"평균 PBR {d['avg_pbr']:.2f}배")
+    if not reasons:
+        reasons.append("데이터 부족")
+    return reasons[:4]
 
 
 def _last_trade_date(conn, as_of=None):
@@ -933,6 +1100,95 @@ def _compute_rotation_map(conn, as_of: str):
     return {"as_of": as_of, "sectors": results}
 
 
+def _compute_dashboard_summary(conn, as_of: str):
+    """메인페이지(매크로 탭) 상단 카드용 통합 신호.
+
+    전략1(추세추종+집중/탈출)과 전략2(낙폭과대 반등)를 한 번에 계산해
+    '지금 집중할 섹터' 또는 '관망(현금 보유) 시기'를 판단한다.
+    """
+    trend_candidates = []
+    exit_alerts = []
+    reversal_entries = []
+    reversal_watch = []
+    reversal_falling = []
+
+    for sect_key, info in SECTOR_GROUPS.items():
+        codes = _valid_codes(info["codes"])
+        score_row = _score_sector(conn, sect_key, info, as_of)
+        rotation = _rotation_phase_for_sector(conn, codes, as_of)
+        leaders = _leader_picks_for_sector(conn, sect_key, as_of, top_n=2)
+        stage = _entry_stage(score_row, rotation, leaders)
+
+        if stage["stage"] == "ENTRY_NOW":
+            trend_candidates.append({
+                "sector": sect_key,
+                "label": info["label"],
+                "color": info["color"],
+                "score": score_row["score"],
+                "rs4w": rotation["rs4w"],
+                "rs12w": rotation["rs12w"],
+                "reasons": _entry_reasons(score_row, rotation),
+                "leaders": leaders[:2],
+            })
+
+        rs4 = rotation.get("rs4w")
+        rs12 = rotation.get("rs12w")
+        if rs4 is not None and rs12 is not None and rs12 >= 5 and rs4 <= -3:
+            exit_alerts.append({
+                "sector": sect_key,
+                "label": info["label"],
+                "color": info["color"],
+                "rs4w": rs4,
+                "rs12w": rs12,
+                "message": f"12주 추세는 양호(+{rs12:.1f}%p)했지만 최근 4주 {rs4:.1f}%p로 꺾였습니다 — 보유 중이면 비중 축소 고려",
+            })
+
+        # 이미 전략1 ENTRY_NOW로 잡힌 섹터는 전략2에서 중복 표시하지 않음 (이미 추세추종으로 다루는 중)
+        if stage["stage"] == "ENTRY_NOW":
+            continue
+
+        rev = _score_bottom_reversal(conn, sect_key, info, as_of)
+        if rev["stage"] == "BOTTOM_ENTRY":
+            reversal_entries.append({**rev, "reasons": _bottom_reversal_reasons(rev)})
+        elif rev["stage"] == "BOTTOM_WATCH":
+            reversal_watch.append({**rev, "reasons": _bottom_reversal_reasons(rev)})
+        elif rev["stage"] == "STILL_FALLING":
+            # 낙폭 자체는 크지만(>=25%) 아직 반등 조짐이 없는 섹터 — 숨기지 않고 '진입 금지' 상태로 명시
+            reversal_falling.append({**rev, "reasons": _bottom_reversal_reasons(rev)})
+
+    trend_candidates.sort(key=lambda x: -x["score"])
+    reversal_entries.sort(key=lambda x: -x["score"])
+    reversal_watch.sort(key=lambda x: -x["score"])
+    reversal_falling.sort(key=lambda x: -(x["detail"].get("drawdown_pct") or 0))
+
+    primary_focus = trend_candidates[0] if trend_candidates else None
+    secondary = trend_candidates[1:]
+    hold_cash = primary_focus is None and not reversal_entries
+
+    if primary_focus:
+        headline = f"🎯 {primary_focus['label']} 섹터 집중 — 추세+수급 동반 진입 구간"
+    elif reversal_entries:
+        headline = f"🔻 {reversal_entries[0]['label']} 낙폭과대 반등 진입 신호"
+    else:
+        headline = "현재 뚜렷한 진입 신호 없음 — 관망(현금 보유) 시기"
+
+    return {
+        "as_of": as_of,
+        "headline": headline,
+        "hold_cash": hold_cash,
+        "trend_strategy": {
+            "primary_focus": primary_focus,
+            "secondary": secondary,
+            "exit_alerts": exit_alerts,
+        },
+        "reversal_strategy": {
+            "entries": reversal_entries,
+            "watch": reversal_watch,
+            "falling": reversal_falling,
+        },
+    }
+
+
 def _cached_or_compute(cache_key: str, compute_fn, as_of: str = None, **kwargs):
     conn = _conn()
     try:
@@ -1034,6 +1290,12 @@ def refresh_rotation_cache():
     return refresh_sector_rotation_cache(force=True)
 
 
+@router.get("/dashboard-summary")
+def get_dashboard_summary(as_of: str = None):
+    """메인페이지(매크로 탭) 상단 카드용 — 전략1(추세추종+집중/탈출) + 전략2(낙폭과대 반등) 통합 신호."""
+    return _cached_or_compute("dashboard-summary", _compute_dashboard_summary, as_of=as_of)
+
+
 @router.get("/top-picks/{sector_key}")
 def get_sector_top_picks(sector_key: str, top_n: int = 8):
     """섹터 내 급등 후보 종목 발굴 — 실증 데이터 기반 3대 드라이버 분석
@@ -1120,9 +1382,22 @@ def get_sector_top_picks(sector_key: str, top_n: int = 8):
                     op_yoy = (float(op_cur[0]) - float(op_prv[0])) / abs(float(op_prv[0])) * 100
 
             # ── 최근 분기 QoQ 영업이익 추세 (실시간 모멘텀) ──
+            # 2026-09-08 수정: report_type 타이브레이크 없이 LIMIT 4만 걸면 최신분기에
+            # CFS/OFS 두 행이 있을 때 q_rows[0]/[1]이 서로 다른 분기가 아니라 같은
+            # 분기의 CFS/OFS 쌍이 될 수 있어 op_qoq·흑자전환 판정이 왜곡된다 —
+            # se_momentum.py에서 발견된 것과 동일 부류의 버그. 분기당 CFS우선 1행만
+            # 남긴 뒤 최근 4분기를 취한다.
             q_rows = conn.execute(
-                """SELECT year, quarter, operating_profit FROM financial_data
-                WHERE stock_code=? AND is_annual=0 AND operating_profit IS NOT NULL
+                """SELECT year, quarter, operating_profit FROM (
+                    SELECT year, quarter, operating_profit,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY year, quarter
+                               ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                           ) AS rt_rn
+                    FROM financial_data
+                    WHERE stock_code=? AND is_annual=0 AND operating_profit IS NOT NULL
+                ) dedup
+                WHERE rt_rn = 1
                 ORDER BY year DESC, quarter DESC LIMIT 4""", (code,)
             ).fetchall()
             op_qoq = None
@@ -1216,3 +1491,15 @@ def get_sector_top_picks(sector_key: str, top_n: int = 8):
         }
     finally:
         conn.close()
+
+
+@router.get("/flow-signal-validation")
+def get_kiwoom_flow_signal_validation():
+    """ka10051(업종별투자자순매수) 신호 효용성 — 매일 쌓이는 스냅샷 기반 누적 검증 현황.
+    2026-09-06 신규: scheduler가 매주 월요일 08:15에 같은 계산을 텔레그램으로도 보내지만,
+    그 사이에 아무 때나 프론트에서 즉시 확인하고 싶을 때를 위한 온디맨드 버전."""
+    try:
+        from scripts.validate_kiwoom_sector_flow_signal import main as _validate
+        return _validate()
+    except Exception as e:
+        return {"error": str(e)}

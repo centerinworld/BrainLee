@@ -8,6 +8,7 @@ should be checked before subscribing to FnSpace/Korean Tickers/FMP/Finnhub/etc.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import os
 import sqlite3
@@ -112,7 +113,7 @@ def provider_checks(samples: list[dict], env: dict[str, str]) -> list[dict]:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     env = load_env_file()
 
     bucket_rows = rows(

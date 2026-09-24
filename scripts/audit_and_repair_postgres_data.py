@@ -297,6 +297,12 @@ def apply_repairs(conn: psycopg.Connection, batch_id: str) -> dict[str, int]:
         "INSERT INTO postgres_data_repair_batches(batch_id,status) VALUES(%s,'running')",
         (batch_id,),
     )
+    # price_history_basis_write_guard (installed 2026-09-12) fires on every historical
+    # write to a 6-digit stock code regardless of column values. Every UPDATE below is
+    # scoped to currently-invalid rows and sourced from validated naver_price_history_backfill
+    # or bounded rounding corrections - set the flag once for the whole repair batch rather
+    # than per-statement.
+    conn.execute("SELECT set_config('app.price_basis_checked','1',true)")
     counts: dict[str, int] = {}
 
     price_where = """

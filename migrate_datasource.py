@@ -4,6 +4,7 @@ migrate_datasource.py — financial_data / cash_flow_data에 data_source 컬럼 
 실행: python3 migrate_datasource.py
 결과: verification/migration_datasource_YYYYMMDD_HHMMSS.json 에 저장
 """
+from db_compat import connect_primary_db
 import sqlite3, json, datetime, os, sys
 
 DB_PATH     = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
@@ -17,7 +18,7 @@ def log(msg): print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 
 def run():
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     report = {"timestamp": TIMESTAMP, "steps": []}
 

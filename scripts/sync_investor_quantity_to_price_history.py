@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import sqlite3
@@ -14,7 +15,7 @@ OUT_DIR = ROOT / "run" / "investor_quantity_sync"
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), timeout=300)
+    conn = connect_primary_db(timeout=300)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=300000")
     conn.execute("PRAGMA temp_store=MEMORY")

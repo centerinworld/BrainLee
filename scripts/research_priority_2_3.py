@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import math
@@ -170,7 +171,7 @@ def run_overlap_backtest(
     trail_pct: float = -0.25,
     max_hold: int = 300,
 ) -> dict:
-    conn = sqlite3.connect(DB, timeout=120)
+    conn = connect_primary_db(timeout=120)
     ensure_backtest_table(conn)
     warmup = (datetime.strptime(start, "%Y-%m-%d") - timedelta(days=420)).strftime("%Y-%m-%d")
     uni = load_universe(conn, start, end, min_mktcap)
@@ -428,7 +429,7 @@ def eval_grid(prices: pd.DataFrame, param: GridParam) -> dict | None:
 
 
 def run_local_grid(start: str = "2021-01-01", end: str = "2026-07-03", min_mktcap: float = 500.0) -> dict:
-    conn = sqlite3.connect(DB, timeout=120)
+    conn = connect_primary_db(timeout=120)
     warmup = (datetime.strptime(start, "%Y-%m-%d") - timedelta(days=420)).strftime("%Y-%m-%d")
     uni = load_universe(conn, start, end, min_mktcap)
     prices = add_indicators(load_prices(conn, uni["stock_code"].tolist(), warmup, end)).merge(uni, on="stock_code", how="left")

@@ -6,6 +6,7 @@ DartV22Builder 재현 — DART API에서 재무데이터 수집 후 v22 형식 �
 CH 시트 데이터:
   사업부문매출 / 직원현황 / 재고자산 / 수주잔고 / 매출채권 / 판관비
 """
+from db_compat import connect_primary_db
 import io, os, re, time, zipfile, logging, sqlite3, requests
 from datetime import datetime
 from typing import Optional
@@ -16,7 +17,6 @@ from dart_key_manager import get_dart_api_keys
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-DB_PATH = "stock.db"
 DART_KEYS = get_dart_api_keys()
 _key_idx = [0]
 
@@ -86,7 +86,7 @@ REPRT_Q = {"11013": 1, "11012": 2, "11014": 3, "11011": 4}
 def _load_corp_code(stock_code: str) -> Optional[str]:
     """stock.db 여러 테이블 또는 DART corpCode.xml에서 corp_code 조회"""
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         # dart_insider_holdings에 corp_code 저장됨 (상위 2198종목)
         for tbl in ["dart_insider_holdings", "dart_backlog_quarterly", "dart_cost_quarterly"]:
             try:
@@ -181,7 +181,7 @@ def _collect_from_db(stock_code: str, years: list[int]) -> dict:
     """DART API 한도 초과 시 stock.db 저장값으로 fallback"""
     annual, standalone, bs_data, cf_data = {}, {}, {}, {}
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         for year in years:
             # 연간 P&L
             row = conn.execute("""
@@ -235,6 +235,7 @@ def _collect_from_db(stock_code: str, years: list[int]) -> dict:
                 qrow = conn.execute("""
                     SELECT revenue, operating_profit, net_income FROM financial_data
                     WHERE stock_code=? AND year=? AND quarter=? AND is_annual=0
+                      AND NOT (report_type='OFS' AND quarter=4 AND data_source LIKE 'dart_ofs_backfill%')
                     ORDER BY CASE WHEN data_source LIKE '%dart%' THEN 0 ELSE 1 END LIMIT 1
                 """, (stock_code, year, q)).fetchone()
                 if qrow and qrow[0]:
@@ -366,7 +367,7 @@ def collect_financials(corp_code: str, stock_code: str, years: list[int]) -> dic
 def get_stock_info(stock_code: str) -> dict:
     """stock.db에서 종목 기본정보"""
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         row = conn.execute(
             "SELECT stock_name, market, sector_large, market_cap, shares_issued, per, pbr FROM stock_universe WHERE stock_code=?",
             (stock_code,)
@@ -912,7 +913,7 @@ def verify_data(stock_code: str, year: int = Query(2023)):
     # DB 저장값 (소스별로 조회)
     db_rows = []
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         rs = conn.execute(
             """SELECT revenue, operating_profit, net_income, total_assets, total_equity, data_source
                FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1
@@ -1102,7 +1103,7 @@ def get_ch_data(code: str):
     DartV22Builder CH시트 데이터:
     사업부문별 매출·영업이익, 직원현황, 재고자산, 수주잔고, 매출채권, 판관비
     """
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     try:
         result: dict = {"stock_code": code}
@@ -1259,6 +1260,7 @@ def get_ch_data(code: str):
               AND revenue IS NOT NULL AND revenue > 0
               AND data_source NOT LIKE '%bs_null%'
               AND data_source NOT LIKE '%recalc_bs%'
+              AND NOT (report_type='OFS' AND quarter=4 AND data_source LIKE 'dart_ofs_backfill%')
             ORDER BY year DESC, quarter DESC,
               CASE WHEN data_source='fnguide' AND report_type='CFS' THEN 0
                    WHEN data_source LIKE '%dart%' AND report_type='CFS' THEN 1

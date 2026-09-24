@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 from dataclasses import dataclass
@@ -275,7 +276,7 @@ def run(args) -> int:
         print("No DART keys in .env")
         return 2
 
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     ensure_log_table(conn)
     targets = collect_targets(conn, args.year_from, args.year_to, args.limit)

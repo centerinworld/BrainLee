@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from db_compat import connect_primary_db
 import sqlite3
 import pandas as pd
 import re
@@ -219,7 +220,7 @@ def db_map(conn, stock_code):
 
 
 def main():
-    conn=sqlite3.connect(DB)
+    conn=connect_primary_db()
     conn.row_factory=sqlite3.Row
     rows=conn.execute("""
       SELECT p.stock_code,p.stock_name,f.file_name,f.file_path

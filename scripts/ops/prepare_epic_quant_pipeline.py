@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import os
@@ -48,7 +49,7 @@ def fetch_rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[t
 
 
 def collect_db_snapshot() -> dict:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     try:
         return {
             "forward_strategy_industry_categories": fetch_scalar(conn, "select count(*) from forward_strategy_industry_categories"),

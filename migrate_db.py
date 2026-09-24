@@ -15,6 +15,7 @@ migrate_db.py — 기존 DB를 안전하게 마이그레이션합니다.
     4. 기존 정상 데이터는 절대 삭제하지 않음
 """
 
+from db_compat import connect_primary_db
 import sqlite3
 from pathlib import Path
 import sys
@@ -55,7 +56,7 @@ def migrate():
         print("  → 서버를 한 번 실행하여 DB를 먼저 생성하세요.")
         sys.exit(1)
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cur = conn.cursor()
 
     # ── 1. financial_data 컬럼 추가 ──────────────────────────

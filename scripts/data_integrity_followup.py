@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import sys
 import time
 from datetime import date, datetime
@@ -39,6 +40,18 @@ RPRT = {1: "11013", 2: "11012", 3: "11014", 0: "11011", 4: "11011"}
 
 class QuotaExhausted(Exception):
     pass
+
+
+def _materially_differs(current: object, proposed: float | None) -> bool:
+    """Avoid repeat writes when a prior DART repair already has this value."""
+    if proposed is None:
+        return current is not None
+    if current is None:
+        return True
+    try:
+        return not math.isclose(float(current), float(proposed), rel_tol=1e-9, abs_tol=1e-6)
+    except (TypeError, ValueError):
+        return True
 
 
 def _get_dart():
@@ -70,7 +83,7 @@ def _extract_revenue(df) -> float | None:
     if df is None or df.empty:
         return None
     for _, row in df.iterrows():
-        if row.get("sj_nm") != "손익계산서":
+        if "손익" not in str(row.get("sj_nm", "")):
             continue
         acc_id = str(row.get("account_id", ""))
         acc = str(row.get("account_nm", "")).replace(" ", "")
@@ -200,9 +213,19 @@ def followup_dilution(conn, dart, limit: int = 30) -> dict:
 
         if real_shares and real_shares > 0:
             new_pct = (float(shares_to_issue) / real_shares * 100) if shares_to_issue else None
+            if not (
+                _materially_differs(current_shares, real_shares)
+                or _materially_differs(dpct, new_pct)
+            ):
+                continue
             cur.execute("""
                 UPDATE dilution_events SET current_shares=%s, dilution_pct=%s,
-                       data_source=COALESCE(data_source,'') || '+dart_followup_repair'
+                       data_source=CASE
+                           WHEN COALESCE(data_source, '') = '' THEN 'dart_followup_repair'
+                           WHEN data_source LIKE '%%+dart_followup_repair%%'
+                                OR data_source = 'dart_followup_repair' THEN data_source
+                           ELSE data_source || '+dart_followup_repair'
+                       END
                 WHERE id=%s
             """, (real_shares, new_pct, id_))
             fixed += cur.rowcount

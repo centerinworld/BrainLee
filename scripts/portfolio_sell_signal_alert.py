@@ -7,6 +7,7 @@ Telegram alert when several validated sell-risk conditions line up.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import html
 import json
@@ -23,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, timeout=30)
+    c = connect_primary_db(timeout=30)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA busy_timeout=30000")
     c.execute("PRAGMA journal_mode=WAL")

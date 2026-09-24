@@ -8,6 +8,7 @@ collect_dart_segments.py — DART fnlttSinglAcntAll IS 계정으로
     python3 scripts/collect_dart_segments.py --resume
 """
 from __future__ import annotations
+from db_compat import connect_primary_db
 import argparse, json, logging, sqlite3, sys, time, xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -41,7 +42,7 @@ def _dart_key():
     return k
 
 def _conn():
-    conn = sqlite3.connect(str(DB_PATH), timeout=300)
+    conn = connect_primary_db(timeout=300)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=300000")

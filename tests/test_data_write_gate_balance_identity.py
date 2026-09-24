@@ -61,3 +61,13 @@ def test_rejects_operating_profit_materially_above_revenue():
     )
     assert ok is False
     assert reason == "OPERATING_PROFIT_EXCEEDS_REVENUE"
+
+
+def test_rejects_completely_empty_financial_row():
+    conn = _conn()
+    ok, _, reason = gate_financial_row(
+        conn,
+        {"stock_code": "000001", "year": 2025, "quarter": 4, "report_type": "CFS"},
+    )
+    assert ok is False
+    assert reason == "EMPTY_FINANCIAL_ROW"

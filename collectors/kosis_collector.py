@@ -6,11 +6,13 @@
 사용 통계표:
 - DT_1C8016: 경기종합지수 (선행/동행/후행 CI + 산업생산/소매판매/고용 등 22종)
 """
+from db_compat import connect_primary_db
 import sqlite3, requests, logging, os, time, base64
 from datetime import datetime, timedelta
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 BASE_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 HOUSING_TABLES = [
@@ -196,7 +198,7 @@ def collect_kosis(lookback_years: int = 5) -> int:
     start_ym = start_dt.strftime("%Y%m")
     end_ym = now.strftime("%Y%m")
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
 
     # 신규 카테고리 등록
@@ -263,7 +265,7 @@ def collect_kosis(lookback_years: int = 5) -> int:
 
 def _log(records: int, status: str = "ok", msg: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.execute("""
             INSERT INTO global_macro_collection_log (source, status, records, message)
             VALUES ('kosis', ?, ?, ?)

@@ -35,11 +35,19 @@ class CashPortfolio:
         if not self.dynamic_tickets:
             return self.max_positions
         return max(1, int(self.equity(mark_prices or {}) // self.ticket_budget))
-    def buy(self,code,date,price,budget=None,mark_prices=None):
+    def buy(self,code,date,price,budget=None,mark_prices=None,hard_cap=None):
+        # F03 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+        # ticket_pct(자본비례 티켓)는 호출자가 넘긴 `budget`을 "기본 목표치"로 보고 위로만
+        # 키웠는데, 호출자가 strategy_budget_weights 등으로 이미 계산해 넘긴 절대 상한도
+        # 똑같이 취급돼 5배까지 뚫렸다(재현: 상한 500만원 요청인데 ticket_pct=25%/자본1억이면
+        # 2,500만원 매수). `hard_cap`은 ticket_pct가 절대 확대할 수 없는 별도 인자 —
+        # None이면(기본) 기존 동작과 완전히 동일.
         limit = self.position_limit(mark_prices)
         if code in self.positions or len(self.positions)>=limit or price<=0:return False
         if budget is not None and self.ticket_pct:
             budget = max(float(budget), self.equity(mark_prices or {}) * float(self.ticket_pct))
+        if hard_cap is not None:
+            budget = min(budget, float(hard_cap)) if budget is not None else float(hard_cap)
         slots=max(1,limit-len(self.positions)); allocation=min(self.cash,self.cash/slots if budget is None else budget)
         fill=self._buy_price(price); qty=int(allocation/(fill*(1+self.fee_bps/10000)))
         if qty<1:return False
@@ -80,6 +88,30 @@ class CashPortfolio:
         fill=self._sell_price(price);gross=pos.quantity*fill;fee=gross*self.fee_bps/10000;tax=gross*self.sell_tax_bps/10000;net=gross-fee-tax
         self.cash+=net; pnl=net-pos.cost_basis
         self.ledger.append({"date":date,"code":code,"side":"sell","quantity":pos.quantity,"price":fill,"fee":fee,"tax":tax,"pnl":pnl,"reason":reason,"cash_after":self.cash});del self.positions[code];return True
+    def sell_partial(self,code,date,price,fraction,reason="signal"):
+        """부분매도 (2026-09-12, Codex 재검토 지적 반영: 병합 엔진이 partial_qty/remaining_qty
+        신호를 받아도 sell()이 항상 전량청산해 부분익절이 전량매도로 둔갑하던 결함 수정).
+        fraction(0<x<1)만큼만 실현하고 나머지는 동일 average_price로 계속 보유한다.
+        fraction이 None/0 이하/1 이상이면 sell()과 동일(전량)하게 처리한다."""
+        pos=self.positions.get(code)
+        if not pos or price<=0:return False
+        if fraction is None or fraction>=1.0:
+            return self.sell(code,date,price,reason)
+        if fraction<=0:return False
+        total_qty=pos.quantity
+        sell_qty=max(1,min(int(total_qty*fraction),total_qty))
+        fill=self._sell_price(price);gross=sell_qty*fill;fee=gross*self.fee_bps/10000;tax=gross*self.sell_tax_bps/10000;net=gross-fee-tax
+        cost_portion=pos.cost_basis*(sell_qty/total_qty);pnl=net-cost_portion
+        self.cash+=net
+        self.ledger.append({"date":date,"code":code,"side":"sell","quantity":sell_qty,"price":fill,"fee":fee,"tax":tax,
+                            "pnl":pnl,"reason":reason,"cash_after":self.cash,"partial":True,
+                            "remaining_qty":total_qty-sell_qty})
+        if sell_qty>=total_qty:
+            del self.positions[code]
+        else:
+            pos.quantity=total_qty-sell_qty
+            pos.cost_basis-=cost_portion
+        return True
     def equity(self,prices): return self.cash+sum(p.quantity*prices.get(c,p.average_price) for c,p in self.positions.items())
     def summary(self,prices):
         equity=self.equity(prices); sells=[x for x in self.ledger if x['side']=='sell']; wins=[x for x in sells if x['pnl']>0]

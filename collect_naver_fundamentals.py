@@ -10,6 +10,7 @@ financial_data 테이블에 per/pbr/eps를 저장 (is_annual=True 최신 연도 
   python3 collect_naver_fundamentals.py --missing    # DB에 per/pbr 없는 종목만
 """
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import sqlite3
@@ -92,7 +93,7 @@ def save(conn: sqlite3.Connection, code: str, data: dict):
 
 
 def run(missing_only: bool = False, limit: int | None = None):
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
 

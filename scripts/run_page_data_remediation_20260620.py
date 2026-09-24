@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import asyncio
 import json
 import sqlite3
@@ -51,7 +52,7 @@ def run_kiwoom_universe(limit: int = 2693) -> dict:
     if not health.get("ok"):
         result = {"ok": False, "reason": "kiwoom_not_ready", "health": health}
     else:
-        conn = sqlite3.connect(str(DB), timeout=30)
+        conn = connect_primary_db(timeout=30)
         try:
             rows = conn.execute(
                 """
@@ -101,7 +102,7 @@ def run_kiwoom_credit_foreign(limit: int = 2200) -> dict:
         summary["ok"] = False
         summary["reason"] = "kiwoom_not_ready"
     else:
-        conn = sqlite3.connect(str(DB), timeout=30)
+        conn = connect_primary_db(timeout=30)
         try:
             rows = conn.execute(
                 """

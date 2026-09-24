@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import re
@@ -78,7 +79,7 @@ def normalize_company(name: str) -> str:
 
 
 def load_stock_lookup() -> dict[str, dict[str, str]]:
-    conn = sqlite3.connect(ROOT_STOCK_DB)
+    conn = connect_primary_db()
     lookup: dict[str, dict[str, str]] = {}
     for table in ("stock_universe", "stock_meta"):
         try:

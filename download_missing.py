@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 import sys
 import sqlite3
 from datetime import datetime, timedelta
@@ -5,7 +6,7 @@ from kis_client import KISClient
 import time
 
 kis = KISClient()
-db = sqlite3.connect("stock.db")
+db = connect_primary_db()
 db.row_factory = sqlite3.Row
 
 # Target dates

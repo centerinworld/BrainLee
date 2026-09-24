@@ -2,6 +2,7 @@
 """Build a unified availability ledger without rewriting source tables."""
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import sqlite3
 import sys
 import re
@@ -52,7 +53,7 @@ def table_exists(conn, name: str) -> bool:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.executescript(DDL)
     now = datetime.now().isoformat(timespec="seconds")

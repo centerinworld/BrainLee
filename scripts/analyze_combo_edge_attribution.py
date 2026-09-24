@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from collections import Counter, defaultdict, deque
@@ -662,7 +663,7 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     try:
         baseline_payload = _load_run_payload(conn, BASELINE_RUN_ID)
         challenger_payload = _load_run_payload(conn, CHALLENGER_RUN_ID)

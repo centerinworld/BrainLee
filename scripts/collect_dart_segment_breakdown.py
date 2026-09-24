@@ -4,6 +4,7 @@ DartV22Builder의 write_ch_sheet 부문별 매출 섹션 재현.
 
 실행: python3 scripts/collect_dart_segment_breakdown.py [--codes 005930,000660]
 """
+from db_compat import connect_primary_db
 import sqlite3, os, time, requests, sys, argparse, logging
 from datetime import datetime
 
@@ -168,7 +169,7 @@ def main():
     p.add_argument("--limit", type=int, default=200, help="처리 종목 수 제한")
     args = p.parse_args()
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
 
     if args.codes:

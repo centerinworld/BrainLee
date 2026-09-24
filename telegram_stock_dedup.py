@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
+from db_compat import connect_primary_db
+
 DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
 
 
@@ -37,7 +39,7 @@ def ensure_table(conn: sqlite3.Connection) -> None:
 
 
 def load_sent_codes(namespace: str, db_path: str | Path = DB_PATH) -> set[str]:
-    conn = sqlite3.connect(str(db_path), timeout=30)
+    conn = connect_primary_db(timeout=30) if db_path == DB_PATH else sqlite3.connect(str(db_path), timeout=30)
     try:
         ensure_table(conn)
         rows = conn.execute(
@@ -63,7 +65,7 @@ def mark_sent(
     db_path: str | Path = DB_PATH,
 ) -> int:
     now = datetime.now().isoformat(timespec="seconds")
-    conn = sqlite3.connect(str(db_path), timeout=30)
+    conn = connect_primary_db(timeout=30) if db_path == DB_PATH else sqlite3.connect(str(db_path), timeout=30)
     try:
         ensure_table(conn)
         count = 0

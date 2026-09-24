@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 import sys
 import sqlite3
 from datetime import datetime
@@ -9,14 +10,14 @@ from data_collector import DataCollector
 DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 LOG='/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/fill_2026q1_missing.log'
 
-conn=sqlite3.connect(DB)
+conn=connect_primary_db()
 rows=conn.execute('''
 SELECT u.stock_code
 FROM stock_universe u
 WHERE u.market IN ('유가증권','코스닥','KOSPI','KOSDAQ')
   AND u.stock_type='보통주'
   AND LENGTH(u.stock_code)=6
-  AND u.stock_code GLOB '[0-9]*'
+  AND u.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
   AND u.stock_code NOT IN (
     SELECT DISTINCT stock_code FROM financial_data
     WHERE year=2026 AND quarter=1 AND is_annual=0
@@ -36,7 +37,7 @@ for i,code in enumerate(codes,1):
     try:
         collector.collect_fundamentals(code, latest_only=True)
         # 확인
-        conn=sqlite3.connect(DB)
+        conn=connect_primary_db()
         hit=conn.execute("SELECT 1 FROM financial_data WHERE stock_code=? AND year=2026 AND quarter=1 AND is_annual=0 LIMIT 1",(code,)).fetchone()
         conn.close()
         if hit:

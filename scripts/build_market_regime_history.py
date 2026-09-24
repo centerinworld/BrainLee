@@ -2,6 +2,7 @@
 """Build point-in-time market regimes from canonical KOSPI history."""
 from __future__ import annotations
 import sqlite3
+from db_compat import connect_primary_db
 from datetime import datetime
 from pathlib import Path
 import numpy as np
@@ -29,7 +30,7 @@ POLICY={
  'mean_reversion':{'bull':(.2,'reduced','추세 역행 주의'),'sideways':(.8,'active','평균회귀 우호'),'bear':(-.4,'reduced','추가 하락 위험'),'high_volatility':(.1,'reduced','짧은 보유만')},
 }
 def main():
- c=sqlite3.connect(DB); c.executescript(DDL)
+ c=connect_primary_db(); c.executescript(DDL)
  d=pd.read_sql_query("SELECT substr(date,1,10) date,close FROM price_history WHERE stock_code='^KS11' AND close>0 AND date>='2014-01-01' ORDER BY date",c)
  d['date']=pd.to_datetime(d.date); d=d.drop_duplicates('date').set_index('date'); r=d.close.pct_change()
  d['ma60']=d.close.rolling(60,min_periods=40).mean();d['ma200']=d.close.rolling(200,min_periods=120).mean()

@@ -3,6 +3,7 @@ base.py -- run_backtest()
 Split out of backtest.py on 2026-09-03. Pure relocation, no logic changed.
 """
 import json
+from price_integrity import research_price_issues
 import uuid
 import math
 import re
@@ -16,10 +17,14 @@ from backtest_common import (
     DB_PATH,
     WARMUP_DAYS,
     _calc_metrics,
+    _load_corp_action_factors,
     _load_disc_dates,
+    _load_delisting_outcomes,
     _ma,
     _record_run_spec,
     _register_execution_artifacts,
+    _register_financial_provenance_artifact,
+    _register_universe_integrity_artifact,
     _run_portfolio,
     _save_result,
     init_backtest_db,
@@ -35,12 +40,14 @@ def run_backtest(start_date: str, end_date: str,
                  asof_mktcap: bool = True,
                  take_profit: float = 0.25,
                  big_gate: float = None,
-                 trail_big: float = -0.35) -> str:
+                 trail_big: float = -0.35,
+                 data_asof_ts: str = None) -> str:
     """
     run_id가 주어지면 해당 레코드(이미 DB에 존재)를 직접 업데이트.
     없으면 새 run_id를 생성하고 INSERT.
     """
     init_backtest_db()
+    effective_data_asof_ts = data_asof_ts or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     run_name = run_name or f"백테스트 {start_date[:7]}~{end_date[:7]}"
 
     if run_id is None:
@@ -63,15 +70,35 @@ def run_backtest(start_date: str, end_date: str,
     # 갖춘 엄격 엔진임을 확인(P0 Codex timing fix, backtest.py:831) — 실제 동작대로 정정.
     # 2026-07-27: as-of 시총(진입일 주가×상장주식수, security_master_history/
     # security_share_history 기반) 게이트를 기본화 — _run_generic_backtest와 동일 패턴.
+    _pit_exact = False
+    if asof_mktcap:
+        _approx_master = conn.execute("""SELECT COUNT(*) FROM security_master_history
+            WHERE market IN ('KOSPI','KOSDAQ') AND is_tradable=1 AND is_etf_etn=0
+              AND interval_quality LIKE '%approx%'
+              AND effective_from<=? AND (effective_to IS NULL OR effective_to>=?)""",
+            (end_date, start_date)).fetchone()[0]
+        _approx_shares = conn.execute("""SELECT COUNT(*) FROM security_share_history sh
+            WHERE sh.quality LIKE '%approx%'
+              AND sh.effective_from<=? AND (sh.effective_to IS NULL OR sh.effective_to>=?)
+              AND EXISTS (SELECT 1 FROM security_master_history sm
+                  WHERE sm.stock_code=sh.stock_code AND sm.market IN ('KOSPI','KOSDAQ')
+                    AND sm.is_tradable=1 AND sm.is_etf_etn=0)""",
+            (end_date, start_date)).fetchone()[0]
+        _pit_exact = int(_approx_master or 0) == 0 and int(_approx_shares or 0) == 0
+
     _record_run_spec(
         run_id, "v4", "v4_portfolio_nextopen_cashledger",
         {"per_stock": per_stock, "max_positions": max_positions,
          "start": start_date, "end": end_date, "asof_mktcap": asof_mktcap,
-         "take_profit": take_profit, "big_gate": big_gate, "trail_big": trail_big},
+         "take_profit": take_profit, "big_gate": big_gate, "trail_big": trail_big,
+         "data_asof_ts": effective_data_asof_ts},
         signal_timing="close_D", execution_timing="next_open",
-        market_cap_mode=("asof_approx" if asof_mktcap else "current"),
+        market_cap_mode=("pit" if _pit_exact else "asof_approx") if asof_mktcap else "current",
         allocation_rule="fixed_slot",
-        universe_version="security_master_history_v1_mixed_approx" if asof_mktcap else "stock_universe_current",
+        universe_version=(
+            "security_master_history_v2_krx_daily_exact" if _pit_exact
+            else "security_master_history_v1_mixed_approx"
+        ) if asof_mktcap else "stock_universe_current",
     )
 
     try:
@@ -111,16 +138,19 @@ def run_backtest(start_date: str, end_date: str,
                           WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                           WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
                           ELSE printf('%d-02-15', f.year+1) END
-                   ) as avail_date
+                   ) as avail_date,
+                   f.id, f.report_type
             FROM financial_data f
             LEFT JOIN fin_disclosure_dates d ON
                 d.stock_code = f.stock_code AND d.year = f.year
                 AND d.quarter = CASE WHEN f.is_annual=1 THEN 4 ELSE f.quarter END
                 AND d.is_annual = CASE WHEN f.is_annual=1 THEN 1 ELSE 0 END
-            WHERE (f.is_annual=0 AND f.quarter BETWEEN 1 AND 3)
-               OR (f.is_annual=1)
-            ORDER BY f.stock_code, f.year, f.quarter
-        """).fetchall():
+            WHERE ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 3)
+               OR (f.is_annual=1))
+              AND f.report_type IN ('CFS','')
+              AND f.updated_at <= ?
+            ORDER BY f.stock_code, f.year, f.quarter, f.report_type DESC, f.id
+        """, (effective_data_asof_ts,)).fetchall():
             sc = r[0]
             fin_all.setdefault(sc, []).append(r[1:])   # (y,q,...,is_ann,avail_date)
 
@@ -140,6 +170,7 @@ def run_backtest(start_date: str, end_date: str,
                   AND sm.market IN ('KOSPI','KOSDAQ')
                 WHERE ph.date>=? AND ph.date<=? AND ph.close>0
                 GROUP BY ph.stock_code HAVING COUNT(*) >= 200
+                ORDER BY ph.stock_code
             """, (warmup_start, end_date)).fetchall()]
         else:
             stock_codes = [r[0] for r in conn.execute("""
@@ -148,12 +179,13 @@ def run_backtest(start_date: str, end_date: str,
                 INNER JOIN (
                     SELECT stock_code FROM stock_universe
                     WHERE market_cap >= 1000
-                      AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                      AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                     GROUP BY stock_code
                 ) su ON ph.stock_code = su.stock_code
                 WHERE ph.date>=? AND ph.date<=? AND ph.close>0
                 GROUP BY ph.stock_code
                 HAVING COUNT(*) >= 200
+                ORDER BY ph.stock_code
             """, (warmup_start, end_date)).fetchall()]
 
         # ── as-of 상장주식수 이력 (as-of 시총 게이트용) ──────────────
@@ -183,6 +215,18 @@ def run_backtest(start_date: str, end_date: str,
             ).fetchall()}
 
         # ── 종목별 데이터 로드 ────────────────────────────────────
+        # 종목 전체를 제거하면 사후정보로 유니버스를 바꾸는 선택편향이 생긴다.
+        # 종목은 유지하고 문제 관측치가 252거래일 지표 창에서 빠질 때까지만 진입 차단.
+        universe_candidate_count = len(stock_codes)
+        price_issues = research_price_issues(
+            conn, stock_codes, warmup_start, end_date,
+            allow_confirmed_corporate_actions=True,
+        )
+        issue_dates: Dict[str, list] = {}
+        for issue_code, issue_day, _classification in price_issues:
+            issue_dates.setdefault(str(issue_code), []).append(str(issue_day)[:10])
+        affected_codes = set(issue_dates)
+        entry_blocked_dates: Dict[str, set] = {}
         stock_data: Dict[str, dict] = {}
         for sc in stock_codes:
             try:
@@ -225,6 +269,11 @@ def run_backtest(start_date: str, end_date: str,
                     'mkt_cap_억':  mkt_cap_map.get(sc, 500),
                     'opens':       opens,
                 }
+                if sc in issue_dates:
+                    blocked = entry_blocked_dates.setdefault(sc, set())
+                    for issue_day in issue_dates[sc]:
+                        issue_i = bisect.bisect_left(dates, issue_day)
+                        blocked.update(dates[issue_i:issue_i + 252])
             except Exception:
                 continue
 
@@ -274,10 +323,23 @@ def run_backtest(start_date: str, end_date: str,
         except Exception:
             pass  # KOSPI 데이터 없으면 필터 비활성화
 
+        # 2026-09-11 신규: 기업행위(액면분할 등) 조정계수 로드 — turnaround.py와 동일 패턴.
+        # v4는 그동안 이 조정이 전혀 없어 point-in-time 검증 게이트를 통과 못하고 있었다.
+        _corp_action_factors = _load_corp_action_factors(
+            conn,
+            [r[0] for r in conn.execute(
+                "SELECT DISTINCT stock_code FROM corporate_action_events WHERE adjustment_status='factor_confirmed'"
+                + (" AND updated_at <= ?" if data_asof_ts else ""),
+                ([data_asof_ts] if data_asof_ts else []),
+            ).fetchall()],
+            data_asof_ts=data_asof_ts,
+        )
+        _delisting_recovery = _load_delisting_outcomes(conn, list(stock_data))
         conn.close()
 
         # ── 포트폴리오 시뮬레이션 ───────────────────────────────
         total_capital = per_stock * max_positions
+        financial_provenance = []
         trades, equity_curve = _run_portfolio(
             sim_dates, stock_data,
             per_stock, max_positions,
@@ -288,7 +350,11 @@ def run_backtest(start_date: str, end_date: str,
             asof_mktcap=asof_mktcap,
             shares_asof_fn=_shares_asof_v4 if asof_mktcap else None,
             mktcap_min=MKTCAP_MIN_V4,
+            corp_action_factors=_corp_action_factors,
+            delisting_recovery=_delisting_recovery,
             big_gate=big_gate, trail_big=trail_big,
+            entry_blocked_dates=entry_blocked_dates,
+            financial_provenance=financial_provenance,
         )
 
         # ── 종목명 매핑 ──────────────────────────────────────
@@ -369,6 +435,12 @@ def run_backtest(start_date: str, end_date: str,
         _init_cap = per_stock * max_positions
         _final_eq = _init_cap * (1 + float(metrics.get('total_return_pct') or 0) / 100.0)
         _register_execution_artifacts(run_id, _init_cap, _final_eq, asof_mktcap=asof_mktcap)
+        _register_financial_provenance_artifact(run_id, financial_provenance, len(trades))
+        _register_universe_integrity_artifact(
+            run_id, universe_candidate_count, affected_codes, warmup_start, end_date,
+            temporal_masking=True, issue_event_count=len(price_issues),
+            blocked_stock_days=sum(len(days) for days in entry_blocked_dates.values()),
+        )
         return run_id
 
     except Exception as e:
@@ -382,7 +454,3 @@ def run_backtest(start_date: str, end_date: str,
         except Exception:
             pass
         raise
-
-
-
-

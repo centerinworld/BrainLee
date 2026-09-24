@@ -2,11 +2,13 @@
 Yahoo Finance 기반 거시지표 수집기 (환율·원자재·지수)
 무료, API 키 불필요
 """
+from db_compat import connect_primary_db
 import sqlite3, logging
 from datetime import datetime, timedelta
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 # (yahoo_ticker, our_code)
 YAHOO_MACRO = [
@@ -16,6 +18,9 @@ YAHOO_MACRO = [
     ("USDCNY=X",  "CN_USD_CNY"),
     ("EURUSD=X",  "EU_EUR_USD"),
     ("DX-Y.NYB",  "US_DXY"),
+    ("TWD=X",     "TW_USD_TWD"),   # 아시아 외국인 자금흐름(global_foreign_flow) USD 환산용 ★2026-09-08
+    ("INR=X",     "IN_USD_INR"),   # 상동
+    ("HKD=X",     "HK_USD_HKD"),   # 홍콩 Stock Connect 남향자금 USD 환산용
     # ── 원자재 ────────────────────────────────────────────
     ("CL=F",      "COMM_OIL_WTI"),
     ("BZ=F",      "COMM_OIL_BRENT"),
@@ -43,7 +48,7 @@ def collect_yahoo_macro(lookback_days: int = 365) -> int:
         return 0
 
     start = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     total = 0
 
     for ticker, our_code in YAHOO_MACRO:
@@ -85,7 +90,7 @@ def collect_yahoo_macro(lookback_days: int = 365) -> int:
 
 def _log(records: int, status: str = "ok", msg: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         conn.execute("""
             INSERT INTO global_macro_collection_log (source, status, records, message)
             VALUES ('yahoo_macro', ?, ?, ?)

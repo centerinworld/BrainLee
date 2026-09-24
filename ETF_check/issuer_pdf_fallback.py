@@ -5,18 +5,34 @@ import argparse
 import gzip
 import hashlib
 import json
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import requests
+from bs4 import BeautifulSoup
 
 from full_pdf_collector import DB_PATH, RAW_ROOT, connect
 
 
 PLUS_PDF_URL = "https://www.plusetf.co.kr/api/v1/product/pdf/list"
-SUPPORTED = {"489010": {"issuer_id": "006368", "source": "PLUS_OFFICIAL"}}
+TIGER_PDF_URL = (
+    "https://investments.miraeasset.com/tigeretf/ko/product/search/detail/"
+    "pdfListAjax.ajax"
+)
+SUPPORTED = {
+    "489010": {"kind": "plus", "issuer_id": "006368", "source": "PLUS_OFFICIAL"},
+    "435420": {
+        "kind": "tiger",
+        "isin": "KR7435420005",
+        "source": "TIGER_OFFICIAL",
+    },
+}
+
+MATURITY_NAME = re.compile(r"(?<!\d)(\d{2})[-.](\d{2})(?!\d)")
+MATURITY_HISTORY_DAYS = 5
 
 
 def initialize(conn: sqlite3.Connection) -> None:
@@ -56,6 +72,136 @@ def initialize(conn: sqlite3.Connection) -> None:
     )
 
 
+def _raw_digest_matches(raw_path: str | None, expected: str | None) -> bool:
+    if not raw_path or not expected:
+        return False
+    path = Path(raw_path)
+    if not path.exists():
+        return False
+    try:
+        with gzip.open(path, "rb") as stream:
+            return hashlib.sha256(stream.read()).hexdigest() == expected
+    except (OSError, EOFError):
+        return False
+
+
+def validated_maturity_wind_down_exceptions(
+    conn: sqlite3.Connection, base_date: str
+) -> list[dict[str, Any]]:
+    """Return empty target-maturity bond ETFs with independently proven wind-downs.
+
+    An empty KRX response is accepted only when the ETF name targets the current
+    year/month, five prior snapshots show a monotonic run-down to at most one
+    non-domestic component, and KIS independently reports zero expected PDF rows.
+    """
+    target_date = datetime.strptime(base_date, "%Y%m%d").date()
+    candidates = conn.execute(
+        """
+        SELECT s.etf_ticker,s.etf_name,s.raw_path,s.raw_sha256,
+               d.expected_component_count,d.listed_shares,d.scale_factor
+        FROM etf_pdf_full_snapshot s
+        JOIN etf_scale_daily d
+          ON d.base_date=s.base_date AND d.etf_ticker=s.etf_ticker
+        WHERE s.base_date=? AND s.status='empty' AND s.component_count=0
+          AND s.domestic_stock_count=0
+          AND d.expected_component_count=0
+          AND d.listed_shares>0 AND d.scale_factor>0
+        ORDER BY s.etf_ticker
+        """,
+        (base_date,),
+    ).fetchall()
+    result = []
+    for row in candidates:
+        name = str(row["etf_name"] or "")
+        maturity = MATURITY_NAME.search(name)
+        if not maturity or "채" not in name:
+            continue
+        maturity_year = 2000 + int(maturity.group(1))
+        maturity_month = int(maturity.group(2))
+        if (maturity_year, maturity_month) != (target_date.year, target_date.month):
+            continue
+        history = conn.execute(
+            """
+            SELECT component_count,domestic_stock_count
+            FROM etf_pdf_full_snapshot
+            WHERE etf_ticker=? AND base_date<? AND status='success'
+            ORDER BY base_date DESC LIMIT ?
+            """,
+            (row["etf_ticker"], base_date, MATURITY_HISTORY_DAYS),
+        ).fetchall()
+        if len(history) != MATURITY_HISTORY_DAYS:
+            continue
+        counts = [int(item["component_count"]) for item in history]
+        if counts[0] > 1 or any(int(item["domestic_stock_count"]) for item in history):
+            continue
+        # Rows are newest first; component counts must not rise toward maturity.
+        if any(newer > older for newer, older in zip(counts, counts[1:])):
+            continue
+        if not _raw_digest_matches(row["raw_path"], row["raw_sha256"]):
+            continue
+        result.append(
+            {
+                "etf_ticker": row["etf_ticker"],
+                "source": "KRX_MATURITY_WINDDOWN",
+                "effective_date": base_date,
+                "component_count": 0,
+                "domestic_components": [],
+                "evidence": {
+                    "prior_component_counts_newest_first": counts,
+                    "kis_expected_component_count": int(row["expected_component_count"]),
+                },
+            }
+        )
+    return result
+
+
+def validated_domestic_exceptions(conn: sqlite3.Connection, base_date: str) -> list[dict[str, Any]]:
+    """Return independently validated snapshots with no Korean stock holdings."""
+    initialize(conn)
+    candidates = conn.execute(
+        """
+        SELECT f.etf_ticker,f.effective_date,f.source,f.component_count,
+               f.raw_path,f.raw_sha256
+        FROM etf_pdf_issuer_fallback f
+        JOIN etf_pdf_full_snapshot s
+          ON s.base_date=f.base_date AND s.etf_ticker=f.etf_ticker
+        WHERE f.base_date=? AND f.effective_date=? AND f.status='current'
+          AND f.component_count>0 AND s.status!='success'
+          AND NOT EXISTS (
+              SELECT 1 FROM etf_pdf_issuer_component c
+              WHERE c.base_date=f.base_date AND c.etf_ticker=f.etf_ticker
+                AND c.component_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+          )
+          AND f.component_count=(
+              SELECT COUNT(*) FROM etf_pdf_issuer_component c
+              WHERE c.base_date=f.base_date AND c.etf_ticker=f.etf_ticker
+          )
+        ORDER BY f.etf_ticker
+        """,
+        (base_date, base_date),
+    ).fetchall()
+    result = []
+    for row in candidates:
+        if not _raw_digest_matches(row["raw_path"], row["raw_sha256"]):
+            continue
+        result.append(
+            {
+                "etf_ticker": row["etf_ticker"],
+                "source": row["source"],
+                "effective_date": row["effective_date"],
+                "component_count": int(row["component_count"]),
+                "domestic_components": [],
+            }
+        )
+    known = {item["etf_ticker"] for item in result}
+    result.extend(
+        item
+        for item in validated_maturity_wind_down_exceptions(conn, base_date)
+        if item["etf_ticker"] not in known
+    )
+    return sorted(result, key=lambda item: item["etf_ticker"])
+
+
 def parse_plus(payload: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
     content = payload.get("content") or []
     if not content:
@@ -89,18 +235,62 @@ def fetch_plus(base_date: str, issuer_id: str) -> tuple[dict[str, Any], str]:
     return response.json(), response.url
 
 
-def store(
+def parse_tiger(html: str) -> list[dict[str, Any]]:
+    soup = BeautifulSoup(html, "html.parser")
+    source_rows = soup.select("tr[data-tot-cnt]")
+    if not source_rows:
+        raise RuntimeError("TIGER official PDF response is empty")
+    totals = {int(row.get("data-tot-cnt", "0")) for row in source_rows}
+    if len(totals) != 1 or len(source_rows) != next(iter(totals)):
+        raise RuntimeError(
+            f"TIGER PDF pagination incomplete: {len(source_rows)}/{sorted(totals)}"
+        )
+    rows = []
+    for order, source_row in enumerate(source_rows, 1):
+        cells = [cell.get_text(" ", strip=True) for cell in source_row.select("td")]
+        if len(cells) < 5:
+            raise RuntimeError(f"TIGER PDF row has only {len(cells)} cells")
+        rows.append(
+            {
+                "order": order,
+                "code": cells[0],
+                "name": cells[1],
+                "shares": float(cells[2].replace(",", "")) if cells[2] not in {"", "-"} else None,
+                "valuation": float(cells[3].replace(",", "")) if cells[3] not in {"", "-"} else None,
+                "weight": float(cells[4].replace(",", "")) if cells[4] not in {"", "-"} else None,
+                "raw": str(source_row),
+            }
+        )
+    return rows
+
+
+def fetch_tiger(base_date: str, isin: str) -> tuple[str, list[dict[str, Any]], str]:
+    params = {
+        "ksdFund": isin,
+        "fixDate": base_date,
+        "prfPrd": "Week01",
+        "order": "SRD",
+        "pageIndex": 1,
+        "firstIndex": 0,
+        "listCnt": 1000,
+    }
+    response = requests.get(TIGER_PDF_URL, params=params, timeout=30)
+    response.raise_for_status()
+    return response.text, parse_tiger(response.text), response.url
+
+
+def store_rows(
     conn: sqlite3.Connection,
     base_date: str,
     ticker: str,
+    effective: str,
     source: str,
     source_url: str,
-    payload: dict[str, Any],
+    rows: list[dict[str, Any]],
+    raw: bytes,
     raw_root: Path = RAW_ROOT,
 ) -> dict[str, Any]:
     initialize(conn)
-    effective, rows = parse_plus(payload)
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     digest = hashlib.sha256(raw).hexdigest()
     directory = raw_root / base_date
     directory.mkdir(parents=True, exist_ok=True)
@@ -149,6 +339,22 @@ def store(
     }
 
 
+def store(
+    conn: sqlite3.Connection,
+    base_date: str,
+    ticker: str,
+    source: str,
+    source_url: str,
+    payload: dict[str, Any],
+    raw_root: Path = RAW_ROOT,
+) -> dict[str, Any]:
+    effective, rows = parse_plus(payload)
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    return store_rows(
+        conn,base_date,ticker,effective,source,source_url,rows,raw,raw_root
+    )
+
+
 def collect_missing(base_date: str, db_path: Path = DB_PATH, raw_root: Path = RAW_ROOT) -> dict[str, Any]:
     conn=connect(db_path); initialize(conn)
     missing=[row[0] for row in conn.execute(
@@ -163,8 +369,16 @@ def collect_missing(base_date: str, db_path: Path = DB_PATH, raw_root: Path = RA
         if not adapter:
             result["unsupported"].append(ticker); continue
         try:
-            payload,url=fetch_plus(base_date,adapter["issuer_id"])
-            result["collected"].append(store(conn,base_date,ticker,adapter["source"],url,payload,raw_root))
+            if adapter["kind"] == "plus":
+                payload,url=fetch_plus(base_date,adapter["issuer_id"])
+                stored=store(conn,base_date,ticker,adapter["source"],url,payload,raw_root)
+            else:
+                html,rows,url=fetch_tiger(base_date,adapter["isin"])
+                stored=store_rows(
+                    conn,base_date,ticker,base_date,adapter["source"],url,
+                    rows,html.encode("utf-8"),raw_root,
+                )
+            result["collected"].append(stored)
         except Exception as exc:
             result["errors"].append({"ticker":ticker,"error":str(exc)})
     conn.close(); return result

@@ -25,6 +25,7 @@ API 문서(오픈API 활용자가이드_금융위원회_주식대차정보) 확�
 예상 소요: rank+svc 5년치 ~1,250일 × ~2초/일 ≈ 약 40~60분
 """
 
+from db_compat import connect_primary_db
 import argparse
 import asyncio
 import logging
@@ -108,7 +109,7 @@ def trading_days(start_str: str, end_str: str) -> list[str]:
 
 def get_existing_dates(table: str, date_col: str = "bas_dt") -> set[str]:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         rows = conn.execute(f"SELECT DISTINCT {date_col} FROM {table}").fetchall()
         conn.close()
         return {r[0] for r in rows}
@@ -119,7 +120,7 @@ def get_existing_dates(table: str, date_col: str = "bas_dt") -> set[str]:
 
 def ensure_tables():
     """필요한 테이블이 없으면 생성."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.execute("PRAGMA journal_mode=WAL")
 
     conn.execute("""
@@ -297,7 +298,7 @@ async def collect_rank(client: httpx.AsyncClient, bas_dt: str) -> list[dict]:
 def save_rank(rows: list[dict]) -> int:
     if not rows:
         return 0
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executemany("""
         INSERT INTO short_rank_daily
@@ -351,7 +352,7 @@ async def collect_svc(client: httpx.AsyncClient, bas_dt: str) -> list[dict]:
 def save_svc(rows: list[dict]) -> int:
     if not rows:
         return 0
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executemany("""
         INSERT INTO short_sell_daily
@@ -405,7 +406,7 @@ async def collect_sector(client: httpx.AsyncClient, bas_dt: str) -> list[dict]:
 def save_sector(rows: list[dict]) -> int:
     if not rows:
         return 0
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executemany("""
         INSERT INTO short_sector_daily

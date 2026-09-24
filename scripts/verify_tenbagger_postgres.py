@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 import sqlite3
 import sys
 import time
@@ -12,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from config import IS_POSTGRES  # noqa: E402
-from db_compat import connect_primary_db, primary_database_label  # noqa: E402
+from db_compat import connect_primary_db, connect_recovery_sqlite_db, primary_database_label  # noqa: E402
 from db_utils import STOCK_DB_PATH  # noqa: E402
 from tenbagger_engine import (  # noqa: E402
     _fetch_candidates,
@@ -81,7 +82,7 @@ def main() -> None:
     if not IS_POSTGRES:
         failures.append("POSTGRES_DATABASE_URL is not active")
 
-    sqlite_conn = sqlite3.connect(str(STOCK_DB_PATH))
+    sqlite_conn = connect_recovery_sqlite_db(readonly=True)
     pg_conn = connect_primary_db()
     try:
         parity = {}
@@ -258,5 +259,13 @@ def main() -> None:
     raise SystemExit(0 if not failures else 1)
 
 
-if __name__ == "__main__":
+def cli(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Verify tenbagger PostgreSQL source parity and calculation inputs."
+    )
+    parser.parse_args(argv)
     main()
+
+
+if __name__ == "__main__":
+    cli()

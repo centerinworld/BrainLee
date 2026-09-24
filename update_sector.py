@@ -9,6 +9,7 @@ portfolio 테이블의 sector 컬럼을 업데이트합니다.
   python3 update_sector.py
 """
 
+from db_compat import connect_primary_db
 import sys, sqlite3, time, requests, logging
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -113,7 +114,7 @@ def get_sector_stock_universe(conn, stock_code: str) -> str | None:
 
 
 def main():
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = connect_primary_db()
 
     # 보유 종목 중 sector가 없거나 '기타'인 종목 조회
     rows = conn.execute("""

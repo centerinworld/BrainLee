@@ -10,6 +10,7 @@ Naver Finance fchart API 사용:
   https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count=3&requestType=0
   XML 응답: <item data="YYYYMMDD|open|high|low|close|volume" />
 """
+from db_compat import connect_primary_db
 import sys, os, sqlite3, time, logging, re
 from datetime import date, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -78,13 +79,13 @@ def get_naver_ohlcv(session, code, count=3):
 
 def get_all_codes():
     """stock_universe에서 코스피/코스닥 6자리 종목코드 목록"""
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     try:
         rows = conn.execute("""
             SELECT stock_code FROM stock_universe
             WHERE (market = '유가증권' OR market = '코스닥')
               AND length(stock_code) = 6
-              AND stock_code GLOB '[0-9]*'
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             ORDER BY market_cap DESC NULLS LAST
         """).fetchall()
         return [r[0] for r in rows]
@@ -100,7 +101,7 @@ def collect_worker(codes_chunk, today_str, result_list):
         rows = get_naver_ohlcv(session, code, count=3)
         for date_iso, o, h, l, c, v in rows:
             if date_iso == today_str and c > 0:
-                local.append((code, date_iso, o, h, l, c, v))
+                local.extend((code, *row) for row in rows)
                 break
         time.sleep(SLEEP_PER_REQ)
     result_list.extend(local)
@@ -108,10 +109,24 @@ def collect_worker(codes_chunk, today_str, result_list):
 
 def save_to_db(records):
     """price_history에 UPSERT"""
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=120000")
     try:
+        from collections import defaultdict
+        from price_integrity import ensure_schema, gate_price_batch
+        ensure_schema(conn)
+        grouped = defaultdict(list)
+        for row in records:
+            grouped[row[0]].append(row[1:7])
+        accepted = {code for code, rows in grouped.items()
+                    if gate_price_batch(conn, code, rows, 'naver_fchart_recent')}
+        records = [r for r in records if r[0] in accepted]
+        # Keep PostgreSQL's transaction-local validation marker alive through
+        # the historical rows in this recent-window batch.
+        if not records:
+            conn.commit()
+            return 0, 0
         ins = upd = 0
         for i in range(0, len(records), BATCH_SIZE):
             batch = records[i:i+BATCH_SIZE]
@@ -157,10 +172,10 @@ def main():
     print("=" * 56)
 
     # 이미 오늘 데이터가 충분히 있으면 스킵
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     existing = conn.execute(
         f"SELECT COUNT(*) FROM price_history WHERE date='{today_str}' "
-        f"AND close>0 AND length(stock_code)=6 AND stock_code GLOB '[0-9]*'"
+        f"AND close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
     ).fetchone()[0]
     conn.close()
     log.info(f"기존 오늘 데이터: {existing}건")
@@ -214,10 +229,10 @@ def main():
     print(f"  신규 삽입: {ins}건 / 기존 수정: {upd}건")
 
     # 검증
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     final = conn.execute(
         f"SELECT COUNT(*) FROM price_history WHERE date='{today_str}' "
-        f"AND close>0 AND length(stock_code)=6 AND stock_code GLOB '[0-9]*'"
+        f"AND close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
     ).fetchone()[0]
     conn.close()
     print(f"  최종 오늘 종목 수: {final}개")

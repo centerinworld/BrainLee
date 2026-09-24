@@ -13,6 +13,7 @@ _parse_fin_df에 "cash"도 재무상태표 행만 허용하도록 방어 추가 
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import sqlite3
@@ -43,7 +44,7 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     args = ap.parse_args()
 
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA busy_timeout=120000")
     targets = conn.execute("""
         SELECT DISTINCT stock_code, year, quarter, is_annual, report_type

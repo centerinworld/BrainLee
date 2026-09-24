@@ -23,7 +23,7 @@ import backtest as _bt
 from datetime import date as _date, datetime as _datetime, timedelta as _timedelta
 from fastapi import APIRouter, HTTPException, Query
 
-from merged_simulator import MergeConfig, persist_merged_run, simulate_merged_account
+from merged_simulator import MergeConfig, persist_merged_run, pnl_concentration, simulate_merged_account
 from run_registry import derive_status, register_run_set, registry as selected_registry, select_run
 from security_master import resolve_security
 from strategy_governance import classify_strategy, summarize_governance
@@ -58,7 +58,7 @@ _bt.init_backtest_db()
 
 
 def _db():
-    return _sl.connect(DB_PATH, timeout=30)
+    return connect_primary_db(timeout=30)
 
 
 def _json_safe(value):
@@ -156,7 +156,7 @@ async def start_backtest(payload: dict):
             # run_id를 직접 전달 → 내부에서 별도 UUID 생성 없이 동일 레코드에 저장
             _bt.run_backtest(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -199,7 +199,7 @@ async def start_backtest_v1(payload: dict):
         try:
             _bt.run_backtest_v1(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -230,7 +230,7 @@ async def start_backtest_vbr(payload: dict):
         try:
             _bt.run_backtest_hidden_rev(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?", (str(e), run_id))
             c.commit(); c.close()
     threading.Thread(target=_run, daemon=True, name=f"BT-VBR-{run_id}").start()
@@ -256,7 +256,7 @@ def _deprecated_v1dart(payload: dict):
             _bt.run_backtest_v1_dart(start, end, per_stock=per_s, dart_min_signal=dart_min,
                                      run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -282,7 +282,7 @@ async def start_backtest_v8(payload: dict):
         try:
             _bt.run_backtest_v8(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -308,7 +308,7 @@ async def start_backtest_golden_cross(payload: dict):
         try:
             _bt.run_backtest_golden_cross(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -334,11 +334,38 @@ async def start_backtest_recovery(payload: dict):
         try:
             _bt.run_backtest_recovery(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
     threading.Thread(target=_run, daemon=True, name=f"BT-RECOVERY-{run_id}").start()
+    return {"run_id": run_id, "status": "running"}
+
+
+@router.post("/run-minervini")
+async def start_backtest_minervini(payload: dict):
+    """Minervini Trend Template — RS강도(KOSPI대비 근사)+이동평균정렬+200일선상승
+    +52주위치+Stage2. 2026-09-19 소유자가 찾은 xang1234/stock-screener(GitHub) 포팅."""
+    start  = payload.get("start_date", "2018-01-01")
+    end    = payload.get("end_date",   "2025-12-31")
+    per_s  = float(payload.get("per_stock", 10_000_000))
+    name   = payload.get("name", f"Minervini Trend Template {start[:7]}~{end[:7]}")
+    run_id = str(uuid.uuid4())[:8]
+    conn = _db()
+    conn.execute(
+        "INSERT OR IGNORE INTO backtest_runs (run_id,name,strategy,start_date,end_date,per_stock,status) "
+        "VALUES (?,?,'minervini',?,?,?,'running')", (run_id, name, start, end, per_s))
+    conn.commit(); conn.close()
+
+    def _run():
+        try:
+            _bt.run_backtest_minervini_trend_template(start, end, per_stock=per_s, run_name=name, run_id=run_id)
+        except Exception as e:
+            c = connect_primary_db(timeout=30)
+            c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
+                      (str(e), run_id))
+            c.commit(); c.close()
+    threading.Thread(target=_run, daemon=True, name=f"BT-MINERVINI-{run_id}").start()
     return {"run_id": run_id, "status": "running"}
 
 
@@ -360,7 +387,7 @@ async def start_backtest_turnaround(payload: dict):
         try:
             _bt.run_backtest_turnaround(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -386,7 +413,7 @@ async def start_backtest_deep_recovery(payload: dict):
         try:
             _bt.run_backtest_deep_recovery(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -412,7 +439,7 @@ async def start_backtest_low_base_breakout(payload: dict):
         try:
             _bt.run_backtest_low_base_breakout(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -438,7 +465,7 @@ async def start_backtest_high_profit(payload: dict):
         try:
             _bt.run_backtest_high_profit_compound(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -469,7 +496,7 @@ async def start_backtest_sector(payload: dict):
                                     run_name=name, run_id=run_id)
         except Exception as e:
             import traceback
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (f"{e}\n{traceback.format_exc()}", run_id))
             c.commit(); c.close()
@@ -495,7 +522,7 @@ async def start_backtest_v10(payload: dict):
         try:
             _bt.run_backtest_v10(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -521,7 +548,7 @@ async def start_backtest_v11(payload: dict):
         try:
             _bt.run_backtest_v11(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -554,7 +581,7 @@ def _deprecated_v10_hs(payload: dict):
             _bt.run_backtest_v10_hs(start, end, per_stock=per_s, hs_yoy_min=hs_min,
                                      run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error' WHERE run_id=?", (run_id,))
             c.commit(); c.close()
     threading.Thread(target=_run, daemon=True, name=f"BT-V10HS-{run_id}").start()
@@ -586,7 +613,7 @@ def _deprecated_v11_hs(payload: dict):
             _bt.run_backtest_v11_hs(start, end, per_stock=per_s, hs_yoy_min=hs_min,
                                      run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error' WHERE run_id=?", (run_id,))
             c.commit(); c.close()
     threading.Thread(target=_run, daemon=True, name=f"BT-V11HS-{run_id}").start()
@@ -611,7 +638,7 @@ async def start_backtest_v12(payload: dict):
         try:
             _bt.run_backtest_v12(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -637,7 +664,7 @@ async def start_backtest_regime_adaptive(payload: dict):
         try:
             _bt.run_backtest_regime_adaptive(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -665,7 +692,7 @@ async def start_backtest_composite(payload: dict):
             _bt.run_backtest_composite(start, end, per_stock=per_s,
                                        score_threshold=thresh, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -691,7 +718,7 @@ async def start_backtest_v1_value(payload: dict):
         try:
             _bt.run_backtest_value(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -717,7 +744,7 @@ async def start_backtest_v2(payload: dict):
         try:
             _bt.run_backtest_v2(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -743,7 +770,7 @@ async def start_backtest_v5(payload: dict):
         try:
             _bt.run_backtest_v5(start, end, per_stock=per_s, run_name=name, run_id=run_id)
         except Exception as e:
-            c = _sl.connect(DB_PATH, timeout=30)
+            c = connect_primary_db(timeout=30)
             c.execute("UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                       (str(e), run_id))
             c.commit(); c.close()
@@ -780,6 +807,7 @@ STRATEGY_LABELS = {
     "moonshot_turnaround": "V-MOONSHOT 턴어라운드 대박발굴",
     "contract_momentum":   "V-CONTRACT 해외수주 모멘텀",
     "earnings_supply_discovery": "V-DISCOVERY 공급+실적 발굴",
+    "minervini": "V-MINERVINI 추세템플릿",
 }
 
 STRATEGY_DESC = {
@@ -787,7 +815,7 @@ STRATEGY_DESC = {
     "v1_value": "Graham 내재가치 25%+ 할인 OR PBR<0.7·PER<10 + 영업흑자. 시장 사이클 무관 저평가 발굴 — 보수적 분할매수에 적합",
     "v2":       "영업이익률·ROE·ROA 수익성 3축 스코어 ≥3점 + 영업흑자 + 보조수급. 재무 우량주 장기 보유형 — 복리효과 극대화",
     "v5":       "기관+외국인 5일 동반 누적 순매수 + MA20>60>120 정배열 + 영업흑자. 스마트머니 방향에 편승하는 수급 주도 모멘텀",
-    "v4":       "Minervini RS(상대강도) + Graham PBR·PER 저평가 + 기관·외국인 수급 삼중 필터. 기술적·기본적·수급 3가지 조건 동시 충족. 2026-07-27 as-of 시총(security_master_history 기반) 리트로핏 재등록(point_in_time_approx): avg6=+15.09%, 3/6기간 양수 [상승+63.19/하락0/회복+1.14/AI-1.69/최근-4.17/최신+32.08] — 구 +21.7%(4/6)는 현재시총 기준 유니버스 필터의 룩어헤드 포함 수치.",
+    "v4":       "Minervini RS(상대강도) + Graham PBR·PER 저평가 + 기관·외국인 수급 삼중 필터. KRX 2015~2026 일별 상장구간·발행주식 수, 거래별 재무 공시 provenance, 합병 회수가치를 반영한 point_in_time_verified 결과: avg6=+19.46%, 2/6기간 양수 [상승+78.26/하락0/회복-1.10/AI-6.35/최근-2.37/최신+48.33].",
     "v10":      "영업이익 YoY≥80% + 매출 YoY≥30% 2분기 연속 확인 + KOSPI MA60 위. 이익 폭발 구간을 압축 투자로 포착하는 고성장 모멘텀",
     "v11":      "V7 이익가속(Earnings Acceleration): OP YoY>30% 3분기 연속 가속 + 이익성장률>매출성장률(마진 레버리지) + MA60>MA120 추세전환 + 52W 50~88% + 기관OR외인 유입. avg5=+6.5%, 최신+60.7%. 회복장·최근 구간 특히 강세.",
     "v8":       "★V9 수출 변곡점 선행 전략: 수출 YoY 음수→양수 전환(진짜 변곡점) 포착 + MA60+20% 상단 차단(선반영 방지). 데이터기반 매도: 수출역전청산(YoY<-3%) + 수출전환실패청산. 2026-07-16 고정슬롯→현금원장 전환(execution_strict) 재등록: avg6=+16.1%, 2/6기간 양수 [상승+76.3/하락0/회복-3.6/AI-9.0/최근-0.3/최신+33.1]. 2026-07-27 코드 재확인 결과 애초에 시총 기반 유니버스 필터 자체가 없음(종목선정은 수출데이터 보유여부만 기준) — market_cap_mode를 \"current\"(부정확한 라벨)에서 \"not_applicable\"로 정정, 수치·로직 변경 없음.",
@@ -798,16 +826,25 @@ STRATEGY_DESC = {
     "sector_focus":         "★V-SECTOR 주도섹터 집중: 섹터 BUY 신호(점수≥55) 발생 시 섹터 내 3개월 RS 리더+기관집중도 우수 종목 TOP3를 매수. KOSPI 절대 레벨로 차단하지 않고 강한 섹터 장세를 우선 반영. 월 1회 리밸런싱, 최소 44일 섹터 보유 후 EXIT. 2026-07-21 추적손절 -20%→-30% 기본값 변경(연속운용 227.89%→245.02%, 승률46.3→46.7%, 조기청산 감소) 재등록 avg6=+30.0% 5/6기간 양수: 상승+61.1/하락-7.1/회복+21.9/AI+40.5/최근+36.9/최신+26.6. execution_strict.",
     "recovery":             "★V-RECOVERY 낙폭과대 반등: MA60 -20~-65% 낙폭 + 52주 저점 40%이내 + 거래량반등×2.0 + 3일중 2일 상승. 랭킹 보너스: 직전분기 첫 흑자전환 +20pt + 기관·외인 5일 순매수 양수 +20pt. Trail-20%/25%, 손절-12%. 2026-07-15 point_in_time_approx 재등록 avg6=+23.0% 5/6기간 양수: 상승+13.7/하락+42.9/회복+25.4/AI-3.8/최근+56.3/최신+3.6 (체결은 여전히 당일종가)",
     "golden_cross":         "V12 골든크로스: MA20이 MA60을 15일 내 상향돌파(골든크로스) + 거래량 1.2배 + RS6M 랭킹 + 40일 수익률 100%초과 과열종목 제외(avoid_overheat). 손절-12%, as-of 시총 필터(min_mktcap 4000억+). 2026-08-10 min_mktcap 2000→4000 변경 — 384건 교차전략 텐버거 캡처분석에서 시총이 유일하게 단조판별력 보유(학습/검증 홀드아웃 양쪽 방향일치+검증기 강화) 확인, 실전략 스윕(2000~10000) 후 6기간 공정비교 avg6=25.28%→35.48%(4/6기간 양수, 거의 전구간 개선·하락장 방어도 개선): 상승+96.3/하락-31.0/회복-2.8/AI+8.1/최근+28.8/최신+113.6 — 유니버스 룩어헤드 제거 후에도 상승장 편중은 여전, 단독운용 비권장.",
-    "deep_recovery":        "V-DEEP 깊은낙폭집중: 실증 최강구간(-25~-45% MA60) 집중. MA60 -25~-60% + 거래량1.5배 + 최근5일중3일상승. Trail-22%/30%, 손절-13%, TP100%. 2026-07-17 as-of 시총(point_in_time_approx) 재등록: avg6=+0.3%, 2/6기간 양수 [상승+81.3/하락-17.8/회복+7.2/AI-36.5/최근-30.4/최신-2.0] — 구 +6.9%는 현재시총 룩어헤드 포함 수치. 상승장 편중 심함, 단독운용 비권장.",
-    "low_base_breakout":    "V-LOWBASE 저점기반돌파: V-GC 골든크로스 직전/초기 진입 — MA60 -18%~+10% + 52주저점+65%이내 + MA20수렴(-8%이내) + 5일중3일상승. Trail-15%/20%/25%, 손절-10%, 만료270일. 2026-07-17 as-of 시총(point_in_time_approx) 재등록: avg6=+0.3%, 2/6기간 양수 [상승+58.0/하락-35.2/회복-1.5/AI-13.3/최근-6.5/최신+0.6] — 구 +6.7%는 현재시총 룩어헤드 포함 수치. 단독운용 비권장.",
+    "deep_recovery":        "V-DEEP 깊은낙폭집중: 실증 최강구간(-25~-45% MA60) 집중. MA60 -25~-60% + 거래량1.5배 + 최근5일중3일상승. Trail-22%/30%, 손절-13%, TP100%. 2026-09-07 재검증(포지션한도 계산이 보유종목 가격결측일에 평가액을 0으로 떨어뜨려 매수신호를 영구히 놓치는 버그 수정 후 재등록): avg6=+10.38%, 2/6기간 양수 [상승+86.41/하락-9.2/회복-8.25/AI-15.67/최근-1.24/최신+10.23] — 2026-07-17 등록치(+0.3%)와 차이가 크지만, 해당 구간 재현 테스트에서는 이 버그가 발동하지 않아 코드 수정 자체보다는 as-of 유니버스·주식수 이력이 그 사이 갱신된 영향으로 추정(point_in_time_approx 근본 한계 — Data Boundary 참조). 상승장 편중 여전, 단독운용 비권장.",
+    "low_base_breakout":    "V-LOWBASE 저점기반돌파: V-GC 골든크로스 직전/초기 진입 — MA60 -18%~+10% + 52주저점+65%이내 + MA20수렴(-8%이내) + 5일중3일상승. Trail-15%/20%/25%, 손절-10%, 만료270일. 2026-09-07 재검증(포지션한도 계산이 보유종목 가격결측일에 평가액을 0으로 떨어뜨려 매수신호를 영구히 놓치는 버그 수정 후 재등록): avg6=+3.58%, 3/6기간 양수 [상승+54.3/하락-20.0/회복-2.06/AI-13.42/최근+1.25/최신+1.41] — 2026-07-17 등록치(+0.3%)와 차이. deep_recovery와 동일 사유(as-of 유니버스 데이터가 그 사이 갱신됐을 가능성)로 추정. 단독운용 비권장.",
     "turnaround":           "★V-TURNAROUND 흑자전환 특화: BQ 실증 흑자전환 종목 평균 6.14x vs 우량성장주 3.48x(1.77배 우위). 52주 고점 -30~-65% 낙폭과대 + 직전 분기 첫 흑자전환(이전 1~3분기 적자 존재) + TTM NI 합산 양수(임시 반등 제외) + PBR≤1.5 저평가. Trail-25%/30%, 손절-13%, 만료300일. 2026-07-17 as-of 시총(point_in_time_approx) 재등록: avg6=+6.9%, 3/6기간 양수 [상승+49.2/하락-22.5/회복+31.6/AI-16.4/최근-15.6/최신+15.1] — as-of 전환에도 avg 유지(current +5.7% 대비 소폭 개선).",
-    "extreme_dd_volume": "★V-EXTREME 초낙폭+거래량 (2026-07-18 신규): 텐버거 엔진 S등급 시그널(52주고점 -70%↓ + 당일거래량 20일평균 1.5배+ + 거래대금 5억+, walk-forward 검증 12개월 3배율 22.6% vs 기준율 7%)의 최초 실전 백테스트化. 1차(거래량급증 즉시매수)는 패닉투매 매수로 -82.8% 참패 → 차트 컨플루언스(일봉MA+주봉구조+캔들 2/3 합의) 바닥확인 게이트 추가로 +20.6%/승률 43% 전환. Trail-35%/40%(V13 철학: 익절상한 없음), 손절-15%, as-of 시총. 연속운용(2020-03~2026-03) +20.6% — 아직 중하위권, 파라미터 개선 여지 있음.",
-    "se_momentum": "★V-SE 주도섹터 바스켓 (2026-07-18 신규, 2026-07-22 실적가속게이트+실측손절 채택): 스탁이지 모멘텀 전략(실보유 BUY 94~100% 재현 검증된 로직)의 최초 백테스트化. SE섹터(middle) 전체멤버 평균 ret20 랭킹 상위 2개 주도섹터 → 섹터 내 MA5>MA20 + 주가≥MA20×0.97 + 기관or외인 5일 순매수 + 매출/영업이익YoY 가속 또는 흑자전환(require_earnings_accel) → 시총상위 5종목 바스켓. 매도: 섹터 히스테리시스 편출(상위8위 밖 or 모멘텀 음전) + MA5<MA20×0.96 깊은 이탈 + Trail-20% + **손절-8%**(2026-07-22: 사용자 제공 로그인세션으로 실제 스탁이지 편출내역 129건 직접 확인 결과 손실거래의 60%가 -8.0~-8.14%에 정확히 클러스터링 — 하드손절선 확정, 승자는 15~45일 보유하며 최대+244%까지 무제한 보유하는 '손절은 짧게 승자는 길게' 패턴 실증). 6기간 avg6 +22.4%→+27.0%(4/6기간, stop -0.10/-0.12보다 우수). ⚠️섹터분류는 현재시점 적용(V-SECTOR 동일 한계). 매도조건 9종 스윕 이력은 signal_experiment_ledger 참조.",
+    "extreme_dd_volume": "★V-EXTREME 초낙폭+거래량 (2026-07-18 신규): 텐버거 엔진 S등급 시그널(52주고점 -70%↓ + 당일거래량 20일평균 1.5배+ + 거래대금 5억+, walk-forward 검증 12개월 3배율 22.6% vs 기준율 7%)의 최초 실전 백테스트化. 1차(거래량급증 즉시매수)는 패닉투매 매수로 -82.8% 참패 → 차트 컨플루언스(일봉MA+주봉구조+캔들 2/3 합의) 바닥확인 게이트 추가로 +20.6%/승률 43% 전환. Trail-35%/40%(V13 철학: 익절상한 없음), 손절-15%, as-of 시총. 연속운용(2020-03~2026-03) +20.6% — 아직 중하위권, 파라미터 개선 여지 있음. 2026-09-07 6기간 표준구간 신규 등록(포지션한도 계산이 보유종목 가격결측일에 평가액을 0으로 떨어뜨려 매수신호를 영구히 놓치는 버그 수정 후): avg6=-13.92%, 2/6기간 양수 [상승+48.14/하락-6.14/회복+14.66/AI-49.58/최근-70.22/최신-20.4] — 최근 두 구간에서 대규모 손실, 구간별 편차가 매우 크다. 단독운용 비권장.",
+    "se_momentum": "★V-SE 주도섹터 바스켓 (2026-07-18 신규, 2026-07-22 실적가속게이트+실측손절 채택): 스탁이지 모멘텀 전략(실보유 BUY 94~100% 재현 검증된 로직)의 최초 백테스트化. SE섹터(middle) 전체멤버 평균 ret20 랭킹 상위 2개 주도섹터 → 섹터 내 MA5>MA20 + 주가≥MA20×0.97 + 기관or외인 5일 순매수 + 매출/영업이익YoY 가속 또는 흑자전환(require_earnings_accel) → 시총상위 5종목 바스켓. 매도: 섹터 히스테리시스 편출(상위8위 밖 or 모멘텀 음전) + MA5<MA20×0.96 깊은 이탈 + Trail-20% + **손절-8%**(2026-07-22: 사용자 제공 로그인세션으로 실제 스탁이지 편출내역 129건 직접 확인 결과 손실거래의 60%가 -8.0~-8.14%에 정확히 클러스터링 — 하드손절선 확정, 승자는 15~45일 보유하며 최대+244%까지 무제한 보유하는 '손절은 짧게 승자는 길게' 패턴 실증). 6기간 avg6 +22.4%→+27.0%(4/6기간, stop -0.10/-0.12보다 우수). ⚠️섹터분류는 현재시점 적용(V-SECTOR 동일 한계). 매도조건 9종 스윕 이력은 signal_experiment_ledger 참조. ⚠️2026-09-07 정정: 위 +27.0%는 재현 불가능한 수치였음이 확인됨 — 실적가속 게이트(require_earnings_accel, 기본값 True)가 분기 재무데이터를 불러올 때 정렬 기준에 report_type(CFS/OFS) 타이브레이커가 없어, 같은 분기·같은 공시일에 공존하는 연결(CFS)/별도(OFS) 재무제표 로우 순서가 실행마다 바뀔 수 있었음 — 이 순서가 실적가속 판정에 쓰이는 '최신 분기'/'1년 전 분기' 지목을 흔들어, 동일 코드·동일 파라미터·동일 데이터로 재실행해도 매번 다른 매수 후보와 최종 수익률이 나오는 버그였음(같은 6개월 구간을 5회 반복 실행 시 -1.59%~39.46%까지 요동 확인). CFS 우선 타이브레이커 + 분기당 1건 dedup으로 수정(megatrend/peak_easy의 동일 패턴도 함께 수정), 수정 후 동일 파라미터 반복 실행으로 완전 재현성 확인 후 재검증: avg6=+6.77%, 3/6기간 양수 [상승+29.0/하락-26.88/회복+39.28/AI-21.48/최근-23.87/최신+44.58] — 기존 +22.4%→+27.0%/4-6기간 수치는 폐기, 이 값으로 대체.",
     "megatrend": "★V-MEGATREND 구조테마추종 (2026-07-20 신규→2026-07-21 다중섹터 확장→2026-07-22 저가주 필터): 사용자 지시로 반도체(151종목) 한정에서 전력기기·조선·화장품ODM도 포착하도록 확장. 유니버스=IT+산업재+필수소비재 섹터(1,040종목, 시총300억+), 6개월수익률≥100% & 52주고점대비-15%이내 & **같은 섹터 내 동시충족 3종목+**(sector_confirm_min) & **진입가 5만원+**(min_price — 실측진단: 24.6~25.5구간 저가 투기성 급등주가 sector_large 필터를 통해 대량 혼입돼 진짜 대세종목(한화에어로스페이스+136%·HD현대중공업+48%·현대로템+29% 등 실제 매수·대부분 수익)을 압도, 진입가 10만원+ 승률45%/+15.2% vs 10만원미만 승률12~27%/-8~-16% 확인). 최대 30종목 분산매수, 손절-20%(하드)+트레일링스탑-30%. 6기간 avg6=+6.3%(2/6, 저가주필터 적용 전과 거의 동일)이나 **하락장 리스크 대폭 축소(-35.2%→-7.1%)** — 완전한 해결책이 아니라 다운사이드 방어 트레이드오프(상승장 캡처도 소폭 감소). 24.6~25.5 구간도 -24.4%→-13.0%로 개선되었으나 잔존 마이너스(저가 투기주 제거 후에도 일부 소형 종목 휩쏘 남음). 다중섹터+섹터확인 적용 결과 연속운용(2020-03~2026-07-20) +125.1%(반도체단독+123.2%와 대등), 실제 HD현대일렉트릭+226.7%·코스메카코리아+263.8%·SK하이닉스+206.5%·한화오션+129.5%·효성중공업+150.8% 등 타업종 메가랠리 포착 확인. walk-forward 검증(n=232건): 개별승률 19~32%로 낮으나 -20%손절+트레일보유 가정 시 건당기대값 플러스(fat-tail) — 반드시 30종목 분산 전제. 손절 후 재매수 흔함(56/102종목 2회+거래, 재도전 성공사례 다수). 2026-07-27 as-of 시총 리트로핏(min_mktcap_억 컷오프가 현재시총 정적필터였음 — as-of로 전환) 재등록(point_in_time_approx): avg6=+3.84%, 2/6기간 양수 [상승+14.31/하락-8.01/회복-4.49/AI-6.84/최근-13.03/최신+41.11] — 이전 current-mode 수치보다 하락, 정직화.",
     "earnings_conviction": "★V-EARNINGS 실적가속 집중배분 (2026-07-22 신규→2026-07-22 3차 절대증가액 전환): 사용자 지적 2건 — ①\"삼성전자/SK하이닉스가 역대급 이익을 내는데 왜 편입이 늦나, 비중을 늘려야 하지 않나\" ②\"산술평균이 아니라 수익 극대화가 목표. 점수높고 확실한 종목에 더 집중해야. 매출 급증도 매수신호로 인정해야\". **가격조건 완전 제거**, ①분기 영업이익 YoY 가속(매출YoY 동반양수, 절대영업이익 500억+) 또는 ②매출 YoY 단독 급증(+40%+, 절대매출 500억+, 이익요건 없음 — 적자성장기업 포착) 중 하나로 진입. **핵심 버그 2회 수정**: 1차(%기준 티어+배치정규화)는 초소형 %폭발(경동도시가스 매출 +379,440%)이 절대영업이익 하한을 2000억으로 올려도 SK하이닉스(+157%, 4.5조원 증가)를 랭킹에서 계속 밀어냄 → **랭킹·가중치를 %가 아니라 절대 증가액(억원)으로 전환**(진입자격만 %로 확인, 이후 5,000억원 증가당 가중치 1배씩·최대 3배 상한) — SK하이닉스가 54개 후보 중 정확히 1위(4조5,505억원 증가)로 확인. 포지션수 20→10 축소(균등화 아닌 소수 집중), 배치 내 정규화(평균=1.0) 폐지 — 점수 자체의 절대 크기를 그대로 반영. 매도: 손절-20%/추적손절-30%(이익권)/실적악화청산(YoY 역성장 전환 시)/만료252일. **6기간 KOSPI/KOSDAQ 대비 실측(avg6=+22.61%, 4/6기간 양수)**: 상승장+17.78%(KOSPI+42.88%, 미달) / 하락장-5.39%(KOSPI-20.90%, 방어) / **회복장-21.27%(KOSPI-2.45%, 집중의 하방리스크 — 대폭 미달)** / AI랠리+5.90%(KOSPI+4.25%, 상회) / **최근+50.07%(KOSPI+2.32%, 압도)** / **최신+88.60%(KOSPI+87.29%, 거의 정확히 일치 — 사용자가 지목한 SK하이닉스/삼성전자 사례의 목표기간에서 지수와 사실상 동률 달성)**. SK하이닉스 실제 캡처+270.5%(원본+296.2%의 91%). **정직한 트레이드오프**: 소수 종목 집중배분이라 최고 강세장·회복 구간에서 극적 개선을 냈지만(최근/최신), 회복장처럼 소수 베팅이 어긋나는 구간에서는 이전 버전(균등정규화, avg6 +18.44%, 회복장 -8.27%)보다 변동성이 커지고 손실도 커짐 — '수익 극대화'와 '안정성'은 명백한 트레이드오프이며 이번 재설계는 전자를 우선한 것. 2026-07-27 as-of 시총 리트로핏(min_mktcap_억 컷오프가 현재시총 정적필터였음) 재등록(point_in_time_approx): avg6=+23.29%, 4/6기간 양수 [상승+21.85/하락-5.39/회복-21.27/AI+5.9/최근+50.07/최신+88.6] — 메가캡(SK하이닉스 등)은 어느 시점에도 시총 컷오프를 여유있게 통과해 as-of 전환에도 수치가 거의 유지·소폭 개선됨.",
     "moonshot_turnaround": "★V-MOONSHOT 턴어라운드 종합스코어 대박발굴 (2026-07-23 신규→2026-07-23 2차 발굴개수 우선 재조정): 사용자 지시 \"기존 전략을 그대로 두더라도 핵심종목 1000%씩 오르는 종목의 발굴에 집중하는것도 괜찮다\" + \"1000% 상승하는 종목을 찾는건 정말 중요, 꼭 1000% 안먹어도 중간에 타서 어깨에 나와도 상관없다\" — V-EARNINGS(메가캡 집중배분)와 반대 극단으로, walk-forward 검증된 turnaround-watch(2026-07-19) comprehensive_score(재도전턴어라운드+매출YoY성장+감가상각주도 이익의질, 3신호 0~3점, 검증 lift 2점=1.13~1.23x/3점=1.38x·검증1.63x)를 최초로 실전 백테스트化. TTM 적자 모집단(V-EARNINGS와 겹치지 않는 별개 population) 중 comprehensive_score≥2 + 희석위험(CB/BW/EB 트레일링365일)≤3건인 종목을 최대 **30종목 균등분산**(집중 아님 — 어느 종목이 1000%될지 사전에 알 수 없어 광범위 분산으로 fat-tail 노림) 매수. 손절-35%/추적손절-35%(변동성 큰 모집단 감안 확대, '어깨'에서 청산되는 게 정상 설계) + 만료 500거래일(~2년, 턴어라운드가 무르익는 데 필요한 긴 호흡). **2026-07-23 2차: max_positions 20→30 상향** — 사용자 지시대로 '총수익 극대화'보다 '발굴 개수 극대화' 우선. 실측(연속운용 2020-03~2026-03): 100%+ 대박종목 21건→**28건**으로 증가(예스24+336.7%·인화정공+254.6%·코스맥스+214.8% 등 추가 포착), 1000%+ 2건은 그대로(RF머트리얼즈+1099.3%·데브시스터즈+1023.4%), 6기간 avg6도 18.94%→**22.39%(3/6→4/6기간 양수)**로 개선 — 단 연속운용 총수익은 190.31%→160.97%로 하락(자본이 더 얇게 분산돼 개별 대박 기여도 희석, 정직하게 밝힘). 6기간[상승+101.44/하락-16.67/회복+14.61/AI+1.91/최근-19.95/최신+53.01]. 정직한 한계: 승률 27~53%로 낮고, 특정 구간(최근)은 여전히 큰 손실 — 반드시 30종목 분산 전제, 집중 매수 금지. 2026-07-27 as-of 시총 리트로핏(min_mktcap_억 컷오프가 현재시총 정적필터였음 — 부실기업이 턴어라운드로 몸집이 커진 뒤에야 소급 편입되는 룩어헤드) 재등록(point_in_time_approx): avg6=+7.60%, 3/6기간 양수 [상승+71.47/하락-19.65/회복+4.56/AI-9.79/최근-17.15/최신+16.16] — 4/6→3/6로 하락, 소형주 비중이 큰 모집단 특성상 as-of 전환의 영향을 크게 받음(정직화).",
+    "minervini": "V-MINERVINI 추세템플릿 (2026-09-19 신규, 소유자가 GitHub에서 찾은 xang1234/stock-screener[MIT]의 MinerviniScanner 포팅 — 아직 6기간 walk-forward 검증 전, 최초 성공 실행만 확인된 신규 전략): RS강도(종목 6개월수익률이 KOSPI 6개월수익률보다 +15%p↑, 원본은 전체시장 percentile rank인데 이 코드베이스 구조상 KOSPI대비 근사로 대체) + 현재가>50일선>150일선>200일선 + 200일선 20거래일간 1%↑상승 + 52주최저가+30%↑·최고가-25%이내 + Stage2(60거래일 선형회귀 우상향). VCP 패턴(원본 8번째 기준)은 이 저장소에 pandas 기반 패턴인식기가 없어 제외. mktcap_min=500억. 시총 넓은 유니버스 전략이라 price_integrity 정책변경(exclude=True) 이후에야 실행 가능해짐(v4류와 같은 문제였음).",
     "contract_momentum": "★V-CONTRACT 해외수주 모멘텀 (2026-08-09 신규): 2026-08-09 사용자 지시로 3년내 10배 종목 251개를 상승계기별 카테고리화한 결과 \"대형수주\"(36개, 14.3%) 공시일의 42%(15/36)가 저점 이전 발생 — 선행지표로 활용 가능함을 확인. 원신호는 2026-07-23~24 Codex가 독립 스크립트로 발굴·홀드아웃 검증(학습기<2024-01-01 그리드서치 최적파라미터를 얼려서 검증기 2024-01-01+에 적용 → +154.3%/145건/승률24.8%/PF2.51/MDD-27.9%, 붕괴 없음 확인)했으나 정식 backtest.py 함수로 이식되지 않아 실전(가상매매/콤보)에 연결된 적이 없었음. 매수: dart_contracts 중 \"단일판매/공급계약\"류 공시(해지·거래정지·유동성공급·[첨부추가] 제외) + 계약금액/매출비율≥10% + 해외수주 한정 + 52주 내 상대위치≤1.0 + 종가≥MA20 + 20일평균거래대금≥20억. 공시 다음거래일 시가매수, 동일일 복수신호는 비율·AI점수 내림차순 우선(최대 10포지션, 종목당 1,000만원). 매도: 손절-8%/추적손절-25%(이익10%+발동)/만기240거래일. 이식버전 자체 재검증(원본과 동일분할 학습<2024-01-01/검증≥2024-01-01): 학습+45.8%(47건,승률36%)/검증+163.5%(99건,승률29%) — 절대치는 원본(고정슬롯 vs 원본 dynamic_tickets 차이 추정)과 다르나 방향·안정성 일치. 6기간 avg6=+25.27%(5/6기간 양수) [상승0.0/하락-6.23/회복+31.73/AI+33.12/최근+69.91/최신+23.11] — 상승장(2020~2021)은 dart_contracts 데이터 자체가 희소해 0건. 시총필터 없음(원본 설계 그대로, market_cap_mode=not_applicable). execution_strict.",
 }
+
+# 2026-09-04 결정성 감사: 이전 실행은 동점 종목의 DB 반환 순서와 가변 데이터 보정이
+# 결과에 개입할 수 있었다. 새 snapshot/tiebreak 엔진으로 6구간을 재생성하기 전에는
+# 여기의 과거 수익률 문구를 투자 근거로 사용하면 안 된다.
+BACKTEST_HISTORY_AUDIT_NOTICE = (
+    "2026-09-04 이전 백테스트 성과는 결정성 재검증 전 참고용입니다. "
+    "동일 기준시점·동일 실행사양으로 6구간 재생성이 완료된 결과만 비교에 사용하세요."
+)
 
 # 전략별 진입/매도 조건 (상세 설명 테이블용)
 STRATEGY_CONDITIONS = {
@@ -987,6 +1024,14 @@ STRATEGY_CONDITIONS = {
         "적합장세": "해당없음 — 벤치마크 미달로 실전 부적합 판정",
         "주의사항": "⚠️★2026-08-12 벤치마크 대비 기각(실전 후보 제외): 연속운용(2020-03~2026-03) +123.01%(승률50.3%,145거래)가 **동기간 KOSPI 단순 buy&hold(+152.3%)에도 못 미침**. 코로나폭락기(20.3~4.15) 진입분이 원인인지 검증했으나 오히려 그 구간 건당평균손익(110.9만원)이 나머지(75.9만원)보다 높아 급락장 진입 문제가 아니었음 — 근본원인은 전략 구조(25종목분산+승률50%+넓은손절-35%) 자체가 6년 내내 지수를 못 이긴 것. 3배기준 lift(4.2x)가 통계적으로 유의해도 포트폴리오 알파로 전환되지 않은 사례로 기록(signal_experiment_ledger verdict=rejected_underperforms_benchmark). 매트릭스에는 투명성 목적으로 유지하되 실전 승격 대상 아님.",
     },
+    "minervini": {
+        "진입조건": "현재가>50일선>150일선>200일선 + 200일선 20거래일간 1%↑ + 52주최저가+30%↑·최고가-25%이내 + Stage2(60거래일 우상향) + RS(6개월수익률 KOSPI대비 +15%p↑)",
+        "매도조건": "손절 -12% 또는 익절 +30%",
+        "손절선": "-12%",
+        "추가필터": "as-of 시총 500억+, 원본 VCP(수축패턴) 기준은 미포함(pandas 패턴인식기 없어 제외)",
+        "적합장세": "미검증 — 2026-09-19 신규 등록, 6기간 walk-forward 이전 상태",
+        "주의사항": "⚠️2026-09-20 최초 성공 실행만 확인(run_id 9a963c91, 2026-08-15~09-18 1개월, 14거래·승률14.3%·총수익-90.24% — 짧은 구간이라 성과 참고용, 6기간 표준검증 전). RS가 원본(전체시장 percentile rank)이 아니라 KOSPI대비 근사치라 원본만큼 정밀하지 않음.",
+    },
 }
 
 # 표준 기간 레이블 (start_date, end_date) → 표시명
@@ -1006,7 +1051,7 @@ PERIOD_LABELS = {
 }
 
 # 핵심 전략 — V1~V9 + V10복합스코어 + VBR(52W돌파) (레짐적응형은 EX에만)
-ALL_STRATEGIES = ["v_trend", "v1_value", "v2", "v5", "v4", "v10", "v11", "vbr", "v8", "v12", "composite", "golden_cross", "high_profit_compound", "sector_focus", "recovery", "deep_recovery", "low_base_breakout", "turnaround", "extreme_dd_volume", "se_momentum", "megatrend", "earnings_conviction", "moonshot_turnaround", "contract_momentum", "earnings_supply_discovery"]
+ALL_STRATEGIES = ["v_trend", "v1_value", "v2", "v5", "v4", "v10", "v11", "vbr", "v8", "v12", "composite", "golden_cross", "high_profit_compound", "sector_focus", "recovery", "deep_recovery", "low_base_breakout", "turnaround", "extreme_dd_volume", "se_momentum", "megatrend", "earnings_conviction", "moonshot_turnaround", "contract_momentum", "earnings_supply_discovery", "minervini"]
 ALL_STRATEGIES_EX = ALL_STRATEGIES + ["regime_adaptive"]
 
 # 핵심 6개 기간 (사용자 지정 — 한국 시장 사이클)
@@ -1040,6 +1085,7 @@ STRATEGY_RUN_FUNCS = {
     "moonshot_turnaround": "run_backtest_moonshot_turnaround",
     "contract_momentum":   "run_backtest_contract_momentum",
     "earnings_supply_discovery": "run_backtest_earnings_supply_discovery",
+    "minervini": "run_backtest_minervini_trend_template",
 }
 
 # 표준 6기간 정의 (run-all-matrix용)
@@ -1311,10 +1357,12 @@ def get_backtest_matrix(include_legacy: bool = Query(False)):
     """선택 registry의 run_hash만 반환한다. 레거시는 감사 요청에서만 포함한다."""
     conn = _db()
     conn.row_factory = _sl.Row
-    # Matrix builds suite verification from immutable manifests below. Re-running
-    # recursive artifact verification here made the read endpoint scale poorly.
+    # 선택 suite의 검증 상태는 manifest 생성 당시의 스냅샷이 아니라 현재
+    # component artifact로 계산해야 한다. 감사 후 artifact가 추가/수정되어도
+    # 과거 status가 화면에 고정되던 문제를 막기 위해 registry에서 suite당 한 번만
+    # derive_status를 실행하고 아래 기간 셀에서는 캐시한 결과를 재사용한다.
     registry_rows = selected_registry(
-        DB_PATH, report_type="strategy_center", include_verification=False
+        DB_PATH, report_type="strategy_center", include_verification=True
     )
     selected_hashes = {row["run_hash"] for row in registry_rows}
     component_to_suite = {
@@ -1325,63 +1373,11 @@ def get_backtest_matrix(include_legacy: bool = Query(False)):
                WHERE s.report_type='strategy_center'"""
         )
     }
-    status_rank = {
-        "legacy": 0, "execution_strict": 1, "point_in_time_approx": 2,
-        "point_in_time_verified": 3, "forward_validated": 4,
+    suite_verification = {
+        row["run_hash"]: row["verification"]
+        for row in registry_rows
+        if row.get("verification", {}).get("is_suite")
     }
-    suite_verification = {}
-    component_price_integrity = {
-        row["run_hash"]: bool(row["passed"])
-        for row in conn.execute(
-            """SELECT run_hash,passed FROM run_verification_artifacts
-               WHERE artifact_type='price_integrity'"""
-        )
-    }
-    suite_rows = conn.execute(
-        """SELECT rs.suite_hash,rs.strategy,rs.manifest_json
-           FROM backtest_run_sets rs
-           JOIN selected_run_registry sr ON sr.run_hash=rs.suite_hash
-           WHERE sr.report_type='strategy_center'"""
-    ).fetchall()
-    for suite_hash, suite_strategy, manifest_json in suite_rows:
-        manifest = json.loads(manifest_json or "{}")
-        members = manifest.get("members") or {}
-        component_rows = [
-            {
-                "period_label": label,
-                "run_hash": item.get("run_hash"),
-                "status": item.get("status") or "legacy",
-            }
-            for label, item in members.items()
-        ]
-        suite_status = min(
-            (row["status"] for row in component_rows),
-            key=lambda value: status_rank.get(value, 0),
-            default="legacy",
-        )
-        failed_price_runs = [
-            row["run_hash"] for row in component_rows
-            if component_price_integrity.get(row["run_hash"]) is False
-        ]
-        if failed_price_runs:
-            suite_status = "legacy"
-        suite_verification[suite_hash] = {
-            "run_hash": suite_hash,
-            "suite_hash": suite_hash,
-            "strategy": suite_strategy,
-            "status": suite_status,
-            "status_rank": status_rank.get(suite_status, 0),
-            "is_suite": True,
-            "gates": {
-                "run_spec": bool(component_rows),
-                "completed": bool(component_rows),
-                "single_suite_identity": True,
-                "all_components_same_or_higher_status": bool(component_rows),
-            },
-            "reasons": ["price_integrity"] if failed_price_runs else [],
-            "failed_price_integrity_runs": failed_price_runs,
-            "components": component_rows,
-        }
     allowed_hashes = selected_hashes | set(component_to_suite)
     selection_params = ()
     if include_legacy:
@@ -1672,15 +1668,22 @@ def list_strategy_combinations():
               AND br.created_at >= '2026-07-25'
         """).fetchone()
         latest_end = latest[0] if latest else None
+        # 2026-09-11 재수정(사용자 제보 계기): end_date 정확 일치(=) 요구가 새 함정을 만들었다 —
+        # sector_focus+v2 조합(403.09%, end=2026-09-08)이 등록돼 있었는데도, 완전히 다른(더 약한)
+        # golden_cross+recovery 조합이 단 하루 늦게(end=2026-09-09) 등록됐다는 이유만으로 "현재
+        # 최고"를 155.47%로 뒤바꿔 403%짜리를 화면에서 통째로 숨겼다(2026-07-28 주석의 "낡은
+        # 등록이 이긴다" 함정과 반대 방향의 동일 계열 버그 — 이번엔 "가장 최근 등록이 무조건
+        # 이긴다"). end_date 정확 일치 대신 최신 end_date 기준 14일 이내 등록을 모두 "현재
+        # 유효"로 보고, 그 안에서 수익률 내림차순으로 진짜 최고를 고른다.
         rows = conn.execute("""
             SELECT br.run_id, br.start_date, br.end_date, br.total_return_pct,
                    br.win_rate, br.total_trades, br.created_at, br.max_drawdown_pct,
-                   s.run_hash, s.parameter_json
+                   br.trades_json, s.run_hash, s.parameter_json
             FROM backtest_runs br JOIN backtest_run_specs s ON s.run_id=br.run_id
             WHERE br.strategy='combined' AND br.status='done'
               AND COALESCE(br.total_trades,0) >= 10   -- 1~2건짜리 인프라 테스트 잔재 제외
               AND br.created_at >= '2026-07-25'       -- daily mark-to-market 버그 수정 이후만
-              AND br.end_date = ?
+              AND br.end_date >= date(?, '-14 days')  -- 최신 측정시점 기준 14일 이내만 "현재 유효"
             ORDER BY br.total_return_pct DESC LIMIT 5
         """, (latest_end,)).fetchall()
         out = []
@@ -1704,6 +1707,18 @@ def list_strategy_combinations():
                                        "label": STRATEGY_LABELS.get(skey, skey)})
             except Exception:
                 pass
+            # 2026-09-11: 사용자 제보 계기 — 헤드라인 수익률(예: 688.94%) 하나만 보여주면
+            # "폭넓은 전략 우위"처럼 보이지만 실제로는 단일 종목(HD현대일렉트릭 등) 손익이
+            # 전체의 30%+를 차지하는 경우가 있었다(corp-action 미조정 버그는 아니었고 실제
+            # 랠리였음, merged_simulator.pnl_concentration() docstring 참조). 이미 저장된
+            # trades_json(ledger+mark_prices)에서 재시뮬레이션 없이 바로 계산해 노출한다.
+            concentration = None
+            try:
+                tj = json.loads(r["trades_json"]) if r["trades_json"] else None
+                if tj and tj.get("ledger") is not None and tj.get("mark_prices") is not None:
+                    concentration = pnl_concentration(tj["ledger"], tj["mark_prices"])
+            except Exception:
+                pass
             out.append({
                 "run_id": r["run_id"], "run_hash": r["run_hash"],
                 "start_date": r["start_date"], "end_date": r["end_date"],
@@ -1712,6 +1727,7 @@ def list_strategy_combinations():
                 "max_drawdown_pct": r["max_drawdown_pct"],
                 "initial_cash": initial_cash, "components": components,
                 "tiebreak_stability": tiebreak,
+                "pnl_concentration": concentration,
             })
         return {"combinations": out}
     finally:
@@ -1756,7 +1772,12 @@ def get_continuous_returns():
                 "run_id": r["run_id"], "start_date": r["start_date"],
                 "end_date": r["end_date"], "updated_at": r["created_at"],
             }
-        return {"strategies": out, "cutoff_end": cutoff_end}
+        return {
+            "strategies": out,
+            "cutoff_end": cutoff_end,
+            "history_audit_required": True,
+            "history_audit_notice": BACKTEST_HISTORY_AUDIT_NOTICE,
+        }
     finally:
         conn.close()
 
@@ -1868,7 +1889,7 @@ async def start_all_matrix_backtests(payload: dict):
                 try:
                     func(s, e, per_stock=ps, run_name=nm, run_id=rid)
                 except Exception as ex:
-                    c = _sl.connect(DB_PATH, timeout=30)
+                    c = connect_primary_db(timeout=30)
                     c.execute(
                         "UPDATE backtest_runs SET status='error',summary_text=? WHERE run_id=?",
                         (str(ex), rid)
@@ -1931,6 +1952,8 @@ def get_backtest_result(run_id: str):
         return {"error": "not found"}
     status, tj, summary = row
     detail = json.loads(tj) if tj else {}
+    if not isinstance(detail, dict):
+        detail = {"trades": detail}
     detail["status"]       = status
     detail["summary_text"] = summary
     return detail

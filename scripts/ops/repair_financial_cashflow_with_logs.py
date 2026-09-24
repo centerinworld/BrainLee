@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from db_compat import connect_primary_db
 from datetime import datetime
 from pathlib import Path
 
@@ -258,7 +259,7 @@ def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    conn = sqlite3.connect(args.db)
+    conn = connect_primary_db() if args.db == str(DB_PATH) else sqlite3.connect(args.db)
     try:
         before = summary(conn)
         create_tables(conn)

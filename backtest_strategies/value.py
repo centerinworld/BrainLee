@@ -16,6 +16,7 @@ from backtest_common import (
     DB_PATH,
     _get_financial_as_of,
     _ma,
+    _make_material_backlog_bonus_fn,
     _release_date,
     _run_generic_backtest,
     logger,
@@ -152,17 +153,36 @@ def run_backtest_value(start_date: str, end_date: str,
                        max_positions: int = 10,
                        chart_confluence: bool = False,
                        use_peg_bonus: bool = False,  # 2026-09-01 실험: PEG(Lynch) 진입우선순위 보너스 opt-in (walk-forward 검증 전까지 기본 비활성)
+                       use_material_backlog_bonus: bool = False,  # 2026-09-08 신규(opt-in) — 아래 참조
                     run_name: str = None, run_id: str = None,
-                    data_asof_ts: str = None) -> str:
+                    data_asof_ts: str = None,
+                    value_trap_gate: bool = False,  # 2026-09-06 실험(opt-in) — _run_generic_backtest 참조
+                    value_trap_min_tvol_억: float = 3.0,
+                    value_trap_max_concentration: float = 50.0,
+                    value_trap_extreme_concentration: float = 75.0) -> str:
     """V1 가치매수 (Graham 내재가치 25%+ 할인 OR PBR<0.7 AND PER<10) — 하락장 무관 매수
 
     data_asof_ts: 2026-09-04 신규. 재무데이터 실시간 보정 잡과의 경쟁으로 인한
-    회귀검증 비재현성 수정 — _run_generic_backtest 참조."""
+    회귀검증 비재현성 수정 — _run_generic_backtest 참조.
+    value_trap_gate: 2026-09-06 신규(opt-in). 저평가(PBR<0.7 등)만 보고 매수하는
+    이 전략은 저유동성+대주주 지분집중 밸류트랩(미원화학류)에 특히 취약할 수 있어
+    검증용으로 추가 — _run_generic_backtest 참조.
+    use_material_backlog_bonus: 2026-09-08 신규(opt-in, 기각). composite.py에서
+    2026-09-06에 채택된 매입재료비 3중검증/수주잔고 급증 이벤트를 entry_bonus_fn으로
+    재사용해 진입우선순위만 바꿔(use_peg_bonus와 동일 메커니즘) 7구간 walk-forward
+    검증: avg 14.78%→11.64%로 일관되게 악화(6/7구간 동일하거나 나빠짐, mixed2425
+    -8.0%p 최대). v2와 동일하게 "이미 신호를 통과한 후보의 순서만 바꾸는" 구조가
+    이 전략 고유의 우선순위를 교란한 것으로 추정. 기본값 False 유지, 재현연구용
+    opt-in만 보존."""
     entry_bonus_fn = None
     if use_peg_bonus:
         _pconn = sqlite3.connect(DB_PATH, timeout=60)
         entry_bonus_fn = _make_peg_bonus_fn(_build_peg_map(_pconn))
         _pconn.close()
+    if use_material_backlog_bonus:
+        _mconn = sqlite3.connect(DB_PATH, timeout=60)
+        entry_bonus_fn = _make_material_backlog_bonus_fn(_mconn)
+        _mconn.close()
     return _run_generic_backtest(
         chart_confluence=chart_confluence,
         version='V1_VALUE', signal_fn=_is_buy_value,
@@ -177,6 +197,10 @@ def run_backtest_value(start_date: str, end_date: str,
         strategy_key='v1_value',
         # sell_signal_fn=_sell_signal_v2,  # 스마트머니이탈 테스트: 효과 없음(5.1%→5.0%), 기본값 사용
         entry_bonus_fn=entry_bonus_fn,
+        value_trap_gate=value_trap_gate,
+        value_trap_min_tvol_억=value_trap_min_tvol_억,
+        value_trap_max_concentration=value_trap_max_concentration,
+        value_trap_extreme_concentration=value_trap_extreme_concentration,
         data_asof_ts=data_asof_ts,
     )
 

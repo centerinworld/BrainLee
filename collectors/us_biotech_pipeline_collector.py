@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import hashlib
 import html
 import json
@@ -19,7 +20,8 @@ from typing import Any
 import requests
 
 
-US_DB_PATH = os.getenv("US_STOCK_DB_PATH", "stock.db")
+# Biotech pipeline data is part of the PostgreSQL operational primary.  The
+# separate us_market.db remains only for the market-radar price cache.
 SEC_USER_AGENT = os.getenv(
     "SEC_USER_AGENT", "StockDashboard research contact@stock-dashboard.local"
 )
@@ -59,8 +61,8 @@ _GENERIC_DRUG_RE = re.compile(
 )
 
 
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(US_DB_PATH, timeout=120)
+def _connect():
+    conn = connect_primary_db(timeout=120)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=120000")
     return conn

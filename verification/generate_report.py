@@ -5,10 +5,13 @@ verification/generate_report.py
 실행: python3 verification/generate_report.py
 출력: verification/financial_verification_report_YYYYMMDD.html
 """
+from db_compat import connect_primary_db
 import json, os, glob, datetime, sqlite3
+from pathlib import Path
 
 VERIFY_DIR = os.path.dirname(__file__)
-DB_PATH    = "/Applications/stock_dashboard/stock.db"
+ROOT        = Path(__file__).resolve().parents[1]
+DB_PATH     = str(ROOT / "stock.db")
 TIMESTAMP  = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 OUT_HTML   = f"{VERIFY_DIR}/financial_verification_report_{TIMESTAMP}.html"
 
@@ -53,7 +56,7 @@ def null_by_source(conn):
 
 
 def top_profiles(n=30):
-    p = "/Applications/stock_dashboard/config/financial_profiles.json"
+    p = ROOT / "config" / "financial_profiles.json"
     if not os.path.exists(p):
         return []
     with open(p) as f:
@@ -75,7 +78,7 @@ def generate():
     after  = load_json("after_fnguide_resume_*.json")
     mig    = load_json("migration_datasource_*.json")
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     samples  = sample_records(conn, 30)
     null_src = null_by_source(conn)
     profiles = top_profiles(30)

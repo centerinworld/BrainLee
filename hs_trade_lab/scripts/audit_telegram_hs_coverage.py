@@ -61,7 +61,7 @@ def audit(baseline_flow_posts: int, baseline_display_ready: int) -> dict:
         conn,
         """
         SELECT COUNT(*) FROM telegram_company_hs_flow_map
-        WHERE hs_code NOT GLOB '[0-9]*' OR LENGTH(hs_code) NOT IN (4,6,8,10)
+        WHERE hs_code GLOB '*[^0-9]*' OR LENGTH(hs_code) NOT IN (4,6,8,10)
         """,
     )
     orphan_rows = scalar(

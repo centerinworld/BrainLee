@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_recovery_sqlite_db
 import argparse
 import concurrent.futures
 import functools
@@ -272,7 +273,7 @@ def main() -> int:
     if args.apply:
         primary = connect_stock_db(timeout=60)
         primary.row_factory = sqlite3.Row
-        legacy = sqlite3.connect(str(STOCK_DB_PATH), timeout=60)
+        legacy = connect_recovery_sqlite_db(timeout=60)
         try:
             changed_codes = set()
             for row, result in zip(targets, results):

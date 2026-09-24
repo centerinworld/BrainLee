@@ -20,6 +20,7 @@ dedup_financial_data.py — financial_data 중복 연간 행 제거
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import sqlite3
@@ -31,7 +32,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "stock.db"
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, timeout=60)
+    c = connect_primary_db(timeout=60)
     c.execute("PRAGMA journal_mode=WAL")
     return c
 

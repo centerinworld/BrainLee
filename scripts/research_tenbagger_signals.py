@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from db_compat import connect_primary_db
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -80,7 +81,7 @@ RULES = [
 
 
 def conn(path: Path) -> sqlite3.Connection:
-    c = sqlite3.connect(path)
+    c = connect_primary_db() if path == DB_PATH else sqlite3.connect(path)
     c.row_factory = sqlite3.Row
     return c
 

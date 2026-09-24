@@ -16,6 +16,7 @@ backfill_financials.py — DART API 한도 내 전종목 재무제표 자동 수
   python3 backfill_financials.py --reset     # 처음부터 다시
 """
 
+from db_compat import connect_primary_db
 import sys, os, time, json, logging, argparse, sqlite3
 from datetime import date, datetime
 from pathlib import Path
@@ -255,7 +256,7 @@ def main():
     if args.setup_cron: setup_cron(); return
     if not DB_PATH.exists(): print(f"❌ DB 없음: {DB_PATH}"); sys.exit(1)
 
-    conn=sqlite3.connect(str(DB_PATH))
+    conn=connect_primary_db()
     progress={} if args.reset else load_progress()
     if args.reset:
         PROGRESS_FILE.unlink(missing_ok=True)

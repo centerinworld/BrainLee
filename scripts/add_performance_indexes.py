@@ -5,6 +5,7 @@ add_performance_indexes.py — 조회 성능 개선용 복합 인덱스 추가
 실행:
     python3 scripts/add_performance_indexes.py
 """
+from db_compat import connect_primary_db
 import sqlite3
 from pathlib import Path
 
@@ -23,7 +24,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_su_market_sector ON stock_universe(market, sector_large)",
 ]
 
-conn = sqlite3.connect(DB, timeout=120)
+conn = connect_primary_db(timeout=120)
 conn.execute("PRAGMA busy_timeout=120000")
 conn.execute("PRAGMA journal_mode=WAL")
 

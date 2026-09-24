@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import os
 import sqlite3
 from datetime import datetime
@@ -13,7 +14,7 @@ from db_utils import connect_stock_db
 router = APIRouter(prefix="/api/us-virtual", tags=["us-virtual-trading"])
 def _conn() -> sqlite3.Connection:
     # Use the same configured primary database as the collection pipeline.
-    # Direct sqlite3.connect("stock.db") is router-dependent and can otherwise
+    # Direct connect_primary_db() is router-dependent and can otherwise
     # drift to the legacy SQLite copy when an operator runs code manually.
     c = connect_stock_db(timeout=30)
     c.row_factory = sqlite3.Row

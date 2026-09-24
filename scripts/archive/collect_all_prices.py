@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 import sqlite3, time, logging
 from datetime import datetime
 
@@ -10,7 +11,7 @@ DB_PATH = '/Applications/stock_dashboard/stock.db'
 
 def collect_all():
     import yfinance as yf
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     codes = conn.execute("""
         SELECT s.stock_code, s.stock_name, COALESCE(p.cnt,0) as cnt
         FROM stock_universe s
@@ -19,7 +20,7 @@ def collect_all():
             WHERE date >= '2024-01-01' GROUP BY stock_code
         ) p ON s.stock_code = p.stock_code
         WHERE COALESCE(p.cnt,0) < 60
-          AND LENGTH(s.stock_code)=6 AND s.stock_code GLOB '[0-9]*'
+          AND s.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         ORDER BY s.stock_code
     """).fetchall()
     total = len(codes)

@@ -10,6 +10,7 @@ cash_flow_data 자체가 해당 연도 전체 유니버스의 절반 정도만 �
 즉시 회수 가능한 커버리지 갭이 있음.
 """
 from __future__ import annotations
+from db_compat import connect_primary_db
 import argparse
 import logging
 import sqlite3
@@ -140,7 +141,7 @@ def main():
     yf, yt = (int(x) for x in args.years.split("-"))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     logger.info(f"변환 시작: {yf}~{yt} ({'DRY-RUN' if args.dry_run else 'APPLY'})")
     res = convert(conn, yf, yt, args.dry_run)

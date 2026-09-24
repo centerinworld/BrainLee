@@ -8,6 +8,7 @@ B490001/gySjbPstateInfoService/getGySjBoheomBsshItem
 실행: python3 employment_monitor/collect_labor_welfare.py [--test]
 """
 
+from db_compat import connect_primary_db
 import os, re, sys, time, sqlite3, logging, argparse
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -68,7 +69,7 @@ def _clean(s: str) -> str:
 
 # ─── stock_universe 로드 ───────────────────────────────────
 def load_stock_universe():
-    conn = sqlite3.connect(STOCK_DB)
+    conn = connect_primary_db()
     rows = conn.execute(
         "SELECT stock_code, stock_name FROM stock_universe WHERE market IN ('유가증권','코스닥','KOSPI','KOSDAQ') AND (secugrp_nm = '주권' OR secugrp_nm IS NULL)"
     ).fetchall()

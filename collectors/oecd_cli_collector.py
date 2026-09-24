@@ -3,6 +3,7 @@ OECD Composite Leading Indicators 수집기
 공식 API 예시:
 https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_CLI/.M.LI...AA...H?startPeriod=2023-02&dimensionAtObservation=AllDimensions&format=csvfilewithlabels
 """
+from db_compat import connect_primary_db
 import csv
 import io
 import logging
@@ -11,9 +12,10 @@ import time
 from datetime import datetime, timedelta
 
 import requests
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 URL = "https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_STES@DF_CLI/.M.LI...AA...H"
 
 AREA_TO_CODE = {
@@ -60,7 +62,7 @@ def collect_oecd_cli(lookback_years: int = 5) -> int:
         except ValueError:
             continue
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     total = 0
     for our_code, values in by_code.items():
         values.sort(key=lambda x: x[0])
@@ -86,7 +88,7 @@ def collect_oecd_cli(lookback_years: int = 5) -> int:
 
 def _log(records: int, status: str = "ok", msg: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.execute("""
             INSERT INTO global_macro_collection_log (source, status, records, message)
             VALUES ('oecd_cli', ?, ?, ?)

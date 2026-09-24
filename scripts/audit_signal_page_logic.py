@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 import sys
@@ -19,7 +20,7 @@ DB = ROOT / "stock.db"
 
 
 def conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB, timeout=30)
+    c = connect_primary_db(timeout=30)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA busy_timeout=30000")
     return c

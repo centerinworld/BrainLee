@@ -9,6 +9,7 @@ recovered from raw_json.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import sqlite3
@@ -30,7 +31,7 @@ def main() -> int:
     args = parser.parse_args()
 
     kc = KiwoomCollector()
-    conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=30000")
 

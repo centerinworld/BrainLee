@@ -19,6 +19,7 @@ scripts/ops/backfill_us_factor_snapshot.py
 """
 
 from __future__ import annotations
+from db_compat import connect_primary_db
 import sqlite3
 import math
 import logging
@@ -397,7 +398,7 @@ def print_stats(conn: sqlite3.Connection):
 
 
 def main():
-    conn = sqlite3.connect(str(DB), timeout=300)
+    conn = connect_primary_db(timeout=300)
     conn.execute("PRAGMA busy_timeout=300000")
     conn.execute("PRAGMA journal_mode=WAL")
     try:

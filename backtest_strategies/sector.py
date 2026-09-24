@@ -18,10 +18,60 @@ from backtest_common import (
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
+    _load_disc_dates,
+    _release_date,
     init_backtest_db,
     logger,
     sqlite3,
 )
+
+
+def _pit_gated_sector_op_yoy_median(conn, codes: list, calendar_year_cap: int, trade_date: str) -> float:
+    """섹터 내 종목들의 영업이익 YoY 중위값 -- F01 (2026-09-12) 실제 공시일 게이팅.
+
+    trade_date 기준으로 실제 공시(fin_disclosure_dates, 없으면 법정기한 익년3/31)돼 있던
+    가장 최근 연간 실적만 사용한다. 종목별로 독립 판정하므로 섹터 내 일부 종목이 아직
+    이전 연도만 공시된 상태여도 배제되지 않는다(2026-09-07 버그 수정의 부수효과 유지).
+    report_type(CFS/OFS) tiebreak: CFS 우선, 종목당 연도별 1행만.
+
+    별도 함수로 분리한 이유(재개 우선순위4, Codex 재검토): 이 로직을 회귀테스트가 실제
+    실행경로로 검증할 수 있어야 한다 — 테스트 안에 로직을 복제하면 운영 코드의 게이트가
+    제거돼도 테스트가 계속 통과할 수 있다.
+    """
+    if not codes:
+        return 0.0
+    ph = "({})".format(",".join("?" * len(codes)))
+    rows = conn.execute(
+        f"SELECT stock_code, year, operating_profit FROM ("
+        f"  SELECT stock_code, year, operating_profit,"
+        f"         ROW_NUMBER() OVER ("
+        f"             PARTITION BY stock_code, year"
+        f"             ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END"
+        f"         ) AS rt_rn"
+        f"  FROM financial_data"
+        f"  WHERE stock_code IN {ph} AND is_annual=1 AND operating_profit IS NOT NULL"
+        f"    AND year<=?"
+        f") dedup WHERE rt_rn=1",
+        list(codes) + [calendar_year_cap],
+    ).fetchall()
+    by_code_year: dict = {}
+    for code, year, op in rows:
+        by_code_year.setdefault(code, {})[int(year)] = op
+    yoys = []
+    for code, year_map in by_code_year.items():
+        avail_years = sorted(
+            (y for y in year_map if _release_date(y, 4, True, code) <= trade_date),
+            reverse=True,
+        )
+        if not avail_years:
+            continue
+        cur_y = avail_years[0]
+        op_c = year_map.get(cur_y)
+        op_p = year_map.get(cur_y - 1)
+        if op_p and op_p != 0:
+            raw = (op_c - op_p) / abs(op_p) * 100
+            yoys.append(min(max(raw, -200), 2000))
+    return sorted(yoys)[len(yoys) // 2] if yoys else 0.0
 
 def run_backtest_sector(
     start_date: str, end_date: str,
@@ -48,6 +98,26 @@ def run_backtest_sector(
     # 문제로 강하게 의심). 매수후보 3M모멘텀 계산 시점 직전에 이런 아티팩트가 있으면 후보에서
     # 제외하는 실험 파라미터 — 기본 False(기존 동작 완전 동일), 실측 검증 후 채택 여부 결정.
     avoid_discontinuity: bool = False,
+    asof_mktcap: bool = True,
+    # 실험 #1 (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md
+    # "PIT로 보정한 섹터 내 선별") — 전부 기본 False(기존 동작과 완전 동일), opt-in.
+    # 셋 다 F01이 이미 정착시킨 실제 공시일 게이팅(_release_date, 룩어헤드 없음) 위에서
+    # 계산한다.
+    use_earnings_abs_bonus: bool = False,        # 영업이익 절대 개선액(시총 대비 정규화)
+    use_disclosure_freshness_bonus: bool = False,  # 사용한 연간실적의 공시 신선도
+    use_cashflow_confirm_gate: bool = False,     # 영업현금흐름 확인(회계상 개선만 있고 현금 미동반 시 감점)
+    # 실험 #2 (2026-09-12): 승자 보유와 매도 이후 재진입 -- 기존 익절(+tp)은 전량 매도.
+    # partial_tp_pct(예: 0.5)를 주면 tp 최초 도달 시 그 비율만 실현하고 나머지는 손절/
+    # 추적손절만으로 계속 보유(포지션당 1회만 적용). None(기본)이면 기존 동작과 완전히 동일.
+    partial_tp_pct: float | None = None,
+    # 재개 우선순위1 (2026-09-12, Codex 재검토): 비용 2배 스트레스 검증을 위해 비용률만
+    # 배율로 노출한다. 1.0(기본)이면 기존 동작과 완전히 동일 — _net_profit()/_tx_cost()
+    # 자체(다른 전략 다수가 공유)는 건드리지 않고, 이 함수 내부에서 그 결과의 비용
+    # 부분만 사후 스케일링한다(gross-net=cost, cost*multiplier로 재계산).
+    cost_multiplier: float = 1.0,
+    # TASK_PARTIAL_TP_P3 (2026-09-13, Gemini 고차원 검증): 단일 초대형 종목(에코프로 등)
+    # 편중성 분해 및 비편중 유니버스 검증용 종목 제외 파라미터. 기본 None(전체 대상).
+    exclude_codes: list[str] | tuple[str, ...] | None = None,
     strict_exec: bool = True,         # 2026-07-13 기본화 (Codex 계약): D종가 신호 → D+1 시가 체결.
                                       # 검증: same_close avg6 +29.2%(5/6) → next_open +31.4%(5/6) — 전략 유효성 유지.
     run_name: str = None,
@@ -69,10 +139,11 @@ def run_backtest_sector(
          "rebalance_days": rebalance_days, "stop": stop, "trail": trail, "tp": tp,
          "min_sector_hold_days": min_sector_hold_days, "strict_exec": strict_exec,
          "per_stock": per_stock, "max_positions": max_positions,
+         "asof_mktcap": asof_mktcap,
          "start": start_date, "end": end_date},
         signal_timing="close_D",
         execution_timing=("next_open" if strict_exec else "same_close"),
-        market_cap_mode="asof_approx",  # 2026-08-13: 리더선정 스코어(sel_score)의 기관집중도
+        market_cap_mode=("asof_approx" if asof_mktcap else "current"),
         # 계산에 쓰이는 시총을 security_share_history 기반 정확한 as-of 값으로 교체(6기간
         # 재검증 avg6 29.98%→27.62%, 5/6양수 유지 — 소폭변동, 일부기간 오히려 개선).
         # ⚠️ 단, _SECTOR_GROUPS 자체(10업종 70종목 후보군)는 여전히 현재시점 수동선정이라
@@ -81,6 +152,13 @@ def run_backtest_sector(
     )
 
     conn = sqlite3.connect(DB_PATH, timeout=120)
+    # F01 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+    # 아래 OP YoY 컴포넌트가 "실제 공시 시점"이 아니라 "회계연도<=거래일 달력연도"만으로
+    # 연간 실적을 선택해 미공개 실적을 참조할 수 있었다(재현: 2024-01-05 결정일에
+    # 2024년 연간 실적이 이미 완결된 DB에서는 선택 가능 — 실제로는 2025년 3월에야 공시됨).
+    # 다른 전략(v2/turnaround 등)이 이미 쓰는 fin_disclosure_dates 기반 실제 공시일(없으면
+    # 법정기한 익년3/31) 인프라를 동일하게 재사용한다.
+    _load_disc_dates(conn)
     conn.execute("""
         INSERT OR IGNORE INTO backtest_runs (run_id,name,strategy,start_date,end_date,per_stock,max_pos,status)
         VALUES (?,?,'sector_focus',?,?,?,?,'running')
@@ -104,27 +182,46 @@ def run_backtest_sector(
         all_codes = list(set(c for info in _SECTOR_GROUPS.values() for c in info["codes"]))
 
         # 가격 데이터 로드
+        # F08 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+        # 종목 RS(3개월/1개월 모멘텀)가 trade_date로부터 92~99일 전 가격을 찾는데,
+        # 가격을 start_date 이후만 로드하면 백테스트 시작 직후(대략 첫 3개월) 구간에서는
+        # DB에 실제 데이터가 있어도 이 price_data 딕셔너리 안에는 없어 RS 산출이 불가능
+        # 했다(성과측정 시작일과 지표 워밍업 시작일이 뒤섞여 있던 문제). RS lookback
+        # 최대치(99일)보다 넉넉한 warmup_buffer_days만큼 더 이전부터 가격을 로드하되,
+        # trade_dates(실제 매매·성과측정 대상일)는 아래에서 그대로 start_date 이후로만
+        # 필터링해 워밍업 구간이 성과에 포함되지 않도록 분리한다.
+        warmup_buffer_days = 110
+        price_load_start = (datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=warmup_buffer_days)).strftime("%Y-%m-%d")
         price_data: dict = {}  # code → {date: (close, high, low)}
         rows_p = conn.execute(
             "SELECT stock_code, date, close, high, low, open FROM price_history "
             "WHERE stock_code IN ({}) AND date>=? AND date<=? AND close>0 ORDER BY date".format(
                 ",".join("?" * len(all_codes))),
-            all_codes + [start_date, end_date]
+            all_codes + [price_load_start, end_date]
         ).fetchall()
         for r in rows_p:
             c, d, cl, hi, lo, op = r
             if c not in price_data:
                 price_data[c] = {}
+            # F07 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+            # 시가 결측(NULL/0)을 그 자리에서 종가로 대체해두면, 아래 strict_exec 체결
+            # 로직이 "그날 진짜 시가로 체결했다"고 오인한다(재현 위험: 실제로는 존재하지
+            # 않는 시가에 매수/매도한 것처럼 기록됨). 결측이면 None을 그대로 보존하고,
+            # 체결 시점(아래 sec_pending_buys/sells 처리부)에서 None을 "당일 미거래"와
+            # 동일하게 취급해 대기(매도)/만료(매수)시킨다 — 평가용 종가(index 0)는 이
+            # 대체와 무관하게 항상 실제 값을 쓴다.
             price_data[c][d] = (float(cl), float(hi) if hi else float(cl), float(lo) if lo else float(cl),
-                                float(op) if op and op > 0 else float(cl))
+                                float(op) if op and op > 0 else None)
 
         # 영업일 목록
         trade_dates = sorted(set(r[1] for r in rows_p if r[1] >= start_date))
 
         # 시총 맵 (거래비용 슬리피지 티어용)
-        mc_map = {r[0]: float(r[1] or 1000) for r in conn.execute(
-            "SELECT stock_code, market_cap FROM stock_universe WHERE stock_code IN ({})".format(
-                ",".join("?" * len(all_codes))), all_codes).fetchall()}
+        mc_map = {}
+        if not asof_mktcap:
+            mc_map = {r[0]: float(r[1] or 1000) for r in conn.execute(
+                "SELECT stock_code, market_cap FROM stock_universe WHERE stock_code IN ({})".format(
+                    ",".join("?" * len(all_codes))), all_codes).fetchall()}
 
         # 2026-08-13: 섹터 리더 선정(sel_score)의 기관집중도 계산이 stock_universe.
         # market_cap(현재시총)을 그대로 쓰고 있었음 — _SECTOR_GROUPS 후보군 자체는
@@ -147,6 +244,24 @@ def run_backtest_sector(
                     return shares
             return 0.0
 
+        def _cost_mktcap(code: str, day: str, price: float) -> float:
+            if asof_mktcap:
+                shares = _shares_asof_sector(code, day)
+                return shares * price / 100_000_000 if shares > 0 else 1000.0
+            return mc_map.get(code, 1000.0)
+
+        def _net_profit_scaled(entry_p: float, exit_p: float, qty: int, mkt_cap_억: float) -> tuple:
+            """_net_profit()의 비용(수수료+세금+슬리피지)만 cost_multiplier배로 스케일.
+            cost_multiplier=1.0(기본)이면 _net_profit()과 완전히 동일한 값을 반환한다."""
+            net_krw, net_pct = _net_profit(entry_p, exit_p, qty, mkt_cap_억)
+            if cost_multiplier == 1.0:
+                return net_krw, net_pct
+            gross = (exit_p - entry_p) * qty
+            cost = gross - net_krw
+            scaled_net = gross - cost * cost_multiplier
+            base = entry_p * qty
+            return round(scaled_net), round((scaled_net / base) * 100, 2) if base else 0.0
+
         # 포지션 관리
         # positions: dict[code] → {buy_price, peak, sector, qty}
         positions: dict = {}
@@ -162,33 +277,60 @@ def run_backtest_sector(
         last_rebalance = ""
         sector_scores_cache: dict = {}  # date → {sector_key: score}
         sector_momentum_cache: dict = {}  # date → {sector_key: {ret1, ret3}}
-        sec_pending_sells: list = []  # strict_exec: (code, reason)
+        sec_pending_sells: list = []  # strict_exec: (code, reason, fraction) -- fraction=None이면 전량
         sec_pending_buys: list = []   # strict_exec: (code, sector_key, meta)
 
         for i, trade_date in enumerate(trade_dates):
             # ── strict_exec: 전일 신호 → 오늘 시가 체결 ──
             if strict_exec:
                 _still = []
-                for code, reason in sec_pending_sells:
+                for code, reason, fraction in sec_pending_sells:
                     if code not in positions:
                         continue
                     pdata = price_data.get(code, {}).get(trade_date)
-                    if pdata is None:
-                        _still.append((code, reason)); continue
+                    # F07 fix: 시가 결측(pdata[3] is None)도 "당일 미거래"와 동일하게 대기시킨다 —
+                    # 종가를 대신 시가로 체결하지 않는다.
+                    if pdata is None or pdata[3] is None:
+                        _still.append((code, reason, fraction)); continue
                     px = pdata[3]
-                    pos = positions.pop(code)
-                    sector_assignments.pop(code, None)
-                    _pnl_amt, _net = _net_profit(pos["buy_price"], px, pos.get("qty", 1), mc_map.get(code, 1000))
-                    cash += pos["buy_price"] * pos.get("qty", 1) + _pnl_amt
-                    all_trades.append({"date": trade_date, "code": code, "action": "SELL",
-                                       "price": px, "pnl_pct": round(_net, 2), "reason": reason})
+                    pos = positions[code]
+                    if fraction is None:
+                        pos = positions.pop(code)
+                        sector_assignments.pop(code, None)
+                        _pnl_amt, _net = _net_profit_scaled(pos["buy_price"], px, pos.get("qty", 1), _cost_mktcap(code, trade_date, px))
+                        cash += pos["buy_price"] * pos.get("qty", 1) + _pnl_amt
+                        # 재개 우선순위1(2026-09-12, Codex 재검토): 종목별 손익귀속 검산을 하려면
+                        # 원화 금액이 필요한데 이전엔 pnl_pct(비율)만 기록해 재구성이 안 됐다 —
+                        # qty/entry_price/pnl_krw를 그대로 남긴다(기존 필드 제거 없음, 추가만).
+                        all_trades.append({"date": trade_date, "code": code, "action": "SELL",
+                                           "price": px, "pnl_pct": round(_net, 2), "reason": reason,
+                                           "qty": pos.get("qty", 1), "entry_price": pos["buy_price"],
+                                           "pnl_krw": round(_pnl_amt)})
+                    else:
+                        # 실험 #2 부분익절: 비율만큼 실현, 나머지는 동일 buy_price/peak로 계속 보유.
+                        total_qty = pos.get("qty", 1)
+                        sell_qty = max(1, int(total_qty * fraction))
+                        sell_qty = min(sell_qty, total_qty)
+                        _pnl_amt, _net = _net_profit_scaled(pos["buy_price"], px, sell_qty, _cost_mktcap(code, trade_date, px))
+                        cash += pos["buy_price"] * sell_qty + _pnl_amt
+                        all_trades.append({"date": trade_date, "code": code, "action": "SELL",
+                                           "price": px, "pnl_pct": round(_net, 2), "reason": reason,
+                                           "partial_qty": sell_qty, "remaining_qty": total_qty - sell_qty,
+                                           "qty": sell_qty, "entry_price": pos["buy_price"],
+                                           "pnl_krw": round(_pnl_amt)})
+                        pos["qty"] = total_qty - sell_qty
+                        pos["partial_tp_done"] = True
+                        if pos["qty"] <= 0:
+                            positions.pop(code)
+                            sector_assignments.pop(code, None)
                 sec_pending_sells = _still
                 for code, sector_key, meta in sec_pending_buys:
                     if code in positions or len(positions) >= max_positions:
                         continue
                     pdata = price_data.get(code, {}).get(trade_date)
-                    if pdata is None:
-                        continue  # 당일 미거래 → 주문 만료
+                    # F07 fix: 시가 결측(pdata[3] is None)도 "당일 미거래"와 동일하게 만료시킨다.
+                    if pdata is None or pdata[3] is None:
+                        continue  # 당일 미거래(또는 시가 결측) → 주문 만료
                     px = pdata[3]
                     budget = min(per_stock, cash * 0.99)
                     qty = int(budget / px)
@@ -200,7 +342,7 @@ def run_backtest_sector(
                                        "entry_sector_score": meta.get("sector_score", 0), "pyramid_adds": 0}
                     sector_assignments[code] = sector_key
                     all_trades.append({"date": trade_date, "code": code, "action": "BUY",
-                                       "price": px, "sector": sector_key, **meta})
+                                       "price": px, "sector": sector_key, "qty": qty, **meta})
                 sec_pending_buys = []
             # ─────── 보유 종목 현재가 업데이트 & 매도 체크 ───────
             to_sell = []
@@ -217,30 +359,57 @@ def run_backtest_sector(
                 trail_dd  = (cur - peak) / peak
 
                 sell_reason = None
+                fraction = None
                 if ret <= stop:
                     sell_reason = f"손절{ret*100:.1f}%"
                 elif trail_cur > 0.05 and trail_dd <= trail:
                     sell_reason = f"추적손절{trail_dd*100:.1f}%"
                 elif ret >= tp:
-                    sell_reason = f"익절{ret*100:.1f}%"
+                    if partial_tp_pct is not None and not pos.get("partial_tp_done"):
+                        # 실험 #2: 부분익절 후 나머지는 손절/추적손절만으로 계속 보유(포지션당 1회).
+                        sell_reason = f"부분익절{ret*100:.1f}%"
+                        fraction = partial_tp_pct
+                    elif partial_tp_pct is None:
+                        sell_reason = f"익절{ret*100:.1f}%"
+                    # partial_tp_pct가 설정돼 있고 이미 1회 부분익절했으면: 고정 tp로는 더 이상
+                    # 청산하지 않고(fraction도 None) 손절/추적손절에만 의존해 계속 보유.
 
                 if sell_reason:
-                    to_sell.append((code, cur, sell_reason))
+                    to_sell.append((code, cur, sell_reason, fraction))
 
             if strict_exec:
-                _queued = {c for c, _ in sec_pending_sells}
-                for code, sell_price, reason in to_sell:
+                _queued = {c for c, _, _ in sec_pending_sells}
+                for code, sell_price, reason, fraction in to_sell:
                     if code not in _queued:
-                        sec_pending_sells.append((code, reason))
+                        sec_pending_sells.append((code, reason, fraction))
             else:
-                for code, sell_price, reason in to_sell:
+                for code, sell_price, reason, fraction in to_sell:
+                    if fraction is not None:
+                        pos = positions[code]
+                        total_qty = pos.get("qty", 1)
+                        sell_qty = max(1, min(int(total_qty * fraction), total_qty))
+                        _pnl_amt, _net = _net_profit_scaled(pos["buy_price"], sell_price, sell_qty, _cost_mktcap(code, trade_date, sell_price))
+                        cash += pos["buy_price"] * sell_qty + _pnl_amt
+                        all_trades.append({"date": trade_date, "code": code, "action": "SELL",
+                                           "price": sell_price, "pnl_pct": round(_net, 2), "reason": reason,
+                                           "partial_qty": sell_qty, "remaining_qty": total_qty - sell_qty,
+                                           "qty": sell_qty, "entry_price": pos["buy_price"],
+                                           "pnl_krw": round(_pnl_amt)})
+                        pos["qty"] = total_qty - sell_qty
+                        pos["partial_tp_done"] = True
+                        if pos["qty"] <= 0:
+                            positions.pop(code)
+                            sector_assignments.pop(code, None)
+                        continue
                     pos = positions.pop(code)
                     sector_assignments.pop(code, None)
-                    _pnl_amt, _net = _net_profit(pos["buy_price"], sell_price, pos.get("qty", 1), mc_map.get(code, 1000))
+                    _pnl_amt, _net = _net_profit_scaled(pos["buy_price"], sell_price, pos.get("qty", 1), _cost_mktcap(code, trade_date, sell_price))
                     cash += pos["buy_price"] * pos.get("qty", 1) + _pnl_amt
                     all_trades.append({
                         "date": trade_date, "code": code, "action": "SELL",
-                        "price": sell_price, "pnl_pct": round(_net, 2), "reason": reason
+                        "price": sell_price, "pnl_pct": round(_net, 2), "reason": reason,
+                        "qty": pos.get("qty", 1), "entry_price": pos["buy_price"],
+                        "pnl_krw": round(_pnl_amt),
                     })
 
             # ─────── 월 1회 섹터 리밸런싱 ───────
@@ -270,26 +439,12 @@ def run_backtest_sector(
                         codes_s + [d_3m, trade_date]
                     ).fetchone() or (0,))[0] or 0.0
 
-                    # OP YoY (섹터 내 종목 중위값)
-                    cur_yr = str(int(trade_date[:4]))
-                    prv_yr = str(int(trade_date[:4]) - 1)
-                    op_rows_s = conn.execute(
-                        f"SELECT stock_code, operating_profit FROM financial_data "
-                        f"WHERE stock_code IN {ph_s} AND year=? AND is_annual=1 AND operating_profit IS NOT NULL",
-                        codes_s + [cur_yr]
-                    ).fetchall()
-                    op_prev_s = {r[0]: r[1] for r in conn.execute(
-                        f"SELECT stock_code, operating_profit FROM financial_data "
-                        f"WHERE stock_code IN {ph_s} AND year=? AND is_annual=1 AND operating_profit IS NOT NULL",
-                        codes_s + [prv_yr]
-                    ).fetchall()}
-                    yoys = []
-                    for code_s, op_c in op_rows_s:
-                        op_p = op_prev_s.get(code_s)
-                        if op_p and op_p != 0:
-                            raw = (op_c - op_p) / abs(op_p) * 100
-                            yoys.append(min(max(raw, -200), 2000))
-                    med_yoy = sorted(yoys)[len(yoys)//2] if yoys else 0.0
+                    # OP YoY (섹터 내 종목 중위값) — F01 (docs/claude_handoff_strategy_code_findings_20260912.md,
+                    # 2026-09-12): 실제 공시 시점(fin_disclosure_dates, 없으면 법정기한)으로
+                    # 종목별 게이팅. 실제 실행경로를 테스트로 검증할 수 있도록 별도 함수로
+                    # 분리했다(재개 우선순위4, Codex 재검토 지적 — 로직을 테스트 안에 복제하면
+                    # 운영 코드의 게이트가 제거돼도 테스트가 통과할 수 있다).
+                    med_yoy = _pit_gated_sector_op_yoy_median(conn, codes_s, int(trade_date[:4]), trade_date)
 
                     ret3_values = []
                     ret1_values = []
@@ -358,12 +513,14 @@ def run_backtest_sector(
                             pos = positions.pop(code)
                             sector_assignments.pop(code, None)
                             sell_p = pdata[0]
-                            _pnl_amt, pnl = _net_profit(pos["buy_price"], sell_p, pos.get("qty", 1), mc_map.get(code, 1000))
+                            _pnl_amt, pnl = _net_profit_scaled(pos["buy_price"], sell_p, pos.get("qty", 1), _cost_mktcap(code, trade_date, sell_p))
                             cash += pos["buy_price"] * pos.get("qty", 1) + _pnl_amt
                             all_trades.append({
                                 "date": trade_date, "code": code, "action": "SECTOR_EXIT",
                                 "price": sell_p, "pnl_pct": round(pnl, 2),
-                                "reason": f"섹터점수하락{scores.get(sec,0):.0f}→EXIT(보유{hold_days}일)"
+                                "reason": f"섹터점수하락{scores.get(sec,0):.0f}→EXIT(보유{hold_days}일)",
+                                "qty": pos.get("qty", 1), "entry_price": pos["buy_price"],
+                                "pnl_krw": round(_pnl_amt),
                             })
 
                 # ── 확신도 상승 시 추가매수(피라미딩, 사용자 제안 2026-08-09) ──
@@ -398,7 +555,7 @@ def run_backtest_sector(
                         pos["pyramid_adds"] = pos.get("pyramid_adds", 0) + 1
                         all_trades.append({
                             "date": trade_date, "code": code, "action": "PYRAMID_ADD",
-                            "price": add_px, "sector": sec,
+                            "price": add_px, "sector": sec, "qty": add_qty,
                             "reason": f"섹터점수상승{entry_score:.0f}→{cur_score:.0f}(+{cur_score-entry_score:.0f}) 추가매수#{pos['pyramid_adds']}",
                         })
 
@@ -439,6 +596,8 @@ def run_backtest_sector(
                     d3m = (datetime.strptime(as_of, "%Y-%m-%d") - timedelta(days=92)).strftime("%Y-%m-%d")
                     results = []
                     for c in codes_r:
+                        if exclude_codes and c in exclude_codes:
+                            continue
                         p_now = price_data.get(c, {}).get(as_of)
                         p_3m = None
                         for d_back in range(92, 100):
@@ -463,16 +622,77 @@ def run_backtest_sector(
                         inst_int_r = inst3m_r / max(1, mktcap_r) * 100
                         # RS 리더 점수 (3M 모멘텀 60% + 기관집중도 40%)
                         sel_score = rs3m * 0.6 + inst_int_r * 40
+
+                        # 실험 #1 (2026-09-12): PIT로 보정한 섹터 내 선별 -- 셋 다 opt-in.
+                        # F01과 동일한 공시일 게이팅(_release_date)으로 "as_of 시점에 실제
+                        # 공시돼 있던 가장 최근 연간 실적"을 찾아 재사용한다(룩어헤드 없음).
+                        if use_earnings_abs_bonus or use_disclosure_freshness_bonus or use_cashflow_confirm_gate:
+                            annual_rows_c = conn.execute(
+                                "SELECT year, operating_profit FROM ("
+                                "  SELECT year, operating_profit,"
+                                "         ROW_NUMBER() OVER (PARTITION BY year"
+                                "             ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END) AS rt_rn"
+                                "  FROM financial_data"
+                                "  WHERE stock_code=? AND is_annual=1 AND operating_profit IS NOT NULL AND year<=?"
+                                ") dedup WHERE rt_rn=1",
+                                (c, int(as_of[:4])),
+                            ).fetchall()
+                            year_map_c = {int(y): op for y, op in annual_rows_c}
+                            avail_years_c = sorted(
+                                (y for y in year_map_c if _release_date(y, 4, True, c) <= as_of), reverse=True
+                            )
+                            if avail_years_c:
+                                cur_y_c = avail_years_c[0]
+                                op_cur_c = year_map_c.get(cur_y_c)
+                                op_prev_c = year_map_c.get(cur_y_c - 1)
+                                if use_earnings_abs_bonus and op_cur_c is not None and op_prev_c is not None:
+                                    # 절대개선액(억원)을 시총(억원) 대비 정규화 -- % YoY와 달리
+                                    # 기저효과(작은 기저에서 튀는 % 폭등)에 흔들리지 않는다.
+                                    abs_improve_억 = (op_cur_c - op_prev_c) / 1e8
+                                    sel_score += max(-10.0, min(10.0, abs_improve_억 / max(1.0, mktcap_r) * 100))
+                                if use_disclosure_freshness_bonus:
+                                    release_c = _release_date(cur_y_c, 4, True, c)
+                                    try:
+                                        days_since = (datetime.strptime(as_of, "%Y-%m-%d") - datetime.strptime(release_c, "%Y-%m-%d")).days
+                                        sel_score += max(0.0, 10.0 - days_since / 30.0)  # 신선할수록(최근 공시) +최대 10점, 300일+면 0
+                                    except ValueError:
+                                        pass
+                                if use_cashflow_confirm_gate:
+                                    ocf_row = conn.execute(
+                                        "SELECT operating_cf FROM ("
+                                        "  SELECT operating_cf,"
+                                        "         ROW_NUMBER() OVER (ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END) AS rt_rn"
+                                        "  FROM cash_flow_data"
+                                        "  WHERE stock_code=? AND is_annual=1 AND year=? AND operating_cf IS NOT NULL"
+                                        ") dedup WHERE rt_rn=1",
+                                        (c, cur_y_c),
+                                    ).fetchone()
+                                    if ocf_row and ocf_row[0] is not None and float(ocf_row[0]) < 0:
+                                        sel_score -= 15.0  # 회계상 실적개선이 영업현금흐름 미동반 시 감점(하드 배제는 아님)
+
                         if pick_ta_bonus is not None:
                             # 직전 공시분기 첫 흑자전환 (as-of 표준 공시일정 기준, 룩어헤드 없음)
+                            # 2026-09-08 수정: report_type(CFS/OFS) 타이브레이크 없이 LIMIT 4만
+                            # 걸면 같은 분기의 CFS/OFS 두 행이 서로 다른 분기인 것처럼 섞여
+                            # 흑자전환 판정(ni_rows[0] vs ni_rows[1:])이 왜곡된다 —
+                            # se_momentum.py에서 발견된 것과 동일 부류의 버그. 분기당 CFS우선
+                            # 1행만 남긴다.
                             ni_rows = conn.execute("""
-                                SELECT net_income FROM financial_data
-                                WHERE stock_code=? AND is_annual=0 AND quarter BETWEEN 1 AND 4
-                                  AND net_income IS NOT NULL
-                                  AND (CASE WHEN quarter=1 THEN printf('%d-05-15', year)
-                                            WHEN quarter=2 THEN printf('%d-08-15', year)
-                                            WHEN quarter=3 THEN printf('%d-11-15', year)
-                                            ELSE printf('%d-02-15', year+1) END) <= ?
+                                SELECT net_income FROM (
+                                    SELECT year, quarter, net_income,
+                                           ROW_NUMBER() OVER (
+                                               PARTITION BY year, quarter
+                                               ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                                           ) AS rt_rn
+                                    FROM financial_data
+                                    WHERE stock_code=? AND is_annual=0 AND quarter BETWEEN 1 AND 4
+                                      AND net_income IS NOT NULL
+                                      AND (CASE WHEN quarter=1 THEN printf('%d-05-15', year)
+                                                WHEN quarter=2 THEN printf('%d-08-15', year)
+                                                WHEN quarter=3 THEN printf('%d-11-15', year)
+                                                ELSE printf('%d-02-15', year+1) END) <= ?
+                                ) dedup
+                                WHERE rt_rn = 1
                                 ORDER BY year DESC, quarter DESC LIMIT 4
                             """, (c, as_of)).fetchall()
                             if (len(ni_rows) >= 2 and float(ni_rows[0][0] or 0) > 0
@@ -522,33 +742,56 @@ def run_backtest_sector(
                         sector_assignments[code] = sector_key
                         all_trades.append({
                             "date": trade_date, "code": code, "action": "BUY",
-                            "price": buy_p, "sector": sector_key, **_meta,
+                            "price": buy_p, "sector": sector_key, "qty": qty, **_meta,
                         })
                         n_slots -= 1
 
         # 마지막 날 청산 (현금원장 방식)
+        # F07 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+        # 기존에는 종료일에 해당 종목 시세가 없으면 그 종목이 과거에 마지막으로 거래된
+        # (임의로 오래될 수 있는) 날짜의 종가를 가져다 "오늘 체결"로 기록했다 — 거래정지
+        # 종목이 정지 이전 몇 달/몇 년 전 가격으로 오늘 종료청산된 것처럼 보이는 허구
+        # 체결이었다. 이제 종료일 당일 시세가 실제로 있을 때만 청산으로 기록하고, 없으면
+        # (거래정지 등) 과거 마지막 가격은 참고 로그로만 남기고 기존 "시세부재" 보수적
+        # 처리(원금 미환입, 전액손실 표기)로 합친다 — 오늘 체결로 간주하지 않는다.
         last_date = trade_dates[-1] if trade_dates else end_date
         for code, pos in positions.items():
-            pdata = price_data.get(code, {}).get(last_date) or price_data.get(code, {})
-            if isinstance(pdata, dict):
-                last = sorted(pdata.keys())[-1] if pdata else None
-                pdata = pdata.get(last) if last else None
+            pdata = price_data.get(code, {}).get(last_date)
             if pdata:
                 sell_p = pdata[0]
-                _pnl_amt, pnl = _net_profit(pos["buy_price"], sell_p, pos.get("qty", 1), mc_map.get(code, 1000))
+                _pnl_amt, pnl = _net_profit_scaled(pos["buy_price"], sell_p, pos.get("qty", 1), _cost_mktcap(code, last_date, sell_p))
                 cash += pos["buy_price"] * pos.get("qty", 1) + _pnl_amt
                 all_trades.append({"date": last_date, "code": code, "action": "FINAL",
-                                   "price": sell_p, "pnl_pct": round(pnl, 2), "reason": "종료청산"})
+                                   "price": sell_p, "pnl_pct": round(pnl, 2), "reason": "종료청산",
+                                   "qty": pos.get("qty", 1), "entry_price": pos["buy_price"],
+                                   "pnl_krw": round(_pnl_amt)})
             else:
-                # 시세 없음(거래정지 등) → 매수원금 그대로 환입하지 않고 전액 손실 처리 대신
-                # 마지막 유효가 부재를 보수적으로 기록 (stale mark 방지: 원금 미환입)
-                all_trades.append({"date": last_date, "code": code, "action": "FINAL",
-                                   "price": None, "pnl_pct": -100.0, "reason": "시세부재(보수적 전액손실 처리)"})
+                # 재개 우선순위2(2026-09-12, Codex 재검토): "시세 없음"을 pnl_pct=-100.0으로
+                # 확정 기록하면 "실제로 전액 손실 확정"과 "그냥 평가불가"를 구분할 수 없다.
+                # 현금원장 자체는 이 분기에서 cash를 건드리지 않으므로(매수원금이 이미
+                # 빠져나간 채 되돌아오지 않음) 수익률 계산 결과는 이전과 동일하게 보수적으로
+                # 유지되지만, pnl_pct는 None(확정 손익 아님)으로 두고 -100%는 "이게 최악의
+                # 경우라면"이라는 하한 시나리오 라벨로만 별도 필드에 남긴다. 미청산 상태·평가
+                # 불가·최종 관측일을 각각 분리해서 기록한다.
+                stale_history = price_data.get(code, {})
+                stale_last_date = sorted(stale_history.keys())[-1] if stale_history else None
+                all_trades.append({
+                    "date": last_date, "code": code, "action": "FINAL",
+                    "price": None, "pnl_pct": None,
+                    "disposition": "unresolved_no_price_at_period_end",
+                    "reason": "평가불가(종료일 시세없음, 원금 미환입으로 보수처리)",
+                    "conservative_lower_bound_pnl_pct": -100.0,
+                    "last_observed_price_date_reference_only": stale_last_date,
+                    "qty": pos.get("qty", 1), "entry_price": pos["buy_price"], "pnl_krw": None,
+                })
 
         # 수익률 계산 (투자원금 기준)
         n_buy = sum(1 for t in all_trades if t["action"] == "BUY")
         n_sell = sum(1 for t in all_trades if t["action"] in ("SELL", "SECTOR_EXIT", "FINAL"))
-        sell_trades = [t for t in all_trades if "pnl_pct" in t and t["action"] != "BUY"]
+        # F07 (2026-09-12): pnl_pct=None(평가불가/미해결)인 레코드는 확정 손익이 아니므로
+        # 평균거래수익률/승률 계산에서 제외한다 -- 전체 수익률(portfolio_return, 아래)은
+        # 실제 cash 원장 기준이라 이 필터와 무관하게 그대로 정확하다.
+        sell_trades = [t for t in all_trades if t.get("pnl_pct") is not None and t["action"] != "BUY"]
         avg_trade_return = sum(t["pnl_pct"] for t in sell_trades) / max(1, len(sell_trades)) if sell_trades else 0.0
         portfolio_return = (cash - initial_cash) / max(1, initial_cash) * 100  # C1: 최종 현금원장 기준
         win_rate = sum(1 for t in sell_trades if t.get("pnl_pct", 0) > 0) / max(1, len(sell_trades)) * 100
@@ -609,6 +852,5 @@ def run_backtest_sector(
 #    기관/외인 강매수     → 3배 달성률 3% (음의 예측력: 이미 알려진 종목)
 #  → 현재 전략들이 "MA 위 + 수급 매수" 중심인데 이게 오히려 역효과
 # ══════════════════════════════════════════════════════════════
-
 
 

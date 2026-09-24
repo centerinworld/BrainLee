@@ -1,0 +1,27 @@
+{
+  "base_date": "20260904",
+  "status": "healthy",
+  "published": true,
+  "snapshots": 1167,
+  "successes": 1167,
+  "empty": 0,
+  "errors": 0,
+  "components": 76194,
+  "missing_raw_metadata": 0,
+  "invalid_hash": 0,
+  "invalid_success": 0,
+  "duplicate_rows": 0,
+  "raw_missing_on_disk": 0,
+  "publication_dates": [
+    "20260904",
+    "20260826"
+  ],
+  "changes": 41041,
+  "previous_date": "20260826",
+  "change_summary": {
+    "added": 18216,
+    "changed": 22251,
+    "removed": 574
+  },
+  "audited_at": "2026-09-06T02:26:15"
+}

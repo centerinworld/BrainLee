@@ -9,6 +9,7 @@ keeps a train/test split so a single lucky period does not define the rule.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import math
 import sqlite3
@@ -131,7 +132,7 @@ SPECS = [
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     return conn
 

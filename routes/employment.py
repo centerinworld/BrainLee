@@ -2,10 +2,11 @@
 import sqlite3
 from fastapi import APIRouter, Query
 
+from db_compat import connect_primary_db
+
 router = APIRouter()
 
 EMP_DB = "employment_monitor/employment.db"
-MAIN_DB = "stock.db"
 
 
 def _emp_conn():
@@ -75,15 +76,12 @@ def get_nps_monthly(
             "lss": "lss_jnngp_cnt DESC",
             "net": "(nw_acqzr_cnt - lss_jnngp_cnt) DESC",
         }.get(order, "(nw_acqzr_cnt - lss_jnngp_cnt) DESC")
-        conn.execute(f"ATTACH DATABASE '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db' AS main_db")
         rows = conn.execute(
-            f"""SELECT n.ym, n.stock_code, n.stock_name,
-                       n.nw_acqzr_cnt, n.lss_jnngp_cnt,
-                       (n.nw_acqzr_cnt - n.lss_jnngp_cnt) AS net_change,
-                       m.market
-                FROM nps_workplace_monthly n
-                LEFT JOIN main_db.stock_universe m ON n.stock_code = m.stock_code
-                WHERE n.ym = ?
+            f"""SELECT ym, stock_code, stock_name,
+                       nw_acqzr_cnt, lss_jnngp_cnt,
+                       (nw_acqzr_cnt - lss_jnngp_cnt) AS net_change
+                FROM nps_workplace_monthly
+                WHERE ym = ?
                 ORDER BY {order_sql}
                 LIMIT ?""",
             (ym, limit),
@@ -91,14 +89,36 @@ def get_nps_monthly(
         months = [r[0] for r in conn.execute(
             "SELECT DISTINCT ym FROM nps_workplace_monthly WHERE ym LIKE '2%' ORDER BY ym DESC LIMIT 24"
         ).fetchall()]
-        
+
         updated_at_row = conn.execute("SELECT MAX(fetched_at) FROM nps_workplace_monthly WHERE ym = ?", (ym,)).fetchone()
         updated_at = updated_at_row[0] if updated_at_row and updated_at_row[0] else None
-        
+
+        # stock.db는 employment.db와 별도 물리 DB(Postgres)라 ATTACH로 조인할 수 없음 —
+        # 종목코드 목록으로 market만 따로 조회해 파이썬에서 LEFT JOIN.
+        codes = sorted({r["stock_code"] for r in rows if r["stock_code"]})
+        market_by_code: dict[str, str | None] = {}
+        if codes:
+            main_conn = connect_primary_db()
+            try:
+                placeholders = ",".join("?" for _ in codes)
+                for mrow in main_conn.execute(
+                    f"SELECT stock_code, market FROM stock_universe WHERE stock_code IN ({placeholders})",
+                    codes,
+                ).fetchall():
+                    market_by_code[mrow["stock_code"]] = mrow["market"]
+            finally:
+                main_conn.close()
+
+        out_rows = []
+        for r in rows:
+            d = dict(r)
+            d["market"] = market_by_code.get(d["stock_code"])
+            out_rows.append(d)
+
         return {
             "ym": ym,
             "months": months,
-            "rows": [dict(r) for r in rows],
+            "rows": out_rows,
             "updated_at": updated_at,
         }
     finally:

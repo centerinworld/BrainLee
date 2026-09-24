@@ -11,6 +11,7 @@ This reruns the v5 tenbagger strategy family with a stricter simulator:
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from collections import defaultdict
@@ -40,7 +41,7 @@ PERIODS = [
 
 
 def connect() -> sqlite3.Connection:
-    return sqlite3.connect(DB, timeout=300)
+    return connect_primary_db(timeout=300)
 
 
 def load_prices(conn: sqlite3.Connection) -> dict[str, list[tuple]]:

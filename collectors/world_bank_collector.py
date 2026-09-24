@@ -3,11 +3,13 @@ World Bank Open Data 수집기
 무료, API 키 불필요
 https://api.worldbank.org/v2/
 """
+from db_compat import connect_primary_db
 import sqlite3, requests, logging, time
 from datetime import datetime
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 # (country_iso, wb_indicator, our_code)
 WORLD_BANK_INDICATORS = [
@@ -62,7 +64,7 @@ def _upsert(conn: sqlite3.Connection, code: str, date: str, value: float | None)
 
 
 def collect_world_bank() -> int:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.execute("""
         INSERT OR IGNORE INTO global_macro_categories
         (code,name,name_en,category,subcategory,unit,source,source_code,frequency,importance)
@@ -122,7 +124,7 @@ def collect_world_bank() -> int:
 
 def _log(records: int, status: str = "ok", msg: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         conn.execute("""
             INSERT INTO global_macro_collection_log (source, status, records, message)
             VALUES ('world_bank', ?, ?, ?)

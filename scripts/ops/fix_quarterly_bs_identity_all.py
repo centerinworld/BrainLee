@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from db_compat import connect_primary_db
 import sqlite3
 from datetime import datetime
 
@@ -6,7 +7,7 @@ DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 RUN_ID='codex_bs_identity_all_20260530'
 
 def main():
-    conn=sqlite3.connect(DB)
+    conn=connect_primary_db()
     conn.row_factory=sqlite3.Row
     now=datetime.now().isoformat(timespec='seconds')
 

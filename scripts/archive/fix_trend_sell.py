@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 with open('/Applications/stock_dashboard/main.py', 'r') as f:
     content = f.read()
 
@@ -12,7 +13,7 @@ def trend_sell(payload: dict):
     profit     = float(payload.get("profit") or 0)
     profit_pct = float(payload.get("profit_pct") or 0)
     sold_at    = payload.get("sold_at") or _dt.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db()
     conn.execute(
         "UPDATE peak_holding SET is_active=0, sell_price=?, sold_at=?, current_price=?, profit_pct=?, updated_at=CURRENT_TIMESTAMP WHERE stock_name=? AND is_active=1",
         (sell_price, sold_at, sell_price, profit_pct, stock_name))

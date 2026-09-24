@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import json
 import sys
+
+import requests
 from datetime import datetime
 from pathlib import Path
 
-import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from collection_health import evaluate_all_contracts  # noqa: E402
 from config import IS_POSTGRES  # noqa: E402
 from db_utils import connect_stock_db  # noqa: E402
 from live_trading_data import ensure_live_data_schema  # noqa: E402
@@ -23,6 +25,8 @@ OUT_JSON = ROOT / "research_outputs" / "strategy_center_live_data_readiness_late
 OUT_MD = ROOT / "research_outputs" / "strategy_center_live_data_readiness_latest.md"
 CUTOVER = ROOT / "research_outputs" / "postgres_cutover" / "verification_latest.json"
 PRICE_INTEGRITY = ROOT / "research_outputs" / "selected_strategy_price_integrity_latest.json"
+DATA_AVAILABILITY = ROOT / "research_outputs" / "selected_strategy_data_availability_latest.json"
+STATIC_CONTRACTS = ROOT / "research_outputs" / "backtest_static_contracts_latest.json"
 CRITICAL_DATASETS = {"program_stock", "investor_flow", "short_balance"}
 
 
@@ -30,43 +34,84 @@ def audit() -> dict:
     ensure_live_data_schema()
     conn = connect_stock_db(readonly=True)
     try:
-        latest_date = str(conn.execute("SELECT MAX(date) FROM price_history").fetchone()[0])[:10]
+        latest_date = str(conn.execute(
+            """SELECT MAX(date) FROM price_history
+               WHERE LENGTH(stock_code)=6 AND stock_code ~ '^[0-9]{6}$'"""
+        ).fetchone()[0])[:10]
         universe_count = int(conn.execute("SELECT COUNT(*) FROM stock_universe").fetchone()[0])
+        canonical_universe_count = int(conn.execute(
+            """SELECT COUNT(DISTINCT stock_code)
+               FROM security_master_history
+               WHERE is_tradable=1 AND is_etf_etn=0
+                 AND market IN ('KOSPI','KOSDAQ')
+                 AND effective_from<=?
+                 AND (effective_to IS NULL OR effective_to>?)""",
+            (latest_date, latest_date),
+        ).fetchone()[0])
         blocked_universe_count = int(conn.execute(
-            """SELECT COUNT(*) FROM stock_universe u
+            """SELECT COUNT(DISTINCT sm.stock_code)
+               FROM security_master_history sm
                WHERE EXISTS(
                  SELECT 1 FROM trading_restrictions r
-                 WHERE r.stock_code=u.stock_code AND r.is_tradable=0
+                 WHERE r.stock_code=sm.stock_code AND r.is_tradable=0
                    AND r.source='KIS_NO_CURRENT_TRADE'
-               )"""
+               )
+                 AND sm.is_tradable=1 AND sm.is_etf_etn=0
+                 AND sm.market IN ('KOSPI','KOSDAQ')
+                 AND sm.effective_from<=?
+                 AND (sm.effective_to IS NULL OR sm.effective_to>?)""",
+            (latest_date, latest_date),
         ).fetchone()[0])
-        effective_universe_count = universe_count - blocked_universe_count
+        effective_universe_count = canonical_universe_count - blocked_universe_count
         price_row = conn.execute(
             """
+            WITH eligible AS (
+              SELECT DISTINCT stock_code
+              FROM security_master_history
+              WHERE is_tradable=1 AND is_etf_etn=0
+                AND market IN ('KOSPI','KOSDAQ')
+                AND effective_from<=?
+                AND (effective_to IS NULL OR effective_to>?)
+            )
             SELECT COUNT(DISTINCT p.stock_code),
                    COUNT(*) FILTER (WHERE p.open IS NULL OR p.high IS NULL OR p.low IS NULL OR p.close IS NULL OR p.volume IS NULL),
-                   COUNT(*) FILTER (WHERE COALESCE(p.trade_amount,0)>0)
-            FROM price_history p JOIN stock_universe u ON u.stock_code=p.stock_code
+                   COUNT(*) FILTER (WHERE COALESCE(p.trade_amount,0)>0),
+                   COUNT(*) FILTER (WHERE COALESCE(p.volume,0)>0)
+            FROM price_history p JOIN eligible e ON e.stock_code=p.stock_code
             WHERE p.date=?
               AND NOT EXISTS(
                 SELECT 1 FROM trading_restrictions r
-                WHERE r.stock_code=u.stock_code AND r.is_tradable=0
+                WHERE r.stock_code=p.stock_code AND r.is_tradable=0
                   AND r.source='KIS_NO_CURRENT_TRADE'
               )
             """,
-            (latest_date,),
+            (latest_date, latest_date, latest_date),
         ).fetchone()
         latest_price_codes = int(price_row[0])
         price_missing_required = int(price_row[1])
         positive_trade_amount = int(price_row[2])
+        positive_volume_rows = int(price_row[3])
         missing_latest = conn.execute(
-            """SELECT u.stock_code,u.stock_name,MAX(p.date)
-               FROM stock_universe u LEFT JOIN price_history p ON p.stock_code=u.stock_code
+            """WITH eligible AS (
+                 SELECT DISTINCT stock_code,stock_name
+                 FROM security_master_history
+                 WHERE is_tradable=1 AND is_etf_etn=0
+                   AND market IN ('KOSPI','KOSDAQ')
+                   AND effective_from<=?
+                   AND (effective_to IS NULL OR effective_to>?)
+               )
+               SELECT u.stock_code,u.stock_name,MAX(p.date)
+               FROM eligible u LEFT JOIN price_history p ON p.stock_code=u.stock_code
                WHERE NOT EXISTS(
                  SELECT 1 FROM price_history x WHERE x.stock_code=u.stock_code AND x.date=?
                )
+                 AND NOT EXISTS(
+                   SELECT 1 FROM trading_restrictions r
+                   WHERE r.stock_code=u.stock_code AND r.is_tradable=0
+                     AND r.source='KIS_NO_CURRENT_TRADE'
+                 )
                GROUP BY u.stock_code,u.stock_name ORDER BY MAX(p.date) DESC""",
-            (latest_date,),
+            (latest_date, latest_date, latest_date),
         ).fetchall()
 
         financial = conn.execute(
@@ -108,16 +153,15 @@ def audit() -> dict:
     finally:
         conn.close()
 
-    dashboard = requests.get(f"{API}/api/dashboard/stats", timeout=30).json()
     unhealthy = [
         {
             "key": item.get("key"), "status": item.get("status"),
             "source_as_of": item.get("source_as_of"), "issues": item.get("issues") or [],
         }
-        for item in dashboard.get("dataset_health", [])
+        for item in evaluate_all_contracts(use_cache=False)
         if item.get("key") in CRITICAL_DATASETS and item.get("status") != "healthy"
     ]
-    matrix = requests.get(f"{API}/api/backtest/matrix?include_legacy=false", timeout=30).json()
+    matrix = requests.get(f"{API}/api/backtest/matrix?include_legacy=true", timeout=30).json()
     verification_counts: dict[str, int] = {}
     for row in matrix.get("strategies") or []:
         status = (row.get("governance") or {}).get("verification_status") or "unknown"
@@ -127,6 +171,14 @@ def audit() -> dict:
     selected_price_integrity = (
         json.loads(PRICE_INTEGRITY.read_text(encoding="utf-8"))
         if PRICE_INTEGRITY.exists() else {}
+    )
+    data_availability = (
+        json.loads(DATA_AVAILABILITY.read_text(encoding="utf-8"))
+        if DATA_AVAILABILITY.exists() else {}
+    )
+    static_contracts = (
+        json.loads(STATIC_CONTRACTS.read_text(encoding="utf-8"))
+        if STATIC_CONTRACTS.exists() else {}
     )
     share_gaps = [
         item for item in cutover.get("postgres_behind", [])
@@ -141,12 +193,30 @@ def audit() -> dict:
     action_confirmed_pct = int(actions[1]) / int(actions[0]) * 100 if actions[0] else 0.0
     dilution_amount_pct = int(dilution[1]) / int(dilution[0]) * 100 if dilution[0] else 0.0
     blockers = []
-    if latest_price_codes < effective_universe_count:
+    warnings = []
+    if universe_count > canonical_universe_count * 1.2:
+        warnings.append({
+            "code": "STOCK_UNIVERSE_CONTAINS_NONCURRENT_ROWS",
+            "evidence": (
+                f"stock_universe={universe_count}, canonical current equities="
+                f"{canonical_universe_count}; readiness denominator now uses the "
+                "as-of security master"
+            ),
+        })
+    if coverage_pct < 98:
         blockers.append({
             "code": "LATEST_PRICE_UNIVERSE_INCOMPLETE",
             "evidence": f"{latest_price_codes}/{effective_universe_count} tradable codes ({coverage_pct:.2f}%), missing={effective_universe_count-latest_price_codes}",
         })
-    warnings = []
+    elif latest_price_codes < effective_universe_count:
+        warnings.append({
+            "code": "LATEST_PRICE_PARTIAL_FAIL_CLOSED",
+            "evidence": (
+                f"{latest_price_codes}/{effective_universe_count} ({coverage_pct:.2f}%); "
+                f"missing {effective_universe_count-latest_price_codes} codes are excluded per candidate"
+            ),
+        })
+
     if int(actions[2]) > 0:
         warnings.append({
             "code": "CORPORATE_ACTION_REVIEW_BACKLOG",
@@ -156,11 +226,11 @@ def audit() -> dict:
                 "candidate gate checks recent actions and audited price jumps"
             ),
         })
-    if positive_trade_amount < latest_price_codes:
+    if positive_trade_amount < positive_volume_rows:
         warnings.append({
             "code": "DAILY_TURNOVER_ARCHIVE_PENDING",
             "evidence": (
-                f"positive archived trade_amount={positive_trade_amount}/{latest_price_codes}; "
+                f"positive archived trade_amount={positive_trade_amount}/{positive_volume_rows} positive-volume rows; "
                 "candidate preflight requires fresh KIS intraday turnover and does not use close*volume"
             ),
         })
@@ -185,9 +255,24 @@ def audit() -> dict:
                 f"global return-unusable jumps={int(price_jumps[1])}/{int(price_jumps[0])}"
             ),
         })
-    if int(dilution[1]) < int(dilution[0]):
+    if not data_availability or data_availability.get("failed"):
         blockers.append({
-            "code": "DILUTION_AMOUNT_PARTIAL",
+            "code": "SELECTED_RUN_DATA_AVAILABILITY_UNPROVEN",
+            "evidence": (
+                f"passed={data_availability.get('passed',0)}/"
+                f"{data_availability.get('component_count',0)}, "
+                f"failed={data_availability.get('failed','missing audit')}; "
+                "delayed-data strategies require persisted input row ids and available_at"
+            ),
+        })
+    if not static_contracts or int((static_contracts.get("counts") or {}).get("P0", 0)):
+        blockers.append({
+            "code": "BACKTEST_STATIC_P0_REMAINS",
+            "evidence": json.dumps(static_contracts.get("counts") or {"audit": "missing"}),
+        })
+    if dilution_amount_pct < 80:
+        blockers.append({
+            "code": "DILUTION_AMOUNT_COVERAGE_LOW",
             "evidence": f"issue_amount={int(dilution[1])}/{int(dilution[0])} ({dilution_amount_pct:.2f}%)",
         })
     if missing_execution_data:
@@ -232,11 +317,19 @@ def audit() -> dict:
             "code": "POSTGRES_SHARE_HISTORY_PARITY",
             "evidence": "PostgreSQL is not behind SQLite for share snapshots or as-of share history",
         })
-    if latest_price_codes == effective_universe_count:
+    if dilution_amount_pct >= 80:
+        passes.append({
+            "code": "DILUTION_RISK_CLASSIFIED",
+            "evidence": (
+                f"confirmed amount={int(dilution[1])}/{int(dilution[0])} ({dilution_amount_pct:.2f}%); "
+                "amount-missing events remain usable only as conservative event/dilution flags"
+            ),
+        })
+    if coverage_pct >= 98:
         passes.append({
             "code": "LATEST_TRADABLE_PRICE_COVERAGE",
             "evidence": (
-                f"{latest_price_codes}/{effective_universe_count} tradable candidates covered; "
+                f"{latest_price_codes}/{effective_universe_count} candidates covered ({coverage_pct:.2f}%); "
                 f"{blocked_universe_count} no-trade/unavailable codes fail closed"
             ),
         })
@@ -251,11 +344,13 @@ def audit() -> dict:
         "metrics": {
             "latest_price_date": latest_date,
             "latest_price_codes": latest_price_codes,
-            "universe_codes": universe_count,
+        "universe_codes": universe_count,
+        "canonical_current_universe_codes": canonical_universe_count,
             "effective_tradable_universe_codes": effective_universe_count,
             "fail_closed_universe_codes": blocked_universe_count,
             "latest_price_coverage_pct": round(coverage_pct, 2),
             "latest_positive_trade_amount": positive_trade_amount,
+            "latest_positive_volume_rows": positive_volume_rows,
             "missing_latest_price_samples": [
                 {"stock_code": row[0], "stock_name": row[1], "last_price_date": str(row[2])}
                 for row in missing_latest[:20]
@@ -266,6 +361,9 @@ def audit() -> dict:
             "corporate_action_confirmed_pct": round(action_confirmed_pct, 2),
             "dilution_amount_coverage_pct": round(dilution_amount_pct, 2),
             "verification_counts": verification_counts,
+            "data_availability_components_passed": int(data_availability.get("passed", 0) or 0),
+            "data_availability_components_failed": int(data_availability.get("failed", 0) or 0),
+            "backtest_static_contract_counts": static_contracts.get("counts") or {},
         },
     }
 

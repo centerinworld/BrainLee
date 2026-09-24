@@ -22,9 +22,12 @@ from backtest_common import (
     _corp_action_adjusted_entry,
     _load_corp_action_factors,
     _load_disc_dates,
+    _load_material_cost_events,
+    _load_backlog_surge_events,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
+    _final_liquidation_quote_for_code,
     _release_date,
     init_backtest_db,
     logger,
@@ -52,6 +55,11 @@ def run_backtest_turnaround(
     run_name: str = None,
     run_id: str = None,
     data_asof_ts: str = None,  # 2026-09-04: 기업행위조정계수/재무데이터 재현성 고정 — 아래 참조
+    vol_scale_gate: bool = True,  # 2026-09-04 기본값 채택 — 아래 참조
+    vol_scale_lookback: int = 5,
+    vol_scale_threshold: float = 0.025,
+    vol_scale_factor: float = 0.5,
+    use_material_backlog_bonus: bool = False,  # 2026-09-08 신규(opt-in) — 아래 참조
 ) -> str:
     """
     흑자전환 특화 전략 (V-TURNAROUND).
@@ -64,6 +72,30 @@ def run_backtest_turnaround(
     두 값 중 하나만 실행 시점 사이에 바뀌어도 거래건수·손익이 흔들린다(회귀검증
     비재현성의 실제 원인). 'YYYY-MM-DD HH:MM:SS'를 주면 그 시각 기준 데이터로
     고정해 재실행해도 항상 동일한 결과를 보장한다. None(기본값)이면 기존과 동일.
+
+    vol_scale_gate: 2026-09-04 기본값 True로 채택(과거 기본은 False). 2024-06~2025-05
+    구간 실거래 분석(trades_json) 결과 37건 중 20건(54%)이 손절 청산이었고, 그중
+    5건이 2024-08-06 하루에 몰려 -20~-30%대로 체결됨 — 원인은 2024-08-05 KOSPI
+    이틀간 -12% 급락(실제 역사적 폭락일)이었는데, 이 전략의 손절은 종가 판정→D+1
+    시가 체결이라 갭하락이 -13% 손절선을 크게 넘어(-20~-30%) 체결된 것(2026-07
+    폭락의 composite에서도 동일 패턴 확인). 진입 자체를 막는 건(_run_generic_backtest의
+    fast_crash_gate 실험) 반등도 같이 놓쳐 walk-forward에서 역효과였으므로, 대신
+    최근 vol_scale_lookback거래일 KOSPI 일변동 표준편차가 vol_scale_threshold
+    이상이면 신규 진입 티켓 크기만 vol_scale_factor배로 축소 — 갭이 나더라도
+    포지션당 손실 절대금액을 줄인다. 6구간 walk-forward 비교(2026-09-04) 결과
+    turnaround는 거래빈도가 낮아(구간당 15~50건) 필터가 상승장에서 자주 안 걸리고
+    2026-07 폭락 방어(-14.2%→-7.25%)는 뚜렷해 평균 +18.76%→+21.64%로 순개선 —
+    기본값으로 채택. v2/composite는 거래빈도가 높아(구간당 74~193건) 같은 필터가
+    변동성 큰 상승장에서도 자주 걸려 순악화(v2 -3.9%p, composite -1.7%p)였으므로
+    그쪽은 계속 opt-in(기본 False) 유지. False로 넘기면 기존 동작으로 되돌릴 수 있다.
+
+    use_material_backlog_bonus: 2026-09-08 신규(opt-in, 기각). composite.py에서
+    2026-09-06에 채택된 매입재료비 3중검증(+1~+3)/수주잔고 QoQ 급증(+2) 이벤트
+    보너스를 이 전략의 복합점수(depth_score+neg_bonus+pbr_bonus, 최대 100점)에도
+    이식해 7구간 walk-forward 검증: avg 20.92%→20.48%로 사실상 무변화(7구간 중
+    5구간 완전동일 — 이 전략은 하루에 상위 3종목만 선별하는데 기존 점수 스케일
+    (최대100점)이 이벤트보너스(최대 3점)를 압도해 순위가 거의 안 바뀜). 기본값
+    False 유지, 재현연구용 opt-in만 보존.
 
     [데이터 기반 핵심 인사이트] BigQuery 1,324종목 전수 분석:
       흑자전환 종목 평균 수익률: 6.14x (우량성장주 3.48x의 1.77배!)
@@ -94,7 +126,12 @@ def run_backtest_turnaround(
          "strict_exec": strict_exec, "asof_mktcap": asof_mktcap,
          "chart_confluence": chart_confluence,
          "per_stock": per_stock, "max_positions": max_positions,
-         "start": start_date, "end": end_date, "data_asof_ts": data_asof_ts},
+         "start": start_date, "end": end_date, "data_asof_ts": data_asof_ts,
+         "vol_scale_gate": vol_scale_gate,
+         "vol_scale_lookback": vol_scale_lookback if vol_scale_gate else None,
+         "vol_scale_threshold": vol_scale_threshold if vol_scale_gate else None,
+         "vol_scale_factor": vol_scale_factor if vol_scale_gate else None,
+         "use_material_backlog_bonus": use_material_backlog_bonus},
         signal_timing="close_D",
         execution_timing=("next_open" if strict_exec else "same_close"),
         market_cap_mode=("asof_approx" if asof_mktcap else "current"),
@@ -152,6 +189,22 @@ def run_backtest_turnaround(
             if idx is None or idx < 60: return None
             return sum(k_prices[idx-59:idx+1]) / 60
 
+        # 2026-09-04: 단기 변동성 급등 시 신규 진입 티켓만 축소(vol_scale_gate 참조).
+        vol_scale: Dict[str, float] = {}
+        if vol_scale_gate:
+            for ki, kd in enumerate(k_dates):
+                if kd < start_date or ki < vol_scale_lookback:
+                    continue
+                rets = [
+                    (k_prices[j] - k_prices[j - 1]) / k_prices[j - 1]
+                    for j in range(ki - vol_scale_lookback + 1, ki + 1)
+                    if k_prices[j - 1] > 0
+                ]
+                if rets:
+                    _mean = sum(rets) / len(rets)
+                    _var  = sum((r - _mean) ** 2 for r in rets) / len(rets)
+                    vol_scale[kd] = vol_scale_factor if _var ** 0.5 >= vol_scale_threshold else 1.0
+
         # 재무 데이터 로드 (분기 + 연간, 공시일 포함)
         # 컬럼: year,quarter,rev,op,eps,bps,equity,net_inc,roe,is_annual,avail_date
         # data_asof_ts 지정 시 그 시각 이후 UPDATE된 행은 제외(재현성 고정용, 2026-09-04).
@@ -175,8 +228,9 @@ def run_backtest_turnaround(
                 AND d.is_annual = CASE WHEN f.is_annual=1 THEN 1 ELSE 0 END
             WHERE ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 3)
                OR (f.is_annual=1))
+              AND f.report_type IN ('CFS','')
               {"AND f.updated_at <= ?" if data_asof_ts else ""}
-            ORDER BY f.stock_code, f.year, f.quarter
+            ORDER BY f.stock_code, f.year, f.quarter, f.report_type DESC, f.id
         """, ([data_asof_ts] if data_asof_ts else [])).fetchall():
             sc = r[0]
             fin_all.setdefault(sc, []).append(r[1:])
@@ -239,7 +293,7 @@ def run_backtest_turnaround(
                 LEFT JOIN stock_universe su ON p.stock_code=su.stock_code
                 WHERE p.date BETWEEN ? AND ? AND p.close>0
                   AND LENGTH(p.stock_code)=6
-                  AND p.stock_code GLOB '[0-9]*'
+                  AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             """, (start_date, end_date)).fetchall()
         else:
             codes = conn.execute("""
@@ -250,7 +304,7 @@ def run_backtest_turnaround(
                   AND su.market_cap >= ?
                   AND su.market IN ('KOSPI','KOSDAQ')
                   AND LENGTH(p.stock_code)=6
-                  AND p.stock_code GLOB '[0-9]*'
+                  AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             """, (start_date, end_date, min_mktcap)).fetchall()
 
         share_intervals: Dict[str, list] = {}
@@ -293,6 +347,28 @@ def run_backtest_turnaround(
             }
             if chart_confluence:
                 sd[code]['chart'] = _chart_prep(sd[code]['d'], sd[code]['lo'], c_list)
+
+        material_map: Dict[str, list] = {}
+        backlog_map: Dict[str, list] = {}
+        if use_material_backlog_bonus and sd:
+            material_map = _load_material_cost_events(conn, list(sd.keys()))
+            backlog_map = _load_backlog_surge_events(conn, list(sd.keys()))
+
+        def _event_bonus(code: str, asof: str) -> float:
+            best = 0.0
+            for ev_date, pts, _label in material_map.get(code, ()):
+                if ev_date > asof:
+                    continue
+                if (datetime.strptime(asof, "%Y-%m-%d") - datetime.strptime(ev_date, "%Y-%m-%d")).days > 365:
+                    continue
+                best = max(best, pts)
+            for ev_date, pts, _label in backlog_map.get(code, ()):
+                if ev_date > asof:
+                    continue
+                if (datetime.strptime(asof, "%Y-%m-%d") - datetime.strptime(ev_date, "%Y-%m-%d")).days > 180:
+                    continue
+                best = max(best, pts)
+            return best
 
         sim_dates = sorted(set(
             d for s in sd.values() for d in s['d'] if start_date <= d <= end_date
@@ -377,7 +453,8 @@ def run_backtest_turnaround(
                     px = sd[code]['o'][i]
                     if px <= 0 or cash < px:
                         continue
-                    budget = min(per_stock, cash * 0.99)
+                    _eff_per_stock = per_stock * vol_scale.get(day, 1.0) if vol_scale_gate else per_stock
+                    budget = min(_eff_per_stock, cash * 0.99)
                     shares = int(budget // px)
                     if shares < 1:
                         continue
@@ -517,6 +594,8 @@ def run_backtest_turnaround(
                 # PBR 저평가 보너스
                 pbr_bonus = max(0.0, (max_pbr - pbr) / max_pbr * 15.0)  # 최대 15점
                 score = depth_score + neg_bonus + pbr_bonus
+                if use_material_backlog_bonus:
+                    score += _event_bonus(code, day)
 
                 # 바닥 컨플루언스 게이트 (2026-07-18 공통모듈)
                 if chart_confluence and _chart_bottom_confluence(
@@ -534,7 +613,8 @@ def run_backtest_turnaround(
                     continue
                 if len(pos) >= max_positions: break
                 if cash < curr * 100: continue
-                budget = min(per_stock, cash * 0.99)
+                _eff_per_stock = per_stock * vol_scale.get(day, 1.0) if vol_scale_gate else per_stock
+                budget = min(_eff_per_stock, cash * 0.99)
                 shares = int(budget // curr)
                 if shares < 1: continue
                 cost   = shares * curr
@@ -551,15 +631,18 @@ def run_backtest_turnaround(
 
         # ── 최종 청산 ────────────────────────────────────────────────
         sell_trades = [t for t in trades if 'sell_date' in t]
+        last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in pos.items():
-            last_price = sd[code]['c'][-1] if sd.get(code, {}).get('c') else p['entry']
+            idx_map = {day: idx for idx, day in enumerate(sd.get(code, {}).get('d', []))}
+            last_price, final_reason = _final_liquidation_quote_for_code(conn, code, 
+                last_day, idx_map, sd.get(code, {}).get('c', []))
             entry_adj = _corp_action_adjusted_entry(
-                _corp_action_factors, code, p['buy_date'], end_date, p['entry'])
+                _corp_action_factors, code, p['buy_date'], last_day, p['entry'])
             pnl, net_pct = _net_profit(entry_adj, last_price, p['shares'], p.get('mkt_cap_억', min_mktcap))
             sell_trades.append({
-                'code': code, 'buy_date': p['buy_date'], 'sell_date': end_date,
+                'code': code, 'buy_date': p['buy_date'], 'sell_date': last_day,
                 'entry': p['entry'], 'exit': last_price,
-                'pnl_pct': net_pct, 'reason': 'end',
+                'pnl_pct': net_pct, 'reason': final_reason,
                 'pnl': round(pnl, 0),
             })
             cash += p['shares'] * p['entry'] + pnl
@@ -605,6 +688,5 @@ def run_backtest_turnaround(
 
 
 # ─── V-MEGATREND: 구조적 테마 추종(분산 바스켓 + 손절규율) ────────────────────
-
 
 

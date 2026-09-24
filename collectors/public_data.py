@@ -14,6 +14,7 @@ collectors/public_data.py — 공공데이터포털 (금융위원회) 수집기
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import asyncio
 import logging
 import sqlite3
@@ -407,7 +408,7 @@ class PublicDataCollector(BaseCollector):
                 SELECT stock_code
                 FROM stock_universe
                 WHERE length(stock_code)=6
-                  AND stock_code GLOB '[0-9]*'
+                  AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND market IN ('KOSPI', 'KOSDAQ', '유가증권', '코스닥')
                   AND COALESCE(stock_type, '') NOT IN ('ETF', 'ETF/ETN', 'ETN')
                   AND stock_name NOT LIKE '%ETF%'
@@ -551,7 +552,7 @@ class PublicDataCollector(BaseCollector):
 
     def _bulk_upsert_short_sync(self, bas_dt: str, rank_rows, svc_rows, month_rows, sector_rows, fbal_rows, ftrad_rows) -> dict[str, int]:
         """대차 관련 4개 테이블 동기 upsert."""
-        conn = sqlite3.connect(_DB_PATH)
+        conn = connect_primary_db()
         conn.execute("PRAGMA journal_mode=WAL")
         saved: dict[str, int] = {}
         try:
@@ -820,7 +821,7 @@ class PublicDataCollector(BaseCollector):
 
     def _bulk_upsert_sync(self, datasets: dict[str, list[dict]]) -> dict[str, int]:
         saved: dict[str, int] = {}
-        conn  = sqlite3.connect(_DB_PATH)
+        conn  = connect_primary_db()
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         try:

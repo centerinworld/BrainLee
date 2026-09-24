@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import re
 import sqlite3
 from datetime import datetime
@@ -262,7 +263,7 @@ def extreme_value_qa(conn: sqlite3.Connection) -> int:
 
 
 def main() -> int:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=60000")
     init_table(conn)

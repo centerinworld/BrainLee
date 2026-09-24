@@ -8,6 +8,7 @@ loads chunks into a non-partitioned table so row completeness wins.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 from pathlib import Path
@@ -82,7 +83,7 @@ def main() -> int:
     args = ap.parse_args()
 
     client = bigquery.Client(project=PROJECT)
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     try:
         results = []
         for table in args.tables:

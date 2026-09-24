@@ -41,25 +41,19 @@ class TickerMapper:
 
         # DB에서 먼저 로드 시도 (KRX API 대신)
         try:
-            import sqlite3
-            db_paths = [
-                "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db",
-                "stock.db",
-            ]
-            for db_path in db_paths:
-                if os.path.exists(db_path):
-                    conn = sqlite3.connect(db_path)
-                    df_db = pd.read_sql(
-                        "SELECT stock_code as Code, stock_name as Name FROM listed_company_info",
-                        conn, dtype={"Code": str}
-                    )
-                    conn.close()
-                    if len(df_db) > 100:
-                        self._df = df_db
-                        self._df.to_csv(self._cache_file, index=False)
-                        self._load_failed = False
-                        print(f"[TickerMapper] DB에서 {len(df_db)}개 종목 로드 완료")
-                        return
+            from db_compat import connect_primary_db
+            conn = connect_primary_db()
+            df_db = pd.read_sql(
+                "SELECT stock_code as Code, stock_name as Name FROM listed_company_info",
+                conn, dtype={"Code": str}
+            )
+            conn.close()
+            if len(df_db) > 100:
+                self._df = df_db
+                self._df.to_csv(self._cache_file, index=False)
+                self._load_failed = False
+                print(f"[TickerMapper] DB에서 {len(df_db)}개 종목 로드 완료")
+                return
         except Exception as e:
             print(f"[TickerMapper] DB 로드 실패: {e}")
 

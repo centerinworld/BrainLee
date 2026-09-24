@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import asyncio
 import argparse
 import os
@@ -145,7 +146,7 @@ async def _collect_stock_messages(channel, stock_name: str, stock_code: str, cli
     # 1) report_files에서 종목과 매핑된 메시지 id를 앵커로 잡고
     # 2) 앵커 전후 메시지를 함께 수집해 종목명 직접 미언급 문맥까지 포함
     anchors = []
-    with sqlite3.connect(DB_PATH) as c2:
+    with connect_primary_db() as c2:
         c2.row_factory = sqlite3.Row
         rows = c2.execute(
             """
@@ -196,7 +197,7 @@ async def run(target_stock: str = "") -> None:
     channel = chk.chat
     channel_title = getattr(channel, "title", "invite_channel")
 
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=120000")
 

@@ -103,6 +103,19 @@ def _get_conn():
     return connect_primary_db(timeout=30, row_factory=sqlite3.Row)
 
 
+def _cost_period_is_publicly_available(year: Any, quarter: Any) -> bool:
+    """Do not expose a cost/inventory fiscal period before its filing window."""
+    try:
+        fiscal_year, fiscal_quarter = int(year), int(quarter)
+    except (TypeError, ValueError):
+        return False
+    earliest_month = {1: 5, 2: 8, 3: 11, 4: 3}.get(fiscal_quarter)
+    if earliest_month is None:
+        return False
+    disclosure_year = fiscal_year + (1 if fiscal_quarter == 4 else 0)
+    return _date_cls.today() >= _date_cls(disclosure_year, earliest_month, 1)
+
+
 def _ro_conn(path: str):
     resolved = str(Path(path).resolve())
     if resolved == str(STOCK_DB_PATH):
@@ -1413,13 +1426,26 @@ def _final_selected(state: dict, min_score: int) -> bool:
 
 
 def _quarterly_rows(conn: sqlite3.Connection) -> dict[str, list[dict]]:
+    # 2026-09-08 수정: report_type(CFS/OFS) 타이브레이크 없이 조회하면 같은 (연도,분기)가
+    # 두 행으로 들어와 _consecutive_qoq/_consecutive_yoy의 위치 기반 비교·(year,quarter)
+    # 조회가 같은 분기를 서로 다른 분기로 착각하거나 중복 계상한다 — se_momentum.py에서
+    # 발견된 것과 동일 부류의 버그. (stock_code, year, quarter)당 CFS우선 1행만 남긴다.
     rows = conn.execute("""
         SELECT stock_code, year, quarter, revenue, operating_profit,
                depreciation_amortization
-        FROM financial_data
-        WHERE is_annual = 0
-          AND quarter > 0
-          AND revenue IS NOT NULL
+        FROM (
+            SELECT stock_code, year, quarter, revenue, operating_profit,
+                   depreciation_amortization,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY stock_code, year, quarter
+                       ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                   ) AS rt_rn
+            FROM financial_data
+            WHERE is_annual = 0
+              AND quarter > 0
+              AND revenue IS NOT NULL
+        ) dedup
+        WHERE rt_rn = 1
         ORDER BY stock_code, year DESC, quarter DESC
     """).fetchall()
     by_code: dict[str, list[dict]] = {}
@@ -2014,31 +2040,45 @@ def get_custom_filter(
         if not universe:
             return {"stocks": [], "count": 0, "meta": {"reason": "no_universe"}}
 
+        # 2026-09-08 수정: MAX(year*10+quarter)로 최신분기를 찾아 다시 JOIN하는 방식은
+        # 최신분기에 CFS/OFS 두 행이 있으면 report_type 타이브레이크 없이 둘 다 조인돼
+        # (딕셔너리 컴프리헨션에서 마지막에 순회된 행이 비결정적으로 채택) 값이 들쭉날쭉
+        # 해진다 — se_momentum.py에서 발견된 것과 동일 부류의 버그. 최신분기 판정과
+        # CFS우선 선택을 하나의 ROW_NUMBER로 통합해 종목당 정확히 1행만 남긴다.
         fin = {
             r["stock_code"]: dict(r)
             for r in stock_conn.execute("""
-                SELECT f.stock_code, f.year, f.quarter, f.revenue,
-                       f.operating_profit, f.depreciation_amortization
-                FROM financial_data f
-                JOIN (
-                    SELECT stock_code, MAX(year * 10 + quarter) AS yq
+                SELECT stock_code, year, quarter, revenue,
+                       operating_profit, depreciation_amortization
+                FROM (
+                    SELECT stock_code, year, quarter, revenue,
+                           operating_profit, depreciation_amortization,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY stock_code
+                               ORDER BY year DESC, quarter DESC,
+                                        CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                           ) AS rn
                     FROM financial_data
                     WHERE is_annual = 0 AND quarter > 0
-                    GROUP BY stock_code
-                ) x ON x.stock_code = f.stock_code AND x.yq = f.year * 10 + f.quarter
+                ) ranked
+                WHERE rn = 1
             """).fetchall()
         }
         cash = {
             r["stock_code"]: dict(r)
             for r in stock_conn.execute("""
-                SELECT c.stock_code, c.year, c.quarter, c.depreciation
-                FROM cash_flow_data c
-                JOIN (
-                    SELECT stock_code, MAX(year * 10 + quarter) AS yq
+                SELECT stock_code, year, quarter, depreciation
+                FROM (
+                    SELECT stock_code, year, quarter, depreciation,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY stock_code
+                               ORDER BY year DESC, quarter DESC,
+                                        CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                           ) AS rn
                     FROM cash_flow_data
                     WHERE is_annual = 0 AND quarter > 0
-                    GROUP BY stock_code
-                ) x ON x.stock_code = c.stock_code AND x.yq = c.year * 10 + c.quarter
+                ) ranked
+                WHERE rn = 1
             """).fetchall()
         }
         qrows = _quarterly_rows(stock_conn)
@@ -4725,6 +4765,11 @@ def get_stock_extra_data(stock_code: str):
             ORDER BY fiscal_year DESC, fiscal_quarter DESC
             LIMIT 20
         """, (stock_code,)).fetchall()
+        # Guard old parser/API contamination as well as new collection runs.
+        cost_rows = [
+            row for row in cost_rows
+            if _cost_period_is_publicly_available(row["fiscal_year"], row["fiscal_quarter"])
+        ]
 
         # 수주잔고 (order_backlog)
         backlog_rows = conn.execute("""

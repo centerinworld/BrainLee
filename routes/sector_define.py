@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 import sqlite3
 import os
 import pandas as pd
@@ -56,7 +57,7 @@ class PostDetail(BaseModel):
     stocks: List[StockInfo]
 
 def get_db_conn():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -241,7 +242,7 @@ def get_special_filtered_stocks(
     - 조건3: 최근 emp_months 개월간 인원 증가
     - 조건4: 최근 1개월 수출액 증가
     """
-    conn_stock = sqlite3.connect(DB_PATH, timeout=30)
+    conn_stock = connect_primary_db(timeout=30)
     conn_stock.row_factory = sqlite3.Row
     
     try:
@@ -266,6 +267,7 @@ def get_special_filtered_stocks(
             SELECT stock_code, year, quarter, revenue, operating_profit, depreciation_amortization
             FROM financial_data
             WHERE stock_code IN ({','.join(['?']*len(codes))}) AND is_annual = 0 AND quarter > 0
+              AND NOT (report_type='OFS' AND quarter=4 AND data_source LIKE 'dart_ofs_backfill%')
             ORDER BY year DESC, quarter DESC
         """, conn_stock, params=codes)
 

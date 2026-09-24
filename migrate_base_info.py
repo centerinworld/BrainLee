@@ -13,6 +13,7 @@ migrate_base_info.py — A안용 스키마 추가
     python3 migrate_base_info.py
 """
 
+from db_compat import connect_primary_db
 import sqlite3
 from pathlib import Path
 
@@ -25,7 +26,7 @@ def col_exists(cur, table, col):
 
 
 def main():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cur = conn.cursor()
 
     # 1. stock_universe 컬럼 추가

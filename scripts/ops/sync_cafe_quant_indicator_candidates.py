@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import sqlite3
 from pathlib import Path
 
@@ -158,7 +159,7 @@ CAFE_CANDIDATES = [
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     for item in CAFE_CANDIDATES:
         conn.execute(
             """

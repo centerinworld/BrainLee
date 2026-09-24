@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import math
 import sqlite3
@@ -526,7 +527,7 @@ def _sample_rows(panel: pd.DataFrame, winner: bool, limit: int = 30) -> list[dic
 
 
 def build() -> dict:
-    conn = sqlite3.connect(STOCK_DB)
+    conn = connect_primary_db()
     try:
         price = _load_price_panel(conn)
         panel = _price_features(price)

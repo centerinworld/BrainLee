@@ -2,12 +2,17 @@ import sqlite3
 import pandas as pd
 import numpy as np
 
+from db_compat import connect_primary_db
+
 def test_interpolation():
     conn = sqlite3.connect('/Volumes/Realtek_NVME/stock_dashboard/runtime/employment_monitor/employment.db')
     df = pd.read_sql("SELECT stock_code, stock_name, sector_label, ym, worker_count FROM employment_company WHERE ym IN ('2023-12', '2024-12', '2025-12')", conn)
-    conn.execute(f"ATTACH DATABASE '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db' AS main_db")
-    markets = pd.read_sql("SELECT stock_code, market FROM stock_universe", conn)
     conn.close()
+    stock_conn = connect_primary_db()
+    try:
+        markets = pd.read_sql("SELECT stock_code, market FROM stock_universe", stock_conn)
+    finally:
+        stock_conn.close()
     
     pivot = df.pivot_table(index=['stock_code', 'stock_name', 'sector_label'], columns='ym', values='worker_count').reset_index()
     pivot = pivot.merge(markets, on='stock_code', how='left')

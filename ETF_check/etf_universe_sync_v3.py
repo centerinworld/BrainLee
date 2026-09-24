@@ -20,7 +20,11 @@ SOURCE_VERSION="KIS_MASTER_ALNUM_V2"
 
 def fetch_complete_universe() -> list[ETFMeta]:
     response=requests.get(MASTER_URL,timeout=30); response.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+    return parse_master_zip(response.content)
+
+
+def parse_master_zip(content: bytes, minimum_count: int = 1000) -> list[ETFMeta]:
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
         raw=archive.read(archive.namelist()[0])
     result=[]; tail_size=sum(WIDTHS)
     for line in raw.splitlines():
@@ -34,7 +38,7 @@ def fetch_complete_universe() -> list[ETFMeta]:
         listed=float(listed_text)*1000 if listed_text else None
         result.append(ETFMeta(ticker,head[21:].decode("cp949",errors="ignore").strip(),"KOSPI",head[9:21].decode("cp949",errors="ignore").strip(),fields["listed_date"],listed))
     result.sort(key=lambda row:row.ticker)
-    if len(result)<1000 or len({row.ticker for row in result})!=len(result):
+    if len(result)<minimum_count or len({row.ticker for row in result})!=len(result):
         raise RuntimeError(f"Corrected ETF universe validation failed: {len(result)}")
     return result
 

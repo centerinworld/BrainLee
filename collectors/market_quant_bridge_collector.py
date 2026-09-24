@@ -7,12 +7,14 @@ are not already represented in global_macro_data.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 
 @dataclass(frozen=True)
@@ -95,7 +97,7 @@ def _normalize_date(period: str) -> str | None:
 
 
 def collect_market_quant_bridge() -> int:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executemany(
         """

@@ -1,7 +1,8 @@
+from db_compat import connect_primary_db
 import sqlite3, yfinance as yf
 from datetime import date
 
-conn = sqlite3.connect('/Applications/stock_dashboard/stock.db')
+conn = connect_primary_db()
 # 활성 보유종목 코드 조회
 codes = conn.execute("""
     SELECT DISTINCT su.stock_code 

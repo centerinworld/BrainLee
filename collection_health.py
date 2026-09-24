@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from db_compat import connect_primary_db
 import threading
 import time
 from dataclasses import dataclass
@@ -48,8 +49,16 @@ class DatasetContract:
 
 
 DATASET_CONTRACTS: tuple[DatasetContract, ...] = (
-    DatasetContract("kr_price", "국내 주가", STOCK_DB, "price_history", "date", ready_hour=16,
-                    min_latest_coverage=2000, coverage_expr="COUNT(DISTINCT stock_code)", source="KIS/KRX", schedule="영업일 장중·장마감"),
+    DatasetContract(
+        "kr_price", "국내 주가", STOCK_DB, "price_history", "date", ready_hour=16,
+        min_latest_coverage=2000,
+        coverage_expr="COUNT(DISTINCT stock_code)",
+        # price_history also contains indices and auxiliary series. Restrict the
+        # freshness contract to tradeable six-digit domestic equities so a later
+        # non-equity row on a market holiday cannot mask the latest KR session.
+        source_filter="stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]' AND close > 0",
+        source="KIS/KRX", schedule="영업일 장중·장마감",
+    ),
     DatasetContract("program_market", "프로그램 매매(시장)", STOCK_DB, "broker_program_market_daily", "dt", ready_hour=19,
                     min_latest_coverage=2, coverage_expr="COUNT(DISTINCT market)", collected_at_col="updated_at", source="KIS/Kiwoom", schedule="영업일 18:20"),
     DatasetContract("program_stock", "프로그램 매매(종목별)", STOCK_DB, "broker_program_stock_daily", "dt", ready_hour=20, ready_minute=30,
@@ -58,8 +67,8 @@ DATASET_CONTRACTS: tuple[DatasetContract, ...] = (
                     min_latest_coverage=2000, coverage_expr="COUNT(DISTINCT stock_code)", collected_at_col="updated_at", source="Kiwoom", schedule="영업일 19:00"),
     DatasetContract("foreign_holding", "외국인 지분", STOCK_DB, "kiwoom_foreign_flow", "dt", ready_hour=20,
                     min_latest_coverage=2000, coverage_expr="COUNT(DISTINCT stock_code)", collected_at_col="updated_at", source="Kiwoom", schedule="영업일 19:15"),
-    DatasetContract("short_balance", "대차·공매도", STOCK_DB, "short_rank_daily", "bas_dt", ready_hour=21,
-                    allowed_lag=1, min_latest_coverage=1000, coverage_expr="COUNT(DISTINCT COALESCE(stock_code, isin_cd))", source="KRX/KIS", schedule="영업일"),
+    DatasetContract("short_balance", "대차·공매도", STOCK_DB, "short_sell_daily", "bas_dt", ready_hour=21,
+                    allowed_lag=1, min_latest_coverage=2000, coverage_expr="COUNT(DISTINCT stock_code)", source="공공데이터/KRX", schedule="영업일"),
     DatasetContract("sector_index", "섹터 지수", STOCK_DB, "sector_index_daily", "date", ready_hour=19,
                     min_latest_coverage=10, coverage_expr="COUNT(DISTINCT market || '|' || sector)", source="KRX", schedule="영업일"),
     # 이벤트 구동형: 스냅샷 스크립트는 매일 돌지만, 조건을 만족하는 종목이 없으면 0행을 남기는 것이 정상이다.
@@ -298,7 +307,7 @@ def evaluate_contract(contract: DatasetContract, now: datetime | None = None) ->
         result["issues"].append("database_missing")
         return result
     try:
-        conn = sqlite3.connect(f"file:{contract.db_path}?mode=ro", uri=True, timeout=10)
+        conn = connect_primary_db(readonly=True, timeout=10) if contract.db_path == STOCK_DB else sqlite3.connect(f"file:{contract.db_path}?mode=ro", uri=True, timeout=10)
         conn.row_factory = sqlite3.Row
         exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name=?", (contract.table,)).fetchone()
         if not exists:

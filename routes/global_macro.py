@@ -2,6 +2,7 @@
 글로벌 경제 인텔리전스 라우터
 세계 주요 경제지표를 수집·조회하는 API
 """
+from db_compat import connect_primary_db
 from fastapi import APIRouter, Query, BackgroundTasks
 from typing import Optional
 import sqlite3 as _sl
@@ -9,10 +10,11 @@ import json, time, logging, asyncio
 from datetime import datetime, timedelta
 from bisect import bisect_right
 from config import IS_POSTGRES
+from pathlib import Path
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 _init_done = False
 
@@ -25,7 +27,7 @@ def _init_tables():
         _seed_categories()
         _init_done = True
         return
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS global_macro_categories (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,6 +193,40 @@ def _seed_categories():
         ("JP_NIKKEI",         "일본 닛케이 225 지수",    "Nikkei 225 Index",             "JP",   "MARKET",      "포인트",  "YAHOO",      "^N225",           "DAILY",    2),
         ("JP_CLI_OECD",       "일본 OECD 경기선행지수",  "Japan OECD CLI",               "JP",   "SENTIMENT",   "지수",    "OECD",       "DF_CLI/JPN",      "MONTHLY",  2),
         ("JP_GDP_GROWTH_WEO", "일본 IMF GDP 전망치",     "Japan IMF GDP Forecast",       "JP",   "GROWTH",      "%",       "IMF",        "NGDP_RPCH/JPN",   "ANNUAL",   2),
+        # ── 아시아 외국인 자금흐름 (routes/global_foreign_flow.py 전용 소스) ★신규(2026-09-08) ──
+        # KR/IN/JP는 실데이터 수집 중(JP는 2026-09-09 MOF 공개 주간 CSV로 전환, e-Stat 불필요).
+        # TW는 TWSE WAF 차단으로 미수집(대체 소스 확보 전까지 보류).
+        # CN(HKEX 북향자금)은 조사만 완료, 실데이터 미확정 — 수집기 아직 없음.
+        ("KR_FOREIGN_FLOW_USD","한국 외국인 순매수(USD환산)",  "Korea Foreign Net Buy (USD)",  "KR","FLOW","백만달러","KRX/KIS",  "price_history",  "DAILY", 3),
+        ("TW_USD_TWD",          "대만달러/달러 환율",          "USD/TWD Exchange Rate",        "TW","FX",  "TWD",     "YAHOO",    "TWD=X",           "DAILY", 1),
+        ("TW_FOREIGN_FLOW_USD","대만 외국인 순매수(USD환산)",  "Taiwan Foreign Net Buy (USD)", "TW","FLOW","백만달러","TWSE",     "BFI82U",          "DAILY", 3),
+        ("JP_FOREIGN_FLOW_USD","일본 외국인 증권매매(USD환산)","Japan Foreign Net Buy (USD)",  "JP","FLOW","백만달러","MOF","week.csv",       "WEEKLY",3),
+        ("CN_NORTHBOUND_FLOW_USD","중국 북향자금 순매수(USD환산)","China Northbound Net Buy (USD)","CN","FLOW","백만달러","HKEX","StockConnect",   "DAILY", 3),
+        ("IN_USD_INR",          "인도루피/달러 환율",          "USD/INR Exchange Rate",        "IN","FX",  "INR",     "YAHOO",    "INR=X",           "DAILY", 1),
+        ("IN_FPI_FLOW_USD",    "인도 FPI 주식 순투자(USD)",    "India FPI Equity Net (USD)",   "IN","FLOW","백만달러","NSDL",     "Latest.aspx",     "DAILY", 3),
+        # ── TIC(미 재무부) 국가별 대미 주식 양자간 자금흐름 — collectors/tic_bilateral_flow_collector.py ★신규(2026-09-08) ──
+        # "해당 국가 투자자가 미국 주식을 얼마나 순매수했는가"(월별, FRED 미러링). 위 국가별 자국시장
+        # 외국인순매수(FLOW)와는 방향이 반대/보완 관계 — 결합하면 "자국 이탈→미국 유입" 가설 검증 가능.
+        ("TIC_US_FLOW_ALL",         "전세계→미국 주식 순매수",   "Foreign Net Buy US Equities: All",     "US","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET69995","MONTHLY",3),
+        ("TIC_US_FLOW_ASIA_TOTAL",  "아시아 합계→미국 주식",     "Foreign Net Buy US Equities: Asia",    "US","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET49999","MONTHLY",3),
+        ("TIC_US_FLOW_EUROPE_TOTAL","유럽 합계→미국 주식",       "Foreign Net Buy US Equities: Europe",  "US","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET19992","MONTHLY",3),
+        ("TIC_US_FLOW_EURO_AREA",   "유로존→미국 주식",          "Foreign Net Buy US Equities: Euro Area","US","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET16713","MONTHLY",2),
+        ("TIC_US_FLOW_JP",          "일본→미국 주식",            "Foreign Net Buy US Equities: Japan",   "JP","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET42609","MONTHLY",2),
+        ("TIC_US_FLOW_KR",          "한국→미국 주식",            "Foreign Net Buy US Equities: Korea",   "KR","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET43001","MONTHLY",2),
+        ("TIC_US_FLOW_CN",          "중국(본토)→미국 주식",      "Foreign Net Buy US Equities: China",   "CN","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET41408","MONTHLY",2),
+        ("TIC_US_FLOW_HK",          "홍콩→미국 주식",            "Foreign Net Buy US Equities: HK",      "HK","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET42005","MONTHLY",2),
+        ("TIC_US_FLOW_TW",          "대만→미국 주식",            "Foreign Net Buy US Equities: Taiwan",  "TW","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET46302","MONTHLY",2),
+        ("TIC_US_FLOW_IN",          "인도→미국 주식",            "Foreign Net Buy US Equities: India",   "IN","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET42102","MONTHLY",2),
+        ("TIC_US_FLOW_SG",          "싱가포르→미국 주식",        "Foreign Net Buy US Equities: Singapore","SG","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET46019","MONTHLY",1),
+        ("TIC_US_FLOW_GB",          "영국→미국 주식",            "Foreign Net Buy US Equities: UK",      "GB","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET13005","MONTHLY",2),
+        ("TIC_US_FLOW_DE",          "독일→미국 주식",            "Foreign Net Buy US Equities: Germany", "DE","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET11002","MONTHLY",2),
+        ("TIC_US_FLOW_FR",          "프랑스→미국 주식",          "Foreign Net Buy US Equities: France",  "FR","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET10804","MONTHLY",1),
+        ("TIC_US_FLOW_IT",          "이탈리아→미국 주식",        "Foreign Net Buy US Equities: Italy",   "IT","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET11509","MONTHLY",1),
+        ("TIC_US_FLOW_CH",          "스위스→미국 주식",          "Foreign Net Buy US Equities: Switzerland","CH","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET12688","MONTHLY",1),
+        ("TIC_US_FLOW_CA",          "캐나다→미국 주식",          "Foreign Net Buy US Equities: Canada",  "CA","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET29998","MONTHLY",1),
+        ("TIC_US_FLOW_AU",          "호주→미국 주식",            "Foreign Net Buy US Equities: Australia","AU","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET60089","MONTHLY",1),
+        ("TIC_US_FLOW_SA",          "사우디아라비아→미국 주식",  "Foreign Net Buy US Equities: Saudi",   "SA","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET45608","MONTHLY",1),
+        ("TIC_US_FLOW_BR",          "브라질→미국 주식",          "Foreign Net Buy US Equities: Brazil",  "BR","TIC_FLOW","백만달러","FRED/TIC","FORLTEQTYNET30309","MONTHLY",1),
         # ── 원자재 ────────────────────────────────────────────────────
         ("COMM_OIL_WTI",      "WTI 원유 가격",          "WTI Crude Oil Price",          "COMMODITY","ENERGY", "달러/배럴","YAHOO",     "CL=F",            "DAILY",    3),
         ("COMM_OIL_BRENT",    "브렌트유 가격",          "Brent Crude Oil Price",        "COMMODITY","ENERGY", "달러/배럴","YAHOO",     "BZ=F",            "DAILY",    2),
@@ -211,7 +247,7 @@ def _seed_categories():
         ("GLOBAL_FOOD_OILS",  "FAO 유지류가격지수",     "FAO Oils Price Index",         "GLOBAL","FOOD",     "지수",    "FAO",        "",                "MONTHLY",  1),
         ("GLOBAL_FOOD_SUGAR", "FAO 설탕가격지수",       "FAO Sugar Price Index",        "GLOBAL","FOOD",     "지수",    "FAO",        "",                "MONTHLY",  1),
     ]
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.executemany("""
         INSERT INTO global_macro_categories
         (code,name,name_en,category,subcategory,unit,source,source_code,frequency,importance)
@@ -359,7 +395,7 @@ def _cached(key: str, fn):
 
 # ── 헬퍼 ──────────────────────────────────────────────────────────────────────
 def _conn():
-    c = _sl.connect(DB_PATH, timeout=30)
+    c = connect_primary_db(timeout=30)
     c.row_factory = _sl.Row
     return c
 
@@ -1625,7 +1661,7 @@ def _collect_task(source: str):
 
 def _log_collection(source: str, status: str, records: int, message: str = ""):
     try:
-        conn = _sl.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.execute("""
             INSERT INTO global_macro_collection_log (source,status,records,message)
             VALUES (?,?,?,?)

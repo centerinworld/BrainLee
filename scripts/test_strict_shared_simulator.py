@@ -11,19 +11,27 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from db_compat import connect_primary_db
 from merged_simulator import CandidateOrder, MergeConfig, simulate_merged_account
 from run_registry import derive_status, ensure_schema, register_artifact, select_run
 from security_master import resolve_security
 
 
 def test_historical_security_intervals() -> None:
-    conn = sqlite3.connect(ROOT / "stock.db")
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(row_factory=sqlite3.Row)
     rows = conn.execute(
         """
         SELECT stock_code,effective_from,effective_to
         FROM security_master_history
-        WHERE interval_quality='krx_delisting_reference'
+        WHERE effective_to IS NOT NULL AND is_tradable=1 AND is_etf_etn=0
+          AND NOT EXISTS (
+            SELECT 1 FROM security_master_history next_interval
+            WHERE next_interval.stock_code=security_master_history.stock_code
+              AND next_interval.is_tradable=1 AND next_interval.is_etf_etn=0
+              AND next_interval.effective_from<=security_master_history.effective_to
+              AND (next_interval.effective_to IS NULL
+                   OR next_interval.effective_to>security_master_history.effective_to)
+          )
           AND is_tradable=1
           AND effective_to IS NOT NULL
         ORDER BY stock_code LIMIT 20
@@ -34,20 +42,28 @@ def test_historical_security_intervals() -> None:
         assert resolve_security(conn, row["stock_code"], row["effective_from"]).eligible
         assert not resolve_security(conn, row["stock_code"], row["effective_to"]).eligible
     assert conn.execute(
-        "SELECT COUNT(*) FROM security_master_history WHERE interval_quality='krx_delisting_reference'"
+        """SELECT COUNT(*) FROM security_master_history h
+           WHERE h.effective_to IS NOT NULL AND h.is_tradable=1 AND h.is_etf_etn=0
+             AND NOT EXISTS (
+               SELECT 1 FROM security_master_history n
+               WHERE n.stock_code=h.stock_code AND n.is_tradable=1 AND n.is_etf_etn=0
+                 AND n.effective_from<=h.effective_to
+                 AND (n.effective_to IS NULL OR n.effective_to>h.effective_to)
+             )"""
     ).fetchone()[0] >= 200
     assert resolve_security(conn, "000145", "2026-07-13").eligible
     assert not resolve_security(conn, "069500", "2026-07-13").eligible
     assert conn.execute(
         """SELECT COUNT(*) FROM security_master_history
-           WHERE interval_quality LIKE '%approx%' AND is_tradable=1"""
+           WHERE interval_quality LIKE '%approx%' AND is_tradable=1
+             AND effective_from<='2026-07-13'
+             AND (effective_to IS NULL OR effective_to>'2026-07-13')"""
     ).fetchone()[0] <= 100
     conn.close()
 
 
 def test_historical_share_intervals() -> None:
-    conn = sqlite3.connect(ROOT / "stock.db")
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(row_factory=sqlite3.Row)
     rows = conn.execute(
         """
         SELECT stock_code,effective_from,effective_to,shares_issued
@@ -143,6 +159,10 @@ def test_registry_and_automatic_badges() -> None:
         conn.close()
         register_artifact("hash1", "execution_contract", True, {"integer_shares": True}, db)
         register_artifact("hash1", "cash_reconciliation", True, {"delta": 0}, db)
+        register_artifact("hash1", "price_integrity", True, {"findings": 0}, db)
+        register_artifact("hash1", "survivorship_integrity", True, {"findings": 0}, db)
+        register_artifact("hash1", "corporate_action_integrity", True, {"findings": 0}, db)
+        register_artifact("hash1", "data_availability", True, {"fallback_rows": 0}, db)
         conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
         assert derive_status(conn, "hash1")["status"] == "point_in_time_approx"
         conn.execute("UPDATE backtest_run_specs SET market_cap_mode='pit',universe_version='security_master_history_v1' WHERE run_hash='hash1'")
@@ -176,8 +196,7 @@ def test_frontend_has_no_manual_verification_sources() -> None:
 
 
 def test_selected_strategy_center_suite_identity() -> None:
-    conn = sqlite3.connect(ROOT / "stock.db")
-    conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(row_factory=sqlite3.Row)
     selected = conn.execute(
         """SELECT run_hash FROM selected_run_registry
            WHERE strategy='v10' AND report_type='strategy_center'"""

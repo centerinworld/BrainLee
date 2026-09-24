@@ -10,6 +10,7 @@ portfolios without using future returns in the selection score.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import math
 import sqlite3
@@ -155,7 +156,7 @@ LOGICS = [
 
 
 def conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, timeout=120)
+    c = connect_primary_db(timeout=120)
     c.row_factory = sqlite3.Row
     return c
 

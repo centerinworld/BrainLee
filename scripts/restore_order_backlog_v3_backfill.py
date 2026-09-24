@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_recovery_sqlite_db
 import argparse
 import json
 import sqlite3
@@ -88,7 +89,7 @@ def main() -> int:
     if args.database in {"postgres", "both"}:
         connections.append(("postgres_primary", connect_stock_db(timeout=60)))
     if args.database in {"sqlite", "both"}:
-        connections.append(("sqlite_recovery", sqlite3.connect(str(STOCK_DB_PATH), timeout=60)))
+        connections.append(("sqlite_recovery", connect_recovery_sqlite_db(timeout=60)))
     results = {}
     try:
         for name, conn in connections:

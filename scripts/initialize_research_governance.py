@@ -4,6 +4,7 @@ import json, sqlite3, sys
 from datetime import datetime
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]; sys.path.insert(0,str(ROOT))
+from db_compat import connect_primary_db
 from research_governance import validate_research_record
 
 DDL="""
@@ -17,7 +18,7 @@ CREATE TABLE IF NOT EXISTS hypothesis_research_runs (
 );
 """
 def main():
- c=sqlite3.connect(ROOT/'stock.db'); c.executescript(DDL); now=datetime.now().isoformat(timespec='seconds')
+ c=connect_primary_db(); c.executescript(DDL); now=datetime.now().isoformat(timespec='seconds')
  s=json.loads((ROOT/'research_outputs/deep_drawdown_recovery_5y/summary.json').read_text())
  rec={"research_id":"deep_drawdown_recovery_5y","title":"낙폭과대·52주 신저가 회복",
  "hypothesis":"고점 대비 60~70% 이상 하락한 종목은 하방이 제한되어 좋은 매수 기회가 된다.","verdict":"rejected",

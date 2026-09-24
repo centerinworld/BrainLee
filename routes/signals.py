@@ -13,6 +13,7 @@ routes/signals.py — 시그널 보드 + 스크리너 + 진입트리거 API
   POST /api/signals/manual/{config_id}
 """
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3 as _sl
 import time as _t
@@ -26,11 +27,9 @@ from db_utils import connect_stock_db
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-DB_PATH = "stock.db"
-
 
 def _db():
-    return _sl.connect(DB_PATH, timeout=30)
+    return connect_primary_db(timeout=30)
 
 
 def _is_market_open() -> bool:
@@ -67,7 +66,7 @@ def _bg_compute(fn, cache_key, *args):
     cache[lock_key] = True
     def _run():
         try:
-            conn = _sl.connect(DB_PATH, timeout=30)
+            conn = connect_primary_db(timeout=30)
             result = fn(conn, *args)
             conn.commit(); conn.close()
             cache[cache_key] = {"data": result, "at": _t.time()}
@@ -505,7 +504,7 @@ def get_v10_earnings_explosion():
         return cached["data"]
     try:
         from signal_engine import calc_earnings_explosion
-        conn = _sl.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.row_factory = _sl.Row
         result = calc_earnings_explosion(conn)
         conn.close()
@@ -527,7 +526,7 @@ def get_v11_turnaround():
         return cached["data"]
     try:
         from signal_engine import calc_turnaround_momentum
-        conn = _sl.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.row_factory = _sl.Row
         result = calc_turnaround_momentum(conn)
         conn.close()
@@ -549,7 +548,7 @@ def get_v12_sector_megatrend():
         return cached["data"]
     try:
         from signal_engine import calc_sector_megatrend
-        conn = _sl.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.row_factory = _sl.Row
         result = calc_sector_megatrend(conn)
         conn.close()
@@ -584,7 +583,7 @@ def get_kiwoom_conditions(strategy: str = "all", refresh: bool = False):
 
     try:
         from signal_engine import calc_kiwoom_conditions
-        conn = _sl.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.row_factory = _sl.Row
         result = calc_kiwoom_conditions(conn, strategy)
         conn.close()
@@ -612,7 +611,7 @@ def get_overheat_risk(limit: int = 50):
     ent = cache.get(ck)
     if ent and _t.time() - ent["at"] < 1800:
         return ent["data"]
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl.Row
     try:
         rows = conn.execute("""
@@ -691,7 +690,7 @@ def get_consensus_revisions(days: int = 60, limit: int = 60):
     # SQLite date('now', ?)는 PostgreSQL 라우팅에서 미지원 — 컷오프를 Python에서 직접 계산
     # (이 프로젝트에서 반복 확인된 함정: db_compat.py가 SQLite 전용 날짜함수를 못 옮김)
     cutoff = (_date.today() - _timedelta(days=abs(days))).isoformat()
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl.Row
     try:
         rows = conn.execute("""

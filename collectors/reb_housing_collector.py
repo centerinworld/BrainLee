@@ -6,6 +6,7 @@ This is used as a fallback/primary path when the KOSIS API key is unavailable.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import re
 import sqlite3
@@ -13,9 +14,10 @@ from datetime import datetime
 from urllib.parse import parse_qsl
 
 import requests
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 PAGE_URL = "https://www.reb.or.kr/r-one/portal/stat/easyStatPage/A_2024_00045.do"
 DATA_URL = "https://www.reb.or.kr/r-one/portal/stat/sttsDataPreviewList.do"
@@ -95,7 +97,7 @@ def collect_reb_housing(start_year: int = 2021, end_year: int | None = None) -> 
         _log("warning", 0, "REB housing endpoint returned no nationwide series")
         return 0
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
         """
@@ -142,7 +144,7 @@ def collect_reb_housing(start_year: int = 2021, end_year: int | None = None) -> 
 
 def _log(status: str, records: int, message: str = "") -> None:
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.execute(
             """
             INSERT INTO global_macro_collection_log (source, status, records, message)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+from db_compat import connect_primary_db
 import csv, json, sqlite3, time
 from pathlib import Path
 
@@ -11,7 +12,7 @@ YEARS=(2023,2024,2025)
 
 
 def conn():
-    c=sqlite3.connect(DB)
+    c=connect_primary_db()
     c.row_factory=sqlite3.Row
     return c
 

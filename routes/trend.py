@@ -13,6 +13,8 @@ routes/trend.py — 스탁이지 가상매매 + AI 자동매매 API
 """
 
 import sqlite3 as _sl
+import hashlib
+import inspect
 import logging
 import json
 import time
@@ -1694,11 +1696,26 @@ def _rec_get_series(conn, code: str, n: int = 260):
 
 
 def _rec_is_turnaround(conn, code: str) -> bool:
-    """직전 분기 첫 흑자전환: 최신 분기 NI>0 AND 이전 1~3분기 중 NI<0 존재."""
+    """직전 분기 첫 흑자전환: 최신 분기 NI>0 AND 이전 1~3분기 중 NI<0 존재.
+
+    2026-09-08 수정: 기존엔 'OFS+4분기+dart_ofs_backfill' 한 가지 특수 케이스만
+    걸러냈는데, 그 외의 CFS/OFS 중복(같은 분기에 둘 다 있는 일반적인 경우)은 여전히
+    걸러지지 않아 같은 분기가 서로 다른 분기처럼 섞일 수 있었다 — se_momentum.py에서
+    발견된 것과 동일 부류의 버그. 분기당 CFS우선 1행만 남기도록 일반화한다(CFS가
+    있으면 항상 그쪽을 택하므로 기존 특수 케이스도 자동으로 포함됨).
+    """
     rows = conn.execute(
-        "SELECT net_income FROM financial_data "
-        "WHERE stock_code=? AND is_annual=0 AND quarter BETWEEN 1 AND 4 AND net_income IS NOT NULL "
-        "ORDER BY year DESC, quarter DESC LIMIT 4",
+        """SELECT net_income FROM (
+            SELECT year, quarter, net_income,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY year, quarter
+                       ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                   ) AS rt_rn
+            FROM financial_data
+            WHERE stock_code=? AND is_annual=0 AND quarter BETWEEN 1 AND 4 AND net_income IS NOT NULL
+        ) dedup
+        WHERE rt_rn = 1
+        ORDER BY year DESC, quarter DESC LIMIT 4""",
         (code,)
     ).fetchall()
     if len(rows) < 2:
@@ -3537,6 +3554,15 @@ STRATEGY_CENTER_PAPER_COUNT = 5
 # 어댑터가 없어 실행가능 전략이 3개로 줄어듦 — _select_strategy_center_top_five()의
 # fail-close 설계(5개 미달 시 예외)로 매일 18:35 "success"로 기록되면서도 실제로는
 # 매매가 통째로 스킵되고 있었음(peak_trade 최종 거래 7/31 이후 정지 확인). v8/v2 추가.
+# 2026-09-21: run_verification_artifacts 대부분(price_integrity/survivorship_integrity/
+# corporate_action_integrity/data_availability)이 오래 갱신되지 않아 전략센터 36개 중
+# 35개가 governance.tier='retired'(status='legacy')로 굳어 있었고, 실제 스케줄러 로그에
+# "strategy center executable top-five unavailable: selected=4"로 매일 18:35 신규매수가
+# 통째로 스킵되고 있었음을 확인 — scripts/audit_selected_strategy_price_integrity.py +
+# audit_selected_strategy_data_availability.py를 재실행해 artifacts를 새로 채워 복구.
+# 그 결과 validation_queue 이상으로 회복된 전략 중 어댑터가 없던 v11/earnings_conviction/
+# se_momentum/v1_value(=value) 추가 + Minervini Trend Template(신규 등록, avg6=+19.15%,
+# validation_queue) 추가.
 STRATEGY_CENTER_PAPER_ENGINES = {
     "golden_cross": (_bt.run_backtest_golden_cross, {"per_stock": 10_000_000, "max_positions": 10}),
     "sector_focus": (_bt.run_backtest_sector, {"per_stock": 10_000_000, "max_positions": 9}),
@@ -3545,6 +3571,11 @@ STRATEGY_CENTER_PAPER_ENGINES = {
     "v8": (_bt.run_backtest_v8, {"per_stock": 10_000_000, "max_positions": 10}),
     "v2": (_bt.run_backtest_v2, {"per_stock": 10_000_000, "max_positions": 10}),
     "contract_momentum": (_bt.run_backtest_contract_momentum, {"total_capital": 100_000_000, "per_stock": 10_000_000, "max_positions": 10}),
+    "v11": (_bt.run_backtest_v11, {"per_stock": 10_000_000, "max_positions": 10}),
+    "earnings_conviction": (_bt.run_backtest_earnings_conviction, {"total_capital": 100_000_000, "max_positions": 10}),
+    "se_momentum": (_bt.run_backtest_se_momentum, {"per_stock": 10_000_000, "max_positions": 10}),
+    "v1_value": (_bt.run_backtest_value, {"per_stock": 10_000_000, "max_positions": 10}),
+    "minervini": (_bt.run_backtest_minervini_trend_template, {"per_stock": 10_000_000, "max_positions": 10}),
 }
 _strategy_center_paper_cache: dict[str, dict] = {}
 
@@ -3553,13 +3584,20 @@ def _strategy_center_paper_key(source_strategy: str) -> str:
     return f"{STRATEGY_CENTER_PAPER_PREFIX}{source_strategy}"
 
 
-def _select_strategy_center_top_five() -> list[dict]:
+def _select_strategy_center_top_five(*, strict: bool = True) -> list[dict]:
     """Read the current Strategy Center matrix instead of persisting a ranked list.
 
     Retired strategies and strategies without a paper execution adapter are excluded.
-    This is intentionally fail-closed: if fewer than five executable, non-retired
-    strategies are verified by the matrix, the scheduler records an error rather
-    than silently substituting a legacy or hard-coded strategy.
+    This is intentionally fail-closed by default: if fewer than five executable,
+    non-retired strategies are verified by the matrix, the scheduler records an error
+    rather than silently substituting a legacy or hard-coded strategy.
+
+    F06 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+    `strict=False` returns whatever executable candidates exist (0..5) instead of
+    raising. The raise-on-shortfall behavior is still the right default for "should we
+    start NEW positions today", but a caller that also needs to keep managing EXISTING
+    holdings for a strategy that just fell out of the matrix must not be blocked by this
+    exception -- see execute_strategy_center_top_five_now().
     """
     from routes.backtest import get_backtest_matrix
 
@@ -3587,7 +3625,7 @@ def _select_strategy_center_top_five() -> list[dict]:
         })
     candidates.sort(key=lambda item: (-item["average_return_pct"], item["source_strategy"]))
     selected = candidates[:STRATEGY_CENTER_PAPER_COUNT]
-    if len(selected) != STRATEGY_CENTER_PAPER_COUNT:
+    if strict and len(selected) != STRATEGY_CENTER_PAPER_COUNT:
         raise RuntimeError(
             f"strategy center executable top-five unavailable: selected={len(selected)}"
         )
@@ -3597,11 +3635,22 @@ def _select_strategy_center_top_five() -> list[dict]:
 
 
 def _strategy_center_refresh_signal(conn, source_strategy: str, latest_date: str) -> dict:
-    cache_key = f"{source_strategy}:{latest_date}"
+    # F05 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+    # the cache key used to be source_strategy+date only, with no way to tell that the
+    # engine's kwargs or source code changed underneath it on the same date (e.g. a
+    # same-day bugfix to sector.py) -- it would keep serving the stale cached signal for
+    # the rest of that date. Fold a fingerprint of the engine's kwargs + its source code
+    # into the key so any such change forces a fresh recompute.
+    fn, kwargs = STRATEGY_CENTER_PAPER_ENGINES[source_strategy]
+    try:
+        code_hash = hashlib.sha256(inspect.getsource(fn).encode("utf-8")).hexdigest()[:12]
+    except (OSError, TypeError):
+        code_hash = "nosrc"
+    kwargs_hash = hashlib.sha256(json.dumps(kwargs, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12]
+    cache_key = f"{source_strategy}:{latest_date}:{code_hash}:{kwargs_hash}"
     cached = _strategy_center_paper_cache.get(cache_key)
     if cached:
         return cached
-    fn, kwargs = STRATEGY_CENTER_PAPER_ENGINES[source_strategy]
     run_id = fn("2020-03-01", latest_date, run_name=f"LIVE_STRATEGY_CENTER_{source_strategy}_{latest_date}", **kwargs)
     row = conn.execute("SELECT trades_json FROM backtest_runs WHERE run_id=?", (run_id,)).fetchone()
     trades = _combo_parse_trades(row[0]) if row and row[0] else []
@@ -3615,7 +3664,22 @@ def _strategy_center_refresh_signal(conn, source_strategy: str, latest_date: str
     return result
 
 
-def _execute_strategy_center_paper(selected: dict, latest_date: str) -> dict:
+def _execute_strategy_center_paper(selected: dict, latest_date: str, *, allow_new_buys: bool = True,
+                                    min_order_krw: float | None = None) -> dict:
+    """F06 fix (2026-09-12): `allow_new_buys=False` runs sell/risk-management for an
+    account whose source strategy fell out of today's top five, without opening any new
+    position for it. Existing behavior (allow_new_buys=True) is unchanged.
+
+    Experiment #3 (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md
+    "허용 상한 내 현금 활용"): `min_order_krw` lets a caller lower the cash-availability
+    floor below the full STRATEGY_CENTER_PAPER_TICKET_KRW so a smaller, still-gated buy
+    can be attempted instead of the loop breaking outright whenever available cash drops
+    under one full ticket. Defaults to STRATEGY_CENTER_PAPER_TICKET_KRW (None ->
+    unchanged production behavior) -- this is opt-in for research/comparison, not a
+    silent default change. The existing `_paper_buy_gate` risk sizing (SIZE_REDUCED
+    handling below) still applies on top of whatever floor is used here."""
+    if min_order_krw is None:
+        min_order_krw = STRATEGY_CENTER_PAPER_TICKET_KRW
     source_strategy = selected["source_strategy"]
     paper_strategy = selected["strategy"]
     conn = _db()
@@ -3625,7 +3689,13 @@ def _execute_strategy_center_paper(selected: dict, latest_date: str) -> dict:
         today = _dt.now().strftime("%Y-%m-%d")
         now_ts = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
         sold = bought = 0
-        sell_codes = {str(item["code"]) for item in signals["sells"]}
+        # F05 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+        # signals["sells"]는 이미 백테스트 엔진이 오늘(latest_date) 실제로 체결한 가격을
+        # 담고 있다(strict_exec 엔진은 D+1 시가 체결가). 이걸 버리고 _combo_current_price
+        # (오늘 최신 "종가")로 다시 채우면 원 백테스트가 낸 신호와 가상계좌의 체결 시각·
+        # 가격이 달라진다 — 신호가 이미 알고 있는 체결가를 그대로 쓴다. 그 값이 없거나
+        # 비정상일 때만(예: 구버전 신호 포맷) 최신가로 보수적 폴백한다.
+        sell_price_by_code = {str(item["code"]): float(item.get("price") or 0) for item in signals["sells"]}
 
         holdings = conn.execute(
             """SELECT id,stock_code,stock_name,quantity,buy_price
@@ -3633,9 +3703,12 @@ def _execute_strategy_center_paper(selected: dict, latest_date: str) -> dict:
             (paper_strategy,),
         ).fetchall()
         for holding_id, code, name, quantity, buy_price in holdings:
-            if str(code) not in sell_codes:
+            code_str = str(code)
+            if code_str not in sell_price_by_code:
                 continue
-            price = _combo_current_price(conn, str(code))
+            price = sell_price_by_code.get(code_str) or 0
+            if price <= 0:
+                price = _combo_current_price(conn, code_str)  # fallback only if the signal had no usable price
             qty = int(quantity or 0)
             if price <= 0 or qty <= 0:
                 continue
@@ -3660,6 +3733,11 @@ def _execute_strategy_center_paper(selected: dict, latest_date: str) -> dict:
             )
             sold += 1
 
+        if not allow_new_buys:
+            conn.commit()
+            return {"ok": True, "strategy": paper_strategy, "source_strategy": source_strategy,
+                    "sold": sold, "bought": 0, "latest_date": latest_date, "new_buys_allowed": False}
+
         available = _investable_cash(
             conn, paper_strategy, STRATEGY_CENTER_PAPER_CAPITAL_KRW, STRATEGY_CENTER_PAPER_CASH_RESERVE
         )
@@ -3675,10 +3753,16 @@ def _execute_strategy_center_paper(selected: dict, latest_date: str) -> dict:
             key=lambda item: _combo_neutral_tiebreak(latest_date, str(item["code"]), source_strategy),
         )
         for buy in ranked_buys:
-            if available < STRATEGY_CENTER_PAPER_TICKET_KRW or active_count >= max_positions:
+            if available < min_order_krw or active_count >= max_positions:
                 break
             code = str(buy["code"])
-            price = _combo_current_price(conn, code)
+            # F05 fix: use the backtest engine's own recorded fill price for this signal
+            # (see the matching sell-side fix above) instead of re-fetching today's latest
+            # close, which can diverge from the D+1-open price the signal was actually
+            # generated against.
+            price = float(buy.get("price") or 0)
+            if price <= 0:
+                price = _combo_current_price(conn, code)
             if price <= 0:
                 continue
             exists = conn.execute(
@@ -3691,6 +3775,27 @@ def _execute_strategy_center_paper(selected: dict, latest_date: str) -> dict:
             if qty <= 0:
                 continue
             gate = _paper_buy_gate(code, paper_strategy, qty, price)
+            if gate.get("decision") == "SIZE_REDUCED":
+                # 2026-09-07 발견·수정: 고정 티켓(STRATEGY_CENTER_PAPER_TICKET_KRW=1천만원)이
+                # volatility_sizing 게이트의 종목당 리스크한도(자본×1.2%÷가정손절20%=자본의 6%,
+                # 1억원 계좌 기준 600만원)를 구조적으로 항상 초과해 SIZE_REDUCED가 사실상 매번
+                # 뜨는데, 이 루프가 "정확히 BUY_ALLOWED"만 받아들여 SIZE_REDUCED를 매수 거부로
+                # 취급하고 있었음 — 6개 전략센터 상위5 가상계좌가 설정 이후 단 한 번도 매수를
+                # 못 한 근본 원인. 게이트가 제시한 허용 한도로 수량을 줄여 재확인하도록 수정.
+                caps_krw = []
+                vs_gate = (gate.get("gates") or {}).get("volatility_sizing") or {}
+                if not vs_gate.get("ok", True) and vs_gate.get("max_order_krw"):
+                    caps_krw.append(float(vs_gate["max_order_krw"]))
+                liq_gate = (gate.get("gates") or {}).get("liquidity") or {}
+                if not liq_gate.get("ok", True) and liq_gate.get("adv_20d"):
+                    caps_krw.append(float(liq_gate["adv_20d"]) * 0.03)
+                if caps_krw:
+                    reduced_qty = int(min(caps_krw) // price)
+                    if 0 < reduced_qty < qty:
+                        retry_gate = _paper_buy_gate(code, paper_strategy, reduced_qty, price)
+                        if retry_gate.get("decision") == "BUY_ALLOWED":
+                            qty = reduced_qty
+                            gate = retry_gate
             if gate.get("decision") != "BUY_ALLOWED":
                 logger.warning("[%s 매수차단] %s %s", paper_strategy, code, gate.get("decision"))
                 continue
@@ -3724,18 +3829,74 @@ def _execute_strategy_center_paper(selected: dict, latest_date: str) -> dict:
 
 
 def execute_strategy_center_top_five_now() -> dict:
-    """Run the current Strategy Center top-five paper portfolios once each."""
-    selected = _select_strategy_center_top_five()
+    """Run the current Strategy Center top-five paper portfolios once each.
+
+    F06 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md): this used
+    to call _select_strategy_center_top_five() with its raise-on-shortfall default, so if
+    fewer than STRATEGY_CENTER_PAPER_COUNT executable strategies were available, NOTHING
+    ran at all -- including sell/risk-management for accounts that already held open
+    positions from a prior successful selection, and no other scheduled job covers this gap
+    (confirmed by code search: scheduler.py's only caller of an sc_* management path is this
+    function). Now: (1) a selection shortfall never blocks existing-holding management, and
+    (2) any sc_* account that fell OUT of today's top five but still holds an open position
+    still gets sell/risk-management (allow_new_buys=False) -- only genuinely new positions
+    require being in today's top five.
+    """
+    selected = _select_strategy_center_top_five(strict=False)
+    if len(selected) != STRATEGY_CENTER_PAPER_COUNT:
+        # 재개 우선순위3 (2026-09-12, docs/claude_resume_strategy_review_20260912.md,
+        # Codex 재검토 지적): 이 로그가 "해당 계좌만 신규매수 없이 진행"이라고 했었는데
+        # 실제 코드는 selected 전부를 allow_new_buys=True로 부른다 — 로그와 코드가
+        # 불일치했다(선택된 1~4개는 정상적으로 신규매수도 한다). 로그를 실제 정책과
+        # 일치시킨다: 선택된 만큼은 정상 실행(신규매수 포함), 그 외 보유 중인 sc_*만
+        # 매도전용.
+        logger.warning(
+            "[전략센터 가상매매] top-five 후보 부족(%d/%d) — 선택된 %d개는 신규매수 포함 정상 실행, "
+            "기존 보유가 있는 다른 sc_* 계좌는 매도전용으로 별도 관리",
+            len(selected), STRATEGY_CENTER_PAPER_COUNT, len(selected),
+        )
     conn = _db()
     try:
         latest_date = _combo_latest_trading_day(conn)
+        selected_source_strategies = {item["source_strategy"] for item in selected}
+        selected_paper_strategies = {item["strategy"] for item in selected}
+        dropped_out: list[dict] = []
+        orphaned: list[str] = []
+        # 재개 우선순위3: STRATEGY_CENTER_PAPER_ENGINES에 남은 어댑터만 순회하면, 어댑터가
+        # 삭제/교체된 뒤에도 peak_holding에 남아있는 sc_* 계좌(고아 계좌)는 영원히 발견되지
+        # 않는다. DB에서 실제 존재하는 sc_* 보유 전략을 직접 조회해 어댑터 유무와 무관하게
+        # 전부 찾는다.
+        active_sc_strategies = [
+            row[0] for row in conn.execute(
+                "SELECT DISTINCT strategy FROM peak_holding WHERE is_active=1 AND strategy LIKE ?",
+                (f"{STRATEGY_CENTER_PAPER_PREFIX}%",),
+            ).fetchall()
+        ]
+        for paper_strategy in active_sc_strategies:
+            if paper_strategy in selected_paper_strategies:
+                continue
+            source_strategy = paper_strategy[len(STRATEGY_CENTER_PAPER_PREFIX):]
+            if source_strategy in STRATEGY_CENTER_PAPER_ENGINES:
+                dropped_out.append({
+                    "source_strategy": source_strategy, "strategy": paper_strategy,
+                    "rank": None, "average_return_pct": None,
+                })
+            else:
+                # 어댑터가 없어 신호를 재생성할 방법이 없다 -- 자동 관리 불가, 알림만 남긴다.
+                orphaned.append(paper_strategy)
+        if orphaned:
+            logger.error(
+                "[전략센터 가상매매] 어댑터 없는 고아 계좌 발견(자동 관리 불가, 수동 확인 필요): %s",
+                orphaned,
+            )
     finally:
         conn.close()
+
     results = {}
     for item in selected:
         key = item["strategy"]
         try:
-            result = _execute_strategy_center_paper(item, latest_date)
+            result = _execute_strategy_center_paper(item, latest_date, allow_new_buys=True)
             _record_virtual_strategy_run(
                 key, "success", sold=result["sold"], bought=result["bought"],
                 message=json.dumps({"source_strategy": item["source_strategy"], "rank": item["rank"], "average_return_pct": item["average_return_pct"], "latest_date": latest_date}),
@@ -3745,7 +3906,23 @@ def execute_strategy_center_top_five_now() -> dict:
             logger.error("[전략센터 가상매매] %s 실행 오류: %s", key, exc, exc_info=True)
             _record_virtual_strategy_run(key, "error", message=str(exc))
             results[key] = {"ok": False, "error": str(exc)}
-    return {"ok": all(result.get("ok") for result in results.values()), "selected": selected, "results": results}
+
+    for item in dropped_out:
+        key = item["strategy"]
+        try:
+            result = _execute_strategy_center_paper(item, latest_date, allow_new_buys=False)
+            _record_virtual_strategy_run(
+                key, "success", sold=result["sold"], bought=0,
+                message=json.dumps({"source_strategy": item["source_strategy"], "rank": None, "note": "dropped_out_of_top_five_sell_only", "latest_date": latest_date}),
+            )
+            results[key] = result
+        except Exception as exc:
+            logger.error("[전략센터 가상매매] %s(매도전용) 실행 오류: %s", key, exc, exc_info=True)
+            _record_virtual_strategy_run(key, "error", message=str(exc))
+            results[key] = {"ok": False, "error": str(exc)}
+
+    return {"ok": all(result.get("ok") for result in results.values()), "selected": selected,
+            "sell_only_managed": dropped_out, "orphaned_accounts": orphaned, "results": results}
 
 
 @router.get("/strategy-center/top-five")

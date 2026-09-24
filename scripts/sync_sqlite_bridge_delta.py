@@ -2,7 +2,8 @@
 """Upsert selected legacy SQLite tables into the PostgreSQL primary database.
 
 This is a temporary cutover bridge for jobs that have not yet been converted to
-``connect_primary_db``. It is idempotent and requires a primary or unique key.
+``connect_primary_db``. It is idempotent only when its conflict key is
+non-nullable; nullable natural keys require an explicit reconciliation policy.
 """
 from __future__ import annotations
 
@@ -68,6 +69,24 @@ def conflict_columns(conn: sqlite3.Connection, table: str) -> list[str]:
     raise RuntimeError(f"{table}: no primary or unique key; refusing unsafe merge")
 
 
+def nullable_conflict_columns(
+    conn: sqlite3.Connection, table: str, columns: list[str]
+) -> list[str]:
+    """Return conflict-key columns containing NULL source values.
+
+    PostgreSQL UNIQUE indexes treat NULL values as distinct by default, so an
+    ``ON CONFLICT`` upsert cannot match those legacy rows. Continuing would
+    duplicate them on every bridge run.
+    """
+    return [
+        column
+        for column in columns
+        if conn.execute(
+            f"SELECT 1 FROM {quote_sqlite(table)} WHERE {quote_sqlite(column)} IS NULL LIMIT 1"
+        ).fetchone()
+    ]
+
+
 def sync_table(
     sqlite_conn: sqlite3.Connection,
     pg_conn: psycopg.Connection,
@@ -81,6 +100,13 @@ def sync_table(
     declared = {row[1]: row[2] for row in columns}
     row_index = {name: idx for idx, name in enumerate(all_names)}
     conflicts = conflict_columns(sqlite_conn, table)
+    if conflicts != ["id"]:
+        nullable = nullable_conflict_columns(sqlite_conn, table, conflicts)
+        if nullable:
+            raise RuntimeError(
+                f"{table}: nullable natural conflict key ({', '.join(nullable)}); "
+                "refusing unsafe bridge merge"
+            )
 
     # SQLite and PostgreSQL each autoincrement `id` independently once a table
     # is no longer bridged 1:1 by surrogate id, so the two sequences drift out

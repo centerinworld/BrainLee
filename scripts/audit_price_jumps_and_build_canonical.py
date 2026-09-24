@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from config import IS_POSTGRES  # noqa: E402
 from db_utils import connect_stock_db  # noqa: E402
+from price_integrity import native_script, ensure_schema, refresh_calendar, rebuild_views, outside_band, install_write_guard  # noqa: E402
 DB = ROOT / "stock.db"
 OUT = ROOT / "research_outputs" / "price_basis_audit_20260712.json"
 OUT_LATEST = ROOT / "research_outputs" / "price_basis_audit_latest.json"
@@ -40,34 +41,15 @@ CREATE TABLE IF NOT EXISTS price_jump_audit (
   PRIMARY KEY(stock_code, event_date)
 );
 CREATE INDEX IF NOT EXISTS idx_pja_class ON price_jump_audit(classification, return_usable);
-CREATE VIEW IF NOT EXISTS canonical_price_history_v AS
-SELECT p.*,
-       COALESCE(a.classification,
-         CASE WHEN q.quality_status='normal' THEN 'normal' ELSE q.quality_status END
-       ) AS canonical_quality,
-       CASE
-         WHEN a.return_usable IS NOT NULL THEN a.return_usable
-         WHEN q.quality_status IN ('normal','insufficient_history') THEN 1
-         ELSE 0
-       END AS return_usable,
-       'price_history' AS selected_series,
-       r.price_basis
-FROM price_history p
-LEFT JOIN price_history_quality_v q ON q.id=p.id
-LEFT JOIN price_jump_audit a ON a.stock_code=p.stock_code AND a.event_date=substr(p.date,1,10)
-LEFT JOIN price_series_registry r ON r.series_name='price_history';
-CREATE VIEW IF NOT EXISTS canonical_price_returns_v AS
-WITH x AS (
-  SELECT c.*,
-         LAG(close) OVER(PARTITION BY stock_code ORDER BY date) AS canonical_prev_close,
-         LAG(return_usable) OVER(PARTITION BY stock_code ORDER BY date) AS previous_return_usable
-  FROM canonical_price_history_v c
-)
-SELECT x.*,
-       CASE WHEN return_usable=1 AND previous_return_usable=1 AND canonical_prev_close>0
-            THEN close/canonical_prev_close-1 END AS safe_daily_return
-FROM x;
 """
+# canonical_price_history_v / canonical_price_returns_v are owned by
+# price_integrity.rebuild_views(), not by this script. That module applies
+# the actual ±15%/±30% price-limit band by date, honors
+# price_integrity_quarantine, and — critically — runs its DDL through
+# native_script() so it actually executes on PostgreSQL (this script's own
+# CREATE VIEW here used to silently no-op there; see IS_POSTGRES guard
+# below). Defining the same view names in two places would make whichever
+# script runs last win unpredictably, so this script only owns price_jump_audit.
 
 
 def _iso(raw: str) -> str:
@@ -77,23 +59,21 @@ def _iso(raw: str) -> str:
 
 def run(conn: sqlite3.Connection) -> dict:
     conn.row_factory = sqlite3.Row
-    if not IS_POSTGRES:
-        conn.execute("DROP VIEW IF EXISTS canonical_price_returns_v")
-        conn.execute("DROP VIEW IF EXISTS canonical_price_history_v")
-        conn.executescript(DDL)
+    native_script(conn, DDL)
+    ensure_schema(conn)
+    install_write_guard(conn)
+    refresh_calendar(conn)
+    rebuild_views(conn)
     current_common = set(r[0] for r in conn.execute(
         """WITH x AS (SELECT *,ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY base_date DESC,id DESC) rn FROM stock_universe)
            SELECT stock_code FROM x WHERE rn=1 AND market IN ('KOSPI','KOSDAQ') AND COALESCE(stock_type,'보통주')='보통주'"""
     ))
     jumps = conn.execute(
         """
-        WITH d AS (
-          SELECT stock_code, substr(date,1,10) event_date, close,
-                 LAG(substr(date,1,10)) OVER(PARTITION BY stock_code ORDER BY date) previous_date,
-                 LAG(close) OVER(PARTITION BY stock_code ORDER BY date) previous_close
-          FROM price_history WHERE close>0
-        )
-        SELECT * FROM d WHERE previous_close>0 AND (close/previous_close>1.8 OR close/previous_close<0.55)
+        SELECT stock_code,substr(date,1,10) event_date,close,prev_close previous_close,
+               substr(previous_date,1,10) previous_date,quality_status
+        FROM price_history_quality_v
+        WHERE quality_status NOT IN ('normal','insufficient_history','suspended')
         """
     ).fetchall()
     now = datetime.now().isoformat(timespec="seconds")
@@ -101,10 +81,11 @@ def run(conn: sqlite3.Connection) -> dict:
     counts = Counter()
     for row in jumps:
         code, event_date = row["stock_code"], row["event_date"]
-        ratio = float(row["close"]) / float(row["previous_close"])
+        ratio = (float(row["close"]) / float(row["previous_close"])
+                 if row["close"] is not None and row["previous_close"] and row["previous_close"] > 0 else None)
         prev_raw = conn.execute(
-            "SELECT close_price FROM stock_price_daily WHERE stock_code=? AND bas_dt<=? ORDER BY bas_dt DESC LIMIT 1",
-            (code, row["previous_date"].replace("-", "")),
+            "SELECT close_price FROM stock_price_daily WHERE stock_code=? AND bas_dt=? ORDER BY bas_dt DESC LIMIT 1",
+            (code, (row["previous_date"] or "").replace("-", "")),
         ).fetchone()
         cur_raw = conn.execute(
             "SELECT close_price FROM stock_price_daily WHERE stock_code=? AND bas_dt=?",
@@ -124,23 +105,77 @@ def run(conn: sqlite3.Connection) -> dict:
         ).fetchone()
         action = conn.execute(
             """SELECT event_type,adjustment_status,evidence_report_name FROM corporate_action_events
-               WHERE stock_code=? AND event_date BETWEEN ? AND ? ORDER BY confidence DESC LIMIT 1""",
+               WHERE stock_code=? AND event_date BETWEEN ? AND ? ORDER BY CASE WHEN adjustment_status='factor_confirmed' THEN 0 ELSE 1 END, confidence DESC LIMIT 1""",
             (code, (d-timedelta(days=3)).date().isoformat(), (d+timedelta(days=3)).date().isoformat()),
         ).fetchone()
+        if action is None and ratio is not None:
+            # capital-reduction/reverse-split events are frequently logged in
+            # corporate_action_events under their DART registration-completion
+            # date (신주상장일), which can trail the actual trading-halt/
+            # resumption date the price jump lands on by 1-3 weeks. The ±3-day
+            # window above misses these, and they then fall through to
+            # unresolved_active_common and can get wrongly promoted to
+            # externally_confirmed_internal_corruption by
+            # verify_price_history_with_naver.py (Naver backward-adjusts its
+            # own series across a split, so it never shows the raw jump and
+            # looks like it "disagrees" with a perfectly legitimate one).
+            # Widen the search to ±25 days but require the row's own
+            # backward_price_factor (confirmed from DART share-count data) to
+            # actually reproduce the observed ratio within 5% - a coincidental
+            # date-proximity match on an unrelated action is not evidence.
+            wide = conn.execute(
+                """SELECT event_type,adjustment_status,evidence_report_name,backward_price_factor,event_date
+                   FROM corporate_action_events
+                   WHERE stock_code=? AND adjustment_status='factor_confirmed' AND backward_price_factor IS NOT NULL
+                   AND event_date BETWEEN ? AND ?""",
+                (code, (d-timedelta(days=25)).date().isoformat(), (d+timedelta(days=25)).date().isoformat()),
+            ).fetchall()
+            best = None
+            for w in wide:
+                bpf = w["backward_price_factor"]
+                if not bpf:
+                    continue
+                for candidate in (bpf, 1.0 / bpf):
+                    if abs(candidate - ratio) / max(abs(ratio), 0.01) <= 0.05:
+                        gap = abs((datetime.strptime(str(w["event_date"])[:10], "%Y-%m-%d") - d).days)
+                        if best is None or gap < best[0]:
+                            best = (gap, w)
+                        break
+            if best is not None:
+                action = best[1]
+                action_date_gap = best[0]
+            else:
+                action_date_gap = None
+        else:
+            action_date_gap = 0
 
         if not (code.isdigit() and len(code) == 6):
             classification, usable = "non_equity_symbol", 0
             evidence = "Index/macro symbol mixed into price_history"
+        elif row["quality_status"] in ('coverage_gap','invalid_ohlcv','invalid_previous_price','quarantined_basis'):
+            classification, usable = row["quality_status"], 0
+            evidence = "Structural price safety check; quote agreement cannot override"
         elif action and action["adjustment_status"] == "factor_confirmed":
             classification, usable = "confirmed_corporate_action", 0
             evidence = f"Confirmed normalized event: {action['event_type']}"
+            if action_date_gap:
+                evidence += f" (matched via ratio, {action_date_gap}d from recorded event_date)"
+        elif action:
+            # A matched corporate_action_events row that isn't factor_confirmed yet
+            # (e.g. adjustment_status='review_required') is still evidence of a
+            # capital action, not proof there wasn't one. Falling through to a raw
+            # source agreement here previously let an unconfirmed rights issue etc.
+            # get marked return_usable=1 just because two providers reproduced the
+            # same pre-confirmation jump (see 011080 2026-05-07 case).
+            classification, usable = "corporate_action_pending_confirmation", 0
+            evidence = f"Unconfirmed matched event ({action['adjustment_status']}): {action['event_type']}"
         elif disclosure:
             classification, usable = "corporate_action_or_delisting_nearby", 0
             evidence = f"Nearby disclosure: {disclosure['report_nm']}"
-        elif raw_ratio is not None and abs(raw_ratio-ratio)/max(abs(ratio), 0.01) <= 0.15:
-            classification, usable = "raw_source_confirmed_jump", 1
+        elif raw_ratio is not None and ratio is not None and abs(raw_ratio-ratio)/max(abs(ratio), 0.01) <= 0.005:
+            classification, usable = "raw_source_confirmed_jump_review", 0
             evidence = f"Public raw series confirms ratio {raw_ratio:.4f}"
-        elif raw_ratio is not None and 0.55 <= raw_ratio <= 1.8:
+        elif raw_ratio is not None and not outside_band(raw_prev, raw_cur, event_date):
             classification, usable = "mixed_basis_or_price_corruption", 0
             evidence = f"price_history ratio {ratio:.4f}, raw ratio {raw_ratio:.4f}"
         elif code not in current_common:
@@ -159,7 +194,10 @@ def run(conn: sqlite3.Connection) -> dict:
     # so stale audit rows must not survive a rebuild.
     conn.execute("DELETE FROM price_jump_audit")
     conn.executemany(
-        """INSERT INTO price_jump_audit VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """INSERT INTO price_jump_audit
+           (stock_code,event_date,previous_date,previous_close,event_close,price_ratio,
+            public_previous_close,public_event_close,public_price_ratio,classification,return_usable,
+            matched_event_type,matched_report_name,evidence,audited_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(stock_code,event_date) DO UPDATE SET previous_date=excluded.previous_date,
            previous_close=excluded.previous_close,event_close=excluded.event_close,price_ratio=excluded.price_ratio,
            public_previous_close=excluded.public_previous_close,public_event_close=excluded.public_event_close,
@@ -181,7 +219,7 @@ def run(conn: sqlite3.Connection) -> dict:
 if __name__ == "__main__":
     if "--require-postgres" in sys.argv and not IS_POSTGRES:
         raise RuntimeError("price jump audit requires PostgreSQL, but SQLite routing is active")
-    conn = connect_stock_db(timeout=60)
+    conn = connect_stock_db(timeout=1800)
     try:
         print(json.dumps(run(conn), ensure_ascii=False, indent=2))
     finally:

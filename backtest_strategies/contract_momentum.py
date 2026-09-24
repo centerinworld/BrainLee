@@ -15,6 +15,7 @@ from typing import Optional, Dict, List, Tuple
 from backtest_common import (
     DB_PATH,
     _calc_metrics,
+    _final_liquidation_quote_for_code,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
@@ -54,6 +55,7 @@ def run_backtest_contract_momentum(
                            # 검증162.8% vs 400 학습39.09%/검증187.92%(+25.1%p) — 검증기(미래데이터)
                            # 에서 개선, 방향 일치. signal_experiment_ledger: contract_momentum/
                            # max_hold_240_to_400_holdout_20260810.
+    data_asof_ts: str = None,
     run_name: str = None,
     run_id: str = None,
 ) -> str:
@@ -79,14 +81,16 @@ def run_backtest_contract_momentum(
     init_backtest_db()
     run_name = run_name or f"V-CONTRACT-MOMENTUM {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
+    effective_data_asof_ts = data_asof_ts or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     _record_run_spec(
-        run_id, "contract_momentum", "contract_momentum_v1_20260809",
+        run_id, "contract_momentum", "contract_momentum_v2_snapshot_20260906",
         {"min_ratio": min_ratio, "overseas_only": overseas_only, "min_ai": min_ai,
          "pos52_max": pos52_max, "min_ma20": min_ma20, "min_quarterly_impact": min_quarterly_impact,
          "max_mom60": max_mom60,
          "stop": stop, "trail": trail,
          "max_hold": max_hold, "max_positions": max_positions, "per_stock": per_stock,
-         "total_capital": total_capital, "start": start_date, "end": end_date},
+         "total_capital": total_capital, "start": start_date, "end": end_date,
+         "data_asof_ts": effective_data_asof_ts},
         signal_timing="close_D", execution_timing="next_open",
         market_cap_mode="not_applicable", allocation_rule="fixed_slot",
     )
@@ -116,7 +120,18 @@ def run_backtest_contract_momentum(
                    COALESCE(contract_amount_krw,0), contract_start, contract_end
             FROM dart_contracts
             WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]' AND contract_ratio_pct IS NOT NULL
-        """).fetchall()
+              AND COALESCE(is_correction, 0) = 0
+              AND COALESCE(updated_at, created_at) <= ?
+        """, (effective_data_asof_ts,)).fetchall()
+        # 2026-09-05: "정정" 공시("[기재정정]...") 매칭 기능 도입(collectors/dart_contract_collector.py)
+        # 이후 dart_contracts에 원 공시를 감사기록용으로 복제한 is_correction=1 행이 추가로 쌓임 —
+        # 이 필터 없이는 같은 계약이 원 공시 행(정정후 값으로 갱신됨)과 정정 감사행 양쪽에서
+        # 중복 매수신호로 잡혀 신호 건수가 부풀려짐.
+        # 2026-09-06: created_at만 보면 안 되는 이유 — 정정은 원 공시 행을 in-place로
+        # 덮어쓰고 created_at은 최초 수집시각 그대로 두므로, data_asof_ts를 "정정 전" 시점으로
+        # 지정해도 이미 정정후 값이 보이는 look-ahead가 있었다. 정정 적용 시 채워지는
+        # updated_at(없으면 created_at로 폴백)을 기준으로 판단해 정정 시점 이후에만 새 값을
+        # "알 수 있었던 것"으로 취급한다.
 
         def _duration_months(s, e):
             # 2026-08-10: 계약기간 정규화 지표(2026-07-25 이론적 제안 → 오늘 실증) —
@@ -308,15 +323,12 @@ def run_backtest_contract_momentum(
 
         last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in list(pos.items()):
-            i = didx[code].get(last_day)
-            curr = sd[code]['c'][i] if i is not None else p['entry']
-            if curr <= 0:
-                curr = p['entry']
+            curr, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]['c'])
             pnl, net_pct = _net_profit(p['entry'], curr, p['shares'], 300)
             cash += p['shares'] * p['entry'] + pnl
             trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': last_day,
                             'entry': p['entry'], 'exit': curr, 'pnl_pct': net_pct,
-                            'reason': 'final', 'pnl': round(pnl, 0)})
+                            'reason': final_reason, 'pnl': round(pnl, 0)})
 
         total_return = (cash - total_capital) / total_capital * 100
         completed = [t for t in trades if 'pnl_pct' in t]
@@ -373,7 +385,5 @@ def run_backtest_contract_momentum(
         except Exception:
             pass
         raise
-
-
 
 

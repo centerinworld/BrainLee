@@ -34,14 +34,16 @@ def get_etf_list(stock_code: str) -> Dict[str, Any]:
         raise HTTPException(status_code=400,detail="종목코드는 6자리 숫자여야 합니다")
     try:
         from etf_primary_service import direct_summary,source_mode
-        if source_mode()=="krx_primary":
-            return direct_summary(stock_code)
+        result=direct_summary(stock_code)
+        if source_mode()!="krx_primary":
+            result["source"]="KRX_KIS_LAST_VALIDATED"
+            result["note"]+=" / 직접 수집 품질 게이트 점검 중인 최근 검증 스냅샷"
+        return result
     except Exception:
-        # Keep the user-facing endpoint available if the new source has a runtime fault.
-        pass
-    result=legacy.get_etf_list(stock_code)
-    result["source"]="ETFCHECK_LEGACY"
-    return result
+        return {"stock_code":stock_code,"stock_name":None,"etf_count":None,
+                "etf_amount_total":None,"etf_list":[],"base_date":None,
+                "source":"ETF_DATA_UNAVAILABLE",
+                "note":"자체 KRX/KIS 전수 스냅샷을 사용할 수 없음"}
 
 
 @router.get("/source-control")

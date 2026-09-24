@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -16,7 +17,7 @@ def q(conn, sql, args=()):
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB))
+    conn = connect_primary_db()
     try:
         result = {'generated_at': datetime.now().isoformat(timespec='seconds')}
 

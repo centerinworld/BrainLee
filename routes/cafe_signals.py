@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 import subprocess
@@ -28,7 +29,7 @@ PYTHON = ROOT / "venv" / "bin" / "python"
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     return conn
 

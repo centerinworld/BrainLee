@@ -100,6 +100,17 @@ def _save_stocks(conn, rows: list, bas_dd: str, today_str: str) -> tuple:
         if close <= 0:
             continue
 
+        if bas_dd != today_str:
+            # Historical (non-today) OHLCV write - the price_history_basis_write_guard
+            # trigger rejects this outright unless a validated ingestion path sets
+            # app.price_basis_checked first. gate_price_batch() doesn't fit here (it
+            # requires the batch to overlap an already-valid close on one of its own
+            # dates, which a single missing/placeholder day never has by definition) -
+            # gate_gap_fill_row() is the counterpart built for exactly this case.
+            from price_integrity import gate_gap_fill_row
+            if not gate_gap_fill_row(conn, code, bas_dd, (open_, high, low, close, volume), 'krx_bydd_trd_gapfill'):
+                continue
+
         cur = conn.execute("""
             INSERT OR IGNORE INTO price_history
                 (stock_code, date, open, high, low, close, volume, trade_amount)
@@ -204,7 +215,7 @@ def _collected_dates(conn) -> set:
     """
     rows = conn.execute("""
         SELECT date, COUNT(*) AS cnt FROM price_history
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         GROUP BY date HAVING COUNT(*) >= 500
     """).fetchall()
     return {r[0] for r in rows}

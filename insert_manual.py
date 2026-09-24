@@ -1,6 +1,7 @@
 
+from db_compat import connect_primary_db
 import sqlite3
-conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+conn = connect_primary_db()
 # 5월 8일 (목) 종가 - 확인 후 수정하세요
 data = [
     # (symbol, date, open, high, low, close, volume)

@@ -8,12 +8,15 @@ routes/buy_candidates.py — 매수후보 + 공매도 잔고 API
   GET    /api/short-sell/{stock_code}
 """
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3 as _sl
 import threading
 import time
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
+
+from security_master import is_kr_equity_code
 
 from routes.cherry_screener import _cache_read as _cherry_cache_read
 from routes.cherry_screener import refresh_cherry_screener_cache
@@ -56,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_su_code_base ON stock_universe(stock_code, base_d
 
 
 def _db():
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     if isinstance(conn, _sl.Connection):
         conn.row_factory = _sl.Row
     return conn
@@ -158,6 +161,8 @@ def _build_auto_board() -> dict:
         def add_candidate(code: str, name: str, source_key: str, weight: int, extra: dict | None = None):
             if not code:
                 return
+            if not is_kr_equity_code(code):
+                return  # 지수/선물/통화 등 비KR 일반종목 코드는 후보에서 제외
             item = pool.setdefault(code, {
                 "stock_code": code,
                 "stock_name": name or code,
@@ -496,6 +501,9 @@ def get_auto_buy_candidate_board():
 # ── POST /api/buy-candidates ────────────────────────────────────
 @router.post("")
 def add_buy_candidate(payload: dict):
+    code = payload.get("stock_code")
+    if not is_kr_equity_code(code):
+        raise HTTPException(status_code=400, detail="일반 종목(6자리 KR 코드)만 등록할 수 있습니다.")
     conn = _db()
     conn.execute(_CREATE_TABLE); conn.commit()
     try:
@@ -503,7 +511,7 @@ def add_buy_candidate(payload: dict):
             "INSERT OR REPLACE INTO buy_candidates "
             "(stock_code,stock_name,mktcap,target_price,ref_date1,ref_price1,ref_date2,ref_price2,memo,updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
-            (payload.get("stock_code"), payload.get("stock_name"), payload.get("mktcap"),
+            (code, payload.get("stock_name"), payload.get("mktcap"),
              payload.get("target_price"), payload.get("ref_date1"), payload.get("ref_price1"),
              payload.get("ref_date2"), payload.get("ref_price2"), payload.get("memo", ""))
         )

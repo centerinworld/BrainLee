@@ -20,7 +20,7 @@ import re
 import sys
 from pathlib import Path
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 if __package__ in (None, ""):
@@ -557,6 +557,61 @@ def _extract_backlog(text: str) -> BacklogMetric:
         conf = 0.96 if _has_explicit_unit_nearby(t, hm.start()) else 0.55
         cands.append((krw, unit, conf, excerpt, _period_tier(t, hm.end()), True))
 
+    # 1-f) "품목 수주총액 기납품액 수주잔고" 3열 표(1-d와 동일 구조, "매출인식액" 대신
+    # "기납품액" 용어 사용 — 2026-09-06 신규: 낮은신뢰도(confidence<0.5) 전수 재검토 중
+    # 발견, 표본 다수(079370/197140 등)에서 "수주총액/기납품액/수주잔고" 헤더 뒤 첫
+    # 데이터행에 값 3개가 순서대로 오는 걸 확인. 합계행이 있으면 우선 채택, 없으면
+    # 1-d와 동일하게 첫 데이터행의 3번째 유효 숫자를 사용.
+    # 2026-09-06: 건설업계 변형 헤더("기본도급액/완성공사액/계약잔액",
+    # "수주총액/완성공사액/계약잔액")도 동일 3열 구조 — 백로그 미해결분 재조사 중 발견.
+    header_pat2 = (
+        r"(?:수주총액|기본도급액)(?:\(주\d+\))?[^\d가-힣]{0,15}"
+        r"(?:기납품액|완성공사액|완성계약액)[^\d가-힣]{0,15}(?:수주잔고|계약잔액)"
+    )
+    for hm in re.finditer(header_pat2, t, re.IGNORECASE):
+        if _is_derivative_context(t, hm.start()):
+            continue
+        # 다수 공사건이 나열되고 끝에 "합계"행이 있는 표는 합계행이 더 정확 —
+        # 넓은 창에서 먼저 합계행을 찾고, 없으면 기존처럼 첫 데이터행을 쓴다.
+        wide_window = t[hm.end():hm.end() + 4000]
+        total_m = re.search(r"합\s*계\s+(.{1,300}?)(?=\s*(?:주석|주\s*[)1-9]|※|\(\*|\[)|$)", wide_window)
+        if total_m:
+            total_row_nodate = re.sub(
+                r"\d{4}\.\d{1,2}(?:\.\d{1,2})?\s*~?\s*(?:\d{4}\.\d{1,2}(?:\.\d{1,2})?)?", " ",
+                total_m.group(1))
+            tot_nums = [nm for nm in re.finditer(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?", total_row_nodate)
+                        if _parse_num(nm.group(0)) is not None]
+            if len(tot_nums) >= 3:
+                raw_v = _parse_num(tot_nums[2].group(0))
+                if raw_v is not None:
+                    unit = _find_unit_nearby(t, hm.start())
+                    krw = _korean_to_krw(raw_v, unit)
+                    excerpt = t[max(0, hm.start()-20):hm.end() + total_m.end()]
+                    cands.append((krw, unit, 0.85, excerpt, _period_tier(t, hm.start()), True))
+                    continue
+        row_window = t[hm.end():hm.end() + 400]
+        stop_m = re.search(r"\d+\.\s*[가-힣]{2,}|합\s*계", row_window)
+        row = row_window[:stop_m.start()] if stop_m else row_window
+        # 품목행에 흔한 "2019.01.01~2020.12.31" 류 날짜가 콤마 없는 숫자조각(2019, 01 등)을
+        # 만들어 진짜 금액(항상 3자리 콤마 포함) 앞에 끼어드는 문제 방지 — 날짜 패턴을
+        # 먼저 제거한 텍스트에서 숫자를 찾는다.
+        row_no_date = re.sub(r"\d{4}\.\d{1,2}(?:\.\d{1,2})?\s*~?\s*(?:\d{4}\.\d{1,2}(?:\.\d{1,2})?)?", " ", row)
+        # "수량 금액 수량 금액 수량 금액" 헤더가 바로 뒤에 더 붙는 변형(수량/금액 쌍 3개)도
+        # 있음 — 이 경우도 같은 로직으로 첫 데이터행의 마지막(6번째) 숫자가 수주잔고 금액.
+        num_matches = [
+            nm for nm in re.finditer(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?", row_no_date)
+            if _parse_num(nm.group(0)) is not None
+        ]
+        if len(num_matches) >= 3:
+            picked = num_matches[-1] if "수량" in t[hm.end():hm.end() + 30] else num_matches[2]
+            raw_v = _parse_num(picked.group(0))
+            if raw_v is not None:
+                unit = _find_unit_nearby(t, hm.start())
+                krw = _korean_to_krw(raw_v, unit)
+                excerpt = t[max(0, hm.start()-20):hm.end() + 200]
+                conf = 0.55  # 합계행 미확인 개별품목행 채택 — 조심스러운 신뢰도
+                cands.append((krw, unit, conf, excerpt, _period_tier(t, hm.start()), False))
+
     # 연도값·소액 필터 적용
     valid_cands = []
     for krw, unit, conf, excerpt, tier, is_total in cands:
@@ -589,6 +644,22 @@ def _extract_backlog(text: str) -> BacklogMetric:
             source_excerpt=excerpt,
         )
 
+    # 숫자 후보를 하나도 못 찾았을 때만 "수주잔고(잔액)는 없습니다/의미가 없습니다" 같은
+    # 명시적 무(無) 표현을 확인 — 진짜 잔고 0인 정상 케이스를 추출실패와 구분한다.
+    # 숫자 후보가 있었는데 이 문구도 같이 나오는 경우(예: 여러 사업부문 중 일부만 "없음")는
+    # 위에서 이미 숫자쪽이 채택되므로 여기까지 오지 않는다. 2026-09-06 신규.
+    none_pat = kw_group + r"(?:은|는)?\s*(?:현재\s*)?(?:없습니다|없음|의미가?\s*없습니다)"
+    none_m = re.search(none_pat, t, re.IGNORECASE)
+    if none_m:
+        excerpt = t[max(0, none_m.start()-60):none_m.end()+20]
+        return BacklogMetric(
+            backlog_amount=0.0,
+            backlog_unit="원",
+            backlog_amount_krw=0.0,
+            backlog_confidence=0.85,
+            source_excerpt=excerpt,
+        )
+
     return BacklogMetric()
 
 
@@ -617,6 +688,21 @@ def _infer_period(report_nm: str, rcept_dt: str) -> tuple[Optional[int], Optiona
     if "분기보고서" in nm:
         return (y, 1) if mm <= 6 else (y, 3)
     return None, None
+
+
+def _period_is_publicly_available(
+    fiscal_year: int, fiscal_quarter: int, as_of: date | None = None
+) -> bool:
+    """Reject periods that cannot yet have a Korean periodic filing.
+
+    A source row alone is not sufficient: malformed disclosure metadata has
+    previously assigned pre-filing records to a future fiscal quarter.
+    """
+    earliest_month = {1: 5, 2: 8, 3: 11, 4: 3}.get(fiscal_quarter)
+    if earliest_month is None:
+        return False
+    disclosure_year = fiscal_year + (1 if fiscal_quarter == 4 else 0)
+    return (as_of or date.today()) >= date(disclosure_year, earliest_month, 1)
 
 
 def _candidate_disclosures(
@@ -651,7 +737,7 @@ def _candidate_disclosures(
     dedup: dict[tuple[str, int, int], dict] = {}
     for r in rows:
         fy, fq = _infer_period(r["report_nm"], r["rcept_dt"])
-        if not fy or not fq:
+        if not fy or not fq or not _period_is_publicly_available(fy, fq):
             continue
         key = (r["stock_code"], fy, fq)
         if key not in dedup:

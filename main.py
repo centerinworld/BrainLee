@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from hs_trade_lab.app.main import app as hs_trade_lab_app
 from hs_trade_lab.semiconductor_value_lab.fastapi_app import app as semiconductor_value_lab_app
 from db_utils import connect_stock_db
-from db_compat import install_sqlite_primary_router, primary_database_label
+from db_compat import install_sqlite_primary_router, primary_database_label, connect_primary_db
 from config import IS_POSTGRES
 
 install_sqlite_primary_router()
@@ -66,6 +66,18 @@ from data_write_gate import (
     gate_cashflow_row as _wg_gate_cashflow_row,
     upsert_canonical_cashflow as _wg_upsert_canonical_cashflow,
 )
+
+# KRX 신규 종목코드 형식(2026~): 6자리 중 1자리가 대문자 영문인 코드가 존재
+# (예: 액스비스=0011A0, 채비=0011T0). 기존 "숫자 6자리만 국내종목" 판정 로직이
+# 이 신규 코드를 전부 해외/미상장으로 오판해 TTM·공시·심층인사이트 등이 누락되는
+# 문제가 있어, 국내종목 판정은 이 헬퍼로 통일한다.
+_KR_CODE_RE = re.compile(r'^[0-9A-Z]{6}$')
+
+
+def _is_kr_code(code) -> bool:
+    """국내 상장종목 코드 여부(숫자 6자리 + KRX 신규 영숫자 6자리 코드 포함)."""
+    return bool(code) and bool(_KR_CODE_RE.fullmatch(code))
+
 
 _collecting: dict      = {}   # stock_code -> "running"|"done"
 _valuation_cache: dict = {}   # stock_code -> {per,pbr,cached_at,...}
@@ -158,6 +170,7 @@ from routes.cherry_screener    import router as _cherry_screener_router
 from routes.sector_rotation    import router as _sector_rotation_router
 from routes.detailed_analysis  import router as _detailed_analysis_router
 from routes.global_macro       import router as _global_macro_router
+from routes.global_foreign_flow import router as _global_foreign_flow_router
 from routes.cafe_signals       import router as _cafe_signals_router
 from routes.us_virtual_trading import router as _us_virtual_trading_router
 from routes.us_13f            import router as _us_13f_router
@@ -165,6 +178,7 @@ from routes.company_intelligence import router as _company_intelligence_router
 from routes.investment_decisions import router as _investment_decisions_router
 from routes.insider            import router as _insider_router
 from routes.notices            import router as _notices_router
+from routes.antigravity_status import router as _antigravity_status_router
 import sys as _sys
 _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime/ETF_check")
 from routes_etf                import router as _etf_check_router
@@ -203,6 +217,7 @@ app.include_router(_tenbagger_router,       prefix="/api/tenbagger",      tags=[
 app.include_router(_sector_rotation_router, prefix="/api/sector-rotation", tags=["sector-rotation"])
 app.include_router(_detailed_analysis_router, prefix="/api/detailed-analysis", tags=["detailed-analysis"])
 app.include_router(_global_macro_router,      prefix="/api/global-macro",      tags=["global-macro"])
+app.include_router(_global_foreign_flow_router, prefix="/api/global-foreign-flow", tags=["global-foreign-flow"])
 app.include_router(_cafe_signals_router,      prefix="/api/cafe-signals",      tags=["cafe-signals"])
 app.include_router(_us_virtual_trading_router)
 app.include_router(_us_13f_router,              prefix="/api/us-13f",            tags=["us-13f"])
@@ -212,6 +227,7 @@ app.include_router(_investment_decisions_router, prefix="/api/investment-decisio
 # 개별종목 페이지의 임원·대주주 지분변동/공지사항 패널이 항상 404였음 — 등록 누락 수정.
 app.include_router(_insider_router,  prefix="/api/insider",  tags=["insider"])
 app.include_router(_notices_router,  prefix="/api/notices",  tags=["notices"])
+app.include_router(_antigravity_status_router)
 
 
 def _send_telegram(msg: str, dedup_key: str = ""):
@@ -560,7 +576,7 @@ def _upsert_cashflow(db, cf: schemas.CashFlowIngest):
     # write-gate: Q1 q필드 등 보정
     try:
         import sqlite3 as _sl_wg
-        _c = _sl_wg.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+        _c = connect_primary_db()
         _wg_ensure_schema(_c)
         ok, fixed, _ = _wg_gate_cashflow_row(_c, {
             "stock_code": row.stock_code,
@@ -596,7 +612,7 @@ def _upsert_cashflow(db, cf: schemas.CashFlowIngest):
     # canonical sync
     try:
         import sqlite3 as _sl_wg
-        _c = _sl_wg.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+        _c = connect_primary_db()
         _wg_ensure_schema(_c)
         _wg_upsert_canonical_cashflow(_c, {
             "stock_code": row.stock_code,
@@ -928,7 +944,7 @@ def _monthly_bulk_update() -> None:
     """전종목 메타(시총·섹터) 갱신 — CollectionScheduler 로직 위임."""
     try:
         import stock_universe
-        stock_universe.update_universe()
+        stock_universe.update_from_krx()
     except Exception as e:
         logger.error(f"[월간업데이트] {e}")
 
@@ -954,7 +970,7 @@ def _run_screener_precompute():
     _signal_cache['_computing_combo_v2'] = True
     try:
         with _screener_lock:
-            conn = _sl.connect("stock.db")
+            conn = connect_primary_db()
             try:
 
                 # 0. 시장 시그널 (메인 화면 즉시 표시용 — 가장 먼저 캐시)
@@ -1057,7 +1073,7 @@ def _run_screener_precompute():
                 try:
                     from signal_engine import calc_combo_v2
                     import sqlite3 as _sl2
-                    conn_v2 = _sl2.connect("stock.db")
+                    conn_v2 = connect_primary_db()
                     combo_v2 = calc_combo_v2(conn_v2)
                     conn_v2.close()
                     _signal_cache['combo_v2'] = {'data': combo_v2, 'at': _t.time()}
@@ -1073,7 +1089,7 @@ def _run_screener_precompute():
                 try:
                     from signal_engine import calc_kiwoom_conditions
                     import sqlite3 as _sl_kc
-                    _conn_kc = _sl_kc.connect("stock.db")
+                    _conn_kc = connect_primary_db()
                     _conn_kc.row_factory = _sl_kc.Row
                     _kc_result = calc_kiwoom_conditions(_conn_kc, "all")
                     _conn_kc.close()
@@ -1108,7 +1124,7 @@ def _process_ai_combo_autotrade(combo_stocks: list):
 
     HARD_STOP_LOSS_PCT = -20.0  # AI 추천 탭 하드 손절선: -20%
 
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db()
     try:
         # 현재 AI_COMBO 전략으로 보유 중인 종목
         active = {r[0]: r for r in conn.execute(
@@ -1405,7 +1421,7 @@ def get_market_info(stock_code: str, refresh: bool = False, db: Session = Depend
     종목의 시장정보 반환.
     refresh=true 이면 캐시 무시하고 재조회.
     """
-    if not (stock_code.isdigit() and len(stock_code) == 6):
+    if not _is_kr_code(stock_code):
         return {"market": None, "mktcap": None, "mktcap_rank": None}
 
     # ── 캐시 확인 (1시간 유효) ──────────────────────────────────
@@ -1555,7 +1571,7 @@ def get_stock_chart(stock_code: str, days: int = 30, basis: str = "research_adju
 @app.get("/api/dashboard/corporate-actions/{stock_code}")
 def get_stock_corporate_actions(stock_code: str, days: int = 365):
     """Return capital/share events that should be annotated on the price chart."""
-    if not (stock_code.isdigit() and len(stock_code) == 6):
+    if not _is_kr_code(stock_code):
         raise HTTPException(status_code=400, detail="stock_code must be a 6 digit code")
     days = max(30, min(int(days), 3650))
     start_date = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
@@ -1849,7 +1865,7 @@ def _build_us_stock_base_items() -> list:
     market/q/limit 조합이 바뀔 때마다 매번 다시 계산할 필요가 없음."""
     import sqlite3 as _sl3
     _ensure_us_tables()
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     rows = conn.execute(
         """
@@ -1957,7 +1973,7 @@ def get_us_stocks_list(q: str = "", market: str = "all", limit: int = 300):
 def get_us_indices():
     """나스닥/S&P500 최신 지수 테이블."""
     import sqlite3 as _sl3
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     out = []
     for code, name in (("^IXIC", "NASDAQ"), ("^GSPC", "S&P500")):
@@ -1990,7 +2006,7 @@ def get_us_indices():
 
 def _ensure_us_tables() -> None:
     import sqlite3 as _sl3
-    conn = _sl3.connect("stock.db", timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA busy_timeout=120000")
     conn.execute(
         """
@@ -2255,7 +2271,7 @@ def _refresh_us_stock_data(ticker: str) -> dict:
     except Exception:
         pass
 
-    conn = _sl3.connect("stock.db", timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA busy_timeout=120000")
     conn.row_factory = _sl3.Row
 
@@ -2672,7 +2688,7 @@ def get_us_screener_presets(
 ):
     """미국 종목 프리셋 스크리너 (주도주, 그레이엄 가치주, 고성장주, 스마트머니 유입)."""
     import sqlite3 as _sl3
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     _ensure_us_tables()
 
@@ -2739,7 +2755,7 @@ def get_us_stock_chart(ticker: str, days: int = 180):
     """미국 종목 차트. source: us_price_history 우선, 없으면 radar_price_cache."""
     import sqlite3 as _sl3
     t = (ticker or "").upper().strip()
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     _ensure_us_tables()
     rows = conn.execute(
@@ -2796,7 +2812,7 @@ def get_us_stock_detail(ticker: str):
     if c and (_tm.time() - c.get("ts", 0)) < 3600:
         return c["data"]
 
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     # 목록 API와 상세 API가 서로 다른 가격 기준일을 표시하지 않도록
     # 최신 us_price_history를 최우선으로 사용하고, snapshot/radar는 보조 소스로만 쓴다.
@@ -2833,7 +2849,7 @@ def get_us_stock_detail(ticker: str):
 
     _ensure_us_tables()
     # DB 데이터 부족 시 1회 수집
-    conn2 = _sl3.connect("stock.db")
+    conn2 = connect_primary_db()
     fin_cnt = conn2.execute("SELECT COUNT(*) FROM us_financial_data WHERE ticker=? AND period_type='annual'", (tk,)).fetchone()[0]
     cf_cnt = conn2.execute("SELECT COUNT(*) FROM us_cashflow_data WHERE ticker=? AND period_type='annual'", (tk,)).fetchone()[0]
     px_cnt = conn2.execute("SELECT COUNT(*) FROM us_price_history WHERE ticker=?", (tk,)).fetchone()[0]
@@ -2979,7 +2995,7 @@ def get_us_stock_detail(ticker: str):
         _recommendations_summary = _f_rs.result()
         next_earnings_date, earnings_d_day = _f_ned.result()
 
-    db = _sl3.connect("stock.db")
+    db = connect_primary_db()
     db.row_factory = _sl3.Row
     fin_annual = [dict(r) for r in db.execute(
         """
@@ -3142,7 +3158,7 @@ def get_us_stock_detail(ticker: str):
     high_52w = max(px_values) if px_values else None
     low_52w = min(px_values) if px_values else None
 
-    _mconn = _sl3.connect("stock.db")
+    _mconn = connect_primary_db()
     meta_row = _mconn.execute(
         "SELECT sector, industry, company_name, index_name FROM us_stock_meta WHERE ticker=?",
         (tk,),
@@ -3198,7 +3214,7 @@ def get_us_stock_detail(ticker: str):
         rs_score = stock_3m_ret - sp500_3m_ret
 
     # ── us_factor_snapshot에서 추가 팩터 로드 ─────────────────────────
-    _snap_conn = _sl3.connect("stock.db")
+    _snap_conn = connect_primary_db()
     _snap_conn.row_factory = _sl3.Row
     _snap = _snap_conn.execute("""
         SELECT total_score, system_action,
@@ -3449,7 +3465,7 @@ def run_us_integrity_check(limit: int = 20):
     """Yahoo 수집 데이터 vs 외부(Stooq) 무결성 점검."""
     import sqlite3 as _sl3
     _ensure_us_tables()
-    conn = _sl3.connect("stock.db", timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA busy_timeout=60000")
     conn.row_factory = _sl3.Row
     tickers = [r["ticker"] for r in conn.execute(
@@ -3493,7 +3509,7 @@ def run_us_integrity_check(limit: int = 20):
 @app.get("/api/us/integrity/latest")
 def get_latest_us_integrity(limit: int = 100):
     import sqlite3 as _sl3
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     rows = [dict(r) for r in conn.execute(
         """
@@ -3509,7 +3525,7 @@ def get_latest_us_integrity(limit: int = 100):
 @app.get("/api/us/screener")
 def get_us_screener(index_name: str = "all", sector: str = "", min_score: float = 0, limit: int = 200):
     import sqlite3 as _sl3
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     where = ["1=1"]
     params = []
@@ -3541,7 +3557,7 @@ def get_us_screener(index_name: str = "all", sector: str = "", min_score: float 
 def get_us_sector_dashboard():
     import sqlite3 as _sl3
     import math as _math
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     rows = [dict(r) for r in conn.execute(
         """
@@ -3581,7 +3597,7 @@ def get_us_sector_dashboard():
 @app.get("/api/us/long-term-picks")
 def get_us_long_term_picks(limit: int = 100):
     import sqlite3 as _sl3
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     rows = [dict(r) for r in conn.execute(
         """
@@ -3606,7 +3622,7 @@ def get_us_long_term_picks(limit: int = 100):
 @app.get("/api/us/new-opportunities")
 def get_us_new_opportunities(limit: int = 150):
     import sqlite3 as _sl3
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     rows = [dict(r) for r in conn.execute(
         """
@@ -3633,7 +3649,7 @@ def get_us_stock_disclosures(ticker: str):
     import sqlite3 as _sl3
     tk = (ticker or "").upper().strip()
     _ensure_us_tables()
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     try:
         cached = [dict(r) for r in conn.execute(
@@ -3674,7 +3690,7 @@ def get_us_stock_disclosures(ticker: str):
         primary_doc = recent.get("primaryDocument", []) or []
         out = []
         n = min(len(forms), len(filed), len(acc_no), 30)
-        conn2 = _sl3.connect("stock.db")
+        conn2 = connect_primary_db()
         for i in range(n):
             an = str(acc_no[i] or "").replace("-", "")
             doc = str(primary_doc[i] or "")
@@ -3719,7 +3735,7 @@ def get_us_biotech_analysis(min_market_cap: float = 300_000_000, limit: int = 30
         and is_biotech_company(item.get("sector"), item.get("industry"))
     ]
     import sqlite3 as _sl3
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     try:
         snapshot_rows = conn.execute(
@@ -3733,7 +3749,7 @@ def get_us_biotech_analysis(min_market_cap: float = 300_000_000, limit: int = 30
         conn.close()
     snapshots = {str(row["ticker"]): dict(row) for row in snapshot_rows}
     trial_rows = conn = None
-    conn = _sl3.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     try:
         trial_rows = conn.execute(
@@ -4050,7 +4066,7 @@ def get_source_intelligence_opinions(asset_class: str = "all", source_key: str =
     if source_key:
         clauses.append("source_key=?"); params.append(source_key)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    conn = sqlite3.connect("stock.db", timeout=30); conn.row_factory = sqlite3.Row
+    conn = connect_primary_db(timeout=30); conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
             f"SELECT source_key,source_type,source_name,published_at,ticker,company_name,asset_class,stance,signal_level,evidence_type,summary_text,excerpt FROM source_intelligence_mentions {where} ORDER BY published_at DESC LIMIT ?",
@@ -4294,7 +4310,7 @@ def _upsert_forward_estimates(payload: dict):
 
 def _load_latest_forward_estimate(stock_code: str) -> dict:
     empty = {"forward_per": None, "forward_eps": None, "forward_period": None, "forward_source": None}
-    if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
+    if not _is_kr_code(stock_code):
         return empty
     try:
         conn = connect_stock_db(timeout=30, row_factory=sqlite3.Row)
@@ -4455,7 +4471,7 @@ def _calc_ttm_fundamentals(stock_code: str, report_type: str = "CFS") -> dict:
         "source": "financial_data quarterly",
         "message": "최근 4개 분기 재무 데이터가 부족합니다.",
     }
-    if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
+    if not _is_kr_code(stock_code):
         return empty
 
     try:
@@ -4589,7 +4605,7 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
     DB 캐시 반환; 없으면 빈 배열 반환.
     """
     import sqlite3 as _sl
-    _conn = _sl.connect("stock.db")
+    _conn = connect_primary_db()
     _conn.row_factory = _sl.Row
 
     is_annual = (type != "quarter")
@@ -4705,6 +4721,11 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
     _conn.close()
 
     if not raw:
+        # 아직 DART 현금흐름 수집이 한 번도 되지 않은 종목 → 백그라운드로 즉시 수집 시작.
+        # 프론트엔드가 빈 배열 응답 시 15초 간격 8회 폴링하므로(App.jsx cfPollRef),
+        # 여기서 트리거하지 않으면 폴링만 돌고 영원히 채워지지 않는다.
+        if _is_kr_code(stock_code) and stock_code not in _cf_collecting:
+            _th.Thread(target=_bg_collect_cashflow, args=(stock_code,), daemon=True).start()
         return []
 
     def _uk(v):
@@ -4775,7 +4796,10 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
             yr_q, qtr_q = r['year'], r['quarter']
 
             def _q_or_diff(field):
-                """_q 컬럼 우선 → NULL이면 누적차감, 음수면 None"""
+                """_q 컬럼 우선 → NULL이면 누적차감.
+                capex는 정의상 항상 양수이므로 음수면 오류로 간주해 None 처리하지만,
+                operating/investing/financing_cf는 부호 있는 값이 정상(특히 investing_cf는
+                capex 지출 시 음수가 일반적)이므로 음수라는 이유만으로 걸러내지 않는다."""
                 qkey = f"{field}_q"
                 q_val = r[qkey] if qkey in r.keys() else None
                 if q_val is not None:
@@ -4783,7 +4807,9 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
                     cum = r[field] if field in r.keys() else None
                     if cum is not None and qtr_q:
                         _prev_cumul[(yr_q, field)] = cum
-                    return q_val if q_val >= 0 else None
+                    if field == 'capex':
+                        return q_val if q_val >= 0 else None
+                    return q_val
                 # _q NULL → 누적에서 역산
                 cum = r[field] if field in r.keys() else None
                 if cum is None or not qtr_q:
@@ -4794,8 +4820,10 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
                 prev = _prev_cumul.get((yr_q, field))
                 diff = (cum - prev) if prev is not None else cum
                 _prev_cumul[(yr_q, field)] = cum
-                # 음수 역산은 원본 누적이 왜곡된 경우 → None
-                return diff if (diff is None or diff >= -1e7) else None
+                if field == 'capex':
+                    # capex 음수 역산은 원본 누적이 왜곡된 경우 → None
+                    return diff if (diff is None or diff >= -1e7) else None
+                return diff
 
             ocf     = _q_or_diff('operating_cf')
             icf     = _q_or_diff('investing_cf')
@@ -4865,7 +4893,7 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
 @app.post("/api/commands/refresh-cashflow/{stock_code}")
 def refresh_cashflow(stock_code: str, db: Session = Depends(get_db)):
     """현금흐름표 강제 재수집."""
-    if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
+    if not _is_kr_code(stock_code):
         raise HTTPException(status_code=400, detail="국내 종목코드(6자리)만 지원합니다.")
     db.query(models.CashFlowData).filter(
         models.CashFlowData.stock_code == stock_code
@@ -4902,7 +4930,7 @@ def start_batch_float_shares(force: bool = False):
 
     def _run():
         global _float_batch_status
-        conn = _sl.connect("stock.db")
+        conn = connect_primary_db()
         # 대상 종목: price_history 최근 90일 활성 종목
         rows = conn.execute("""
             SELECT DISTINCT p.stock_code
@@ -4947,7 +4975,7 @@ def start_batch_float_shares(force: bool = False):
 
             if fs or so:
                 try:
-                    c2 = _sl.connect("stock.db")
+                    c2 = connect_primary_db()
                     existing = c2.execute(
                         "SELECT id FROM stock_meta WHERE stock_code=?", (code,)
                     ).fetchone()
@@ -4994,7 +5022,7 @@ def refresh_annual_financials(stock_code: str, db: Session = Depends(get_db)):
     - 기존 is_annual 레코드 삭제 후 DART에서 재수집
     - 분기값이 잘못 저장된 경우 수동으로 정정할 때 사용
     """
-    if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
+    if not _is_kr_code(stock_code):
         raise HTTPException(status_code=400, detail="국내 종목코드(6자리)만 지원합니다.")
 
     # 기존 is_annual=True 레코드 삭제
@@ -5113,7 +5141,7 @@ def get_data_quality(stock_code: str):
       na         — 구조적 한계 (DART 미제공)
     """
     import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl.Row
 
     # ── 0. 종목 섹터/업종 (STRUCTURAL_DIFF_FINANCIAL_SECTOR 오분류 검증용) ──
@@ -5505,7 +5533,7 @@ def get_data_quality(stock_code: str):
 
     # ── 4-b. 분기 데이터 검증 현황 (fin_quarterly_validation_flags) ──
     import sqlite3 as _sl2
-    conn2 = _sl2.connect("stock.db", timeout=10)
+    conn2 = connect_primary_db(timeout=10)
     conn2.row_factory = _sl2.Row
 
     # ── 투자 신뢰등급 (OPEN tier) ─────────────────────────────────────
@@ -5653,7 +5681,7 @@ def get_data_quality(stock_code: str):
         })
 
     # 최근 gate 보정 로그 (종목별)
-    conn3 = _sl2.connect("stock.db", timeout=10)
+    conn3 = connect_primary_db(timeout=10)
     conn3.row_factory = _sl2.Row
     gate_logs = conn3.execute("""
         SELECT gate_ts, table_name, year, quarter, is_annual, report_type, reason_code
@@ -6020,7 +6048,7 @@ def get_data_quality(stock_code: str):
     # 두 시스템 간 낙관적 불일치("여긴 A인데 저긴 disputed") 자체를 화면에서 숨기지 않는다.
     try:
         import sqlite3 as _sl_dv
-        _conn_dv = _sl_dv.connect("stock.db", timeout=10)
+        _conn_dv = connect_primary_db(timeout=10)
         _dv_row = _conn_dv.execute(
             "SELECT COUNT(*) FROM field_verification_status WHERE stock_code=? AND status='disputed'",
             (stock_code,),
@@ -6043,7 +6071,7 @@ def get_data_quality(stock_code: str):
     _cf_annual  = {}  # year -> {ocf, icf, fcf, capex, dep, source, report_type}
 
     import sqlite3 as _sl3
-    _mc = _sl3.connect("stock.db", timeout=10)
+    _mc = connect_primary_db(timeout=10)
     _mc.row_factory = _sl3.Row
 
     # 연간 재무 (CFS 우선)
@@ -6229,7 +6257,7 @@ def get_data_quality(stock_code: str):
     # CFS/OFS 수집 여부 요약
     _cfs_years = sorted(_fin_annual.keys())
     _ofs_fin = _mc_count = 0
-    _tmp_mc = _sl3.connect("stock.db", timeout=10)
+    _tmp_mc = connect_primary_db(timeout=10)
     try:
         _ofs_fin = _tmp_mc.execute(
             "SELECT COUNT(DISTINCT year) FROM financial_data WHERE stock_code=? AND report_type='OFS' AND is_annual=1",
@@ -6282,7 +6310,7 @@ def _load_disclosures_from_db(stock_code: str, limit: int = 100):
     items = []
     conn = None
     try:
-        conn = _sl.connect("stock.db", timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.row_factory = _sl.Row
 
         # 1) 정규 저장 테이블 우선
@@ -6337,8 +6365,8 @@ def get_disclosures(stock_code: str):
     - 최근 1년 공시, 최대 100건
     - 5분 캐시 적용
     """
-    # 국내 종목 코드 검증 (6자리 숫자)
-    if not (stock_code and stock_code.isdigit() and len(stock_code) == 6):
+    # 국내 종목 코드 검증 (숫자 6자리 + KRX 신규 영숫자 6자리 코드)
+    if not _is_kr_code(stock_code):
         return []
 
     # 캐시 확인 (메모리)
@@ -6420,7 +6448,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
     2. 주가 DB 없으면 → KIS 즉시 저장 + Yahoo 백그라운드
     3. PBR/PER → 캐시 우선, 없으면 네이버금융 동기 스크래핑
     """
-    is_kr  = stock_code.isdigit() and len(stock_code) == 6
+    is_kr  = _is_kr_code(stock_code)
     is_col = _collecting.get(stock_code) == "running"
 
     # 2026-08-29 신설: DART 원문 조회 자체가 안 되는 종목(상폐/비표준공시 등)을
@@ -6432,7 +6460,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
     if is_kr:
         try:
             import sqlite3 as _sl3q
-            _conn_q = _sl3q.connect("stock.db")
+            _conn_q = connect_primary_db()
             _dq_row = _conn_q.execute(
                 "SELECT status, note FROM stock_dart_data_quality WHERE stock_code=?",
                 (stock_code,),
@@ -6452,7 +6480,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
     if is_kr:
         try:
             import sqlite3 as _sl3v
-            _conn_v2 = _sl3v.connect("stock.db")
+            _conn_v2 = connect_primary_db()
             _rows = _conn_v2.execute(
                 "SELECT status, COUNT(*) FROM field_verification_status WHERE stock_code=? GROUP BY status",
                 (stock_code,),
@@ -6522,7 +6550,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
     if not val and is_kr:
         import sqlite3 as _sl3
         try:
-            _conn_v = _sl3.connect("stock.db")
+            _conn_v = connect_primary_db()
             _conn_v.row_factory = _sl3.Row
             # 현재주가
             _pr = _conn_v.execute(
@@ -6747,7 +6775,7 @@ def list_shareholder_profiles(
     """국내 종목 유통주식수·주요주주 통합 프로필 목록."""
     import sqlite3 as _sl
     limit = max(1, min(int(limit or 300), 3000))
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db()
     conn.row_factory = _sl.Row
     try:
         params: list = []
@@ -6869,8 +6897,8 @@ def command_analyze_stock(stock_name: str, db: Session = Depends(get_db)):
     5. 즉시 응답 (collecting=True 이면 프론트가 폴링)
     """
     from ticker_utils import ticker_mapper
-    # 종목코드로 직접 조회도 허용 (6자리 숫자)
-    if stock_name.isdigit() and len(stock_name) == 6:
+    # 종목코드로 직접 조회도 허용 (숫자 6자리 + KRX 신규 영숫자 6자리 코드)
+    if _is_kr_code(stock_name):
         stock_code = stock_name
         resolved_name = ticker_mapper.get_name(stock_code) or stock_name
     else:
@@ -6890,7 +6918,7 @@ def command_analyze_stock(stock_name: str, db: Session = Depends(get_db)):
     try: db.commit()
     except: db.rollback()
 
-    is_kr  = stock_code.isdigit() and len(stock_code) == 6
+    is_kr  = _is_kr_code(stock_code)
     is_col = _collecting.get(stock_code) == "running"
 
     if is_kr and not is_col:
@@ -6980,7 +7008,7 @@ def command_analyze_stock(stock_name: str, db: Session = Depends(get_db)):
                     logger.warning(f"[Analyze] {code} 수급 업데이트 오류: {e2}")
 
             try:
-                c2 = _sl2.connect("stock.db", timeout=30)
+                c2 = connect_primary_db(timeout=30)
                 c2.execute("PRAGMA busy_timeout=30000")
                 _do_update(c2)     # 즉시 1회
                 # _bg_collect 완료 대기 후 재시도 (race-condition 방지)
@@ -7039,7 +7067,7 @@ def get_market_regime():
     NEUTRAL: MA120 ±1% 이내 (횡보)
     """
     import sqlite3 as _sl
-    conn = _sl.connect("stock.db"); conn.row_factory = _sl.Row
+    conn = connect_primary_db(); conn.row_factory = _sl.Row
     try:
         rows = conn.execute("""
             SELECT date, close FROM price_history
@@ -7148,6 +7176,98 @@ _NAMU_SECRET  = _namu_os.getenv("NAMU_STOCK_API_SECRET", "")
 _namu_token_cache: dict = {"token": None, "expires_at": 0.0}
 # 체결추이 결과 캐시 (종목별, 1분 유효)
 _namu_exec_cache: dict = {}
+_namu_schema_ready = False
+_namu_schema_lock = _th.Lock()
+
+
+def _ensure_namu_execution_schema() -> None:
+    """Create durable intraday execution-strength storage once per process."""
+    global _namu_schema_ready
+    if _namu_schema_ready:
+        return
+    with _namu_schema_lock:
+        if _namu_schema_ready:
+            return
+        conn = connect_stock_db(timeout=30)
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS namu_execution_strength_snapshots (
+                    stock_code TEXT NOT NULL,
+                    trade_date TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    execution_strength REAL,
+                    buy_rate REAL,
+                    sell_rate REAL,
+                    price REAL,
+                    buy_volume REAL,
+                    sell_volume REAL,
+                    broker_time TEXT,
+                    source TEXT NOT NULL DEFAULT 'NAMU currentExecution',
+                    PRIMARY KEY (stock_code, observed_at)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_namu_exec_date_code ON namu_execution_strength_snapshots(trade_date, stock_code)")
+            conn.commit()
+            _namu_schema_ready = True
+        finally:
+            conn.close()
+
+
+def _namu_number(value):
+    try:
+        return float(str(value).replace(",", "")) if value not in (None, "", "-") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _persist_namu_execution(stock_code: str, result: dict) -> None:
+    _ensure_namu_execution_schema()
+    observed_at = datetime.now().isoformat(timespec="seconds")
+    result["observed_at"] = observed_at
+    conn = connect_stock_db(timeout=30)
+    try:
+        conn.execute("""
+            INSERT INTO namu_execution_strength_snapshots (
+                stock_code, trade_date, observed_at, execution_strength, buy_rate, sell_rate,
+                price, buy_volume, sell_volume, broker_time, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(stock_code, observed_at) DO UPDATE SET
+                execution_strength=excluded.execution_strength, buy_rate=excluded.buy_rate,
+                sell_rate=excluded.sell_rate, price=excluded.price, buy_volume=excluded.buy_volume,
+                sell_volume=excluded.sell_volume, broker_time=excluded.broker_time
+        """, (
+            stock_code, date.today().isoformat(), observed_at, _namu_number(result.get("cttr")),
+            _namu_number(result.get("bidrate")), _namu_number(result.get("askrate")),
+            _namu_number(result.get("price")), _namu_number(result.get("buy_vol")),
+            _namu_number(result.get("sell_vol")), result.get("time"), "NAMU currentExecution",
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _latest_namu_execution(stock_code: str) -> dict | None:
+    _ensure_namu_execution_schema()
+    conn = connect_stock_db(timeout=30, row_factory=sqlite3.Row, readonly=True)
+    try:
+        row = conn.execute("""
+            SELECT execution_strength, buy_rate, sell_rate, price, buy_volume, sell_volume,
+                   broker_time, observed_at, trade_date
+            FROM namu_execution_strength_snapshots
+            WHERE stock_code=?
+            ORDER BY observed_at DESC
+            LIMIT 1
+        """, (stock_code,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    return {
+        "cttr": row[0], "bidrate": row[1], "askrate": row[2], "price": row[3],
+        "buy_vol": row[4], "sell_vol": row[5], "time": row[6],
+        "observed_at": row[7], "trade_date": row[8], "market_closed": True,
+        "source": "NAMU currentExecution history",
+    }
 
 
 def _get_namu_token() -> str | None:
@@ -7192,6 +7312,14 @@ def get_namu_execution(stock_code: str):
     if not (stock_code.isdigit() and len(stock_code) == 6):
         raise HTTPException(status_code=400, detail="종목코드 6자리 필요")
 
+    from trading_calendar import is_kr_trading_day
+    if not is_kr_trading_day(date.today()):
+        return _latest_namu_execution(stock_code) or {
+            "cttr": None, "bidrate": None, "askrate": None, "price": None,
+            "buy_vol": None, "sell_vol": None, "time": None,
+            "market_closed": True, "source": "NAMU skipped on KR market holiday",
+        }
+
     now = _t.time()
     cached = _namu_exec_cache.get(stock_code, {})
     if cached and now - cached.get("cached_at", 0) < 60:
@@ -7228,6 +7356,7 @@ def get_namu_execution(stock_code: str):
             "cached_at": now,
         }
         _namu_exec_cache[stock_code] = {"data": result, "cached_at": now}
+        _persist_namu_execution(stock_code, result)
         return result
 
     except HTTPException:

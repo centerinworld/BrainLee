@@ -15,15 +15,14 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Query
 
-from db_utils import STOCK_DB_PATH
+from db_compat import connect_primary_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-DB_PATH = str(STOCK_DB_PATH)
 
 
 def _conn():
-    c = _sl.connect(DB_PATH, timeout=20)
+    c = connect_primary_db(timeout=20)
     c.row_factory = _sl.Row
     return c
 

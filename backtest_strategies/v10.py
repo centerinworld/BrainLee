@@ -24,7 +24,8 @@ def run_backtest_v10(start_date: str, end_date: str,
                      per_stock: float = 10_000_000,
                      max_positions: int = 10,
                      chart_confluence: bool = False,
-                    run_name: str = None, run_id: str = None) -> str:
+                    run_name: str = None, run_id: str = None,
+                    data_asof_ts: str = None) -> str:
     return _run_generic_backtest(
         chart_confluence=chart_confluence,
         version='V10', signal_fn=_is_buy_v10,
@@ -36,6 +37,7 @@ def run_backtest_v10(start_date: str, end_date: str,
         mktcap_min=500,     # 500억+ (억원 단위)
         max_new_per_month=999,       # 펀더멘탈 전략 — 월 한도 없음 (자연 필터)
         strategy_key='v10',
+        data_asof_ts=data_asof_ts,
         # sell_signal_fn=_sell_signal_v6,  # 피크반납 테스트: avg5 동일(7.2%), 기간별 분산 — 기본값 사용
     )
 
@@ -65,7 +67,6 @@ def _sell_signal_v6(i: int, sd: dict, pos: dict) -> Optional[str]:
     if giveback > 0.40:
         return f"피크반납{giveback*100:.0f}%(V6)"
     return None
-
 
 
 

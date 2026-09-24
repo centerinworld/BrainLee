@@ -21,6 +21,7 @@ HTML 파싱 전략:
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import re
 import sqlite3
@@ -243,7 +244,7 @@ def collect_consensus(
     session.headers.update(_HEADERS)
     total_saved = 0
 
-    conn = sqlite3.connect(db_path)
+    conn = connect_primary_db()
     conn.execute("PRAGMA journal_mode=WAL")
 
     try:
@@ -385,7 +386,7 @@ def get_consensus_for_stock(
     최신순 정렬
     """
     since = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m-%d")
-    conn  = sqlite3.connect(db_path)
+    conn  = connect_primary_db()
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
@@ -426,7 +427,7 @@ def get_consensus_summary(
     }
     """
     since = (date.today() - timedelta(days=months * 30)).strftime("%Y-%m-%d")
-    conn  = sqlite3.connect(db_path)
+    conn  = connect_primary_db()
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(

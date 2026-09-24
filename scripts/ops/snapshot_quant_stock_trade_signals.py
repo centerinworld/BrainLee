@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 import sys
@@ -17,7 +18,7 @@ from routes.cafe_signals import get_stock_trade_signals
 
 def main() -> None:
     payload = get_stock_trade_signals(limit=100)
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA busy_timeout=120000")
     conn.execute(
         """

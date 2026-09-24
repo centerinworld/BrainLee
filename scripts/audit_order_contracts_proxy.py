@@ -13,6 +13,7 @@ critical issues that should wake the next Codex/Claude pass.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import asyncio
 import json
 import re
@@ -29,8 +30,32 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+def require_postgres_primary() -> None:
+    """Fail loudly if the PostgreSQL primary isn't reachable — never fall
+    back to the repo-local stock.db file.
+
+    2026-09-05: this used to be `force_local_sqlite_primary()`, which
+    unconditionally (later: conditionally, on a failed probe) redirected
+    `sqlite3.connect` to the repo-local SQLite file. Production runs
+    exclusively on PostgreSQL — nothing else ever reads that local file — so
+    any write this audit performs while bypassed (most importantly
+    `collect_recent_disclosures()`, called right after this in main()) is
+    invisible to the live service and permanently stranded. That's exactly
+    what happened on 2026-09-04: 77 real DART disclosures were collected and
+    saved into the local file, never reached PostgreSQL, and sat undetected
+    for a day until found and merged back in by hand. There is no safe
+    fallback here — if PostgreSQL is down, this audit should stop, not
+    silently write somewhere nobody reads.
+    """
+    probe = connect_primary_db(timeout=5)
+    try:
+        probe.execute("SELECT 1")
+    finally:
+        probe.close()
+
+
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -478,6 +503,7 @@ def write_reports(metrics: dict, surge: dict, issues: list[dict], sync_result: d
 
 
 def main() -> int:
+    require_postgres_primary()
     from routes.order_contracts import collect_recent_disclosures
 
     recent_collect = asyncio.run(collect_recent_disclosures(max_backfill_days=14))

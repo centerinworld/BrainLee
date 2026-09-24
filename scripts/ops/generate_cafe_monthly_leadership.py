@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import importlib.util
 import json
 import math
@@ -388,7 +389,7 @@ def upsert_results(conn: sqlite3.Connection, period: str, sectors: list[dict], h
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     hs_conn = sqlite3.connect(HS_DB_PATH)
     hs_conn.row_factory = sqlite3.Row

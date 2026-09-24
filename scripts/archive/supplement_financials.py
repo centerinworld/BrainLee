@@ -10,6 +10,7 @@ FDR은 KRX/네이버 기반으로 연간 재무 요약 제공 (DART보다 빠름
   python3 supplement_financials.py --codes 005930 000660  # 특정 종목
 """
 
+from db_compat import connect_primary_db
 import sys, sqlite3, time, logging
 from pathlib import Path
 from datetime import date
@@ -200,7 +201,7 @@ def main():
     parser.add_argument("--naver-only", action="store_true", help="네이버 스크래핑만 사용")
     args = parser.parse_args()
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = connect_primary_db()
     codes = [c.zfill(6) for c in args.codes] if args.codes else get_watchlist_codes(conn)
 
     print(f"\n대상 종목: {len(codes)}개")

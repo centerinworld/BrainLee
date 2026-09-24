@@ -14,6 +14,7 @@ from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
     DB_PATH,
+    _final_liquidation_quote_for_code,
     _CHART_TOP_MIN,
     _chart_prep,
     _chart_top_confluence,
@@ -186,7 +187,7 @@ def run_backtest_megatrend(
                 SELECT stock_code, stock_name, market_cap FROM stock_universe
                 WHERE market IN ('유가증권','코스피','코스닥','KOSPI','KOSDAQ')
                   {_mktcap_gate}
-                  AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                  AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   {_sector_clause}
             """, _mktcap_param + _sector_params).fetchall()
             codes = [r[0] for r in all_rows if not (r[1] and _pref_pat.search(r[1]))]
@@ -267,6 +268,7 @@ def run_backtest_megatrend(
 
         earn_fins: Dict[str, list] = {}
         if require_earnings_accel and sd:
+            _earn_seen = set()
             for r in conn.execute("""
                 SELECT f.stock_code, f.revenue, f.operating_profit, f.net_income, f.year, f.quarter,
                        COALESCE(d.avail_date,
@@ -279,8 +281,18 @@ def run_backtest_megatrend(
                     d.stock_code=f.stock_code AND d.year=f.year AND d.quarter=f.quarter AND d.is_annual<1
                 WHERE f.is_annual=0 AND f.quarter BETWEEN 1 AND 4
                   AND f.stock_code IN ({})
-                ORDER BY f.stock_code, avail_date
+                ORDER BY f.stock_code, f.year, f.quarter,
+                         CASE f.report_type WHEN 'CFS' THEN 0 ELSE 1 END
             """.format(",".join("?" * len(sd))), list(sd.keys())).fetchall():
+                # financial_data carries both CFS and OFS rows per (stock_code, year,
+                # quarter), often sharing the same avail_date; without a tiebreaker and
+                # dedup, Postgres can return them in either order across otherwise-
+                # identical calls, flipping which figures land at avail[-1]/avail[-5]
+                # in _earnings_accel_ok below (see se_momentum.py's identical fix).
+                key = (r[0], r[4], r[5])
+                if key in _earn_seen:
+                    continue
+                _earn_seen.add(key)
                 earn_fins.setdefault(r[0], []).append(
                     (r[6], r[1], r[2], r[3], r[4], r[5]))
 
@@ -518,16 +530,13 @@ def run_backtest_megatrend(
         # 미청산 포지션 강제 청산
         last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in list(pos.items()):
-            i = didx[code].get(last_day)
-            curr = sd[code]['c'][i] if i is not None else p['entry']
-            if curr <= 0:
-                curr = p['entry']
+            curr, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]['c'])
             pnl, net_pct = _net_profit(p['entry'], curr, p['shares'], p.get('mkt_cap_억', 300))
             cash += p['shares'] * p['entry'] + pnl
             trades.append({
                 'code': code, 'buy_date': p['buy_date'], 'sell_date': last_day,
                 'entry': p['entry'], 'exit': curr, 'pnl_pct': net_pct,
-                'reason': 'final', 'pnl': round(pnl, 0),
+                'reason': final_reason, 'pnl': round(pnl, 0),
             })
 
         total_return = (cash - total_capital) / total_capital * 100
@@ -562,7 +571,6 @@ def run_backtest_megatrend(
         except Exception:
             pass
         raise
-
 
 
 

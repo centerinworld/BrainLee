@@ -10,6 +10,7 @@ qa_report.py — 배치 완료 시 자동 QA 로그 생성
   python3 scripts/ops/qa_report.py [--out-dir /path/to/logs]
 """
 import argparse, json, os, sys, sqlite3
+from db_compat import connect_primary_db
 from datetime import datetime
 
 ROOT = "/Volumes/Realtek_NVME/stock_dashboard/runtime"
@@ -287,7 +288,7 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     ts_file = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    conn = sqlite3.connect(args.db, timeout=300)
+    conn = connect_primary_db(timeout=300) if args.db == DB else sqlite3.connect(args.db, timeout=300)
     conn.execute("PRAGMA busy_timeout=300000")
 
     m            = collect(conn)

@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 with open('/Applications/stock_dashboard/main.py', 'r') as f:
     content = f.read()
 
@@ -17,7 +18,7 @@ def trend_buy(payload: dict):
     if not stock_name or not buy_price:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="stock_name, buy_price 필수")
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db()
     # 이미 활성 보유중이면 업데이트만
     existing = conn.execute(
         "SELECT id FROM peak_holding WHERE stock_name=? AND is_active=1", (stock_name,)

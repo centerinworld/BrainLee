@@ -6,8 +6,39 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+from db_compat import connect_primary_db
 
 DB_PATH = Path(__file__).resolve().parent / "stock.db"
+
+_KR_CODE_RE = __import__("re").compile(r"^[0-9A-Z]{6}$")
+
+
+def is_kr_equity_code(code: object) -> bool:
+    """True only for the exact six-char KR security-code shape.
+
+    Accepts preferred shares such as ``00088K`` (letters allowed in the 6-char
+    slot) and rejects every macro/overseas symbol that also lives in
+    price_history: indices (``^KS11``, ``^GSPC``), futures (``GC=F``),
+    currency pairs (``USDKRW=X``), yields (``2YY=F``), and blank/malformed
+    values. This is the single shared predicate for keeping index/futures/
+    currency codes out of stock-only screens and buy-candidate queries.
+    """
+    if not code:
+        return False
+    return bool(_KR_CODE_RE.match(str(code)))
+
+
+def _kr_code_predicate(conn, column: str = "stock_code") -> str:
+    """Return an exact six-character KR security-code predicate per backend.
+
+    Preferred shares such as ``00088K`` require letters, while the local-file
+    rebuild path still uses SQLite and cannot execute PostgreSQL's ``~`` regex
+    operator.
+    """
+    if isinstance(conn, sqlite3.Connection):
+        atom = "[0-9A-Z]"
+        return f"{column} GLOB '{atom * 6}'"
+    return f"{column} ~ '^[0-9A-Z]{{6}}$'"
 
 
 def _iso(value: object) -> str | None:
@@ -66,21 +97,22 @@ def _name_map(conn: sqlite3.Connection) -> dict[str, str]:
     names = {r[0]: r[1] or "" for r in conn.execute(
         "SELECT stock_code, stock_name FROM stock_universe"
     )}
+    code_filter = _kr_code_predicate(conn)
     for code, name in conn.execute(
-        """
+        f"""
         SELECT stock_code, MAX(COALESCE(stock_name,''))
         FROM stock_price_daily
-        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+        WHERE {code_filter}
         GROUP BY stock_code
         """
     ):
         if name:
             names.setdefault(code, name)
     for code, name in conn.execute(
-        """
+        f"""
         SELECT stock_code, MAX(COALESCE(corp_name,''))
         FROM dart_disclosures
-        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+        WHERE {code_filter}
         GROUP BY stock_code
         """
     ):
@@ -105,24 +137,25 @@ def _security_type(name: str, current_type: str = "") -> tuple[str, int]:
 
 
 def rebuild_security_master(db_path: Path | str = DB_PATH) -> dict:
-    conn = sqlite3.connect(db_path, timeout=60)
+    conn = connect_primary_db(timeout=60) if db_path == DB_PATH else sqlite3.connect(db_path, timeout=60)
     conn.row_factory = sqlite3.Row
     ensure_schema(conn)
     names = _name_map(conn)
+    code_filter = _kr_code_predicate(conn)
     current = {r["stock_code"]: r for r in conn.execute(
-        """
+        f"""
         SELECT stock_code, stock_name, market, stock_type, secugrp_nm,
                listed_date, shares_issued
         FROM stock_universe
-        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+        WHERE {code_filter}
         """
     )}
     observed = conn.execute(
-        """
+        f"""
         SELECT stock_code, MIN(substr(date,1,10)) first_seen,
                MAX(substr(date,1,10)) last_seen, COUNT(*) observations
         FROM price_history
-        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]' AND close > 0
+        WHERE {code_filter} AND close > 0
         GROUP BY stock_code
         """
     ).fetchall()
@@ -146,6 +179,45 @@ def rebuild_security_master(db_path: Path | str = DB_PATH) -> dict:
         code = row["stock_code"]
         code_refs = references.get(code, [])
         if code_refs:
+            cur = current.get(code)
+            # Current KRX reference rows can start at a market-transfer or
+            # reclassification date. Preserve an observed pre-reference
+            # interval instead of silently erasing the stock's earlier life.
+            first_ref_start = min(ref["effective_from"] for ref in code_refs)
+            first_seen = _iso(row["first_seen"])
+            if first_seen and first_seen < first_ref_start:
+                historical_market_row = conn.execute(
+                    """SELECT market FROM stock_price_daily
+                       WHERE stock_code=? AND bas_dt<? AND market IN ('KOSPI','KOSDAQ')
+                       ORDER BY bas_dt DESC LIMIT 1""",
+                    (code, first_ref_start.replace("-", "")),
+                ).fetchone()
+                name = (cur["stock_name"] if cur else "") or names.get(code, "")
+                raw_type = ((cur["secugrp_nm"] or cur["stock_type"] or "") if cur else "")
+                sec_type, is_etf = _security_type(name, raw_type)
+                # With complete KRX KOSPI/KOSDAQ daily reference coverage, an
+                # observed price interval absent from those endpoints before
+                # the first official reference is not an eligible exchange
+                # listing. These are overwhelmingly KONEX-to-KOSDAQ transfers
+                # (e.g. 058970, 199800), which the old current-market fallback
+                # mislabeled as historical KOSDAQ and admitted into backtests.
+                historical_market = historical_market_row[0] if historical_market_row else "OTHER"
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO security_master_history
+                    (stock_code,effective_from,effective_to,stock_name,market,security_type,
+                     is_etf_etn,is_tradable,interval_quality,source,source_note)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        code, first_seen, first_ref_start, name, historical_market,
+                        sec_type, is_etf, 0,
+                        "pre_official_equity_reference_ineligible",
+                        "price_history+KRX_OPEN_API_DAILY_HISTORY",
+                        "가격은 관측됐지만 KOSPI/KOSDAQ 일별 종목기본정보에 없던 구간; "
+                        "KONEX 등 비대상 시장으로 진입 제외",
+                    ),
+                )
             # Exact/labelled KRX reference intervals supersede price-observation
             # inference. A code may have multiple intervals after relisting.
             for ref in code_refs:

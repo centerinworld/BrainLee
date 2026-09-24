@@ -15,6 +15,7 @@ routes/notices.py — 종목 공지사항 (KRX 종목기본정보 변동) API
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3 as _sl
 from datetime import date, timedelta
@@ -29,7 +30,7 @@ DB_PATH = str(STOCK_DB_PATH)
 
 
 def _conn():
-    c = _sl.connect(DB_PATH, timeout=20)
+    c = connect_primary_db(timeout=20)
     c.row_factory = _sl.Row
     return c
 

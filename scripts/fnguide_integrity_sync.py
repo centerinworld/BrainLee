@@ -6,17 +6,17 @@ FnGuide → financial_data 무결성 동기화 + stock_collection_config 구축
   python3 scripts/fnguide_integrity_sync.py --dry-run  # 변경 없이 리포트만
   python3 scripts/fnguide_integrity_sync.py --all      # large_discrepancy 포함 전체
 """
+from db_compat import connect_primary_db
 import sqlite3
 import json
 import sys
 import argparse
 from datetime import datetime
 
-DB_PATH = "stock.db"
 DRY_RUN = "--dry-run" in sys.argv
 ALL_MODE = "--all" in sys.argv
 
-conn = sqlite3.connect(DB_PATH)
+conn = connect_primary_db()
 conn.row_factory = sqlite3.Row
 conn.execute("PRAGMA journal_mode=WAL")
 

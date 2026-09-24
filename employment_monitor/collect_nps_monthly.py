@@ -26,6 +26,7 @@ import argparse
 import logging
 import os
 import sqlite3
+from db_compat import connect_primary_db
 import sys
 import time
 from datetime import datetime
@@ -314,7 +315,7 @@ def build_seq_map(
     stock_universe 상위 N개 종목에 대해 최신 NPS seq를 찾아 nps_seq_map에 저장.
     매월 실행해야 seq가 갱신됨 (seq = 월별 스냅샷 번호).
     """
-    stk_conn = sqlite3.connect(f"file:{STOCK_DB}?mode=ro", uri=True)
+    stk_conn = connect_primary_db(readonly=True)
     sql = """
         SELECT stock_code, stock_name
         FROM stock_universe
@@ -602,20 +603,33 @@ def build_historical_data(months_back: int | None = 36, from_ym: str | None = No
     """
     conn = sqlite3.connect(EMP_DB)
     try:
-        conn.execute("ATTACH DATABASE ? AS stock_src", (STOCK_DB,))
-        seq_rows = conn.execute(
+        # stock.db(운영 시 Postgres)는 employment.db와 별도 물리 DB라 ATTACH로
+        # 조인할 수 없음 — stock_universe 필터를 만족하는 종목코드 집합을 먼저
+        # connect_primary_db()로 조회한 뒤, nps_seq_map을 파이썬에서 필터링한다.
+        stock_conn = connect_primary_db()
+        try:
+            allowed_codes = {
+                row[0] for row in stock_conn.execute(
+                    """
+                    SELECT stock_code FROM stock_universe
+                    WHERE market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
+                      AND stock_type = '보통주'
+                      AND LENGTH(stock_code) = 6
+                    """
+                ).fetchall()
+            }
+        finally:
+            stock_conn.close()
+        all_seq_rows = conn.execute(
             """
-            SELECT m.stock_code, m.wkpl_nm
-            FROM nps_seq_map m
-            JOIN stock_src.stock_universe u ON u.stock_code = m.stock_code
-            WHERE m.wkpl_nm IS NOT NULL
-              AND u.market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
-              AND u.stock_type = '보통주'
-              AND LENGTH(u.stock_code) = 6
-            GROUP BY m.stock_code, m.wkpl_nm
-            ORDER BY m.stock_code
+            SELECT stock_code, wkpl_nm
+            FROM nps_seq_map
+            WHERE wkpl_nm IS NOT NULL
+            GROUP BY stock_code, wkpl_nm
+            ORDER BY stock_code
             """
         ).fetchall()
+        seq_rows = [r for r in all_seq_rows if r[0] in allowed_codes]
     except sqlite3.Error as e:
         logger.warning(f"stock_universe 필터 적용 실패, nps_seq_map 전체 사용: {e}")
         seq_rows = conn.execute(
@@ -746,7 +760,7 @@ def build_historical_data(months_back: int | None = 36, from_ym: str | None = No
 # ── 테스트 ────────────────────────────────────────────────────────────────────
 def test_single(stock_code: str):
     """단일 종목 NPS 데이터 조회 테스트"""
-    stk_conn = sqlite3.connect(f"file:{STOCK_DB}?mode=ro", uri=True)
+    stk_conn = connect_primary_db(readonly=True)
     row = stk_conn.execute(
         "SELECT stock_name FROM stock_universe WHERE stock_code=?", (stock_code,)
     ).fetchone()

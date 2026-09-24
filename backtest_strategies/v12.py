@@ -19,6 +19,7 @@ from backtest_common import (
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
+    _final_liquidation_quote_for_code,
     _rsi,
     _save_result,
     init_backtest_db,
@@ -59,7 +60,7 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
     _sector_universe_sql = """
         SELECT stock_code, COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,''), '기타')
         FROM stock_universe
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
           AND sector_large NOT IN ('기타','벤처기업부','신성장기업부','우선주','리츠','ETF','ETN','','스팩')
     """ + ("" if asof_mktcap else " AND market_cap >= 2000")
     for sc, sec in conn.execute(_sector_universe_sql).fetchall():
@@ -371,8 +372,7 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
     for sc, pos in list(positions.items()):
         idx_map = date_idx.get(sc, {})
         sd = stock_data[sc]
-        curr = sd['prices'][idx_map[last_day]] if last_day and last_day in idx_map \
-               else (sd['prices'][-1] if sd['prices'] else pos['entry_price'])
+        curr, final_reason = _final_liquidation_quote_for_code(conn, sc, last_day, idx_map, sd['prices'])
         pct = (curr - pos['entry_price']) / pos['entry_price']
         _v12f_amt, _v12f_pct = _net_profit(pos['entry_price'], curr, pos['qty'], pos.get('mkt_cap_억', 500))
         cash += pos['qty'] * pos['entry_price'] + _v12f_amt
@@ -385,8 +385,15 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
             'qty':         pos['qty'],
             'profit_pct':  _v12f_pct,
             'profit_amt':  _v12f_amt,
-            'exit_reason': '기간종료',
+            'exit_reason': final_reason,
         })
+
+    if last_day:
+        terminal = {'date': last_day, 'equity': round(cash)}
+        if equity_curve and equity_curve[-1].get('date') == last_day:
+            equity_curve[-1] = terminal
+        else:
+            equity_curve.append(terminal)
 
     return trades, equity_curve, cash
 
@@ -542,7 +549,6 @@ def run_backtest_v12(start_date: str, end_date: str,
             pass
         conn.close()
         raise
-
 
 
 

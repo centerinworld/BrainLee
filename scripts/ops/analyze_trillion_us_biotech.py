@@ -9,6 +9,7 @@ It is a research aid, not investment advice or an automatic trade signal.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import asyncio
 import json
@@ -392,7 +393,7 @@ def _persist_results_postgres(result: dict[str, Any], sec_master: dict[str, str]
 
 def _persist_results_sqlite(result: dict[str, Any], sec_master: dict[str, str], source_key: str, source_name: str, source_type: str) -> None:
     """Portable fallback for an offline SQLite-only installation."""
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     try:
         conn.execute("PRAGMA busy_timeout=120000")
         conn.executescript("""

@@ -14,6 +14,7 @@ from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
     DB_PATH,
+    _final_liquidation_quote_for_code,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
@@ -343,10 +344,7 @@ def run_backtest_segment_revenue_divergence(
 
         last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in list(pos.items()):
-            i = didx[code].get(last_day)
-            curr = sd[code]["c"][i] if i is not None else p["entry"]
-            if curr <= 0:
-                curr = p["entry"]
+            curr, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]["c"])
             pnl, net_pct = _net_profit(p["entry"], curr, p["shares"], 300)
             cash += p["shares"] * p["entry"] + pnl
             trades.append({
@@ -356,7 +354,7 @@ def run_backtest_segment_revenue_divergence(
                 "entry": p["entry"],
                 "exit": curr,
                 "pnl_pct": net_pct,
-                "reason": "final",
+                "reason": final_reason,
                 "pnl": round(pnl, 0),
                 "signal_year": p["signal_year"],
                 "segment_name": p["segment_name"],
@@ -391,7 +389,6 @@ def run_backtest_segment_revenue_divergence(
         except Exception:
             pass
         raise
-
 
 
 

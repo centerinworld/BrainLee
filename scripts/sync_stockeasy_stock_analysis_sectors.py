@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import re
 import sqlite3
@@ -122,7 +123,7 @@ def main() -> None:
     html = fetch_html()
     rows = parse_rows(html)
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     try:
         inserted = upsert(conn, rows, args.snapshot_date)
         major_counter = Counter(r[2] for r in rows if r[2])

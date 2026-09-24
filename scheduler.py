@@ -21,6 +21,7 @@ scheduler.py — 통합 수집 스케줄러
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import asyncio
 import logging
 import os
@@ -54,6 +55,7 @@ _DB_WRITE_JOBS = {
     "장마감",
     "공공데이터",
     "KIS일별수집",
+    "KIS추정실적",
     "KRX일별수집",
     "전종목수급17시",
     "전종목수급21시",
@@ -97,8 +99,10 @@ _DB_WRITE_JOBS = {
     "시장시그널브리핑",
     "글로벌매크로수집",
     "거시지표백테스트",
+    "퀀트주요지표일일",
     "V14장중10분",
     "키움실시간스냅샷",
+    "나무체결강도",
     "WAL일별체크",
     "실적신호스캔",
     "텐버거위클리",
@@ -363,6 +367,7 @@ class CollectionScheduler:
         self._start_lock = threading.Lock()
         self._started = False
         self._kiwoom_rt_cursor = 0
+        self._namu_exec_cursor = 0
 
     # ══════════════════════════════════════════════════════════
     # Public API
@@ -392,6 +397,7 @@ class CollectionScheduler:
             ("스크리너사전계산", self._loop_screener),
             ("공공데이터",      self._loop_public_data),
             ("KIS일별수집",    self._loop_kis_daily),         # ★ KIS API 전종목 OHLCV (KRX 차단 대체)
+            ("KIS추정실적",    self._loop_kis_forward_estimates), # KIS Forward EPS/PER 등 순환 갱신
             ("전종목수급17시",  self._loop_supply_daily),      # ★ 17:30 KIS 전종목 수급
             ("전종목수급21시",  self._loop_supply_evening),    # ★ 21:00 재갱신
             ("레이더해외가격",  self._loop_radar_price_update), # ★ 1시간마다 해외 yfinance
@@ -427,14 +433,17 @@ class CollectionScheduler:
             ("전략센터상위5가상매매", self._loop_combo_daily),          # ★ 매일 18:35 전략센터 현재 상위 5개를 재선정해 가상매매
             ("키움연결체크",   self._loop_kiwoom_health),            # ★ 키움 REST 연결 상태 점검(장중 10분)
             ("키움실시간스냅샷", self._loop_kiwoom_realtime),         # ★ 장중 1분 키움 실시간 스냅샷 수집
+            ("나무체결강도",   self._loop_namu_execution_strength), # 관심/보유 종목 체결강도 이력
             ("키움조건검색",   self._loop_kiwoom_condition_snapshot), # ★ 장중 조건식 현재 편입 + 편입/편출 이력
             # ("고용보험배치",  self._loop_insurance_monthly),    # ⛔ 비활성: 연간 총인원 수집 — 월별차이 없어 의미 없음 (사용자 요청)
             ("DART수주공시",   self._loop_dart_contracts),        # ★ 매일 08:00/13:00/17:00 DART 수주공시
             ("DART수주계약",   self._loop_order_contracts),       # ★ 매일 19:00 수주잔고 급증 proxy 테이블 적재
             ("DART희석공시",   self._loop_dart_dilution),         # ★ 매일 07:10 CB/BW/EB 희석 공시 수집
             ("DART희석공시마감", self._loop_dart_dilution_close),  # ★ 평일 17:20 당일 CB/BW/EB·증자 공시 반영
-            ("키움신용잔고",   self._loop_kiwoom_margin),         # ★ 매일 18:45 종목별 신용/대주 잔고 (코스피+코스닥 80%)
-            ("키움외국인지분율", self._loop_kiwoom_foreign_hold),  # ★ 매일 19:15 외국인 지분율 수집 (코스피+코스닥 80%)
+            ("키움신용잔고",   self._loop_kiwoom_margin),         # ★ 평일 18:45 종목별 신용/대주 잔고 (코스피+코스닥 80%)
+            ("키움업종수급",   self._loop_kiwoom_sector_flow),    # ★ 평일 19:00 ka10051 업종별투자자순매수(2026-09-05 신규, 12종 세부기관분류)
+            ("키움업종수급검증", self._loop_kiwoom_sector_flow_validation),  # ★ 매주 월요일 08:15 수급→다음날수익률 상관관계 누적검증(2026-09-06 신규)
+            ("키움외국인지분율", self._loop_kiwoom_foreign_hold),  # ★ 평일 19:15 외국인 지분율 수집 (코스피+코스닥 80%)
             ("DART임원매매",   self._loop_dart_insider),          # ★ 매주 일요일 02:30 임원매매 전종목 + 매일 공시 incremental
             ("DART수주잔고",   self._loop_dart_backlog),          # ★ 매주 일요일 01:20 수주잔고 분기 수집(5년)
             ("DART원가재고",   self._loop_dart_cost),             # ★ 매주 일요일 01:50 매입재료비/재고/감가상각 수집(5년)
@@ -474,10 +483,12 @@ class CollectionScheduler:
             ("체리형부패밀리학습", self._loop_cherry_family_learning),   # ★ 매일 09:05 체리형부 family 등록상태 확인 + 재학습 로그 저장
             ("퀀트지표트리거",  self._loop_quant_indicator_signal),       # ★ 매일 07:40 지표 이상치 → 관련 종목 매수 후보 텔레그램
             ("거시지표백테스트", self._loop_macro_indicator_backtest),     # ★ 매주 월요일 07:50 거시지표×섹터 후보 검증
+            ("퀀트주요지표일일", self._loop_quant_major_indicators_daily), # ★ 매일 19:35 퀀트 주요지표 daily(시장폭/대차/기준금리/거시브릿지/카지노) — 2026-09-22 crontab 부재 복구
             ("데이터무결성후속검증", self._loop_data_integrity_followup), # ★ 매일 00:05 2026-08-22 세션 발견 잔여 이상치(revenue_extreme_yoy/dilution) DART 원문대조 재검증
             ("기업행위조정계수후속확정", self._loop_corporate_action_confirmation_followup), # ★ 매일 00:10 유상증자 TERP 조정계수 매칭 재시도 (turnaround/regime_adaptive 등 백테스트 검증 병목 해소용, DART 미사용)
             ("가격점프감사재빌드", self._loop_price_jump_audit_rebuild), # ★ 매일 00:15 price_jump_audit 재빌드(2026-08-24 세션: 2주 이상 스테일 방치로 허위오탐 발생 확인, 재발방지)
             ("가격외부소스재대조", self._loop_naver_price_verify), # ★ 매일 00:20 신규 가격점프 이벤트만 Naver와 교차대조(--only-new, DART 미사용)
+            ("가격커버리지백필", self._loop_naver_coverage_backfill), # ★ 매일 19:15 KIS일별수집 직후 그날 빠진 종목을 Naver로 즉시 백필
             ("다중소스재무교차검증", self._loop_multi_source_financial_crosscheck), # ★ 매일 00:25 손익/현금흐름/매입재료비를 DART(anchor) vs FnGuide/Naver/Yahoo 다중소스로 교차검증(2026-08-26 세션, DART API 미사용 — FnGuide스크레이핑+naver_financial테이블+yfinance)
             ("전략센터주간재검증", self._loop_weekly_strategy_reverify), # ★ 매주 일요일 01:30 등록전략 전량 최신데이터로 재실행(2026-08-24: V8 승격/V10·V12 정직한 하향 확인된 바로 그 배치를 정기화)
             ("DART재무재수집",  self._loop_dart_financial_recollect),  # ★ 매일 00:30 DART 재무제표 재수집 (ETF/ETN/상폐 제외)
@@ -593,7 +604,7 @@ class CollectionScheduler:
             _run_job_safe("공시확인", self._job_disclosure_check)
 
     def _loop_disclosure_recent_refresh(self) -> None:
-        """DART 최근 공시 목록 증분 갱신 — 하루 4회 dart_disclosures upsert."""
+        """DART 최근 공시 목록 증분 갱신 - 하루 4회 dart_disclosures upsert."""
         self._wait_secs(25)
         while not self._stop_event.is_set():
             now = datetime.now()
@@ -829,7 +840,7 @@ class CollectionScheduler:
         """전종목 메타(시총·섹터) 갱신."""
         try:
             import stock_universe
-            stock_universe.update_universe()
+            stock_universe.update_from_krx()
         except Exception as e:
             logger.error(f"[월간업데이트] {e}")
 
@@ -1060,7 +1071,7 @@ class CollectionScheduler:
         for _table, _col in (("kiwoom_tick_history", "event_ts"), ("kiwoom_minute_snapshot", "minute_ts")):
             try:
                 import sqlite3 as _sl3
-                _c = _sl3.connect("stock.db", timeout=60)
+                _c = connect_primary_db(timeout=60)
                 _c.execute("PRAGMA busy_timeout=60000")
                 _cutoff = _c.execute("SELECT date('now','-7 day')").fetchone()[0]
                 _deleted = 0
@@ -1118,7 +1129,7 @@ class CollectionScheduler:
         # ── Gap 감지: short_sell_daily 마지막 수집일 확인 ──────────
         dates_to_collect: list[str] = []
         try:
-            _conn = _sl.connect("stock.db")
+            _conn = connect_primary_db()
             _last = _conn.execute("SELECT MAX(bas_dt) FROM short_sell_daily WHERE stock_code != '000000'").fetchone()
             _conn.close()
             last_date = _last[0] if _last and _last[0] else None
@@ -1131,7 +1142,7 @@ class CollectionScheduler:
                 f"{last_date[:4]}-{last_date[4:6]}-{last_date[6:8]}"
             ) + _td(days=1)
             while _cur <= today:
-                if _cur.weekday() < 5:
+                if is_kr_trading_day(_cur):
                     dates_to_collect.append(_cur.strftime("%Y%m%d"))
                 _cur += _td(days=1)
             logger.info(
@@ -1172,7 +1183,7 @@ class CollectionScheduler:
                 saved_short = {}
                 for i in range(0, 10):
                     cand = today - _td(days=i)
-                    if cand.weekday() >= 5:
+                    if not is_kr_trading_day(cand):
                         continue
                     cand_str = cand.strftime("%Y%m%d")
                     saved_short = loop.run_until_complete(
@@ -1221,11 +1232,36 @@ class CollectionScheduler:
             self._wait_secs(3600)
         logger.info("[KIS일별] 루프 종료")
 
+    def _loop_kis_forward_estimates(self) -> None:
+        """영업일 20:10 - KIS 추정실적을 7일 stale 기준으로 순환 갱신."""
+        self._wait_secs(95)
+        while not self._stop_event.is_set():
+            self._wait_until(20, 10, skip_weekend=False)
+            _run_job_safe("KIS추정실적", self._job_kis_forward_estimates)
+
+    def _job_kis_forward_estimates(self) -> None:
+        """대형주 우선으로 최대 450종목을 갱신해 API 호출량을 제한한다."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/collect_kis_forward_estimates.py",
+                "--limit", "450",
+                "--stale-days", "7",
+            ],
+            cwd=str(Path(__file__).resolve().parent),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr[-500:] or result.stdout[-500:])
+        logger.info("[KIS추정실적] %s", result.stdout[-500:].strip())
+
     def _job_kis_ohlcv_daily(self) -> None:
         """KIS API로 당일 전종목 OHLCV를 수집하고 KIS/네이버로 주요 지수를 보완."""
         today = date.today()
-        if today.weekday() >= 5:
-            logger.info("[KIS일별] 주말 — 스킵")
+        if not is_kr_trading_day(today):
+            logger.info("[KIS일별] 휴장일 — 스킵")
             return
 
         with stock_db_write_lock("KIS일별수집", timeout=3) as acquired:
@@ -1563,7 +1599,7 @@ class CollectionScheduler:
         try:
             rows = conn.execute("""
                 SELECT stock_code FROM stock_universe
-                WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND market IN ('유가증권', '코스닥', 'KOSPI', 'KOSDAQ')
                   AND COALESCE(stock_type, '보통주') = '보통주'
                   AND COALESCE(stock_name, '') NOT LIKE '%ETF%'
@@ -1726,7 +1762,7 @@ class CollectionScheduler:
         today = date.today()
         for offset in range(days):
             d = today - timedelta(days=offset)
-            if d.weekday() >= 5:
+            if not is_kr_trading_day(d):
                 continue
             try:
                 r = _rq.get(
@@ -1779,7 +1815,7 @@ class CollectionScheduler:
                     # 주말/공휴일 스킵
                     from datetime import date as _dt_cls
                     d = _dt_cls.fromisoformat(dt_str)
-                    if d.weekday() >= 5:
+                    if not is_kr_trading_day(d):
                         continue
                     if row["close"] <= 0:
                         continue
@@ -1813,27 +1849,49 @@ class CollectionScheduler:
             return
 
         now = datetime.now()
-        today_str = now.strftime("%Y-%m-%d")
+        target_day = now.date()
+        while not is_kr_trading_day(target_day):
+            target_day -= timedelta(days=1)
+        target_str = target_day.isoformat()
+        logger.info(f"[캐치업] 기준 거래일 {target_str} 누락 데이터 확인 시작")
 
-        # 주말이면 스킵
-        if now.weekday() >= 5:
-            logger.info("[캐치업] 주말 — 스킵")
-            return
-
-        logger.info(f"[캐치업] {today_str} 당일 누락 데이터 확인 시작")
+        # 휴장일 재시작도 직전 거래일의 미완료 전종목 적재를 복구한다.
+        try:
+            conn = connect_stock_db(timeout=15)
+            price_cnt = conn.execute(
+                """SELECT COUNT(DISTINCT stock_code) FROM price_history
+                   WHERE date=? AND LENGTH(stock_code)=6
+                     AND stock_code ~ '^[0-9]{6}$' AND close>0""",
+                (target_str,),
+            ).fetchone()[0]
+            conn.close()
+            if price_cnt < 2000:
+                logger.info(f"[캐치업] {target_str} 국내시세 {price_cnt}건 부족 → 전종목 재수집")
+                py = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python"
+                result = subprocess.run(
+                    [py, "collect_kis_ohlcv.py", "--start", target_day.strftime("%Y%m%d"),
+                     "--end", target_day.strftime("%Y%m%d")],
+                    cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                    capture_output=True, text=True, timeout=3600,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError((result.stderr or result.stdout)[-1000:])
+                logger.info(f"[캐치업] {target_str} 전종목 재수집 완료: {result.stdout[-1000:]}")
+        except Exception as e:
+            logger.warning(f"[캐치업] 국내시세 복구 오류: {e}")
 
         # ① KOSPI/KOSDAQ/KOSPI200/KOSDAQ150 누락 확인 → KIS/네이버 fallback
-        # 16:00 이후이고 오늘 데이터가 없으면 즉시 수집
-        if now.hour >= 16:
+        # 당일은 16시 이후, 과거 거래일 결손은 시각과 무관하게 수집
+        if now.hour >= 16 or target_day < now.date():
             try:
                 conn = connect_stock_db(timeout=15)
                 missing = conn.execute(
                     "SELECT COUNT(*) FROM price_history WHERE stock_code IN ('^KS11','^KQ11','^KS200','^KQ150') AND date=?",
-                    (today_str,)
+                    (target_str,)
                 ).fetchone()[0]
                 conn.close()
                 if missing < 4:
-                    logger.info(f"[캐치업] {today_str} 주요 지수 {missing}/4건 존재 → KIS/네이버 fallback")
+                    logger.info(f"[캐치업] {target_str} 주요 지수 {missing}/4건 존재 → KIS/네이버 fallback")
                     with stock_db_write_lock("캐치업KIS지수", timeout=3) as acquired:
                         if not acquired:
                             logger.warning("[캐치업] 주요 지수 KIS/네이버 수집 스킵 — 다른 DB writer 실행 중")
@@ -1850,23 +1908,50 @@ class CollectionScheduler:
                 logger.warning(f"[캐치업] KRX 지수 확인 오류: {e}")
 
         # ② 수급 amount (inst_net_buy_amt) 누락 확인
-        # 17:00 이후이고 오늘 amt 데이터 < 50건이면 즉시 수집
-        if now.hour >= 17:
+        # 당일은 17시 이후, 과거 거래일 결손은 시각과 무관하게 수집
+        if now.hour >= 17 or target_day < now.date():
             try:
                 conn = connect_stock_db(timeout=15)
                 amt_cnt = conn.execute(
                     "SELECT COUNT(*) FROM price_history WHERE date=? "
                     "AND inst_net_buy_amt IS NOT NULL AND inst_net_buy_amt != 0",
-                    (today_str,)
+                    (target_str,)
                 ).fetchone()[0]
                 conn.close()
                 if amt_cnt < 50:
-                    logger.info(f"[캐치업] {today_str} 수급 amt {amt_cnt}건 부족 → 즉시 수집 (~43분 소요)")
+                    logger.info(f"[캐치업] {target_str} 수급 amt {amt_cnt}건 부족 → 즉시 수집 (~43분 소요)")
                     _run_job_safe("캐치업수급", self._job_supply_daily)
                 else:
                     logger.info(f"[캐치업] 수급 amt 정상 ({amt_cnt}건 존재)")
             except Exception as e:
                 logger.warning(f"[캐치업] 수급 확인 오류: {e}")
+
+        # 키움 수급은 과거 일별 조회가 가능하므로 휴장일에도 직전 거래일을 복구한다.
+        try:
+            conn = connect_stock_db(timeout=15)
+            investor_cnt = conn.execute(
+                "SELECT COUNT(DISTINCT stock_code) FROM kiwoom_investor_daily WHERE dt=?",
+                (target_str,),
+            ).fetchone()[0]
+            conn.close()
+            if investor_cnt < 2000:
+                logger.info(f"[캐치업] {target_str} 키움수급 {investor_cnt}건 부족 → 즉시 복구")
+                _run_job_safe("캐치업키움수급", self._job_kiwoom_investor_daily)
+        except Exception as e:
+            logger.warning(f"[캐치업] 키움수급 복구 오류: {e}")
+
+        try:
+            conn = connect_stock_db(timeout=15)
+            foreign_cnt = conn.execute(
+                "SELECT COUNT(DISTINCT stock_code) FROM kiwoom_foreign_flow WHERE dt=?",
+                (target_str,),
+            ).fetchone()[0]
+            conn.close()
+            if foreign_cnt < 2000:
+                logger.info(f"[캐치업] {target_str} 외국인지분 {foreign_cnt}건 부족 → 즉시 복구")
+                _run_job_safe("캐치업외국인지분", self._job_kiwoom_foreign_hold)
+        except Exception as e:
+            logger.warning(f"[캐치업] 외국인지분 복구 오류: {e}")
 
         logger.info("[캐치업] 완료")
 
@@ -1890,7 +1975,7 @@ class CollectionScheduler:
             try:
                 rows = conn.execute(
                     f"SELECT DISTINCT stock_code FROM {table} "
-                    f"WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'"
+                    f"WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
                 ).fetchall()
                 codes.update(r[0] for r in rows)
             except Exception:
@@ -1903,11 +1988,11 @@ class CollectionScheduler:
         codes: set[str] = set()
         for query in (
             "SELECT DISTINCT stock_code FROM watchlist "
-            "WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'",
+            "WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'",
             "SELECT DISTINCT stock_code FROM peak_holding "
-            "WHERE is_active=1 AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'",
+            "WHERE is_active=1 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'",
             "SELECT DISTINCT stock_code FROM portfolio "
-            "WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'",
+            "WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'",
         ):
             try:
                 rows = conn.execute(query).fetchall()
@@ -1925,7 +2010,7 @@ class CollectionScheduler:
                 SELECT DISTINCT stock_code
                 FROM stock_universe
                 WHERE LENGTH(stock_code)=6
-                  AND stock_code GLOB '[0-9]*'
+                  AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND UPPER(COALESCE(market,'')) IN ('KOSPI','KOSDAQ')
                 ORDER BY stock_code
                 """
@@ -2016,7 +2101,7 @@ class CollectionScheduler:
 
     def _job_tenbagger(self, run_type: str) -> None:
         """텐버거 발굴 실행 — tenbagger_engine.run_discovery 위임."""
-        if datetime.now().weekday() >= 5:
+        if not is_kr_trading_day(datetime.now().date()):
             return
         try:
             from tenbagger_engine import run_discovery
@@ -2347,7 +2432,7 @@ class CollectionScheduler:
             from datetime import datetime as _dt
             _now = _dt.now()
             _hm = _now.hour * 100 + _now.minute
-            _market = _now.weekday() < 5 and 900 <= _hm < 1530
+            _market = is_kr_trading_day(_now.date()) and 900 <= _hm < 1530
             self._wait_secs(300 if _market else 1800)
 
     def _job_stockeasy_30m_sync(self) -> None:
@@ -2411,7 +2496,7 @@ class CollectionScheduler:
         self._wait_secs(110)
         while not self._stop_event.is_set():
             now = datetime.now()
-            is_weekday = now.weekday() < 5
+            is_weekday = is_kr_trading_day(now.date())  # 2026-09-05: 주말만 걸러지고 평일 공휴일은 그대로 통과하던 것 수정
             hm = now.hour * 60 + now.minute
             in_session = (9 * 60) <= hm <= (15 * 60 + 30)
 
@@ -2437,7 +2522,7 @@ class CollectionScheduler:
         self._wait_secs(130)  # 서버 시작 초기화 대기 (V18과 시차)
         while not self._stop_event.is_set():
             now = datetime.now()
-            is_weekday = now.weekday() < 5
+            is_weekday = is_kr_trading_day(now.date())  # 2026-09-05: 주말만 걸러지고 평일 공휴일은 그대로 통과하던 것 수정
             hm = now.hour * 60 + now.minute
             in_session = (9 * 60) <= hm <= (15 * 60 + 30)
             if is_weekday and in_session:
@@ -2462,7 +2547,7 @@ class CollectionScheduler:
         self._wait_secs(190)  # 서버 시작 초기화 대기 (V18/GC와 시차)
         while not self._stop_event.is_set():
             now = datetime.now()
-            is_weekday = now.weekday() < 5
+            is_weekday = is_kr_trading_day(now.date())  # 2026-09-05: 주말만 걸러지고 평일 공휴일은 그대로 통과하던 것 수정
             hm = now.hour * 60 + now.minute
             in_session = (9 * 60) <= hm <= (15 * 60 + 30)
             if is_weekday and in_session:
@@ -2490,7 +2575,7 @@ class CollectionScheduler:
         self._wait_secs(220)  # V12/V-RECOVERY와 시차
         while not self._stop_event.is_set():
             now = datetime.now()
-            is_weekday = now.weekday() < 5
+            is_weekday = is_kr_trading_day(now.date())  # 2026-09-05: 주말만 걸러지고 평일 공휴일은 그대로 통과하던 것 수정
             hm = now.hour * 60 + now.minute
             in_session = (9 * 60) <= hm <= (15 * 60 + 30)
             if is_weekday and in_session:
@@ -2561,12 +2646,57 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[전략센터상위5가상매매] 오류: {e}", exc_info=True)
 
+    def _loop_namu_execution_strength(self) -> None:
+        """한국 장중 30분마다 관심/보유 종목의 나무 체결강도를 이력화한다."""
+        self._wait_secs(150)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            hm = now.hour * 60 + now.minute
+            if is_kr_trading_day(now.date()) and 9 * 60 <= hm <= 15 * 60 + 30:
+                _run_job_safe("나무체결강도", self._job_namu_execution_strength)
+                self._wait_secs(1800)
+            else:
+                self._wait_secs(300)
+
+    def _job_namu_execution_strength(self) -> None:
+        """최대 60개 활성 종목만 수집해 나무 API 호출량을 제한한다."""
+        if not is_kr_trading_day(date.today()):
+            logger.info("[나무체결강도] 휴장일 - 스킵")
+            return
+        conn = connect_stock_db(timeout=15)
+        try:
+            universe = sorted(self._get_active_codes(conn))
+        finally:
+            conn.close()
+        if not universe:
+            logger.info("[나무체결강도] 관심/보유 종목 없음")
+            return
+        batch_size = 60
+        start = self._namu_exec_cursor
+        codes = universe[start:start + batch_size]
+        if not codes:
+            start = 0
+            codes = universe[:batch_size]
+        self._namu_exec_cursor = (start + len(codes)) % len(universe)
+        import main as main_app
+        saved = failed = 0
+        for code in codes:
+            try:
+                result = main_app.get_namu_execution(code)
+                if result.get("observed_at"):
+                    saved += 1
+            except Exception as exc:
+                failed += 1
+                logger.warning("[나무체결강도] %s 조회 실패: %s", code, exc)
+            self._wait_secs(0.2)
+        logger.info("[나무체결강도] 전체=%s 배치=%s 저장=%s 실패=%s 다음커서=%s", len(universe), len(codes), saved, failed, self._namu_exec_cursor)
+
     def _loop_kiwoom_health(self) -> None:
         """평일 장중 10분마다 키움 REST 인증 상태 점검."""
         self._wait_secs(120)
         while not self._stop_event.is_set():
             now = datetime.now()
-            is_weekday = now.weekday() < 5
+            is_weekday = is_kr_trading_day(now.date())  # 2026-09-05: 주말만 걸러지고 평일 공휴일은 그대로 통과하던 것 수정
             hm = now.hour * 60 + now.minute
             in_session = (9 * 60) <= hm <= (15 * 60 + 30)
             if is_weekday and in_session:
@@ -2599,7 +2729,7 @@ class CollectionScheduler:
                     self._wait_secs(180)
                     continue
                 now = datetime.now()
-                is_weekday = now.weekday() < 5
+                is_weekday = is_kr_trading_day(now.date())  # 2026-09-05: 주말만 걸러지고 평일 공휴일은 그대로 통과하던 것 수정
                 hm = now.hour * 60 + now.minute
                 in_session = (9 * 60) <= hm <= (15 * 60 + 30)
                 if is_weekday and in_session:
@@ -2691,7 +2821,7 @@ class CollectionScheduler:
         self._wait_secs(110)
         while not self._stop_event.is_set():
             now = datetime.now()
-            in_session = now.weekday() < 5 and 9 * 60 <= now.hour * 60 + now.minute <= 15 * 60 + 30
+            in_session = is_kr_trading_day(now.date()) and 9 * 60 <= now.hour * 60 + now.minute <= 15 * 60 + 30
             if in_session:
                 _run_job_safe("키움조건검색", self._job_kiwoom_condition_snapshot)
                 self._wait_secs(max(60, int(getattr(config, "KIWOOM_CONDITION_SNAPSHOT_SECONDS", 300))))
@@ -3132,10 +3262,15 @@ class CollectionScheduler:
             logger.error("[미국13F거물공시] 갱신 실패: %s", exc, exc_info=True)
 
     def _loop_kiwoom_margin(self) -> None:
-        """매일 18:45 — 키움 종목별 신용/대주 잔고 수집."""
+        """평일 18:45 — 키움 종목별 신용/대주 잔고 수집.
+        2026-09-05: skip_weekend=False였던 오타/누락 수정 — 형제 잡인 키움외국인지분율
+        (19:15, skip_weekend=True)과 동일하게 코스피/코스닥 휴장일엔 신규 데이터가 없어
+        주말 실행 시 2,200종목 중 약 40%가 no_valid_endpoint_or_zero로 실패하고, 나머지도
+        직전 거래일(금) 값을 오늘 날짜(base_date)로 재저장해 시계열에 가짜 거래일 데이터를
+        만드는 것으로 확인됨(2026-09-05 토요일 실행: target 2200, failed 896)."""
         self._wait_secs(30)
         while not self._stop_event.is_set():
-            self._wait_until(18, 45, skip_weekend=False)
+            self._wait_until(18, 45, skip_weekend=True)
             _run_job_safe("키움신용잔고", self._job_kiwoom_margin)
 
     def _job_kiwoom_margin(self) -> None:
@@ -3147,6 +3282,68 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[키움신용잔고] 잡 오류: {e}", exc_info=True)
 
+    # ── 키움 업종별투자자순매수 (2026-09-05 신규) ─────────────────────────
+    # 2026-09-05: 원래 3개(ka10062/ka10035/ka10051)를 추가했으나, ka10062(동일
+    # 순매매)·ka10035(외인연속순매매)는 signal_engine.py(4735~4795줄)가 이미
+    # price_history로 동일 개념(동반/연속 순매수일)을 무료로 계산하고 있어 API
+    # 호출만 추가되는 중복이었음(게다가 당일 스냅샷뿐이라 백테스트에도 못 씀) —
+    # 제거. ka10051(업종별 12종 세부 기관 분류, KRX 표준업종 21종)만 유지 —
+    # 기존 SECTOR_GROUPS(커스텀 10개 테마)·price_history(기관/외국인/개인 3종)
+    # 어디에도 없던 정보라 유일하게 순수 추가 가치가 있음.
+    def _loop_kiwoom_sector_flow(self) -> None:
+        """평일 19:00 — ka10051 업종별투자자순매수(코스피+코스닥 업종 수급)."""
+        self._wait_secs(45)
+        while not self._stop_event.is_set():
+            self._wait_until(19, 0, skip_weekend=True)
+            _run_job_safe("키움업종수급", self._job_kiwoom_sector_flow)
+
+    def _job_kiwoom_sector_flow(self) -> None:
+        try:
+            from collectors.kiwoom_collector import KiwoomCollector
+            kc = KiwoomCollector()
+            kospi = kc.fetch_sector_investor_net_buy(market_type="0")
+            kosdaq = kc.fetch_sector_investor_net_buy(market_type="1")
+            logger.info(f"[키움업종수급] 완료: kospi={kospi.get('saved')} kosdaq={kosdaq.get('saved')} "
+                        f"ok={kospi.get('ok')}/{kosdaq.get('ok')}")
+        except Exception as e:
+            logger.error(f"[키움업종수급] 잡 오류: {e}", exc_info=True)
+
+    def _loop_kiwoom_sector_flow_validation(self) -> None:
+        """매주 월요일 08:15 — ka10051 수급→다음날 수익률 상관관계 누적 검증 리포트.
+        2026-09-06 신규: ka10051은 스냅샷만 주고 과거 조회가 안 되므로, 매일 쌓이는
+        스냅샷 자체를 walk-forward 근거로 쓴다(scripts/validate_kiwoom_sector_flow_signal.py).
+        표본이 쌓일수록 상관계수가 갱신되며, 최소 표본(15 day-pair) 전까지는 스크립트가
+        "판정 보류"만 로그에 남긴다 — 성급한 채택/기각을 막기 위함."""
+        while not self._stop_event.is_set():
+            wait = _seconds_until(8, 15, skip_weekend=False)
+            if self._stop_event.wait(wait):
+                break
+            if datetime.now().weekday() != 0:
+                self._wait_secs(23 * 3600)
+                continue
+            _run_job_safe("키움업종수급검증", self._job_kiwoom_sector_flow_validation)
+
+    def _job_kiwoom_sector_flow_validation(self) -> None:
+        """2026-09-06: 텔레그램으로도 자동 발송 — 로그만 보고 있으면 사람이 몇 주 뒤
+        확인하는 걸 잊어버리므로, 매주 월요일 결과를 그냥 채팅으로 밀어준다."""
+        try:
+            from scripts.validate_kiwoom_sector_flow_signal import main as _validate
+            report = _validate()
+            logger.info(f"[키움업종수급검증] 완료: {report}")
+
+            market_names = {"0": "코스피", "1": "코스닥"}
+            lines = ["<b>📊 키움 업종수급(ka10051) 신호 검증 — 주간</b>"]
+            for mtype, m in report.get("markets", {}).items():
+                lines.append(
+                    f"\n<b>{market_names.get(mtype, mtype)}</b>\n"
+                    f"수집일수 {m['days_collected']}일 · 검증쌍 {m['day_pairs_available']}개\n"
+                    f"{m['verdict']}"
+                )
+            from notifier import send
+            send("\n".join(lines), key=f"kiwoom_sector_flow_validation_{date.today().isoformat()}")
+        except Exception as e:
+            logger.error(f"[키움업종수급검증] 잡 오류: {e}", exc_info=True)
+
     # ── 키움 대량체결 순위 (장중 10분) ────────────────────────────────────
     def _loop_kiwoom_large_trade_rank(self) -> None:
         """키움 ka00190 장중 대량체결 매수/매도 상위 원본을 10분마다 저장."""
@@ -3154,7 +3351,7 @@ class CollectionScheduler:
         self._wait_secs(75)
         while not self._stop_event.is_set():
             now = datetime.now()
-            if now.weekday() < 5 and 900 <= now.hour * 100 + now.minute <= 1530:
+            if is_kr_trading_day(now.date()) and 900 <= now.hour * 100 + now.minute <= 1530:
                 _run_job_safe("키움대량체결", self._job_kiwoom_large_trade_rank)
                 self._wait_secs(600)
             else:
@@ -3518,14 +3715,14 @@ class CollectionScheduler:
         """매일 04:00 — 한경 컨센서스 증분 수집 (최근 3일치, 03:30 공시확인 후)."""
         self._wait_secs(20)
         while not self._stop_event.is_set():
-            self._wait_until(4, 0, skip_weekend=False)   # 주말도 수집 (리포트는 평일이지만 DB 갱신)
+            self._wait_until(4, 0, skip_weekend=False)
             _run_job_safe("컨센서스수집", self._job_consensus)
 
     def _job_consensus(self) -> None:
         """한경 컨센서스 최근 3일치 증분 수집."""
         try:
             from collectors.hankyung_consensus_collector import collect_consensus
-            saved = collect_consensus(db_path="stock.db", days=3, full=False)
+            saved = collect_consensus(days=3, full=False)
             logger.info(f"[컨센서스] 증분 수집 완료 — {saved}건 신규 저장")
         except Exception as e:
             logger.error(f"[컨센서스] 잡 오류: {e}", exc_info=True)
@@ -4088,7 +4285,7 @@ class CollectionScheduler:
         logger.info("[KRX프로그램매매] 루프 시작")
         while not self._stop_event.is_set():
             now = datetime.now()
-            if now.weekday() < 5 and _seconds_until(18, 20) < 60:
+            if is_kr_trading_day(now.date()) and _seconds_until(18, 20) < 60:
                 _run_job_safe("KRX프로그램매매", self._job_krx_program_trading)
             self._stop_event.wait(60)
         logger.info("[KRX프로그램매매] 루프 종료")
@@ -4692,6 +4889,42 @@ class CollectionScheduler:
         except Exception as e:
             logger.error(f"[가격외부소스재대조] 오류: {e}", exc_info=True)
 
+    def _loop_naver_coverage_backfill(self) -> None:
+        """매일 19:15 — KIS일별수집(18:00, 최대 1시간)이 끝날 시간을 잡아, 그날
+        price_history에 종목이 하나라도 빠졌으면 Naver로 즉시 메운다.
+
+        2026-09-19 발견: KIS API가 rt_cd="0"(정상)이라면서 그날 시세(output2)를
+        비워서 주는 경우가 있는데(그 종목 시세를 아직 발행 안 한 것으로 보임),
+        collect_kis_ohlcv.py의 재시도 로직이 이걸 놓쳐서 실제로 발생 중이었다
+        (실측: 2026-09-18자 2,700종목 중 347종목만 수집, 캐치업 재시도도 동일하게
+        실패). collect_kis_ohlcv.py의 그 버그는 고쳤지만(재시도/경고는 이제 뜸),
+        KIS가 실제로 그 시점에 데이터를 안 준 것 자체는 코드로 못 고친다 - 같은
+        시점에 Naver는 이미 최신 데이터를 갖고 있음을 실측 확인했으므로, KIS가
+        막혀도 Naver로 그날 안에 메워지는 이 안전망을 둔다."""
+        logger.info("[가격커버리지백필] 루프 시작")
+        self._wait_secs(180)
+        while not self._stop_event.is_set():
+            self._wait_until(19, 15)
+            _run_job_safe("가격커버리지백필", self._job_naver_coverage_backfill)
+        logger.info("[가격커버리지백필] 루프 종료")
+
+    def _job_naver_coverage_backfill(self) -> None:
+        import subprocess, sys
+        try:
+            result = subprocess.run(
+                [sys.executable, "scripts/check_and_backfill_daily_coverage.py", "--apply"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True, text=True, timeout=1800,
+            )
+            if result.returncode == 0:
+                logger.info("[가격커버리지백필] 완료: %s", (result.stdout or "")[-800:])
+            else:
+                logger.warning("[가격커버리지백필] 비정상 종료: %s", (result.stderr or "")[-800:])
+        except subprocess.TimeoutExpired:
+            logger.warning("[가격커버리지백필] 30분 타임아웃")
+        except Exception as e:
+            logger.error(f"[가격커버리지백필] 오류: {e}", exc_info=True)
+
     def _loop_weekly_strategy_reverify(self) -> None:
         """매주 일요일 01:30 — 등록된 전략 전량을 최신 가격/데이터로 재실행해
         governance 등급 드리프트를 감지한다.
@@ -4910,7 +5143,7 @@ class CollectionScheduler:
                 logger.info(f"[DB유지보수] stock.db(PostgreSQL VACUUM ANALYZE) 완료 ({elapsed:.1f}s)")
             else:
                 import sqlite3 as _sl
-                conn = _sl.connect("stock.db", timeout=120)
+                conn = connect_primary_db(timeout=120)
                 fl_before = conn.execute("PRAGMA freelist_count").fetchone()[0]
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 conn.execute("VACUUM")
@@ -4955,11 +5188,17 @@ class CollectionScheduler:
     def _job_wal_daily_check(self) -> None:
         """WAL 100MB 초과 시에만 TRUNCATE checkpoint — hs_trade_lab + stock.db."""
         import sqlite3 as _sl, os as _os
+        from config import IS_POSTGRES
         THRESHOLD_BYTES = 100 * 1024 * 1024  # 100MB
         targets = [
             ("stock.db",        "stock.db"),
             ("hs_trade_lab.db", "hs_trade_lab/data/hs_trade_lab.db"),
         ]
+        if IS_POSTGRES:
+            # PostgreSQL는 자체 WAL을 관리하므로 stock.db의 SQLite WAL checkpoint는
+            # 의미 없음 (라우터로 PG에 연결되어 -wal 파일이 존재하지 않음). 독립 SQLite
+            # 저장소(hs_trade_lab.db)만 유지.
+            targets = [t for t in targets if t[0] != "stock.db"]
         for label, path in targets:
             wal_path = path + "-wal"
             try:
@@ -5591,6 +5830,37 @@ class CollectionScheduler:
         logger.info(f"[거시지표백테스트] 완료: {result.stdout[-800:] if result.stdout else ''}")
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout or "macro indicator backtest failed")[-800:])
+
+    def _loop_quant_major_indicators_daily(self) -> None:
+        """매일 19:35 — 퀀트 주요지표 daily 수집 (시장폭·대차잔고·기준금리·글로벌 거시 브릿지·카지노).
+
+        2026-09-22: crontab(19:30) 단독 스케줄이 macOS sleep 등으로 ~3주 무동작해
+        quant_macro_bridge(퀀트 거시지표 브릿지)가 stale로 방치됨. 스케줄러에서
+        subprocess로 재기동해 신뢰성을 복구. 전 단계가 UNIQUE upsert로 멱등이라
+        crontab과 중복 실행돼도 무해(단순 재작업).
+        """
+        logger.info("[퀀트주요지표일일] 루프 시작")
+        self._wait_secs(30)
+        while not self._stop_event.is_set():
+            self._wait_until(19, 35, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("퀀트주요지표일일", self._job_quant_major_indicators_daily)
+            self._wait_secs(23 * 3600)
+        logger.info("[퀀트주요지표일일] 루프 종료")
+
+    def _job_quant_major_indicators_daily(self) -> None:
+        script = str(Path(__file__).resolve().parent / "scripts" / "ops" / "quant_indicators_cron.py")
+        result = subprocess.run(
+            [sys.executable, script, "--mode", "daily", "--no-pid"],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            cwd=str(Path(__file__).resolve().parent),
+        )
+        logger.info(f"[퀀트주요지표일일] 완료: {result.stdout[-800:] if result.stdout else ''}")
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "quant major indicator daily failed")[-800:])
 
     def _loop_cherry_latest_channel(self) -> None:
         """매일 08:45 — @Brianlee4 세션으로 최신 체리형부 채널 증분 수집."""

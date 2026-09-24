@@ -18,6 +18,7 @@ fetch_employment_insurance.py — 고용보험 상시인원 수집
 import argparse
 import json
 import sqlite3
+from db_compat import connect_primary_db
 import sys
 import time
 from datetime import datetime
@@ -206,7 +207,7 @@ def run(limit: int = 0, single_code: str = '', dry_run: bool = False, delay: flo
         sys.exit(0 if ok else 1)
 
     emp_conn   = sqlite3.connect(EMP_DB, timeout=60)
-    stock_conn = sqlite3.connect(f'file:{STOCK_DB}?mode=ro', uri=True)
+    stock_conn = connect_primary_db(readonly=True)
 
     init_db(emp_conn)
 

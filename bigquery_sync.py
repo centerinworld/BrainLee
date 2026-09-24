@@ -9,6 +9,7 @@ stock.db → Google BigQuery (project-d8a62269-8156-4f96-870.stock_dashboard)
   python3 bigquery_sync.py --mode external  # hs_trade_lab.db, employment.db 추가 업로드
 """
 
+from db_compat import connect_primary_db
 import sqlite3
 import pandas as pd
 import argparse
@@ -302,7 +303,7 @@ def is_excluded_table(table_name: str) -> bool:
 
 def get_sqlite_tables():
     """stock.db 테이블 목록 (제외 목록 필터링)"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     ).fetchall()
@@ -423,7 +424,7 @@ def sync_full(tables=None):
     ensure_dataset(client)
 
     all_tables = tables or get_sqlite_tables()
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
 
     for tname in all_tables:
         try:
@@ -454,7 +455,7 @@ def sync_daily(days_back: int = 7):
     ensure_dataset(client)
 
     cutoff = (datetime.now() - timedelta(days=max(days_back, 7))).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
 
     # ── price_history: 최근 N일 증분 ─────────────────────────────────
     logger.info(f"[price_history] 증분 로드 ({cutoff} 이후)...")
@@ -550,7 +551,7 @@ def sync_daily_lite(days_back: int = 7, rebuild_trigger_lab: bool = True):
     client = get_bq_client()
     ensure_dataset(client)
     cutoff = (datetime.now() - timedelta(days=max(days_back, 7))).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
 
     logger.info(f"[price_history] lite 증분 로드 ({cutoff} 이후)...")
     try:

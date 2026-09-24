@@ -15,6 +15,7 @@ from typing import Optional, Dict, List, Tuple
 from backtest_common import (
     DB_PATH,
     WARMUP_DAYS,
+    _final_liquidation_quote_for_code,
     _ma,
     _score_stock,
     init_backtest_db,
@@ -99,7 +100,7 @@ def run_backtest_meta_v2(
         stock_codes = [r[0] for r in conn.execute("""
             SELECT stock_code, COUNT(*) cnt FROM price_history
             WHERE date>=? AND date<=? AND close>0
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             GROUP BY stock_code HAVING COUNT(*) >= 200
         """, (warmup_start, end_date)).fetchall()]
 
@@ -269,19 +270,17 @@ def run_backtest_meta_v2(
         for sc, pos in list(positions.items()):
             sd = stock_data[sc]
             im = date_idx.get(sc, {})
-            if last_day in im:
-                i    = im[last_day]
-                curr = sd['prices'][i]
-                ep   = pos['entry_price']
-                ret  = (curr - ep) / ep
-                capital += ret * per_stock
-                trades.append({
-                    'sc': sc, 'entry': pos['entry_date'], 'exit': last_day,
-                    'entry_price': ep, 'exit_price': curr,
-                    'return_pct': ret * 100, 'pnl': ret * per_stock,
-                    'reason': '기간종료', 'score': pos.get('score', 0),
-                    'mode': pos.get('mode', 'bull'),
-                })
+            curr, final_reason = _final_liquidation_quote_for_code(conn, sc, last_day, im, sd['prices'])
+            ep   = pos['entry_price']
+            ret  = (curr - ep) / ep
+            capital += ret * per_stock
+            trades.append({
+                'sc': sc, 'entry': pos['entry_date'], 'exit': last_day,
+                'entry_price': ep, 'exit_price': curr,
+                'return_pct': ret * 100, 'pnl': ret * per_stock,
+                'reason': final_reason, 'score': pos.get('score', 0),
+                'mode': pos.get('mode', 'bull'),
+            })
 
         # 집계
         total_trades  = len(trades)
@@ -351,5 +350,4 @@ def run_backtest_meta_v2(
 #    Trail30%: 이익 50%+ 달성 시 고점대비 -30% (대박 종목 홀드 연장)
 #    만료: 300거래일 초과
 # ══════════════════════════════════════════════════════════════
-
 

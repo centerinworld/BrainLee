@@ -22,7 +22,7 @@ STATUS_ORDER = {
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    if IS_POSTGRES:
+    if IS_POSTGRES and not isinstance(conn, sqlite3.Connection):
         return
     conn.executescript(
         """
@@ -67,7 +67,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     )
 
 
-def source_snapshot(conn: sqlite3.Connection) -> dict:
+def source_snapshot(
+    conn: sqlite3.Connection,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
     """데이터 스냅샷 지문. 같은 run-set(6기간) 구성 요소가 동일 데이터 시대에서
     나왔는지 판별하는 용도 — 대규모 백필/재적재를 구분하는 것이 목적이지,
     장중 분단위 시세 틱(1분마다 갱신되는 today 행)까지 구분하는 것이 목적이 아니다.
@@ -84,17 +88,44 @@ def source_snapshot(conn: sqlite3.Connection) -> dict:
         row = conn.execute(sql, params).fetchone()
         return list(row) if row else []
     today = datetime.now().date().isoformat()
+    upper = min(end_date or today, today)
+    lower = start_date or "0000-01-01"
     payload = {
         "price_history": one(
-            "SELECT COUNT(*),MIN(date),MAX(date) FROM price_history WHERE date<?", (today,)
+            """SELECT COUNT(*),MIN(date),MAX(date),
+                      ROUND(COALESCE(SUM(close),0),4),
+                      ROUND(COALESCE(SUM(volume),0),4),
+                      ROUND(COALESCE(SUM(close*((id%1009)+1)),0),4)
+               FROM price_history WHERE date>=? AND date<=? AND date<?""",
+            (lower, upper, today),
         ),
-        "financial_data": one("SELECT COUNT(*),MAX(year),MAX(quarter) FROM financial_data"),
+        "financial_data": one(
+            "SELECT COUNT(*),MAX(year),MAX(quarter),MAX(updated_at) FROM financial_data"
+        ),
         "security_master": one("SELECT COUNT(*),MAX(substr(updated_at,1,10)) FROM security_master_history")
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='security_master_history'").fetchone()
         else [0, None],
     }
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)
-    return {"fingerprint": hashlib.sha256(canonical.encode()).hexdigest()[:16], "datasets": payload}
+    revision = {
+        "price_history": one(
+            """SELECT id,created_at,date FROM price_history
+               WHERE date<? ORDER BY id DESC LIMIT 1""",
+            (today,),
+        ),
+        "financial_data": one("SELECT COUNT(*),MAX(updated_at) FROM financial_data"),
+        "security_master": one(
+            "SELECT COUNT(*),MAX(updated_at) FROM security_master_history"
+        ),
+    }
+    revision_canonical = json.dumps(revision, sort_keys=True, ensure_ascii=True, default=str)
+    return {
+        "fingerprint": hashlib.sha256(canonical.encode()).hexdigest()[:16],
+        "revision_fingerprint": hashlib.sha256(revision_canonical.encode()).hexdigest()[:16],
+        "period": [lower, upper],
+        "datasets": payload,
+        "revision": revision,
+    }
 
 
 def canonical_hash(spec: dict) -> str:
@@ -109,7 +140,12 @@ def register_artifact(
     details: dict,
     db_path: Path | str = DB_PATH,
 ) -> dict:
-    conn = connect_primary_db(timeout=60)
+    conn = (
+        connect_primary_db(timeout=60)
+        if IS_POSTGRES and Path(db_path) == DB_PATH
+        else sqlite3.connect(db_path, timeout=60)
+    )
+    conn.row_factory = sqlite3.Row
     ensure_schema(conn)
     details_json = json.dumps(details, sort_keys=True, ensure_ascii=False, default=str)
     artifact_hash = hashlib.sha256(details_json.encode()).hexdigest()[:16]
@@ -159,7 +195,7 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
             rank = min((item.get("status_rank", 0) for item in statuses), default=0)
             status = next(name for name, value in STATUS_ORDER.items() if value == rank)
             price_integrity = bool(statuses) and all(
-                item.get("gates", {}).get("price_integrity", True) for item in statuses
+                item.get("gates", {}).get("price_integrity", False) for item in statuses
             )
             return {
                 "run_hash": run_hash, "suite_hash": run_hash, "strategy": suite["strategy"],
@@ -187,6 +223,12 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
         r["artifact_type"]: {"passed": bool(r["passed"]), "details": json.loads(r["details_json"] or "{}")}
         for r in conn.execute("SELECT * FROM run_verification_artifacts WHERE run_hash=?", (run_hash,))
     }
+    # Older runs predate this artifact. Once present, it becomes a real gate so
+    # broad symbol exclusion cannot be hidden behind an otherwise clean run.
+    universe_integrity = bool(
+        "universe_integrity" not in artifacts
+        or artifacts.get("universe_integrity", {}).get("passed")
+    )
     execution = bool(
         spec["run_status"] == "done"
         and spec["execution_timing"] == "next_open"
@@ -194,7 +236,10 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
         and spec["fee_model"]
         and artifacts.get("execution_contract", {}).get("passed")
         and artifacts.get("cash_reconciliation", {}).get("passed")
-        and artifacts.get("price_integrity", {"passed": True}).get("passed")
+        and artifacts.get("price_integrity", {}).get("passed")
+        and artifacts.get("survivorship_integrity", {}).get("passed")
+        and artifacts.get("corporate_action_integrity", {}).get("passed")
+        and universe_integrity
     )
     universe = str(spec["universe_version"] or "").lower()
     # 2026-08-12: 시총 필터 자체를 쓰지 않는 전략(market_cap_mode='not_applicable')은
@@ -207,7 +252,7 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
     pit_exact_spec = spec["market_cap_mode"] == "pit" and "approx" not in universe and "current" not in universe
     pit_artifact = artifacts.get("point_in_time_coverage", {})
     pit_pass = bool(
-        execution and (
+        execution and artifacts.get("data_availability", {}).get("passed") and (
             market_cap_not_applicable
             or (pit_exact_spec and pit_artifact.get("passed"))
         )
@@ -228,7 +273,11 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
         "fees_declared": bool(spec["fee_model"]),
         "execution_contract": bool(artifacts.get("execution_contract", {}).get("passed")),
         "cash_reconciliation": bool(artifacts.get("cash_reconciliation", {}).get("passed")),
-        "price_integrity": bool(artifacts.get("price_integrity", {"passed": True}).get("passed")),
+        "price_integrity": bool(artifacts.get("price_integrity", {}).get("passed")),
+        "survivorship_integrity": bool(artifacts.get("survivorship_integrity", {}).get("passed")),
+        "corporate_action_integrity": bool(artifacts.get("corporate_action_integrity", {}).get("passed")),
+        "universe_integrity": universe_integrity,
+        "data_availability": bool(artifacts.get("data_availability", {}).get("passed")),
         "point_in_time_exact": pit_pass,
         "forward_validation": forward,
     }
@@ -252,7 +301,11 @@ def select_run(
     note: str = "",
     db_path: Path | str = DB_PATH,
 ) -> dict:
-    conn = connect_primary_db(timeout=60)
+    conn = (
+        connect_primary_db(timeout=60)
+        if IS_POSTGRES and Path(db_path) == DB_PATH
+        else sqlite3.connect(db_path, timeout=60)
+    )
     conn.row_factory = sqlite3.Row
     ensure_schema(conn)
     status = derive_status(conn, run_hash)
@@ -290,7 +343,11 @@ def register_run_set(
         required = {"20.3~21.11", "21.12~22.10", "22.11~23.10", "23.11~24.12", "24.6~25.5", "25.6~26.3"}
         if set(members) != required:
             raise ValueError("strategy_center run set requires all six standard periods")
-    conn = connect_primary_db(timeout=60)
+    conn = (
+        connect_primary_db(timeout=60)
+        if IS_POSTGRES and Path(db_path) == DB_PATH
+        else sqlite3.connect(db_path, timeout=60)
+    )
     conn.row_factory = sqlite3.Row
     ensure_schema(conn)
     component_specs = {}
@@ -305,7 +362,12 @@ def register_run_set(
             "source_snapshot": params.get("_source_snapshot"),
             "code_fingerprint": params.get("_code_fingerprint"),
         }
-    snapshots = {json.dumps(value.get("source_snapshot"), sort_keys=True) for value in component_specs.values()}
+    snapshots = {
+        (value.get("source_snapshot") or {}).get("revision_fingerprint")
+        or (value.get("source_snapshot") or {}).get("fingerprint")
+        or json.dumps(value.get("source_snapshot"), sort_keys=True)
+        for value in component_specs.values()
+    }
     if len(snapshots) != 1:
         conn.close()
         raise ValueError("all run-set components must share one source snapshot")
@@ -341,7 +403,11 @@ def registry(
     *,
     include_verification: bool = True,
 ) -> list[dict]:
-    conn = connect_primary_db(timeout=60)
+    conn = (
+        connect_primary_db(timeout=60)
+        if IS_POSTGRES and Path(db_path) == DB_PATH
+        else sqlite3.connect(db_path, timeout=60)
+    )
     conn.row_factory = sqlite3.Row
     if include_verification:
         ensure_schema(conn)

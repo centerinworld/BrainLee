@@ -5,6 +5,7 @@ fix_q4_balance_sheet.py — Q4 balance sheet NULL 보완 (FnGuide 분기 BS 스�
   python3 fix_q4_balance_sheet.py           # 자동 탐색 (is_annual=0, Q4, total_assets IS NULL)
   python3 fix_q4_balance_sheet.py --year 2024  # 특정 연도만
 """
+from db_compat import connect_primary_db
 import argparse
 import re
 import sqlite3
@@ -37,7 +38,7 @@ FNGUIDE_CF_Q = "https://comp.fnguide.com/SVO2/ASP/SVD_Finance.asp?pGB=1&gicode=A
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=60000")

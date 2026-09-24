@@ -33,6 +33,7 @@ validate_5year_pipeline.py — 5년치 재무제표·현금흐름표 100% 검증
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import logging
@@ -61,7 +62,7 @@ LOSS_YEARS_THRESHOLD = 3   # 연속 손실 기준년수
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, timeout=120)
+    c = connect_primary_db(timeout=120)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA busy_timeout=120000")

@@ -390,6 +390,80 @@ class KiwoomCollector(BaseCollector):
             "notice": "키움 대량체결 원본 순위입니다. 단독 매수 신호가 아니며 KIS/공식 수급 대조 후 연구·가상매매에만 사용합니다.",
         }
 
+    # ── ka10051: 업종별투자자순매수 (2026-09-05 신규) ─────────────────────
+    # ka00190과 동일한 "raw-first" 저장 방식: 키움 응답 필드명이 바뀌어도
+    # 원본(raw_json)이 보존되므로 조용히 잘못된 숫자가 파생되는 사고를 막는다.
+    # 요청 바디는 younghwan91/kiwoom-client(공개 REST 래퍼) 통합테스트의 실제
+    # 성공 예시를 근거로 확정(2026-09-05 조사).
+    #
+    # 2026-09-05: 원래 ka10062(동일순매매)·ka10035(외인연속순매매)도 함께
+    # 추가했으나, signal_engine.py(4735~4795줄)가 price_history로 이미 동일
+    # 개념(기관+외국인 동반/연속 순매수일)을 추가 API 호출 없이 계산하고 있어
+    # 중복이었고(게다가 당일 스냅샷뿐이라 백테스트에도 못 씀) 제거했다. ka10051만
+    # 유지 — KRX 표준업종 21종 + 증권사/보험/투신/은행/기금 등 12종 세부 기관
+    # 분류는 기존 SECTOR_GROUPS(커스텀 10개 테마)·price_history(기관/외국인/개인
+    # 3종) 어디에도 없던 정보라 유일하게 순수 추가 가치가 있다.
+    def _ensure_supply_rank_tables(self) -> None:
+        conn = connect_stock_db(timeout=30)
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kiwoom_sector_investor_net_buy (
+                    snapshot_at TEXT NOT NULL,
+                    market_type TEXT NOT NULL,
+                    row_no INTEGER NOT NULL,
+                    sector_code TEXT,
+                    sector_name TEXT,
+                    raw_json TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (snapshot_at, market_type, row_no)
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kiwoom_sector_flow_latest "
+                "ON kiwoom_sector_investor_net_buy(snapshot_at DESC, market_type)"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def fetch_sector_investor_net_buy(self, market_type: str = "0") -> dict[str, Any]:
+        """ka10051 업종별투자자순매수요청 — 업종(섹터) 단위 투자자별(외국인/기관 등)
+        순매수 금액. 기존 섹터로테이션(routes/sector_rotation.py)이 개별종목 합산으로
+        근사 계산하던 수급 점수를 키움 공식 업종 집계값으로 교차검증하는 용도.
+        market_type: "0"=코스피, "1"=코스닥(ka20001류 업종 API와 동일 관례)."""
+        if not self.ensure_token():
+            return {"ok": False, "reason": "token_fail"}
+        self._ensure_supply_rank_tables()
+
+        today = datetime.now().strftime("%Y%m%d")
+        body = {"mrkt_tp": market_type, "amt_qty_tp": "0", "base_dt": today, "stex_tp": "3"}
+        try:
+            r = requests.post(f"{self.base_url}/api/dostk/sect",
+                               headers=self._auth_headers(api_id="ka10051"), json=body, timeout=12)
+            data = r.json() if r.content else {}
+        except Exception as exc:
+            return {"ok": False, "reason": f"HTTP 오류: {exc}"}
+        if r.status_code >= 400:
+            return {"ok": False, "reason": f"HTTP {r.status_code}", "raw": str(data)[:500]}
+
+        rows = self._first_list_payload(data)
+        snapshot_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = connect_stock_db(timeout=30)
+        try:
+            for row_no, row in enumerate(rows, 1):
+                code = str(row.get("inds_cd") or row.get("sector_code") or "").strip() or None
+                name = str(row.get("inds_nm") or row.get("sector_name") or "").strip() or None
+                conn.execute("""
+                    INSERT INTO kiwoom_sector_investor_net_buy
+                    (snapshot_at, market_type, row_no, sector_code, sector_name, raw_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (snapshot_at, market_type, row_no, code, name, json.dumps(row, ensure_ascii=False)))
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True, "api_id": "ka10051", "snapshot_at": snapshot_at, "saved": len(rows),
+                "return_code": data.get("return_code"), "return_msg": data.get("return_msg")}
+
     def _extract_realtime_fields(self, payload: dict[str, Any]) -> dict[str, float]:
         # 키움 실시간 타입별 필드명이 다를 수 있어 다중 alias를 허용
         values = payload.get("values") if isinstance(payload.get("values"), dict) else {}

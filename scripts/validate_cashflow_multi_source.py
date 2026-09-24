@@ -16,6 +16,7 @@ validate_cashflow_multi_source.py — 다중 소스 현금흐름표 검증 + 불
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import logging
@@ -45,7 +46,7 @@ REPORT_PATH = Path(__file__).resolve().parent.parent / "scratch" / "validation_c
 
 
 def _conn() -> sqlite3.Connection:
-    return sqlite3.connect(DB_PATH, timeout=30)
+    return connect_primary_db(timeout=30)
 
 
 def _close_match(a: float | None, b: float | None) -> bool:

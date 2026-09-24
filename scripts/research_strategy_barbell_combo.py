@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import sqlite3
@@ -416,7 +417,7 @@ def main() -> None:
     full_range = {"start": args.full_range_start, "end": args.full_range_end}
     json_path = OUT_DIR / f"strategy_barbell_combo_{stamp}.json"
     md_path = OUT_DIR / f"strategy_barbell_combo_{stamp}.md"
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     try:
         latest = _latest_runs(conn)
     finally:

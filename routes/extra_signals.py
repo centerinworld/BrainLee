@@ -3,16 +3,18 @@ routes/extra_signals.py — 개별종목 추가 시그널 API
   고용(1/3/6개월) / 수출계약(월별추이+트렌드설명) / 섹터(인덱스+섹터내종목평균)
   / 수급(5/10/30일) / ETF비중추이(전일/5일대비) / ETF편입여부
 """
+from db_compat import connect_primary_db
 import logging
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from fastapi import APIRouter
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-MAIN_DB = "stock.db"
+MAIN_DB = str(Path(__file__).resolve().parent.parent / "stock.db")
 EMP_DB  = "employment_monitor/employment.db"
 ETF_DB  = "ETF_check/etf_check.db"
 HS_DB   = "hs_trade_lab/data/hs_trade_lab.db"
@@ -27,7 +29,7 @@ SECTOR_MAP = {
 
 
 def _main_conn():
-    c = sqlite3.connect(MAIN_DB, timeout=10); c.row_factory = sqlite3.Row; return c
+    c = connect_primary_db(timeout=10); c.row_factory = sqlite3.Row; return c
 
 def _emp_conn():
     c = sqlite3.connect(EMP_DB, timeout=10);  c.row_factory = sqlite3.Row; return c
@@ -849,7 +851,7 @@ def get_extra_signals(code: str):
 # ──────────────────────────────────────────────
 @router.get("/chart/{code}")
 def get_chart_signals(code: str):
-    import backtest as _bt
+    import backtest_common as _bt
     conn = _main_conn()
     try:
         rows = conn.execute(

@@ -5,6 +5,7 @@ Q2 실제 = Q2누계 - Q1
 Q3 실제 = Q3누계 - Q1 - Q2실제
 Q4 실제 = 연간 - Q1 - Q2실제 - Q3실제
 """
+from db_compat import connect_primary_db
 import sqlite3, logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 logger = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 DB_PATH = '/Applications/stock_dashboard/stock.db'
 
 def fix_quarters():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     
     # 문제 종목-연도 조회 (연간 < Q1+Q2+Q3 합계의 50%)
     bad = conn.execute('''

@@ -165,7 +165,7 @@ def collect_stock(session: requests.Session, conn: sqlite3.Connection,
 def get_universe_codes(conn: sqlite3.Connection, limit: int | None = None) -> list[str]:
     rows = conn.execute("""
         SELECT stock_code FROM stock_universe
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
           AND (stock_type IS NULL OR stock_type = '보통주')
         ORDER BY market_cap DESC NULLS LAST
     """).fetchall()

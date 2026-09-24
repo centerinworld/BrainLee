@@ -4,6 +4,7 @@ DartV22Builder 미수집 데이터 배치 수집:
   2. dart_sga_annual       — DART fnlttSinglAcntAll IS → 판관비
   3. dart_bs_items         — DART fnlttSinglAcntAll BS → 매출채권
 """
+from db_compat import connect_primary_db
 import sqlite3, requests, time, json, sys, os, argparse, re
 sys.path.insert(0, '/Volumes/Realtek_NVME/stock_dashboard/runtime')
 from dart_key_manager import get_dart_api_keys
@@ -182,7 +183,7 @@ def collect_sga_ar(conn, stock_code, corp_code, years):
                 pass
 
 def run(limit=500, resume=True):
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     init_tables(conn)
     

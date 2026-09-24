@@ -7,6 +7,7 @@ routes/ingest.py — 데이터 수신(Ingest) API
   POST /api/ingest/investor-trends
 """
 
+from price_integrity import PriceIntegrityError
 import logging
 import time
 from datetime import datetime, timedelta as _td
@@ -14,6 +15,7 @@ from datetime import datetime, timedelta as _td
 import crud, models, schemas
 from database import get_db
 from db_utils import stock_db_write_lock
+from trading_calendar import is_kr_trading_day
 from macro_data_quality import filter_plausible_price_rows
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import OperationalError
@@ -36,8 +38,8 @@ def ingest_fundamentals(financial: schemas.FinancialIngest, db: Session = Depend
 @router.post("/market-price")
 def ingest_market_price(price_ingest: schemas.PriceIngest, db: Session = Depends(get_db)):
     """일일 주가 마감 데이터를 수신하여 일괄 저장합니다."""
-    if datetime.now().weekday() >= 5:  # 5=토, 6=일
-        return {"status": "skip", "reason": "weekend"}
+    if not is_kr_trading_day(datetime.now().date()):
+        return {"status": "skip", "reason": "kr_market_holiday"}
     valid_prices, rejected = filter_plausible_price_rows(
         price_ingest.stock_code, price_ingest.prices
     )
@@ -76,6 +78,9 @@ def ingest_market_price(price_ingest: schemas.PriceIngest, db: Session = Depends
                     continue
         logger.warning(f"주가 데이터 저장 지연: {lock_error}")
         raise HTTPException(status_code=503, detail="주가 DB 쓰기 작업이 진행 중입니다. 다음 수집 주기에 재시도합니다.")
+    except PriceIntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
     except HTTPException:
         db.rollback()
         raise

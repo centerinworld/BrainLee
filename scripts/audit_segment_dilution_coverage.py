@@ -8,6 +8,7 @@ amounts from rows that are only event flags.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -33,7 +34,7 @@ def pct(n: float, d: float) -> float:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
 
     universe_sql = """

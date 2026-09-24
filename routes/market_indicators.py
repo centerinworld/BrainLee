@@ -15,6 +15,7 @@ routes/market_indicators.py — 시장 지표 API
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3 as _sl
 import time
@@ -421,6 +422,26 @@ _LATEST_TRADE_DATE_CACHE: dict = {"date": None, "at": 0.0}
 _LATEST_TRADE_DATE_TTL = 300  # 5분 — 하루 중 여러 번 호출되므로 짧은 캐시로 재계산 방지
 
 
+def _day_bounds(day: str) -> tuple[str, str]:
+    """'YYYY-MM-DD' 하루 키의 [당일, 익일) 범위 바운드.
+
+    price_history.date는 TEXT이고 레거시 SQLite 저장소에는 'YYYY-MM-DD HH:MM:SS'
+    행이 드물게 섞여 있어 이 모듈은 오랫동안 date 컬럼에 substr(...,1,10)을 씌운
+    등가/비교 술어를 써 왔다.
+    그런데 이 술어는 sargable하지 않다 — PostgreSQL은 ix_price_history_6755ae263c(date)
+    / ix_price_history_0b57a1f65a(stock_code,date)를 전혀 쓰지 못하고 1,024만행(2.9GB)
+    전체를 seq scan하며, 30초 statement_timeout을 넘겨 HTTP 500을 냈다
+    (/investor-top·/turnover-top·/available-dates에서 실측 재현).
+    raw 컬럼에 대한 반개구간 범위 비교는 정확히 같은 행을 고르면서 인덱스 탐색을 유지한다.
+    """
+    d = (day or "")[:10]
+    try:
+        nxt = (datetime.strptime(d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    except Exception:
+        return d, d + " 99"
+    return d, nxt
+
+
 def _count_codes_on_day(conn: _sl.Connection, day: str) -> int:
     """day(YYYY-MM-DD) 하루치 종목수. date 컬럼에 드물게 섞인 타임스탬프 행도
     범위 비교(>=day AND <next_day)로 포함하되 date 인덱스 탐색만 사용한다."""
@@ -522,7 +543,7 @@ def get_investor_top(
                          ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY updated_at DESC) as rn
                   FROM stock_universe
               ) su ON ph.stock_code = su.stock_code AND su.rn = 1
-              WHERE substr(ph.date, 1, 10) = ?
+              WHERE ph.date >= ? AND ph.date < ?
                 AND COALESCE(su.stock_type, '보통주') = '보통주'
                 AND COALESCE(su.stock_name, '') NOT LIKE '%ETF%'
                 AND COALESCE(su.stock_name, '') NOT LIKE '%ETN%'
@@ -549,7 +570,7 @@ def get_investor_top(
             )
             SELECT * FROM ranked WHERE dedup_rn=1
         """
-        rows = conn.execute(sql, (trade_date,)).fetchall()
+        rows = conn.execute(sql, _day_bounds(trade_date)).fetchall()
 
         # 당일 주가는 "장중에만" 표시
         market_open = _is_kr_market_open_now()
@@ -566,10 +587,10 @@ def get_investor_top(
                     FROM price_history
                     WHERE stock_code IN ({codes_in})
                       AND close > 0
-                      AND substr(date,1,10) = ?
+                      AND date >= ? AND date < ?
                 ) latest
                 WHERE rn=1
-            """, (datetime.now().strftime("%Y-%m-%d"),)).fetchall()
+            """, _day_bounds(datetime.now().strftime("%Y-%m-%d"))).fetchall()
             for tr in today_rows:
                 today_price_map[tr["stock_code"]] = {
                     "today_close": tr["today_close"],
@@ -680,7 +701,7 @@ def get_turnover_top(
         trade_date = date_str if date_str else _latest_trade_date(conn)
 
         mkt_filter = ""
-        params: list = [trade_date]
+        params: list = list(_day_bounds(trade_date))
         if market.upper() == "KOSPI":
             mkt_filter = "AND (su.market LIKE '%유가%' OR su.market LIKE '%KOSPI%' OR su.market LIKE '%코스피%')"
         elif market.upper() == "KOSDAQ":
@@ -712,7 +733,7 @@ def get_turnover_top(
                        ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY updated_at DESC) as rn
                 FROM stock_universe
             ) su ON ph.stock_code = su.stock_code AND su.rn = 1
-            WHERE substr(ph.date, 1, 10) = ?
+            WHERE ph.date >= ? AND ph.date < ?
               AND ph.volume > 0
               AND su.shares_issued > 0
               AND COALESCE(su.stock_type, '보통주') = '보통주'
@@ -740,7 +761,10 @@ def get_turnover_top(
         params.append(limit)
         rows = conn.execute(sql, params).fetchall()
 
-        # 전일 종가 & 등락률 추가 — correlated subquery로 정확한 직전 거래일 종가
+        # 전일 종가 & 등락률 추가 — DISTINCT ON + date DESC 로 직전 거래일 종가를 얻는다.
+        # (기존에는 동일 목적의 `ph.date = (SELECT MAX(ph2.date) ...)` 상관 서브쿼리를 함께
+        #  걸었는데, 후보 행마다 MAX 를 재평가해 20종목에 1.19초가 들었다. 실측 결과
+        #  DISTINCT ON 만으로 결과가 완전히 동일(ma==mb)하면서 0.17초로 줄어든다.)
         if rows:
             codes = [r["stock_code"] for r in rows]
             codes_ph = ','.join('?' * len(codes))
@@ -749,15 +773,9 @@ def get_turnover_top(
                     FROM price_history ph
                     WHERE ph.stock_code IN ({codes_ph})
                       AND ph.close > 0
-                      AND substr(ph.date, 1, 10) < ?
-                      AND ph.date = (
-                          SELECT MAX(ph2.date) FROM price_history ph2
-                          WHERE ph2.stock_code = ph.stock_code
-                            AND ph2.close > 0
-                            AND substr(ph2.date, 1, 10) < ?
-                      )
-                    ORDER BY ph.stock_code, ph.id DESC""",
-                codes + [trade_date, trade_date],
+                      AND ph.date < ?
+                    ORDER BY ph.stock_code, ph.date DESC, ph.id DESC""",
+                codes + [trade_date],
             ).fetchall()
             prev_map = {r["stock_code"]: r["prev_close"] for r in prev_rows}
         else:
@@ -1138,7 +1156,7 @@ def get_turnover_breakout_signals(
               FROM price_history
               WHERE stock_code IN ({ph})
                 AND volume > 0
-                AND substr(date,1,10) < ?
+                AND date < ?
             )
             SELECT stock_code, AVG(volume) AS avg20_volume
             FROM recent
@@ -1311,10 +1329,10 @@ def get_turnover_breakout_live(
                    ROUND(CAST(SUM(COALESCE(inst_net_buy_amt,0))/100.0 AS NUMERIC),1) AS inst_amt,
                    ROUND(CAST(SUM(COALESCE(frn_net_buy_amt,0))/100.0 AS NUMERIC),1)  AS frn_amt
             FROM price_history
-            WHERE substr(date,1,10)=?
+            WHERE date >= ? AND date < ?
             GROUP BY stock_code
             """,
-            (today,),
+            _day_bounds(today),
         ).fetchall()
         flow_map = {r["stock_code"]: (float(r["inst_amt"] or 0), float(r["frn_amt"] or 0)) for r in flow_rows}
 
@@ -1426,7 +1444,7 @@ def get_turnover_breakout_live(
                   FROM price_history
                   WHERE stock_code IN ({ph})
                     AND volume > 0
-                    AND substr(date,1,10) < ?
+                    AND date < ?
                 )
                 SELECT stock_code, AVG(volume) avg20
                 FROM recent
@@ -1655,6 +1673,7 @@ def get_market_summary():
     conn = _db()
     try:
         result = {}
+        since = (date.today() - timedelta(days=400)).strftime("%Y-%m-%d")
         for mkt_label, code in [("KOSPI", "^KS11"), ("KOSDAQ", "^KQ11")]:
             # close row와 investor row가 날짜별로 분리되어 있으므로 GROUP BY
             rows = conn.execute(
@@ -1666,11 +1685,11 @@ def get_market_summary():
                           SUM(COALESCE(frn_net_buy_amt, 0)/100)     AS frn_amt,
                           SUM(COALESCE(ind_net_buy_amt, 0)/100)     AS ind_amt
                    FROM price_history
-                   WHERE stock_code=?
+                   WHERE stock_code=? AND date >= ?
                    GROUP BY d
                    HAVING MAX(close) > 0
                    ORDER BY d DESC LIMIT 2""",
-                (code,),
+                (code, since),
             ).fetchall()
             if rows:
                 t     = rows[0]
@@ -1738,10 +1757,17 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
     주말(토/일)은 제외하며, 1종목 이상 수급 데이터가 있는 날짜 포함."""
     conn = _db()
     try:
+        # 인덱스 탐색 범위 제한 — 요청 limit보다 넉넉히(주말·휴일 감안) 뒤쪽만 스캔하고,
+        # 요일/휴일 판정은 파이썬(_is_kr_trading_day)에서 한다. 기존 substr(date,1,10)
+        # + strftime('%w', date) 술어는 1,024만행 전체 seq scan을 유발해
+        # 30초 statement_timeout → HTTP 500을 냈다(실측 재현).
+        sql_limit = min(limit + 40, 290)
+        lower = (date.today() - timedelta(days=sql_limit * 2 + 30)).strftime("%Y-%m-%d")
         rows = conn.execute(
             """SELECT substr(date,1,10) AS d, count(*) AS cnt
                FROM price_history
-               WHERE stock_code NOT LIKE '%^%'
+               WHERE date >= ?
+                 AND stock_code NOT LIKE '%^%'
                  AND stock_code NOT LIKE 'GC%'
                  AND stock_code NOT LIKE 'CL%'
                  AND stock_code NOT LIKE 'ES%'
@@ -1749,27 +1775,26 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
                  AND stock_code NOT LIKE '%-F'
                  AND stock_code NOT LIKE '%=%'
                  AND (inst_net_buy_amt != 0 OR frn_net_buy_amt != 0)
-                 AND strftime('%w', date) NOT IN ('0', '6')
                GROUP BY d
                HAVING count(*) >= 20
                ORDER BY d DESC LIMIT ?""",
-            (limit,),
+            (lower, sql_limit),
         ).fetchall()
         # 20건 미만인 날도 fallback으로 포함 (주말은 여전히 제외)
         if not rows:
             rows = conn.execute(
                 """SELECT substr(date,1,10) AS d, count(*) AS cnt
                    FROM price_history
-                   WHERE stock_code NOT LIKE '%^%'
+                   WHERE date >= ?
+                     AND stock_code NOT LIKE '%^%'
                      AND (COALESCE(inst_net_buy_amt, 0) != 0 OR COALESCE(frn_net_buy_amt, 0) != 0)
-                     AND strftime('%w', date) NOT IN ('0', '6')
                    GROUP BY d
                    HAVING count(*) >= 1
                    ORDER BY d DESC LIMIT ?""",
-                (limit,),
+                (lower, sql_limit),
             ).fetchall()
         
-        all_dates = [r[0] for r in rows if _is_kr_trading_day(r[0])]
+        all_dates = [r[0] for r in rows if _is_kr_trading_day(r[0])][:limit]
         logger.info(f"Available dates found: {all_dates}")
         return all_dates
     finally:
@@ -1783,7 +1808,7 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
 @router.get("/short-dates")
 def get_short_dates(limit: int = 30):
     """대차종목순위 수집된 날짜 목록."""
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     try:
         rows = conn.execute(
             "SELECT DISTINCT bas_dt FROM short_rank_daily ORDER BY bas_dt DESC LIMIT ?",
@@ -1800,7 +1825,7 @@ def get_short_rank(date: str = "", limit: int = 50, sort_by: str = "lnb_rman_stc
 
     sort_by: lnb_rman_stck_cnt(잔여주식수) | lnb_bal(잔액) | lnb_ccl_stck_cnt(체결주식수)
     """
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = _sl.Row
     try:
         # 날짜 결정
@@ -1834,7 +1859,7 @@ def get_short_rank(date: str = "", limit: int = 50, sort_by: str = "lnb_rman_stc
 @router.get("/short-history")
 def get_short_history(code: str = "", name: str = "", days: int = 60):
     """종목별 대차거래현황 추이 (short_sell_daily 기반)."""
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = _sl.Row
     try:
         # 종목코드/이름 해결
@@ -1873,7 +1898,7 @@ def get_short_history(code: str = "", name: str = "", days: int = 60):
 @router.get("/short-foreign")
 def get_short_foreign(days: int = 120):
     """내외국인 대차잔고비교 + 거래량 추이 (최근 N일)."""
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = _sl.Row
     try:
         cutoff = (datetime.today() - timedelta(days=days)).strftime("%Y%m%d")
@@ -1907,7 +1932,7 @@ def get_short_foreign(days: int = 120):
 @router.get("/short-monthly")
 def get_short_monthly(months: int = 24):
     """월별 대차거래현황 집계 (최근 N개월)."""
-    conn = _sl.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = _sl.Row
     try:
         rows = conn.execute("""

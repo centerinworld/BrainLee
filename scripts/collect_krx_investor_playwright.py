@@ -18,6 +18,7 @@ invstTpCd:
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import logging
@@ -58,7 +59,7 @@ KRX_DATA_PASS = _ENV.get("KRX_DATA_PASS", "")
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, timeout=120)
+    c = connect_primary_db(timeout=120)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA busy_timeout=120000")

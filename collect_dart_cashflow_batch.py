@@ -12,6 +12,7 @@ cash_flow_data 테이블을 채운다. 이미 있는 행은 건너뜀.
   python3 collect_dart_cashflow_batch.py --refill-depr   # depreciation=NULL 행만 재수집
   python3 collect_dart_cashflow_batch.py --limit 100 # 상위 N종목만
 """
+from db_compat import connect_primary_db
 import argparse
 import contextlib
 import logging
@@ -367,7 +368,7 @@ def _eligible_stock_codes(conn: sqlite3.Connection) -> list[str]:
         FROM financial_data f
         JOIN market_codes m ON m.stock_code = f.stock_code
         LEFT JOIN stock_universe su ON su.stock_code = f.stock_code
-        WHERE LENGTH(f.stock_code)=6 AND f.stock_code GLOB '[0-9]*'
+        WHERE f.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         ORDER BY f.stock_code
     """).fetchall()
     return [code for code, name in rows if not (name and _PREFERRED_NAME_PAT.search(name))]
@@ -437,7 +438,7 @@ def run(
     refill_capex: bool = False,
     limit: int | None = None,
 ):
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
 

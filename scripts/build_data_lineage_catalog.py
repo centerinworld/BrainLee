@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json,sqlite3
+from db_compat import connect_primary_db
 from datetime import datetime
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];DB=ROOT/'stock.db'
@@ -18,5 +19,5 @@ ROWS=[
 ('corporate.action','자본행위','DART+listed shares','corporate_action_events','event_date','event/effective date','old shares/new shares factor','reported/derived','factor only when type+direction agree','build_corporate_action_adjustment_engine.py','market-data'),
 ]
 def main():
- c=sqlite3.connect(DB);c.execute(DDL);now=datetime.now().isoformat(timespec='seconds');c.executemany('INSERT OR REPLACE INTO data_lineage_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[r+(now,) for r in ROWS]);c.commit();print({'metrics':len(ROWS)});c.close()
+ c=connect_primary_db();c.execute(DDL);now=datetime.now().isoformat(timespec='seconds');c.executemany('INSERT OR REPLACE INTO data_lineage_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[r+(now,) for r in ROWS]);c.commit();print({'metrics':len(ROWS)});c.close()
 if __name__=='__main__':main()

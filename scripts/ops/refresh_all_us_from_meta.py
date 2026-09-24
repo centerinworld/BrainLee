@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 import sys
@@ -13,7 +14,7 @@ DB='/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 
 
 def main_run():
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     try:
         rows = conn.execute(
             """

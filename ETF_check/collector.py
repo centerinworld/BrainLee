@@ -9,6 +9,7 @@ import re
 import sys
 import time
 import sqlite3
+from db_compat import connect_primary_db
 import logging
 from datetime import date, datetime, timedelta
 
@@ -29,15 +30,17 @@ BROWSER_USER_AGENT = (
 )
 
 # ── 로깅 설정 ──────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_PATH, encoding="utf-8"),
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger(__name__)
+if not logger.handlers:
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    file_handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
+    stream_handler = logging.StreamHandler()
+    file_handler.setFormatter(formatter)
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 # 요청 간격 (초)
 # 2026-08-07 기준 etfcheck SPA가 domcontentloaded 직후엔 "0억원 / 0종목" 임시 상태를
@@ -114,25 +117,34 @@ def _send_telegram(msg: str):
 
 def get_stock_list(offset: int = 0, limit: int | None = None):
     """stock.db의 stock_universe에서 코스피/코스닥 보통주 코드 + 이름 가져오기."""
-    conn = sqlite3.connect(f"file:{STOCK_DB}?mode=ro", uri=True, timeout=3)
+    conn = connect_primary_db(readonly=True, timeout=3)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
+        WITH ranked_universe AS (
+            SELECT stock_code, stock_name, market, secugrp_nm, market_cap,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY stock_code
+                       ORDER BY base_date DESC, market_cap DESC NULLS LAST
+                   ) AS row_rank
+            FROM stock_universe
+            WHERE  stock_code NOT LIKE '%^%'
+              AND  stock_code NOT LIKE 'GC%'
+              AND  stock_code NOT LIKE 'CL%'
+              AND  stock_code NOT LIKE '%-F'
+              AND  stock_code NOT LIKE '%=%'
+              AND  stock_code NOT LIKE 'NQ%'
+              AND  stock_code NOT LIKE 'ES%'
+              AND  length(stock_code) = 6
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND  market IN ('KOSPI', 'KOSDAQ', '유가증권', '코스닥')
+              AND  COALESCE(stock_type, '') NOT IN ('ETF', 'ETF/ETN', 'ETN')
+              AND  stock_name NOT LIKE '%ETF%'
+              AND  stock_name NOT LIKE '%ETN%'
+        )
         SELECT stock_code, stock_name, market, secugrp_nm
-        FROM   stock_universe
-        WHERE  stock_code NOT LIKE '%^%'
-          AND  stock_code NOT LIKE 'GC%'
-          AND  stock_code NOT LIKE 'CL%'
-          AND  stock_code NOT LIKE '%-F'
-          AND  stock_code NOT LIKE '%=%'
-          AND  stock_code NOT LIKE 'NQ%'
-          AND  stock_code NOT LIKE 'ES%'
-          AND  length(stock_code) = 6
-          AND  stock_code GLOB '[0-9]*'
-          AND  market IN ('KOSPI', 'KOSDAQ', '유가증권', '코스닥')
-          AND  COALESCE(stock_type, '') NOT IN ('ETF', 'ETF/ETN', 'ETN')
-          AND  stock_name NOT LIKE '%ETF%'
-          AND  stock_name NOT LIKE '%ETN%'
-        ORDER  BY market_cap DESC NULLS LAST
+        FROM ranked_universe
+        WHERE row_rank = 1
+        ORDER BY market_cap DESC NULLS LAST
     """).fetchall()
     conn.close()
     stocks = [dict(r) for r in rows]

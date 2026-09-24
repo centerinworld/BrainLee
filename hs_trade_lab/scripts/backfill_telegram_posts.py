@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from db_compat import connect_primary_db
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -536,7 +537,7 @@ def load_existing_maps(conn: sqlite3.Connection) -> tuple[set[str], set[str], se
     }
     # listed universe fallback: company-scope posts can include names not yet seen in hs_code_company_map
     try:
-        sconn = sqlite3.connect(f"file:{ROOT_STOCK_DB}?mode=ro", uri=True)
+        sconn = connect_primary_db(readonly=True)
         sconn.row_factory = sqlite3.Row
         for table in ("stock_universe", "stock_meta", "stock_price_daily"):
             try:

@@ -23,6 +23,7 @@ backfill_bt5y.py — 5년 백테스트용 데이터 수집 (가격 + 재무)
   python3 backfill_bt5y.py --stats
 """
 
+from db_compat import connect_primary_db
 import sqlite3, time, json, logging, argparse, sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -48,7 +49,7 @@ log = logging.getLogger(__name__)
 #  유틸
 # ══════════════════════════════════════════════════════════════
 def get_conn():
-    return sqlite3.connect(str(DB_PATH))
+    return connect_primary_db()
 
 
 def get_stock_list(conn, market_filter=None):
@@ -61,7 +62,7 @@ def get_stock_list(conn, market_filter=None):
         LEFT JOIN stock_universe su USING(stock_code)
         LEFT JOIN stock_meta    sm USING(stock_code)
         WHERE LENGTH(ph.stock_code)=6
-          AND ph.stock_code GLOB '[0-9]*'
+          AND ph.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         ORDER BY ph.stock_code
     """).fetchall()
     return rows
@@ -74,7 +75,7 @@ def print_stats(conn):
     r = conn.execute("""
         SELECT MIN(date), MAX(date), COUNT(DISTINCT stock_code), COUNT(*)
         FROM price_history WHERE close>0
-          AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
     """).fetchone()
     log.info("━"*60)
     log.info(f"[가격 데이터]  {r[0]} ~ {r[1]}  |  {r[2]:,}종목  |  {r[3]:,}행")
@@ -83,7 +84,7 @@ def print_stats(conn):
     n2019 = conn.execute("""
         SELECT COUNT(DISTINCT stock_code) FROM price_history
         WHERE date < '2019-06-01' AND close>0
-          AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
     """).fetchone()[0]
     log.info(f"[가격] 2019-01 이전 데이터 보유: {n2019:,}종목  (MA200 워밍업 가능)")
 
@@ -104,7 +105,7 @@ def print_stats(conn):
         SELECT COUNT(DISTINCT p.stock_code)
         FROM (
           SELECT stock_code FROM price_history
-          WHERE close>0 AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+          WHERE close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
           GROUP BY stock_code HAVING MIN(date)<='2020-01-31' AND COUNT(*)>=400
         ) p
         JOIN (SELECT DISTINCT stock_code FROM financial_data WHERE year>=2020) f
@@ -136,7 +137,7 @@ def backfill_price(conn, limit=None, start_from=None):
     existing_min = {
         r[0]: r[1] for r in conn.execute("""
             SELECT stock_code, MIN(date) FROM price_history
-            WHERE close>0 AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+            WHERE close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             GROUP BY stock_code
         """).fetchall()
     }

@@ -23,6 +23,7 @@ from backtest_common import (
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
+    _final_liquidation_quote_for_code,
     _save_result,
     init_backtest_db,
     logger,
@@ -122,8 +123,9 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
                 AND d.is_annual = CASE WHEN f.is_annual=1 THEN 1 ELSE 0 END
             WHERE ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 4)
                OR (f.is_annual=1))
+              AND f.report_type IN ('CFS','')
               {"AND f.updated_at <= ?" if data_asof_ts else ""}
-            ORDER BY f.stock_code, f.year, f.quarter
+            ORDER BY f.stock_code, f.year, f.quarter, f.report_type DESC, f.id
         """, ([data_asof_ts] if data_asof_ts else [])).fetchall():
             fin_all.setdefault(r[0], []).append(r[1:])
 
@@ -133,7 +135,7 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
         stock_codes = [r[0] for r in conn.execute("""
             SELECT stock_code, COUNT(*) AS cnt FROM price_history
             WHERE date>=? AND date<=? AND close>0
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             GROUP BY stock_code HAVING COUNT(*) >= 200
         """, (warmup_start, end_date)).fetchall()]
 
@@ -378,7 +380,7 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
         for sc, pos in list(positions.items()):
             sd = stock_data[sc]
             im = date_idx.get(sc, {})
-            curr = sd['prices'][im[last_day]] if last_day and last_day in im else sd['prices'][-1]
+            curr, final_reason = _final_liquidation_quote_for_code(conn, sc, last_day, im, sd['prices'])
             pct  = (curr - pos['entry_price']) / pos['entry_price']
             _raf_entry_adj = _corp_action_adjusted_entry(
                 _corp_action_factors, sc, pos['entry_date'], last_day or end_date, pos['entry_price'])
@@ -391,9 +393,15 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
                 'qty': pos['qty'],
                 'profit_pct': _raf_pct,
                 'profit_amt': _raf_amt,
-                'exit_reason': '기간종료',
+                'exit_reason': final_reason,
                 'entry_regime': pos.get('regime', '?'),
             })
+        if last_day:
+            terminal = {'date': last_day, 'equity': round(cash)}
+            if equity_curve and equity_curve[-1].get('date') == last_day:
+                equity_curve[-1] = terminal
+            else:
+                equity_curve.append(terminal)
 
         conn2 = sqlite3.connect(DB_PATH, timeout=120)
         name_map = {}
@@ -467,5 +475,4 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
 # ══════════════════════════════════════════════════════════════
 #  복합 스코어링 시그널 (100점 기반 선택적 매수)
 # ══════════════════════════════════════════════════════════════
-
 

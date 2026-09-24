@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from pathlib import Path
@@ -83,7 +84,7 @@ def load_signals() -> dict:
 
 
 def load_prices(codes: list[str]) -> dict[str, pd.DataFrame]:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     rows = []
     for i in range(0, len(codes), 500):
         batch = codes[i : i + 500]

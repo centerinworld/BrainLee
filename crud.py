@@ -18,6 +18,27 @@ _FINANCIAL_MODEL_COLUMNS = {
     if c.key != "id"
 }
 
+# price_history 수급(공급) 6필드 — 순서는 아래 SELECT/튜플과 일치해야 한다.
+_SUPPLY_FIELDS = (
+    "inst_net_buy", "frn_net_buy", "ind_net_buy",
+    "inst_net_buy_amt", "frn_net_buy_amt", "ind_net_buy_amt",
+)
+
+
+def merge_supply_fields(new_row: dict, existing) -> dict:
+    """새 행의 빈(None/0) 수급 필드를 기존 값으로 되채운다.
+
+    장중 1분 주가 갱신은 수급을 0으로 보내므로, 가격만 갱신할 때 기존에 확정된
+    수급값(수량·금액 6필드)을 0·NULL로 덮어쓰면 안 된다. ``existing``는
+    ``_SUPPLY_FIELDS`` 순서(inst, frn, ind, inst_amt, frn_amt, ind_amt)의 튜플.
+    """
+    for key, old in zip(_SUPPLY_FIELDS, existing):
+        cur = new_row.get(key)
+        if cur is None or cur == 0:
+            if old not in (None, 0, 0.0):
+                new_row[key] = old
+    return new_row
+
 
 def bulk_insert_price_history(db: Session, price_ingest: schemas.PriceIngest):
     """
@@ -57,6 +78,21 @@ def bulk_insert_price_history(db: Session, price_ingest: schemas.PriceIngest):
         else:
             past_rows.append(row)
 
+    from price_integrity import ensure_schema, gate_price_batch, PriceIntegrityError
+    gate_conn = connect_stock_db(timeout=30)
+    try:
+        ensure_schema(gate_conn)
+        accepted = gate_price_batch(gate_conn, price_ingest.stock_code,
+            [(r['date'],r['open'],r['high'],r['low'],r['close'],r['volume'])
+             for r in past_rows+today_rows], 'market_price_api')
+        gate_conn.commit()
+    finally:
+        gate_conn.close()
+    if not accepted:
+        raise PriceIntegrityError('Price batch quarantined: OHLC, historical overlap or boundary mismatch')
+
+    if IS_POSTGRES:
+        db.execute(text("SELECT set_config('app.price_basis_checked','1',true)"))
     # 과거 데이터: INSERT IGNORE
     if past_rows:
         stmt = insert(models.PriceHistory).values(past_rows)
@@ -75,11 +111,8 @@ def bulk_insert_price_history(db: Session, price_ingest: schemas.PriceIngest):
             {"code": price_ingest.stock_code, "pat": f"{today_str}%"}
         ).fetchone()
         if existing_sup:
-            # 새 데이터에 수급값이 없으면(0) 기존 값 보존
-            if not best.get("inst_net_buy"):
-                best["inst_net_buy"] = existing_sup[0] or 0.0
-            if not best.get("frn_net_buy"):
-                best["frn_net_buy"]  = existing_sup[1] or 0.0
+            # 새 데이터에 수급값이 없으면(0/NULL) 기존 6개 수급 필드 보존
+            merge_supply_fields(best, existing_sup)
         db.execute(
             text("DELETE FROM price_history WHERE stock_code = :code AND date LIKE :pat"),
             {"code": price_ingest.stock_code, "pat": f"{today_str}%"}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sqlite3
 from datetime import datetime
@@ -12,6 +13,7 @@ from pathlib import Path
 from db_utils import connect_stock_db
 from etf_parity_cutover import THRESHOLDS
 from full_pdf_collector import DB_PATH, connect
+from issuer_pdf_fallback import validated_domestic_exceptions
 
 
 DOMESTIC_CODE = re.compile(r"^[0-9]{6}$")
@@ -48,39 +50,18 @@ def _iso_day(day: str) -> str:
 
 
 def _issuer_exception(conn: sqlite3.Connection, day: str, ticker: str) -> dict | None:
-    row = conn.execute(
-        """
-        SELECT effective_date,status,component_count,source
-        FROM etf_pdf_issuer_fallback
-        WHERE base_date=? AND etf_ticker=?
-        """,
-        (day, ticker),
-    ).fetchone()
-    if not row:
-        return None
-    effective = datetime.strptime(row[0], "%Y%m%d").date()
-    lag_days = (datetime.strptime(day, "%Y%m%d").date() - effective).days
-    components = conn.execute(
-        """
-        SELECT component_code FROM etf_pdf_issuer_component
-        WHERE base_date=? AND etf_ticker=?
-        """,
-        (day, ticker),
-    ).fetchall()
-    domestic = [str(item[0]) for item in components if DOMESTIC_CODE.fullmatch(str(item[0]))]
-    if lag_days < 0 or lag_days > MAX_ISSUER_LAG_DAYS or domestic:
-        return None
-    return {
-        "etf_ticker": ticker,
-        "source": row[3],
-        "effective_date": row[0],
-        "lag_days": lag_days,
-        "component_count": int(row[2]),
-        "domestic_components": domestic,
-    }
+    return next(
+        (
+            item
+            for item in validated_domestic_exceptions(conn, day)
+            if item["etf_ticker"] == ticker
+        ),
+        None,
+    )
 
 
 def _quality_gate(conn: sqlite3.Connection, day: str) -> dict:
+    legacy_validation = os.getenv("ENABLE_ETFCHECK_VALIDATION", "0") == "1"
     universe = int(conn.execute(
         "SELECT COUNT(*) FROM etf_universe_daily WHERE base_date=?", (day,)
     ).fetchone()[0])
@@ -121,6 +102,12 @@ def _quality_gate(conn: sqlite3.Connection, day: str) -> dict:
         """,
         (day,),
     ).fetchone()
+    control = conn.execute(
+        """
+        SELECT mode,consecutive_pass_days,last_evaluated_date
+        FROM etf_source_control WHERE control_id=1
+        """
+    ).fetchone()
     failures = []
     if not universe or len(rows) != universe:
         failures.append("pdf_snapshot_coverage")
@@ -130,11 +117,11 @@ def _quality_gate(conn: sqlite3.Connection, day: str) -> dict:
         failures.append("scale_coverage")
     attempted = int(sample[0] or 0) if sample else 0
     sample_success = int(sample[1] or 0) if sample else 0
-    if attempted < MIN_SAMPLE_SIZE or sample_success != attempted:
+    if legacy_validation and (attempted < MIN_SAMPLE_SIZE or sample_success != attempted):
         failures.append("sample_coverage")
-    if not parity:
+    if legacy_validation and not parity:
         failures.append("parity_missing")
-    else:
+    elif legacy_validation:
         metric_names = (
             "membership_jaccard",
             "count_within_one_ratio",
@@ -153,6 +140,8 @@ def _quality_gate(conn: sqlite3.Connection, day: str) -> dict:
         smape = parity[4]
         if smape is None or float(smape) > THRESHOLDS["amount_median_smape_max"]:
             failures.append("amount_median_smape")
+    elif not control or control["mode"] != "krx_primary" or int(control["consecutive_pass_days"] or 0) < 5:
+        failures.append("direct_source_not_certified")
     return {
         "universe": universe,
         "snapshots": len(rows),
@@ -160,6 +149,9 @@ def _quality_gate(conn: sqlite3.Connection, day: str) -> dict:
         "scale": scale,
         "sample": attempted,
         "sample_success": sample_success,
+        "validation_mode": "etfcheck_parallel" if legacy_validation else "direct_internal",
+        "source_control_mode": control["mode"] if control else None,
+        "source_control_pass_days": int(control["consecutive_pass_days"] or 0) if control else 0,
         "exceptions": exceptions,
         "unresolved": unresolved,
         "failures": failures,

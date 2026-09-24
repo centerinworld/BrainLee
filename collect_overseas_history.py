@@ -16,6 +16,7 @@ collect_overseas_history.py — 해외 주요 종목 20년치 히스토리 다�
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import sqlite3
@@ -81,7 +82,7 @@ SYMBOL_META = {
 
 
 def _db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.row_factory = sqlite3.Row

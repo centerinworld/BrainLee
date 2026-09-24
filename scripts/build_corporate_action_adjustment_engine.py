@@ -2,6 +2,7 @@
 """Build non-destructive corporate-action and price-basis metadata tables."""
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 from datetime import datetime, timedelta
@@ -43,33 +44,6 @@ CREATE TABLE IF NOT EXISTS corporate_action_events (
 );
 CREATE INDEX IF NOT EXISTS idx_cae_code_date ON corporate_action_events(stock_code, event_date);
 CREATE INDEX IF NOT EXISTS idx_cae_status ON corporate_action_events(adjustment_status, event_type);
-CREATE VIEW IF NOT EXISTS price_history_quality_v AS
-WITH p AS (
-  SELECT ph.*,
-         LAG(close) OVER (PARTITION BY stock_code ORDER BY date) AS prev_close
-  FROM price_history ph
-), e AS (
-  SELECT stock_code, event_date,
-         GROUP_CONCAT(event_type, ',') AS event_type,
-         MAX(CASE WHEN adjustment_status='factor_confirmed' THEN 'factor_confirmed' ELSE adjustment_status END) AS adjustment_status,
-         MAX(confidence) AS confidence
-  FROM corporate_action_events
-  GROUP BY stock_code, event_date
-)
-SELECT p.*,
-       CASE WHEN p.prev_close > 0 THEN p.close / p.prev_close END AS daily_price_ratio,
-       e.event_type AS corporate_action_type,
-       e.adjustment_status,
-       e.confidence AS corporate_action_confidence,
-       CASE
-         WHEN p.prev_close IS NULL OR p.prev_close <= 0 THEN 'insufficient_history'
-         WHEN p.close / p.prev_close BETWEEN 0.55 AND 1.80 THEN 'normal'
-         WHEN e.adjustment_status='factor_confirmed' THEN 'explained_corporate_action'
-         WHEN e.event_type IS NOT NULL THEN 'corporate_action_review'
-         ELSE 'unexplained_jump'
-       END AS quality_status
-FROM p
-LEFT JOIN e ON e.stock_code=p.stock_code AND e.event_date=substr(p.date,1,10);
 CREATE VIEW IF NOT EXISTS stock_price_daily_adjusted_v AS
 WITH base AS (
   SELECT s.*,
@@ -138,9 +112,13 @@ def _nearest_disclosure(conn: sqlite3.Connection, code: str, event_date: str) ->
 
 def build(conn: sqlite3.Connection, dry_run: bool = False) -> dict:
     conn.row_factory = sqlite3.Row
-    conn.execute("DROP VIEW IF EXISTS price_history_quality_v")
     conn.execute("DROP VIEW IF EXISTS stock_price_daily_adjusted_v")
     conn.executescript(DDL)
+    from price_integrity import ensure_schema, rebuild_views, native_script
+    from scripts.audit_price_jumps_and_build_canonical import DDL as AUDIT_DDL
+    native_script(conn, AUDIT_DDL)
+    ensure_schema(conn)
+    rebuild_views(conn)
     now = datetime.now().isoformat(timespec="seconds")
     registry = [
         ("price_history", "adjusted_intended_mixed_risk", "research/backtest signal calculation",
@@ -230,16 +208,21 @@ def build(conn: sqlite3.Connection, dry_run: bool = False) -> dict:
             events,
         )
         conn.commit()
-    explained = conn.execute("SELECT COUNT(*) FROM price_history_quality_v WHERE quality_status='explained_corporate_action'").fetchone()[0]
+    # The structural quality view intentionally does not claim that an event
+    # explains a return.  That verdict belongs to the downstream jump audit.
+    confirmed_events = sum(1 for event in events if event[12] == 'factor_confirmed')
+    explained = conn.execute("SELECT COUNT(*) FROM price_jump_audit WHERE classification='confirmed_corporate_action'").fetchone()[0]
     unexplained = conn.execute("SELECT COUNT(*) FROM price_history_quality_v WHERE quality_status='unexplained_jump'").fetchone()[0]
-    return {"share_change_events": len(events), "event_types": counts, "explained_price_jumps": explained, "unexplained_price_jumps": unexplained}
+    return {"share_change_events": len(events), "confirmed_adjustment_events": confirmed_events,
+            "event_types": counts, "explained_price_jumps_in_last_audit": explained,
+            "unexplained_price_jumps": unexplained, "price_jump_audit_rebuild_required": not dry_run}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     try:
         print(build(conn, args.dry_run))
     finally:

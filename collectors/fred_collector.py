@@ -3,11 +3,13 @@ FRED (Federal Reserve Economic Data) 수집기
 무료 API 키 필요: https://fred.stlouisfed.org/docs/api/api_key.html
 환경변수: FRED_API_KEY
 """
-import sqlite3, requests, logging, os, time
+from db_compat import connect_primary_db
+import argparse, sqlite3, requests, logging, os, time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 # (fred_series_id, our_code, transform)
 # transform: None=원본, 'pct_change'=전월대비%, 'yoy'=전년대비%
@@ -86,7 +88,7 @@ def collect_fred(lookback_years: int = 5) -> int:
         return 0
 
     start_date = (datetime.now() - timedelta(days=lookback_years * 365)).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     total = 0
 
     for series_id, our_code, transform in FRED_SERIES:
@@ -118,7 +120,7 @@ def collect_fred(lookback_years: int = 5) -> int:
 
 def _log(records: int, status: str = "ok", msg: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         conn.execute("""
             INSERT INTO global_macro_collection_log (source, status, records, message)
             VALUES ('fred', ?, ?, ?)
@@ -129,7 +131,28 @@ def _log(records: int, status: str = "ok", msg: str = ""):
         pass
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Collect FRED macroeconomic series.")
+    parser.add_argument(
+        "--collect",
+        action="store_true",
+        help="fetch FRED observations and write them to the primary database",
+    )
+    parser.add_argument(
+        "--lookback-years",
+        type=int,
+        default=5,
+        help="history window used with --collect (default: 5)",
+    )
+    args = parser.parse_args(argv)
+    if not args.collect:
+        parser.print_help()
+        return 0
     logging.basicConfig(level=logging.INFO)
-    n = collect_fred()
+    n = collect_fred(args.lookback_years)
     print(f"FRED 수집 완료: {n}건")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

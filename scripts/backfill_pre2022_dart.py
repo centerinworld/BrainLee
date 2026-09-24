@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 import time
@@ -22,7 +23,7 @@ OUT.mkdir(exist_ok=True)
 
 
 def conn():
-    c = sqlite3.connect(DB, timeout=120)
+    c = connect_primary_db(timeout=120)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA busy_timeout=120000")

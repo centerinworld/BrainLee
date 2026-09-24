@@ -18,9 +18,20 @@ def source_mode(db_path:Path=DB_PATH) -> str:
         conn.close()
 
 
-def direct_summary(stock_code:str,db_path:Path=DB_PATH) -> dict:
-    conn=connect(db_path); conn.row_factory=sqlite3.Row
-    day=conn.execute(
+def latest_published_day(conn: sqlite3.Connection) -> str | None:
+    """Prefer the gated stock publication, including validated issuer exceptions."""
+    try:
+        day = conn.execute(
+            """
+            SELECT MAX(base_date) FROM etf_direct_stock_publication
+            WHERE status='published'
+            """
+        ).fetchone()[0]
+        if day:
+            return str(day)
+    except sqlite3.OperationalError:
+        pass
+    return conn.execute(
         """
         SELECT MAX(u.base_date)
         FROM (
@@ -39,8 +50,25 @@ def direct_summary(stock_code:str,db_path:Path=DB_PATH) -> dict:
         )=u.universe_count
         """
     ).fetchone()[0]
+
+
+def stock_name_for(conn: sqlite3.Connection, stock_code: str) -> str | None:
+    """Return the cached Korean stock name without making the summary unavailable."""
+    try:
+        row = conn.execute(
+            "SELECT stock_name FROM etf_stock_meta WHERE stock_code=?", (stock_code,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return str(row[0]) if row and row[0] else None
+
+
+def direct_summary(stock_code:str,db_path:Path=DB_PATH) -> dict:
+    conn=connect(db_path); conn.row_factory=sqlite3.Row
+    day=latest_published_day(conn)
     if not day:
         conn.close(); raise RuntimeError("direct ETF snapshot unavailable")
+    stock_name=stock_name_for(conn,stock_code)
     rows=[dict(row) for row in conn.execute(
         """
         SELECT c.etf_ticker,s.etf_name,c.weight,
@@ -60,4 +88,4 @@ def direct_summary(stock_code:str,db_path:Path=DB_PATH) -> dict:
         items.append({"label":"비중 1위","name":top_ratio["etf_name"],"value":f"{top_ratio['weight']:.2f}%" if top_ratio["weight"] is not None else None,"type":"ratio"})
     if top_amount:
         items.append({"label":"편입금액 1위","name":top_amount["etf_name"],"value":f"{top_amount['amount_100m']:,.0f}억","type":"amount"})
-    return {"stock_code":stock_code,"stock_name":None,"etf_count":len(rows),"etf_amount_total":sum(row["amount_100m"] or 0 for row in rows),"etf_list":items,"note":f"국내 ETF {len(rows)}개 편입 (KRX/KIS 자체 수집, 기준 {day})","source":"KRX_KIS_DIRECT","base_date":day}
+    return {"stock_code":stock_code,"stock_name":stock_name,"etf_count":len(rows),"etf_amount_total":sum(row["amount_100m"] or 0 for row in rows),"etf_list":items,"note":f"국내 ETF {len(rows)}개 편입 (KRX/KIS 자체 수집, 기준 {day})","source":"KRX_KIS_DIRECT","base_date":day}

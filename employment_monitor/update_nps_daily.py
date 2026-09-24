@@ -10,6 +10,8 @@ from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 import os
 
+from db_compat import connect_primary_db
+
 logger = logging.getLogger(__name__)
 
 load_dotenv('/Volumes/Realtek_NVME/stock_dashboard/runtime/.env')
@@ -48,8 +50,7 @@ def check_if_month_exists_on_api(ym, test_biz_no='124810'): # 삼성전자(12481
 
 def update_nps_data():
     conn = sqlite3.connect(EMP_DB)
-    conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS main_db")
-    
+
     latest_ym = get_latest_db_month(conn)
     print(f"📌 현재 DB 최신 수집월: {latest_ym}")
     
@@ -67,12 +68,22 @@ def update_nps_data():
         
     print(f"🚀 {target_ym} 월 데이터 업데이트 확인됨! 전체 상장사 대상 수집을 시작합니다.")
     
-    df = pd.read_sql("""
-        SELECT u.stock_code, u.stock_name, m.biz_no_6 as biz_no 
-        FROM main_db.stock_universe u
-        JOIN stock_bizno_map m ON u.stock_code = m.stock_code
-        WHERE u.market IN ('유가증권', 'KOSPI', '코스닥', 'KOSDAQ')
-    """, conn)
+    # stock.db(운영 시 Postgres)는 employment.db와 별도 물리 DB라 ATTACH로 조인할 수
+    # 없음 — stock_universe는 connect_primary_db()로 따로 조회 후 stock_bizno_map
+    # (employment.db)과 파이썬에서 merge.
+    stock_conn = connect_primary_db()
+    try:
+        universe_df = pd.read_sql(
+            """SELECT stock_code, stock_name FROM stock_universe
+               WHERE market IN ('유가증권', 'KOSPI', '코스닥', 'KOSDAQ')""",
+            stock_conn,
+        )
+    finally:
+        stock_conn.close()
+    bizno_df = pd.read_sql(
+        "SELECT stock_code, biz_no_6 as biz_no FROM stock_bizno_map", conn
+    )
+    df = universe_df.merge(bizno_df, on="stock_code", how="inner")
     
     url = "http://apis.data.go.kr/B552015/NpsBsnmWorkplaceListInfoService/getNpsBsnmBssInfoList"
     inserted = 0

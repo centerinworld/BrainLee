@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import sqlite3
 from datetime import datetime
 
@@ -52,7 +53,7 @@ def log(conn: sqlite3.Connection, code: str, year: int, quarter: int, row_id: in
 
 
 def main():
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     ensure_log(conn)
 

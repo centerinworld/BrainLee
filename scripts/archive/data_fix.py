@@ -14,6 +14,7 @@ data_fix.py — 주가 데이터 품질 수정 및 보완 스크립트
   6. financial_data EPS/BPS 보정: shares_issued 기반 역산
 """
 
+from db_compat import connect_primary_db
 import sqlite3
 import math
 from pathlib import Path
@@ -429,7 +430,7 @@ def main():
     print("데이터 품질 수정 및 보완 스크립트")
     print("=" * 60)
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
 

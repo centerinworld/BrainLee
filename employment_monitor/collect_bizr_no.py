@@ -20,6 +20,7 @@ import csv
 import os
 import re
 import sqlite3
+from db_compat import connect_primary_db
 import sys
 import time
 import logging
@@ -134,7 +135,7 @@ def dart_web_bizr_no(corp_code: str) -> str | None:
 # ── 메인 수집 ─────────────────────────────────────────────────────────────────
 def run(only_missing: bool = False, delay: float = 0.2):
     emp_conn = sqlite3.connect(EMP_DB, timeout=60)
-    stk_conn = sqlite3.connect(f'file:{STOCK_DB}?mode=ro', uri=True)
+    stk_conn = connect_primary_db(readonly=True)
 
     # 대상: 보통주 코스피/코스닥 종목 (ETF/ETN/리츠/스팩/외국법인 제외)  {code: name}
     universe = {r[0]: r[1] for r in stk_conn.execute("""

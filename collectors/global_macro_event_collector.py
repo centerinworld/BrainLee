@@ -6,14 +6,16 @@ available actual/previous values from global_macro_data.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3
 from datetime import datetime, timedelta
 
 from config import IS_POSTGRES
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 
 FOMC_2026 = [
@@ -168,7 +170,7 @@ def _upsert_event(
 
 
 def collect_global_macro_events() -> int:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     _ensure_event_columns(conn)
     total = 0

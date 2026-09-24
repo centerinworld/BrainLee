@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 import requests
 from bs4 import BeautifulSoup
 import sqlite3
@@ -23,7 +24,7 @@ DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 def get_current_price(stock_code):
     """stock.db에서 최신 종가 가져오기"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
@@ -39,6 +40,11 @@ def get_current_price(stock_code):
 _stock_name_cache: list = []
 _stock_name_cache_at: float = 0.0
 
+# 짧은 종목명이 무관한 단어/인명 안에 우연히 포함돼 오매칭되는 사례 (재발 확인시 계속 추가)
+# 예: "알트"(459550) → "샘알트먼"(Sam Altman) 안에 포함되어 오매칭 (2026-09-14 발견)
+#     "아스트"(067390) → "아스트라"(AI 제품명) 안에 포함되어 오매칭 (2026-09-14 발견)
+_FALSE_POSITIVE_PHRASES = ["샘알트먼", "알트먼", "아스트라제네카", "아스트라"]
+
 def _load_stock_names() -> list:
     """stock_universe에서 종목명 목록 로드 (길이 내림차순 — 부분매칭 방지)."""
     global _stock_name_cache, _stock_name_cache_at
@@ -46,7 +52,7 @@ def _load_stock_names() -> list:
     if _stock_name_cache and (time.time() - _stock_name_cache_at) < 3600:
         return _stock_name_cache
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         rows = conn.execute(
             "SELECT stock_name FROM stock_universe WHERE market IN ('유가증권','KOSPI','코스닥','KOSDAQ')"
         ).fetchall()
@@ -126,6 +132,8 @@ def parse_blog_post_local(title: str, content: str) -> tuple:
         # 종목명 탐지 (longest-match; 이미 찾은 건 공백으로 치환)
         matched = []
         remaining = stripped
+        for phrase in _FALSE_POSITIVE_PHRASES:
+            remaining = remaining.replace(phrase, " " * len(phrase))
         for name in stock_names:
             if name in remaining:
                 matched.append(name)
@@ -145,6 +153,10 @@ def parse_blog_post_local(title: str, content: str) -> tuple:
     result = {
         "summary": f"{title} — 로컬매칭 {total}개 종목 추출",
         "data": data,
+        # 로컬 매칭은 단순 부분문자열 검색이라 "기업 상세분석" 여부를 판단할 근거가 없음
+        # (실제로 무관한 인명/제품명에 종목명이 우연히 포함된 오탐 사례 확인, 2026-09-14).
+        # 항상 False로 두어 run_parser()가 텔레그램 발송을 건너뛰게 함 — DB 저장/UI 조회는 그대로 유지.
+        "is_company_analysis": False,
     }
     return result, None
 
@@ -164,9 +176,16 @@ def parse_blog_post_with_ai(title, content, image_urls):
                 "content": (
                     "당신은 주식 분석 전문가입니다. 블로그 포스트의 내용과 이미지를 분석하여 "
                     "섹터(Level 1)와 해당 섹터에 속한 종목들(Level 2)을 추출해야 합니다. "
+                    "또한 이 포스트가 개별 기업에 대한 상세분석(실적/밸류에이션/사업내용/매수매도 근거 등 "
+                    "구체적 투자판단 근거를 담은 글)인지, 단순 시황/산업 동향 전달(특정 기업을 깊이 "
+                    "분석하지 않고 뉴스·트렌드·거시 상황만 요약하는 글 — 예: 인명·해외기업·제품명이 "
+                    "우연히 국내 종목명과 겹쳐 언급되는 경우 포함)인지 반드시 판단하세요. "
                     "결과는 반드시 JSON 형식으로 반환하세요. "
-                    "형식: {\"summary\": \"...\", \"data\": [{\"category\": \"섹터명\", \"stocks\": [\"종목1\", \"종목2\"]}]} "
-                    "종목명은 한국 주식일 경우 정확한 명칭을 사용하세요."
+                    "형식: {\"summary\": \"...\", \"is_company_analysis\": true|false, "
+                    "\"data\": [{\"category\": \"섹터명\", \"stocks\": [\"종목1\", \"종목2\"]}]} "
+                    "종목명은 한국 주식일 경우 정확한 명칭을 사용하세요. "
+                    "is_company_analysis는 실제로 해당 종목(들)에 대한 구체적 분석 내용이 있을 때만 "
+                    "true로 표시하고, 조금이라도 애매하면 false로 표시하세요."
                 )
             },
             {
@@ -222,7 +241,7 @@ def scrape_blog_list():
         # 각 포스트 제목 채우기 (최신 10개만 — 신규 감지용)
         seen_in_db: set = set()
         try:
-            _conn = sqlite3.connect(DB_PATH)
+            _conn = connect_primary_db()
             rows = _conn.execute("SELECT blog_url FROM sector_posts").fetchall()
             _conn.close()
             seen_in_db = {r[0] for r in rows}
@@ -306,7 +325,7 @@ def run_parser(reprocess_empty: bool = True):
     logger.info("Starting Blog Parser...")
     posts = scrape_blog_list()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cursor = conn.cursor()
 
     # 테이블 생성 보장
@@ -387,12 +406,16 @@ def run_parser(reprocess_empty: bool = True):
             
         conn.commit()
         new_post_count += 1
-        
-        telegram_msg = "\n".join(telegram_msg_parts)
-        send_telegram(telegram_msg, key=f"sector_post_{post_db_id}")
-        
-        cursor.execute("UPDATE sector_posts SET telegram_sent=1 WHERE id=?", (post_db_id,))
-        conn.commit()
+
+        # 기업 상세분석이 아닌 단순 시황/동향 전달 글은 텔레그램 발송 생략 (사용자 지시, 2026-09-14).
+        # DB 저장(sector_posts/sector_stocks)은 그대로 유지 — UI에서 조회는 가능, 알림만 안 감.
+        if ai_result.get("is_company_analysis"):
+            telegram_msg = "\n".join(telegram_msg_parts)
+            send_telegram(telegram_msg, key=f"sector_post_{post_db_id}")
+            cursor.execute("UPDATE sector_posts SET telegram_sent=1 WHERE id=?", (post_db_id,))
+            conn.commit()
+        else:
+            logger.info(f"[blog_parser] 상세분석 아님 — 텔레그램 발송 생략: {p['title']}")
         
     conn.close()
     logger.info(f"Parser finished. {new_post_count} new posts processed.")

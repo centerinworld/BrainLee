@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import itertools
 import json
 import math
@@ -59,7 +60,7 @@ TARGET_COLUMNS = {
 
 
 def db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -73,7 +74,7 @@ def nearest_price(conn: sqlite3.Connection, date: str, direction: str) -> pd.Dat
             SELECT stock_code, date, close, volume, trade_amount,
                    ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date {order}) rn
             FROM price_history
-            WHERE date {op} ? AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+            WHERE date {op} ? AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
               AND close > 0
         )
         SELECT stock_code, date, close, volume, trade_amount
@@ -124,7 +125,7 @@ def build_universe() -> tuple[pd.DataFrame, pd.DataFrame]:
         SELECT stock_code, COALESCE(stock_name, stock_code) stock_name, market,
                stock_type, market_cap, sector_large, sector_mid, sector_small
         FROM stock_universe
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         """,
         conn,
     )
@@ -140,7 +141,7 @@ def build_universe() -> tuple[pd.DataFrame, pd.DataFrame]:
                  LAG(close) OVER (PARTITION BY stock_code ORDER BY date) LAG_CLOSE
           FROM price_history
           WHERE date BETWEEN '2025-03-28' AND '2025-05-02'
-            AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+            AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         )
         GROUP BY stock_code
         """,

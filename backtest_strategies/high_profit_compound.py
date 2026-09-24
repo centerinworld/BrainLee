@@ -14,7 +14,9 @@ from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
     DB_PATH,
+    _final_liquidation_quote_for_code,
     _record_run_spec,
+    _register_execution_artifacts,
     logger,
     sqlite3,
 )
@@ -117,14 +119,46 @@ def run_backtest_high_profit_compound(
         ).fetchall()
         return {r[0] for r in rows}
 
-    # 계약/수주잔고 보유 종목 캐시 (연도 변동이 적으므로 전체 미리 로드)
-    contract_codes = {r[0] for r in conn.execute(
-        "SELECT DISTINCT stock_code FROM dart_contracts WHERE signal_strength >= 2"
-    ).fetchall()}
-    backlog_codes = {r[0] for r in conn.execute(
-        "SELECT DISTINCT stock_code FROM order_backlog WHERE COALESCE(backlog_amount,0)>0"
-    ).fetchall()}
-    catalyst_codes = contract_codes | backlog_codes
+    # 2026-09-22 수정(룩어헤드 편향 발견·수정): 이전엔 "연도 변동이 적으므로"라는
+    # 검증 안 된 가정으로 dart_contracts/order_backlog를 날짜 필터 없이 전체 이력을
+    # 한 번에 로드했다 — 실측 확인 결과 그 가정은 틀렸다: dart_contracts는
+    # 2021-05-31~2026-09-22까지 846개 종목이 분산돼 있고(as_of=2021-06-30이면 실제로는
+    # 0개만 공시됐어야 하는데 846개 전부를 "촉매"로 인식), order_backlog의 collected_at은
+    # 2026-06~09처럼 최근 3개월뿐이라 그보다 이전 어떤 백테스트 날짜에도 사실상 전부
+    # "미래" 데이터였다. `catalyst_codes`가 buy_universe의 하드 AND 조건이라 이건
+    # golden_cross(진입 우선순위 보너스 하나)보다 영향 범위가 크다 — 매수 유니버스
+    # 자체가 미래정보로 결정되고 있었다.
+    #
+    # dart_contracts는 실제 공시일(disclosed_at, 'YYYYMMDD')이 있어 그대로 필터링.
+    # order_backlog는 별도 공시일 컬럼이 없어(collected_at은 우리 수집시각일 뿐 실제
+    # 공시일이 아님) 다른 전략들과 동일한 법정기한 근사(분기+45일/연간 익년 3월31일,
+    # quarter=4는 사업보고서=연간으로 취급)로 avail_date를 계산.
+    _contract_rows = conn.execute(
+        "SELECT stock_code, disclosed_at FROM dart_contracts WHERE signal_strength >= 2"
+    ).fetchall()
+    _backlog_rows = conn.execute(
+        "SELECT stock_code, year, quarter FROM order_backlog WHERE COALESCE(backlog_amount,0)>0"
+    ).fetchall()
+
+    def _backlog_avail_date(year: int, quarter: int) -> str:
+        if quarter == 4:
+            return f"{year + 1}-03-31"
+        return {1: f"{year}-05-15", 2: f"{year}-08-15", 3: f"{year}-11-15"}.get(
+            quarter, f"{year + 1}-03-31"
+        )
+
+    _contract_events = [
+        (code, f"{str(d)[:4]}-{str(d)[4:6]}-{str(d)[6:8]}")
+        for code, d in _contract_rows if d
+    ]
+    _backlog_events = [
+        (code, _backlog_avail_date(int(y), int(q)))
+        for code, y, q in _backlog_rows if y and q
+    ]
+    _catalyst_events = _contract_events + _backlog_events
+
+    def _catalyst_codes_as_of(as_of: str) -> set:
+        return {code for code, avail in _catalyst_events if avail <= as_of}
 
     # 섹터 필터
     sector_codes = {r[0] for r in conn.execute(
@@ -157,6 +191,7 @@ def run_backtest_high_profit_compound(
         return sum(r[0] for r in rows) / n
 
     _insider_cache: dict = {}
+    _catalyst_cache: set = set()
 
     for date in sim_dates:
         # 임원매수 코드 (7일마다 갱신)
@@ -164,6 +199,8 @@ def run_backtest_high_profit_compound(
         if date_idx % 7 == 0 or not _insider_cache:
             _insider_cache.clear()
             _insider_cache.update({c: True for c in _insider_buy_codes(date)})
+        if date_idx % 7 == 0 or not _catalyst_cache:
+            _catalyst_cache = _catalyst_codes_as_of(date)
 
         # ── 매도 체크 ──
         for code in list(holdings.keys()):
@@ -201,7 +238,7 @@ def run_backtest_high_profit_compound(
             continue
 
         # 임원매수 × 섹터 × 촉매 교집합
-        buy_universe = (set(_insider_cache.keys()) & sector_codes & catalyst_codes) - set(holdings.keys())
+        buy_universe = (set(_insider_cache.keys()) & sector_codes & _catalyst_cache) - set(holdings.keys())
         if not buy_universe:
             continue
 
@@ -259,14 +296,35 @@ def run_backtest_high_profit_compound(
             cash -= per_stock
 
     # 기간 종료 처리
+    # 2026-09-23 수정: 이전엔 _close_as_of(date<=end_date로 가장 최근 종가를 그냥
+    # 끌어옴)를 그대로 써서, 상장폐지된 종목도 몇 달 전 마지막 종가가 "정상 청산가"인
+    # 것처럼 조용히 재사용됐다(다른 26개 전략이 전부 공유하는 _final_liquidation_
+    # quote_for_code()로 교체될 때 이 파일만 자체 헬퍼를 써서 누락됨). 게다가 그
+    # 가짜값마저 없으면(curr<=0) 포지션 자체가 trades에서 통째로 빠져 손실 계상도
+    # 안 됐다. 종목별 실제 시세이력으로 idx_map을 만들어 같은 안전헬퍼를 쓰도록 정정
+    # — 실제 최종거래일 종가, 확인된 합병/교환가치(delisting_outcomes), 둘 다 없으면
+    # 명시적 전액손실 순으로 정확히 처리되고 포지션이 조용히 사라지지 않는다.
+    #
+    # 첫 시도 버그(즉시 발견·수정): last_day로 sim_dates[-1](실제 마지막 거래일)이
+    # 아니라 end_date(달력상 종료일, 예 2025-05-31 토요일)를 그대로 넘겨서, 042660/
+    # 329180/207940 같은 초대형 우량주까지 "시세부재 전액손실"로 오판했다(정상 시세는
+    # 그 직전 거래일 2025-05-30까지 있었음). golden_cross/v8 등 이미 검증된 전략들과
+    # 동일하게 sim_dates[-1]을 실제 청산 기준일로 사용하도록 정정.
+    _last_trading_day = sim_dates[-1] if sim_dates else end_date
     for code, h in holdings.items():
-        curr = _close_as_of(code, end_date)
-        if curr > 0:
-            pnl = (curr - h["entry"]) / h["entry"]
-            pnl_abs = round(per_stock * pnl)
-            trades.append({"code": code, "buy_date": h["entry_date"], "sell_date": end_date,
-                           "entry": h["entry"], "exit": curr, "pnl_pct": round(pnl * 100, 2),
-                           "reason": "end", "pnl": pnl_abs})
+        _rows = conn.execute(
+            "SELECT date, close FROM price_history WHERE stock_code=? AND date<=? AND close>0 ORDER BY date",
+            (code, _last_trading_day),
+        ).fetchall()
+        _dates = [r[0] for r in _rows]
+        _prices = [float(r[1]) for r in _rows]
+        _idx_map = {d: i for i, d in enumerate(_dates)}
+        curr, _reason = _final_liquidation_quote_for_code(conn, code, _last_trading_day, _idx_map, _prices)
+        pnl = (curr - h["entry"]) / h["entry"]
+        pnl_abs = round(per_stock * pnl)
+        trades.append({"code": code, "buy_date": h["entry_date"], "sell_date": end_date,
+                       "entry": h["entry"], "exit": curr, "pnl_pct": round(pnl * 100, 2),
+                       "reason": "end" if curr > 0 else _reason, "pnl": pnl_abs})
 
     # 수익률 계산
     total_pnl = sum(t["pnl"] for t in trades)
@@ -288,6 +346,13 @@ def run_backtest_high_profit_compound(
          json.dumps(trades, ensure_ascii=False), summary, rid)
     )
     conn.commit()
+    # 2026-09-23 신규: execution_contract/cash_reconciliation 아티팩트가 이 전략만
+    # 한 번도 등록된 적이 없어 derive_status()가 영원히 legacy로 고정돼 있었다
+    # (golden_cross 등 6개 엔진에서 2026-07-14에 이미 고친 것과 동일 부류의 누락
+    # — 그때 이 파일은 이관 대상에서 빠졌다). final_cash는 `cash`가 기간종료
+    # 강제청산분을 반영 안 하므로 capital+total_pnl(모든 trades의 실현손익 합)로
+    # 직접 계산 — 다른 26개 전략과 동일하게 "최종현금=초기자본+총손익" 원칙.
+    _register_execution_artifacts(rid, capital, capital + total_pnl)
     conn.close()
     return rid
 

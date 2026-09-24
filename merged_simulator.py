@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
+from db_compat import connect_primary_db
 from portfolio_engine import CashPortfolio
 from run_registry import canonical_hash, derive_status, ensure_schema as ensure_registry_schema, register_artifact, source_snapshot
 
@@ -52,6 +53,10 @@ class CandidateOrder:
     reason: str = "signal"
     budget: float | None = None
     sector: str = ""
+    # 2026-09-12 (Codex 재검토 지적): 부분매도(예: sector.py partial_tp_pct) 신호가 병합계좌로
+    # 넘어오면 전량매도로 뭉개지던 결함 수정 — None(기본)이면 기존과 완전히 동일(전량).
+    # 0<x<1이면 그 비율만큼만 실현하고 나머지는 계속 보유(sell_partial() 참조).
+    sell_fraction: float | None = None
 
 
 @dataclass
@@ -77,6 +82,12 @@ class MergeConfig:
     # 둘 다 None(비활성)이면 기존 동작과 완전히 동일.
     max_pyramid_adds: int | None = None       # 포지션당 최대 추가매수 횟수 상한(merged_simulator 자체 강제)
     pyramid_min_hold_days: int | None = None  # 최초 진입 후 최소 보유일수 경과해야 피라미드 자격
+    # F09 (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md): 공유 포지션의
+    # 매도 소유권 정책을 명시적으로 만듦 — 이전엔 "누구든 매도신호를 내면 공통청산"이 유일한
+    # 동작이었고 코드에 정책으로 표시돼 있지 않았다. 기본값 "any_sell"은 기존 동작과 완전히
+    # 동일(하위호환). "owner_only"는 실제 그 포지션을 처음 매수한 전략(capital_owner)의 매도
+    # 신호만 인정 — 매수하지 못한 전략 B의 매도가 A의 포지션을 정리하는 상황을 배제한다.
+    sell_ownership_policy: str = "any_sell"  # "any_sell" | "owner_only"
 
 
 def _normalize_orders(orders: list[CandidateOrder | dict], tiebreak_mode: str = "neutral_hash") -> list[CandidateOrder]:
@@ -105,7 +116,7 @@ def _load_daily_price_map(
     if not codes:
         return {}
     try:
-        conn = sqlite3.connect(str(db_path), timeout=30)
+        conn = connect_primary_db(timeout=30) if db_path == DB_PATH else sqlite3.connect(str(db_path), timeout=30)
         placeholders = ",".join("?" for _ in codes)
         rows = conn.execute(
             f"""SELECT stock_code, date(date), close FROM price_history
@@ -123,6 +134,113 @@ def _load_daily_price_map(
         # 통일한다. str(date(2020,8,7)) == '2020-08-07'이라 포맷은 기존과 동일하게 유지됨.
         out.setdefault(code, {})[str(d)] = float(close)
     return out
+
+
+def pnl_concentration(ledger: list[dict], marks: dict[str, float]) -> dict:
+    """2026-09-11 신규. 종목별 손익(실현+미실현, FIFO)을 계산해 상위 종목 집중도를 반환.
+
+    사용자 제보 계기: 병합계좌(combined) 등록 결과가 688.94%처럼 큰 수치를 보여도
+    그중 34%가 단일 종목(HD현대일렉트릭, 2022-08 진입 후 24.7배) 하나의 손익이었다 —
+    corporate_action(액면분할 등) 미조정 버그는 아니었음(가격 연속성·조정계수 테이블
+    양쪽 확인, 실제 2024~2025 전력기기 슈퍼사이클 랠리)이지만, 헤드라인 수익률 하나만
+    보여주면 "폭넓은 전략 우위"처럼 보여 오해를 부른다. top1/top2 종목이 전체 손익의
+    몇 %를 차지하는지 노출해 이 집중도를 투명하게 드러낸다.
+
+    반환: {"total_pnl", "top1_code", "top1_pnl", "top1_pct_of_pnl", "top2_pct_of_pnl"}
+    (총손익<=0이면 pct 필드는 None — 나눗셈 무의미).
+    """
+    lots: dict[str, list[list]] = {}
+    realized: dict[str, float] = {}
+    for e in ledger:
+        code = e["code"]
+        lots.setdefault(code, [])
+        realized.setdefault(code, 0.0)
+        if e["side"] in ("buy", "add"):
+            lots[code].append([e["quantity"], e["price"]])
+        elif e["side"] == "sell":
+            qty_to_sell = e["quantity"]
+            proceeds = cost = 0.0
+            while qty_to_sell > 0 and lots[code]:
+                lot_qty, lot_price = lots[code][0]
+                take = min(lot_qty, qty_to_sell)
+                cost += take * lot_price
+                proceeds += take * e["price"]
+                lot_qty -= take
+                qty_to_sell -= take
+                if lot_qty <= 0:
+                    lots[code].pop(0)
+                else:
+                    lots[code][0][0] = lot_qty
+            realized[code] += proceeds - cost
+
+    unrealized: dict[str, float] = {}
+    for code, remaining in lots.items():
+        qty = sum(l[0] for l in remaining)
+        if qty <= 0:
+            continue
+        cost = sum(l[0] * l[1] for l in remaining)
+        px = marks.get(code)
+        if px:
+            unrealized[code] = qty * px - cost
+
+    by_code: dict[str, float] = {}
+    for code in set(list(realized) + list(unrealized)):
+        by_code[code] = realized.get(code, 0.0) + unrealized.get(code, 0.0)
+
+    total = sum(by_code.values())
+    ranked = sorted(by_code.items(), key=lambda x: -x[1])
+    top1_code, top1_pnl = ranked[0] if ranked else (None, 0.0)
+    top2_sum = sum(p for _, p in ranked[:2])
+    return {
+        "total_pnl": round(total, 0),
+        "top1_code": top1_code,
+        "top1_pnl": round(top1_pnl, 0),
+        "top1_pct_of_pnl": round(top1_pnl / total * 100, 1) if total > 0 else None,
+        "top2_pct_of_pnl": round(top2_sum / total * 100, 1) if total > 0 else None,
+    }
+
+
+def orders_from_trades_json(strategy: str, trades_json_raw: str | None) -> list[CandidateOrder]:
+    """2026-09-12 (Codex 재검토): 여러 연구 스크립트가 각자 손으로 복제해 온 trades_json ->
+    CandidateOrder 변환을 표준화한다. 사고: `scripts/rerun_baseline_after_F01_F02_fix_20260912.py`
+    등의 자체 `_orders()`가 sector.py 부분매도 이벤트(action=SELL, partial_qty/remaining_qty)의
+    수량 정보를 버려서, 병합계좌 재생 시 부분익절이 조용히 전량매도로 바뀌던 결함이 있었다
+    (CandidateOrder에 sell_fraction이 없던 시절 코드). 여기서는 partial_qty/remaining_qty가
+    있으면 sell_fraction = partial_qty/(partial_qty+remaining_qty)로 변환해 보존한다."""
+    payload = json.loads(trades_json_raw or "[]")
+    trades = list(payload.get("trades") or []) if isinstance(payload, dict) else list(payload)
+    orders: list[CandidateOrder] = []
+    for row in trades:
+        if row.get("action"):
+            side = str(row["action"]).lower()
+            if side not in {"buy", "sell", "pyramid"}:
+                continue
+            price = float(row.get("price") or 0)
+            if price <= 0:
+                continue
+            sell_fraction = None
+            if side == "sell" and row.get("partial_qty") is not None:
+                partial_qty = float(row.get("partial_qty") or 0)
+                remaining_qty = float(row.get("remaining_qty") or 0)
+                total_qty = partial_qty + remaining_qty
+                if total_qty > 0 and remaining_qty > 0:
+                    sell_fraction = partial_qty / total_qty
+            orders.append(CandidateOrder(
+                str(row.get("date") or ""), str(row.get("code") or row.get("stock_code") or ""),
+                side, price, strategy, 1.0, sector=str(row.get("sector") or ""),
+                sell_fraction=sell_fraction,
+            ))
+            continue
+        buy_date = row.get("buy_date") or row.get("entry_date")
+        sell_date = row.get("sell_date") or row.get("exit_date")
+        entry = row.get("entry") if row.get("entry") is not None else row.get("entry_price")
+        exit_price = row.get("exit") if row.get("exit") is not None else row.get("exit_price")
+        code = str(row.get("code") or row.get("stock_code") or "")
+        if not all((buy_date, sell_date, entry, exit_price, code)):
+            continue
+        orders.append(CandidateOrder(str(buy_date), code, "buy", float(entry), strategy, 1.0))
+        orders.append(CandidateOrder(str(sell_date), code, "sell", float(exit_price), strategy, 1.0))
+    return orders
 
 
 def simulate_merged_account(
@@ -162,6 +280,14 @@ def simulate_merged_account(
     ) if order_dates else {}
     dates = sorted(order_dates | {d for by_date in price_map.values() for d in by_date})
     for day in dates:
+        # F02 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+        # 아래에서 `marks`를 오늘 종가로 먼저 갱신한 뒤, 그 값을 그대로 매수 주문의
+        # position_limit()/equity() 계산에 넘기면 D+1 시가로 체결되는 매수 주문이
+        # "아직 알 수 없는 오늘 종가"를 참조하게 된다(재현: 동일한 시가주문 전 상태에서
+        # A 종목 평가만 10,000→12,000으로 바꾸면 dynamic_tickets 한도가 10→11로 바뀜).
+        # marks_preopen(오늘 갱신 전 = 전일 종가 기준 상태)을 매수/피라미드 사이징에
+        # 쓰고, marks(오늘 종가 반영 후)는 기존대로 일별 MDD/자산곡선 집계에만 쓴다.
+        marks_preopen = dict(marks)
         # 일별 mark-to-market: 실제 종가로 갱신(보유중이나 오늘 주문 없는 포지션도 최신가 반영).
         # price_history에 없는 종목(합성 테스트 코드 등)은 CashPortfolio.equity()가 average_price로
         # 자동 폴백 — Codex의 검증된 true simulator와 동일하게 주문가로 별도 덮어쓰지 않음.
@@ -179,16 +305,42 @@ def simulate_merged_account(
         for code in sorted(sell_groups):
             group = sell_groups[code]
             contributors = sorted({order.strategy for order in group})
-            chosen = sorted(group, key=lambda x: (-x.priority, x.strategy))[0]
             owner = capital_owner.get(code)
-            released_cost = portfolio.positions[code].cost_basis if code in portfolio.positions else 0.0
-            if portfolio.sell(code, day, chosen.price, chosen.reason):
-                sold_codes.add(code)
-                events.append({"date": day, "stock_code": code, "side": "sell", "status": "filled", "contributors": contributors})
-                attribution.pop(code, None)
-                capital_owner.pop(code, None)
-                position_sector.pop(code, None)
-                pyramid_add_counts.pop(code, None)
+            # F09: owner_only 정책이면 실제 매수(기여)한 전략의 매도신호만 인정한다.
+            # any_sell(기본, 하위호환)이면 기존과 동일하게 아무 매도신호나 인정.
+            if cfg.sell_ownership_policy == "owner_only" and owner is not None:
+                eligible = [order for order in group if order.strategy == owner]
+                if not eligible:
+                    events.append({"date": day, "stock_code": code, "side": "sell", "status": "rejected",
+                                   "reason": "not_owner_strategy", "contributors": contributors, "owner": owner})
+                    continue
+                group = eligible
+            chosen = sorted(group, key=lambda x: (-x.priority, x.strategy))[0]
+            fraction = chosen.sell_fraction
+            pos_before = portfolio.positions.get(code)
+            cost_before = pos_before.cost_basis if pos_before else 0.0
+            qty_before = pos_before.quantity if pos_before else 0
+            if fraction is not None and 0 < fraction < 1.0:
+                filled = portfolio.sell_partial(code, day, chosen.price, fraction, chosen.reason)
+            else:
+                filled = portfolio.sell(code, day, chosen.price, chosen.reason)
+            if filled:
+                pos_after = portfolio.positions.get(code)
+                fully_closed = pos_after is None
+                # 부분매도든 전량매도든 실제로 줄어든 비용만큼만 전략별 소진액을 해제한다
+                # (전량이면 released_cost==cost_before와 동일, 부분이면 그 비율만).
+                released_cost = cost_before - (pos_after.cost_basis if pos_after else 0.0)
+                events.append({"date": day, "stock_code": code, "side": "sell", "status": "filled",
+                               "contributors": contributors,
+                               **({"partial": True, "sell_fraction": fraction,
+                                   "remaining_qty": pos_after.quantity if pos_after else 0,
+                                   "qty_before": qty_before} if not fully_closed else {})})
+                if fully_closed:
+                    sold_codes.add(code)
+                    attribution.pop(code, None)
+                    capital_owner.pop(code, None)
+                    position_sector.pop(code, None)
+                    pyramid_add_counts.pop(code, None)
                 if owner:
                     strategy_capital_used[owner] = max(0.0, strategy_capital_used.get(owner, 0.0) - released_cost)
             else:
@@ -225,7 +377,7 @@ def simulate_merged_account(
             budget = chosen.budget or cfg.ticket_budget
             owner = capital_owner.get(code)
             cost_before = portfolio.positions[code].cost_basis
-            if portfolio.add_to_position(code, day, chosen.price, budget, marks):
+            if portfolio.add_to_position(code, day, chosen.price, budget, marks_preopen):
                 events.append({"date": day, "stock_code": code, "side": "pyramid", "status": "filled", "contributors": contributors})
                 pyramid_add_counts[code] = pyramid_add_counts.get(code, 0) + 1
                 if owner:
@@ -267,18 +419,23 @@ def simulate_merged_account(
                     continue
             owner = chosen.strategy
             requested_budget = chosen.budget or cfg.ticket_budget
+            # F03 fix: strategy_budget_weights가 만드는 상한은 portfolio_engine.buy()의
+            # hard_cap으로 별도 전달한다 — requested_budget에 min()으로 미리 접어 넣으면
+            # ticket_pct가 다시 max(budget, equity*ticket_pct)로 그 상한 위로 확대해버린다.
+            strategy_hard_cap = None
             if cfg.strategy_budget_weights:
                 weight = float(cfg.strategy_budget_weights.get(owner, 0.0))
                 strategy_cap = cfg.initial_cash * max(0.0, weight)
                 remaining = strategy_cap - strategy_capital_used.get(owner, 0.0)
-                requested_budget = min(requested_budget, remaining)
-                if requested_budget <= 0:
+                if remaining <= 0:
                     events.append({"date": day, "stock_code": code, "side": "buy", "status": "rejected", "reason": "strategy_budget_limit", "contributors": contributors})
                     continue
+                strategy_hard_cap = remaining
             filled = portfolio.buy(
                 code, day, chosen.price,
                 budget=requested_budget,
-                mark_prices=marks,
+                mark_prices=marks_preopen,
+                hard_cap=strategy_hard_cap,
             )
             if filled:
                 attribution[code] = contributors
@@ -322,6 +479,7 @@ def simulate_merged_account(
         "merged_duplicate_signals": merged_duplicate_signals,
         "max_drawdown_pct": round(max_drawdown_pct, 2),
         "max_drawdown_date": max_drawdown_date,
+        "pnl_concentration": pnl_concentration(portfolio.ledger, marks),
     })
     return {
         "config": asdict(cfg),
@@ -421,7 +579,7 @@ def persist_merged_run(
                 "상단 꼬리일 가능성이 높습니다. 컴포넌트 우선순위를 명시적으로 차등화하거나, "
                 "의도적으로 등록하려면 allow_path_luck=True를 넘기세요."
             )
-    conn = sqlite3.connect(db_path, timeout=60)
+    conn = connect_primary_db(timeout=60) if db_path == DB_PATH else sqlite3.connect(db_path, timeout=60)
     conn.row_factory = sqlite3.Row
     ensure_registry_schema(conn)
     known_components = {
@@ -509,13 +667,25 @@ def persist_merged_run(
         "strategy_budget_policy": bool(cfg.strategy_budget_weights),
         "sector_cap": cfg.max_sector_positions,
     }, db_path)
+    # F04 fix (2026-09-12, docs/claude_handoff_strategy_code_findings_20260912.md):
+    # 이 등록용 현금검산 루프가 side=='buy'만 현금 지출로 보고 나머지(피라미딩
+    # 추가매수 'pyramid_add' 포함)는 전부 매도처럼 현금 유입으로 더하고 있었다
+    # (재현: 초기현금 100,000 → 매수10,000+추가매수5,000 후 실제현금 85,000인데
+    # 이 루프의 기대현금은 95,000). 실제 CashPortfolio.add_to_position()의 현금
+    # 차감(portfolio_engine.py)은 처음부터 정확했고, 오류는 이 별도 검산 루프에만
+    # 있었다 — 즉 정상적인 피라미딩 조합이 이 검산 때문에 부당하게 fail 처리됐을 수
+    # 있다. buy/pyramid_add=지출, sell=수입으로 명시하고, 알 수 없는 side는 조용히
+    # 매도로 취급하지 않고 즉시 오류로 처리한다.
     expected_cash = cfg.initial_cash
     for row in result["ledger"]:
         gross = float(row["quantity"]) * float(row["price"])
-        if row["side"] == "buy":
+        side = row["side"]
+        if side in ("buy", "pyramid_add"):
             expected_cash -= gross + float(row.get("fee") or 0)
-        else:
+        elif side == "sell":
             expected_cash += gross - float(row.get("fee") or 0) - float(row.get("tax") or 0)
+        else:
+            raise ValueError(f"cash_reconciliation: unknown ledger side {side!r}")
     cash_delta = float(summary["cash"]) - expected_cash
     register_artifact(run_hash, "cash_reconciliation", abs(cash_delta) < 0.01, {
         "initial_cash": cfg.initial_cash, "final_cash": summary["cash"],

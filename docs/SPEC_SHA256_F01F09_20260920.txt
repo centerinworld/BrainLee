@@ -1,0 +1,7 @@
+# F01~F09 규격문서 정본 — immutable 복사 SHA-256 (code-doer, 2026-09-20)
+#
+# 원본 소스: /Volumes/Realtek_NVME/stock_dashboard/docs/  (루트 레포, branch claude/automate-stock-discovery-44sMp)
+# 런타임 정본: 이 레포 docs/ (branch claude/sqlite-migration-completion-x0h891), chmod 444 (read-only)
+# 원본과 런타임 복사본은 바이트 단위 동일(shasum 일치)함을 확인.
+38ffa6a2422f1ba975c1f48e1668cae71b1d5d369331260cf5043052d2f7468b  docs/claude_handoff_strategy_code_findings_20260912.md
+c7c97d816d2c10a4f95ef59457e3eca0a46e90fe67fb87debbe973804ffa2f6b  docs/claude_resume_strategy_review_20260912.md

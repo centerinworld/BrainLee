@@ -1,7 +1,8 @@
+from db_compat import connect_primary_db
 import sqlite3, sys
 sys.path.insert(0, '/Applications/stock_dashboard')
 
-conn = sqlite3.connect('/Applications/stock_dashboard/stock.db')
+conn = connect_primary_db()
 cur = conn.cursor()
 
 cur.execute("PRAGMA table_info(portfolio_snapshot)")

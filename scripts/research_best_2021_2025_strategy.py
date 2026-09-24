@@ -9,6 +9,7 @@ unallocated capital in cash. It is research code, not live trading advice.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import math
 import sqlite3
@@ -41,7 +42,7 @@ class Rule:
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     return conn
 

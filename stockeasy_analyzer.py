@@ -13,6 +13,7 @@ stockeasy_analyzer.py — 스탁이지 3전략 AI 분석기
   python3 stockeasy_analyzer.py --strategy peak — 특정 전략만
 """
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 import json
@@ -321,7 +322,7 @@ def parse_strategy_html(html: str) -> dict:
 # ──────────────────────────────────────────────────────────────
 def get_stock_data(stock_name: str, entry_date: str) -> dict:
     """종목명으로 DB에서 기술·수급·재무 데이터 수집 (매수 시점 기준)"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     result = {
         "name": stock_name,
         "entry_date": entry_date,
@@ -771,7 +772,7 @@ def _send_telegram_reports(reports: list, now_str: str) -> None:
 def _load_previous_strategy_snapshot(strategy: str) -> tuple[str, set[str]]:
     """현재 저장 직전의 최신 스탁이지 스냅샷을 읽는다."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         row = conn.execute("""
             SELECT analyzed_at, holdings_json
             FROM stockeasy_analysis
@@ -847,7 +848,7 @@ def _save_analysis_to_db(reports: list) -> None:
     for attempt in range(6):
         conn = None
         try:
-            conn = sqlite3.connect(DB_PATH, timeout=60)
+            conn = connect_primary_db(timeout=60)
             conn.execute("PRAGMA busy_timeout=120000")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS stockeasy_analysis (
@@ -898,7 +899,7 @@ def _save_analysis_to_db(reports: list) -> None:
 def run_weekly_summary() -> None:
     """매주 일요일 09:00 — 지난 7일 분석 DB에서 패턴 종합 + 텔레그램."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         week_ago = (date.today() - timedelta(days=7)).isoformat()
         rows = conn.execute("""
             SELECT strategy, analyzed_at, holdings_cnt, exits_cnt, analysis_text

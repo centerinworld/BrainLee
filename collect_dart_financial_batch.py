@@ -19,6 +19,7 @@ collect_dart_financial_batch.py — DART 전종목 재무제표 배치 수집 (�
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import contextlib
 import csv
@@ -442,7 +443,7 @@ def _eligible_codes(conn: sqlite3.Connection) -> list[str]:
         WHERE su.market IN ('유가증권','코스피','코스닥','KOSPI','KOSDAQ')
           AND COALESCE(su.stock_type,'보통주') = '보통주'
           AND LENGTH(su.stock_code) = 6
-          AND su.stock_code GLOB '[0-9]*'
+          AND su.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         ORDER BY su.stock_code
     """).fetchall()
     return [r[0] for r in rows]
@@ -456,7 +457,7 @@ def run(
     validate_only: bool = False,
     limit: int | None = None,
 ):
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.row_factory = sqlite3.Row
@@ -518,7 +519,7 @@ def run(
     # 수집 후 자동 검증
     if ok > 0:
         logger.info("수집 완료 — 자동 검증 실행")
-        conn2 = sqlite3.connect(DB_PATH, timeout=60)
+        conn2 = connect_primary_db(timeout=60)
         conn2.row_factory = sqlite3.Row
         results = validate_eps_bps(conn2)
         conn2.close()

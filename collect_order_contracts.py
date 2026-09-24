@@ -15,6 +15,7 @@ order_contracts 테이블은 스케줄러(scheduler.py `_job_order_contracts_dai
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import asyncio
 import logging
@@ -34,7 +35,7 @@ RATE_LIMIT_SECS = 0.3  # DART list() 호출 사이 최소 간격
 
 
 def get_target_codes(watchlist_only: bool, limit: int | None) -> list[str]:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     try:
         if watchlist_only:
             codes: set[str] = set()
@@ -42,7 +43,7 @@ def get_target_codes(watchlist_only: bool, limit: int | None) -> list[str]:
                 try:
                     rows = conn.execute(
                         f"SELECT DISTINCT stock_code FROM {table} "
-                        f"WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'"
+                        f"WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
                     ).fetchall()
                     codes.update(r[0] for r in rows)
                 except sqlite3.OperationalError:
@@ -51,7 +52,7 @@ def get_target_codes(watchlist_only: bool, limit: int | None) -> list[str]:
         else:
             rows = conn.execute("""
                 SELECT DISTINCT stock_code FROM stock_universe
-                WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND (stock_type IS NULL OR stock_type = '보통주')
                 ORDER BY market_cap DESC NULLS LAST
             """).fetchall()

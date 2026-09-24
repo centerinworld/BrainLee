@@ -25,7 +25,8 @@ def run_backtest_v1(start_date: str, end_date: str,
                     per_stock: float = 10_000_000,
                     max_positions: int = 10,
                     chart_confluence: bool = False,
-                    run_name: str = None, run_id: str = None) -> str:
+                    run_name: str = None, run_id: str = None,
+                    data_asof_ts: str = None) -> str:
     """V1 트렌드 (미너비니 추세추종 기본) — 월 10개 한도"""
     return _run_generic_backtest(
         chart_confluence=chart_confluence,
@@ -38,9 +39,9 @@ def run_backtest_v1(start_date: str, end_date: str,
         mktcap_min=1000,    # 1000억+ (억원 단위)
         max_new_per_month=10,         # ★ 추세추종은 후보 많아서 월 10개 제한
         strategy_key='v_trend',
+        data_asof_ts=data_asof_ts,
         # sell_signal_fn=_sell_signal_v1,  # 데스크로스 테스트: MA60붕괴 조건과 중복, 효과 없음(25.9%→25.9%)
     )
-
 
 
 

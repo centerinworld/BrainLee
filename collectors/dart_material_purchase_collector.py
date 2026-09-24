@@ -4,6 +4,7 @@ DART 사업보고서 '원재료 및 생산설비' 섹션에서 연간 원재료 
 - 단위: 섹션 헤더에 명시된 단위(백만원/억원/원 등) 자동 감지
 - 저장: dart_cost_quarterly (is_annual=1, quarter=4) 및 material_cost_krw 컬럼
 """
+from db_compat import connect_primary_db
 import sqlite3, zipfile, io, re, requests, time, os, logging, sys
 from pathlib import Path
 
@@ -34,7 +35,7 @@ def _mark_exhausted(key: str, reason: str = ""):
         log.warning("키 소진 처리: ...%s (%s) — 남은 키 %d개", key[-4:], reason, len(KEYS) - len(_exhausted))
 
 def _get_conn():
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=60000")
     conn.row_factory = sqlite3.Row

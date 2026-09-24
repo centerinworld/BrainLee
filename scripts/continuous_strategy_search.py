@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from db_compat import connect_primary_db
 import argparse
 from dataclasses import dataclass
 from itertools import product
@@ -46,7 +47,7 @@ class RuleSpec:
 
 
 def conn(path: Path = DB_PATH) -> sqlite3.Connection:
-    c = sqlite3.connect(path, timeout=60)
+    c = connect_primary_db(timeout=60) if path == DB_PATH else sqlite3.connect(path, timeout=60)
     c.row_factory = sqlite3.Row
     return c
 

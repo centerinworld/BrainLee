@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import re
 import sqlite3
@@ -879,7 +880,7 @@ def reapply_latest_macro_promotions(conn: sqlite3.Connection, ts: str) -> int:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA busy_timeout=120000")
     conn.row_factory = sqlite3.Row
     init_table(conn)

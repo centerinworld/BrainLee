@@ -5,6 +5,7 @@ API: elestock (임원·주요주주특정증권등소유상황보고서)
 테이블: dart_insider_holdings
 """
 from __future__ import annotations
+from db_compat import connect_primary_db
 import logging, os, requests, sqlite3, sys, time, zipfile, io, xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -51,7 +52,7 @@ def _get_corp_map() -> dict[str, str]:
                 if e.findtext("stock_code","").strip()}
     except Exception as e:
         logger.warning("corpCode.xml 로드 실패, 로컬 DB corp_code 맵으로 fallback: %s", e)
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         rows = conn.execute(
             """
             SELECT stock_code, corp_code FROM dart_insider_holdings
@@ -75,7 +76,7 @@ def collect_insider_holdings(
     if not end_de:
         end_de = datetime.now().strftime("%Y%m%d")
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
 
     # 이미 수집된 최신 날짜 확인
@@ -191,7 +192,7 @@ def collect_major_holders(
     if not end_de:
         end_de = datetime.now().strftime("%Y%m%d")
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     corp_map = _get_corp_map()
     if stock_codes is None:
@@ -325,7 +326,7 @@ def collect_major_holders_bulk(
     if not end_de:
         end_de = datetime.now().strftime("%Y%m%d")
     corp_map = _get_corp_map()
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     stocks = [row[0] for row in conn.execute(
         """
         SELECT stock_code FROM stock_universe
@@ -359,7 +360,7 @@ def collect_recent_disclosures(days: int = 2) -> dict:
     """최근 N일 임원·주요주주 공시 수집 (스케줄러에서 호출)"""
     bgn = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
     end = datetime.now().strftime("%Y%m%d")
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     recent_codes = [row[0] for row in conn.execute(
         """
         SELECT DISTINCT stock_code
@@ -400,7 +401,7 @@ def collect_insider_holdings_bulk(
     _ki = 0; _exhausted = set()
 
     corp_map = _get_corp_map()
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
 

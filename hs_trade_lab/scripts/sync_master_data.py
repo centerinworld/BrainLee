@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from db_compat import connect_primary_db
 from pathlib import Path
 
 
@@ -38,7 +39,7 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
 
 def main() -> None:
     conn = sqlite3.connect(DB_PATH)
-    root = sqlite3.connect(f"file:{ROOT_STOCK_DB}?mode=ro", uri=True)
+    root = connect_primary_db(readonly=True)
     root.row_factory = sqlite3.Row
     ensure_tables(conn)
 

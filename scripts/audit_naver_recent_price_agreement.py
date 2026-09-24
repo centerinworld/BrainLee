@@ -2,6 +2,7 @@
 """Measure recent close-price agreement between price_history and Naver Finance."""
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import re
 import sqlite3
@@ -32,7 +33,7 @@ def fetch(code: str) -> tuple[str, dict[str, float]]:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     codes = [r[0] for r in conn.execute(
         """WITH x AS (SELECT *,ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY base_date DESC,id DESC) rn FROM stock_universe)

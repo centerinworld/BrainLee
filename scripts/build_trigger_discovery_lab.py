@@ -13,6 +13,7 @@ first tradable close within a short fill window to reduce sparse-price artifacts
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import hashlib
 import json
@@ -501,7 +502,7 @@ def main() -> int:
     parser.add_argument("--limit-forward-events", type=int, default=None)
     args = parser.parse_args()
 
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     init_tables(conn)
     conn.execute("DELETE FROM trigger_discovery_forward_returns")

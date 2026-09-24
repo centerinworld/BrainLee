@@ -20,6 +20,7 @@ from backtest_common import (
     _chart_bottom_confluence,
     _chart_prep,
     _chart_top_confluence,
+    _final_liquidation_quote_for_code,
     _load_trade_signals,
     _ma,
     _net_profit,
@@ -567,24 +568,26 @@ def run_backtest_golden_cross(
                 if dd < max_dd:
                     max_dd = dd
 
-        # 잔존 포지션 청산
+        # 잔존 포지션 청산. 기간 말 거래일에 시세가 없는 종목은 상장폐지·장기
+        # 거래정지 가능성이 있으므로 과거 마지막 종가를 끌어 쓰지 않는다.
+        last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in pos.items():
-            c = sd[code]['c'][-1]
-            last_date = sd[code]['d'][-1]
+            idx_map = {day: idx for idx, day in enumerate(sd[code]['d'])}
+            c, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, idx_map, sd[code]['c'])
             net_amt, net_pct = _net_profit(p['entry'], c, p['qty'],
                                            p.get('mkt_cap_억', sd[code].get('mkt_cap_억', 500)))
             cash += p['entry'] * p['qty'] + net_amt
             trades.append({
                 'stock_code': code,
                 'entry_date': p['entry_date'],
-                'exit_date': last_date,
+                'exit_date': last_day,
                 'entry_price': p['entry'],
                 'exit_price': c,
                 'qty': p['qty'],
                 'profit_pct': net_pct,
                 'profit_amt': net_amt,
                 'hold_days': p.get('hold', 0),
-                'exit_reason': '잔존',
+                'exit_reason': final_reason,
             })
 
         # 성과 집계
@@ -695,18 +698,39 @@ def _sector_score_as_of(conn: sqlite3.Connection, sector_key: str, as_of: str) -
     ).fetchone() or (0,))[0] or 0.0
 
     # 영업이익 YoY (섹터 합산)
-    cur_year  = str(int(as_of[:4]))
-    prev_year = str(int(as_of[:4]) - 1)
-    op_cur = (conn.execute(
-        f"SELECT SUM(operating_profit) FROM financial_data "
-        f"WHERE stock_code IN {ph_sql} AND is_annual=1 AND year=?",
-        codes + [cur_year]
-    ).fetchone() or (None,))[0]
-    op_prev = (conn.execute(
-        f"SELECT SUM(operating_profit) FROM financial_data "
-        f"WHERE stock_code IN {ph_sql} AND is_annual=1 AND year=?",
-        codes + [prev_year]
-    ).fetchone() or (None,))[0]
+    # 2026-09-08 수정: report_type(CFS/OFS) 타이브레이크 없이 SUM()하면 두 유형을 다
+    # 보고하는 종목의 영업이익이 이중계상된다 — se_momentum.py에서 발견된 것과 동일
+    # 부류의 버그. 종목당 CFS우선 1행만 남긴 뒤 합산한다.
+    #
+    # 2026-09-22 수정(룩어헤드 편향 발견): 이 쿼리는 애초에 avail_date 필터가 전혀
+    # 없었고, year도 as_of의 "당해년도"(cur_year=as_of[:4])를 그대로 썼다 — FY연간
+    # 실적은 보통 다음해 3월에 공시되므로, as_of가 속한 해의 연간실적은 그 시점에
+    # 아직 존재할 수 없다(예: as_of=2024-06이면 FY2024는 그 해 12월에야 끝나고
+    # 공시는 2025년 3월). 실측 확인: 005930 FY2025 실제공시일 2026-03-11인데
+    # financial_data에는 이미 그 행이 들어있어, as_of=2025-06처럼 과거로 백테스트를
+    # 돌려도 미래에만 존재했어야 할 실적을 그대로 읽어옴. year를
+    # (as_of연도-1)/(as_of연도-2)로 정정(공시시점상 실제로 가장 최근 사용 가능한
+    # 연간실적 기준 YoY로 의미 자체를 맞춤) + avail_date<=as_of 필터를 다른 전략들과
+    # 동일한 관례(COALESCE(d.avail_date, 법정기한 fallback))로 추가해 3월 이전
+    # 구간까지 이중으로 방어.
+    _op_sum_sql = (
+        f"SELECT SUM(operating_profit) FROM ("
+        f"  SELECT f.stock_code, f.operating_profit,"
+        f"         ROW_NUMBER() OVER ("
+        f"             PARTITION BY f.stock_code"
+        f"             ORDER BY CASE f.report_type WHEN 'CFS' THEN 0 ELSE 1 END"
+        f"         ) AS rt_rn"
+        f"  FROM financial_data f"
+        f"  LEFT JOIN fin_disclosure_dates d ON d.stock_code=f.stock_code AND d.year=f.year"
+        f"    AND d.quarter=4 AND d.is_annual=1"
+        f"  WHERE f.stock_code IN {ph_sql} AND f.is_annual=1 AND f.year=?"
+        f"    AND COALESCE(d.avail_date, printf('%d-03-31', f.year+1)) <= ?"
+        f") dedup WHERE rt_rn=1"
+    )
+    cur_year  = str(int(as_of[:4]) - 1)
+    prev_year = str(int(as_of[:4]) - 2)
+    op_cur = (conn.execute(_op_sum_sql, codes + [cur_year, as_of]).fetchone() or (None,))[0]
+    op_prev = (conn.execute(_op_sum_sql, codes + [prev_year, as_of]).fetchone() or (None,))[0]
 
     op_yoy = 0.0
     if op_cur and op_prev and op_prev != 0:
@@ -786,6 +810,5 @@ def _is_sector_buy(conn: sqlite3.Connection, code: str, date: str,
 
 
 # ─── V-DEEP: 깊은낙폭 반등 집중 전략 ─────────────────────────────────────────
-
 
 

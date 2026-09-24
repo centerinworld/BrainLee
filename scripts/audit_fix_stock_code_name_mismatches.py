@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -65,7 +66,7 @@ def cleanup_hs_company_map() -> list[dict]:
 
 
 def cleanup_sector_stocks() -> dict:
-    conn = sqlite3.connect(STOCK_DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     try:
         rows = rows_as_dicts(
@@ -103,7 +104,7 @@ def cleanup_sector_stocks() -> dict:
 
 
 def verify() -> dict:
-    stock_conn = sqlite3.connect(STOCK_DB)
+    stock_conn = connect_primary_db()
     stock_conn.row_factory = sqlite3.Row
     hs_conn = sqlite3.connect(HS_DB)
     hs_conn.row_factory = sqlite3.Row

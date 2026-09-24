@@ -1,6 +1,7 @@
+from db_compat import connect_primary_db
 import sqlite3
 
-db = sqlite3.connect("stock.db")
+db = connect_primary_db()
 
 def patch(date_str, data, field):
     print(f"Patching {date_str} for {field}...")

@@ -14,6 +14,7 @@ from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
     DB_PATH,
+    _final_liquidation_quote_for_code,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
@@ -93,7 +94,7 @@ def run_backtest_earnings_supply_discovery(
             SELECT stock_code, stock_name, market_cap FROM stock_universe
             WHERE market IN ('유가증권','코스피','코스닥','KOSPI','KOSDAQ')
               {_mktcap_gate}
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         """, _mktcap_param).fetchall()
         codes = [r[0] for r in all_rows if not (r[1] and _pref_pat.search(r[1]))]
         mktcap_map = {r[0]: (r[2] or 300) for r in all_rows}
@@ -323,16 +324,13 @@ def run_backtest_earnings_supply_discovery(
 
         last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in list(pos.items()):
-            i = didx[code].get(last_day)
-            curr = sd[code]['c'][i] if i is not None else p['entry']
-            if curr <= 0:
-                curr = p['entry']
+            curr, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]['c'])
             pnl, net_pct = _net_profit(p['entry'], curr, p['shares'], p.get('mkt_cap_억', 300))
             cash += p['shares'] * p['entry'] + pnl
             trades.append({
                 'code': code, 'buy_date': p['buy_date'], 'sell_date': last_day,
                 'entry': p['entry'], 'exit': curr,
-                'pnl_pct': net_pct, 'reason': 'final', 'pnl': round(pnl, 0),
+                'pnl_pct': net_pct, 'reason': final_reason, 'pnl': round(pnl, 0),
             })
 
         name_map = {}
@@ -379,7 +377,6 @@ def run_backtest_earnings_supply_discovery(
         except Exception:
             pass
         raise
-
 
 
 

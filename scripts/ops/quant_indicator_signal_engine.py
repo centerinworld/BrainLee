@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import html
 import json
@@ -296,7 +297,7 @@ def build_message(event: dict, stocks: list[dict]) -> str:
 
 
 def run(limit_events: int = 30, send_telegram: bool = False) -> dict:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     init_tables(conn)
     ts = now_kst()

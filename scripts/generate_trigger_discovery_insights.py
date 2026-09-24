@@ -8,6 +8,7 @@ surface recent candidates without running any BigQuery refresh/query.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import math
 import sqlite3
@@ -262,7 +263,7 @@ def write_reports(payload: dict) -> tuple[Path, Path]:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     summary = rows(
         conn,
         """

@@ -193,7 +193,18 @@ def _extract_labeled_num(text: str, keyword: str, window: int = 180, prefer: str
     cands: list[tuple[float, str]] = []
     for km in re.finditer(keyword, t, re.IGNORECASE):
         w = t[km.end():km.end() + window]
-        # 표에서 '-'는 값 없음이므로, 다음 숫자만 후보로 본다.
+        # ⚠️ 2026-09-06 수정(사용자 지적으로 발견): "값이 없으면 다음 숫자를 후보로
+        # 본다"는 규칙이 너무 관대해서, "시설자금(원) - 영업양수자금(원) -
+        # 운영자금(원) 13,500,024,150" 같은 표에서 "시설자금"/"영업양수자금"이
+        # 자기 값("-")을 건너뛰고 훨씬 뒤에 있는 "운영자금"의 값을 자기 값으로
+        # 잘못 채택해버림 — 합산 시 같은 금액이 여러 항목에 중복 계상되어
+        # 실제보다 몇 배 부풀려짐(020210722000277 실측: 13,500,024,150원이
+        # 3번 중복 합산되어 issue_amount_krw가 40,500,072,460원으로 잘못 저장).
+        # 라벨 직후 첫 토큰이 단독 "-"(값없음 표시)면 그 즉시 "값 없음"으로 확정하고
+        # 뒤쪽 숫자를 빌려오지 않는다.
+        stripped = w.lstrip()
+        if stripped[:1] == "-" and not re.match(r"-[\d,]", stripped):
+            continue
         for m in re.finditer(r"(?<![A-Za-z])(-?[\d,]+(?:\.\d+)?)", w):
             v = _to_num(m.group(1))
             if v is None:

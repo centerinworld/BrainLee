@@ -3,6 +3,7 @@
 - 이미 데이터가 있는 종목만 최신 1주일치 업데이트
 - 상장폐지 종목 자동 제외
 """
+from db_compat import connect_primary_db
 import sqlite3, time, logging, yfinance as yf
 from datetime import datetime, timedelta
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 DB_PATH = '/Applications/stock_dashboard/stock.db'
 
 def collect_weekly():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     start = datetime.now()
 
     # 이미 주가 데이터가 있는 종목만 (60일 이상) + 최근 1주일 데이터 없는 경우
@@ -30,7 +31,7 @@ def collect_weekly():
         FROM stock_universe s
         JOIN price_history p ON s.stock_code = p.stock_code
         WHERE LENGTH(s.stock_code)=6
-          AND s.stock_code GLOB '[0-9]*'
+          AND s.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         GROUP BY s.stock_code
         HAVING cnt >= 60
         ORDER BY s.stock_code

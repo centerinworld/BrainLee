@@ -7,6 +7,7 @@
 - 외국인 지분율 급증
 스케줄러에서 평일 18:00 실행
 """
+from db_compat import connect_primary_db
 import sqlite3, sys, json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,7 +20,7 @@ ALERT_STATE_FILE = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/t
 
 
 def _db():
-    conn = sqlite3.connect(DB_PATH, timeout=20)
+    conn = connect_primary_db(timeout=20)
     conn.row_factory = sqlite3.Row
     return conn
 

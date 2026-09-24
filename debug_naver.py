@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """네이버 증권 해외지수 API 응답 디버깅 + 5.8일 데이터 직접 삽입"""
+from db_compat import connect_primary_db
 import requests, json, sqlite3
 from datetime import datetime, timedelta, date
 
@@ -47,7 +48,7 @@ for naver_sym, yf_sym, name in [("NAS", "^IXIC", "NASDAQ"), ("SPI", "^GSPC", "S&
 
 print("\n\n=== DB 직접 삽입 (파싱 성공한 경우) ===")
 if results:
-    conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+    conn = connect_primary_db()
     for yf_sym, data in results.items():
         inserted = 0
         for item in data:
@@ -86,7 +87,7 @@ else:
     # 수동 삽입 스크립트 생성
     manual = '''
 import sqlite3
-conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+conn = connect_primary_db()
 # 5월 8일 (목) 종가 - 확인 후 수정하세요
 data = [
     # (symbol, date, open, high, low, close, volume)
@@ -111,7 +112,7 @@ print("삽입 완료")
     print("insert_manual.py 생성됨")
 
 print("\n=== DB 최신 상태 ===")
-conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+conn = connect_primary_db()
 rows = conn.execute(
     "SELECT stock_code, date, close FROM price_history WHERE stock_code IN ('^IXIC','^GSPC') ORDER BY stock_code, date DESC LIMIT 6"
 ).fetchall()

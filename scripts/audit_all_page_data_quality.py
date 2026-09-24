@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from collection_health import evaluate_all_contracts
+from db_compat import connect_primary_db, primary_database_label
 
 DB = ROOT / "stock.db"
 HS_DB = ROOT / "hs_trade_lab" / "data" / "hs_trade_lab.db"
@@ -59,7 +60,7 @@ CHECKS: list[TableCheck] = [
     TableCheck("재무/텐버거/DART Excel", "현금흐름", "cash_flow_data", "stock_code,year,quarter,is_annual,report_type", "year", "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type", ("operating_cf", "capex"), 20_000, None, "DART cashflow batch", "P0"),
     TableCheck("재무/텐버거/DART Excel", "표준 현금흐름", "canonical_cashflow_data", "stock_code,year,quarter,is_annual,report_type", "year", "stock_code || '|' || year || '|' || quarter || '|' || is_annual || '|' || report_type", ("operating_cf", "capex"), 20_000, None, "canonical cashflow rebuild", "P1"),
     TableCheck("재무/텐버거", "매입재료비", "dart_material_purchase", "stock_code,year,report_type", "year", "stock_code || '|' || year || '|' || report_type", ("material_purchase_krw",), 3_000, None, "DART material collector", "P0"),
-    TableCheck("재무/텐버거", "수주잔고", "order_backlog", "stock_code,year,quarter", "year", "stock_code || '|' || year || '|' || quarter", ("backlog_normalized",), 1_000, None, "DART backlog collector", "P0"),
+    TableCheck("재무/텐버거", "수주잔고", "order_backlog", "stock_code,year,quarter", "year", "stock_code || '|' || year || '|' || quarter", (), 1_000, None, "DART backlog collector", "P0"),
     TableCheck("재무/텐버거", "세그먼트 매출", "segment_revenue", "stock_code,year,quarter,segment_name", "year", "stock_code || '|' || year || '|' || quarter || '|' || segment_name", ("revenue",), 1_000, None, "DART segment collector", "P0"),
     TableCheck("고용 페이지", "NPS 월별", "nps_workplace_monthly", "ym,stock_code", "ym", "ym || '|' || stock_code", ("nw_acqzr_cnt", "lss_jnngp_cnt"), 10_000, 75, "employment_monitor.collect_nps_workplace", "P0"),
     # 2026-07-17 수정: min_rows 5,000 → 1,200. DART empSttus는 전 상장사가 아니라 일부만 공시하는
@@ -67,6 +68,8 @@ CHECKS: list[TableCheck] = [
     # 완전 커버 상한이 아니라 collector 재발 회귀를 잡을 수 있는 현재 달성치(1,332행) 근접 하한으로 설정.
     TableCheck("고용/재무", "DART 임직원", "dart_employee_count", "stock_code,year,reprt_code,acmtn_dscd", "year", "stock_code || '|' || year || '|' || reprt_code || '|' || COALESCE(acmtn_dscd, '')", ("total_emp",), 1_200, None, "DART employee collector", "P1"),
     TableCheck("컨센서스/종목", "컨센서스", "consensus_targets", "report_idx 또는 자연키", "report_date", "COALESCE(CAST(report_idx AS TEXT), stock_code || '|' || report_date || '|' || securities_firm || '|' || analyst || '|' || report_title || '|' || target_price)", ("target_price",), 1_000, 45, "collect_consensus", "P2", "report_idx가 없는 한경 리포트는 자연키로 중복 판정"),
+    TableCheck("컨센서스/전략센터", "KIS 추정실적 최신", "forward_estimates", "stock_code,period,source", "collected_at", "stock_code || '|' || period || '|' || source", ("eps_원", "per"), 500, 10, "KIS estimate-perform", "P1"),
+    TableCheck("컨센서스/전략센터", "KIS 추정실적 변경이력", "forward_estimate_snapshots", "stock_code,period,source,snapshot_date", "snapshot_date", "COALESCE(stock_code, '') || '|' || COALESCE(period, '') || '|' || COALESCE(source, '') || '|' || COALESCE(snapshot_date, '')", ("eps_원", "per"), 500, 10, "KIS estimate-perform snapshots", "P1"),
     TableCheck("텐버거", "텐버거 결과", "tenbagger_results", "run_time,stock_code", "run_time", "run_time || '|' || stock_code", ("total_score", "current_price"), 10, 7, "routes/tenbagger run", "P0"),
     TableCheck("텐버거", "실적 시그널", "earnings_signals", "stock_code,year,quarter,signal_type", "year", "stock_code || '|' || year || '|' || quarter || '|' || signal_type", ("signal_type",), 1, None, "earnings signal scan", "P1"),
     TableCheck("퀀트 주요지표", "주요지표 시계열", "quant_major_indicator_series", "indicator_key,period,series_name,source_name", "period", "indicator_key || '|' || period || '|' || series_name || '|' || source_name", ("value",), 100, 75, "scripts/ops/quant_indicators_cron.py", "P1"),
@@ -207,6 +210,28 @@ def _append_note(result: dict, note: str) -> None:
 
 def apply_dynamic_coverage_notes(conn: sqlite3.Connection, results: list[dict]) -> None:
     """Add DB-derived coverage figures for fields where row count alone is misleading."""
+    canonical_fin = _by_table(results, "canonical_financial_data")
+    if canonical_fin and canonical_fin.get("exists"):
+        try:
+            empty_rows = q_scalar(
+                conn,
+                """
+                SELECT COUNT(*) FROM canonical_financial_data
+                WHERE revenue IS NULL AND operating_profit IS NULL AND net_income IS NULL
+                  AND total_assets IS NULL AND total_liabilities IS NULL AND total_equity IS NULL
+                  AND capital_stock IS NULL AND eps IS NULL AND bps IS NULL
+                  AND dps IS NULL AND roe IS NULL
+                """,
+            )
+            canonical_fin["fully_empty_rows"] = empty_rows
+            if empty_rows:
+                canonical_fin.setdefault("issues", []).append(f"fully_empty_rows:{empty_rows}")
+                canonical_fin["status"] = "unstable_or_needs_review"
+                canonical_fin["severity"] = "high"
+        except Exception as exc:
+            canonical_fin.setdefault("issues", []).append(f"empty_row_check_error:{exc}")
+            canonical_fin["status"] = "unstable_or_needs_review"
+
     segment = _by_table(results, "segment_revenue")
     if segment and segment.get("exists"):
         try:
@@ -240,32 +265,66 @@ def apply_dynamic_coverage_notes(conn: sqlite3.Connection, results: list[dict]) 
     dilution = _by_table(results, "dilution_events")
     if dilution and dilution.get("exists"):
         try:
-            total, with_amount, stocks_with_amount = conn.execute(
+            applicable, confirmed, stocks_with_amount, unclassified = conn.execute(
                 """
                 SELECT
-                  COUNT(*) AS total_rows,
-                  SUM(CASE WHEN issue_amount IS NOT NULL AND issue_amount > 0 THEN 1 ELSE 0 END) AS with_issue_amount,
-                  COUNT(DISTINCT CASE WHEN issue_amount IS NOT NULL AND issue_amount > 0 THEN stock_code END) AS stocks_with_issue_amount
+                  SUM(CASE WHEN risk_amount_status IN ('amount_confirmed', 'amount_missing_event_usable') THEN 1 ELSE 0 END),
+                  SUM(CASE WHEN risk_amount_status = 'amount_confirmed' THEN 1 ELSE 0 END),
+                  COUNT(DISTINCT CASE WHEN risk_amount_status = 'amount_confirmed' THEN stock_code END),
+                  SUM(CASE WHEN risk_amount_status IS NULL THEN 1 ELSE 0 END)
                 FROM dilution_events
                 """
             ).fetchone()
-            pct = (with_amount / total * 100) if total else 0
-            dilution["issue_amount_rows"] = with_amount
+            pct = (confirmed / applicable * 100) if applicable else 0
+            dilution["issue_amount_applicable_rows"] = applicable
+            dilution["issue_amount_rows"] = confirmed
             dilution["issue_amount_stocks"] = stocks_with_amount
             dilution["issue_amount_coverage_pct"] = round(pct, 2)
             dilution["issue_amount_status"] = "partial" if pct < 80 else "ok"
             _append_note(
                 dilution,
-                f"issue_amount 실채움 {with_amount:,}/{total:,} ({pct:.2f}%), {stocks_with_amount:,}종목. "
-                f"80% 미만이면 금액 기반 희석 리스크는 부분완료로 간주하고, 금액 미추출 행은 건수 기반 리스크로만 사용",
+                f"금액 적용 대상 이벤트 중 확인 {confirmed:,}/{applicable:,} ({pct:.2f}%), "
+                f"{stocks_with_amount:,}종목. 무상증자/결과/가격조정 등 금액 비적용 행은 분모에서 제외",
             )
+            if unclassified:
+                dilution.setdefault("issues", []).append(f"unclassified_quality:{unclassified}")
             if pct < 80:
                 dilution.setdefault("issues", []).append(f"partial_field:issue_amount:{pct:.2f}%<80%")
-                if dilution.get("status") == "ok":
-                    dilution["status"] = "unstable_or_needs_review"
-                    dilution["severity"] = "high"
+            if dilution.get("issues"):
+                dilution["status"] = "unstable_or_needs_review"
+                dilution["severity"] = "high"
         except Exception as exc:
             dilution.setdefault("issues", []).append(f"coverage_note_error:dilution_events:{exc}")
+
+    backlog = _by_table(results, "order_backlog")
+    if backlog and backlog.get("exists"):
+        try:
+            total, raw_available, normalized, parse_failures = conn.execute(
+                """
+                SELECT COUNT(*),
+                  SUM(CASE WHEN backlog_amount IS NOT NULL THEN 1 ELSE 0 END),
+                  SUM(CASE WHEN backlog_normalized IS NOT NULL THEN 1 ELSE 0 END),
+                  SUM(CASE WHEN backlog_amount IS NOT NULL AND backlog_normalized IS NULL THEN 1 ELSE 0 END)
+                FROM order_backlog
+                """
+            ).fetchone()
+            source_absent = total - raw_available
+            backlog["raw_amount_rows"] = raw_available
+            backlog["normalized_rows"] = normalized
+            backlog["source_non_numeric_rows"] = source_absent
+            backlog["normalization_failures"] = parse_failures
+            _append_note(
+                backlog,
+                f"정규화 {normalized:,}/{total:,}; 원문 수치 미제공 {source_absent:,}; "
+                f"원금액 존재 후 정규화 실패 {parse_failures:,}. 원문 비수치 행은 0으로 대체하지 않고 특징으로 유지",
+            )
+            if parse_failures:
+                backlog.setdefault("issues", []).append(f"normalization_failures:{parse_failures}")
+                backlog["status"] = "unstable_or_needs_review"
+                backlog["severity"] = "high"
+        except Exception as exc:
+            backlog.setdefault("issues", []).append(f"coverage_note_error:order_backlog:{exc}")
+
 
 
 def apply_operational_fallbacks(results: list[dict]) -> None:
@@ -364,8 +423,9 @@ def audit_hs_trade_lab() -> list[dict]:
 
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
+    # Audit the same primary store used by the application.  Directly opening
+    # stock.db can inspect an outdated SQLite mirror when PostgreSQL is active.
+    conn = connect_primary_db(readonly=True)
     try:
         results = [audit_one(conn, c) for c in CHECKS]
         apply_dynamic_coverage_notes(conn, results)
@@ -374,13 +434,13 @@ def main() -> int:
     finally:
         conn.close()
     for r in results:
-        r["db"] = str(DB)
+        r["db"] = primary_database_label()
     if HS_DB.exists():
         results.extend(audit_hs_trade_lab())
 
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "db": str(DB),
+        "db": primary_database_label(),
         "additional_dbs": [str(HS_DB)] if HS_DB.exists() else [],
         "results": results,
         "summary": {
@@ -400,7 +460,7 @@ def main() -> int:
     lines = [
         f"# 전체 페이지 데이터 품질 감사 — {date.today().isoformat()}",
         "",
-        f"- DB: `{DB}`",
+        f"- DB: `{primary_database_label()}`",
         f"- HS DB: `{HS_DB}`",
         f"- 생성: `{payload['generated_at']}`",
         f"- 요약: OK {payload['summary']['ok']} / 수집필요 {payload['summary']['needs_collection']} / 검토필요 {payload['summary']['unstable_or_needs_review']} / 누락 {payload['summary']['missing']}",

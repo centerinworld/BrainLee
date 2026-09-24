@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 import sys
@@ -202,7 +203,7 @@ def _pick_disclosure_overlay(conn: sqlite3.Connection, days: int = 7) -> list[di
 
 
 def build_plan() -> dict:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     try:
         stats = _fetch_strategy_stats(conn)
         snap = signal_engine.get_market_regime_snapshot()

@@ -4,6 +4,7 @@ DART 임원매매 최신 데이터 수집 (2026-06-29 이후)
 1. DART list API로 최근 임원·주요주주 공시 기업 corp_code 목록 수집
 2. 각 corp_code로 elestock.json 개별 조회 → DB 저장
 """
+from db_compat import connect_primary_db
 import sys, time, sqlite3, requests, logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -115,7 +116,7 @@ def get_stock_code_for_corp(conn: sqlite3.Connection, corp_code: str) -> str:
 
 
 def main():
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
 
     # 마지막 수집 날짜로부터

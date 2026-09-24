@@ -21,6 +21,7 @@ V16 개선 내용:
 """
 from __future__ import annotations
 import json, sqlite3
+from db_compat import connect_primary_db
 from collections import defaultdict, deque
 from datetime import date, timedelta
 from typing import Any
@@ -87,7 +88,7 @@ def resolve_source_key(day: date) -> tuple[str, str]:
 
 
 def load_all_trades(db_path: str, ext_runs: dict) -> dict[tuple, dict]:
-    conn = sqlite3.connect(db_path)
+    conn = connect_primary_db() if db_path == DB else sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
     mat: dict[tuple, dict] = defaultdict(dict)

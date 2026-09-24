@@ -24,6 +24,7 @@ from backtest_common import (
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
+    _final_liquidation_quote_for_code,
     _rsi,
     _save_result,
     init_backtest_db,
@@ -59,7 +60,8 @@ def _load_employment_signals() -> Dict[str, Dict[str, int]]:
 def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                      per_stock, max_positions,
                      stop_loss_pct, take_profit_pct, max_hold_days,
-                     strict_exec: bool = True):
+                     strict_exec: bool = True,
+                     data_asof_ts: str = None):
     """
     V8 선행지표 멀티팩터 포트폴리오 시뮬레이터.
 
@@ -100,8 +102,15 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
         market_bullish[kd] = (kma120 is None) or (k_price_list[ki] > kma120)
 
     # ── 재무 데이터 로드 ────────────────────────────────────────
+    # 2026-09-04: financial_data는 (stock_code,year,quarter)당 CFS/OFS 중복 행이
+    # 6만+ 조합에 존재하고(별도재무제표 vs 연결재무제표), report_type 필터와 안정적
+    # tiebreak 없이는 Postgres가 동률 정렬 순서를 보장하지 않아 완전히 같은 데이터를
+    # 같은 순간에 재조회해도 어느 쪽이 fin_all에 먼저 쌓이는지 실행마다 달라질 수
+    # 있었다(turnaround/regime_adaptive/value/v2에서 실측된 회귀검증 비재현성의
+    # 지배적 원인 — backtest_common._run_generic_backtest와 동일 수정).
+    # data_asof_ts 지정 시 그 시각 이후 UPDATE된 행도 추가로 제외(재현성 고정용).
     fin_all: Dict[str, list] = {}
-    for r in conn.execute("""
+    for r in conn.execute(f"""
         SELECT f.stock_code, f.year, f.quarter,
                f.revenue, f.operating_profit, f.eps, f.bps,
                f.total_equity, f.net_income, f.roe,
@@ -117,10 +126,12 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
             d.stock_code = f.stock_code AND d.year = f.year
             AND d.quarter = CASE WHEN f.is_annual=1 THEN 4 ELSE f.quarter END
             AND d.is_annual = CASE WHEN f.is_annual=1 THEN 1 ELSE 0 END
-        WHERE (f.is_annual=0 AND f.quarter BETWEEN 1 AND 4)
-           OR (f.is_annual=1)
-        ORDER BY f.stock_code, f.year, f.quarter
-    """).fetchall():
+        WHERE ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 4)
+           OR (f.is_annual=1))
+          AND f.report_type IN ('CFS','')
+          {"AND f.updated_at <= ?" if data_asof_ts else ""}
+        ORDER BY f.stock_code, f.year, f.quarter, f.report_type DESC, f.id
+    """, ([data_asof_ts] if data_asof_ts else [])).fetchall():
         sc = r[0]
         fin_all.setdefault(sc, []).append(r[1:])
 
@@ -132,7 +143,7 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
         FROM price_history ph
         INNER JOIN (
             SELECT stock_code FROM stock_universe
-            WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+            WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         ) su ON ph.stock_code = su.stock_code
         WHERE ph.date>=? AND ph.date<=? AND ph.close>0
         GROUP BY ph.stock_code HAVING COUNT(*) >= 200
@@ -500,7 +511,7 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
     for sc, pos in list(positions.items()):
         sd  = stock_data[sc]
         im  = date_idx.get(sc, {})
-        curr = sd['prices'][im[last_day]] if last_day and last_day in im else sd['prices'][-1]
+        curr, final_reason = _final_liquidation_quote_for_code(conn, sc, last_day, im, sd['prices'])
         pct  = (curr - pos['entry_price']) / pos['entry_price']
         _pnl_amt, _net_pct = _net_profit(pos['entry_price'], curr, pos['qty'], pos.get('mkt_cap_억', 500))
         cash += pos['qty'] * pos['entry_price'] + _pnl_amt
@@ -513,8 +524,15 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
             'qty':         pos['qty'],
             'profit_pct':  _net_pct,
             'profit_amt':  _pnl_amt,
-            'exit_reason': '기간종료',
+            'exit_reason': final_reason,
         })
+
+    if last_day:
+        terminal = {'date': last_day, 'equity': round(cash)}
+        if equity_curve and equity_curve[-1].get('date') == last_day:
+            equity_curve[-1] = terminal
+        else:
+            equity_curve.append(terminal)
 
     return trades, equity_curve, len(stock_data), market_bullish, cash
 
@@ -524,16 +542,24 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
 def run_backtest_v8(start_date: str, end_date: str,
                     per_stock: float = 10_000_000,
                     max_positions: int = 10,
-                    run_name: str = None, run_id: str = None) -> str:
+                    run_name: str = None, run_id: str = None,
+                    data_asof_ts: str = None) -> str:
     """
     V8 수출 선행지표 멀티팩터 백테스트.
     HS 무역통계(월별 수출 YoY) + 고용 데이터를 선행 신호로 활용.
+
+    data_asof_ts: 2026-09-04 신규. financial_data 재무데이터를 재검증하는 백그라운드
+    잡(scripts/data_integrity_followup.py, 매일 00:05)과의 경쟁으로 인한 회귀검증
+    비재현성 수정 — turnaround/regime_adaptive/value/v2와 동일 목적
+    (backtest_common._run_generic_backtest 참조). 'YYYY-MM-DD HH:MM:SS'를 주면 그
+    시각 기준 데이터로 고정. None(기본값)이면 기존과 동일하게 항상 최신 데이터 사용.
     """
     init_backtest_db()
     run_name = run_name or f"V8 수출선행 {start_date[:7]}~{end_date[:7]}"
     _v8_params = {"per_stock": per_stock, "max_positions": max_positions,
                   "stop_loss_pct": 0.10, "take_profit_pct": 0.30, "max_hold_days": 252,
-                  "strict_exec": True, "start": start_date, "end": end_date}
+                  "strict_exec": True, "start": start_date, "end": end_date,
+                  "data_asof_ts": data_asof_ts}
     if run_id is None:
         run_id = str(uuid.uuid4())[:8]
         conn = sqlite3.connect(DB_PATH, timeout=120)
@@ -578,6 +604,7 @@ def run_backtest_v8(start_date: str, end_date: str,
             stop_loss_pct=0.10,      # 선행 매수 → 넓은 손절 허용
             take_profit_pct=0.30,    # 선행 매수 → 충분한 상승 기다림
             max_hold_days=252,       # 최대 1년 보유 (선행지표 실현 대기)
+            data_asof_ts=data_asof_ts,
         )
 
         # 종목명 매핑
@@ -658,5 +685,4 @@ def run_backtest_v8(start_date: str, end_date: str,
 # ══════════════════════════════════════════════════════════════
 #  레짐 적응형 전략: BULL→V1 MA추세, BEAR→V7 흑자전환 자동 전환
 # ══════════════════════════════════════════════════════════════
-
 

@@ -7,6 +7,7 @@ collectors/dart_cost_collector.py
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import hashlib
 import json
 import logging
@@ -401,7 +402,7 @@ def collect_cogs_from_dart_api(
                         pass
         return None
 
-    conn = _sl.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = _sl.Row
     # corp_code 조회
     corp_map = {}
@@ -567,7 +568,7 @@ def collect_cogs_quarters(
 
     # corp_code 맵
     corp_map: dict[str, str | None] = {}
-    conn = _sl.connect(DB, timeout=60); conn.row_factory = _sl.Row
+    conn = connect_primary_db(timeout=60); conn.row_factory = _sl.Row
     rows = conn.execute("""
         SELECT stock_code FROM stock_universe
         WHERE market IN ('KOSPI','KOSDAQ','유가증권','코스닥')
@@ -597,7 +598,7 @@ def collect_cogs_quarters(
 
     stocks = [(sc, cc) for sc, cc in corp_map.items() if cc]
     ok = err = skip_no_corp = skip_exists = 0
-    conn = _sl.connect(DB, timeout=60); conn.row_factory = _sl.Row
+    conn = connect_primary_db(timeout=60); conn.row_factory = _sl.Row
     conn.execute("PRAGMA journal_mode=WAL")
 
     total = len(stocks) * len(range(year_from, year_to+1)) * len(quarters)
@@ -715,7 +716,7 @@ def collect_order_backlog_api(
         return None, None
 
     # 테이블 생성
-    conn_init = _sl.connect(DB, timeout=30)
+    conn_init = connect_primary_db(timeout=30)
     conn_init.execute("""
         CREATE TABLE IF NOT EXISTS order_backlog_api (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -735,7 +736,7 @@ def collect_order_backlog_api(
 
     # corp_code 맵
     corp_map: dict[str, tuple[str, str]] = {}
-    conn = _sl.connect(DB, timeout=60); conn.row_factory = _sl.Row
+    conn = connect_primary_db(timeout=60); conn.row_factory = _sl.Row
     rows = conn.execute("""
         SELECT stock_code, stock_name FROM stock_universe
         WHERE market IN ('KOSPI','KOSDAQ','유가증권','코스닥')
@@ -757,7 +758,7 @@ def collect_order_backlog_api(
 
     stocks = [(sc, cc, nm) for sc, (cc, nm) in corp_map.items() if cc]
     ok = err = no_data = 0
-    conn = _sl.connect(DB, timeout=60); conn.row_factory = _sl.Row
+    conn = connect_primary_db(timeout=60); conn.row_factory = _sl.Row
     conn.execute("PRAGMA journal_mode=WAL")
 
     for i, (sc, corp_code, sname) in enumerate(stocks):

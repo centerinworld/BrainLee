@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import re
 import sqlite3
 from datetime import datetime
@@ -42,7 +43,7 @@ def load_stock_names(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
         )
         SELECT stock_code, stock_name, MAX(market)
         FROM names
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         GROUP BY stock_code, stock_name
         """
     ).fetchall()
@@ -141,7 +142,7 @@ def remove_duplicates(conn: sqlite3.Connection) -> int:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     backup_name = "report_files_backup_before_cleanup_" + datetime.now().strftime("%Y%m%d_%H%M%S")
     conn.execute(f"CREATE TABLE {backup_name} AS SELECT * FROM report_files")

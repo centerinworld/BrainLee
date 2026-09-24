@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -23,7 +24,7 @@ GAMES = [
 
 
 def collect() -> dict:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     period = datetime.now().strftime("%Y-%m-%d")
     saved = 0
     failures = []

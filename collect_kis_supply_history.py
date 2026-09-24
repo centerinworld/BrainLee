@@ -28,7 +28,7 @@ DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 def get_universe_codes(conn, limit=None):
     rows = conn.execute("""
         SELECT stock_code FROM stock_universe
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
           AND market IN ('유가증권', '코스닥', 'KOSPI', 'KOSDAQ')
           AND COALESCE(stock_type, '보통주') = '보통주'
           AND COALESCE(stock_name, '') NOT LIKE '%ETF%'
@@ -100,6 +100,7 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="최대 종목 수 (0=전체)")
     parser.add_argument("--codes", default="", help="특정 종목: 005930,000660")
     parser.add_argument("--sleep", type=float, default=1.05, help="요청 간격(초)")
+    parser.add_argument("--allow-holiday", action="store_true", help="수동 복구 실행에서만 휴장일 게이트 해제")
     args = parser.parse_args()
 
     sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
@@ -107,6 +108,12 @@ def main():
 
     from kis_client import kis_client
     from db_utils import connect_stock_db
+    from trading_calendar import is_kr_trading_day
+    from datetime import date
+
+    if not args.allow_holiday and not is_kr_trading_day(date.today()):
+        print(f"[SKIP] {date.today()} 한국 증시 휴장일")
+        return
 
     conn = connect_stock_db(timeout=60)
 

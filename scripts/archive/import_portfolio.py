@@ -1,6 +1,7 @@
+from db_compat import connect_primary_db
 import sqlite3
 
-conn = sqlite3.connect('/Applications/stock_dashboard/stock.db')
+conn = connect_primary_db()
 cur = conn.cursor()
 
 cur.execute("DELETE FROM portfolio")

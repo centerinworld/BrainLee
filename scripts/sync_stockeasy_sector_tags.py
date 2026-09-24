@@ -8,6 +8,7 @@ One stock can have many sector tags, with source/confidence/evidence preserved.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import base64
 import json
@@ -226,7 +227,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     init_db(conn)
 
@@ -236,7 +237,7 @@ def main() -> None:
                MAX(sector_large) AS sector_large, MAX(sector_mid) AS sector_mid,
                MAX(sector_small) AS sector_small
         FROM stock_universe
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
           AND COALESCE(stock_type, '보통주') NOT IN ('ETF', 'ETN')
         GROUP BY stock_code
         """

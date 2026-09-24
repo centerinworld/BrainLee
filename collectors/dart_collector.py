@@ -812,6 +812,7 @@ class DARTCollector(BaseCollector):
             "raw_snippet": "",
             "is_correction": False,
             "corrects_disclosed_at": None,
+            "correction_amount_before": None,
         }
         try:
             from collectors.dart_contract_collector import _extract_amounts, _fetch_dart_document
@@ -833,4 +834,5 @@ class DARTCollector(BaseCollector):
         result["parse_ok"] = parsed.get("contract_amount_krw") is not None
         result["is_correction"] = bool(parsed.get("is_correction"))
         result["corrects_disclosed_at"] = parsed.get("corrects_disclosed_at")
+        result["correction_amount_before"] = parsed.get("correction_amount_before")
         return result

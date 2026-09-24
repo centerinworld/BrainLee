@@ -9,6 +9,7 @@ filings. This parser fetches document.xml and extracts the detail-change table.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import html
 import io
@@ -321,7 +322,7 @@ def main() -> None:
     ap.add_argument("--reset-progress", action="store_true")
     args = ap.parse_args()
 
-    conn = sqlite3.connect(DB_PATH, timeout=180)
+    conn = connect_primary_db(timeout=180)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=180000")

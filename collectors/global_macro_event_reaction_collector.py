@@ -7,11 +7,13 @@ without depending on market-data APIs during dashboard refreshes.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 logger = logging.getLogger(__name__)
 
 
@@ -138,7 +140,7 @@ def _upsert_reaction(
 
 
 def collect_global_macro_event_reactions() -> int:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     _ensure_table(conn)
     today = datetime.now().strftime("%Y-%m-%d")

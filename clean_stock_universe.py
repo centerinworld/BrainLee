@@ -1,6 +1,7 @@
+from db_compat import connect_primary_db
 import sqlite3
 
-db = sqlite3.connect("stock.db")
+db = connect_primary_db()
 
 # 1. 중복 제거 및 이름 최적화
 # 동일 코드가 여러 개일 때, 이름에 영문이 포함된 것을 우선하거나 ID가 큰 것을 남김.

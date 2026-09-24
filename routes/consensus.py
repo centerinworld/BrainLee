@@ -9,6 +9,7 @@ POST /api/consensus/backfill            2년치 전체 수집 (초기화용)
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3
 import threading
@@ -17,16 +18,16 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 
+from db_utils import STOCK_DB_PATH as DB_PATH
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-DB_PATH   = "stock.db"
 _backfill_lock = threading.Lock()
 _backfill_running = False
 
 
 def _conn():
-    c = sqlite3.connect(DB_PATH, timeout=30)
+    c = connect_primary_db(timeout=30)
     c.row_factory = sqlite3.Row
     return c
 

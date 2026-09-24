@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import re
 import sqlite3
 from pathlib import Path
@@ -18,14 +19,14 @@ def load_candidates(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
             SELECT stock_code, stock_name, market
             FROM stock_universe
             WHERE stock_code IS NOT NULL AND stock_name IS NOT NULL
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
               AND market IN ('유가증권', '코스피', '코스닥', 'KOSPI', 'KOSDAQ')
               AND COALESCE(stock_type, '보통주')='보통주'
             UNION
             SELECT stock_code, stock_name, market
             FROM stock_meta
             WHERE stock_code IS NOT NULL AND stock_name IS NOT NULL
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
               AND UPPER(COALESCE(market, '')) IN ('KOSPI', 'KOSDAQ')
         )
         SELECT stock_code, stock_name, MAX(market)
@@ -64,7 +65,7 @@ def find_stock(text: str, candidates: list[tuple[str, str, str]]) -> tuple[str, 
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=60000")
     candidates = load_candidates(conn)

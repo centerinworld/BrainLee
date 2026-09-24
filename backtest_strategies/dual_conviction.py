@@ -14,6 +14,7 @@ from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
     DB_PATH,
+    _final_liquidation_quote_for_code,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
@@ -250,15 +251,12 @@ def run_backtest_dual_conviction(
 
         last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in list(pos.items()):
-            i = didx[code].get(last_day)
-            curr = sd[code]['c'][i] if i is not None else p['entry']
-            if curr <= 0:
-                curr = p['entry']
+            curr, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]['c'])
             pnl, net_pct = _net_profit(p['entry'], curr, p['shares'], 300)
             cash += p['shares'] * p['entry'] + pnl
             trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': last_day,
                             'entry': p['entry'], 'exit': curr, 'pnl_pct': net_pct,
-                            'reason': 'final', 'pnl': round(pnl, 0)})
+                            'reason': final_reason, 'pnl': round(pnl, 0)})
 
         total_return = (cash - total_capital) / total_capital * 100
         completed = [t for t in trades if 'pnl_pct' in t]
@@ -283,7 +281,6 @@ def run_backtest_dual_conviction(
         except Exception:
             pass
         raise
-
 
 
 

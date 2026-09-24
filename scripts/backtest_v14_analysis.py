@@ -18,6 +18,7 @@ V14 종합 재검증 + 개선 탐색 스크립트
 """
 from __future__ import annotations
 import json, sqlite3
+from db_compat import connect_primary_db
 from collections import defaultdict, deque
 from datetime import date, timedelta
 from typing import Any
@@ -60,7 +61,7 @@ def resolve_source_key(day: date):
 
 
 def load_auto_trades(db_path):
-    conn = sqlite3.connect(db_path)
+    conn = connect_primary_db() if db_path == DB else sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT start_date,end_date,strategy,trades_json FROM backtest_runs "

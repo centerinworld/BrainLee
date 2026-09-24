@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -12,7 +13,7 @@ OUT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/research_outputs/remai
 
 
 def conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB, timeout=120)
+    c = connect_primary_db(timeout=120)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA busy_timeout=120000")
     return c

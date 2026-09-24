@@ -6,11 +6,14 @@ DART 공시 전종목 일괄 수집 (10년치 DB 저장)
 - 일 10,000건 API 제한 고려: 배치당 최대 9,000건 (재실행 안전)
 - 이미 최근 7일 이내 수집된 종목은 스킵
 """
+from db_compat import connect_primary_db
 import sqlite3
 import time
 import logging
 import argparse
 from datetime import datetime, timedelta
+
+from db_utils import STOCK_DB_PATH as DB_PATH
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,8 +21,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
-
-DB_PATH = "stock.db"
 YEARS_BACK = 10
 RATE_LIMIT_SEC = 0.25   # 4 calls/sec → 14,400/hour (여유있게)
 MAX_CALLS_PER_RUN = 9000  # 일일 한도 10,000 대비 안전 마진
@@ -38,7 +39,7 @@ DDL = """CREATE TABLE IF NOT EXISTS dart_disclosures (
 
 
 def connect():
-    conn = sqlite3.connect(DB_PATH, timeout=15)
+    conn = connect_primary_db(timeout=15)
     conn.row_factory = sqlite3.Row
     return conn
 

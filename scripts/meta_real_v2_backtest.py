@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from db_compat import connect_primary_db
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -48,7 +49,7 @@ def daterange(a: date, b: date):
 
 
 def load_matrix(db_path: str) -> dict[tuple[str, str], dict[str, list[dict]]]:
-    conn = sqlite3.connect(db_path)
+    conn = connect_primary_db() if db_path == '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db' else sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         """

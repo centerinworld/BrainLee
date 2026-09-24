@@ -4,6 +4,7 @@
 - 분기 보고서도 동일 FS 타입으로 재수집
 - 대상: Q4 영업이익이 -5000억원 이하인 (stock_code, year) 36쌍
 """
+from db_compat import connect_primary_db
 import sqlite3, time, sys, traceback
 import pandas as pd
 from dart_key_manager import RotatingOpenDartReader
@@ -196,7 +197,7 @@ def process_one(stock_code, year, conn):
 
 
 def main():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
 
     ok_count = 0
     fail_count = 0
@@ -231,7 +232,7 @@ def main():
             print(f"  {code} {year}: {reason}")
 
     # 최종 검증
-    conn2 = sqlite3.connect(DB_PATH)
+    conn2 = connect_primary_db()
     remaining = conn2.execute("""
         SELECT COUNT(*) FROM financial_data
         WHERE is_annual=0 AND quarter=4 AND operating_profit < -500000000000

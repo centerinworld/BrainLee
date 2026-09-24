@@ -113,7 +113,7 @@ log = logging.getLogger("quant_cron")
 def _open_db() -> sqlite3.Connection:
     if IS_POSTGRES:
         return connect_primary_db(timeout=300)
-    conn = sqlite3.connect(DB_PATH, timeout=300)
+    conn = connect_primary_db(timeout=300)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=300000")  # 5분 대기

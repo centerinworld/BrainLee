@@ -16,6 +16,7 @@ migrate_report_type.py — 연결/별도 구분 + 외부소스 스냅샷 테이�
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import sqlite3
@@ -37,7 +38,7 @@ def table_exists(cur, table: str) -> bool:
 
 
 def run(dry_run: bool) -> None:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
     cur = conn.cursor()
 

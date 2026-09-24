@@ -32,7 +32,7 @@ from db_compat import connect_primary_db  # noqa: E402
 def open_primary_db(*, timeout: float = 30):
     if IS_POSTGRES:
         return connect_primary_db(timeout=timeout)
-    return sqlite3.connect(DB_PATH, timeout=timeout)
+    return connect_primary_db(timeout=timeout)
 
 
 CUSTOMS_SECTOR_QUANT_SPECS = [

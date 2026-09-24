@@ -12,11 +12,15 @@ from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
+from config import IS_POSTGRES
+
 from backtest_common import (
     DB_PATH,
     _CHART_BOTTOM_MIN,
     _chart_bottom_confluence,
     _chart_prep,
+    _final_liquidation_quote_for_code,
+    _load_corp_action_factors,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
@@ -102,6 +106,17 @@ def run_backtest_se_momentum(
     conn.commit()
 
     try:
+        if IS_POSTGRES:
+            # This run reads a few thousand rows across many separate statements
+            # on one connection. Postgres's default READ COMMITTED gives each
+            # statement its own snapshot, so a concurrent writer (a collector,
+            # a backfill job) touching price_history/security_share_history/etc.
+            # mid-run can make row N+1 see data row N did not, producing a
+            # different universe/candidate set (and therefore a different
+            # simulated result) from an otherwise identical call. REPEATABLE READ
+            # pins one snapshot for the whole transaction so repeated calls with
+            # the same parameters are actually reproducible.
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         warmup_days = max(120, int(sector_lookback_days * 1.6) + 30)
         warmup_start = (datetime.strptime(start_date, '%Y-%m-%d')
                         - timedelta(days=warmup_days)).strftime('%Y-%m-%d')
@@ -130,7 +145,7 @@ def run_backtest_se_momentum(
                   AND sm.market IN ('KOSPI','KOSDAQ')
                 LEFT JOIN stock_universe su ON p.stock_code=su.stock_code
                 WHERE p.date BETWEEN ? AND ? AND p.close>0
-                  AND LENGTH(p.stock_code)=6 AND p.stock_code GLOB '[0-9]*'
+                  AND LENGTH(p.stock_code)=6 AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             """, (start_date, end_date)).fetchall()
         else:
             codes = conn.execute("""
@@ -139,7 +154,7 @@ def run_backtest_se_momentum(
                 JOIN stock_universe su ON p.stock_code=su.stock_code
                 WHERE p.date BETWEEN ? AND ? AND p.close>0
                   AND su.market_cap >= ? AND su.market IN ('KOSPI','KOSDAQ')
-                  AND LENGTH(p.stock_code)=6 AND p.stock_code GLOB '[0-9]*'
+                  AND LENGTH(p.stock_code)=6 AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             """, (start_date, end_date, min_mktcap_억)).fetchall()
         # SE 섹터 분류가 있는 종목만 (전략 유니버스 정의)
         codes = [(c, m) for c, m in codes if c in se_sector]
@@ -159,8 +174,47 @@ def run_backtest_se_momentum(
                     return shares
             return 0.0
 
+        # 2026-09-09 수정(사용자 지시로 심층조사 후 발견): 이 종목별 가격 시계열은 원시
+        # 종가(수정주가 아님)라, 감자/유상증자처럼 확정된 기업행위를 보유기간이 가로지르면
+        # 그 시점에 손익과 무관한 가격점프가 그대로 pnl_pct에 섞인다(실측: 097780이
+        # 2026-06-16 감자로 664원→1,348원 하루 +103% — 진짜 거래이익 아님). 바로 아래
+        # (i-1,i) 1일 급등락 필터가 극단적 경우(>2.2배 또는 <0.45배)만 종목 전체를
+        # 통째로 제외해왔는데, 097780처럼 비율이 2.03배로 문턱 바로 아래인 경우는
+        # 걸러지지 않고 조정 안 된 채로 그대로 거래에 쓰였다 — turnaround/regime_adaptive/
+        # composite 전략은 이미 2026-08-23에 `_load_corp_action_factors`/
+        # `_corp_action_adjusted_entry`로 이 문제를 막아뒀는데 se_momentum은 그 보호가
+        # 없었다. 여기서는 원가격 시계열 자체를 뒤로 조정(수정주가 방식 — 이벤트 이전
+        # 가격에 backward_price_factor를 누적곱)해 시계열을 연속적으로 만든 뒤 급등락
+        # 필터를 적용한다 — 이러면 진짜 데이터 오류만 걸러지고, 확정된 기업행위는
+        # 종목 전체를 버리지 않고 정상적으로 거래에 포함된다.
+        codes_only = [c for c, _ in codes]
+        corp_factors = _load_corp_action_factors(conn, codes_only)
+
+        # 2026-09-09 추가: 확정된 기업행위(위에서 조정)와 별개로, 아직 원인이 확인 안 된
+        # 가격급등락(price_jump_audit.return_usable=0, 예: 084010의 2022-02-21 하루
+        # +117%→3일 뒤 그대로 원복 — 감자 등 확정 이벤트가 전혀 없어 corp_factors에도
+        # 안 잡히고, 비율도 2.17배로 기존 2.2배 문턱 바로 아래라 그물을 빠져나가던 진짜
+        # 데이터 리스크였음)은 여전히 종목 전체를 제외해 걸러야 한다 — 확정 조정으로
+        # 해소된 날짜(위 corp_factors의 event_date와 정확히 일치)만 제외하고, 나머지
+        # 미해소 급등락이 하나라도 있는 종목은 통째로 스킵한다(기존 보수적 동작 유지).
+        unresolved_codes: set = set()
+        if codes_only:
+            placeholders = ",".join("?" for _ in codes_only)
+            jump_rows = conn.execute(
+                f"""SELECT stock_code, event_date FROM price_jump_audit
+                    WHERE stock_code IN ({placeholders}) AND return_usable=0
+                      AND event_date>=? AND event_date<=?""",
+                codes_only + [warmup_start, end_date],
+            ).fetchall()
+            for jcode, jdate in jump_rows:
+                confirmed_dates = {ed for ed, _f in corp_factors.get(jcode, [])}
+                if str(jdate)[:10] not in confirmed_dates:
+                    unresolved_codes.add(jcode)
+
         sd: Dict[str, dict] = {}
         for code, mktcap in codes:
+            if code in unresolved_codes:
+                continue
             rows = conn.execute("""
                 SELECT date, close, COALESCE(volume,0),
                        COALESCE(open,close), COALESCE(high,close), COALESCE(low,close),
@@ -170,16 +224,32 @@ def run_backtest_se_momentum(
                 ORDER BY date
             """, (code, warmup_start, end_date)).fetchall()
             if len(rows) < 40: continue
-            c_list = [float(r[1]) for r in rows]
+            dates = [r[0] for r in rows]
+            events = corp_factors.get(code)
+            if events:
+                adj = [1.0] * len(dates)
+                for edate, f in events:
+                    for i, d in enumerate(dates):
+                        if d < edate:
+                            adj[i] *= f
+                c_list = [float(r[1]) * adj[i] for i, r in enumerate(rows)]
+                o_list = [float(r[3]) * adj[i] for i, r in enumerate(rows)]
+                h_list = [float(r[4]) * adj[i] for i, r in enumerate(rows)]
+                lo_list = [float(r[5]) * adj[i] for i, r in enumerate(rows)]
+            else:
+                c_list = [float(r[1]) for r in rows]
+                o_list = [float(r[3]) for r in rows]
+                h_list = [float(r[4]) for r in rows]
+                lo_list = [float(r[5]) for r in rows]
             if any(c_list[i-1]>0 and (c_list[i]/c_list[i-1]<0.45 or c_list[i]/c_list[i-1]>2.2)
                    for i in range(1, len(c_list))): continue
             sd[code] = {
-                'd': [r[0] for r in rows],
+                'd': dates,
                 'c': c_list,
                 'v': [float(r[2]) for r in rows],
-                'o': [float(r[3]) for r in rows],
-                'h': [float(r[4]) for r in rows],
-                'lo': [float(r[5]) for r in rows],
+                'o': o_list,
+                'h': h_list,
+                'lo': lo_list,
                 'frn': [float(r[6]) for r in rows],
                 'inst': [float(r[7]) for r in rows],
                 'mkt_cap_억': round(mktcap) if mktcap else min_mktcap_억,
@@ -197,6 +267,7 @@ def run_backtest_se_momentum(
         # 기존 se_momentum은 순수 기술적(MA+섹터+수급) 로직뿐이라 실적 요소가 전무했음.
         earn_fins: Dict[str, list] = {}
         if require_earnings_accel and sd:
+            _earn_seen = set()
             for r in conn.execute("""
                 SELECT f.stock_code, f.revenue, f.operating_profit, f.net_income, f.year, f.quarter,
                        COALESCE(d.avail_date,
@@ -209,8 +280,19 @@ def run_backtest_se_momentum(
                     d.stock_code=f.stock_code AND d.year=f.year AND d.quarter=f.quarter AND d.is_annual<1
                 WHERE f.is_annual=0 AND f.quarter BETWEEN 1 AND 4
                   AND f.stock_code IN ({})
-                ORDER BY f.stock_code, avail_date
+                ORDER BY f.stock_code, f.year, f.quarter,
+                         CASE f.report_type WHEN 'CFS' THEN 0 ELSE 1 END
             """.format(",".join("?" * len(sd))), list(sd.keys())).fetchall():
+                # financial_data carries both CFS (consolidated) and OFS (standalone)
+                # rows per (stock_code, year, quarter), often sharing the same avail_date.
+                # Without this dedup, Postgres has no tiebreaker between the two ties and
+                # can return them in either order across otherwise-identical calls, which
+                # flips which figures land at avail[-1]/avail[-5] below and made this gate
+                # (and therefore the whole backtest's candidate set) non-reproducible.
+                key = (r[0], r[4], r[5])
+                if key in _earn_seen:
+                    continue
+                _earn_seen.add(key)
                 earn_fins.setdefault(r[0], []).append(
                     (r[6], r[1], r[2], r[3], r[4], r[5]))  # (avail_date, rev, op, ni, year, quarter)
 
@@ -280,8 +362,8 @@ def run_backtest_se_momentum(
                 del pending_sells[code]
 
             marked_equity = cash + sum(
-                p['shares'] * sd[code]['c'][didx[code][day]]
-                for code, p in pos.items() if day in didx[code]
+                p['shares'] * (sd[code]['c'][didx[code][day]] if day in didx[code] else p['entry'])
+                for code, p in pos.items()
             )
             position_limit = max(max_positions, int(marked_equity // per_stock))
             for code in list(pending_buys):
@@ -380,18 +462,14 @@ def run_backtest_se_momentum(
                 available -= 1
 
         final_val = cash
+        last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in pos.items():
-            last_c = None
-            for d in reversed(sim_dates):
-                i = didx[code].get(d)
-                if i is not None and sd[code]['c'][i] > 0:
-                    last_c = sd[code]['c'][i]; break
-            if last_c:
-                pnl, net_pct = _net_profit(p['entry'], last_c, p['shares'], p.get('mkt_cap_억', min_mktcap_억))
-                final_val += p['shares'] * p['entry'] + pnl
-                trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': sim_dates[-1],
-                               'entry': p['entry'], 'exit': last_c,
-                               'pnl_pct': net_pct, 'reason': 'final', 'pnl': round(pnl, 0)})
+            last_c, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]['c'])
+            pnl, net_pct = _net_profit(p['entry'], last_c, p['shares'], p.get('mkt_cap_억', min_mktcap_억))
+            final_val += p['shares'] * p['entry'] + pnl
+            trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': last_day,
+                           'entry': p['entry'], 'exit': last_c,
+                           'pnl_pct': net_pct, 'reason': final_reason, 'pnl': round(pnl, 0)})
 
         init_cap = per_stock * max_positions
         total_ret = (final_val - init_cap) / init_cap * 100
@@ -425,7 +503,6 @@ def run_backtest_se_momentum(
         except Exception:
             pass
         raise
-
 
 
 

@@ -6,6 +6,7 @@ backfill_5year.py — 전종목 5년치 주가 데이터 Yahoo Finance 수집
   python3 backfill_5year.py [--limit 100]  # limit: 테스트용 종목 수 제한
 """
 
+from db_compat import connect_primary_db
 import sqlite3
 import time
 import argparse
@@ -24,7 +25,7 @@ def get_stock_list(conn, limit=None):
         LEFT JOIN stock_universe su ON ph.stock_code = su.stock_code
         LEFT JOIN stock_meta sm ON ph.stock_code = sm.stock_code
         WHERE LENGTH(ph.stock_code) = 6
-          AND ph.stock_code GLOB '[0-9]*'
+          AND ph.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         GROUP BY ph.stock_code
         ORDER BY ph.stock_code
     """).fetchall()
@@ -98,7 +99,7 @@ def main():
     parser.add_argument("--limit", type=int, default=None, help="테스트용 종목 수 제한")
     args = parser.parse_args()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
 
     print("종목 목록 조회 중...")

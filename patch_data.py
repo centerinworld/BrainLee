@@ -1,7 +1,8 @@
+from db_compat import connect_primary_db
 import sqlite3
 from datetime import datetime
 
-db = sqlite3.connect("stock.db")
+db = connect_primary_db()
 
 # 2026-04-09 KOSPI Institutional Top (억 단위 -> 백만원 단위로 저장: * 100)
 data_0409 = [

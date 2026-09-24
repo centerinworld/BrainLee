@@ -3,14 +3,16 @@ IMF World Economic Outlook 수집기
 공식 Datamapper API 사용:
 https://www.imf.org/external/datamapper/api/v1/NGDP_RPCH/USA,EUQ,CHN,JPN
 """
+from db_compat import connect_primary_db
 import logging
 import sqlite3
 from datetime import datetime
 
 import requests
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 URL = "https://www.imf.org/external/datamapper/api/v1/NGDP_RPCH/USA,EUQ,CHN,JPN"
 
 COUNTRY_TO_CODE = {
@@ -36,7 +38,7 @@ def collect_imf_weo(start_year: int = 2015) -> int:
         return 0
 
     values = payload.get("values", {}).get("NGDP_RPCH", {})
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     total = 0
 
     for country_code, our_code in COUNTRY_TO_CODE.items():
@@ -75,7 +77,7 @@ def collect_imf_weo(start_year: int = 2015) -> int:
 
 def _log(records: int, status: str = "ok", msg: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.execute("""
             INSERT INTO global_macro_collection_log (source, status, records, message)
             VALUES ('imf_weo', ?, ?, ?)

@@ -2,6 +2,7 @@
 """Validate a small predeclared strategy portfolio on one shared cash account."""
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 import sys
@@ -130,7 +131,7 @@ def _aggregate(rows: list[dict]) -> dict:
 
 
 def main() -> None:
-    with sqlite3.connect(DB_PATH, timeout=60) as conn:
+    with connect_primary_db(timeout=60) as conn:
         selected, governance = _selected_runs(conn)
     results = []
     for name, weights in PROFILES.items():

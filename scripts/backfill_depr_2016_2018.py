@@ -4,6 +4,7 @@
 대상: cash_flow_data에 CFS 연간 행이 있으나 depreciation=NULL/0인 종목
 """
 from __future__ import annotations
+from db_compat import connect_primary_db
 import logging, sqlite3, sys, time
 from pathlib import Path
 
@@ -22,7 +23,7 @@ log = logging.getLogger(__name__)
 DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 
 def main():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
 
     # 대상 종목: 2016~2018 연간 CFS에서 depreciation NULL인 종목

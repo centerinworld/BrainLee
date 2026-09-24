@@ -1,0 +1,18 @@
+{
+  "base_date": "20260918",
+  "ok": true,
+  "universe": 1172,
+  "pdf_successes": 1171,
+  "issuer_exception_count": 1,
+  "issuer_exception_tickers": [
+    "465780"
+  ],
+  "scale_count": 1172,
+  "sample_success": 80,
+  "sample_attempted": 80,
+  "parity_failures": [],
+  "validation_mode": "direct_internal",
+  "source_control_mode": "krx_primary",
+  "source_control_pass_days": 5,
+  "failures": []
+}

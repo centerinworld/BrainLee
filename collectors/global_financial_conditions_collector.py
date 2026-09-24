@@ -6,6 +6,7 @@ conditions, breakeven inflation, and additional Treasury tenors.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import os
 import sqlite3
@@ -20,7 +21,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 import config  # noqa: F401  # load .env values when running collector directly
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 FRED_SERIES = [
     ("ECBMRRFR", "EU_ECB_RATE", None),
@@ -84,7 +85,7 @@ def collect_global_financial_conditions(lookback_years: int = 3) -> int:
         return 0
 
     start_date = (datetime.now() - timedelta(days=lookback_years * 365)).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executemany(
         """
@@ -139,7 +140,7 @@ def collect_global_financial_conditions(lookback_years: int = 3) -> int:
 
 def _log(status: str, records: int, message: str = "") -> None:
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.execute(
             """
             INSERT INTO global_macro_collection_log (source, status, records, message)

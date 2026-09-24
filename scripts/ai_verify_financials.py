@@ -25,6 +25,7 @@ ai_verify_financials.py — 2번째 AI가 financial_source_snapshot을 검증
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import logging
@@ -55,7 +56,7 @@ TOLERANCE_ABS = 1e8    # 1억원 이하 차이 허용
 
 
 def _conn():
-    c = sqlite3.connect(DB_PATH, timeout=60)
+    c = connect_primary_db(timeout=60)
     c.row_factory = sqlite3.Row
     return c
 

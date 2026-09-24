@@ -24,6 +24,7 @@ fnguide_financial_collector.py — FnGuide 연결/별도 재무제표 일괄 수
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import logging
@@ -70,7 +71,7 @@ WCOMP_BASE = "https://wcomp.fnguide.com"
 # DB 유틸
 # ─────────────────────────────────────────────────────────
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, timeout=60)
+    c = connect_primary_db(timeout=60)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     return c

@@ -12,6 +12,7 @@ BigQuery 3배주/우상향 패턴 일일 파이프라인
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import os
 from datetime import datetime, timezone
@@ -189,7 +190,7 @@ def _sync_to_local(rows: list) -> int:
     """BQ triple_pattern_daily 결과를 local stock.db에 동기화."""
     import sqlite3 as _sl
     DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
-    conn = _sl.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS triple_pattern_daily (

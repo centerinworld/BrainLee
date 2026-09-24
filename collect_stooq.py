@@ -3,6 +3,7 @@
 stooq.com에서 나스닥/S&P500 히스토리 수집 후 DB 직접 삽입
 Yahoo Finance / 네이버 API 모두 막힌 경우 사용
 """
+from db_compat import connect_primary_db
 import requests, csv, sqlite3, io
 from datetime import datetime, timedelta, date
 
@@ -21,7 +22,7 @@ STOOQ_MAP = {
 start_date = "20260501"
 end_date   = datetime.now().strftime("%Y%m%d")
 
-conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+conn = connect_primary_db()
 total_inserted = 0
 
 for yf_sym, (stooq_sym, name) in STOOQ_MAP.items():
@@ -82,7 +83,7 @@ conn.close()
 print(f"\n=== 완료: 총 {total_inserted}건 저장 ===")
 
 # 결과 확인
-conn = sqlite3.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+conn = connect_primary_db()
 print("\n[DB 최신 상태]")
 rows = conn.execute("""
     SELECT stock_code, date, close FROM price_history

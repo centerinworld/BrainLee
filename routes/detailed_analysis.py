@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import os
 import re
@@ -16,13 +17,12 @@ import requests
 from services.gemini import generate_text, is_configured
 from pydantic import BaseModel
 
-DB_PATH = "stock.db"
 router = APIRouter()
 POSTS_PAGE_SIZE_MAX = 100
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 

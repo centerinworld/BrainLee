@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -15,7 +16,7 @@ OUT_DIR = ROOT / "research_outputs"
 
 
 def main() -> int:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     try:
         summary = dict(conn.execute(

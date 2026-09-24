@@ -10,6 +10,7 @@ to stock_code map from CORPCODE.xml.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import io
 import json
@@ -324,7 +325,7 @@ def main() -> None:
     corp_to_stock = _corp_map(keys_list)
     logger.info("corp_code map loaded: %d listed companies", len(corp_to_stock))
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     _ensure_table(conn)

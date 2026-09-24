@@ -6,14 +6,16 @@ oil inventory series in global_macro_data.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3
 import tempfile
 import urllib.request
 
 import pandas as pd
+from pathlib import Path
 
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 logger = logging.getLogger(__name__)
 
 SERIES = [
@@ -49,7 +51,7 @@ def _load_rows(source_key: str) -> list[tuple[str, float]]:
 
 
 def collect_eia_oil_supply() -> int:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     total = 0
     for source_key, code, _label in SERIES:
         rows = _load_rows(source_key)

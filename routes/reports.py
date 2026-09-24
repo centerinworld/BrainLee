@@ -9,6 +9,7 @@ routes/reports.py — 보고서 파일 API
   GET  /api/reports/extracts/{stock_code}       # 종목별 추출 결과 목록
 """
 
+from db_compat import connect_primary_db
 import json
 import os
 import sqlite3 as _sl
@@ -25,7 +26,7 @@ PDF_CONSENSUS_EXTRACT_DISABLED = True
 
 # ── analyst_pdf_extracts 테이블 자동 생성 ─────────────────────────
 def _ensure_extracts_table():
-    c = _sl.connect(DB_PATH, timeout=30)
+    c = connect_primary_db(timeout=30)
     c.execute("""
         CREATE TABLE IF NOT EXISTS analyst_pdf_extracts (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +49,7 @@ _ensure_extracts_table()
 _COLS = "id, channel_id, stock_name, report_date, file_name, saved_name, file_size, caption, stock_code, sector"
 
 def _db():
-    c = _sl.connect(DB_PATH, timeout=15)
+    c = connect_primary_db(timeout=15)
     c.row_factory = _sl.Row
     return c
 

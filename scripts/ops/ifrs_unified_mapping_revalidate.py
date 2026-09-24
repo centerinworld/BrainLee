@@ -10,6 +10,7 @@ IFRS 단일화 규칙/매핑 카탈로그 생성 + 재검증 실행
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import sqlite3
 import subprocess
 from datetime import datetime
@@ -66,7 +67,7 @@ DART_PATTERNS = {
 
 
 def connect():
-    conn = sqlite3.connect(DB, timeout=300)
+    conn = connect_primary_db(timeout=300)
     conn.execute('PRAGMA journal_mode=WAL')
     conn.execute('PRAGMA busy_timeout=300000')
     return conn

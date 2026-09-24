@@ -26,6 +26,7 @@ cf_triple_validator.py — DART·FnGuide·Seibro 3중 현금흐름 검증 모듈
 독립 실행: python3 collectors/cf_triple_validator.py [--days 7] [--codes 005930] [--dry-run]
 """
 
+from db_compat import connect_primary_db
 import sys
 import re
 import time
@@ -68,7 +69,7 @@ _custno_cache: dict[str, Optional[str]] = {}
 # ══════════════════════════════════════════════════════════
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH)
+    c = connect_primary_db()
     c.row_factory = sqlite3.Row
     return c
 
@@ -115,7 +116,9 @@ def get_cf_values(conn: sqlite3.Connection, stock_code: str, year: int) -> dict:
         SELECT data_source, operating_cf, investing_cf, cash_end, report_type
         FROM cash_flow_data
         WHERE stock_code=? AND year=? AND is_annual=1
-        ORDER BY id
+        ORDER BY
+            CASE WHEN COALESCE(report_type, 'CFS') = 'CFS' THEN 0 ELSE 1 END,
+            id
     """, (stock_code, year)).fetchall()
 
     result = {"dart": {}, "fnguide": {}}

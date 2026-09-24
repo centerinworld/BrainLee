@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import re
 import sqlite3
@@ -58,7 +59,7 @@ def collect() -> dict:
     if not history_payload.get("result"):
         raise RuntimeError(f"MOLIT history error: {history_payload.get('msg')}")
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute(
         "DELETE FROM quant_major_indicator_series WHERE indicator_key=? AND series_name='주택건설실적_착공' AND source_name='MOLIT_STAT'",
         (TARGET_KEY,),

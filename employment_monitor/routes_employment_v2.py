@@ -1,3 +1,4 @@
+from db_compat import connect_primary_db
 import sqlite3
 import os
 import time
@@ -9,7 +10,19 @@ router = APIRouter(prefix="/api/employment-v2", tags=["employment-v2"])
 
 DIR = os.path.dirname(__file__)
 EMP_DB = os.path.join(DIR, "employment.db")
-STOCK_DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+DEFAULT_STOCK_DB = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
+STOCK_DB = DEFAULT_STOCK_DB
+
+
+def _connect_stock_db(readonly: bool = False):
+    if STOCK_DB == DEFAULT_STOCK_DB:
+        return connect_primary_db(readonly=readonly)
+    if readonly:
+        conn = sqlite3.connect(f"file:{STOCK_DB}?mode=ro", uri=True)
+    else:
+        conn = sqlite3.connect(STOCK_DB)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 @router.get("/quality")
@@ -68,29 +81,49 @@ def get_yearly_employment(limit: int = 9999, sort_by: str = "count"):
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
-
         ym_row = conn.execute("SELECT MAX(data_ym) FROM wlb_monthly").fetchone()
         latest_ym = ym_row[0] if ym_row and ym_row[0] else None
 
-        order_col = ("w.total_workers" if sort_by in ("count", "increase")
-                     else "w.workplace_cnt" if sort_by == "workplace"
-                     else "u.stock_name")
+        sort_field = ("total_workers" if sort_by in ("count", "increase")
+                      else "workplace_cnt" if sort_by == "workplace"
+                      else "stock_name")
 
-        # stock_universe 전체 보통주 기준 LEFT JOIN → 데이터 없는 종목도 포함
-        rows = conn.execute(f"""
-            SELECT
-                u.stock_code, u.stock_name,
-                w.total_workers, w.workplace_cnt,
-                w.data_ym,
-                u.market,
-                u.sector_small AS sector
-            FROM stock_db.stock_universe u
-            LEFT JOIN wlb_monthly w
-                ON u.stock_code = w.stock_code AND w.data_ym = ?
-            WHERE u.secugrp_nm = '주권'
-            ORDER BY {order_col} DESC NULLS LAST
-        """, (latest_ym,)).fetchall()
+        # stock.db(운영 시 Postgres)는 employment.db와 별도 물리 DB라 ATTACH로 조인할
+        # 수 없음 — stock_universe 전체(보통주)를 _connect_stock_db()로 따로 조회하고
+        # wlb_monthly(employment.db)를 파이썬에서 LEFT JOIN한다.
+        stock_conn = _connect_stock_db()
+        try:
+            universe_rows = stock_conn.execute(
+                """SELECT stock_code, stock_name, market, sector_small AS sector
+                   FROM stock_universe WHERE secugrp_nm = '주권'"""
+            ).fetchall()
+        finally:
+            stock_conn.close()
+
+        wlb_rows = conn.execute(
+            "SELECT stock_code, total_workers, workplace_cnt, data_ym FROM wlb_monthly WHERE data_ym = ?",
+            (latest_ym,),
+        ).fetchall() if latest_ym else []
+        wlb_by_code = {r["stock_code"]: dict(r) for r in wlb_rows}
+
+        rows = []
+        for u in universe_rows:
+            d = {
+                "stock_code": u["stock_code"], "stock_name": u["stock_name"],
+                "market": u["market"], "sector": u["sector"],
+                "total_workers": None, "workplace_cnt": None, "data_ym": None,
+            }
+            w = wlb_by_code.get(u["stock_code"])
+            if w:
+                d["total_workers"] = w["total_workers"]
+                d["workplace_cnt"] = w["workplace_cnt"]
+                d["data_ym"] = w["data_ym"]
+            rows.append(d)
+
+        with_val = [d for d in rows if d[sort_field] is not None]
+        without_val = [d for d in rows if d[sort_field] is None]
+        with_val.sort(key=lambda d: d[sort_field], reverse=True)
+        rows = with_val + without_val
 
         meta_row = (conn.execute("SELECT MAX(fetched_at) FROM wlb_monthly WHERE data_ym=?", (latest_ym,)).fetchone()
                     if latest_ym else None)
@@ -152,12 +185,15 @@ def get_trend_data():
 
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
-    conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS main_db")
-    # 1) universe
-    markets = conn.execute(
-        "SELECT stock_code, stock_name, market, sector_small as sector "
-        "FROM main_db.stock_universe WHERE secugrp_nm='주권'"
-    ).fetchall()
+    # 1) universe (stock.db는 별도 물리 DB라 ATTACH 대신 _connect_stock_db()로 조회)
+    stock_conn = _connect_stock_db()
+    try:
+        markets = stock_conn.execute(
+            "SELECT stock_code, stock_name, market, sector_small as sector "
+            "FROM stock_universe WHERE secugrp_nm='주권'"
+        ).fetchall()
+    finally:
+        stock_conn.close()
 
     # 2) NPS rows. 모든 종목을 동일한 공개 기준월로 비교한다.
     latest_nps_row = conn.execute("SELECT MAX(data_ym) FROM nps_monthly").fetchone()
@@ -492,8 +528,7 @@ def get_insurance_employment(limit: int = 200, sort_by: str = "count"):
     """
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
-    stock_conn = sqlite3.connect(f'file:{STOCK_DB}?mode=ro', uri=True)
-    stock_conn.row_factory = sqlite3.Row
+    stock_conn = _connect_stock_db(readonly=True)
     try:
         # 최신 ym의 고용보험 데이터
         latest_ym_row = conn.execute(
@@ -638,7 +673,7 @@ def get_insurance_chart(code: str = Query(..., description="Stock code")):
             "SELECT stock_name FROM wlb_monthly WHERE stock_code = ? LIMIT 1", (code,)
         ).fetchone()
         stock_name = name_row['stock_name'] if name_row else code
-        stock_conn = sqlite3.connect(STOCK_DB)
+        stock_conn = _connect_stock_db()
         stock_conn.row_factory = sqlite3.Row
         stock_meta = stock_conn.execute(
             "SELECT stock_name, sector_small AS sector FROM stock_universe WHERE stock_code=? LIMIT 1",
@@ -677,18 +712,22 @@ def get_nps_chart(query: str = Query(..., description="Stock code or name")):
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
-        row = conn.execute(
-            "SELECT stock_code, stock_name, sector_small AS sector FROM stock_db.stock_universe "
-            "WHERE stock_code=? OR stock_name=? LIMIT 1",
-            (query, query),
-        ).fetchone()
-        if not row:
-            row = conn.execute(
-                "SELECT stock_code, stock_name, sector_small AS sector FROM stock_db.stock_universe "
-                "WHERE stock_name LIKE ? ORDER BY stock_name LIMIT 1",
-                (f"%{query}%",),
+        # stock.db는 별도 물리 DB라 ATTACH 대신 _connect_stock_db()로 조회
+        stock_conn = _connect_stock_db()
+        try:
+            row = stock_conn.execute(
+                "SELECT stock_code, stock_name, sector_small AS sector FROM stock_universe "
+                "WHERE stock_code=? OR stock_name=? LIMIT 1",
+                (query, query),
             ).fetchone()
+            if not row:
+                row = stock_conn.execute(
+                    "SELECT stock_code, stock_name, sector_small AS sector FROM stock_universe "
+                    "WHERE stock_name LIKE ? ORDER BY stock_name LIMIT 1",
+                    (f"%{query}%",),
+                ).fetchone()
+        finally:
+            stock_conn.close()
         if not row:
             return {"company": None, "history": [], "notFound": True}
 
@@ -755,15 +794,18 @@ def get_annual_trend(q: str = Query(..., description="종목명 또는 종목코
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
-
         # 1. stock_universe에서 전체 보통주 검색 (데이터 없는 종목도 포함)
-        companies = conn.execute("""
-            SELECT stock_code, stock_name, sector_small AS sector FROM stock_db.stock_universe
-            WHERE secugrp_nm = '주권'
-              AND (stock_code = ? OR stock_name LIKE ?)
-            LIMIT 10
-        """, (q, f'%{q}%')).fetchall()
+        # stock.db는 별도 물리 DB라 ATTACH 대신 _connect_stock_db()로 조회
+        stock_conn = _connect_stock_db()
+        try:
+            companies = stock_conn.execute("""
+                SELECT stock_code, stock_name, sector_small AS sector FROM stock_universe
+                WHERE secugrp_nm = '주권'
+                  AND (stock_code = ? OR stock_name LIKE ?)
+                LIMIT 10
+            """, (q, f'%{q}%')).fetchall()
+        finally:
+            stock_conn.close()
 
         if not companies:
             return {"results": [], "notFound": True}
@@ -824,30 +866,49 @@ def get_annual_top(limit: int = 9999, sort_by: str = "latest"):
     conn = sqlite3.connect(EMP_DB)
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute(f"ATTACH DATABASE '{STOCK_DB}' AS stock_db")
+        # stock.db는 별도 물리 DB라 ATTACH 대신 _connect_stock_db()로 조회하고
+        # employment_company(3개 ym) 조회 결과를 파이썬에서 LEFT JOIN한다.
+        stock_conn = _connect_stock_db()
+        try:
+            universe_rows = stock_conn.execute("""
+                SELECT stock_code, stock_name, market, sector_small AS sector
+                FROM stock_universe WHERE secugrp_nm = '주권'
+            """).fetchall()
+        finally:
+            stock_conn.close()
 
-        rows = conn.execute("""
-            SELECT
-                u.stock_code, u.stock_name, u.market, u.sector_small AS sector,
-                a.worker_count AS cnt_2025,
-                b.worker_count AS cnt_2024,
-                c.worker_count AS cnt_2023,
-                (a.worker_count - COALESCE(b.worker_count, a.worker_count)) AS diff_1y,
-                (a.worker_count - COALESCE(c.worker_count, a.worker_count)) AS diff_2y
-            FROM stock_db.stock_universe u
-            LEFT JOIN employment_company a ON u.stock_code = a.stock_code AND a.ym = '2025-12'
-            LEFT JOIN employment_company b ON u.stock_code = b.stock_code AND b.ym = '2024-12'
-            LEFT JOIN employment_company c ON u.stock_code = c.stock_code AND c.ym = '2023-12'
-            WHERE u.secugrp_nm = '주권'
-            ORDER BY a.worker_count DESC NULLS LAST
+        emp_rows = conn.execute("""
+            SELECT stock_code, ym, worker_count FROM employment_company
+            WHERE ym IN ('2025-12', '2024-12', '2023-12')
         """).fetchall()
+        emp_by_code_ym: dict[tuple[str, str], int | None] = {}
+        for r in emp_rows:
+            emp_by_code_ym[(r["stock_code"], r["ym"])] = r["worker_count"]
 
-        result = [dict(r) for r in rows]
+        result = []
+        for u in universe_rows:
+            code = u["stock_code"]
+            cnt_2025 = emp_by_code_ym.get((code, "2025-12"))
+            cnt_2024 = emp_by_code_ym.get((code, "2024-12"))
+            cnt_2023 = emp_by_code_ym.get((code, "2023-12"))
+            diff_1y = (cnt_2025 - (cnt_2024 if cnt_2024 is not None else cnt_2025)) if cnt_2025 is not None else None
+            diff_2y = (cnt_2025 - (cnt_2023 if cnt_2023 is not None else cnt_2025)) if cnt_2025 is not None else None
+            result.append({
+                "stock_code": code, "stock_name": u["stock_name"],
+                "market": u["market"], "sector": u["sector"],
+                "cnt_2025": cnt_2025, "cnt_2024": cnt_2024, "cnt_2023": cnt_2023,
+                "diff_1y": diff_1y, "diff_2y": diff_2y,
+            })
 
         if sort_by == 'growth':
             result.sort(key=lambda x: x.get('diff_1y') or 0, reverse=True)
         elif sort_by == 'name':
             result.sort(key=lambda x: x.get('stock_name') or '')
+        else:
+            with_val = [d for d in result if d['cnt_2025'] is not None]
+            without_val = [d for d in result if d['cnt_2025'] is None]
+            with_val.sort(key=lambda d: d['cnt_2025'], reverse=True)
+            result = with_val + without_val
 
         return {"rows": result, "count": len(result), "base_ym": "2025-12", "compare_ym": "2024-12"}
     finally:

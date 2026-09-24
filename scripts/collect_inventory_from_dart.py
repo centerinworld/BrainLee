@@ -10,7 +10,9 @@ DART fnlttSinglAcntAll API로 재고자산(Inventories)을 연도×분기별로 
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse, logging, os, sqlite3, sys, time, zipfile
+from datetime import date
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -86,6 +88,15 @@ def _report_code(quarter: int) -> list[str]:
     return []
 
 
+def _period_is_publicly_available(year: int, quarter: int, as_of: date | None = None) -> bool:
+    """Only query periods for which the statutory periodic filing can exist."""
+    earliest_month = {1: 5, 2: 8, 3: 11, 4: 3}.get(quarter)
+    if earliest_month is None:
+        return False
+    disclosure_year = year + (1 if quarter == 4 else 0)
+    return (as_of or date.today()) >= date(disclosure_year, earliest_month, 1)
+
+
 def _fetch_inventory(corp_code: str, year: int, quarter: int) -> float | None:
     for rpt_code in _report_code(quarter):
         for fs_div in ["CFS", "OFS"]:
@@ -151,7 +162,7 @@ def main():
     ap.add_argument("--min-cap", type=float, default=500, help="최소 시가총액(억원)")
     args = ap.parse_args()
 
-    conn = sqlite3.connect(str(DB_PATH), timeout=300)
+    conn = connect_primary_db(timeout=300)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=300000")  # 5분 대기
 
@@ -184,6 +195,9 @@ def main():
         for year in args.year:
             for quarter in args.quarter:
                 idx += 1
+                if not _period_is_publicly_available(year, quarter):
+                    skipped += 1
+                    continue
                 # 이미 수집된 경우 건너뜀
                 existing = conn.execute("""
                     SELECT inventory_assets_krw FROM dart_cost_quarterly

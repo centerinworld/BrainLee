@@ -7,14 +7,16 @@
 3. as-of 유니버스가 현재 stock_universe보다 넓음 (생존편향 감소 확인)
 4. 미래 데이터 유출 없음 (과거로 갈수록 유니버스가 작아짐)
 """
+from db_compat import connect_primary_db
 import sqlite3
 
 
 def test_delisted_names_have_intervals():
-    conn = sqlite3.connect("stock.db")
+    conn = connect_primary_db()
     rows = conn.execute("""
         SELECT stock_code, effective_from, effective_to FROM security_master_history
-        WHERE source='FinanceDataReader:KRX-DELISTING' AND effective_to IS NOT NULL
+        WHERE source='KRX_OPEN_API_DAILY_HISTORY' AND effective_to IS NOT NULL
+          AND interval_quality='official_daily_snapshot'
         LIMIT 20
     """).fetchall()
     assert len(rows) >= 20, f"델리스팅 종목 20건 미만: {len(rows)}건"
@@ -25,11 +27,11 @@ def test_delisted_names_have_intervals():
 
 
 def test_share_count_changes_exist():
-    conn = sqlite3.connect("stock.db")
+    conn = connect_primary_db()
     rows = conn.execute("""
         SELECT stock_code, COUNT(*) c FROM security_share_history
-        WHERE quality IN ('official_daily_observed', 'asof_change_observed')
-        GROUP BY stock_code HAVING c >= 2 LIMIT 20
+        WHERE quality IN ('official_daily_snapshot','official_daily_observed','asof_change_observed')
+        GROUP BY stock_code HAVING COUNT(*) >= 2 LIMIT 20
     """).fetchall()
     assert len(rows) >= 20, f"주식수 변경 이력 2회+ 종목 20건 미만: {len(rows)}건"
     print(f"주식수 변경 이력 종목 {len(rows)}건 (2회 이상 변경): PASS")
@@ -37,7 +39,7 @@ def test_share_count_changes_exist():
 
 
 def test_asof_wider_than_current():
-    conn = sqlite3.connect("stock.db")
+    conn = connect_primary_db()
     current = conn.execute(
         "SELECT COUNT(*) FROM stock_universe WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
     ).fetchone()[0]
@@ -58,7 +60,7 @@ def test_asof_wider_than_current():
 
 
 def test_no_lookahead_universe_shrinks_in_past():
-    conn = sqlite3.connect("stock.db")
+    conn = connect_primary_db()
     for as_of in ("2015-01-01", "2020-01-01", "2025-01-01"):
         n = conn.execute("""
             SELECT COUNT(DISTINCT stock_code) FROM security_master_history

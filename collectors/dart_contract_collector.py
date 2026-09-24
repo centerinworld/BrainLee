@@ -10,6 +10,7 @@ collectors/dart_contract_collector.py — DART 수주·공급계약 공시 수�
 AI 분석 → 매수 시그널 (★1~★5) → 텔레그램 알림
 """
 
+from db_compat import connect_primary_db
 import json
 import logging
 import os
@@ -690,7 +691,7 @@ def _calc_signal_strength(parsed: dict, ai_score: int) -> int:
 
 def _stock_code_from_dart(corp_code: str, corp_name: str) -> Optional[str]:
     """DART corp_code → 종목코드 매핑 (stock_universe에서 조회)."""
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     try:
         # 기업명으로 먼저 검색
         row = conn.execute(
@@ -719,42 +720,95 @@ def _ensure_correction_columns(conn) -> None:
         "is_correction": "INTEGER DEFAULT 0",
         "corrects_rcept_no": "TEXT",
         "corrected_by_rcept_no": "TEXT",
+        # 2026-09-06: 정정이 원 공시 행을 in-place로 덮어쓰므로(과거값을 별도 보관하지 않음),
+        # created_at(최초 수집시각)만으로는 "이 값이 최종 확정된 시점"을 알 수 없다 —
+        # backtest_strategies/contract_momentum.py의 data_asof_ts 점검-시점 재현이 정정 이전
+        # 시점을 요청해도 정정 이후 값을 그대로 보게 되는 사각지대가 있었다. 정정 적용 시각을
+        # 별도로 남겨 그 필터가 정정 시점 이후에만 새 값을 "알 수 있었던 것"으로 취급하게 한다.
+        "updated_at": "TEXT",
     }.items():
         if col not in existing:
             conn.execute(f"ALTER TABLE dart_contracts ADD COLUMN {col} {typ}")
     conn.commit()
 
 
-def _find_original_contract(conn, stock_code: str, corrects_disclosed_at: str) -> Optional[str]:
-    """정정공시가 가리키는 원 공시(rcept_no)를 stock_code+공시일로 찾는다.
-    disclosed_at은 DART list.json 원본 그대로(YYYYMMDD)라 대시 포맷과 둘 다 비교한다."""
-    if not stock_code or not corrects_disclosed_at:
+def _find_original_contract(
+    conn, stock_code: str, corrects_disclosed_at: str,
+    correction_amount_before: float | None = None,
+    fallback_amount: float | None = None,
+) -> Optional[str]:
+    """정정공시가 가리키는 원 공시(rcept_no)를 찾는다.
+    1순위: stock_code+공시일 정확매칭(disclosed_at은 DART 원본 그대로 YYYYMMDD라 대시 포맷도 함께 비교).
+    2순위(폴백): 날짜매칭 실패 시 "정정전" 계약금액과 정확히 같은 금액을 가진 원 공시를 찾는다.
+    3순위(최후 폴백): 계약금액 자체는 정정되지 않은 경우(예: 계약기간만 변경) "정정전" 값이
+    아예 없을 수 있음 — 이땐 이 문서에서 최종 채택된 계약금액(정정 여부와 무관하게 항상 동일해야
+    함)으로 매칭한다. 2순위보다 신호가 약해(다른 계약과 우연히 같은 금액일 가능성) 최후 순위로 둔다.
+    2026-09 실측 확인: 일부 DART 정정신고서는 "정정관련 공시서류제출일"에 원 공시일이 아니라
+    정정 자신의 제출일을 잘못 기재하는 사례가 실재함(아시아나IDT 20241209800413 예시 —
+    실제 원 공시는 2023-03-20인데 문서에는 2024-12-09로 자기자신을 가리킴). 이 경우 날짜매칭은
+    반드시 실패해야 안전하므로(잘못된 행을 덮어쓰면 안 됨) 그대로 두고, 금액 폴백으로 보완한다.
+    """
+    if not stock_code:
         return None
-    compact = corrects_disclosed_at.replace("-", "")
-    row = conn.execute(
-        """
-        SELECT rcept_no FROM dart_contracts
-        WHERE stock_code=? AND COALESCE(is_correction,0)=0
-          AND (disclosed_at=? OR disclosed_at=? OR substr(disclosed_at,1,10)=?)
-        ORDER BY rcept_no DESC LIMIT 1
-        """,
-        (stock_code, compact, corrects_disclosed_at, corrects_disclosed_at),
-    ).fetchone()
-    return row[0] if row else None
+    if corrects_disclosed_at:
+        compact = corrects_disclosed_at.replace("-", "")
+        row = conn.execute(
+            """
+            SELECT rcept_no FROM dart_contracts
+            WHERE stock_code=? AND COALESCE(is_correction,0)=0
+              AND (disclosed_at=? OR disclosed_at=? OR substr(disclosed_at,1,10)=?)
+            ORDER BY rcept_no DESC LIMIT 1
+            """,
+            (stock_code, compact, corrects_disclosed_at, corrects_disclosed_at),
+        ).fetchone()
+        if row:
+            return row[0]
+    for amt in (correction_amount_before, fallback_amount):
+        if not amt:
+            continue
+        row = conn.execute(
+            """
+            SELECT rcept_no FROM dart_contracts
+            WHERE stock_code=? AND COALESCE(is_correction,0)=0
+              AND contract_amount_krw IS NOT NULL
+              AND ABS(contract_amount_krw - ?) < 1
+            ORDER BY rcept_no DESC LIMIT 1
+            """,
+            (stock_code, amt),
+        ).fetchone()
+        if row:
+            return row[0]
+    return None
 
 
 def _apply_correction_to_original(conn, original_rcept_no: str, correction_rcept_no: str, parsed: dict) -> None:
-    """정정후 값을 원 공시 행에 반영(supersede)하고 상호참조를 남긴다."""
+    """정정후 값을 원 공시 행에 반영(supersede)하고 상호참조를 남긴다.
+    2026-09 수정: 같은 원 공시에 대해 같은 날 정정이 2건 이상 들어올 수 있음(예: 336260
+    "공시유보 해제"로 서로 다른 세부계약이 각각 정정 — rcept_no 20260904800110/800112가
+    동일 원공시 20250908800042를 동시에 가리킨 실제 사례). 처리 순서가 DART 제출 순서와
+    다를 수 있어(배치/스케줄러가 list.json 반환 순서를 그대로 순회), 무조건 덮어쓰면 더 늦게
+    처리된 쪽이 실제로는 더 이른 정정이어도 최종 상태를 차지하는 비결정적 결과가 나옴 —
+    rcept_no가 클수록(같은 날짜 내에서는 제출이 늦을수록) 실제로 더 최신이므로, 이미 적용된
+    corrected_by_rcept_no보다 작은(=더 이른) correction_rcept_no는 적용을 건너뛴다.
+    """
+    row = conn.execute(
+        "SELECT corrected_by_rcept_no FROM dart_contracts WHERE rcept_no=?",
+        (original_rcept_no,),
+    ).fetchone()
+    already_corrected_by = row[0] if row else None
+    if already_corrected_by and already_corrected_by >= correction_rcept_no:
+        return
     conn.execute(
         """
         UPDATE dart_contracts SET
             contract_amount=?, contract_unit=?, contract_amount_krw=?,
-            contract_end=?, corrected_by_rcept_no=?
+            contract_end=?, corrected_by_rcept_no=?, updated_at=?
         WHERE rcept_no=?
         """,
         (
             parsed.get("contract_amount"), parsed.get("contract_unit"), parsed.get("contract_amount_krw"),
-            parsed.get("contract_end"), correction_rcept_no, original_rcept_no,
+            parsed.get("contract_end"), correction_rcept_no,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"), original_rcept_no,
         ),
     )
     conn.commit()
@@ -774,7 +828,7 @@ def _save_contract(data: dict, max_retries: int = 6):
     values = tuple(data.get(column) for column in columns)
     for attempt in range(max_retries):
         try:
-            conn = sqlite3.connect(DB_PATH, timeout=60)
+            conn = connect_primary_db(timeout=60)
             conn.execute("PRAGMA busy_timeout = 60000")  # 60초
             try:
                 _ensure_correction_columns(conn)
@@ -882,7 +936,7 @@ def _send_telegram_alert(contract: dict):
         dedup_key = f"dart_contract_{contract.get('rcept_no','')}"
         sent = _notify(msg, key=dedup_key)
         if sent:
-            conn = sqlite3.connect(DB_PATH, timeout=30)
+            conn = connect_primary_db(timeout=30)
             conn.execute(
                 "UPDATE dart_contracts SET telegram_sent=1 WHERE rcept_no=?",
                 (contract["rcept_no"],)
@@ -932,7 +986,7 @@ def collect_dart_contracts(days: int = 1, min_signal: int = 2,
     logger.info(f"[DART수주] 전체 주요사항보고서 {len(items)}건")
 
     # 이미 처리된 rcept_no 확인
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     existing = set(row[0] for row in conn.execute(
         "SELECT rcept_no FROM dart_contracts"
     ).fetchall())
@@ -970,7 +1024,7 @@ def collect_dart_contracts(days: int = 1, min_signal: int = 2,
         # 있었음 — routes/order_contracts.py의 검증된 tiebreak 순서(CFS 우선 >
         # quarter=4/0 우선 > DART 소스 우선 > id DESC) 재사용.
         if not parsed["contract_ratio_pct"] and parsed.get("contract_amount_krw") and stock_code:
-            conn = sqlite3.connect(DB_PATH, timeout=30)
+            conn = connect_primary_db(timeout=30)
             row = conn.execute("""
                 SELECT revenue FROM financial_data
                 WHERE stock_code=? AND is_annual=1 AND revenue IS NOT NULL AND revenue > 0
@@ -1000,11 +1054,13 @@ def collect_dart_contracts(days: int = 1, min_signal: int = 2,
         # 못 찾으면(원 공시가 아직 미수집 등) 신규 행으로 저장(감사기록 목적).
         corrects_rcept_no = None
         if parsed.get("is_correction") and stock_code:
-            conn = sqlite3.connect(DB_PATH, timeout=30)
+            conn = connect_primary_db(timeout=30)
             try:
                 _ensure_correction_columns(conn)
                 corrects_rcept_no = _find_original_contract(
-                    conn, stock_code, parsed.get("corrects_disclosed_at") or ""
+                    conn, stock_code, parsed.get("corrects_disclosed_at") or "",
+                    parsed.get("correction_amount_before"),
+                    parsed.get("contract_amount_krw"),
                 )
             finally:
                 conn.close()
@@ -1070,7 +1126,7 @@ def collect_dart_contracts_catchup(
     fallback_start = end_dt - timedelta(days=max_backfill_days)
 
     latest_raw = None
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     try:
         row = conn.execute("SELECT MAX(disclosed_at) FROM dart_contracts").fetchone()
         latest_raw = row[0] if row else None
@@ -1176,7 +1232,7 @@ def get_recent_contract_signals(days: int = 30) -> dict[str, dict]:
     Returns:
         {stock_code: {"signal_strength": 4, "is_overseas": True, "ratio": 25.0, ...}}
     """
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     cutoff = (date.today() - timedelta(days=days)).strftime("%Y%m%d")
     rows = conn.execute("""
         SELECT stock_code, MAX(signal_strength) as max_sig,

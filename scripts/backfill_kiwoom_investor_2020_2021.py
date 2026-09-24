@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import sqlite3
@@ -33,7 +34,7 @@ def log(message: str) -> None:
 def load_codes(limit: int | None = None, explicit_codes: list[str] | None = None) -> list[str]:
     if explicit_codes:
         return [c.strip().zfill(6) for c in explicit_codes if c.strip()]
-    conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+    conn = connect_primary_db(timeout=30)
     try:
         sql = """
             SELECT stock_code
@@ -74,7 +75,7 @@ def save_progress(done_codes: set[str], summary: dict) -> None:
 
 
 def count_window() -> dict:
-    conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+    conn = connect_primary_db(timeout=30)
     try:
         row = conn.execute(
             """

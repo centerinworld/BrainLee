@@ -41,6 +41,7 @@ public_data_collector.py — 공공데이터포털 + DART 일괄 수집기
   python3 public_data_collector.py --backfill --start 20250101 --end 20260327
 """
 
+from db_compat import connect_primary_db
 import sys, os, sqlite3, time, logging, argparse, requests, json, zipfile, io
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -786,7 +787,7 @@ def main():
         setup_cron()
         return
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = connect_primary_db()
     init_db(conn)
 
     if args.stats:

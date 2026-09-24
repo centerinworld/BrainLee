@@ -1,3 +1,5 @@
+import atexit
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from config import DATABASE_URL, IS_SQLITE
@@ -9,6 +11,7 @@ connect_args = {"check_same_thread": False, "timeout": 30} if IS_SQLITE else {}
 # 여유가 충분해 풀을 확장.
 _pool_kwargs = {} if IS_SQLITE else {"pool_size": 20, "max_overflow": 20, "pool_recycle": 1800}
 engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True, **_pool_kwargs)
+atexit.register(engine.dispose)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

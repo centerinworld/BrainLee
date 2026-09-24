@@ -11,13 +11,17 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
+import sys
+
 ROOT = Path(__file__).resolve().parents[1]
-DB = ROOT / "stock.db"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from db_utils import connect_stock_db  # noqa: E402
 OUT_DIR = ROOT / "research_outputs"
 
 
@@ -25,7 +29,7 @@ def compact(text: str | None) -> str:
     return re.sub(r"\s+", "", text or "")
 
 
-def ensure_columns(conn: sqlite3.Connection) -> None:
+def ensure_columns(conn) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(dilution_events)").fetchall()}
     ddl = {
         "risk_amount_status": "ALTER TABLE dilution_events ADD COLUMN risk_amount_status TEXT",
@@ -40,7 +44,7 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_de_amount_status ON dilution_events(risk_amount_status, disclosed_at)")
 
 
-def classify(row: sqlite3.Row) -> tuple[str, str, str]:
+def classify(row) -> tuple[str, str, str]:
     event_type = (row["event_type"] or "").upper()
     report = compact(row["report_nm"])
     source = row["data_source"] or ""
@@ -133,9 +137,7 @@ def classify(row: sqlite3.Row) -> tuple[str, str, str]:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB, timeout=120)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=120000")
+    conn = connect_stock_db(timeout=120)
     ensure_columns(conn)
 
     now = datetime.now().isoformat(timespec="seconds")

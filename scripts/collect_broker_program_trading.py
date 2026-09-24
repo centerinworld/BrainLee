@@ -12,6 +12,7 @@ Examples:
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import sqlite3
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config  # noqa: E402
 from collectors.kiwoom_collector import KiwoomCollector  # noqa: E402
 from db_utils import stock_db_write_lock  # noqa: E402
+from trading_calendar import is_kr_trading_day  # noqa: E402
 from kis_client import kis_client  # noqa: E402
 
 DB_PATH = Path(__file__).resolve().parent.parent / "stock.db"
@@ -63,7 +65,7 @@ def _parse_day(value: str) -> date:
 
 
 def _conn() -> sqlite3.Connection:
-    con = sqlite3.connect(str(DB_PATH), timeout=90)
+    con = connect_primary_db(timeout=90)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA busy_timeout=90000")
     return con
@@ -157,12 +159,12 @@ def load_stock_codes(con: sqlite3.Connection, limit: int | None = None) -> list[
     return [str(row[0]).zfill(6) for row in con.execute(sql).fetchall()]
 
 
-def iter_weekdays(start: str, end: str) -> list[str]:
+def iter_trading_days(start: str, end: str) -> list[str]:
     cur = _parse_day(start)
     last = _parse_day(end)
     dates: list[str] = []
     while cur <= last:
-        if cur.weekday() < 5:
+        if is_kr_trading_day(cur):
             dates.append(_yyyymmdd(cur))
         cur += timedelta(days=1)
     return dates
@@ -510,7 +512,7 @@ def main() -> None:
                 if not args.start:
                     raise SystemExit("--start is required when using --end/range mode")
                 end = args.end or date.today().strftime("%Y%m%d")
-                dates = iter_weekdays(args.start, end)
+                dates = iter_trading_days(args.start, end)
                 total = collect_range(
                     con,
                     dates,

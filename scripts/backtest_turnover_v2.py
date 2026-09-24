@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from db_compat import connect_primary_db
 import sqlite3
 import json
 from dataclasses import dataclass
@@ -48,7 +49,7 @@ class Pos:
 
 
 def load_data() -> pd.DataFrame:
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     q = """
     WITH u AS (
       SELECT stock_code,

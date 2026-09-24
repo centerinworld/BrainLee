@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import random
 import sqlite3
@@ -37,7 +38,7 @@ class EvalResult:
 
 
 def _load_auto_matrix() -> dict[tuple[str, str], dict[str, dict[str, float]]]:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         """

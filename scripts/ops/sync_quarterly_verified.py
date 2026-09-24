@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import os
 import sqlite3
@@ -187,7 +188,7 @@ def main():
 
     run_id = f"quarter_sync_{qt.year}Q{qt.quarter}"
 
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     ensure_fix_log_table(conn)
 

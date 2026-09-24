@@ -432,7 +432,15 @@ def save_snapshot(
         )
 
 
-def save_failure(conn: sqlite3.Connection, day: str, etf: ETF, status: str, error: str) -> None:
+def save_failure(
+    conn: sqlite3.Connection,
+    day: str,
+    etf: ETF,
+    status: str,
+    error: str,
+    raw_path: str | None = None,
+    digest: str | None = None,
+) -> None:
     with conn:
         conn.execute(
             "DELETE FROM etf_pdf_full_component WHERE base_date=? AND etf_ticker=?",
@@ -441,13 +449,19 @@ def save_failure(conn: sqlite3.Connection, day: str, etf: ETF, status: str, erro
         conn.execute(
             """
             INSERT INTO etf_pdf_full_snapshot(
-                base_date,etf_ticker,etf_name,isin,status,error,collected_at
-            ) VALUES(?,?,?,?,?,?,?)
+                base_date,etf_ticker,etf_name,isin,status,raw_path,raw_sha256,
+                error,collected_at
+            ) VALUES(?,?,?,?,?,?,?,?,?)
             ON CONFLICT(base_date,etf_ticker) DO UPDATE SET
                 status=excluded.status,component_count=0,domestic_stock_count=0,
-                weight_sum=NULL,error=excluded.error,collected_at=excluded.collected_at
+                weight_sum=NULL,raw_path=COALESCE(excluded.raw_path,raw_path),
+                raw_sha256=COALESCE(excluded.raw_sha256,raw_sha256),
+                error=excluded.error,collected_at=excluded.collected_at
             """,
-            (day,etf.ticker,etf.name,etf.isin,status,error[:1000],datetime.now().isoformat(timespec="seconds")),
+            (
+                day,etf.ticker,etf.name,etf.isin,status,raw_path,digest,
+                error[:1000],datetime.now().isoformat(timespec="seconds"),
+            ),
         )
 
 
@@ -551,6 +565,8 @@ def collect(
                     continue
                 last_error: Exception | None = None
                 final_status = "error"
+                last_raw_path: str | None = None
+                last_digest: str | None = None
                 previous = conn.execute(
                     """
                     SELECT component_count FROM etf_pdf_full_snapshot
@@ -563,6 +579,7 @@ def collect(
                 for attempt in range(max(retries, 1)):
                     try:
                         rows = source.fetch(day, etf.isin)
+                        last_raw_path,last_digest = store_raw(day,etf.ticker,rows,raw_root)
                         if not rows:
                             final_status = "empty"
                             raise RuntimeError("KRX returned an empty PDF")
@@ -570,8 +587,9 @@ def collect(
                         if issue:
                             final_status = "error"
                             raise RuntimeError(issue)
-                        path,digest = store_raw(day,etf.ticker,rows,raw_root)
-                        save_snapshot(conn,day,etf,rows,path,digest,historical_isin_map)
+                        save_snapshot(
+                            conn,day,etf,rows,last_raw_path,last_digest,historical_isin_map
+                        )
                         stats["fetched"] += 1
                         last_error = None
                         break
@@ -582,7 +600,9 @@ def collect(
                         if attempt + 1 < max(retries, 1):
                             time.sleep(min(2 ** attempt, 4))
                 if last_error:
-                    save_failure(conn,day,etf,final_status,str(last_error))
+                    save_failure(
+                        conn,day,etf,final_status,str(last_error),last_raw_path,last_digest
+                    )
                     stats["empty" if final_status == "empty" else "errors"] += 1
                     if len(stats["error_samples"]) < 30:
                         stats["error_samples"].append({"ticker":etf.ticker,"error":str(last_error)})

@@ -11,6 +11,7 @@ routes/market_radar.py  —  시장 Radar API
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import asyncio
 import csv
 import io
@@ -121,7 +122,7 @@ _CACHE_TTL = 300
 
 
 def _db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
@@ -878,6 +879,16 @@ async def refresh_market_cache(background_tasks: BackgroundTasks):
 
 
 async def _do_refresh_cache():
+    worker = _HERE / "scripts" / "refresh_market_radar_cache.py"
+    process = await asyncio.create_subprocess_exec(
+        str(_HERE / "venv" / "bin" / "python"), str(worker)
+    )
+    code = await process.wait()
+    if code != 0:
+        logger.error(f"[market-radar] cache worker exit={code}")
+
+
+async def _refresh_cache_worker():
     try:
         import yfinance as yf
     except ImportError:
@@ -898,23 +909,21 @@ async def _do_refresh_cache():
 
         async def fetch_one(t: str):
             try:
-                # fast_info: market_cap만 빠르게
-                fi  = await asyncio.to_thread(lambda: yf.Ticker(t).fast_info)
-                mc  = getattr(fi, "market_cap", None)
-                # info dict: PER/PBR는 fast_info에 없어 info로 보완
-                inf = await asyncio.to_thread(lambda: yf.Ticker(t).info)
-                pe  = inf.get("trailingPE") or inf.get("forwardPE")
-                pb  = inf.get("priceToBook")
-                if not mc:
-                    mc = inf.get("marketCap")
-                if mc or pe or pb:
-                    return (t, float(mc) if mc else None,
-                            float(pe) if pe else None, float(pb) if pb else None)
+                # quoteSummary/info is slow and emits 404 for recently delisted symbols.
+                fi = await asyncio.wait_for(
+                    asyncio.to_thread(lambda: yf.Ticker(t).fast_info), timeout=12
+                )
+                mc = getattr(fi, "market_cap", None)
+                if mc:
+                    return (t, float(mc), None, None)
             except Exception as e:
                 logger.debug(f"[market-radar] yfinance {t}: {e}")
             return None
 
-        results = await asyncio.gather(*[fetch_one(t) for t in tickers])
+        results = []
+        for start in range(0, len(tickers), 8):
+            batch = tickers[start:start + 8]
+            results.extend(await asyncio.gather(*[fetch_one(t) for t in batch]))
         updated = 0
         for r in results:
             if r is None:
@@ -924,9 +933,9 @@ async def _do_refresh_cache():
                 INSERT INTO radar_market_cache (ticker, market_cap, per, pbr, updated_at)
                 VALUES (?, ?, ?, ?, datetime('now'))
                 ON CONFLICT(ticker) DO UPDATE SET
-                    market_cap = excluded.market_cap,
-                    per        = excluded.per,
-                    pbr        = excluded.pbr,
+                    market_cap = COALESCE(excluded.market_cap, radar_market_cache.market_cap),
+                    per        = COALESCE(excluded.per, radar_market_cache.per),
+                    pbr        = COALESCE(excluded.pbr, radar_market_cache.pbr),
                     updated_at = excluded.updated_at
             """, (t, mc, pe, pb))
             updated += 1
@@ -1235,8 +1244,16 @@ def get_semiconductor_valuestream(
                     SELECT stock_code, revenue,
                            ROW_NUMBER() OVER (PARTITION BY stock_code
                                               ORDER BY year DESC, quarter DESC) AS rn
-                    FROM financial_data
-                    WHERE stock_code IN ({ph}) AND is_annual=0 AND revenue IS NOT NULL AND revenue > 0
+                    FROM (
+                        SELECT stock_code, year, quarter, revenue,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY stock_code, year, quarter
+                                   ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                               ) AS rt_rn
+                        FROM financial_data
+                        WHERE stock_code IN ({ph}) AND is_annual=0 AND revenue IS NOT NULL AND revenue > 0
+                    ) dedup
+                    WHERE rt_rn = 1
                 )
                 WHERE rn <= 4
                 GROUP BY stock_code""",
@@ -1795,8 +1812,16 @@ def get_semiconductor_summary(
                 FROM (
                     SELECT stock_code, revenue,
                            ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) AS rn
-                    FROM financial_data
-                    WHERE stock_code IN ({ph}) AND is_annual = 0 AND revenue IS NOT NULL
+                    FROM (
+                        SELECT stock_code, year, quarter, revenue,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY stock_code, year, quarter
+                                   ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                               ) AS rt_rn
+                        FROM financial_data
+                        WHERE stock_code IN ({ph}) AND is_annual = 0 AND revenue IS NOT NULL
+                    ) dedup
+                    WHERE rt_rn = 1
                 )
                 WHERE rn <= 4
                 GROUP BY stock_code""",
@@ -1948,16 +1973,16 @@ def get_semiconductor_financials(
         lv1_map = {r["stock_code"]: (r["lv1"] or "기타") for r in base_rows}
         name_map = {r["stock_code"]: r["company_name"] for r in base_rows}
 
-        is_annual = 1 if type == "annual" else 0
+        annual_predicate = "is_annual IS TRUE" if type == "annual" else "is_annual IS FALSE"
         rows = conn.execute(
             f"""
             SELECT stock_code, year, quarter, revenue, operating_profit
             FROM financial_data
             WHERE stock_code IN ({ph})
-              AND is_annual = ?
+              AND {annual_predicate}
             ORDER BY stock_code, year ASC, quarter ASC
             """,
-            codes + [is_annual],
+            codes,
         ).fetchall()
 
         data_map: Dict[str, Dict[str, Dict[str, float]]] = {}
@@ -1975,8 +2000,8 @@ def get_semiconductor_financials(
 
             rev = r["revenue"]
             op = r["operating_profit"]
-            data_map[sc]["revenue"][period] = round(rev / 1e8) if rev is not None else None
-            data_map[sc]["profit"][period] = round(op / 1e8) if op is not None else None
+            data_map[sc]["revenue"][period] = round(rev / 100_000_000) if rev is not None else None
+            data_map[sc]["profit"][period] = round(op / 100_000_000) if op is not None else None
 
         out: List[Dict[str, Any]] = []
         for sc in codes:
@@ -2040,12 +2065,24 @@ def get_semiconductor_financial_detail(stock_code: str = Query(...)):
         ).fetchall()
 
         # TTM: last 4 quarters net_income + revenue
+        # 2026-09-08 수정: report_type(CFS/OFS) 타이브레이크 없이 조회하면 같은 분기가
+        # 두 행(CFS+OFS) 다 잡혀 4행 안에 실제로는 2~3개 분기만 담기고 그만큼 합산이
+        # 이중계상된다 — se_momentum.py에서 발견된 것과 동일 부류의 버그. 분기당
+        # CFS 우선 1행만 남긴 뒤 최근 4분기를 취한다.
         ttm_rows = conn.execute(
             """
             SELECT revenue, operating_profit, net_income, eps
-            FROM financial_data
-            WHERE stock_code=? AND is_annual=0
-              AND net_income IS NOT NULL
+            FROM (
+                SELECT year, quarter, revenue, operating_profit, net_income, eps,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY year, quarter
+                           ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                       ) AS rt_rn
+                FROM financial_data
+                WHERE stock_code=? AND is_annual=0
+                  AND net_income IS NOT NULL
+            ) dedup
+            WHERE rt_rn = 1
             ORDER BY year DESC, quarter DESC
             LIMIT 4
             """,

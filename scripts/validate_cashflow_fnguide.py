@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import os
@@ -47,7 +48,7 @@ def main() -> None:
     ap.add_argument("--out", default="/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/validation_cashflow_fnguide.json")
     args = ap.parse_args()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     targets = get_targets(conn, args.limit_stocks)
 

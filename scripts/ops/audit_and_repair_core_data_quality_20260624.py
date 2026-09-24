@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import csv
 import json
@@ -17,7 +18,7 @@ TODAY = date.today()
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -473,6 +474,12 @@ def log_repair(
 
 def apply_repairs(conn: sqlite3.Connection, run_id: str) -> list[dict[str, Any]]:
     ensure_log(conn)
+    # price_history_basis_write_guard (installed 2026-09-12) fires on every historical
+    # write to a 6-digit stock code regardless of column values. The price_history
+    # UPDATE below only touches rows already invalid_ohlcv, sourced from the raw KRX
+    # stock_price_daily table - set the flag once for this repair batch.
+    if hasattr(conn, '_connection'):
+        conn.execute("SELECT set_config('app.price_basis_checked','1',true)")
     repairs: list[dict[str, Any]] = []
 
     def record(table: str, repair: str, affected: int, backup_table: str | None) -> None:

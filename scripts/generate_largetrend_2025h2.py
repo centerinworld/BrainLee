@@ -14,6 +14,7 @@ V_LARGE_TREND: KOSPI 대형주 추세 추종 전략 (2025-06~12)
   - 목표: pre-computed strategies의 조기 이탈 문제 해결
 """
 from __future__ import annotations
+from db_compat import connect_primary_db
 import sqlite3, json, uuid
 from datetime import date, timedelta
 
@@ -115,7 +116,7 @@ def simulate_trade(code: str, prices: dict[str, float],
 
 
 def main():
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
 
     print(f"=== V_LARGE_TREND 신호 생성 ({PERIOD_START}~{PERIOD_END}) ===\n")

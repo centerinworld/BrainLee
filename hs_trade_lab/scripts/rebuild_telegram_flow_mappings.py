@@ -4,6 +4,7 @@ import csv
 import json
 import re
 import sqlite3
+from db_compat import connect_primary_db
 from pathlib import Path
 
 
@@ -389,7 +390,7 @@ def is_bad_company_token(name: str) -> bool:
 
 
 def load_stock_lookup() -> dict[str, dict[str, str]]:
-    conn = sqlite3.connect(f"file:{ROOT_STOCK_DB}?mode=ro", uri=True)
+    conn = connect_primary_db(readonly=True)
     conn.row_factory = sqlite3.Row
     lookup: dict[str, dict[str, str]] = {}
     listed_markets = {"유가증권", "코스닥", "KOSPI", "KOSDAQ"}

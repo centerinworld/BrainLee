@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_recovery_sqlite_db
 import argparse
 import json
 import sqlite3
@@ -88,7 +89,7 @@ def main() -> int:
     output = BASE_DIR / "research_outputs" / f"order_backlog_low_confidence_quarantine_{datetime.now():%Y%m%d_%H%M%S}.json"
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.apply:
-        legacy = sqlite3.connect(str(STOCK_DB_PATH), timeout=60)
+        legacy = connect_recovery_sqlite_db(timeout=60)
         try:
             _apply(primary, results)
             _apply(legacy, results)

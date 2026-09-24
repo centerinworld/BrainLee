@@ -6,6 +6,7 @@ Uses fast Python in-memory processing.
 """
 
 from __future__ import annotations
+from db_compat import connect_primary_db
 import sqlite3
 import logging
 from pathlib import Path
@@ -93,7 +94,7 @@ def sync_stock_universe(conn: sqlite3.Connection):
 
 
 def main():
-    conn = sqlite3.connect(str(DB), timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA busy_timeout=120000")
     try:
         sync_stock_universe(conn)

@@ -13,6 +13,7 @@ signal_engine.py — 시그널 보드 계산 엔진 (v2 — 퀀트/추세추종 
    - 이평선 정배열 상태에서의 MACD/RSI만 유효 시그널로 인정
 """
 
+from db_compat import connect_primary_db
 import json, sqlite3, logging, time as _time, math as _math
 import numpy as _np
 import os as _os
@@ -51,7 +52,7 @@ DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 # DB 초기화
 # ══════════════════════════════════════════════════════════════════
 def init_signal_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.executescript("""
     CREATE TABLE IF NOT EXISTS signal_config (
         id          INTEGER PRIMARY KEY,
@@ -252,7 +253,7 @@ def _load_contract_bonus_map(days: int = 90) -> dict[str, dict]:
         return _contract_bonus_cache
 
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         cutoff = (date.today() - timedelta(days=days)).strftime("%Y%m%d")
         rows = conn.execute("""
             SELECT stock_code,
@@ -316,7 +317,7 @@ def _load_order_contract_surge_bonus_map(window_months: int = 3) -> dict[str, di
         return _ORDER_SURGE_BONUS_CACHE
 
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.row_factory = sqlite3.Row
         recent_since = (date.today() - timedelta(days=window_months * 30)).strftime("%Y-%m-%d")
         prev_since = (date.today() - timedelta(days=window_months * 60)).strftime("%Y-%m-%d")
@@ -499,7 +500,7 @@ def _load_inventory_sales_bonus_map(min_score: int = 4) -> dict[str, dict]:
         return _INVENTORY_SALES_BONUS_CACHE
 
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
@@ -560,7 +561,7 @@ def _load_cash_conversion_bonus_map(min_score: int = 4) -> dict[str, dict]:
         return _CASH_CONVERSION_BONUS_CACHE
 
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn = connect_primary_db(timeout=10)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
@@ -826,7 +827,7 @@ def _load_nps_monthly_bonus_map() -> dict:
 # 시그널 계산 메인
 # ══════════════════════════════════════════════════════════════════
 def calc_market_signals(db_conn=None) -> list:
-    conn  = db_conn or sqlite3.connect(DB_PATH, timeout=30)
+    conn  = db_conn or connect_primary_db(timeout=30)
     today = date.today().isoformat()
     cfgs  = conn.execute(
         "SELECT id,name,label,description,logic_type,params FROM signal_config "
@@ -934,7 +935,8 @@ def _crosscheck_market_metrics(conn: sqlite3.Connection, market_label: str, trad
     ).fetchone()
     up_ratio_alt = float(row[0] or 0.0)
 
-    # B) 독립 외국인20일: investor_trading_daily (부호 체크 용도)
+    # B) 독립 외국인20일: Kiwoom ka10059 순매수 금액(백만원)
+    # KIS price_history와 별도 API 원천이므로 실제 교차검증에 사용한다.
     row2 = conn.execute(
         """
         WITH su AS (
@@ -942,13 +944,13 @@ def _crosscheck_market_metrics(conn: sqlite3.Connection, market_label: str, trad
           FROM stock_universe
         ),
         d AS (
-          SELECT itd.bas_dt d, SUM(COALESCE(itd.frgn_net,0)) frn_net
-          FROM investor_trading_daily itd
-          JOIN su ON su.stock_code=itd.stock_code AND su.rn=1
+          SELECT replace(kid.dt, '-', '') d, SUM(COALESCE(kid.frgnr_invsr,0)) frn_net
+          FROM kiwoom_investor_daily kid
+          JOIN su ON su.stock_code=kid.stock_code AND su.rn=1
           WHERE su.market LIKE ?
             AND COALESCE(su.stock_type,'') IN ('보통주','우선주')
-          GROUP BY itd.bas_dt
-          ORDER BY itd.bas_dt DESC
+          GROUP BY replace(kid.dt, '-', '')
+          ORDER BY replace(kid.dt, '-', '') DESC
           LIMIT 30
         )
         SELECT SUM(CASE WHEN rn <= 20 THEN frn_net ELSE 0 END)
@@ -1509,25 +1511,15 @@ def generate_market_ai_briefings(db_conn=None) -> dict:
                 f"교차체크 상승종목비율 차이 {up_diff:.1f}%p",
                 {"up_ratio_alt": up_ratio_alt, "up_ratio_main": up_ratio_now},
             )
-            # frn20은 규모 단위가 달라 부호만 검증
-            # 2026-07-29 발견: investor_trading_daily(공공데이터포털 getInvstByTrdrStkInfo,
-            # 서비스 폐지됨)의 frgn_net이 2018~2026 전체 452만행 중 음수가 단 한 건도 없는
-            # 것으로 확인(항상 0 이상) — 원천 API 자체가 죽어있어 이 alt 계산은 구조적으로
-            # "외국인 순매도(음수)"를 절대 표현할 수 없음. 그 결과 실제 frn20_now(가격 순매수,
-            # 신뢰 가능한 KIS 소스)가 진짜로 음수(외국인 매도세)인 정상적인 날마다 이 교차체크가
-            # 항상 불일치로 걸려 block_save=True로 저장을 막고 있었음 — 실측: 최근 로그
-            # 114건 critical(차단) vs 84건 info(통과), 즉 절반 이상의 날에 시장 시그널 브리핑
-            # 저장이 이 죽은 데이터 때문에 막히고 있었음(하필 외국인이 실제로 매도하는,
-            # 가장 중요한 하락장 국면에서 더 자주 발생). 원천 재수집이 불가능하므로(API 폐지)
-            # 이 교차체크는 차단 사유에서 제외하고 정보성 로그로만 유지.
+            # KIS와 Kiwoom 모두 순매수 금액(백만원)이지만 종목 분류와 체결 반영 시점에
+            # 미세한 차이가 있으므로 규모가 아닌 방향을 독립 검증한다.
             sign_main = 1 if frn20_now > 0 else (-1 if frn20_now < 0 else 0)
             sign_alt = 1 if frn20_alt > 0 else (-1 if frn20_alt < 0 else 0)
             if sign_main != sign_alt:
                 _qa_log(
                     conn, today, market, trade_date,
-                    "crosscheck_frn20_sign", "info", float(sign_alt), float(sign_main), float(sign_main - sign_alt),
-                    "외국인 20일 수급 부호 불일치(alt 소스 investor_trading_daily가 폐지된 공공API 기반이라 "
-                    "항상 비음수 — 저장 차단하지 않음, 참고용)",
+                    "crosscheck_frn20_sign", "warn", float(sign_alt), float(sign_main), float(sign_main - sign_alt),
+                    "외국인 20일 수급 부호 불일치(KIS 주원천 vs Kiwoom 독립 원천)",
                     {"frn20_main_억": frn20_now, "frn20_alt_raw": frn20_alt},
                 )
             else:
@@ -1624,7 +1616,7 @@ def generate_market_ai_briefings(db_conn=None) -> dict:
 
 
 def get_market_regime_qa_summary(db_conn=None, qa_date: str | None = None, limit: int = 100) -> dict:
-    conn = db_conn or sqlite3.connect(DB_PATH, timeout=30)
+    conn = db_conn or connect_primary_db(timeout=30)
     try:
         _ensure_market_regime_tables(conn)
         d = qa_date or date.today().isoformat()
@@ -1663,7 +1655,7 @@ def get_market_regime_qa_summary(db_conn=None, qa_date: str | None = None, limit
 
 
 def calc_stock_signals(stock_code: str, db_conn=None) -> list:
-    conn  = db_conn or sqlite3.connect(DB_PATH, timeout=30)
+    conn  = db_conn or connect_primary_db(timeout=30)
     today = date.today().isoformat()
     cfgs  = conn.execute(
         "SELECT id,name,label,description,logic_type,params FROM signal_config "
@@ -1998,7 +1990,7 @@ def _load_universe_maps(conn) -> dict:
                stock_code, sector_large, sector_mid, stock_name,
                market_cap, market, trading_value
         FROM stock_universe
-        WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         ORDER BY stock_code, updated_at DESC, id DESC
     """).fetchall():
         mktcap[sc]     = mc or 0
@@ -2289,14 +2281,22 @@ def _calc_adr(conn, params):
 
     # price_history에서 일별 등락 계산
     rows = conn.execute("""
-        SELECT DISTINCT ON (p1.date, p1.stock_code)
-               p1.date, p1.close, p2.close as prev_close
-        FROM price_history p1
-        JOIN price_history p2 ON p1.stock_code = p2.stock_code
-            AND DATE(p2.date) = DATE(p1.date, '-1 day')
-        WHERE p1.date >= ? AND p1.close > 0 AND p2.close > 0
-            AND LENGTH(p1.stock_code) = 6 AND p1.stock_code GLOB '[0-9]*'
-        ORDER BY p1.date DESC, p1.stock_code, p1.id DESC, p2.id DESC
+        WITH daily AS (
+            SELECT DISTINCT ON (stock_code, date)
+                   date, stock_code, close
+            FROM price_history
+            WHERE date >= ? AND close > 0
+                AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+            ORDER BY stock_code, date, id DESC
+        ), changes AS (
+            SELECT date, stock_code, close,
+                   LAG(close) OVER (PARTITION BY stock_code ORDER BY date) AS prev_close
+            FROM daily
+        )
+        SELECT date, close, prev_close
+        FROM changes
+        WHERE prev_close > 0
+        ORDER BY date DESC, stock_code
     """, (cutoff,)).fetchall()
 
     if not rows:
@@ -3374,7 +3374,7 @@ def _build_sector_activation_map(conn):
         FROM stock_universe su
         WHERE su.sector_large IS NOT NULL
           AND LENGTH(su.stock_code) = 6
-          AND su.stock_code GLOB '[0-9]*'
+          AND su.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
           AND su.market_cap > 0
         GROUP BY su.stock_code, su.sector_large
         ORDER BY su.sector_large, mktcap DESC
@@ -3454,7 +3454,7 @@ def calc_trend_candidates(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
 
     try:
         # ── 섹터 활성화 맵 ─────────────────────────────────────────
@@ -3492,7 +3492,7 @@ def calc_trend_candidates(conn=None) -> list:
             FROM price_history p
             INNER JOIN (
                 SELECT stock_code FROM stock_universe
-                WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND (market_cap IS NULL OR market_cap >= ?)
                 GROUP BY stock_code
             ) su ON p.stock_code = su.stock_code
@@ -3793,7 +3793,7 @@ def calc_stockeasy_trend_candidates(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
 
     try:
         sector_map = _build_sector_activation_map(conn)
@@ -3859,7 +3859,7 @@ def calc_stockeasy_trend_candidates(conn=None) -> list:
             FROM price_history p
             INNER JOIN (
                 SELECT stock_code FROM stock_universe
-                WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND (market_cap IS NULL OR market_cap >= ?)
                 GROUP BY stock_code
             ) su ON p.stock_code = su.stock_code
@@ -4180,7 +4180,7 @@ def calc_value_candidates(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
 
     try:
         # EPS가 있는 종목 목록 (BPS는 equity/shares로 관산 가능)
@@ -4197,7 +4197,7 @@ def calc_value_candidates(conn=None) -> list:
             ) su ON fd.stock_code = su.stock_code
             WHERE fd.eps IS NOT NULL AND fd.eps > 0
               AND LENGTH(fd.stock_code) = 6
-              AND fd.stock_code GLOB '[0-9]*'
+              AND fd.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         """).fetchall()
 
         # 시총/시장구분 사전 로드
@@ -4205,7 +4205,7 @@ def calc_value_candidates(conn=None) -> list:
         market_map = {}
         for sc, mc, mkt in conn.execute("""
             SELECT stock_code, MAX(market_cap) as mc, MAX(market) as mkt
-            FROM stock_universe WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+            FROM stock_universe WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             GROUP BY stock_code
         """).fetchall():
             mktcap_map[sc] = mc or 0
@@ -4230,7 +4230,7 @@ def calc_value_candidates(conn=None) -> list:
             FROM financial_data
             WHERE eps IS NOT NULL
               AND is_annual = 0
-              AND LENGTH(stock_code) = 6 AND stock_code GLOB '[0-9]*'
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             ORDER BY stock_code, year DESC, quarter DESC
         """).fetchall()
 
@@ -4274,7 +4274,7 @@ def calc_value_candidates(conn=None) -> list:
             INNER JOIN (
                 SELECT stock_code, MAX(date) as mdate
                 FROM price_history
-                WHERE close > 0 AND LENGTH(stock_code) = 6 AND stock_code GLOB '[0-9]*'
+                WHERE close > 0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                 GROUP BY stock_code
             ) latest ON p.stock_code = latest.stock_code AND p.date = latest.mdate
         """).fetchall():
@@ -4410,7 +4410,7 @@ def calc_top20_candidates(conn=None) -> list:
 
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
 
     try:
         # ── 섹터 활성화 맵 ─────────────────────────────────────────
@@ -4433,7 +4433,7 @@ def calc_top20_candidates(conn=None) -> list:
                    year * 10 + quarter AS yyyyq
             FROM financial_data
             WHERE is_annual = 0
-              AND LENGTH(stock_code) = 6 AND stock_code GLOB '[0-9]*'
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             ORDER BY stock_code, year DESC, quarter DESC
         """).fetchall()
         _seen_fin = set()
@@ -4456,7 +4456,7 @@ def calc_top20_candidates(conn=None) -> list:
             SELECT p.stock_code, p.close FROM price_history p
             INNER JOIN (
                 SELECT stock_code, MAX(date) as mdate
-                FROM price_history WHERE close>0 AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                FROM price_history WHERE close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                 GROUP BY stock_code
             ) latest ON p.stock_code=latest.stock_code AND p.date=latest.mdate
         """).fetchall():
@@ -4470,7 +4470,7 @@ def calc_top20_candidates(conn=None) -> list:
             FROM price_history p
             INNER JOIN (
                 SELECT stock_code FROM stock_universe
-                WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND (market_cap IS NULL OR market_cap >= ?)
                 GROUP BY stock_code
             ) su ON p.stock_code = su.stock_code
@@ -4831,7 +4831,7 @@ def calc_combo_v2(conn=None) -> list:
 
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
 
     try:
         # ── 시장 환경: KOSPI 추세 확인 ─────────────────────────────
@@ -4880,7 +4880,7 @@ def calc_combo_v2(conn=None) -> list:
                        ) AS rn
                 FROM financial_data
                 WHERE is_annual=0
-                  AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                  AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             ) latest
             WHERE rn=1 AND operating_profit > 0
         """).fetchall()
@@ -4894,7 +4894,7 @@ def calc_combo_v2(conn=None) -> list:
             FROM price_history p
             INNER JOIN (
                 SELECT stock_code FROM stock_universe
-                WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND (market_cap IS NULL OR market_cap >= ?)
                 GROUP BY stock_code
             ) su ON p.stock_code = su.stock_code
@@ -5219,7 +5219,7 @@ def calc_earnings_explosion(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.row_factory = sqlite3.Row
 
     try:
@@ -5388,7 +5388,7 @@ def calc_turnaround_momentum(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.row_factory = sqlite3.Row
 
     try:
@@ -5549,7 +5549,7 @@ def calc_sector_megatrend(conn=None) -> list:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.row_factory = sqlite3.Row
 
     try:
@@ -5739,7 +5739,7 @@ def calc_kiwoom_conditions(conn=None, strategy: str = "all") -> dict:
     """
     own_conn = conn is None
     if own_conn:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = connect_primary_db(timeout=30)
         conn.row_factory = sqlite3.Row
 
     try:
@@ -6187,7 +6187,7 @@ def calc_kiwoom_conditions(conn=None, strategy: str = "all") -> dict:
 if __name__ == "__main__":
     init_signal_db()
     print("시그널 DB 초기화 완료")
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     print("\n[시장 시그널]")
     for r in calc_market_signals(conn):
         e = {'green':'🟢','yellow':'🟡','red':'🔴','gray':'⚪'}.get(r['signal'],'⚪')

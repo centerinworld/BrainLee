@@ -83,7 +83,7 @@ class StockUniverse(Base):
     stock_type      = Column(String(20))   # 보통주 / 우선주 / ETF / 리츠 등
 
     # ── 일별 시세 ─────────────────────────────────────────────
-    base_date       = Column(Date, index=True)  # 기준일 (데이터 날짜)
+    base_date       = Column(String(20), index=True)  # 기준일 (데이터 날짜, 'YYYY-MM-DD' 텍스트 — 실 Postgres 컬럼이 text)
     close           = Column(Float)             # 종가
     open            = Column(Float)             # 시가
     high            = Column(Float)             # 고가
@@ -94,7 +94,7 @@ class StockUniverse(Base):
     market_cap      = Column(Float)             # 시가총액 (억원)
 
     # ── 종목 기본정보 ─────────────────────────────────────────
-    listed_date     = Column(Date)              # 상장일
+    listed_date     = Column(String(20))         # 상장일 ('YYYY-MM-DD' 텍스트 — 실 Postgres 컬럼이 text)
     settlement_month= Column(Integer)           # 결산월
     face_value      = Column(Float)             # 액면가
     shares_issued   = Column(Float)             # 발행주식수
@@ -154,9 +154,15 @@ def _migrate_add_columns():
         ("bps",  "REAL"),
     ]
     with engine.connect() as conn:
-        # 현재 컬럼 목록 조회
-        result = conn.execute(text("PRAGMA table_info(stock_universe)"))
-        existing = {row[1] for row in result}   # row[1] = 컬럼명
+        # 현재 컬럼 목록 조회 (PostgreSQL은 PRAGMA 미지원 — information_schema 사용)
+        if engine.dialect.name == "postgresql":
+            result = conn.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name='stock_universe'"
+            ))
+            existing = {row[0] for row in result}
+        else:
+            result = conn.execute(text("PRAGMA table_info(stock_universe)"))
+            existing = {row[1] for row in result}   # row[1] = 컬럼명
 
         for col_name, col_type in new_cols:
             if col_name not in existing:
@@ -207,7 +213,8 @@ def import_from_excel(excel_path: str, base_date_override: date | None = None) -
     """
     init_tables()
     _migrate_add_columns()   # pbr/eps/bps 컬럼 없으면 자동 추가
-    base_date = base_date_override or date.today()
+    # base_date는 실 Postgres 컬럼이 text이므로 date 객체가 아닌 'YYYY-MM-DD' 문자열로 다룬다
+    base_date = (base_date_override or date.today()).isoformat()
 
     logger.info(f"엑셀 적재 시작: {excel_path}  기준일={base_date}")
     df = pd.read_excel(excel_path, dtype={"종목코드": str})
@@ -258,7 +265,8 @@ def import_from_excel(excel_path: str, base_date_override: date | None = None) -
             obj.dps             = _safe_float(row.get("보통주DPS"))
             obj.roa             = _safe_float(row.get("ROA"))
             obj.roe             = _safe_float(row.get("ROE"))
-            obj.listed_date     = _parse_listed_date(row.get("상장일"))
+            _ld = _parse_listed_date(row.get("상장일"))
+            obj.listed_date     = _ld.isoformat() if _ld else None
             obj.source          = "excel"
 
             upserted += 1
@@ -390,7 +398,7 @@ def _scrape_naver_sise(sosok: int) -> list[dict]:
                     continue
                 href = a_tag.get("href", "")
                 import re
-                code_m = re.search(r"code=(\d{6})", href)
+                code_m = re.search(r"code=([0-9A-Z]{6})", href)
                 if not code_m:
                     continue
                 code = code_m.group(1)
@@ -510,7 +518,8 @@ def update_from_krx(trade_date: str | None = None) -> int:
     _migrate_add_columns()
 
     td_str  = trade_date or _find_latest_trading_day()
-    td_date = date(int(td_str[:4]), int(td_str[4:6]), int(td_str[6:8]))
+    # base_date는 실 Postgres 컬럼이 text이므로 date 객체가 아닌 'YYYY-MM-DD' 문자열로 다룬다
+    td_date = f"{td_str[:4]}-{td_str[4:6]}-{td_str[6:8]}"
 
     merged = fetch_krx_universe(td_str)
     if merged.empty:
@@ -863,7 +872,7 @@ if __name__ == "__main__":
                 for tr in data_rows[:3]:
                     tds = tr.select("td")
                     a = tds[1].select_one("a")
-                    code_m = re.search(r"code=(\d{6})", a.get("href",""))
+                    code_m = re.search(r"code=([0-9A-Z]{6})", a.get("href",""))
                     if code_m:
                         print(f"    {code_m.group(1)} {a.get_text(strip=True)} | {[td.get_text(strip=True) for td in tds[2:8]]}")
             # 총 페이지

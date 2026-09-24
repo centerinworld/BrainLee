@@ -4,6 +4,7 @@
 - 동일 fnlttSinglAcntAll API로 2021-2022년 데이터 소급
 - order_backlog 테이블에 병합
 """
+from db_compat import connect_primary_db
 import sqlite3, time, requests, os, logging, sys
 
 sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime")
@@ -46,7 +47,7 @@ def _best(items, keywords):
     return None, None
 
 def main():
-    conn = sqlite3.connect(DB, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
 

@@ -10,6 +10,7 @@ routes/telegram.py — 텔레그램 채널 관리 + 종목 언급 통계 API
   GET    /api/telegram/mentions/monthly
 """
 
+from db_compat import connect_primary_db
 import sqlite3 as _sl
 import subprocess
 import threading
@@ -27,7 +28,7 @@ PYTHON     = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python3"
 
 
 def _db():
-    return _sl.connect(DB_PATH, timeout=30)
+    return connect_primary_db(timeout=30)
 
 
 # ── 채널 관리 ────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ def get_daily_mentions():
         (dates[0],)
     ).fetchall()
     # stock_code 조인 (stock_universe)
-    su_conn = _sl.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+    su_conn = connect_primary_db()
     su_conn.row_factory = _sl.Row
     code_map = {r["stock_name"]: r["stock_code"] for r in su_conn.execute(
         "SELECT stock_name, stock_code FROM stock_universe"
@@ -128,7 +129,7 @@ def get_weekly_mentions():
         "WHERE mention_date >= ? GROUP BY stock_name ORDER BY 3 DESC LIMIT 20",
         (since,)
     ).fetchall()
-    su_conn = _sl.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+    su_conn = connect_primary_db()
     su_conn.row_factory = _sl.Row
     code_map = {r["stock_name"]: r["stock_code"] for r in su_conn.execute(
         "SELECT stock_name, stock_code FROM stock_universe"
@@ -148,7 +149,7 @@ def get_monthly_mentions():
         "WHERE mention_date >= ? GROUP BY stock_name ORDER BY 3 DESC LIMIT 20",
         (since,)
     ).fetchall()
-    su_conn = _sl.connect("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+    su_conn = connect_primary_db()
     su_conn.row_factory = _sl.Row
     code_map = {r["stock_name"]: r["stock_code"] for r in su_conn.execute(
         "SELECT stock_name, stock_code FROM stock_universe"

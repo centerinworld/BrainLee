@@ -9,6 +9,7 @@ P0~P1 개선 작업:
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import math
 import sqlite3
@@ -52,7 +53,7 @@ OOS_PERIOD    = (OOS_START, OOS_END)
 # ─────────────────────── 데이터 로드 ───────────────────────
 
 def conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH)
+    c = connect_primary_db()
     c.row_factory = sqlite3.Row
     return c
 

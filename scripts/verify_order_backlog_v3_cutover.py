@@ -6,6 +6,7 @@ Optionally rebuild every backlog trigger from quality-eligible source rows.
 
 from __future__ import annotations
 
+from db_compat import connect_recovery_sqlite_db
 import argparse
 import json
 import sqlite3
@@ -187,7 +188,7 @@ def main() -> int:
     connections = [("postgres_primary", connect_stock_db(timeout=60))]
     from config import IS_POSTGRES
     if IS_POSTGRES:
-        connections.append(("sqlite_recovery", sqlite3.connect(str(STOCK_DB_PATH), timeout=60)))
+        connections.append(("sqlite_recovery", connect_recovery_sqlite_db(timeout=60, readonly=True)))
 
     results = {}
     try:

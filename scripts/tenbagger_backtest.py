@@ -23,6 +23,7 @@
 
 실행: python3 scripts/tenbagger_backtest.py
 """
+from db_compat import connect_primary_db
 import sqlite3
 import os
 import json
@@ -43,7 +44,7 @@ WINDOWS = [
 
 
 def get_conn():
-    return sqlite3.connect(DB_PATH, timeout=60)
+    return connect_primary_db(timeout=60)
 
 
 def get_monthly_rebal_dates(conn, start, end):

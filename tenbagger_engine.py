@@ -226,6 +226,11 @@ def _fetch_price_data(conn, stock_code: str) -> dict:
     avg_vol20 = sum(volumes[:20]) / 20 if len(volumes) >= 20 else 0
     vol_ratio = (volumes[0] / avg_vol20) if avg_vol20 > 0 else 0
 
+    # 60일 평균 거래대금 — 2026-09-06: 5일 평균은 하루 튀는 거래량에 취약해서
+    # 밸류트랩 가드레일(아래 _passes_tenbagger_guardrails)용으로 더 긴 창 추가.
+    avg_vol60  = sum(volumes[:60]) / 60 if len(volumes) >= 60 else avg_vol20
+    avg_tvol60 = avg_vol60 * current / 1e8
+
     # 52주 대비 위치
     from_high_pct = (current / high_52w - 1) * 100 if high_52w else 0
     from_low_pct  = (current / low_52w  - 1) * 100 if low_52w  else 999
@@ -240,6 +245,7 @@ def _fetch_price_data(conn, stock_code: str) -> dict:
         "high_52w": high_52w,
         "low_52w": low_52w,
         "avg_tvol5_억": avg_tvol5,
+        "avg_tvol60_억": avg_tvol60,
         "vol_ratio": round(vol_ratio, 2),
         "from_high_pct": round(from_high_pct, 1),
         "from_low_pct":  round(from_low_pct,  1),
@@ -909,13 +915,59 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
     }
 
 
+def _fetch_ownership_concentration(conn, stock_code: str, shares_issued: float | None) -> float | None:
+    """대주주+특수관계인 누적 지분율(%) 추정 — dart_insider_holdings의 대량보유
+    상황보고를 신고인(repror)별로 최신 "보유주식수"(sp_stock_lmp_cnt)만 남겨
+    합산한 뒤 상장주식수로 나눈다.
+
+    주의(2026-09-06 버그 수정): sp_stock_lmp_irds_rate는 누적 지분율이 아니라
+    그 신고 건의 "증감률"이라 최초 신규보고(5%/10% 최초 진입) 이후로는 대부분
+    0.0x~0.x% 같은 작은 변동치만 남아, 이 컬럼으로 최신값을 합산하면 지분율이
+    거의 0%로 잡히는 버그가 있었다(미원화학 실측: 44.3% 대신 0.37%로 계산됨).
+    sp_stock_lmp_cnt(보유주식수, 절대값)를 상장주식수로 나누는 방식으로 수정.
+
+    2026-09-06: 흑자+저PBR(<1.2) 24,218건 walk-forward 연구 결과, 지분집중도
+    단독으로는 30~45% 구간이 오히려 가장 좋았지만(평균 +25.2%), 75%+ 초고집중
+    구간은 평균 -1.2%·중앙값 -14.6%·정체/하락비율 73.3%로 뚜렷이 나빴다. 더
+    결정적인 건 "저유동성(60일 평균거래대금 <3억) AND 지분집중 >50%" 조합 —
+    이 조합(n=38)은 평균 +0.5%/정체·하락 68.4%로, 나머지 전체(평균 +22.3%/
+    정체·하락 50.4%) 대비 확연히 나빴다(미원화학 사례가 정확히 이 패턴).
+    _passes_tenbagger_guardrails에서 이 두 조건을 가드레일로 사용한다.
+    """
+    if not shares_issued or shares_issued <= 0:
+        return None
+    rows = conn.execute("""
+        SELECT repror, sp_stock_lmp_cnt, rcept_dt
+        FROM dart_insider_holdings
+        WHERE stock_code = ? AND sp_stock_lmp_cnt IS NOT NULL
+        ORDER BY rcept_dt ASC
+    """, (stock_code,)).fetchall()
+    if not rows:
+        return None
+    latest: dict = {}
+    for reporter, cnt, _dt in rows:
+        latest[reporter] = float(cnt)
+    total_shares = sum(latest.values())
+    return total_shares / shares_issued * 100 if latest else None
+
+
 def _passes_tenbagger_guardrails(price: dict, fin: dict, supply: dict, uni: dict,
-                                 extra: dict) -> tuple[bool, list[str]]:
+                                 extra: dict, concentration: float | None = None) -> tuple[bool, list[str]]:
     failures: list[str] = []
 
     tvol5 = float(price.get("avg_tvol5_억") or 0)
     if tvol5 < TENBAGGER_MIN_AVG_TVOL5_억:
         failures.append(f"5일 평균 거래대금 {tvol5:.1f}억 < {TENBAGGER_MIN_AVG_TVOL5_억:.0f}억")
+
+    # 2026-09-06 신규: 밸류트랩 가드레일 (아래 참조).
+    if concentration is not None:
+        tvol60 = float(price.get("avg_tvol60_억") or tvol5)
+        if concentration >= 75:
+            failures.append(f"대주주+특수관계인 지분 과도 집중 {concentration:.0f}% (밸류트랩 위험)")
+        elif tvol60 > 0 and tvol60 < 3.0 and concentration > 50:
+            failures.append(
+                f"저유동성({tvol60:.1f}억/60일)+지분집중({concentration:.0f}%) 밸류트랩 조합"
+            )
 
     dilution_pct = float(extra.get("dilution_pct") or 0)
     if dilution_pct >= TENBAGGER_MAX_DILUTION_PCT:
@@ -1742,7 +1794,9 @@ def run_discovery(
                 fin    = _fetch_financials(conn, code)
                 supply = _fetch_supply(conn, code)
                 extra  = _fetch_extra_signals(conn, code)
-                passed_guardrails, guardrail_failures = _passes_tenbagger_guardrails(price, fin, supply, uni, extra)
+                concentration = _fetch_ownership_concentration(conn, code, uni.get("shares_issued"))
+                passed_guardrails, guardrail_failures = _passes_tenbagger_guardrails(
+                    price, fin, supply, uni, extra, concentration)
                 if not passed_guardrails:
                     logger.info("[텐버거] 제외 %s(%s): %s", uni["stock_name"], code, " / ".join(guardrail_failures))
                     continue
@@ -2088,7 +2142,7 @@ def get_action_signals(limit: int = 30) -> list[dict]:
 
         # 해당 런의 결과
         rows = conn.execute("""
-            SELECT tr.*, su.market_cap, su.market, su.sector_large
+            SELECT tr.*, su.market_cap, su.market, su.sector_large, su.shares_issued
             FROM tenbagger_results tr
             LEFT JOIN stock_universe su ON su.stock_code = tr.stock_code
             WHERE tr.run_time = ?
@@ -2100,7 +2154,7 @@ def get_action_signals(limit: int = 30) -> list[dict]:
         for r in rows:
             code = r["stock_code"]
             uni  = {"market_cap": r["market_cap"], "market": r["market"],
-                    "sector_large": r["sector_large"]}
+                    "sector_large": r["sector_large"], "shares_issued": r["shares_issued"]}
 
             # 최신 가격 데이터 재조회 (run_time 이후 변동 반영)
             price = _fetch_price_data(conn, code)
@@ -2109,8 +2163,9 @@ def get_action_signals(limit: int = 30) -> list[dict]:
             fin = _fetch_financials(conn, code)
             supply = _fetch_supply(conn, code)
             extra = _fetch_extra_signals(conn, code)
+            concentration = _fetch_ownership_concentration(conn, code, uni.get("shares_issued"))
             passed_guardrails, guardrail_failures = _passes_tenbagger_guardrails(
-                price, fin, supply, uni, extra
+                price, fin, supply, uni, extra, concentration
             )
             if not passed_guardrails:
                 continue

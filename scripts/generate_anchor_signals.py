@@ -14,6 +14,7 @@ v_anchor 전략 신호 생성 (2020-03 ~ 2025-12)
   - 각 AUTO 구간별로 분리하여 저장 (메타시뮬레이터 소스윈도우 대응)
 """
 from __future__ import annotations
+from db_compat import connect_primary_db
 import sqlite3, json, uuid
 from datetime import date, timedelta
 
@@ -220,7 +221,7 @@ def find_entry_dates(
 
 
 def main():
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
 
     # 확장 기간용 KOSPI 데이터 (충분한 MA 계산 여유)

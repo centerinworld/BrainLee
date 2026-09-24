@@ -117,6 +117,7 @@ def _build_quarterly_panel(conn: sqlite3.Connection) -> tuple[dict[str, list[tup
         SELECT stock_code, year, quarter, report_type, net_income, revenue, cash
         FROM financial_data
         WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
+          AND NOT (report_type='OFS' AND quarter=4 AND data_source LIKE 'dart_ofs_backfill%')
         ORDER BY stock_code, year, quarter
     """).fetchall()
     by_quarter: dict[tuple, dict] = {}

@@ -69,6 +69,7 @@ screener.py — AI 재무 스크리너
   logic_desc (원리 설명)
 """
 
+from db_compat import connect_primary_db
 import sqlite3
 import math
 from sqlalchemy.orm import Session
@@ -111,7 +112,7 @@ def _safe_div(a, b, default=0.0):
 
 
 def _conn():
-    c = sqlite3.connect(DB_PATH)
+    c = connect_primary_db()
     c.row_factory = sqlite3.Row
     return c
 
@@ -177,7 +178,7 @@ def _build_sector_leader_map(conn) -> dict:
         SELECT DISTINCT stock_code, sector_large, MAX(market_cap) as mc
         FROM stock_universe
         WHERE sector_large IS NOT NULL AND LENGTH(stock_code)=6
-          AND stock_code GLOB '[0-9]*' AND market_cap > 0
+          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]' AND market_cap > 0
         GROUP BY stock_code, sector_large
         ORDER BY sector_large, mc DESC
     """).fetchall()

@@ -9,6 +9,7 @@ fix_financial_gaps.py — 재무제표 결함 보완 스크립트
 
 Rate limit: FnGuide에 0.6초 간격, 시간당 최대 ~6000 요청 허용 수준
 """
+from db_compat import connect_primary_db
 import sqlite3
 import time
 import logging
@@ -55,7 +56,7 @@ HEADERS = {
 
 # ── DB 연결 ──────────────────────────────────────────────────────────────────
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=60000")  # 60초 대기

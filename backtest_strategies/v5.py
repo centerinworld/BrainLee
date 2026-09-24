@@ -72,7 +72,8 @@ def run_backtest_v5(start_date: str, end_date: str,
                     per_stock: float = 10_000_000,
                     max_positions: int = 10,
                     chart_confluence: bool = False,
-                    run_name: str = None, run_id: str = None) -> str:
+                    run_name: str = None, run_id: str = None,
+                    data_asof_ts: str = None) -> str:
     """V5 수급 주도 모멘텀 (기관+외국인 5일 동반 순매수 + MA정배열)"""
     return _run_generic_backtest(
         chart_confluence=chart_confluence,
@@ -87,6 +88,7 @@ def run_backtest_v5(start_date: str, end_date: str,
         use_market_filter=True,
         strategy_key='v5',
         sell_signal_fn=_sell_signal_v4,  # 수급모멘텀: 동반순매수 해소 + 삼중정배열 붕괴 시 매도
+        data_asof_ts=data_asof_ts,
     )
 
 
@@ -119,7 +121,6 @@ def _sell_signal_v4(i: int, sd: dict, pos: dict) -> Optional[str]:
             return "손실+수급소멸(V4)"
 
     return None
-
 
 
 

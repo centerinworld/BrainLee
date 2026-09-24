@@ -49,6 +49,7 @@ collect_10year_extension.py — 10년치 재무제표·현금흐름표 확장 �
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import logging
@@ -89,7 +90,7 @@ DEFAULT_DART_DAILY  = 400     # 하루 DART 호출 종목수 한도
 # ─── DB 헬퍼 ─────────────────────────────────────────────────────────────────
 
 def _conn():
-    c = sqlite3.connect(DB_PATH, timeout=120)
+    c = connect_primary_db(timeout=120)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA busy_timeout=60000")

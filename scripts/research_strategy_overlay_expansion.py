@@ -22,6 +22,7 @@ Execution model:
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import bisect
 import json
 import math
@@ -511,7 +512,7 @@ def objective(s: dict, base: dict) -> float:
 
 def main() -> int:
     OUT_DIR.mkdir(exist_ok=True)
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
 
     raw = load_snapshots(conn)

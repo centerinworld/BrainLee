@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -126,7 +127,7 @@ def mark_status(conn: sqlite3.Connection, statuses: dict[str, str]) -> None:
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     for target_key in [*SERIES_BRIDGES, "cafe:11:3475", "cafe:34:7616"]:
         conn.execute("DELETE FROM quant_major_indicator_series WHERE indicator_key=?", (target_key,))
     copied = {key: sync_copied_series(conn, key, sources) for key, sources in SERIES_BRIDGES.items()}

@@ -8,6 +8,7 @@ report_store.py
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import os
 import sqlite3
 from pathlib import Path
@@ -27,7 +28,7 @@ def connect_reports_db() -> sqlite3.Connection:
 
 
 def connect_stock_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(STOCK_DB_PATH), timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
 

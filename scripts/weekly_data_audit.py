@@ -14,6 +14,7 @@ weekly_data_audit.py — 주간 데이터 자동점검
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 import subprocess
@@ -41,7 +42,7 @@ def _since_date(years: int) -> str:
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=60000")
     conn.execute("PRAGMA journal_mode=WAL")
@@ -214,7 +215,7 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
                 """
                 SELECT m.stock_code, m.biz_no_6 AS biz_no_6
                 FROM stock_bizno_map m
-                WHERE LENGTH(m.stock_code)=6 AND m.stock_code GLOB '[0-9]*'
+                WHERE m.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                   AND NOT EXISTS (
                     SELECT 1 FROM nps_monthly n
                     WHERE n.stock_code=m.stock_code AND n.data_ym=?
@@ -231,7 +232,7 @@ def audit_nps(nps_months: int, limit: int = 0) -> NpsReport:
                     SELECT stock_code, stock_name
                     FROM stock_universe
                     WHERE market IN ('유가증권', 'KOSPI', '코스닥', 'KOSDAQ')
-                      AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                      AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                       AND (stock_type IS NULL OR stock_type='보통주')
                     """
                 ).fetchall()
@@ -400,7 +401,7 @@ def audit_investor(years: int, chunk: int, limit_missing: int = 300) -> Investor
             SELECT market, COUNT(DISTINCT stock_code) AS cnt
             FROM stock_universe
             WHERE market IN ('KOSPI','KOSDAQ','유가증권','코스닥')
-              AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
               AND (stock_type IS NULL OR stock_type='보통주')
             GROUP BY market
             """
@@ -417,7 +418,7 @@ def audit_investor(years: int, chunk: int, limit_missing: int = 300) -> Investor
                 WHERE stock_code IN (
                     SELECT stock_code FROM stock_universe
                     WHERE market IN ('KOSPI','KOSDAQ','유가증권','코스닥')
-                      AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                      AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                       AND (stock_type IS NULL OR stock_type='보통주')
                 )
                 """
@@ -435,7 +436,7 @@ def audit_investor(years: int, chunk: int, limit_missing: int = 300) -> Investor
                   AND stock_code IN (
                     SELECT stock_code FROM stock_universe
                     WHERE market IN ('KOSPI','KOSDAQ','유가증권','코스닥')
-                      AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                      AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                       AND (stock_type IS NULL OR stock_type='보통주')
                   )
                 """,
@@ -452,7 +453,7 @@ def audit_investor(years: int, chunk: int, limit_missing: int = 300) -> Investor
               SELECT stock_code
               FROM stock_universe
               WHERE market IN ('KOSPI','KOSDAQ','유가증권','코스닥')
-                AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9]*'
+                AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                 AND (stock_type IS NULL OR stock_type='보통주')
             ),
             inv AS (

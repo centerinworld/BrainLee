@@ -14,6 +14,7 @@ marks them as candidates unless they survive the full OOS gates.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import itertools
 import json
 import math
@@ -39,7 +40,7 @@ BUDGET = 100_000_000
 
 
 def conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, timeout=120)
+    c = connect_primary_db(timeout=120)
     c.row_factory = sqlite3.Row
     return c
 

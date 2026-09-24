@@ -58,7 +58,7 @@ _DATE_NOW_OFFSET_RE = re.compile(
     r"date\(\s*'now'\s*,\s*'-(\d+)\s+days?'\s*\)", re.IGNORECASE
 )
 _DATE_PARAM_OFFSET_RE = re.compile(
-    r"date\(\s*\?\s*,\s*'-(\d+)\s+days?'\s*\)", re.IGNORECASE
+    r"date\(\s*\?\s*,\s*'([+-])(\d+)\s+days?'\s*\)", re.IGNORECASE
 )
 _DATE_COLUMN_OFFSET_RE = re.compile(
     r"date\(\s*([A-Za-z_][A-Za-z0-9_.]*)\s*,\s*'-(\d+)\s+days?'\s*\)",
@@ -190,6 +190,148 @@ def _replace_qmark_placeholders(sql: str) -> str:
     return "".join(out)
 
 
+def _replace_named_placeholders(sql: str) -> str:
+    """Convert SQLite ``:name`` named placeholders to psycopg ``%(name)s``.
+
+    Mirrors ``_replace_qmark_placeholders``: skips ``:word`` inside string
+    literals and PostgreSQL ``::type`` casts (a ``:`` immediately preceded by
+    another ``:``, or followed by a non-identifier char, is left untouched).
+    """
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    n = len(sql)
+    while i < n:
+        char = sql[i]
+        if quote:
+            out.append(char)
+            if char == quote:
+                if i + 1 < n and sql[i + 1] == quote:
+                    out.append(sql[i + 1])
+                    i += 1
+                else:
+                    quote = None
+        elif char in ("'", '"'):
+            quote = char
+            out.append(char)
+        elif char == ":" and (i == 0 or sql[i - 1] != ":"):
+            nxt = sql[i + 1] if i + 1 < n else ""
+            if nxt.isalpha() or nxt == "_":
+                j = i + 1
+                while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                    j += 1
+                out.append(f"%({sql[i + 1:j]})s")
+                i = j
+                continue
+            out.append(char)
+        else:
+            out.append(char)
+        i += 1
+    return "".join(out)
+
+
+def _escape_literal_percent(sql: str) -> str:
+    """Escape literal percent signs while preserving psycopg placeholders.
+
+    Our generated placeholders are ``%s`` (from SQLite ``?``) and ``%(name)s``
+    (from SQLite ``:name``). psycopg interpolates the whole statement with
+    Python ``%``-style formatting, so every other percent sign is literal data
+    and must be doubled. Percent signs *inside* string literals are always data:
+    a LIKE pattern such as ``'%b%'`` must become ``'%%b%%'`` and must never be
+    left as a psycopg ``%b``/``%t`` placeholder (which would corrupt the
+    parameter count).
+    """
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    n = len(sql)
+    while i < n:
+        char = sql[i]
+        if quote is not None:
+            if char == quote:
+                if i + 1 < n and sql[i + 1] == quote:  # doubled quote stays in literal
+                    out.append(char)
+                    out.append(sql[i + 1])
+                    i += 2
+                    continue
+                quote = None
+                out.append(char)
+            else:
+                out.append("%%" if char == "%" else char)
+            i += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            out.append(char)
+            i += 1
+            continue
+        if char == "%":
+            if sql[i + 1:i + 2] == "%":
+                out.append("%%")
+                i += 2
+                continue
+            if sql[i + 1:i + 2] == "s":
+                out.append("%s")
+                i += 2
+                continue
+            named = re.match(r"%\([A-Za-z_][A-Za-z0-9_]*\)s", sql[i:])
+            if named:
+                token = named.group(0)
+                out.append(token)
+                i += len(token)
+                continue
+            out.append("%%")
+            i += 1
+            continue
+        out.append(char)
+        i += 1
+    return "".join(out)
+
+
+def _translate_json_extract(sql: str) -> str:
+    """Translate SQLite JSON1 extraction, including dynamic JSONPath expressions."""
+    lower = sql.lower()
+    out: list[str] = []
+    pos = 0
+    while True:
+        start = lower.find("json_extract(", pos)
+        if start < 0:
+            out.append(sql[pos:])
+            break
+        out.append(sql[pos:start])
+        open_paren = start + len("json_extract")
+        depth = 0
+        quote: str | None = None
+        end = open_paren
+        while end < len(sql):
+            char = sql[end]
+            if quote:
+                if char == quote:
+                    quote = None
+            elif char in ("'", '"'):
+                quote = char
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            end += 1
+        if end >= len(sql):
+            out.append(sql[start:])
+            break
+        args = _split_top_level_commas(sql[open_paren + 1:end])
+        if len(args) != 2:
+            out.append(sql[start:end + 1])
+        else:
+            expression, path = (arg.strip() for arg in args)
+            out.append(
+                f"(jsonb_path_query_first(({expression})::jsonb, ({path})::jsonpath) #>> '{{}}')"
+            )
+        pos = end + 1
+    return "".join(out)
+
+
 def translate_sqlite_sql(sql: str) -> str:
     """Translate the SQLite subset used by live stock-dashboard queries."""
     insert_or_ignore = bool(
@@ -217,6 +359,15 @@ def translate_sqlite_sql(sql: str) -> str:
     translated = _DATE_NOW_OFFSET_RE.sub(
         lambda m: f"TO_CHAR(CURRENT_DATE - INTERVAL '{m.group(1)} days', 'YYYY-MM-DD')", translated
     )
+    # 2026-09-19: SQLite date('now','start of month','localtime') (3-arg, used by
+    # routes/trend.py V18 monthly-entry rule) → PostgreSQL date_trunc. The
+    # 'localtime' modifier is implied by the server timezone, so it is dropped.
+    translated = re.sub(
+        r"date\(\s*'now'\s*,\s*'start of month'(?:\s*,\s*'localtime')?\s*\)",
+        "TO_CHAR(date_trunc('month', now()), 'YYYY-MM-DD')",
+        translated,
+        flags=re.IGNORECASE,
+    )
     translated = re.sub(
         r"date\(\s*'now'\s*,\s*'([+-])(\d+)\s+(days?|months?|years?)'\s*\)",
         lambda m: (
@@ -234,7 +385,10 @@ def translate_sqlite_sql(sql: str) -> str:
         flags=re.IGNORECASE,
     )
     translated = _DATE_PARAM_OFFSET_RE.sub(
-        lambda m: f"TO_CHAR(?::date - INTERVAL '{m.group(1)} days', 'YYYY-MM-DD')", translated
+        lambda m: (
+            f"TO_CHAR(?::date {m.group(1)} INTERVAL '{m.group(2)} days', 'YYYY-MM-DD')"
+        ),
+        translated,
     )
     translated = _DATE_COLUMN_OFFSET_RE.sub(
         lambda m: f"({m.group(1)}::date - INTERVAL '{m.group(2)} days')::date",
@@ -282,19 +436,45 @@ def translate_sqlite_sql(sql: str) -> str:
         translated,
         flags=re.IGNORECASE,
     )
-    # The legacy database mixed INTEGER and BOOLEAN representations for
-    # is_annual.  A bare `IS FALSE` only works for BOOLEAN columns, while the
-    # point-in-time backtests also join numeric disclosure tables.  Compare a
-    # normalized text value so the same SQLite-era query is valid for both.
+    # Preserve SQLite three-valued behavior for nullable legacy is_annual
+    # columns. In particular, NULL IS FALSE is false and NULL IS NOT FALSE is
+    # true; COALESCE would silently reverse both results.
     translated = re.sub(
         r"\b((?:[A-Za-z_][A-Za-z0-9_]*\.)?is_annual)\s*=\s*0\b",
-        r"COALESCE(\1::text, '0') IN ('0', 'false', 'f')",
+        r"\1::text IN ('0', 'false', 'f')",
         translated,
         flags=re.IGNORECASE,
     )
     translated = re.sub(
         r"\b((?:[A-Za-z_][A-Za-z0-9_]*\.)?is_annual)\s*=\s*1\b",
-        r"COALESCE(\1::text, '0') IN ('1', 'true', 't')",
+        r"\1::text IN ('1', 'true', 't')",
+        translated,
+        flags=re.IGNORECASE,
+    )
+    translated = re.sub(
+        r"\b((?:[A-Za-z_][A-Za-z0-9_]*\.)?is_annual)\s+IS\s+NOT\s+TRUE\b",
+        r"(\1::text IN ('1', 'true', 't')) IS NOT TRUE",
+        translated, flags=re.IGNORECASE,
+    )
+    translated = re.sub(
+        r"\b((?:[A-Za-z_][A-Za-z0-9_]*\.)?is_annual)\s+IS\s+TRUE\b",
+        r"(\1::text IN ('1', 'true', 't')) IS TRUE",
+        translated, flags=re.IGNORECASE,
+    )
+    translated = re.sub(
+        r"\b((?:[A-Za-z_][A-Za-z0-9_]*\.)?is_annual)\s+IS\s+NOT\s+FALSE\b",
+        r"(\1::text IN ('0', 'false', 'f')) IS NOT TRUE",
+        translated, flags=re.IGNORECASE,
+    )
+    translated = re.sub(
+        r"\b((?:[A-Za-z_][A-Za-z0-9_]*\.)?is_annual)\s+IS\s+FALSE\b",
+        r"(\1::text IN ('0', 'false', 'f')) IS TRUE",
+        translated, flags=re.IGNORECASE,
+    )
+    translated = _translate_json_extract(translated)
+    translated = re.sub(
+        r"\bjson_object\(",
+        "json_build_object(",
         translated,
         flags=re.IGNORECASE,
     )
@@ -438,9 +618,35 @@ def translate_sqlite_sql(sql: str) -> str:
 
 
 class PostgresCompatCursor:
-    def __init__(self, cursor: Any) -> None:
+    def __init__(self, cursor: Any, id_column_cache: dict[str, bool]) -> None:
         self._cursor = cursor
+        self._id_column_cache = id_column_cache
         self._lastrowid: int | None = None
+
+    def _insert_target_has_id(self, statement: str) -> bool:
+        match = re.match(
+            r'\s*INSERT\s+INTO\s+(["A-Za-z_]["A-Za-z0-9_.]*)',
+            statement,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return False
+        qualified = match.group(1).replace('"', '')
+        parts = qualified.split('.', 1)
+        schema, table = parts if len(parts) == 2 else ('public', parts[0])
+        cache_key = f'{schema}.{table}'
+        cached = self._id_column_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        with self._cursor.connection.cursor() as metadata:
+            metadata.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema=%s AND table_name=%s AND column_name='id')",
+                (schema, table),
+            )
+            has_id = bool(metadata.fetchone()[0])
+        self._id_column_cache[cache_key] = has_id
+        return has_id
 
     @property
     def rowcount(self) -> int:
@@ -459,8 +665,10 @@ class PostgresCompatCursor:
         # (financial_source_snapshot 등 "id" 정수 PK를 쓰는 테이블에서만 유효, 없으면 None).
         return self._lastrowid
 
-    def execute(self, sql: str, params: Sequence[Any] | None = None):
+    def execute(self, sql: str, params: Sequence[Any] | dict | None = None):
         self._lastrowid = None
+        if isinstance(params, dict):
+            return self._execute_named(sql, params)
         values = tuple(params or ())
         if re.search(r"\bINSERT\s+OR\s+REPLACE\s+INTO\b", sql, flags=re.IGNORECASE):
             return self._execute_insert_or_replace(sql, values)
@@ -479,13 +687,13 @@ class PostgresCompatCursor:
         else:
             translated = translate_sqlite_sql(sql)
         values = tuple(params or ())
-        # 2026-08-11: 순수 INSERT INTO(INSERT OR REPLACE 아닌 일반형)에 "RETURNING id"를
-        # 붙여 lastrowid를 흉내낸다. 대상 테이블에 정수 "id" PK가 없으면 Postgres가
-        # "column id does not exist"로 실패하므로, 그 경우에만 RETURNING 없이 재시도해
-        # 기존 동작(에러 없이 진행, lastrowid=None)을 그대로 보존한다.
+        # sqlite3 lastrowid compatibility is needed only for tables that really
+        # expose an id column. Cache the schema lookup per connection so normal
+        # inserts never create expected PostgreSQL errors or SAVEPOINT churn.
         wants_lastrowid = bool(
             re.match(r"\s*INSERT\s+INTO\b", translated, flags=re.IGNORECASE)
             and not re.search(r"\bRETURNING\b", translated, flags=re.IGNORECASE)
+            and self._insert_target_has_id(translated)
         )
         if wants_lastrowid:
             candidate = translated.rstrip().removesuffix(";") + " RETURNING id"
@@ -499,7 +707,7 @@ class PostgresCompatCursor:
             try:
                 self._cursor.execute("SAVEPOINT lastrowid_probe")
                 if values:
-                    bound = re.sub(r"%(?!s)", "%%", candidate)
+                    bound = _escape_literal_percent(candidate)
                     self._cursor.execute(bound, values)
                 else:
                     self._cursor.execute(candidate)
@@ -523,13 +731,24 @@ class PostgresCompatCursor:
                 # "id" 컬럼이 없는 테이블 — RETURNING 없이 원래 문장으로 재시도.
         try:
             if values:
-                translated = re.sub(r"%(?!s)", "%%", translated)
+                translated = _escape_literal_percent(translated)
                 self._cursor.execute(translated, values)
             else:
                 self._cursor.execute(translated)
         except Exception as exc:
             self._cursor.connection.rollback()
             logger.warning("PostgreSQL compatibility query failed: %s | %s", exc, " ".join(sql.split())[:240])
+            raise
+        return self
+
+    def _execute_named(self, sql: str, params: dict) -> "PostgresCompatCursor":
+        """Execute a query with SQLite-style ``:name`` named placeholders (dict params)."""
+        translated = translate_sqlite_sql(sql)
+        translated = _replace_named_placeholders(translated)
+        try:
+            self._cursor.execute(_escape_literal_percent(translated), params)
+        except Exception:
+            self._cursor.connection.rollback()
             raise
         return self
 
@@ -597,13 +816,16 @@ class PostgresCompatCursor:
             raise
         return self
 
-    def executemany(self, sql: str, params: Sequence[Sequence[Any]]):
+    def executemany(self, sql: str, params: Sequence[Sequence[Any] | dict]):
         if re.search(r"\bINSERT\s+OR\s+REPLACE\s+INTO\b", sql, flags=re.IGNORECASE):
             for values in params:
                 self.execute(sql, values)
             return self
         try:
-            self._cursor.executemany(translate_sqlite_sql(sql), params)
+            translated = translate_sqlite_sql(sql)
+            if re.search(r"(?<!:):[A-Za-z_]", translated):
+                translated = _replace_named_placeholders(translated)
+            self._cursor.executemany(_escape_literal_percent(translated), params)
         except Exception:
             self._cursor.connection.rollback()
             raise
@@ -637,9 +859,18 @@ class PostgresCompatCursor:
 
 
 class PostgresCompatConnection:
-    def __init__(self) -> None:
+    def __init__(self, *, timeout: float = 30.0, readonly: bool = False, row_factory=None) -> None:
         self._connection = engine.raw_connection()
-        self._row_factory = None
+        dbapi_connection = getattr(self._connection, "dbapi_connection", self._connection)
+        if hasattr(dbapi_connection, "set_read_only"):
+            dbapi_connection.set_read_only(readonly)
+        else:
+            # psycopg2 fallback for older local environments.
+            dbapi_connection.set_session(readonly=readonly)
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT set_config('statement_timeout', %s, false)", (str(max(1, round(timeout * 1000))),))
+        self._row_factory = row_factory
+        self._id_column_cache: dict[str, bool] = {}
 
     @property
     def row_factory(self):
@@ -652,12 +883,12 @@ class PostgresCompatConnection:
         self._row_factory = value
 
     def cursor(self) -> PostgresCompatCursor:
-        return PostgresCompatCursor(self._connection.cursor())
+        return PostgresCompatCursor(self._connection.cursor(), self._id_column_cache)
 
-    def execute(self, sql: str, params: Sequence[Any] | None = None) -> PostgresCompatCursor:
+    def execute(self, sql: str, params: Sequence[Any] | dict | None = None) -> PostgresCompatCursor:
         return self.cursor().execute(sql, params)
 
-    def executemany(self, sql: str, params: Sequence[Sequence[Any]]) -> PostgresCompatCursor:
+    def executemany(self, sql: str, params: Sequence[Sequence[Any] | dict]) -> PostgresCompatCursor:
         return self.cursor().executemany(sql, params)
 
     def executescript(self, script: str) -> None:
@@ -707,8 +938,27 @@ class PostgresCompatConnection:
 def connect_primary_db(*, timeout: float = 30.0, row_factory=None, readonly: bool = False, wal: bool = False):
     """Connect to the configured primary DB while preserving legacy call semantics."""
     if IS_POSTGRES:
-        return PostgresCompatConnection()
+        return PostgresCompatConnection(timeout=timeout, readonly=readonly, row_factory=row_factory)
     return connect_stock_db(timeout=timeout, row_factory=row_factory, readonly=readonly, wal=wal)
+
+
+def connect_recovery_sqlite_db(*, timeout: float = 30.0, row_factory=None, readonly: bool = False):
+    """Open the immutable legacy stock.db without primary-DB routing.
+
+    Cutover verifiers use this only as a recovery/reference source. It must
+    never resolve to PostgreSQL, even when the process-wide SQLite router is on.
+    """
+    from db_utils import STOCK_DB_PATH
+
+    if readonly:
+        conn = _ORIGINAL_SQLITE_CONNECT(f"file:{STOCK_DB_PATH}?mode=ro", uri=True, timeout=timeout)
+    else:
+        conn = _ORIGINAL_SQLITE_CONNECT(str(STOCK_DB_PATH), timeout=timeout)
+    conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
+    conn.execute("PRAGMA foreign_keys=ON")
+    if row_factory is not None:
+        conn.row_factory = row_factory
+    return conn
 
 
 def primary_database_label() -> str:
@@ -721,7 +971,7 @@ def _is_primary_sqlite_path(database: Any, *, uri: bool = False) -> bool:
     value = os.fspath(database)
     if value == ":memory:":
         return False
-    if value.startswith("file:"):
+    if uri and value.startswith("file:"):
         value = value[5:].split("?", 1)[0]
     path = Path(value).expanduser()
     if not path.is_absolute():

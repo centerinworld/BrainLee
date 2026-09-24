@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+from db_compat import connect_primary_db
 import csv, json, re, sqlite3, time
 from io import StringIO
 from pathlib import Path
@@ -128,7 +129,7 @@ def naver(code):
         return {'per':None,'pbr':None,'eps':None}
 
 def main():
-    conn=sqlite3.connect(DB); conn.row_factory=sqlite3.Row
+    conn=connect_primary_db(); conn.row_factory=sqlite3.Row
     tars=targets(conn)
     res=[]
     for i,r in enumerate(tars,1):

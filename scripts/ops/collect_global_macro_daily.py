@@ -48,21 +48,35 @@ def main() -> int:
     args = parser.parse_args()
 
     from collectors.eia_oil_supply_collector import collect_eia_oil_supply
+    from collectors.ecb_euro_equity_flow_collector import collect_ecb_euro_equity_flow
     from collectors.fred_collector import collect_fred
     from collectors.global_financial_conditions_collector import collect_global_financial_conditions
     from collectors.global_macro_event_collector import collect_global_macro_events
     from collectors.global_macro_event_reaction_collector import collect_global_macro_event_reactions
     from collectors.market_quant_bridge_collector import collect_market_quant_bridge
     from collectors.yahoo_macro_collector import collect_yahoo_macro
+    from collectors.asia_foreign_flow_collector import collect_asia_foreign_flow
+    from collectors.india_fpi_flow_collector import collect_india_fpi_flow
+    from collectors.hk_southbound_flow_collector import collect_hk_southbound_flow
+    from collectors.mof_japan_flow_collector import collect_jp_foreign_flow
+    from collectors.tic_bilateral_flow_collector import collect_tic_bilateral_flow
 
     steps = [
         ("yahoo_macro", collect_yahoo_macro, (args.yahoo_lookback_days,), {}),
+        ("ecb_euro_equity_flow", collect_ecb_euro_equity_flow, (), {}),
         ("fred", collect_fred, (args.fred_lookback_years,), {}),
+        ("tic_bilateral_flow", collect_tic_bilateral_flow, (args.fred_lookback_years,), {}),  # ★신규(2026-09-08) TIC 국가별 대미 주식 흐름, 월 1회면 충분하나 저비용이라 매일 실행
         ("global_financial", collect_global_financial_conditions, (3,), {}),
         ("eia_oil", collect_eia_oil_supply, (), {}),
         ("market_quant_bridge", collect_market_quant_bridge, (), {}),
         ("macro_events", collect_global_macro_events, (), {}),
         ("macro_event_reactions", collect_global_macro_event_reactions, (), {}),
+        # 아시아 외국인 자금흐름 ★신규(2026-09-08) — TW_USD_TWD/IN_USD_INR가 위 yahoo_macro에서
+        # 먼저 갱신된 뒤 실행돼야 환율 환산이 최신값을 쓴다(steps 순서 유지 필수).
+        ("asia_foreign_flow", collect_asia_foreign_flow, (), {}),
+        ("hk_southbound_flow", collect_hk_southbound_flow, (), {}),
+        ("india_fpi_flow", collect_india_fpi_flow, (), {}),
+        ("jp_foreign_flow", collect_jp_foreign_flow, (), {}),  # MOF 공개 주간 CSV(2026-09-09 전환, e-Stat 불필요)
     ]
 
     if args.include_monthly:

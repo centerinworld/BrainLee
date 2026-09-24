@@ -21,6 +21,7 @@ collect_kis_ohlcv.py — KIS API로 전종목 OHLCV 수집
 KIS 레이트리밋: 초당 20회 (일반 계정 기준)
 6,693종목 × 1호출 = 약 6분 (초당 20회 기준)
 """
+from db_compat import connect_primary_db
 import sys, os, sqlite3, time, logging, argparse
 from datetime import date, datetime, timedelta
 from threading import Thread, Semaphore, Lock
@@ -57,11 +58,7 @@ CHUNK_DAYS  = 100       # KIS 1회 최대 조회일수
 _rate_sem   = Semaphore(RATE_LIMIT)
 _db_lock    = Lock()
 
-_KR_HOLIDAYS_2026 = {
-    '2026-01-01','2026-01-27','2026-01-28','2026-01-29','2026-01-30',
-    '2026-03-01','2026-05-05','2026-06-06','2026-08-15',
-    '2026-09-24','2026-09-25','2026-09-26','2026-10-03','2026-10-09','2026-12-25',
-}
+from trading_calendar import is_kr_trading_day
 
 
 # ── 토큰 관리 ──────────────────────────────────────────
@@ -130,16 +127,16 @@ def _rate_wait():
 
 def fetch_ohlcv(code, start_yyyymmdd, end_yyyymmdd, token):
     """
-    KIS FHKST01010400: 기간별 일봉 OHLCV
-    반환: [(date_str, open, high, low, close, volume), ...]
+    KIS FHKST03010100: 국내주식 기간별 시세(일/주/월/년)
+    반환: [(date_str, open, high, low, close, volume, trade_amount), ...]
     """
-    url = f"{KIS_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-price"
+    url = f"{KIS_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"
     headers = {
         "Content-Type": "application/json",
         "authorization": f"Bearer {token}",
         "appkey": KIS_APP_KEY,
         "appsecret": KIS_APP_SECRET,
-        "tr_id": "FHKST01010400",
+        "tr_id": "FHKST03010100",
         "custtype": "P",
     }
 
@@ -156,27 +153,61 @@ def fetch_ohlcv(code, start_yyyymmdd, end_yyyymmdd, token):
             "FID_INPUT_DATE_1":       cursor_start.strftime("%Y%m%d"),
             "FID_INPUT_DATE_2":       cursor_end.strftime("%Y%m%d"),
             "FID_PERIOD_DIV_CODE":    "D",
-            "FID_ORG_ADJ_PRC":        "1",   # 수정주가
+            "FID_ORG_ADJ_PRC":        "0",   # itemchartprice: 0=수정주가, 1=원주가
         }
 
-        _rate_wait()
-        try:
-            r = requests.get(url, headers=headers, params=params, timeout=10)
-            data = r.json()
-        except Exception as e:
-            log.debug(f"[KIS] {code} 요청 오류: {e}")
+        data = {}
+        rows = []
+        for attempt in range(3):
+            _rate_wait()
+            try:
+                response = requests.get(url, headers=headers, params=params, timeout=10)
+                data = response.json()
+            except Exception as exc:
+                if attempt == 2:
+                    log.debug(f"[KIS] {code} 요청 오류: {exc}")
+                    return result
+                time.sleep(0.5 * (attempt + 1))
+                continue
+
+            rows = data.get("output2") or data.get("output") or []
+            incomplete_turnover = any(
+                float(row.get("acml_vol", 0) or 0) > 0
+                and float(row.get("acml_tr_pbmn", 0) or 0) <= 0
+                for row in rows
+            )
+            # 2026-09-19 발견(실사용 중 재현): rows가 빈 배열이면 incomplete_turnover가
+            # any([])=False가 돼 이 조건을 그냥 통과했다 - KIS가 rt_cd="0"(정상)을
+            # 주면서 output2만 비어있는(아직 그날 시세를 발행 안 한) 응답을 "완전한
+            # 정상 응답"으로 오인해 재시도 없이 그대로 받아들였다(실측: 09-18 캐치업
+            # 재수집이 2,700종목 중 347종목만 성공하고도 에러 없이 "완료"로 끝남).
+            # 요청 구간에 실제 거래일이 하나라도 있는데 빈 응답이면 똑같이 재시도
+            # 대상으로 취급한다 - 응답 자체가 없는 구간(주말만 요청 등)은 재시도해도
+            # 의미 없으므로 제외.
+            requested_dates = [
+                (cursor_start + timedelta(days=d)).date()
+                for d in range((cursor_end - cursor_start).days + 1)
+            ]
+            expects_data = any(
+                d <= date.today() and is_kr_trading_day(d)
+                for d in requested_dates
+            )
+            empty_but_expected = not rows and expects_data
+            if data.get("rt_cd") == "0" and not incomplete_turnover and not empty_but_expected:
+                break
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+        else:
+            log.warning(
+                "[KIS] %s 불완전 응답 3회: %s",
+                code,
+                data.get("msg1", "거래량 양수/거래대금 0"),
+            )
             return result
 
-        if data.get("rt_cd") != "0":
-            msg = data.get("msg1", "")
-            if "초당" in msg or "Rate" in msg.lower():
-                time.sleep(1)
-            return result
-
-        rows = data.get("output2") or data.get("output") or []
         for r in rows:
             d = r.get("stck_bsop_date", "")
-            if not d or len(d) != 8:
+            if not d or len(d) != 8 or not start_yyyymmdd <= d <= end_yyyymmdd:
                 continue
             date_iso = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
             try:
@@ -184,37 +215,47 @@ def fetch_ohlcv(code, start_yyyymmdd, end_yyyymmdd, token):
                 h = float(r.get("stck_hgpr", 0) or 0)
                 l = float(r.get("stck_lwpr", 0) or 0)
                 c = float(r.get("stck_clpr", 0) or 0)
-                v = float(r.get("acml_vol",  0) or 0)
+                v = float(r.get("acml_vol", 0) or 0)
+                trade_amount = float(r.get("acml_tr_pbmn", 0) or 0)
                 if c > 0:
-                    result.append((date_iso, o, h, l, c, v))
+                    result.append((date_iso, o, h, l, c, v, trade_amount))
             except (ValueError, TypeError):
                 continue
 
-        if not rows or len(rows) < CHUNK_DAYS:
-            break
+        # Calendar-day chunks normally contain fewer than 100 sessions.
         cursor_end = cursor_start - timedelta(days=1)
 
-    return result
+    return sorted({r[0]: r for r in result}.values(), key=lambda r: r[0])
 
 
 # ── DB 저장 ────────────────────────────────────────────
 def save_batch(records, conn):
-    """records: [(code, date, o, h, l, c, v)]"""
+    """records: [(code, date, o, h, l, c, v, trade_amount)]"""
+    from collections import defaultdict
+    from price_integrity import ensure_schema, gate_price_batch
+    ensure_schema(conn)
+    grouped = defaultdict(list)
+    for row in records:
+        grouped[row[0]].append(row[1:7])
+    accepted = {code for code, rows in grouped.items()
+                if gate_price_batch(conn, code, rows, 'kis_itemchart_adjusted_0')}
     ins = upd = 0
-    for (code, date_iso, o, h, l, c, v) in records:
+    for (code, date_iso, o, h, l, c, v, trade_amount) in records:
+        if code not in accepted:
+            continue
         cur = conn.execute("""
             INSERT OR IGNORE INTO price_history
-                (stock_code, date, open, high, low, close, volume)
-            VALUES (?,?,?,?,?,?,?)
-        """, (code, date_iso, o, h, l, c, v))
+                (stock_code, date, open, high, low, close, volume, trade_amount)
+            VALUES (?,?,?,?,?,?,?,?)
+        """, (code, date_iso, o, h, l, c, v, trade_amount))
         if cur.rowcount > 0:
             ins += 1
         else:
             conn.execute("""
                 UPDATE price_history
-                SET open=?, high=?, low=?, close=?, volume=?
+                SET open=?, high=?, low=?, close=?, volume=?, trade_amount=?
                 WHERE stock_code=? AND date=?
-            """, (o, h, l, c, v, code, date_iso))
+            """, (o, h, l, c, v, trade_amount, code, date_iso))
             upd += 1
     conn.commit()
     return ins, upd
@@ -222,7 +263,7 @@ def save_batch(records, conn):
 
 # ── 수집 워커 ──────────────────────────────────────────
 def worker(codes_chunk, start_str, end_str, token, result_queue, progress_counter, counter_lock):
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=120000")
 
@@ -231,8 +272,8 @@ def worker(codes_chunk, start_str, end_str, token, result_queue, progress_counte
 
     for code in codes_chunk:
         rows = fetch_ohlcv(code, start_str, end_str, token)
-        for (date_iso, o, h, l, c, v) in rows:
-            batch.append((code, date_iso, o, h, l, c, v))
+        for (date_iso, o, h, l, c, v, trade_amount) in rows:
+            batch.append((code, date_iso, o, h, l, c, v, trade_amount))
 
         with counter_lock:
             progress_counter[0] += 1
@@ -258,7 +299,9 @@ def main():
     parser.add_argument('--start', default=None,  help='시작일 YYYYMMDD (기본: 오늘)')
     parser.add_argument('--end',   default=None,  help='종료일 YYYYMMDD (기본: 오늘)')
     parser.add_argument('--limit', type=int, default=0, help='종목 수 제한 (0=전체)')
-    parser.add_argument('--days',  type=int, default=0, help='최근 N일 (start/end 대신)')
+    parser.add_argument('--days', type=int, default=0, help='최근 N일 (start/end 대신)')
+    parser.add_argument('--missing-trade-amount', action='store_true',
+                        help='종료일 가격은 있으나 거래대금이 없는 종목만 재수집')
     args = parser.parse_args()
 
     today = date.today()
@@ -277,11 +320,8 @@ def main():
 
     # 오늘이 거래일인지
     if start_str == end_str == today_str:
-        if today.weekday() >= 5:
-            log.warning("오늘은 주말 — 수집 불필요")
-            return
-        if today.isoformat() in _KR_HOLIDAYS_2026:
-            log.warning("오늘은 공휴일 — 수집 불필요")
+        if not is_kr_trading_day(today):
+            log.warning("오늘은 한국 증시 휴장일 - 수집 불필요")
             return
 
     print("=" * 60)
@@ -294,14 +334,24 @@ def main():
     log.info("KIS 토큰 준비 완료")
 
     # 종목 목록
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     rows = conn.execute("""
         SELECT stock_code FROM stock_universe
         WHERE market IN ('유가증권', '코스닥', 'KOSPI', 'KOSDAQ')
           AND length(stock_code) = 6
-          AND stock_code GLOB '[0-9]*'
+          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         ORDER BY CAST(COALESCE(market_cap, 0) AS REAL) DESC
     """).fetchall()
+    if args.missing_trade_amount:
+        target_iso = datetime.strptime(end_str, "%Y%m%d").date().isoformat()
+        missing_codes = {
+            row[0] for row in conn.execute(
+                """SELECT stock_code FROM price_history
+                   WHERE date=? AND COALESCE(trade_amount,0)<=0""",
+                (target_iso,),
+            ).fetchall()
+        }
+        rows = [row for row in rows if row[0] in missing_codes]
     conn.close()
 
     codes = [r[0] for r in rows]
@@ -352,13 +402,13 @@ def main():
     print(f"  갱신:      {total_upd:,}건")
 
     # 오늘 한국 종목 수 확인
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     verify_day = datetime.strptime(end_str, "%Y%m%d").date()
     today_iso = verify_day.isoformat()
     kr_today = conn.execute(f"""
         SELECT COUNT(*) FROM price_history
         WHERE date='{today_iso}' AND close>0
-          AND length(stock_code)=6 AND stock_code GLOB '[0-9]*'
+          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
     """).fetchone()[0]
 
     # 샘플 확인
@@ -367,7 +417,7 @@ def main():
         FROM price_history p
         LEFT JOIN stock_universe u ON p.stock_code = u.stock_code
         WHERE p.date='{today_iso}' AND p.close>0
-          AND length(p.stock_code)=6 AND p.stock_code GLOB '[0-9]*'
+          AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         ORDER BY CAST(COALESCE(u.market_cap,0) AS REAL) DESC
         LIMIT 5
     """).fetchall()

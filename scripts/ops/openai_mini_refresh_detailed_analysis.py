@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import os
 import re
@@ -57,7 +58,7 @@ def qtag_from_name(name: str) -> Optional[str]:
 
 
 def find_files_from_db() -> list[FileMeta]:
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         """
@@ -218,7 +219,7 @@ def main():
         print('No target xlsx files found.')
         return
 
-    conn = sqlite3.connect(DB)
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
 
     report = []

@@ -10,6 +10,7 @@ US 종목 재무/현금흐름 데이터 SEC EDGAR 전수 백필 스크립트.
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 import time
@@ -425,7 +426,7 @@ def main():
     ap.add_argument('--stats', action='store_true', help='처리 전후 채움률 출력')
     args = ap.parse_args()
 
-    conn = sqlite3.connect(str(DB), timeout=300)
+    conn = connect_primary_db(timeout=300)
     conn.execute('PRAGMA busy_timeout=300000')
     conn.execute('PRAGMA journal_mode=WAL')
 

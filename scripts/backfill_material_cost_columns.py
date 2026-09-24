@@ -8,6 +8,7 @@ Q4 cost_structure row and let signal discovery forward-fill it after disclosure.
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import sqlite3
 from pathlib import Path
 
@@ -17,7 +18,7 @@ DB_PATH = ROOT / "stock.db"
 
 
 def main() -> None:
-    con = sqlite3.connect(DB_PATH, timeout=60)
+    con = connect_primary_db(timeout=60)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=60000")

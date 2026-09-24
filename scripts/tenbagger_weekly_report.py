@@ -3,6 +3,7 @@
 텐버거 위클리 리포트 자동 생성 + 텔레그램 발송
 매주 월요일 07:30 스케줄러 실행
 """
+from db_compat import connect_primary_db
 import sqlite3, sys, os, json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,7 +18,7 @@ ALERT_NAMESPACE = "tenbagger_hunter_candidate"
 
 
 def _db():
-    conn = sqlite3.connect(DB_PATH, timeout=20)
+    conn = connect_primary_db(timeout=20)
     conn.row_factory = sqlite3.Row
     return conn
 

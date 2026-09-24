@@ -74,7 +74,9 @@ def _selected_specs(only: set[str]) -> dict[str, list[dict]]:
 # 확인된 전략만). 다른 전략은 계수를 계산해뒀어도 return 계산에 적용하지 않으므로
 # 게이트를 그대로 유지해야 한다 — 잘못 완화하면 미보정 오염 수익률이 "검증됨"으로
 # 통과해버리는 사고가 난다.
-_STRATEGIES_WITH_CORP_ACTION_ADJUSTMENT = {"turnaround", "regime_adaptive", "composite"}
+_STRATEGIES_WITH_CORP_ACTION_ADJUSTMENT = {
+    "turnaround", "regime_adaptive", "composite", "v4",
+}
 
 
 def _price_integrity(run_id: str, end_date: str, strategy: str | None = None) -> tuple[bool, dict]:

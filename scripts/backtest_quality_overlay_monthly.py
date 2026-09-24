@@ -13,6 +13,7 @@ Assumptions:
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import math
 import sqlite3
@@ -41,7 +42,7 @@ def filter_liquid(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_prices(codes: set[str]) -> pd.DataFrame:
-    conn = sqlite3.connect(DB, timeout=60)
+    conn = connect_primary_db(timeout=60)
     chunks = []
     code_list = sorted(codes)
     for i in range(0, len(code_list), 800):

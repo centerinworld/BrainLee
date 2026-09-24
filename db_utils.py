@@ -32,9 +32,9 @@ def connect_stock_db(
         # Lazy import avoids the db_compat -> db_utils fallback import cycle.
         from db_compat import PostgresCompatConnection
 
-        conn = PostgresCompatConnection()
-        if row_factory is not None:
-            conn.row_factory = row_factory
+        conn = PostgresCompatConnection(
+            timeout=timeout, readonly=readonly, row_factory=row_factory
+        )
         return conn
     if readonly:
         uri = f"file:{STOCK_DB_PATH}?mode=ro"

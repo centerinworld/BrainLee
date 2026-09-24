@@ -12,6 +12,7 @@ Two modes are evaluated:
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import math
 import sqlite3
@@ -49,7 +50,7 @@ class PairKey:
 
 
 def conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH)
+    c = connect_primary_db()
     c.row_factory = sqlite3.Row
     return c
 

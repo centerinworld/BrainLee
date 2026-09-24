@@ -33,6 +33,7 @@ convert_cf_cumulative_to_quarterly.py — cash_flow_data Q1~Q4 누적값을 분�
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import sqlite3
@@ -306,7 +307,7 @@ def main():
     yf, yt = (int(x) for x in args.years.split("-"))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.execute("PRAGMA journal_mode=WAL")
 
     if not args.no_backup and not args.dry_run:

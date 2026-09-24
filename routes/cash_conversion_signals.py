@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import sqlite3
 import subprocess
 import sys
@@ -16,7 +17,7 @@ ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
 
 def _db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = connect_primary_db(timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 

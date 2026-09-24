@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # KIS TR_ID 상수 (하드코딩 방지)
 _TR = {
     "PRICE":    "FHKST01010100",   # 주식 현재가
-    "PERIOD":   "FHKST01010400",   # 기간별 일봉 (OHLCV)
+    "PERIOD":   "FHKST03010100",   # 기간별 일봉 (OHLCV)
     "INVESTOR": "FHKST01010900",   # 투자자별 매매동향
     "INDEX":    "FHPUP02100000",   # 지수 현재가
     "BALANCE":  "TTTC8434R",       # 주식 잔고 조회 (실전)
@@ -85,10 +85,10 @@ class KISCollector(BaseCollector):
         stock_code:  str,
         start_date:  str,        # "YYYYMMDD"
         end_date:    str | None = None,
-        adj_price:   str = "1",  # 수정주가: "1"=수정, "0"=원주가
+        adj_price:   str = "0",  # itemchartprice: 0=수정, 1=원주가
     ) -> list[dict]:
         """
-        FHKST01010400 — 국내 주식 기간별 시세.
+        FHKST03010100 — 국내 주식 기간별 시세.
         한 번 호출로 최대 100 거래일치 OHLCV 반환.
         100일 초과 기간은 페이지네이션하여 자동 합산.
 
@@ -97,7 +97,7 @@ class KISCollector(BaseCollector):
         if not end_date:
             end_date = _date_fmt(datetime.now())
 
-        url    = f"{config.KIS_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-price"
+        url    = f"{config.KIS_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"
         result: list[dict] = []
 
         # KIS는 최대 100건 — 기간이 길면 분할 호출
@@ -126,10 +126,10 @@ class KISCollector(BaseCollector):
                 logger.debug(f"[KIS] {stock_code} OHLCV 없음: {data and data.get('msg1','')}")
                 break
 
-            rows = data.get("output2") or data.get("output") or []
+            rows = data.get("output2") or []
             for r in rows:
                 d = r.get("stck_bsop_date", "")
-                if not d:
+                if not d or d < start_date or d > end_date:
                     continue
                 result.append({
                     "date":         _parse_date(d),
@@ -146,7 +146,7 @@ class KISCollector(BaseCollector):
                 break
             cursor_end = cursor_start - timedelta(days=1)
 
-        return result
+        return sorted({r["date"]: r for r in result}.values(), key=lambda r: r["date"])
 
     # ══════════════════════════════════════════════════════════
     # 2) 투자자별 수급 (30거래일 bulk)

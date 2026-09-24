@@ -12,6 +12,7 @@ EPS 우선주/보통주 오매칭 백필 (2026-08-09(2차))
 """
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import logging
 import re
@@ -43,7 +44,7 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     args = ap.parse_args()
 
-    conn = sqlite3.connect(DB_PATH, timeout=120)
+    conn = connect_primary_db(timeout=120)
     conn.execute("PRAGMA busy_timeout=120000")
 
     pref = conn.execute(

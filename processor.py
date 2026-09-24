@@ -167,12 +167,12 @@ def _calc_eps(eps, net_income, shares_issued):
 
 def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual", report_type: str = "CFS"):
     # 주식수 + stock_collection_config 로드
-    import sqlite3 as _sl3
+    from db_compat import connect_primary_db
     import sqlalchemy as _sa
     _shares_issued = None
     _preferred_report_type = None
     try:
-        _conn = _sl3.connect("stock.db")
+        _conn = connect_primary_db()
         _su = _conn.execute(
             "SELECT shares_issued FROM stock_universe WHERE stock_code=?", (stock_code,)
         ).fetchone()
@@ -403,30 +403,46 @@ def get_financial_summary(db: Session, stock_code: str, data_type: str = "annual
 
     # ── 연간 레코드의 정합성 검증: 연간값이 단일 분기 수준이면 분기합으로 보정 ──
     # DART 수집 버그 등으로 is_annual=True에 분기값이 저장되는 경우 대응
+    # ⚠️ 2026-09-04: 아래 두 쿼리에 report_type 필터(_rt_filter)가 빠져 있어
+    # OFS 연간값을 CFS 분기값(대개 훨씬 큼)과 비교/합산하는 버그가 있었음 —
+    # OFS 연간이 정상인데도 "분기보다 작다"고 오판해 CFS+OFS가 뒤섞인 값으로
+    # 뒤엎어버림(예: 002620 2017 OFS 당기순이익 5,168억 정상값 → DART 원문
+    # 대조로 확정한 값인데도 화면엔 엉뚱한 값으로 표시됨). report_type을
+    # annual_data와 동일하게 맞춰서 비교/합산하도록 수정.
+    # DART 사업보고서(reprt_code=11011) 원본에서 직접 수집/원문대조 완료된
+    # 연간 소스는 분기합 비교로 재차 의심하지 않는다 — 분기 쪽(특히 OFS)이
+    # 회사 사정(분할 등)이나 자체 수집 편차로 더 들쭉날쭉한 경우가 많아서,
+    # 이미 원문으로 확정한 연간값을 도리어 분기합으로 덮어쓰는 역효과가 있었음.
+    _TRUSTED_ANNUAL_SOURCES = ("dart_ofs_backfill", "dart_primary_doc_reverify",
+                               "dart_pre2021_gap_fill", "dart_ofs_2016_2018_gap_fill")
     years_to_fix = set()
     for d in annual_data:
+        if (d.data_source or "").startswith(_TRUSTED_ANNUAL_SOURCES):
+            continue
         if not d.revenue or d.revenue <= 0:
             years_to_fix.add(d.year)
             continue
-        # 같은 연도 분기 레코드의 최대 revenue 확인
+        # 같은 연도·같은 report_type 분기 레코드의 최대 revenue 확인
         max_q_rev = db.query(models.FinancialData).filter(
             models.FinancialData.stock_code == stock_code,
             models.FinancialData.year == d.year,
             models.FinancialData.is_annual.is_(False),
             models.FinancialData.revenue > 0,
+            _rt_filter,
         ).order_by(models.FinancialData.revenue.desc()).first()
         if max_q_rev and d.revenue <= max_q_rev.revenue * 1.05:
             # 연간값이 분기 최대값과 거의 같으면(5% 이내)만 오류로 판단
             # 1.8배 기준은 삼천리·한국전력 등 계절성 기업을 오판함
             years_to_fix.add(d.year)
 
-    # 보정이 필요한 연도의 분기 데이터를 한 번에 로드
+    # 보정이 필요한 연도의 분기 데이터를 한 번에 로드 (같은 report_type만)
     q_by_year: dict[int, list] = {}
     if years_to_fix:
         q_rows = db.query(models.FinancialData).filter(
             models.FinancialData.stock_code == stock_code,
             models.FinancialData.year.in_(years_to_fix),
             models.FinancialData.is_annual.is_(False),
+            _rt_filter,
         ).all()
         for q in q_rows:
             q_by_year.setdefault(q.year, []).append(q)
@@ -694,7 +710,7 @@ def get_macro_status(db: Session) -> dict:
       index:       { KOSPI, KOSDAQ }          — 지수 + 수급 + 30일 히스토리
       vix:         { value, change, date, history(30일) }
       us_treasury: { US2Y, US10Y, US30Y, spreads, risk, ai_summary }
-      commodities: { USD/KRW, GOLD, OIL }     — 가격 + 30일 히스토리
+      commodities: { USD/KRW, GOLD, OIL }     — 가격 + 3년 히스토리
     """
     # ── KOSPI / KOSDAQ / 나스닥 / S&P500 ─────────────────────
     index_result = {}
@@ -857,7 +873,7 @@ def get_macro_status(db: Session) -> dict:
     if spread_30_10 is not None and spread_30_10 < 0:
         ai_lines.append(f"30Y-10Y 스프레드 {spread_30_10:.2f}%p: 매우 드문 위험 신호입니다.")
 
-    # ── 원자재 · 환율 (각각 30일 히스토리 포함) ──────────────
+    # ── 원자재 · 환율 (3/12/36개월 버튼을 위한 3년 히스토리) ──
     commodity_result = {}
     for symbol, name in [("USDKRW=X", "USD/KRW"), ("GC=F", "GOLD"), ("CL=F", "OIL")]:
         latest, prev = _query_latest(db, symbol)
@@ -866,7 +882,9 @@ def get_macro_status(db: Session) -> dict:
             "value":   round(latest.close, 2) if latest else None,
             "change":  _pct_change(latest, prev),
             "date":    (str(latest.date)[:10] if not hasattr(latest.date,"hour") else (latest.date.strftime("%Y-%m-%d") if latest.date.hour==0 and latest.date.minute==0 else latest.date.strftime("%Y-%m-%d %H:%M"))) if latest else "-",
-            "history": _history(db, symbol, 30),
+            # The dashboard derives 3/12/36-month returns locally, so 30-day
+            # history made every period button show the same result.
+            "history": _history(db, symbol, 1095),
         }
 
     return {

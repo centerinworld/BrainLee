@@ -15,6 +15,7 @@ collectors/krx_isu_base_info.py — KRX 종목기본정보 + 일별 스냅샷/�
 
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import logging
 import sqlite3
 from datetime import date, timedelta
@@ -168,7 +169,7 @@ def collect_base_info(today_str: str | None = None, max_lookback_days: int = 5) 
 
     today_str = resolved_date.isoformat()
 
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     cur = conn.cursor()
     updated = history = changes = skipped = 0
 

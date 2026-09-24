@@ -3,11 +3,13 @@
 무료 API 키 필요: https://ecos.bok.or.kr/api/#/DevGuide/TokenStat
 환경변수: ECOS_API_KEY
 """
+from db_compat import connect_primary_db
 import sqlite3, requests, logging, os, time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
-DB_PATH = "stock.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "stock.db")
 
 BASE_URL = "https://ecos.bok.or.kr/api"
 
@@ -87,7 +89,7 @@ def collect_ecos(lookback_years: int = 10) -> int:
 
     now = datetime.now()
     start_dt = now - timedelta(days=lookback_years * 365)
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     total = 0
 
     for stat_code, cycle, items in ECOS_SERIES:
@@ -144,7 +146,7 @@ def collect_ecos(lookback_years: int = 10) -> int:
 
 def _log(records: int, status: str = "ok", msg: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         conn.execute("""
             INSERT INTO global_macro_collection_log (source, status, records, message)
             VALUES ('ecos', ?, ?, ?)

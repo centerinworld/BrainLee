@@ -14,6 +14,7 @@ from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
     DB_PATH,
+    _final_liquidation_quote_for_code,
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
@@ -117,7 +118,7 @@ def run_backtest_peak_easy(
                   AND sm.market IN ('KOSPI','KOSDAQ')
                 LEFT JOIN stock_universe su ON p.stock_code=su.stock_code
                 WHERE p.date BETWEEN ? AND ? AND p.close>0
-                  AND LENGTH(p.stock_code)=6 AND p.stock_code GLOB '[0-9]*'
+                  AND LENGTH(p.stock_code)=6 AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             """, (start_date, end_date)).fetchall()
         else:
             codes = conn.execute("""
@@ -126,7 +127,7 @@ def run_backtest_peak_easy(
                 JOIN stock_universe su ON p.stock_code=su.stock_code
                 WHERE p.date BETWEEN ? AND ? AND p.close>0
                   AND su.market_cap >= ? AND su.market IN ('KOSPI','KOSDAQ')
-                  AND LENGTH(p.stock_code)=6 AND p.stock_code GLOB '[0-9]*'
+                  AND LENGTH(p.stock_code)=6 AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
             """, (start_date, end_date, min_mktcap_억)).fetchall()
         codes = [(c, m) for c, m in codes if c in sec_map]
 
@@ -200,6 +201,7 @@ def run_backtest_peak_easy(
 
         earn_fins: Dict[str, list] = {}
         if require_earnings_accel and sd:
+            _earn_seen = set()
             for r in conn.execute("""
                 SELECT f.stock_code, f.revenue, f.operating_profit, f.net_income, f.year, f.quarter,
                        COALESCE(d.avail_date,
@@ -212,8 +214,18 @@ def run_backtest_peak_easy(
                     d.stock_code=f.stock_code AND d.year=f.year AND d.quarter=f.quarter AND d.is_annual<1
                 WHERE f.is_annual=0 AND f.quarter BETWEEN 1 AND 4
                   AND f.stock_code IN ({})
-                ORDER BY f.stock_code, avail_date
+                ORDER BY f.stock_code, f.year, f.quarter,
+                         CASE f.report_type WHEN 'CFS' THEN 0 ELSE 1 END
             """.format(",".join("?" * len(sd))), list(sd.keys())).fetchall():
+                # financial_data carries both CFS and OFS rows per (stock_code, year,
+                # quarter), often sharing the same avail_date; without a tiebreaker and
+                # dedup, Postgres can return them in either order across otherwise-
+                # identical calls, flipping which figures land at avail[-1]/avail[-5]
+                # in _earnings_accel_ok below (see se_momentum.py's identical fix).
+                key = (r[0], r[4], r[5])
+                if key in _earn_seen:
+                    continue
+                _earn_seen.add(key)
                 earn_fins.setdefault(r[0], []).append(
                     (r[6], r[1], r[2], r[3], r[4], r[5]))
 
@@ -274,8 +286,8 @@ def run_backtest_peak_easy(
                 del pending_sells[code]
 
             marked_equity = cash + sum(
-                p['shares'] * sd[code]['c'][didx[code][day]]
-                for code, p in pos.items() if day in didx[code]
+                p['shares'] * (sd[code]['c'][didx[code][day]] if day in didx[code] else p['entry'])
+                for code, p in pos.items()
             )
             position_limit = max(max_positions, int(marked_equity // per_stock))
             for code in list(pending_buys):
@@ -375,18 +387,14 @@ def run_backtest_peak_easy(
                 available -= 1
 
         final_val = cash
+        last_day = sim_dates[-1] if sim_dates else end_date
         for code, p in pos.items():
-            last_c = None
-            for d in reversed(sim_dates):
-                i = didx[code].get(d)
-                if i is not None and sd[code]['c'][i] > 0:
-                    last_c = sd[code]['c'][i]; break
-            if last_c:
-                pnl, net_pct = _net_profit(p['entry'], last_c, p['shares'], p.get('mkt_cap_억', min_mktcap_억))
-                final_val += p['shares'] * p['entry'] + pnl
-                trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': sim_dates[-1],
-                               'entry': p['entry'], 'exit': last_c,
-                               'pnl_pct': net_pct, 'reason': 'final', 'pnl': round(pnl, 0)})
+            last_c, final_reason = _final_liquidation_quote_for_code(conn, code, last_day, didx[code], sd[code]['c'])
+            pnl, net_pct = _net_profit(p['entry'], last_c, p['shares'], p.get('mkt_cap_억', min_mktcap_억))
+            final_val += p['shares'] * p['entry'] + pnl
+            trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': last_day,
+                           'entry': p['entry'], 'exit': last_c,
+                           'pnl_pct': net_pct, 'reason': final_reason, 'pnl': round(pnl, 0)})
 
         init_cap = per_stock * max_positions
         total_ret = (final_val - init_cap) / init_cap * 100
@@ -420,7 +428,6 @@ def run_backtest_peak_easy(
         except Exception:
             pass
         raise
-
 
 
 

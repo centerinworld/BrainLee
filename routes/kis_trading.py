@@ -431,19 +431,46 @@ def _gate_volatility_sizing(c: sqlite3.Connection, stock_code: str, order_krw: f
     }
 
 
+def _resolve_sectors(c: sqlite3.Connection, codes: list[str]) -> dict[str, str | None]:
+    """stock_code → sector_large, falling back to stockeasy_sector_membership(major)
+    when stock_universe.sector_large is missing.
+
+    2026-09-07 발견: stock_universe.sector_large가 KOSPI/KOSDAQ의 절반(2,686/5,379)에서
+    NULL이라 _gate_sector_concentration이 거의 매번 "판단불가"로 빠졌고, strict_for_execution
+    하에서는 이 "판단불가"가 그 자체로 BUY_ALLOWED→WAIT_CONFIRM 강등 사유가 되어 전략센터
+    상위5 가상매매가 매수 자체를 거의 못 하는 원인 중 하나였다(다른 하나는 티켓크기/
+    volatility_sizing 불일치, 같은 날 함께 수정). stockeasy_sector_membership에 이미 그중
+    94%(2,524/2,686)의 분류가 있어 안전정책(strict_for_execution)은 그대로 두고 데이터
+    소스만 보강한다."""
+    if not codes:
+        return {}
+    ph = ",".join("?" * len(codes))
+    sec_map: dict[str, str | None] = dict(c.execute(
+        f"SELECT stock_code, sector_large FROM stock_universe WHERE stock_code IN ({ph})", codes
+    ).fetchall())
+    missing = [code for code in codes if not sec_map.get(code)]
+    if missing:
+        ph2 = ",".join("?" * len(missing))
+        fallback = dict(c.execute(
+            f"SELECT stock_code, sector_name FROM stockeasy_sector_membership "
+            f"WHERE sector_level='major' AND stock_code IN ({ph2})", missing
+        ).fetchall())
+        for code in missing:
+            if fallback.get(code):
+                sec_map[code] = fallback[code]
+    return sec_map
+
+
 def _gate_sector_concentration(c: sqlite3.Connection, stock_code: str, order_krw: float, total_capital: float,
                                 sector_limit_pct: float = 0.35) -> dict:
-    sec_row = c.execute("SELECT sector_large FROM stock_universe WHERE stock_code=?", (stock_code,)).fetchone()
-    sector = sec_row[0] if sec_row else None
+    sector = _resolve_sectors(c, [stock_code]).get(stock_code)
     if not sector:
         return {"ok": True, "data_available": False, "sector": None, "current_exposure_pct": None, "reason": "섹터 분류 없음(판단불가, 통과)"}
     positions = c.execute("SELECT stock_code, qty, avg_price FROM kis_paper_positions").fetchall()
     exposure_krw = 0.0
     if positions:
         codes = [p[0] for p in positions]
-        sec_map = dict(c.execute(
-            "SELECT stock_code, sector_large FROM stock_universe WHERE stock_code IN ({})".format(
-                ",".join("?" * len(codes))), codes).fetchall())
+        sec_map = _resolve_sectors(c, codes)
         for p_code, p_qty, p_avg in positions:
             if sec_map.get(p_code) == sector:
                 exposure_krw += p_qty * p_avg

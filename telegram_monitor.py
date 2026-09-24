@@ -5,6 +5,7 @@
 실행: python3 telegram_monitor.py
 """
 
+from db_compat import connect_primary_db
 import asyncio
 import sqlite3
 import json
@@ -37,7 +38,7 @@ TELEGRAM_MONITOR_DISABLED = True
 def _load_monitor_channels(db_path=None):
     try:
         import sqlite3 as _sl
-        conn = _sl.connect(db_path or "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+        conn = _sl.connect(db_path) if db_path else connect_primary_db()
         rows = conn.execute(
             "SELECT channel_id FROM telegram_channels WHERE is_active=1 ORDER BY id"
         ).fetchall()
@@ -59,7 +60,7 @@ def _load_stock_dict():
     global _STOCK_DICT
     if _STOCK_DICT is not None:
         return _STOCK_DICT
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     try:
         rows = conn.execute(
             """
@@ -108,7 +109,7 @@ def _fallback_extract_stocks(texts):
 # DB 초기화
 # ──────────────────────────────────────────────
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cur  = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS telegram_messages (
@@ -206,7 +207,7 @@ def save_daily_mentions(today_str, all_stocks):
         if name:
             counter[name] += 1
             market_map[name] = s.get("market", "미확인")
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cur  = conn.cursor()
     for name, cnt in counter.items():
         cur.execute("""
@@ -278,7 +279,7 @@ async def collect_and_analyze():
     print(f"수집: {now.strftime('%Y-%m-%d %H:%M')} | 날짜키: {today_str}")
     print(f"{'='*50}")
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cur  = conn.cursor()
     channel_summaries = []
 

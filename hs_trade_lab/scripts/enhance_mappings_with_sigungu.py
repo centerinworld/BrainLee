@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import argparse
 import json
 import re
@@ -416,7 +417,7 @@ def main() -> None:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     create_tables(conn)
-    stock_conn = sqlite3.connect(ROOT_STOCK_DB)
+    stock_conn = connect_primary_db()
     stock_lookup = load_stock_lookup(stock_conn)
     stock_conn.close()
     hs_lookup = load_hs_lookup(conn)

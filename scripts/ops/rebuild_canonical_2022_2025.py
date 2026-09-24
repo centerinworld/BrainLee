@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from db_compat import connect_primary_db
 import sqlite3
 import sys
 from pathlib import Path
@@ -33,7 +34,7 @@ def qscore_cf(r):
     return s
 
 def main():
-    conn=sqlite3.connect(DB)
+    conn=connect_primary_db()
     conn.row_factory=sqlite3.Row
     ensure_canonical_schema(conn)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal, InvalidOperation
 import os
 import sqlite3
 import sys
@@ -45,8 +46,16 @@ CORE_TABLES = (
 # These tables are rebuilt from PostgreSQL source data and replace their entire
 # contents. The legacy SQLite copy is only a pre-cutover snapshot, so a lower
 # PostgreSQL row count can be the expected result of removing stale findings.
+# Each value is the freshness timestamp; PostgreSQL must be at least as new as the
+# frozen SQLite copy, so row-count parity is replaced by a freshness comparison.
 POSTGRES_AUTHORITATIVE_SNAPSHOTS = {
     "price_jump_audit": "audited_at",
+    # scripts/ops/sync_cafe_stock_indicator_mappings.py performs DELETE + INSERT from
+    # the Naver Cafe pipeline on a scheduler, so PostgreSQL holds the only authoritative
+    # copy (observed 2026-09-24: PG updated_at 2026-09-24 07:40 vs the frozen SQLite
+    # snapshot 2026-08-10). Copying the legacy rows back would reintroduce 45-day-stale
+    # mappings, so parity is asserted by freshness instead of row count.
+    "cafe_stock_indicator_mappings": "updated_at",
 }
 
 
@@ -99,12 +108,39 @@ def main() -> None:
                     "delta": target_count - source_count,
                 }
             )
+        insider_key_coverage = None
+        if "dart_insider_holdings" in active_tables and "dart_insider_holdings" in pg_tables:
+            key_columns = "rcept_no, repror, sp_stock_lmp_cnt, sp_stock_lmp_irds_cnt"
+            def normalize(row):
+                values = []
+                for index, value in enumerate(row):
+                    if value is None:
+                        values.append("∅")
+                    elif index in (2, 3):
+                        try:
+                            values.append(format(Decimal(str(value).replace(",", "")), "f"))
+                        except InvalidOperation:
+                            values.append(str(value).replace(",", ""))
+                    else:
+                        values.append(str(value))
+                return tuple(values)
+            sqlite_keys = {normalize(row) for row in sqlite_conn.execute(
+                f"SELECT {key_columns} FROM dart_insider_holdings"
+            )}
+            postgres_keys = {normalize(row) for row in pg_conn.execute(
+                f"SELECT {key_columns} FROM public.dart_insider_holdings"
+            )}
+            insider_key_coverage = {"sqlite_keys": len(sqlite_keys), "postgres_keys": len(postgres_keys),
+                                    "missing_keys": len(sqlite_keys - postgres_keys)}
+            if insider_key_coverage["missing_keys"]:
+                failures.append(f"dart_insider_holdings natural-key gaps: {insider_key_coverage['missing_keys']}")
         behind = [
             item
             for item in parity
             if item["delta"] is not None
             and item["delta"] < 0
             and item["table"] not in POSTGRES_AUTHORITATIVE_SNAPSHOTS
+            and item["table"] != "dart_insider_holdings"
         ]
         snapshot_freshness = []
         for table, timestamp_column in POSTGRES_AUTHORITATIVE_SNAPSHOTS.items():
@@ -238,6 +274,7 @@ def main() -> None:
             "sqlite_active_table_count": len(active_tables),
             "missing_tables": missing,
             "postgres_behind": behind,
+            "dart_insider_holdings_key_coverage": insider_key_coverage,
             "postgres_authoritative_snapshots": snapshot_freshness,
             "postgres_ahead": [item for item in parity if (item["delta"] or 0) > 0],
             "core_counts": core_counts,
@@ -264,7 +301,7 @@ def main() -> None:
             "known_constraint_exceptions": {
                 "dart_employee_count": "nullable legacy composite primary key",
                 "consensus_targets": "legacy duplicate natural key; non-unique lookup index",
-                "dart_insider_holdings": "legacy duplicate natural key; non-unique lookup index",
+                "dart_insider_holdings": "nullable natural key; bridge sync is intentionally blocked pending per-table reconciliation",
             },
             "failures": failures,
         }

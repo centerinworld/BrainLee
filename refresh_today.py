@@ -9,6 +9,7 @@ refresh_today.py — 오늘 데이터 즉시 갱신 스크립트
   2. Yahoo Finance로 지수/환율 최신값 갱신 (KOSPI, NASDAQ 등)
   3. 갱신 결과 출력
 """
+from db_compat import connect_primary_db
 import sys, os, sqlite3, time
 from datetime import date, datetime, timedelta
 
@@ -18,7 +19,7 @@ os.chdir('/Volumes/Realtek_NVME/stock_dashboard/runtime')
 DB_PATH = '/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db'
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn = connect_primary_db(timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=60000")
@@ -218,7 +219,7 @@ def step3_summary():
 
         # 오늘 한국 종목 수
         kr_today = conn.execute(
-            f"SELECT COUNT(*) FROM price_history WHERE date='{today}' AND length(stock_code)=6 AND stock_code GLOB '[0-9]*'"
+            f"SELECT COUNT(*) FROM price_history WHERE date='{today}' AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
         ).fetchone()[0]
         print(f"\n  오늘({today}) 한국 종목 OHLCV: {kr_today}개")
         if kr_today < 100:

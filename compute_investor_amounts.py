@@ -13,6 +13,7 @@ inst_net_buy_amt / frn_net_buy_amt 가 0인 행에 대해
   python3 compute_investor_amounts.py --days 30 # 최근 30일만
 """
 
+from db_compat import connect_primary_db
 import argparse
 import sqlite3
 import time
@@ -23,7 +24,7 @@ BATCH   = 10_000   # 한 번에 처리할 행 수
 
 
 def run(days: int | None = None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     conn.execute("PRAGMA busy_timeout=60000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")

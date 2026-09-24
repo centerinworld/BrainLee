@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from db_compat import connect_primary_db
 import json
 import sqlite3
 from datetime import datetime
@@ -15,7 +16,7 @@ def main() -> int:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = OUT_DIR / f"financial_identity_audit_{ts}.json"
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = connect_primary_db()
     conn.row_factory = sqlite3.Row
     try:
         summary = []
