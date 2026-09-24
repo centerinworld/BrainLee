@@ -17,7 +17,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query, HTTPException
 
-from db_utils import connect_stock_db
+from db_compat import connect_primary_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,7 +37,7 @@ def compare_peers(codes: str = Query(..., description="쉼표구분 종목코드
     if len(stock_codes) > MAX_PEERS:
         raise HTTPException(status_code=400, detail=f"최대 {MAX_PEERS}개까지 비교할 수 있습니다.")
 
-    conn = connect_stock_db(readonly=True)
+    conn = connect_primary_db(readonly=True)
     conn.row_factory = None
     import sqlite3
     conn.row_factory = sqlite3.Row
