@@ -17,3 +17,10 @@ turnaround·regime_adaptive 재등록이 막혀 두 전략은 기존(구) 스위
 2. `(stock_code, event_date, event_type)` 유일성 충돌, 하류 소비자(`backtest_common._load_corp_action_factors`, `price_history_quality_v`, `stock_price_daily_adjusted_v`) 확인.
 3. 정정 후 `python3 scripts/rerun_all_after_audit_rebuild.py --strategies turnaround,regime_adaptive --selected-by ... --note ...` 재실행.
 4. 근본 수정: `register_corporate_events_from_dart_20260924.py` 등 이벤트 생성 로직이 무상증자에 배정기준일 대신 권리락일(=기준일 직전 거래일)을 쓰도록.
+
+## 처리 결과 (2026-09-24 후속)
+- 무상증자 138건 event_date 정정 완료(`scripts/fix_bonus_issue_event_date_20260924.py --verify-dart -1 --apply`, run_id `bonus_event_date_fix_20260924_184810_3dffdb`). 백업 `corporate_action_events_backup_20260924`. DART 신주배정기준일 대조: 일치 122 / 불일치 1(187660, 제외) / 확인불가 16.
+- 수집기 근본 수정: `collectors/dart_equity_issue_collector.py` — BONUS는 직전 거래일(권리락일) 저장(연말 폐장일 처리 포함, 정정 138건과 100% 일치).
+- turnaround 재등록 성공(스위트 0f3275a34dc8f8d6). regime_adaptive는 CR홀딩스(000480) 회사분할 이벤트(2023-04-13, 100,400→8,800원, `review_required`, 계수 없음)로 게이트 거부 — DART 분할계획서로 계수 확정 필요.
+- 잔여: 무상증자 15건 + rights_issue 515건(정합 54/-1일 52/-2일 143/+일 107/미확인 138) 분석·정정.
+
