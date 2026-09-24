@@ -37,3 +37,9 @@ turnaround·regime_adaptive 재등록이 막혀 두 전략은 기존(구) 스위
 4. **±5일 내 factor_confirmed 쌍 88건**(동일계수 약 51건: rights_issue↔rights_issue 26, rights_or_other_issue↔rights_issue 18 등) — 같은 사건이 서로 다른 파이프라인(DART_equity_issue / marcap·shares)에서 두 번 확정된 흔적. 읽기 시점 병합에 의존 중이므로, 병합 로직이 바뀌면 이중 적용이 되살아남 → 장기적으로 DB 차원의 중복 정리 필요.
 5. **유상증자(rights_issue 515건)는 자동 정정하지 않음**: (a) 일반공모·제3자배정은 권리락이 없어 '단절 미확인'(138건)이 정상, (b) 계수가 0.9대인 건은 시장의 우연한 하락과 구분되지 않아 가격단절만으로 날짜를 옮기면 오정정 위험, (c) DART 신주배정기준일 파싱이 표본 60건 중 3건만 성공(문서 구조 상이).
    권장: 주주배정 유상증자만 분리(공시 '주주배정' 표기)하고, 그 부분집합에 대해 무상증자와 같은 방식(DART 기준일 대조 + 가격단절)으로 별도 검증.
+
+## 재등록 최종 (2026-09-24 밤)
+- regime_adaptive 재등록 성공(스위트 f30035042d15e5dd). 게이트 통과에 순서대로 필요했던 조치: ① CR홀딩스 000480 계수 확정 ② 두산 000150 2024-11-07 격리(`recurring_splice_auto_confirmation_invalidated`) 사유를 Naver 대조 후 기본 등급으로 하향 + `audit_price_jumps_and_build_canonical.py --require-postgres` 재빌드(`price_jump_audit`은 이 재빌드가 있어야 격리 변경이 반영됨) ③ 만호제강 001080(1:10 액면분할, 계수 0.1)·삼양홀딩스 000070(인적분할 존속비율 0.9039233, KRX 방식, 재상장 첫날 기준가 대비 -33% 잔여 한계 명시) 확정.
+- 세 전략 최종 6기간 평균: turnaround +25.8%(최신 +101.6%는 단일 종목 의존), regime_adaptive +9.95%, composite +4.75% — 모두 `retired` 유지.
+- 교훈: 미확정 기업행위는 '가격 단절 + DART 원문 + 이중적용 가드' 3중 근거로만 확정했고, 확정 불가(진짜 회사분할 66건·가격불일치 액면분할 30건·유상증자 515건)는 review_required로 유지.
+
