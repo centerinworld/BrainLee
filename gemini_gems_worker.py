@@ -15,7 +15,7 @@ import sys
 import glob
 import time
 import json
-import sqlite3
+from db_compat import connect_primary_db  # 운영 DB=PostgreSQL (2026-09-24, 소스 stock.db SQLite 쓰기 제거)
 import logging
 from datetime import datetime, date
 
@@ -23,7 +23,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("GeminiGemsWorker")
 
 BASE_DIR = "/Volumes/Realtek_NVME/stock_dashboard"
-DB_PATH = os.path.join(BASE_DIR, "stock.db")
 QUOTA_STATUS_PATH = os.path.join(BASE_DIR, "session_quota_status.json")
 STATUS_LOG_PATH = os.path.join(BASE_DIR, "logs/gemini_gems_status.json")
 PROFILE_DIRS = {
@@ -148,7 +147,7 @@ def get_available_accounts(quota):
 
 # ── 2. DB 초기화 ──────────────────────────────────────────────────────────────
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS gems_analyst_insights (
@@ -194,7 +193,7 @@ def get_today_processed_files():
     """오늘 날짜 기준 이미 처리한 파일명 집합 반환 (중복 방지)"""
     today_str = date.today().isoformat()
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = connect_primary_db()
         cur = conn.cursor()
         cur.execute("""
             SELECT source_file_name FROM gems_daily_learned_logs
@@ -225,7 +224,7 @@ def get_latest_reports_list(limit=50):
 # ── 5. 학습 로그 기록 ─────────────────────────────────────────────────────────
 def record_learned_log(target_type, target_name, source_file, account_used, summary, growth, bull_bear,
                         tokens_ctx="2,000,000", quota_snapshot=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_primary_db()
     cur = conn.cursor()
     today_str = date.today().isoformat()
     quota_json = json.dumps(quota_snapshot, ensure_ascii=False) if quota_snapshot else None
