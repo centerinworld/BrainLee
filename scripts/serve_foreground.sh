@@ -11,6 +11,9 @@ LOG_DIR="$PROJECT_ROOT/logs"
 BACKEND_LOG="$LOG_DIR/backend.launchd.log"
 FRONTEND_LOG="$LOG_DIR/frontend.launchd.log"
 PEAK_LOG="$LOG_DIR/peak_monitor.launchd.log"
+PG_DATA_DIR="/Volumes/Realtek_NVME/stock_dashboard/postgresql16/data"
+PG_LOG="/Volumes/Realtek_NVME/stock_dashboard/postgresql16/logs/postgresql.log"
+PG_CTL="/opt/homebrew/opt/postgresql@16/bin/pg_ctl"
 
 mkdir -p "$LOG_DIR"
 
@@ -33,6 +36,21 @@ trap cleanup INT TERM EXIT
 "$PROJECT_ROOT/stop.sh" --processes-only
 
 cd "$PROJECT_ROOT"
+# Give the system LaunchDaemon time to start first. If it is unavailable after
+# login, start the same external cluster as the desktop user so the dashboard
+# does not remain in a permanent restart loop after a reboot.
+for _ in {1..8}; do
+  "$PROJECT_ROOT/venv/bin/python" "$PROJECT_ROOT/scripts/check_postgres_ready.py" \
+    >> "$BACKEND_LOG" 2>&1 && break
+  sleep 2
+done
+if ! "$PROJECT_ROOT/venv/bin/python" "$PROJECT_ROOT/scripts/check_postgres_ready.py" \
+    >> "$BACKEND_LOG" 2>&1; then
+  mkdir -p "${PG_LOG:h}"
+  if ! "$PG_CTL" -D "$PG_DATA_DIR" status >/dev/null 2>&1; then
+    "$PG_CTL" -D "$PG_DATA_DIR" -l "$PG_LOG" start -w -t 60 >> "$BACKEND_LOG" 2>&1
+  fi
+fi
 for _ in {1..90}; do
   "$PROJECT_ROOT/venv/bin/python" "$PROJECT_ROOT/scripts/check_postgres_ready.py" \
     >> "$BACKEND_LOG" 2>&1 && break

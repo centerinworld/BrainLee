@@ -7,9 +7,9 @@ TARGET_DIR="$HOME/Library/LaunchAgents"
 
 mkdir -p "$TARGET_DIR"
 
-if ! launchctl print system/com.stock-dashboard.postgresql >/dev/null 2>&1; then
-  echo "[stock-dashboard] native PostgreSQL system daemon is not installed" >&2
-  echo "[stock-dashboard] run: $PROJECT_ROOT/scripts/install_native_postgres_daemon.sh" >&2
+if ! launchctl print "gui/$(id -u)/com.stock-dashboard.postgresql.user" >/dev/null 2>&1; then
+  echo "[stock-dashboard] PostgreSQL user agent is not installed" >&2
+  echo "[stock-dashboard] run: $PROJECT_ROOT/scripts/install_user_postgres_agent.sh" >&2
   exit 1
 fi
 
@@ -23,7 +23,7 @@ for LABEL in "$APP_LABEL"; do
   launchctl kickstart -k "gui/$(id -u)/$LABEL"
 done
 
-echo "[stock-dashboard] system service ready: com.stock-dashboard.postgresql"
+echo "[stock-dashboard] database service ready: com.stock-dashboard.postgresql.user"
 echo "[stock-dashboard] launchd service installed: $APP_LABEL"
 echo "[stock-dashboard] frontend: http://127.0.0.1:5173"
 echo "[stock-dashboard] backend : http://127.0.0.1:8000/docs"

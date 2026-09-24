@@ -6,6 +6,8 @@ PYTHON="$ROOT/venv/bin/python"
 LOG_DIR="$ROOT/ETF_check/logs"
 LOCK_DIR="$ROOT/ETF_check/run/daily_pipeline.lock"
 TARGET_DATE="${1:-}"
+ENABLE_ETFCHECK_VALIDATION="${ENABLE_ETFCHECK_VALIDATION:-0}"
+export ENABLE_ETFCHECK_VALIDATION
 
 if [[ -z "$TARGET_DATE" ]]; then
   if (( 10#$(date '+%H') < 12 )); then
@@ -14,6 +16,17 @@ if [[ -z "$TARGET_DATE" ]]; then
     TARGET_DATE="$(date '+%Y%m%d')"
   fi
 fi
+
+# Resolve weekends and exchange holidays once so every stage uses one KRX date.
+TARGET_DATE="$(cd "$ROOT" && "$PYTHON" -c '
+import sys
+from datetime import datetime, timedelta
+from trading_calendar import is_kr_trading_day
+d = datetime.strptime(sys.argv[1], "%Y%m%d").date()
+while not is_kr_trading_day(d):
+    d -= timedelta(days=1)
+print(d.strftime("%Y%m%d"))
+' "$TARGET_DATE")"
 
 mkdir -p "$LOG_DIR" "$ROOT/ETF_check/run"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -41,10 +54,14 @@ failed=0
 run_stage full_pdf "$PYTHON" ETF_check/full_pdf_collector_v7.py --date "$TARGET_DATE" || failed=1
 run_stage issuer_fallback "$PYTHON" ETF_check/issuer_pdf_fallback_v2.py --date "$TARGET_DATE" || failed=1
 run_stage scale "$PYTHON" ETF_check/etf_scale_collector.py --date "$TARGET_DATE" || failed=1
-run_stage etfcheck_sample "$PYTHON" ETF_check/etfcheck_k_sample_collector.py --date "$TARGET_DATE" || failed=1
 run_stage full_pdf_audit "$PYTHON" ETF_check/full_pdf_audit.py || failed=1
 run_stage rebalance_audit "$PYTHON" ETF_check/daily_rebalance_audit_v5.py --date "$TARGET_DATE" || failed=1
-run_stage parity "$PYTHON" ETF_check/etf_parity_cutover_v2.py --date "$TARGET_DATE" || failed=1
+if [[ "$ENABLE_ETFCHECK_VALIDATION" == "1" ]]; then
+  run_stage etfcheck_sample "$PYTHON" ETF_check/etfcheck_k_sample_collector.py --date "$TARGET_DATE" || failed=1
+  run_stage parity "$PYTHON" ETF_check/etf_parity_cutover_v2.py --date "$TARGET_DATE" || failed=1
+else
+  echo "[$(date '+%F %T')] STAGE_SKIP etfcheck_sample/parity external ETF Check disabled"
+fi
 run_stage postcondition "$PYTHON" ETF_check/verify_daily_pipeline.py --date "$TARGET_DATE" || failed=1
 
 echo "[$(date '+%F %T')] END base_date=$TARGET_DATE exit=$failed"
