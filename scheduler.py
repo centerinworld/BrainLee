@@ -432,6 +432,7 @@ class CollectionScheduler:
             ("전방검증체크",   self._loop_forward_validation_check),  # ★ 매일 06:10 라이브 가상매매 실측으로 forward_validation 아티팩트 재평가(2026-08-13)
             ("전략센터상위5가상매매", self._loop_combo_daily),          # ★ 매일 18:35 전략센터 현재 상위 5개를 재선정해 가상매매
             ("키움연결체크",   self._loop_kiwoom_health),            # ★ 키움 REST 연결 상태 점검(장중 10분)
+            ("키움IP감시",    self._loop_kiwoom_ip_watch),          # ★ 24시간 10분마다 공인 IP 변경 감시 → 변경 시 키움 인증 재확인+텔레그램 알림
             ("키움실시간스냅샷", self._loop_kiwoom_realtime),         # ★ 장중 1분 키움 실시간 스냅샷 수집
             ("나무체결강도",   self._loop_namu_execution_strength), # 관심/보유 종목 체결강도 이력
             ("키움조건검색",   self._loop_kiwoom_condition_snapshot), # ★ 장중 조건식 현재 편입 + 편입/편출 이력
@@ -2704,6 +2705,59 @@ class CollectionScheduler:
                 self._wait_secs(600)
             else:
                 self._wait_secs(120)
+
+    def _loop_kiwoom_ip_watch(self) -> None:
+        """24시간 10분마다 공인 IP 변경을 감시한다(키움 REST는 등록 IP에서만 인증됨)."""
+        self._wait_secs(150)
+        while not self._stop_event.is_set():
+            _run_job_safe("키움IP감시", self._job_kiwoom_ip_watch)
+            self._wait_secs(600)
+
+    def _job_kiwoom_ip_watch(self) -> None:
+        """공인 IP가 마지막 인증 성공 IP와 달라지면 토큰을 새로 발급해 등록 여부를 확인하고,
+        8050(IP 미등록)이면 옛/새 IP와 조치 방법을 텔레그램으로 알린다(IP당 1회).
+        IP가 그대로면 키움 API를 호출하지 않는다. 상태: logs/kiwoom_ip_state.json (DB 미사용)."""
+        import json as _json
+        import requests as _rq
+        state_path = Path(__file__).resolve().parent / "logs" / "kiwoom_ip_state.json"
+        try:
+            ip = _rq.get("https://api.ipify.org", timeout=8).text.strip()
+        except Exception:
+            return  # 네트워크 일시 장애는 무시
+        try:
+            state = _json.loads(state_path.read_text(encoding="utf-8"))
+        except Exception:
+            state = {}
+        ok_ip = state.get("ok_ip")
+        if ip == ok_ip:
+            return
+        from collectors.kiwoom_collector import KiwoomCollector
+        kc = KiwoomCollector()
+        if not kc.is_configured():
+            return
+        res = kc.issue_token()  # 캐시 토큰이 아닌 신규 발급으로 IP 등록 여부를 직접 확인
+        if res.get("ok"):
+            state_path.write_text(_json.dumps({"ok_ip": ip, "checked_at": datetime.now().isoformat(timespec="seconds")}), encoding="utf-8")
+            if ok_ip:
+                logger.info(f"[키움IP감시] 공인 IP 변경 {ok_ip} → {ip} — 키움 인증 정상(등록됨)")
+            else:
+                logger.info(f"[키움IP감시] 기준 IP 기록: {ip}")
+            return
+        raw = str(res.get("raw", ""))
+        if "8050" in raw:
+            logger.error(f"[키움IP감시] 공인 IP 변경 {ok_ip or '(이전 기록 없음)'} → {ip}, 키움 미등록(8050)")
+            try:
+                import notifier as _nt
+                _nt.send(
+                    f"⚠️ <b>공인 IP 변경 — 키움 REST 사용 불가(8050)</b>\n"
+                    f"이전: <code>{ok_ip or '기록없음'}</code>\n현재: <code>{ip}</code>\n"
+                    f"조치: 키움 REST API 포털 → 앱 관리 → 허용 IP에 <code>{ip}</code> 등록 (등록 후 10분 내 자동 재확인, 수집 잡은 다음 실행부터 정상화)",
+                    key=f"kiwoom_ip_8050_{ip}",
+                )
+            except Exception as _e:
+                logger.warning(f"[키움IP감시] 텔레그램 알림 실패: {_e}")
+        else:
+            logger.warning(f"[키움IP감시] 토큰 발급 실패(IP 외 원인): {res}")
 
     def _job_kiwoom_health(self) -> None:
         try:
