@@ -125,6 +125,34 @@ DATASET_CONTRACTS: tuple[DatasetContract, ...] = (
     DatasetContract("listed_company_info", "상장회사 기본정보(공공데이터)", STOCK_DB, "listed_company_info", "bas_dt",
                     cadence="calendar", allowed_lag=10,
                     min_latest_coverage=1, coverage_expr="COUNT(*)", source="공공데이터포털", schedule="매주 월요일 07:00"),
+    # 2026-09-24: 장중 키움 실시간 피드(분봉/틱/스냅샷)가 어떤 계약에도 묶여 있지 않아
+    # 토큰 실패(8050)로 이틀치가 통째로 비어도 조용히 success로 남았다 — 잡 이름
+    # '키움실시간스냅샷'이 JOB_DATASET_KEYS에 없어 evaluate_job_outputs가 []를 돌려줬다.
+    # 판정은 마지막 분봉 날짜(minute_ts = 'YYYY-MM-DD HH:MM:00' TEXT)의 거래일 기준 지연만 본다.
+    # min_latest_coverage는 두지 않는다 — source_date_col이 '분' 단위라 WHERE col=? 커버리지가
+    # '마지막 1분의 행수'가 되어 하루 전체 커버리지를 대표하지 못한다.
+    DatasetContract("kiwoom_intraday", "키움 실시간(장중 분봉)", STOCK_DB, "kiwoom_minute_snapshot", "minute_ts",
+                    ready_hour=16, collected_at_col="updated_at",
+                    source="Kiwoom WS", schedule="영업일 09:00~15:30 1분 주기"),
+    # 같은 잡이 쓰는 나머지 두 저장 경로. `_save_realtime_snapshot` 한 호출이 세 테이블을 함께
+    # 쓰지만, 한 경로만 죽어도 나머지는 갱신되므로 세 테이블을 각각 감시해야 조용한 부분 실패가 보인다.
+    # 실측 쿼리 비용: minute_snapshot MAX 0.03초(4만행/일) · realtime_quote MAX 0.35초(2,639행 고정)
+    # · tick_history MAX 0.88초(90만행, 일 23만행 증가 — (event_ts) 단독 인덱스가 없어 풀스캔).
+    # 그래서 셋 다 계약으로 묶되, tick_history의 증가에 따른 비용은 별도 인덱스 확보가 필요한 후속 항목.
+    DatasetContract("kiwoom_intraday_quote", "키움 실시간(최신 스냅샷)", STOCK_DB, "kiwoom_realtime_quote", "updated_at",
+                    ready_hour=16, collected_at_col="updated_at",
+                    source="Kiwoom WS", schedule="영업일 09:00~15:30 1분 주기"),
+    DatasetContract("kiwoom_intraday_tick", "키움 실시간(틱 원본)", STOCK_DB, "kiwoom_tick_history", "event_ts",
+                    ready_hour=16,
+                    source="Kiwoom WS", schedule="영업일 09:00~15:30 1분 주기"),
+    # 2026-09-24: `키움대량체결`(ka00190)도 무검증이었다. 같은 잡이 09-22·09-23(거래일)에
+    # 원장 success 79건을 남기는 동안 `kiwoom_large_trade_rank`는 0행이었고, 그 사실이
+    # 어떤 대시보드에도 드러나지 않았다. 판정은 마지막 스냅샷 시각(snapshot_at =
+    # 'YYYY-MM-DD HH:MM:SS' TEXT)의 거래일 기준 지연만 본다 — min_latest_coverage는 두지 않는다
+    # (스냅샷 1회당 순위 행이 여러 개라 coverage_expr가 '마지막 스냅샷의 행수'밖에 못 본다).
+    DatasetContract("kiwoom_large_trade_rank", "키움 대량체결 순위(원본)", STOCK_DB, "kiwoom_large_trade_rank", "snapshot_at",
+                    ready_hour=16, collected_at_col="created_at",
+                    source="Kiwoom ka00190", schedule="영업일 09:00~15:30 10분 주기"),
 )
 
 
@@ -133,6 +161,12 @@ JOB_DATASET_KEYS = {
     "KRX프로그램매매": ("program_market",),
     "종목프로그램매매": ("program_stock",),
     "키움투자자수급": ("investor_flow",),
+    # 2026-09-24: 장중 실시간 피드가 무검증(details_json=[])이던 것을 계약에 연결.
+    # `_save_realtime_snapshot`이 쓰는 세 테이블을 모두 묶는다 — 하나만 묶으면 나머지 두 경로가
+    # 조용히 0행이 되어도 잡은 success로 남는다(planner 지적사항).
+    "키움실시간스냅샷": ("kiwoom_intraday", "kiwoom_intraday_quote", "kiwoom_intraday_tick"),
+    # 2026-09-24: ka00190 대량체결도 무검증이었다(09-22·09-23 success 79건 / 테이블 0행).
+    "키움대량체결": ("kiwoom_large_trade_rank",),
     "섹터지수보완": ("sector_index",),
     "미국일별시세팩터수집": ("us_price", "us_factor"),
     "글로벌매크로수집": ("global_macro_fast",),
