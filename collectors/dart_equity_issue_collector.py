@@ -171,6 +171,28 @@ def _extract_date(text: str, keyword: str) -> Optional[str]:
     return None
 
 
+def _prev_kr_trading_day(value: str) -> str:
+    """YYYY-MM-DD 의 직전 한국 거래일. 무상증자 권리락일 = 신주배정기준일의 직전 영업일(T+2 결제)."""
+    from datetime import date as _date, timedelta as _td
+    from trading_calendar import is_trading_day
+    def _year_end_closed(x):  # KRX 연말 폐장일 = 12월의 마지막 평일 (공용 캘린더는 12/31 평일만 반영)
+        if x.month != 12 or x.weekday() >= 5:
+            return False
+        nxt = x + _td(days=1)
+        while nxt.month == 12:
+            if nxt.weekday() < 5:
+                return False
+            nxt += _td(days=1)
+        return True
+
+    d = _date.fromisoformat(value) - _td(days=1)
+    for _ in range(10):
+        if is_trading_day(d, "KR") and not _year_end_closed(d):
+            break
+        d -= _td(days=1)
+    return d.isoformat()
+
+
 def _plausible_event_date(value: Optional[str], disclosed_at: str) -> Optional[str]:
     if not value:
         return None
@@ -442,7 +464,13 @@ def collect_equity_issue_events(
                     ),
                 )
 
-                action_date = record_date or listing_date or rdt
+                # 2026-09-24: 무상증자는 이벤트 일자를 신주배정기준일이 아니라 권리락일(직전 거래일)로 저장한다 —
+                # 가격 단절은 권리락일에 생기므로 배정기준일을 쓰면 보정계수가 하루 늦게 적용됐다(218건 중 153건 1일 오프셋,
+                # docs/handoff_corp_action_event_date_offset_20260924.md). 기존 행은 fix_bonus_issue_event_date_20260924.py 로 정정.
+                if event_type == "BONUS" and record_date:
+                    action_date = _prev_kr_trading_day(record_date)
+                else:
+                    action_date = record_date or listing_date or rdt
                 _execute_with_retry(
                     conn,
                     """
