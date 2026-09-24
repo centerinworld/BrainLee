@@ -6,15 +6,15 @@
   <key>Label</key>
   <string>com.stock-dashboard.dart-missing-business-retry</string>
   <key>WorkingDirectory</key>
-  <string>/Applications/stock_dashboard</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Applications/stock_dashboard/scripts/run_dart_missing_business_retry_20260621.sh</string>
+    <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/run_dart_missing_business_retry_20260621.sh</string>
   </array>
   <key>StandardOutPath</key>
-  <string>/Applications/stock_dashboard/run/dart_missing_business_retry_20260621/launchd.log</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/run/dart_missing_business_retry_20260621/launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>/Applications/stock_dashboard/run/dart_missing_business_retry_20260621/launchd.err</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/run/dart_missing_business_retry_20260621/launchd.err</string>
   <key>RunAtLoad</key>
   <false/>
   <key>StartInterval</key>

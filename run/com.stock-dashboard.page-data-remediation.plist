@@ -6,17 +6,17 @@
   <key>Label</key>
   <string>com.stock-dashboard.page-data-remediation</string>
   <key>WorkingDirectory</key>
-  <string>/Applications/stock_dashboard</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Applications/stock_dashboard/venv/bin/python</string>
+    <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python</string>
     <string>scripts/run_page_data_remediation_20260620.py</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Applications/stock_dashboard/run/page_data_remediation_20260620/main.log</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/run/page_data_remediation_20260620/main.log</string>
   <key>StandardErrorPath</key>
-  <string>/Applications/stock_dashboard/run/page_data_remediation_20260620/main.err</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/run/page_data_remediation_20260620/main.err</string>
 </dict>
 </plist>

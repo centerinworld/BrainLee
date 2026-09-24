@@ -6,10 +6,10 @@
   <key>Label</key>
   <string>com.stock-dashboard.programtradingstocks</string>
   <key>WorkingDirectory</key>
-  <string>/Applications/stock_dashboard</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Applications/stock_dashboard/venv/bin/python</string>
+    <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python</string>
     <string>scripts/collect_broker_program_trading.py</string>
     <string>--date</string>
     <string>20260619</string>
@@ -24,8 +24,8 @@
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Applications/stock_dashboard/run/program_trading_backfill_20260620/stocks_latest_kiwoom.launchd.log</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/run/program_trading_backfill_20260620/stocks_latest_kiwoom.launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>/Applications/stock_dashboard/run/program_trading_backfill_20260620/stocks_latest_kiwoom.launchd.err</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/run/program_trading_backfill_20260620/stocks_latest_kiwoom.launchd.err</string>
 </dict>
 </plist>

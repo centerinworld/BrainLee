@@ -8,14 +8,14 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Applications/stock_dashboard/scripts/run_strategy_data_backfill_queue.sh</string>
+    <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/run_strategy_data_backfill_queue.sh</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Applications/stock_dashboard</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime</string>
   <key>StandardOutPath</key>
-  <string>/Applications/stock_dashboard/run/strategy_data_backfill_queue/launchd.out</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/run/strategy_data_backfill_queue/launchd.out</string>
   <key>StandardErrorPath</key>
-  <string>/Applications/stock_dashboard/run/strategy_data_backfill_queue/launchd.err</string>
+  <string>/Volumes/Realtek_NVME/stock_dashboard/runtime/run/strategy_data_backfill_queue/launchd.err</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
