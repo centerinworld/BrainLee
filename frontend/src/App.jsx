@@ -15,6 +15,7 @@ import EmploymentYearlyView from './EmploymentYearlyView';
 import NpsTrendView from './NpsTrendView';
 import StockDecisionEvidencePanel from './views/StockDecisionEvidencePanel';
 import InvestmentDecisionTaskPanel from './views/InvestmentDecisionTaskPanel';
+import SectorSignalSummary from './views/SectorSignalSummary';
 
 const ResponsiveContainer = (props) => (
   <RechartsResponsiveContainer
@@ -42,6 +43,7 @@ const BacktestView = React.lazy(() => import('./views/BacktestView'));
 const Screener = React.lazy(() => import('./views/Screener'));
 const StrategyHub = React.lazy(() => import('./views/StrategyHub'));
 const SectorRotationView = React.lazy(() => import('./views/SectorRotationView'));
+const GlobalForeignFlowView = React.lazy(() => import('./views/GlobalForeignFlowView'));
 const QuantMajorIndicatorsView = React.lazy(() => import('./views/QuantMajorIndicatorsView'));
 const DartExcelView = React.lazy(() => import('./views/DartExcelView'));
 const SignalImpactView = React.lazy(() => import('./views/SignalImpactView'));
@@ -71,6 +73,11 @@ const isUSMarketOpen = () => {
   return t>=930 && t<=1600;
 };
 const anyMarketOpen = () => isKRMarketOpen()||isUSMarketOpen();
+
+// 국내 종목코드 판정: 숫자 6자리 + KRX 신규 영숫자 6자리 코드(예: 액스비스=0011A0)
+// 기존 /^\d{6}$/ 숫자 전용 판정은 신규 코드 종목의 TTM·공시·심층인사이트 등
+// 하위 데이터 fetch를 전부 건너뛰게 만드는 원인이었음 — 전 구간 이 헬퍼로 통일.
+const isKrStockCode = (s) => /^[0-9A-Za-z]{6}$/.test(s || '');
 
 // 공시 조회 가능 시간: 평일 08:00~20:00 KST (장 마감 후 공시 포함)
 const isDisclosureTime = () => {
@@ -3679,7 +3686,11 @@ const _signalFrontCache = {};
           ...(filters.signal_type && { signal_type: filters.signal_type }),
           ...(filters.is_overseas >= 0 && { is_overseas: filters.is_overseas }),
         });
-        const [listRes, statsRes, surgeRes, advanceRes, inventoryRes, cashQualityRes] = await Promise.all([
+        // 2026-09-06: Promise.all은 6개 중 하나만 실패(백엔드 재시작 등으로 순간 끊김)해도
+        // 전체가 reject돼 나머지 5개 탭까지 전부 "데이터 없음"으로 보이게 만드는 문제가
+        // 있었음(사용자 리포트: 수주잔고 급증 탭이 비어 보임). 각 fetch를 독립적으로
+        // 처리해 하나가 실패해도 나머지는 정상 표시되도록 수정.
+        const [listRes, statsRes, surgeRes, advanceRes, inventoryRes, cashQualityRes] = await Promise.allSettled([
           fetch(`/api/dart-contracts/list?${qs}`).then(r=>r.json()),
           fetch('/api/dart-contracts/stats').then(r=>r.json()),
           fetch('/api/order-contracts/screener/surge?window_months=3&min_growth_pct=50&limit=80').then(r=>r.json()),
@@ -3687,12 +3698,18 @@ const _signalFrontCache = {};
           fetch('/api/inventory-sales-signals/top?mode=all&min_score=4&limit=100&fs_div=CFS').then(r=>r.json()),
           fetch('/api/cash-conversion-signals/top?mode=all&min_score=4&limit=100&fs_div=CFS').then(r=>r.json()),
         ]);
-        setContracts(Array.isArray(listRes) ? listRes : []);
-        setStats(statsRes);
-        setSurge(surgeRes);
-        setAdvanceSignals(advanceRes);
-        setInventorySignals(inventoryRes);
-        setCashQualitySignals(cashQualityRes);
+        if (listRes.status === 'fulfilled') setContracts(Array.isArray(listRes.value) ? listRes.value : []);
+        else console.error('dart-contracts/list 실패', listRes.reason);
+        if (statsRes.status === 'fulfilled') setStats(statsRes.value);
+        else console.error('dart-contracts/stats 실패', statsRes.reason);
+        if (surgeRes.status === 'fulfilled') setSurge(surgeRes.value);
+        else console.error('order-contracts/screener/surge 실패', surgeRes.reason);
+        if (advanceRes.status === 'fulfilled') setAdvanceSignals(advanceRes.value);
+        else console.error('contract-advance-signals/top 실패', advanceRes.reason);
+        if (inventoryRes.status === 'fulfilled') setInventorySignals(inventoryRes.value);
+        else console.error('inventory-sales-signals/top 실패', inventoryRes.reason);
+        if (cashQualityRes.status === 'fulfilled') setCashQualitySignals(cashQualityRes.value);
+        else console.error('cash-conversion-signals/top 실패', cashQualityRes.reason);
       } catch(e) { console.error(e); }
       setLoading(false);
     };
@@ -7734,11 +7751,11 @@ const _signalFrontCache = {};
     const pc = (v) => !v ? 'rgba(255,255,255,0.4)' : v>0?'#ef4444':'#3b82f6';
     const pctStr = (v) => v==null?'-':(v>=0?'+':'')+Number(v).toFixed(1)+'%';
     const fmtMkt = (v) => {
-      if(!v) return '-';
-      // stock_universe.market_cap 단위: 원(KRW)
-      if(v >= 1e12) return (v/1e12).toLocaleString('ko-KR',{maximumFractionDigits:1})+'조원';
-      if(v >= 1e8)  return Math.round(v/1e8).toLocaleString('ko-KR')+'억원';
-      return Math.round(v/1e4).toLocaleString('ko-KR')+'만원';
+      const capEok = Number(v);
+      if (!Number.isFinite(capEok) || capEok <= 0) return '-';
+      // /api/buy-candidates의 mktcap은 stock_universe와 같은 억원 단위.
+      if (capEok >= 10000) return (capEok / 10000).toLocaleString('ko-KR', {maximumFractionDigits:2}) + '조원';
+      return capEok.toLocaleString('ko-KR', {maximumFractionDigits:0}) + '억원';
     };
 
     const inputSt = {padding:'0.25rem 0.5rem',borderRadius:'5px',background:'rgba(255,255,255,0.08)',
@@ -12847,6 +12864,10 @@ const ExperimentRoadmapView = () => {
 // 정의되어 있어 App이 리렌더될 때마다(activeTab 변경, 300초 매크로 폴링 등) 사이드바
 // 아이콘 ~30개를 포함한 배열 전체가 매번 새로 생성되고 있었다. module-level로 이동.
 const NAV_ITEMS = [
+  // ── 최상단 섹션 (포트폴리오, 모바일에서 빠르게 찾을 수 있도록 맨 위로 배치) ──
+  { key: 'buy_candidates',   icon: <Target size={17} style={{color:'#f59e0b'}} />,           label: '매수후보' },
+  { key: 'portfolio',        icon: <Wallet size={17} style={{color:'#c084fc'}} />,           label: '계좌현황 🔒' },
+  null,
   // ── 상단 섹션 (시황) ───────────────────────────
   { key: 'macro',            icon: <LayoutDashboard size={17} />,                            label: '주요 지표' },
   { key: 'analysis',         icon: <BarChart3 size={17} />,                                 label: '국내 종목' },
@@ -12864,6 +12885,7 @@ const NAV_ITEMS = [
   { key: 'tenbagger',        icon: <span style={{fontSize:'14px',lineHeight:1}}>💎</span>,   label: '조건 필터' },
   { key: 'tenbagger_proj',   icon: <span style={{fontSize:'14px',lineHeight:1}}>🚀</span>,   label: '텐버거 프로젝트' },
   { key: 'sector_rotation',  icon: <span style={{fontSize:'14px',lineHeight:1}}>🔄</span>,   label: '섹터 로테이션' },
+  { key: 'global_foreign_flow', icon: <span style={{fontSize:'14px',lineHeight:1}}>🌏</span>, label: '외국인 자금흐름' },
   { key: 'dart_excel',      icon: <span style={{fontSize:'14px',lineHeight:1}}>📊</span>,   label: 'DART v22 엑셀' },
   { key: 'dart_contracts',   icon: <span style={{fontSize:'14px',lineHeight:1}}>📋</span>,   label: '수주공시 알림' },
   { key: 'trend',            icon: <TrendingUp size={17} style={{color:'#a78bfa'}} />,       label: '가상 매매' },
@@ -12875,11 +12897,9 @@ const NAV_ITEMS = [
   { key: 'employment',       icon: <Users size={17} style={{color:'#86efac'}} />,            label: '고용 정보' },
   { key: 'etf_check',        icon: <span style={{fontSize:'14px',lineHeight:1}}>📊</span>,   label: 'ETF 모니터링' },
   null,
-  // ── 하단 섹션 (포트폴리오) ─────────────────────
+  // ── 하단 섹션 (기타 분석) ─────────────────────
   { key: 'detailed_analysis', icon: <FileText size={17} style={{color:'#38bdf8'}} />,        label: '상세분석' },
   { key: 'signal_impact',    icon: <span style={{fontSize:'14px',lineHeight:1}}>🔬</span>,   label: '시그널 영향성 분석' },
-  { key: 'buy_candidates',   icon: <Target size={17} style={{color:'#f59e0b'}} />,           label: '매수후보' },
-  { key: 'portfolio',        icon: <Wallet size={17} style={{color:'#c084fc'}} />,           label: '계좌현황 🔒' },
   { key: 'risk_gate',        icon: <span style={{fontSize:'14px',lineHeight:1}}>🛡️</span>,   label: '리스크게이트' },
   null,
   { key: 'settings',         icon: <Settings size={17} style={{color:'#94a3b8'}} />,         label: '⚙ 설정' },
@@ -12897,6 +12917,9 @@ const App = () => {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState('macro');
   const [portfolioAuth, setPortfolioAuth] = useState(false);
+  const [pwPromptOpen, setPwPromptOpen] = useState(false);
+  const [pwPromptValue, setPwPromptValue] = useState('');
+  const [pwPromptError, setPwPromptError] = useState(false);
   const [selectedStock, setSelectedStock] = useState(() => _lsGet('sd_selectedStock', '005930'));
   const [shortData, setShortData]         = React.useState(null); // 대차잔고 + 실제 공매도 거래
   const [execData, setExecData]           = React.useState(null); // 체결강도(나무API)
@@ -13084,7 +13107,7 @@ const App = () => {
         .catch(() => { if (!isStale()) setShortData(null); });
 
       // ② 체결강도 (나무 플러그 API) — 별도 fetch + 60초 폴링
-      if (/^\d{6}$/.test(code)) {
+      if (isKrStockCode(code)) {
         const fetchExec = () => {
           fetch(API(`/api/namu/execution/${code}`))
             .then(r => r.ok ? r.json() : null)
@@ -13112,7 +13135,7 @@ const App = () => {
         timedFetch(API(`/api/reports/latest/${code}`)),
         timedFetch(API(`/api/dashboard/cashflow/${code}?type=annual&report_type=CFS`)),
         timedFetch(API(`/api/dashboard/cashflow/${code}?type=quarter&report_type=CFS`)),
-        /^\d{6}$/.test(code) ? timedFetch(API(`/api/consensus/${code}`)) : Promise.resolve(null),
+        isKrStockCode(code) ? timedFetch(API(`/api/consensus/${code}`)) : Promise.resolve(null),
       ]);
 
       if (isStale()) return;  // 종목 전환됨 → 결과 버림
@@ -13133,7 +13156,7 @@ const App = () => {
       if (!isStale()) { setCfAnnual(cfAData); setCfQuarter(cfQData); }
 
       // 현금흐름 백그라운드 수집 중 → 15초 간격으로 최대 8회 폴링
-      if (cfAData.length === 0 && /^\d{6}$/.test(code)) {
+      if (cfAData.length === 0 && isKrStockCode(code)) {
         if (cfPollRef.current) clearInterval(cfPollRef.current);
         let cfTry = 0;
         cfPollRef.current = setInterval(async () => {
@@ -13164,7 +13187,7 @@ const App = () => {
         if (!isStale()) setSummStats(sData);
 
         // PBR/PER가 null이면 백그라운드 스크래핑 중 → 5초 후 재조회
-        if (sData && sData.pbr === null && sData.per === null && /^\d{6}$/.test(code)) {
+        if (sData && sData.pbr === null && sData.per === null && isKrStockCode(code)) {
           setTimeout(async () => {
             if (isStale()) return;
             try {
@@ -13259,7 +13282,7 @@ const App = () => {
   // ── reportType(연결/별도) 변경 시 재무제표·현금흐름 재조회 ──────────
   React.useEffect(() => {
     if (activeTab !== "analysis" && activeTab !== "insight") return;
-    if (!selectedStock || !/^\d{6}$/.test(selectedStock)) return;
+    if (!selectedStock || !isKrStockCode(selectedStock)) return;
     const controller = new AbortController();
     const codeSnapshot = selectedStock; // 클로저로 현재 종목코드 고정
     Promise.all([
@@ -13681,6 +13704,9 @@ const App = () => {
 
       {/* 시장 시그널 보드 */}
       <SignalBoard scope="market" />
+
+      {/* 오늘의 섹터 신호 (추세추종 집중/탈출 + 낙폭과대 반등) */}
+      <SectorSignalSummary onOpenDetail={() => setActiveTab('sector_rotation')} changeStock={changeStock} />
 
       {/* 예탁금 추이 (한국은행 ECOS/네이버 폴백) */}
       <div className="glass-panel" style={{ padding:'1rem' }}>
@@ -14224,7 +14250,7 @@ const App = () => {
     // 화면 내부에서 한 번 더 보강 조회한다. API/DB가 정상인데 카드가 '-'로 남는 현상 방지용.
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) {
+      if (!selectedStock || !isKrStockCode(selectedStock)) {
         setLocalSummStats(null);
         setLocalChartData([]);
         return;
@@ -14243,7 +14269,7 @@ const App = () => {
 
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) {
+      if (!selectedStock || !isKrStockCode(selectedStock)) {
         setLocalCompanyIntel(null);
         if (setCompanyIntel) setCompanyIntel(null);
         return;
@@ -14267,7 +14293,7 @@ const App = () => {
 
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) {
+      if (!selectedStock || !isKrStockCode(selectedStock)) {
         setCorporateActions([]);
         return;
       }
@@ -14283,7 +14309,7 @@ const App = () => {
     const [chartSignals, setChartSignals] = React.useState(null);
     React.useEffect(() => {
       if (activeTab !== 'analysis') return undefined;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) { setChartSignals(null); return undefined; }
+      if (!selectedStock || !isKrStockCode(selectedStock)) { setChartSignals(null); return undefined; }
       let cancelled = false;
       const loadChartSignals = () => {
         fetch(API(`/api/extra-signals/chart/${selectedStock}?_=${Date.now()}`))
@@ -14309,7 +14335,7 @@ const App = () => {
     // ── 수주·선수금·현금전환 보조 신호 조회 ─────────────────────
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) return;
+      if (!selectedStock || !isKrStockCode(selectedStock)) return;
       setStockQualitySignals(null);
       const snap = selectedStock;
       fetch(API(`/api/tenbagger/stock-quality-signals/${selectedStock}`))
@@ -14343,7 +14369,7 @@ const App = () => {
     const [dqExpanded, setDqExpanded] = React.useState(false);
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) { setDataQuality(null); return; }
+      if (!selectedStock || !isKrStockCode(selectedStock)) { setDataQuality(null); return; }
       setDataQuality(null);
       setDqExpanded(false);
       const snap = selectedStock;
@@ -14377,7 +14403,7 @@ const App = () => {
     // ── 매입재료비/재고자산/수주잔고 조회 ────────────────────────────
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) return;
+      if (!selectedStock || !isKrStockCode(selectedStock)) return;
       setStockExtra(null);
       const snap = selectedStock;
       fetch(API(`/api/tenbagger/stock-extra/${selectedStock}`))
@@ -14389,7 +14415,7 @@ const App = () => {
     // ── CH 시트 데이터 조회 (사업부문/직원수/매출채권) ──────────────
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) return;
+      if (!selectedStock || !isKrStockCode(selectedStock)) return;
       setStockChData(null);
       const snap = selectedStock;
       fetch(API(`/api/dart-excel/ch-data/${selectedStock}`))
@@ -14401,7 +14427,7 @@ const App = () => {
     // ── 심층 인사이트 조회 (역사적밸류/수급/임원/신용) ─────────────
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) return;
+      if (!selectedStock || !isKrStockCode(selectedStock)) return;
       setStockInsight(null);
       const snap = selectedStock;
       fetch(API(`/api/tenbagger/stock-insight/${selectedStock}`))
@@ -14413,7 +14439,7 @@ const App = () => {
     // ── KIS 종목추정실적 조회 (공시 재무와 별도 표시) ─────────────
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) {
+      if (!selectedStock || !isKrStockCode(selectedStock)) {
         setStockEstimate(null);
         return;
       }
@@ -14428,7 +14454,7 @@ const App = () => {
     // ── 키움 확장정보 조회 (수급/신용/프로그램/실시간 보조 시그널) ──
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) {
+      if (!selectedStock || !isKrStockCode(selectedStock)) {
         setStockKiwoom(null);
         return;
       }
@@ -14450,7 +14476,7 @@ const App = () => {
       if (activeTab !== 'analysis') return;
       if (!selectedStock) return;
       // 국내 종목만 (6자리 숫자)
-      if (!/^\d{6}$/.test(selectedStock)) return;
+      if (!isKrStockCode(selectedStock)) return;
       try {
         setDisclosureLoading(true);
         const res = await fetch(API(`/api/dashboard/disclosures/${selectedStock}`));
@@ -14477,7 +14503,7 @@ const App = () => {
     const [stockHsRevenueContext, setStockHsRevenueContext] = React.useState(null);
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) { setExtraSignals(null); setExtraSignalsLoading(false); return; }
+      if (!selectedStock || !isKrStockCode(selectedStock)) { setExtraSignals(null); setExtraSignalsLoading(false); return; }
       setExtraSignals(null);
       setExtraSignalsLoading(true);
       const snap = selectedStock;
@@ -14489,7 +14515,7 @@ const App = () => {
 
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) {
+      if (!selectedStock || !isKrStockCode(selectedStock)) {
         setStockHsRevenueContext(null);
         return;
       }
@@ -14501,14 +14527,15 @@ const App = () => {
         .catch(() => {});
     }, [selectedStock, activeTab]);
 
-    // ── KRX 공지사항 + 대주주/임원 지분변동 ────────────────────────
+    // ── KRX 공지사항 + 대주주 지분변동 ────────────────────────
+    // 임원 매매 이력(/api/insider/holdings)은 심층 인사이트가 같은 테이블
+    // (dart_insider_holdings)을 조회해 표시하므로 여기서는 더 이상 fetch하지 않는다.
     const [notices, setNotices] = React.useState([]);
     const [majorHolders, setMajorHolders] = React.useState({ current_holders: [], history: [] });
-    const [insiderHist, setInsiderHist] = React.useState([]);
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
-      if (!selectedStock || !/^\d{6}$/.test(selectedStock)) {
-        setNotices([]); setMajorHolders({ current_holders: [], history: [] }); setInsiderHist([]); return;
+      if (!selectedStock || !isKrStockCode(selectedStock)) {
+        setNotices([]); setMajorHolders({ current_holders: [], history: [] }); return;
       }
       fetch(API(`/api/notices/stock/${selectedStock}`))
         .then(r => r.ok ? r.json() : [])
@@ -14517,10 +14544,6 @@ const App = () => {
       fetch(API(`/api/insider/major/${selectedStock}?limit=50`))
         .then(r => r.ok ? r.json() : null)
         .then(d => setMajorHolders(d || { current_holders: [], history: [] }))
-        .catch(() => {});
-      fetch(API(`/api/insider/holdings/${selectedStock}?limit=20`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => setInsiderHist((d && d.items) || []))
         .catch(() => {});
     }, [selectedStock, activeTab]);
 
@@ -15542,13 +15565,13 @@ const App = () => {
           <SignalBoard scope="stock" stockCode={selectedStock} key={selectedStock} />
 
           {/* 추가 시그널 */}
-          {/^\d{6}$/.test(selectedStock) && extraSignalsLoading && (
+          {isKrStockCode(selectedStock) && extraSignalsLoading && (
             <div style={{ padding:'1rem 1.2rem', background:'var(--surface)', borderRadius:'10px', border:'1px solid var(--border)', color:'var(--text-secondary)', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
               <div style={{ width:'12px', height:'12px', borderRadius:'50%', border:'2px solid var(--accent-mint)', borderTopColor:'transparent', animation:'spin 0.8s linear infinite', flexShrink:0 }}/>
               추가 시그널 로딩 중...
             </div>
           )}
-          {/^\d{6}$/.test(selectedStock) && !extraSignalsLoading && extraSignals && (() => {
+          {isKrStockCode(selectedStock) && !extraSignalsLoading && extraSignals && (() => {
             const sigColor = s => s==='green'?'#22c55e':s==='red'?'#ef4444':s==='yellow'?'#fbbf24':'#6b7280';
             const sigLabelColor = (s, isGrey) => isGrey ? 'var(--text-secondary)' : s==='green'?'#22c55e':s==='red'?'#ef4444':s==='yellow'?'#fbbf24':'var(--text-secondary)';
             const em = extraSignals.employment || {};
@@ -15999,7 +16022,7 @@ const App = () => {
         <InvestmentDecisionTaskPanel stockCode={selectedStock} active={activeTab === 'analysis'} />
 
         {/* ── DART 공시 정보 ────────────────────────────────────── */}
-        {/^\d{6}$/.test(selectedStock) && (
+        {isKrStockCode(selectedStock) && (
           <section className="glass-panel">
             <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)',
               display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -16102,7 +16125,7 @@ const App = () => {
         )}
 
         {/* ── KRX 공지사항 (종목기본정보 변동) ─────────────────────── */}
-        {/^\d{6}$/.test(selectedStock) && notices.length > 0 && (
+        {isKrStockCode(selectedStock) && notices.length > 0 && (
           <section className="glass-panel">
             <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)',
               display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -16131,50 +16154,301 @@ const App = () => {
           </section>
         )}
 
-        {/* ── 대주주 / 임원 지분변동 ────────────────────────────────── */}
-        {/^\d{6}$/.test(selectedStock) && (majorHolders.current_holders.length > 0 || insiderHist.length > 0) && (
+        {/* ── 대주주 (현재 주요주주) ─────────────────────────────────
+             임원 매매 이력(dart_insider_holdings)은 아래 "심층 인사이트" 카드에서
+             자사주/CB·BW 이벤트와 함께 한 번만 표시한다(중복 제거, 2026-09 정리). */}
+        {isKrStockCode(selectedStock) && majorHolders.current_holders.length > 0 && (
           <section className="glass-panel">
             <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)' }}>
               <span style={{ fontSize:'0.8rem', fontWeight:600, color:'#a78bfa' }}>
-                👤 대주주 · 임원 지분변동
+                👤 대주주 현황
               </span>
             </div>
-            {majorHolders.current_holders.length > 0 && (
-              <div style={{ padding:'0.5rem 1rem 0.25rem' }}>
-                <p style={{ fontSize:'0.7rem', color:'var(--text-secondary)', marginBottom:'0.35rem' }}>현재 주요주주</p>
-                <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem' }}>
-                  {majorHolders.current_holders.slice(0, 8).map((h, i) => (
-                    <span key={i} style={{ fontSize:'0.73rem', padding:'0.15rem 0.5rem',
-                      background:'rgba(167,139,250,0.12)', borderRadius:'4px',
-                      border:'1px solid rgba(167,139,250,0.25)' }}>
-                      {h.holder_name} {h.hold_ratio != null ? `${Number(h.hold_ratio).toFixed(1)}%` : ''}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {insiderHist.length > 0 && (
-              <div style={{ maxHeight:'160px', overflowY:'auto', padding:'0.25rem 0' }}>
-                {insiderHist.map((r, i) => (
-                  <div key={i} style={{ padding:'0.35rem 1rem',
-                    borderTop: i === 0 && majorHolders.current_holders.length > 0
-                      ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                    display:'flex', gap:'0.6rem', fontSize:'0.75rem', alignItems:'center' }}>
-                    <span style={{ color:'var(--text-secondary)', whiteSpace:'nowrap', width:'80px', flexShrink:0 }}>
-                      {r.report_date || r.date || ''}
-                    </span>
-                    <span style={{ fontWeight:600, whiteSpace:'nowrap' }}>{r.holder_name || r.name}</span>
-                    <span style={{ color:'var(--text-secondary)' }}>{r.relation || ''}</span>
-                    <span style={{ marginLeft:'auto', color: (r.change_qty||0) > 0 ? '#ef4444' : '#3b82f6',
-                      whiteSpace:'nowrap' }}>
-                      {(r.change_qty||0) > 0 ? '▲' : '▼'} {Math.abs(r.change_qty||0).toLocaleString()}주
-                    </span>
-                  </div>
+            <div style={{ padding:'0.5rem 1rem 0.6rem' }}>
+              <p style={{ fontSize:'0.7rem', color:'var(--text-secondary)', marginBottom:'0.35rem' }}>현재 주요주주</p>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem' }}>
+                {majorHolders.current_holders.slice(0, 8).map((h, i) => (
+                  <span key={i} style={{ fontSize:'0.73rem', padding:'0.15rem 0.5rem',
+                    background:'rgba(167,139,250,0.12)', borderRadius:'4px',
+                    border:'1px solid rgba(167,139,250,0.25)' }}>
+                    {h.holder_name} {h.hold_ratio != null ? `${Number(h.hold_ratio).toFixed(1)}%` : ''}
+                  </span>
                 ))}
               </div>
-            )}
+            </div>
           </section>
         )}
+
+        {/* ── 심층 인사이트 (역사적밸류/분기수급/임원매매/CB-BW/신용잔고/외국인지분) ── */}
+        {stockInsight && (() => {
+          const si = stockInsight;
+          const fmtNum = v => v == null ? '-' : Number(v).toLocaleString();
+          const fmtPct = v => v == null ? '-' : `${v}%`;
+          const shareCoverage = si.share_change_coverage;
+
+          // 색상 유틸
+          const posNeg = v => ({color: v > 0 ? '#34d399' : v < 0 ? '#f87171' : 'rgba(255,255,255,0.5)'});
+
+          return (
+            <section className="glass-panel" style={{overflow:'clip'}}>
+              <div style={{padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap'}}>
+                <span style={{fontSize:'0.8rem', fontWeight:700, color:'#a78bfa'}}>🔍 심층 인사이트</span>
+                {si.pbr_percentile != null && (
+                  <span style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px',
+                    background: si.pbr_percentile <= 25 ? 'rgba(52,211,153,0.15)' : si.pbr_percentile >= 75 ? 'rgba(248,113,113,0.15)' : 'rgba(251,191,36,0.15)',
+                    color: si.pbr_percentile <= 25 ? '#34d399' : si.pbr_percentile >= 75 ? '#f87171' : '#fbbf24',
+                  }}>현재PBR {si.current_pbr} — 역사적 {si.pbr_percentile}%분위{si.pbr_percentile <= 25 ? ' (저평가구간)' : si.pbr_percentile >= 75 ? ' (고평가구간)' : ''}</span>
+                )}
+                {si.has_buyback && <span style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px', background:'rgba(167,139,250,0.15)', color:'#a78bfa'}}>자사주 취득/소각</span>}
+                {si.has_dilution && <span style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px', background:'rgba(248,113,113,0.15)', color:'#f87171'}}>CB/BW 희석 이벤트</span>}
+                {shareCoverage && (
+                  <span title={shareCoverage.note} style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px',
+                    background: shareCoverage.status === 'event_detected' ? 'rgba(251,146,60,0.15)' : 'rgba(148,163,184,0.12)',
+                    color: shareCoverage.status === 'event_detected' ? '#fb923c' : '#94a3b8'}}>
+                    {shareCoverage.status === 'event_detected' ? `주식수 기준 ${fmtNum(shareCoverage.current_outstanding_shares)}주` : '주식수 변동 공시 미확인'}
+                  </span>
+                )}
+                {si.liquidity_risk?.at_risk && (
+                  <span style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px', background:'rgba(239,68,68,0.25)', color:'#fca5a5', border:'1px solid rgba(239,68,68,0.5)', fontWeight:700}}>
+                    🚨 풋옵션 현금부족 위험
+                  </span>
+                )}
+              </div>
+
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0', borderBottom:'1px solid var(--glass-border)'}}>
+
+                {/* 역사적 PBR/PER */}
+                {si.has_valuation && (
+                  <div style={{padding:'0.8rem 1rem', borderRight:'1px solid var(--glass-border)'}}>
+                    <div style={{fontSize:'0.75rem', fontWeight:600, color:'#a78bfa', marginBottom:'0.5rem'}}>📈 역사적 PBR / PER</div>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%', fontSize:'0.72rem', borderCollapse:'collapse'}}>
+                        <thead><tr>
+	                          {sortByPeriodAsc(si.valuation).slice(-8).map((r,i) => <th key={i} style={{textAlign:'right', padding:'2px 4px', color:'rgba(255,255,255,0.4)', fontWeight:400}}>{r.year}Q{r.quarter}</th>)}
+                        </tr></thead>
+                        <tbody>
+                          <tr>
+                            <td style={{color:'rgba(255,255,255,0.5)', padding:'2px 4px', whiteSpace:'nowrap'}}>PBR</td>
+	                            {sortByPeriodAsc(si.valuation).slice(-8).map((r,i) => <td key={i} style={{textAlign:'right', padding:'2px 4px', color: r.pbr < 1 ? '#34d399' : r.pbr > 3 ? '#f87171' : 'rgba(255,255,255,0.85)'}}>{r.pbr}</td>)}
+                          </tr>
+                          <tr>
+                            <td style={{color:'rgba(255,255,255,0.5)', padding:'2px 4px', whiteSpace:'nowrap'}}>PER</td>
+	                            {sortByPeriodAsc(si.valuation).slice(-8).map((r,i) => <td key={i} style={{textAlign:'right', padding:'2px 4px', color: r.per < 15 ? '#34d399' : r.per > 50 ? '#f87171' : 'rgba(255,255,255,0.85)'}}>{r.per}</td>)}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 분기별 투자자 수급 */}
+                {si.has_investor_flow && (
+                  <div style={{padding:'0.8rem 1rem'}}>
+                    <div style={{fontSize:'0.75rem', fontWeight:600, color:'#38bdf8', marginBottom:'0.5rem'}}>💰 분기 투자자 순매수 (억원)</div>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%', fontSize:'0.72rem', borderCollapse:'collapse'}}>
+                        <thead><tr>
+                          <th style={{textAlign:'left', padding:'2px 4px', color:'rgba(255,255,255,0.4)', fontWeight:400}}>구분</th>
+	                          {sortByPeriodAsc(si.investor_flow).slice(-6).map((r,i) => <th key={i} style={{textAlign:'right', padding:'2px 4px', color:'rgba(255,255,255,0.4)', fontWeight:400}}>{r.year}Q{r.quarter}</th>)}
+                        </tr></thead>
+                        <tbody>
+                          {[['개인','individual','#fbbf24'],['외국인','foreign','#34d399'],['기관','institution','#a78bfa']].map(([label,key,color]) => (
+                            <tr key={key}>
+                              <td style={{padding:'2px 4px', color, whiteSpace:'nowrap'}}>{label}</td>
+	                              {sortByPeriodAsc(si.investor_flow).slice(-6).map((r,i) => <td key={i} style={{textAlign:'right', padding:'2px 4px', ...posNeg(r[key])}}>{r[key] > 0 ? '+' : ''}{fmtNum(r[key])}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0'}}>
+
+                {/* 임원 매매 + 자사주 */}
+                <div style={{padding:'0.8rem 1rem', borderRight:'1px solid var(--glass-border)'}}>
+                  <div style={{fontSize:'0.75rem', fontWeight:600, color:'#fbbf24', marginBottom:'0.5rem'}}>👤 임원 매매 (최근 1년)</div>
+                  {si.has_insider ? (
+                    <div style={{maxHeight:'150px', overflowY:'auto'}}>
+                      {si.insider_trading.map((r,i) => (
+                        <div key={i} style={{display:'flex', justifyContent:'space-between', padding:'2px 0', fontSize:'0.72rem', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                          <span style={{color:'rgba(255,255,255,0.7)'}}>{r.date.slice(5)} {r.name} <span style={{color:'rgba(255,255,255,0.4)'}}>{r.title}</span></span>
+                          <span style={{...posNeg(r.change_amount), fontWeight:600}}>{r.direction === '매수' ? '▲' : r.direction === '매도' ? '▼' : '━'} {fmtNum(Math.abs(r.change_amount))}주</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <span style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.3)'}}>최근 1년 임원 매매 없음</span>}
+                  {si.has_buyback && (
+                    <div style={{marginTop:'0.5rem'}}>
+                      <div style={{fontSize:'0.72rem', color:'#a78bfa', marginBottom:'3px'}}>🔄 자사주 취득/소각</div>
+                      {si.buyback.map((r,i) => (
+                        <div key={i} style={{fontSize:'0.7rem', color:'rgba(255,255,255,0.6)', padding:'1px 0'}}>
+                          {r.date} <span style={{color: r.type.includes('소각') ? '#34d399' : r.type.includes('취득') ? '#a78bfa' : '#fbbf24'}}>{r.type}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {si.liquidity_risk && (
+                    <div style={{marginTop:'0.5rem', padding:'0.5rem 0.6rem', borderRadius:8,
+                      background: si.liquidity_risk.at_risk ? 'rgba(239,68,68,0.12)' : 'rgba(52,211,153,0.08)',
+                      border: si.liquidity_risk.at_risk ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(52,211,153,0.3)'}}>
+                      <div style={{fontSize:'0.72rem', fontWeight:700, color: si.liquidity_risk.at_risk ? '#fca5a5' : '#6ee7b7', marginBottom:'2px'}}>
+                        {si.liquidity_risk.at_risk ? '🚨 풋옵션(조기상환청구권) 현금부족 위험' : '✅ 풋옵션 대비 현금 충분'}
+                      </div>
+                      <div style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.7)'}}>
+                        {si.liquidity_risk.put_option_date} 풋옵션 개시 — 상환필요액 {fmtNum(si.liquidity_risk.amount_억)}억
+                        vs 보유현금 {si.liquidity_risk.current_cash_억 != null ? fmtNum(si.liquidity_risk.current_cash_억) + '억' : '알수없음'}
+                        {si.liquidity_risk.at_risk && ` — 부족액 ${fmtNum(si.liquidity_risk.shortfall_억)}억`}
+                      </div>
+                    </div>
+                  )}
+                  {si.has_dilution && (
+                    <div style={{marginTop:'0.5rem'}}>
+                      <div style={{fontSize:'0.72rem', color:'#f87171', marginBottom:'3px', display:'flex', alignItems:'center', gap:'0.4rem'}}>
+                        ⚠️ CB/BW 희석 이벤트
+                        <span style={{fontSize:'0.66rem', fontWeight:700, padding:'1px 6px', borderRadius:99,
+                          background: si.dilution_count_1y >= 3 ? 'rgba(248,113,113,0.25)' : 'rgba(248,113,113,0.1)'}}>
+                          최근1년 {si.dilution_count_1y}건 · 최근3년 {si.dilution_count_3y}건
+                        </span>
+                      </div>
+                      {si.dilution_count_1y >= 3 && (
+                        <div style={{fontSize:'0.66rem', color:'#fca5a5', marginBottom:'3px'}}>
+                          최근 1년 내 희석 공시 3건 이상 — walk-forward 검증상 이런 종목은 12개월 뒤 -30% 이상
+                          하락 확률이 평균보다 뚜렷이 높았습니다.
+                        </div>
+                      )}
+                      {si.dilution_events.map((r,i) => (
+                        <div key={i} style={{fontSize:'0.7rem', color:'rgba(255,255,255,0.7)', padding:'0.3rem 0', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                          <div>
+                            <b style={{color:'#fca5a5'}}>{r.date} [{r.type}]</b>
+                            {r.issue_amount_억 ? ` ${fmtNum(r.issue_amount_억)}억` : ''}
+                            {r.potential_shares ? ` · 잠재 신주 ${fmtNum(r.potential_shares)}주` : ''}
+                            {r.dilution_pct != null ? ` · 기준 희석 ${Number(r.dilution_pct).toFixed(2)}%` : ''}
+                            {r.conversion_price ? ` · 전환/발행가 ${fmtNum(r.conversion_price)}원` : ''}
+                            {r.put_option_date ? ` · 풋 ${r.put_option_date}` : ''}
+                          </div>
+                          <div style={{fontSize:'0.64rem', color:'var(--text-secondary)', marginTop:'2px'}}>{r.impact_note}</div>
+                        </div>
+                      ))}
+                      <div style={{fontSize:'0.63rem', color:'var(--text-secondary)', marginTop:'4px'}}>
+                        기준 희석률은 해당 공시 시점의 발행주식수 기준입니다. 전환·행사·상환 완료 여부를 합산하지 않아 현재 희석률로 단정하지 않습니다.
+                      </div>
+                      {si.dilution_count_3y > si.dilution_events.length && (
+                        <div style={{fontSize:'0.66rem', color:'var(--text-secondary)', marginTop:'2px'}}>
+                          ...외 {si.dilution_count_3y - si.dilution_events.length}건 더 있음(최근 3년 기준)
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 신용잔고 + 외국인지분율 */}
+                <div style={{padding:'0.8rem 1rem'}}>
+                  <div style={{fontSize:'0.75rem', fontWeight:600, color:'#fb923c', marginBottom:'0.5rem'}}>📊 신용잔고 / 외국인지분율 (최근 60일)</div>
+                  {si.has_credit && si.credit_balance.length >= 2 && (() => {
+                    const arr = si.credit_balance;
+                    const first = arr[0].qty, last = arr[arr.length-1].qty;
+                    const chg = last - first;
+                    const chgPct = first ? ((chg/first)*100).toFixed(1) : null;
+                    const vals = arr.map(r => Number(r.qty || 0)).filter(v => isFinite(v));
+                    const minQ = Math.min(...vals);
+                    const maxQ = Math.max(...vals);
+                    const rangeQ = maxQ - minQ || 1;
+                    const lineColor = chg < 0 ? '#34d399' : '#f87171';
+                    const pointFor = (r, i) => {
+                      const x = (i / Math.max(arr.length - 1, 1)) * 100;
+                      const y = 42 - ((Number(r.qty || 0) - minQ) / rangeQ) * 34;
+                      return { x, y };
+                    };
+                    return (
+                      <div style={{marginBottom:'0.7rem'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',gap:'0.6rem',alignItems:'baseline',flexWrap:'wrap',fontSize:'0.72rem', color:'rgba(255,255,255,0.62)'}}>
+                          <span>
+                            신용잔고 <b style={{color:'rgba(255,255,255,0.88)'}}>{fmtNum(last)}주</b>
+                            <span style={posNeg(chg)}> ({chg > 0 ? '+' : ''}{fmtNum(chg)}주 {chgPct ? `${chgPct}%` : ''})</span>
+                          </span>
+                          <span style={{fontSize:'0.66rem',color:'rgba(255,255,255,0.38)'}}>
+                            60일전 {fmtNum(first)}주
+                          </span>
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(4, minmax(0, 1fr))',gap:'0.35rem',marginTop:'0.38rem',fontSize:'0.62rem'}}>
+                          {[
+                            ['최신', last, 'rgba(255,255,255,0.86)'],
+                            ['60일전', first, 'rgba(255,255,255,0.62)'],
+                            ['최저', minQ, '#34d399'],
+                            ['최고', maxQ, '#f87171'],
+                          ].map(([label, value, color]) => (
+                            <div key={label} style={{padding:'0.25rem 0.35rem',borderRadius:'5px',background:'rgba(255,255,255,0.035)',border:'1px solid rgba(255,255,255,0.07)'}}>
+                              <div style={{color:'rgba(255,255,255,0.32)',marginBottom:'0.08rem'}}>{label}</div>
+                              <div style={{color,fontWeight:750,whiteSpace:'nowrap'}}>{fmtNum(value)}주</div>
+                            </div>
+                          ))}
+                        </div>
+                        <svg width="100%" height="54" viewBox="0 0 100 54" preserveAspectRatio="none" style={{display:'block', marginTop:'0.38rem', overflow:'visible'}}>
+                          <line x1="0" y1="8" x2="100" y2="8" stroke="rgba(255,255,255,0.07)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.05)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                          <line x1="0" y1="42" x2="100" y2="42" stroke="rgba(255,255,255,0.07)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                          <polyline
+                            fill="none"
+                            stroke={lineColor}
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            opacity="0.9"
+                            vectorEffect="non-scaling-stroke"
+                            points={arr.map((r,i) => {
+                              const p = pointFor(r, i);
+                              return `${p.x},${p.y}`;
+                            }).join(' ')}
+                          />
+                          {arr.map((r,i) => {
+                            if (i !== 0 && i !== arr.length - 1) return null;
+                            const p = pointFor(r, i);
+                            return <circle key={i} cx={p.x} cy={p.y} r="2.8" vectorEffect="non-scaling-stroke" fill={i === arr.length - 1 ? lineColor : 'rgba(255,255,255,0.55)'} />;
+                          })}
+                        </svg>
+                        <div style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.35)', display:'flex', justifyContent:'space-between'}}>
+                          <span>{arr[0]?.date?.slice(0,6)}</span><span>{arr[arr.length-1]?.date?.slice(0,6)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {si.has_foreign && si.foreign_ownership.length >= 2 && (() => {
+                    const arr = si.foreign_ownership;
+                    const first = arr[0].weight, last = arr[arr.length-1].weight;
+                    const chg = (last - first).toFixed(2);
+                    const min = Math.min(...arr.map(r => r.weight||0));
+                    const max = Math.max(...arr.map(r => r.weight||0));
+                    const range = max - min || 1;
+                    return (
+                      <div>
+                        <div style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.6)'}}>
+                          외국인 지분율 {fmtPct(last)} (<span style={posNeg(Number(chg))}>{Number(chg)>0?'+':''}{chg}%p</span> vs 60일전)
+                        </div>
+                        <svg width="100%" height="40" viewBox="0 0 100 40" preserveAspectRatio="none" style={{display:'block', marginTop:'4px'}}>
+                          <polyline
+                            fill="none" stroke="#38bdf8" strokeWidth="1.5" opacity="0.8"
+                            vectorEffect="non-scaling-stroke"
+                            points={arr.map((r,i) => {
+                              const x = (i / (arr.length-1)) * 100;
+                              const y = 38 - ((r.weight - min)/range)*34;
+                              return `${x},${y}`;
+                            }).join(' ')}
+                          />
+                        </svg>
+                        <div style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.35)', display:'flex', justifyContent:'space-between'}}>
+                          <span>{arr[0]?.date?.slice(0,6)}</span><span>{arr[arr.length-1]?.date?.slice(0,6)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </section>
+          );
+        })()}
 
                 {/* 연결/별도 탭 */}
         <div style={{ display:'flex', gap:'0.5rem', marginBottom:'0.5rem', alignItems:'center' }}>
@@ -16272,7 +16546,7 @@ const App = () => {
         </section>
 
         {/* ── 키움 확장 수급정보 (공시 재무와 별도) ── */}
-        {/^\d{6}$/.test(selectedStock) && stockKiwoom?.ok && stockKiwoom?.has_data && (
+        {isKrStockCode(selectedStock) && stockKiwoom?.ok && stockKiwoom?.has_data && (
           <section className="glass-panel" style={{ overflow:'clip', border:'1px solid rgba(96,165,250,0.24)' }}>
             <div style={{
               padding:'0.6rem 1rem',
@@ -16421,7 +16695,7 @@ const App = () => {
         )}
 
         {/* ── 키움 기반 종목별 수급·대차 분석 ───────────────────────── */}
-        {/^\d{6}$/.test(selectedStock) && stockKiwoom?.ok && (() => {
+        {isKrStockCode(selectedStock) && stockKiwoom?.ok && (() => {
           const flow = stockKiwoom.flow_analysis || {};
           const supply = Array.isArray(flow.supply_history) ? flow.supply_history : [];
           const shortHistory = Array.isArray(flow.short_history) ? flow.short_history : [];
@@ -16492,7 +16766,7 @@ const App = () => {
         })()}
 
         {/* ── KIS 종목추정실적 (공시 재무와 별도) ── */}
-	        {/^\d{6}$/.test(selectedStock) && stockEstimate?.available && (() => {
+	        {isKrStockCode(selectedStock) && stockEstimate?.available && (() => {
 	          const estimateIncomeRows = sortByPeriodAsc(stockEstimate.income_statement || []);
 	          const estimateIndicatorRows = sortByPeriodAsc(stockEstimate.investment_indicators || []);
 	          return (
@@ -16602,7 +16876,7 @@ const App = () => {
 	        })()}
 
         {/* ── 컨센서스 (목표주가) ── */}
-        {/^\d{6}$/.test(selectedStock) && (() => {
+        {isKrStockCode(selectedStock) && (() => {
           const allRecords = consensus?.records || [];
           if (allRecords.length === 0) {
             return (
@@ -17294,276 +17568,6 @@ const App = () => {
           );
         })()}
 
-        {/* ── 심층 인사이트 (역사적밸류/분기수급/임원매매/CB-BW/신용잔고/외국인지분) ── */}
-        {stockInsight && (() => {
-          const si = stockInsight;
-          const fmtNum = v => v == null ? '-' : Number(v).toLocaleString();
-          const fmtPct = v => v == null ? '-' : `${v}%`;
-          const shareCoverage = si.share_change_coverage;
-
-          // 색상 유틸
-          const posNeg = v => ({color: v > 0 ? '#34d399' : v < 0 ? '#f87171' : 'rgba(255,255,255,0.5)'});
-
-          return (
-            <section className="glass-panel" style={{overflow:'clip'}}>
-              <div style={{padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap'}}>
-                <span style={{fontSize:'0.8rem', fontWeight:700, color:'#a78bfa'}}>🔍 심층 인사이트</span>
-                {si.pbr_percentile != null && (
-                  <span style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px',
-                    background: si.pbr_percentile <= 25 ? 'rgba(52,211,153,0.15)' : si.pbr_percentile >= 75 ? 'rgba(248,113,113,0.15)' : 'rgba(251,191,36,0.15)',
-                    color: si.pbr_percentile <= 25 ? '#34d399' : si.pbr_percentile >= 75 ? '#f87171' : '#fbbf24',
-                  }}>현재PBR {si.current_pbr} — 역사적 {si.pbr_percentile}%분위{si.pbr_percentile <= 25 ? ' (저평가구간)' : si.pbr_percentile >= 75 ? ' (고평가구간)' : ''}</span>
-                )}
-                {si.has_buyback && <span style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px', background:'rgba(167,139,250,0.15)', color:'#a78bfa'}}>자사주 취득/소각</span>}
-                {si.has_dilution && <span style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px', background:'rgba(248,113,113,0.15)', color:'#f87171'}}>CB/BW 희석 이벤트</span>}
-                {shareCoverage && (
-                  <span title={shareCoverage.note} style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px',
-                    background: shareCoverage.status === 'event_detected' ? 'rgba(251,146,60,0.15)' : 'rgba(148,163,184,0.12)',
-                    color: shareCoverage.status === 'event_detected' ? '#fb923c' : '#94a3b8'}}>
-                    {shareCoverage.status === 'event_detected' ? `주식수 기준 ${fmtNum(shareCoverage.current_outstanding_shares)}주` : '주식수 변동 공시 미확인'}
-                  </span>
-                )}
-                {si.liquidity_risk?.at_risk && (
-                  <span style={{fontSize:'0.72rem', padding:'2px 8px', borderRadius:'99px', background:'rgba(239,68,68,0.25)', color:'#fca5a5', border:'1px solid rgba(239,68,68,0.5)', fontWeight:700}}>
-                    🚨 풋옵션 현금부족 위험
-                  </span>
-                )}
-              </div>
-
-              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0', borderBottom:'1px solid var(--glass-border)'}}>
-
-                {/* 역사적 PBR/PER */}
-                {si.has_valuation && (
-                  <div style={{padding:'0.8rem 1rem', borderRight:'1px solid var(--glass-border)'}}>
-                    <div style={{fontSize:'0.75rem', fontWeight:600, color:'#a78bfa', marginBottom:'0.5rem'}}>📈 역사적 PBR / PER</div>
-                    <div style={{overflowX:'auto'}}>
-                      <table style={{width:'100%', fontSize:'0.72rem', borderCollapse:'collapse'}}>
-                        <thead><tr>
-	                          {sortByPeriodAsc(si.valuation).slice(-8).map((r,i) => <th key={i} style={{textAlign:'right', padding:'2px 4px', color:'rgba(255,255,255,0.4)', fontWeight:400}}>{r.year}Q{r.quarter}</th>)}
-                        </tr></thead>
-                        <tbody>
-                          <tr>
-                            <td style={{color:'rgba(255,255,255,0.5)', padding:'2px 4px', whiteSpace:'nowrap'}}>PBR</td>
-	                            {sortByPeriodAsc(si.valuation).slice(-8).map((r,i) => <td key={i} style={{textAlign:'right', padding:'2px 4px', color: r.pbr < 1 ? '#34d399' : r.pbr > 3 ? '#f87171' : 'rgba(255,255,255,0.85)'}}>{r.pbr}</td>)}
-                          </tr>
-                          <tr>
-                            <td style={{color:'rgba(255,255,255,0.5)', padding:'2px 4px', whiteSpace:'nowrap'}}>PER</td>
-	                            {sortByPeriodAsc(si.valuation).slice(-8).map((r,i) => <td key={i} style={{textAlign:'right', padding:'2px 4px', color: r.per < 15 ? '#34d399' : r.per > 50 ? '#f87171' : 'rgba(255,255,255,0.85)'}}>{r.per}</td>)}
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* 분기별 투자자 수급 */}
-                {si.has_investor_flow && (
-                  <div style={{padding:'0.8rem 1rem'}}>
-                    <div style={{fontSize:'0.75rem', fontWeight:600, color:'#38bdf8', marginBottom:'0.5rem'}}>💰 분기 투자자 순매수 (억원)</div>
-                    <div style={{overflowX:'auto'}}>
-                      <table style={{width:'100%', fontSize:'0.72rem', borderCollapse:'collapse'}}>
-                        <thead><tr>
-                          <th style={{textAlign:'left', padding:'2px 4px', color:'rgba(255,255,255,0.4)', fontWeight:400}}>구분</th>
-	                          {sortByPeriodAsc(si.investor_flow).slice(-6).map((r,i) => <th key={i} style={{textAlign:'right', padding:'2px 4px', color:'rgba(255,255,255,0.4)', fontWeight:400}}>{r.year}Q{r.quarter}</th>)}
-                        </tr></thead>
-                        <tbody>
-                          {[['개인','individual','#fbbf24'],['외국인','foreign','#34d399'],['기관','institution','#a78bfa']].map(([label,key,color]) => (
-                            <tr key={key}>
-                              <td style={{padding:'2px 4px', color, whiteSpace:'nowrap'}}>{label}</td>
-	                              {sortByPeriodAsc(si.investor_flow).slice(-6).map((r,i) => <td key={i} style={{textAlign:'right', padding:'2px 4px', ...posNeg(r[key])}}>{r[key] > 0 ? '+' : ''}{fmtNum(r[key])}</td>)}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0'}}>
-
-                {/* 임원 매매 + 자사주 */}
-                <div style={{padding:'0.8rem 1rem', borderRight:'1px solid var(--glass-border)'}}>
-                  <div style={{fontSize:'0.75rem', fontWeight:600, color:'#fbbf24', marginBottom:'0.5rem'}}>👤 임원 매매 (최근 1년)</div>
-                  {si.has_insider ? (
-                    <div style={{maxHeight:'150px', overflowY:'auto'}}>
-                      {si.insider_trading.map((r,i) => (
-                        <div key={i} style={{display:'flex', justifyContent:'space-between', padding:'2px 0', fontSize:'0.72rem', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
-                          <span style={{color:'rgba(255,255,255,0.7)'}}>{r.date.slice(5)} {r.name} <span style={{color:'rgba(255,255,255,0.4)'}}>{r.title}</span></span>
-                          <span style={{...posNeg(r.change_amount), fontWeight:600}}>{r.direction === '매수' ? '▲' : r.direction === '매도' ? '▼' : '━'} {fmtNum(Math.abs(r.change_amount))}주</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : <span style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.3)'}}>최근 1년 임원 매매 없음</span>}
-                  {si.has_buyback && (
-                    <div style={{marginTop:'0.5rem'}}>
-                      <div style={{fontSize:'0.72rem', color:'#a78bfa', marginBottom:'3px'}}>🔄 자사주 취득/소각</div>
-                      {si.buyback.map((r,i) => (
-                        <div key={i} style={{fontSize:'0.7rem', color:'rgba(255,255,255,0.6)', padding:'1px 0'}}>
-                          {r.date} <span style={{color: r.type.includes('소각') ? '#34d399' : r.type.includes('취득') ? '#a78bfa' : '#fbbf24'}}>{r.type}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {si.liquidity_risk && (
-                    <div style={{marginTop:'0.5rem', padding:'0.5rem 0.6rem', borderRadius:8,
-                      background: si.liquidity_risk.at_risk ? 'rgba(239,68,68,0.12)' : 'rgba(52,211,153,0.08)',
-                      border: si.liquidity_risk.at_risk ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(52,211,153,0.3)'}}>
-                      <div style={{fontSize:'0.72rem', fontWeight:700, color: si.liquidity_risk.at_risk ? '#fca5a5' : '#6ee7b7', marginBottom:'2px'}}>
-                        {si.liquidity_risk.at_risk ? '🚨 풋옵션(조기상환청구권) 현금부족 위험' : '✅ 풋옵션 대비 현금 충분'}
-                      </div>
-                      <div style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.7)'}}>
-                        {si.liquidity_risk.put_option_date} 풋옵션 개시 — 상환필요액 {fmtNum(si.liquidity_risk.amount_억)}억
-                        vs 보유현금 {si.liquidity_risk.current_cash_억 != null ? fmtNum(si.liquidity_risk.current_cash_억) + '억' : '알수없음'}
-                        {si.liquidity_risk.at_risk && ` — 부족액 ${fmtNum(si.liquidity_risk.shortfall_억)}억`}
-                      </div>
-                    </div>
-                  )}
-                  {si.has_dilution && (
-                    <div style={{marginTop:'0.5rem'}}>
-                      <div style={{fontSize:'0.72rem', color:'#f87171', marginBottom:'3px', display:'flex', alignItems:'center', gap:'0.4rem'}}>
-                        ⚠️ CB/BW 희석 이벤트
-                        <span style={{fontSize:'0.66rem', fontWeight:700, padding:'1px 6px', borderRadius:99,
-                          background: si.dilution_count_1y >= 3 ? 'rgba(248,113,113,0.25)' : 'rgba(248,113,113,0.1)'}}>
-                          최근1년 {si.dilution_count_1y}건 · 최근3년 {si.dilution_count_3y}건
-                        </span>
-                      </div>
-                      {si.dilution_count_1y >= 3 && (
-                        <div style={{fontSize:'0.66rem', color:'#fca5a5', marginBottom:'3px'}}>
-                          최근 1년 내 희석 공시 3건 이상 — walk-forward 검증상 이런 종목은 12개월 뒤 -30% 이상
-                          하락 확률이 평균보다 뚜렷이 높았습니다.
-                        </div>
-                      )}
-                      {si.dilution_events.map((r,i) => (
-                        <div key={i} style={{fontSize:'0.7rem', color:'rgba(255,255,255,0.7)', padding:'0.3rem 0', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
-                          <div>
-                            <b style={{color:'#fca5a5'}}>{r.date} [{r.type}]</b>
-                            {r.issue_amount_억 ? ` ${fmtNum(r.issue_amount_억)}억` : ''}
-                            {r.potential_shares ? ` · 잠재 신주 ${fmtNum(r.potential_shares)}주` : ''}
-                            {r.dilution_pct != null ? ` · 기준 희석 ${Number(r.dilution_pct).toFixed(2)}%` : ''}
-                            {r.conversion_price ? ` · 전환/발행가 ${fmtNum(r.conversion_price)}원` : ''}
-                            {r.put_option_date ? ` · 풋 ${r.put_option_date}` : ''}
-                          </div>
-                          <div style={{fontSize:'0.64rem', color:'var(--text-secondary)', marginTop:'2px'}}>{r.impact_note}</div>
-                        </div>
-                      ))}
-                      <div style={{fontSize:'0.63rem', color:'var(--text-secondary)', marginTop:'4px'}}>
-                        기준 희석률은 해당 공시 시점의 발행주식수 기준입니다. 전환·행사·상환 완료 여부를 합산하지 않아 현재 희석률로 단정하지 않습니다.
-                      </div>
-                      {si.dilution_count_3y > si.dilution_events.length && (
-                        <div style={{fontSize:'0.66rem', color:'var(--text-secondary)', marginTop:'2px'}}>
-                          ...외 {si.dilution_count_3y - si.dilution_events.length}건 더 있음(최근 3년 기준)
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* 신용잔고 + 외국인지분율 */}
-                <div style={{padding:'0.8rem 1rem'}}>
-                  <div style={{fontSize:'0.75rem', fontWeight:600, color:'#fb923c', marginBottom:'0.5rem'}}>📊 신용잔고 / 외국인지분율 (최근 60일)</div>
-                  {si.has_credit && si.credit_balance.length >= 2 && (() => {
-                    const arr = si.credit_balance;
-                    const first = arr[0].qty, last = arr[arr.length-1].qty;
-                    const chg = last - first;
-                    const chgPct = first ? ((chg/first)*100).toFixed(1) : null;
-                    const vals = arr.map(r => Number(r.qty || 0)).filter(v => isFinite(v));
-                    const minQ = Math.min(...vals);
-                    const maxQ = Math.max(...vals);
-                    const rangeQ = maxQ - minQ || 1;
-                    const lineColor = chg < 0 ? '#34d399' : '#f87171';
-                    const pointFor = (r, i) => {
-                      const x = (i / Math.max(arr.length - 1, 1)) * 100;
-                      const y = 42 - ((Number(r.qty || 0) - minQ) / rangeQ) * 34;
-                      return { x, y };
-                    };
-                    return (
-                      <div style={{marginBottom:'0.7rem'}}>
-                        <div style={{display:'flex',justifyContent:'space-between',gap:'0.6rem',alignItems:'baseline',flexWrap:'wrap',fontSize:'0.72rem', color:'rgba(255,255,255,0.62)'}}>
-                          <span>
-                            신용잔고 <b style={{color:'rgba(255,255,255,0.88)'}}>{fmtNum(last)}주</b>
-                            <span style={posNeg(chg)}> ({chg > 0 ? '+' : ''}{fmtNum(chg)}주 {chgPct ? `${chgPct}%` : ''})</span>
-                          </span>
-                          <span style={{fontSize:'0.66rem',color:'rgba(255,255,255,0.38)'}}>
-                            60일전 {fmtNum(first)}주
-                          </span>
-                        </div>
-                        <div style={{display:'grid',gridTemplateColumns:'repeat(4, minmax(0, 1fr))',gap:'0.35rem',marginTop:'0.38rem',fontSize:'0.62rem'}}>
-                          {[
-                            ['최신', last, 'rgba(255,255,255,0.86)'],
-                            ['60일전', first, 'rgba(255,255,255,0.62)'],
-                            ['최저', minQ, '#34d399'],
-                            ['최고', maxQ, '#f87171'],
-                          ].map(([label, value, color]) => (
-                            <div key={label} style={{padding:'0.25rem 0.35rem',borderRadius:'5px',background:'rgba(255,255,255,0.035)',border:'1px solid rgba(255,255,255,0.07)'}}>
-                              <div style={{color:'rgba(255,255,255,0.32)',marginBottom:'0.08rem'}}>{label}</div>
-                              <div style={{color,fontWeight:750,whiteSpace:'nowrap'}}>{fmtNum(value)}주</div>
-                            </div>
-                          ))}
-                        </div>
-                        <svg width="100%" height="54" viewBox="0 0 100 54" preserveAspectRatio="none" style={{display:'block', marginTop:'0.38rem', overflow:'visible'}}>
-                          <line x1="0" y1="8" x2="100" y2="8" stroke="rgba(255,255,255,0.07)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.05)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                          <line x1="0" y1="42" x2="100" y2="42" stroke="rgba(255,255,255,0.07)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                          <polyline
-                            fill="none"
-                            stroke={lineColor}
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            opacity="0.9"
-                            vectorEffect="non-scaling-stroke"
-                            points={arr.map((r,i) => {
-                              const p = pointFor(r, i);
-                              return `${p.x},${p.y}`;
-                            }).join(' ')}
-                          />
-                          {arr.map((r,i) => {
-                            if (i !== 0 && i !== arr.length - 1) return null;
-                            const p = pointFor(r, i);
-                            return <circle key={i} cx={p.x} cy={p.y} r="2.8" vectorEffect="non-scaling-stroke" fill={i === arr.length - 1 ? lineColor : 'rgba(255,255,255,0.55)'} />;
-                          })}
-                        </svg>
-                        <div style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.35)', display:'flex', justifyContent:'space-between'}}>
-                          <span>{arr[0]?.date?.slice(0,6)}</span><span>{arr[arr.length-1]?.date?.slice(0,6)}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {si.has_foreign && si.foreign_ownership.length >= 2 && (() => {
-                    const arr = si.foreign_ownership;
-                    const first = arr[0].weight, last = arr[arr.length-1].weight;
-                    const chg = (last - first).toFixed(2);
-                    const min = Math.min(...arr.map(r => r.weight||0));
-                    const max = Math.max(...arr.map(r => r.weight||0));
-                    const range = max - min || 1;
-                    return (
-                      <div>
-                        <div style={{fontSize:'0.72rem', color:'rgba(255,255,255,0.6)'}}>
-                          외국인 지분율 {fmtPct(last)} (<span style={posNeg(Number(chg))}>{Number(chg)>0?'+':''}{chg}%p</span> vs 60일전)
-                        </div>
-                        <svg width="100%" height="40" viewBox="0 0 100 40" preserveAspectRatio="none" style={{display:'block', marginTop:'4px'}}>
-                          <polyline
-                            fill="none" stroke="#38bdf8" strokeWidth="1.5" opacity="0.8"
-                            vectorEffect="non-scaling-stroke"
-                            points={arr.map((r,i) => {
-                              const x = (i / (arr.length-1)) * 100;
-                              const y = 38 - ((r.weight - min)/range)*34;
-                              return `${x},${y}`;
-                            }).join(' ')}
-                          />
-                        </svg>
-                        <div style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.35)', display:'flex', justifyContent:'space-between'}}>
-                          <span>{arr[0]?.date?.slice(0,6)}</span><span>{arr[arr.length-1]?.date?.slice(0,6)}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </section>
-          );
-        })()}
 
         {viewCompanyIntel?.stock_code === selectedStock && (
           <section className="glass-panel" style={{ padding:'0.95rem 1.05rem', display:'grid', gap:'0.9rem' }}>
@@ -18459,9 +18463,11 @@ const App = () => {
             ) : (
               <button key={item.key} onClick={() => {
                 if (item.key === 'portfolio' && !portfolioAuth) {
-                  const pw = window.prompt('계좌현황 비밀번호를 입력하세요:');
-                  if (pw === '5133') { setPortfolioAuth(true); changeTab(item.key); }
-                  else if (pw !== null) window.alert('비밀번호가 틀렸습니다.');
+                  setPwPromptError(false);
+                  setPwPromptValue('');
+                  setPwPromptOpen(true);
+                  if (isMobile) setSidebarOpen(false);
+                  return;
                 } else { changeTab(item.key); }
                 if (isMobile) setSidebarOpen(false);
               }}
@@ -18553,6 +18559,7 @@ const App = () => {
           {activeTab === 'tenbagger' && <TenbaggerView changeStock={changeStock} changeTab={changeTab} />}
           {activeTab === 'tenbagger_proj' && <TenbaggerProjectView megatrendView={<MegatrendView setActiveTab={setActiveTab} changeStock={changeStock} />} />}
           {activeTab === 'sector_rotation' && <SectorRotationView />}
+          {activeTab === 'global_foreign_flow' && <GlobalForeignFlowView />}
           {activeTab === 'dart_excel' && <DartExcelView />}
           {activeTab === 'dart_contracts' && <DartContractView />}
           {activeTab === 'megatrend' && <MegatrendView setActiveTab={setActiveTab} changeStock={changeStock} />}
@@ -18590,6 +18597,54 @@ const App = () => {
             <span>메뉴</span>
           </button>
         </nav>
+      )}
+
+      {/* 계좌현황 비밀번호 모달 (window.prompt는 카카오톡 등 모바일 인앱 브라우저에서 미지원 — 재발방지) */}
+      {pwPromptOpen && (
+        <div
+          style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.62)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000}}
+          onClick={(e) => { if (e.target === e.currentTarget) setPwPromptOpen(false); }}
+        >
+          <div className="glass-panel" style={{width:'min(320px, 88vw)', padding:'1.3rem'}}>
+            <h3 style={{margin:'0 0 0.9rem', fontSize:'0.95rem', fontWeight:800}}>🔒 계좌현황 비밀번호</h3>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (pwPromptValue === '5133') {
+                setPortfolioAuth(true);
+                setPwPromptOpen(false);
+                changeTab('portfolio');
+              } else {
+                setPwPromptError(true);
+                setPwPromptValue('');
+              }
+            }}>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoFocus
+                value={pwPromptValue}
+                onChange={(e) => { setPwPromptValue(e.target.value); setPwPromptError(false); }}
+                placeholder="비밀번호를 입력하세요"
+                style={{width:'100%', boxSizing:'border-box', padding:'0.65rem 0.8rem', borderRadius:'8px',
+                  border: pwPromptError ? '1px solid #ef4444' : '1px solid var(--glass-border)',
+                  background:'rgba(255,255,255,0.05)', color:'var(--text-primary)', fontSize:'0.9rem'}}
+              />
+              {pwPromptError && (
+                <p style={{margin:'0.5rem 0 0', fontSize:'0.75rem', color:'#ef4444'}}>비밀번호가 틀렸습니다.</p>
+              )}
+              <div style={{display:'flex', gap:'0.5rem', marginTop:'1rem'}}>
+                <button type="button" onClick={() => setPwPromptOpen(false)}
+                  style={{flex:1, background:'transparent', border:'1px solid var(--glass-border)', color:'var(--text-secondary)', borderRadius:'8px', cursor:'pointer', padding:'0.55rem 0'}}>
+                  취소
+                </button>
+                <button type="submit"
+                  style={{flex:1, background:'var(--accent-mint)', border:'none', color:'#04201c', fontWeight:700, borderRadius:'8px', cursor:'pointer', padding:'0.55rem 0'}}>
+                  확인
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* 로딩 오버레이 */}

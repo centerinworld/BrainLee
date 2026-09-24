@@ -102,6 +102,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
     // 정기 재검증(전략센터주간재검증, 매주 일요일 01:30)이나 수동 실험이 새 연속운용
     // run을 저장하면 App.jsx를 손으로 고치지 않아도 다음 새로고침에 자동 반영된다.
     const [contReturns, setContReturns] = React.useState(STRATEGY_HUB_CONTINUOUS_RETURNS);
+    const [historyAuditNotice, setHistoryAuditNotice] = React.useState('');
     React.useEffect(() => {
       fetch(API('/api/backtest/continuous-returns'))
         .then(r => r.ok ? r.json() : null)
@@ -109,6 +110,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
           if (d && d.strategies) {
             setContReturns(prev => ({ ...STRATEGY_HUB_CONTINUOUS_RETURNS, ...d.strategies }));
           }
+          if (d?.history_audit_required) setHistoryAuditNotice(d.history_audit_notice || '과거 성과 재검증이 필요합니다.');
         })
         .catch(() => {});
     }, []);
@@ -295,6 +297,10 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
           <span style={{fontSize:'0.95rem',fontWeight:800,color:'var(--accent-mint)'}}>⚗️ 전략 센터</span>
           <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>실시간 추천 종목 + 과거 백테스트 성과</span>
         </div>
+
+        {historyAuditNotice && <div style={{padding:'0.55rem 0.7rem',border:'1px solid rgba(251,191,36,0.45)',borderRadius:8,background:'rgba(120,83,12,0.14)',color:'#fcd34d',fontSize:'0.75rem',lineHeight:1.45}}>
+          {historyAuditNotice}
+        </div>}
 
         {/* ── 현재 시장 국면 ── */}
 	        {marketRegime && (() => {
@@ -834,6 +840,15 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
                               <td style={{padding:'0.45rem 0.6rem', textAlign:'right', fontWeight:800,
                                 color: (run.total_return_pct ?? 0) > 0 ? '#f87171' : '#60a5fa', fontSize:'0.85rem'}}>
                                 {(run.total_return_pct ?? 0) >= 0 ? '+' : ''}{(run.total_return_pct ?? 0).toFixed(1)}%
+                                {/* 2026-09-11: 헤드라인 수익률만 보면 "폭넓은 전략 우위"처럼 보이지만
+                                    실제로는 단일 종목 손익이 대부분을 차지할 수 있다(사용자 제보 계기,
+                                    merged_simulator.pnl_concentration() 참조) — 상위1종목 기여도를 함께 노출 */}
+                                {run.pnl_concentration?.top1_pct_of_pnl != null && (
+                                  <div style={{fontWeight:500, fontSize:'0.62rem', marginTop:'0.15rem',
+                                    color: run.pnl_concentration.top1_pct_of_pnl >= 25 ? '#fbbf24' : 'var(--text-secondary)'}}>
+                                    상위1종목({run.pnl_concentration.top1_code}) {run.pnl_concentration.top1_pct_of_pnl.toFixed(0)}% 기여
+                                  </div>
+                                )}
                               </td>
                               <td style={{padding:'0.45rem 0.6rem', textAlign:'right', color:'rgba(255,255,255,0.7)'}}>
                                 {run.win_rate != null ? run.win_rate.toFixed(1) + '%' : '-'}

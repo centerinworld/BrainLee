@@ -30,6 +30,7 @@ export default function SectorRotationView() {
   const [expandedSector, setExpandedSector] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('leadership'); // leadership | scores | rotation | history
+  const [flowValidation, setFlowValidation] = useState(null); // ka10051 신호 검증 현황(2026-09-06)
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,6 +85,16 @@ export default function SectorRotationView() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ka10051(업종별투자자순매수) 신호가 실제로 쓸모 있는지 매일 쌓이는 스냅샷으로
+  // 누적 검증 중 — 2026-09-06: "몇 주 뒤 로그 확인" 방식은 사람이 잊어버리니
+  // 화면에서 항상 바로 보이게 함. 메인 load()와 분리해 실패해도 다른 탭에 영향 없음.
+  useEffect(() => {
+    fetch(API('/api/sector-rotation/flow-signal-validation'))
+      .then(r => r.json())
+      .then(setFlowValidation)
+      .catch(() => {});
+  }, []);
+
   const card = (style = {}) => ({
     background: 'rgba(30,41,59,0.8)',
     border: '1px solid rgba(51,65,85,0.6)',
@@ -125,6 +136,25 @@ export default function SectorRotationView() {
           </button>
         ))}
       </div>
+
+      {/* 키움 ka10051 업종수급 신호 검증 현황 — 매일 쌓이는 스냅샷 기반, 매주 월요일 텔레그램도 발송 */}
+      {flowValidation?.markets && (
+        <div style={{ background: 'rgba(30,41,59,0.55)', border: '1px solid rgba(51,65,85,0.5)', borderRadius: '0.6rem', padding: '0.6rem 0.9rem', marginBottom: '1rem', fontSize: '0.78rem' }}>
+          <span style={{ color: '#94a3b8', fontWeight: 700 }}>🧪 키움 업종수급(ka10051) 신호 검증: </span>
+          {Object.entries(flowValidation.markets).map(([mtype, m], i) => (
+            <span key={mtype} style={{ color: '#cbd5e1' }}>
+              {i > 0 && ' · '}
+              {mtype === '0' ? '코스피' : mtype === '1' ? '코스닥' : mtype} 수집 {m.days_collected}일(검증쌍 {m.day_pairs_available}개)
+              {m.spearman_corr_flow_vs_next_return != null && (
+                <> — 상관계수 {m.spearman_corr_flow_vs_next_return > 0 ? '+' : ''}{m.spearman_corr_flow_vs_next_return}, 적중률 {m.same_direction_hit_rate_pct}%</>
+              )}
+            </span>
+          ))}
+          <div style={{ color: '#64748b', marginTop: '0.2rem' }}>
+            {Object.values(flowValidation.markets)[0]?.verdict}
+          </div>
+        </div>
+      )}
 
       {/* 탭 0: 주도섹터·진입 타이밍 */}
       {tab === 'leadership' && leadership && (
