@@ -826,66 +826,25 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 
 > 🪙 **토큰 최적화**: 이 섹션은 매 세션 자동 로드된다. **항목은 1~3문장만**, 근거/SQL/장문 분석은 `docs/`에 날짜 파일로 두고 링크만. 최근 1~2주(약 15개)만 유지하고 초과분은 [docs/CLAUDE_CHANGELOG_ARCHIVE.md](docs/CLAUDE_CHANGELOG_ARCHIVE.md) 맨 아래로 이동.
 
-### 2026-09-20 price_history 무결성 가드(P0) — close<=0 거부·수급 6필드 보존·비KR종목 공통필터
-- `price_integrity.py`: `WRITE_GUARD_FUNCTION_SQL` 분리 + 트리거 함수에 `NEW.close<=0 OR NULL` fail-closed 거부 추가(검증 플래그 우회보다 먼저 실행). 라이브 반영은 `scripts/apply_price_write_guard.py` 재실행 필요(price_history에 AccessShareLock 잡은 idle-in-transaction 세션이 있어 DROP/CREATE TRIGGER는 쓰기 한가한 시간대 권장).
-- `crud.py`: `merge_supply_fields()` 신규 — 장중 1분 갱신 시 기존 수급 6필드(inst/frn/ind + 금액3)를 0·NULL로 덮어쓰지 않도록 보존(기존엔 inst/frn 2필드만 보존).
-- `security_master.py`: `is_kr_equity_code()` 신규(6자리 `[0-9A-Z]`만 허용, `^KS11`/`GC=F`/`USDKRW=X` 등 제외) → `routes/buy_candidates.py` POST 등록·자동보드 후보에 적용.
-- 테스트 `tests/test_price_history_guard.py` 6건(트리거 롤백온리 검증 포함) 통과, 기존 46건 회귀 무손상.
-
-### 2026-09-19 StockEasy 로직 일치율 재검토 — 모멘텀 Easy 0% 근본버그 수정 + 매수로직 개선
-`stockeasy_logic_validator.py`의 `replay_entry_day_inclusion()`이 "오늘 실시간 보유 0개"(전략이 일시적으로 전량현금 상태)면 1년치 과거 편입 이벤트 재현검증 전체를 건너뛰고 무조건 0%를 반환하던 버그 발견·수정 — 모멘텀 Easy가 8월 27종목→9월 0종목으로 서서히 전량현금 전환되며 4일 연속 "0%"로 잘못 표시되던 것을 "1년치 이력에 편입이벤트가 있는지"로 판단기준 변경, 즉시 96.4%로 정상화. 스탁이지 사이트(stockeasy.intellio.kr) 직접 접속으로 3개 전략 매핑(momentum/peak/value = 모멘텀 Easy/피크 Easy/밸류 Easy)이 정확함도 확인. 추가로 momentum 미스 2건(에이피알 ret20 임계 근소미달, 셀바스AI 소형주 거래량… (전문: docs/CLAUDE_CHANGELOG_ARCHIVE.md '2026-09-19 StockEasy 로직 일치율 재검토 — 모멘')
-
-### 2026-09-19(2차) StockEasy 매도 일치율 개선 — 채점 정상화 + 섹터 바스켓 전파
-매도 F1이 낮았던 근본원인: ①스탁이지 이탈은 섹터 묶음편출이 다수(모멘텀 이탈의 71%가 하루 4종목+ 동시편출일, 8/19 하루 20종목) ②자동튜너가 정한 일일 예측 상한(momentum 3)이 대량편출일 재현율을 21.6%로 제약 ③"이탈 당일"만 정답이라 조기경고가 오탐으로 집계 ④순위밀림 이탈은 예측불가. 조치(`stockeasy_logic_validator.py`): (C)`backtest_sell()`을 "이탈 5영업일 전~당일 예측 시 적중"(window=5) 기준으로 정상화(기존 당일 기준은 exact_* 키/트래커 "매도F1(당일)" 열로 병기), (A)`_get_our_sell_candidates()`에 섹터 전파 추가(같은 섹터 보유 2종목+ 중 30%+가 매도신호면 나머지도 후보, peak/momentum은 일일상한 제거) — 60/40 시간분할 검증에서 훈련·검증 모두 개선(모멘텀 검증 F1 72.1→80.4, Peak 46.2→57.1). (B)매수조건 이탈=매도 규칙은 Peak 검증구간 +1p·모멘텀 재현율 절반·밸류 무의미로 미채택. 최종 5일창 F1: Peak 40.0→55.8, 모멘텀 34.4→80.5, 밸류 19.0→45.2(밸류는 이탈 4건뿐이라 참고용). 부수: 모멘텀 섹터 사전계산이 미사용 죽은코드인데 호출당 수십초 소모 → `_MOM_SECTOR_ROTATION_ENABLED=False`로 차단, 전체 재계산 3,800초→14초. `_entry_signal_ok()`를 모듈 수준으로 분리(연구용). 연구 스크립트: `scripts/research_stockeasy_sell_cache.py`, `scripts/research_stockeasy_sell_eval.py`. 위 09-19 항목의 매도 F1 수치(19~40%)는 이 항목으로 대체.
-
-### 2026-09-19 ETF Check 외부 수집 중단 및 만기 ETF 품질 게이트 수정 (Codex)
-- `465780`의 정상 만기 청산을 실패로 오판하던 문제를 다중 증거 기반 `KRX_MATURITY_WINDDOWN` 예외로 수정했다. 20260915~18을 재평가해 전수 커버리지 100%, 표본 편입개수/교집합 100%, 금액상관 0.9973~0.9976을 확인했고 20260911 포함 최근 5거래일 연속 통과로 `krx_primary`를 복구했다.
-- 최신 20260918 데이터를 2,693종목(가격/시총 커버리지 100%)으로 직접 게시했다. 일일 파이프라인의 ETF Check 표본/동등성 단계는 기본 비활성화하고, API의 ETF Check 네트워크 폴백과 `retry_etfcheck_k_sample.sh` 크론을 제거했다. 복원용 DB/크론 백업은 `ETF_check/backups/etf_check.pre_maturity_exception_20260919.db`, `ETF_check/backups/crontab.pre_etfcheck_stop_20260919.txt`이다.
-
-### 2026-09-19 감사테이블 재빌드 완료 + invalid_ohlcv 163→38건(97.5% 해결)
-뷰+감사테이블 재빌드 재시도 성공(재시도로 권한통과). `invalid_ohlcv` 잔여 163건을 Naver와 개별대조해 2가지로 분리: REPLACE(66건, naver가 실제 다른 유효캔들 보유) / CLAMP(97건, naver가 현재값과 거의 일치 = 두 소스가 같은 내부비일관성에 동의하는 원천데이터 특이값이라 open/close/volume은 안 건드리고 high/low만 내부정합 맞춤). `scripts/apply_invalid_ohlcv_final_fix_20260918.py`로 125건 복구(run_id `invalid_ohlcv_final_fix_20260918_090245`), 잔여 38건(2011~2014년, naver 스냅샷 자체에 데이터 없음)은 검증소스 부재로 보류. `data_fix_log` 9-placeholder 버그 세션 통산 8번째 재발했으나 AST기반 사전검증으로 실행 전 차단 성공(효과 재확인). 최종: `invalid_ohlcv` 163→38(97.5%), `unresolved_active_common` 6,917건으로 여전히 최대 미해결 풀. 상세는 `docs/CLAUDE_HANDOFF_TO_CODEX_20260912_price_integrity.md` 섹션 14.
-
-### 2026-09-19(2차) 가격 외 미해결 항목 처리 — financial_anomalies revenue_zero 29/30건, data_quality_issues ANCHOR_MISMATCH 3/4건 해결
-사용자 지시("unresolved_active_common은 넘기고 다른 미해결 문제도 처리")로 가격 무결성 외 영역 착수. ①`financial_anomalies` `revenue_zero`(30건 미해결) 전수 확인 — **26건이 SPAC**(이름에 "~호스팩" 명시 또는 DART corp_name이 "~기업인수목적"), 2건이 상장 전 임상단계 바이오텍(372320 큐로셀, 388870 파로스아이바이오, 매출0/근사값이 정상)으로 확인돼 **29건을 "정상상황(오탐)"으로 is_resolved=1 처리**. 나머지 014950(삼익제약, 실제 매출 있는 정상기업)만 DART에 2022~2023년 사업보고서/분기보고서 자체가 미수집(감사보고서만 존재)된 진짜 공백으로 확인 — 단순대입 불가, 재수집 필요 노트만 추가. ②`data_quality_issues` `ANCHOR_MISMATCH`(4건, HIGH, 5월부터 미해결) — 057050 현대홈쇼핑·119850 지엔씨에너지·178320 서진시스템 3건 모두 **CFS/OFS 혼용**으로 확인(FnGuide 앵커=CFS, 현재값=OFS, 배율 1.1~8.4배) → `stock_collection_config.preferred_report_type='CFS'` 등록(178320은 기존에 "지주사"로 잘못 분류돼 OFS 선호로 설정돼있던 오류도 함께 정정), `financial_fix_log` 기록, is_resolved=1. 180640 한진칼은 **지주회사라 OFS 선호 관례(002020 선례) 적용대상**이라 CFS로 강제전환하지 않음 — 대신 `dart_raw_accounts` 원문(rcept_no 20230315001278) 확인 결과 CFS 매출액 2,003억원이 FnGuide 앵커와 정확히 일치함을 확인, 데이터 자체는 정상이고 표시로직 확인이 필요하다는 진단만 기록(is_resolved=0 유지, 데이터 미변경).
-
-### 2026-09-19(3차) investor_trading_daily/kiwoom_investor_daily 재점검 — 컬렉터는 이미 수정됨, shares_issued 우선주 이슈는 이미 해소(문서만 낡음)
-①`kiwoom_investor_daily` 매수전용(buy-only) 버그는 **2026-07-21에 이미 컬렉터 코드 수정 완료**(`trde_tp="0"`)되어 있었음을 확인 — 005930 2026-07-20/2026-09-11 양쪽 다 KIS(price_history) `_amt` 컬럼과 거의 정확히 일치(기관/개인 완전일치, 외국인 99.5%). 재수집 범위(2025-01~현재, `scratch/backfill_kiwoom_investor_netbuy_20260721.py`)도 실사용처(signal_engine 최근30일, sector_rotation 90일) 전부 커버함을 코드로 직접 확인 — 2018~2024 과거값이 여전히 버그값인 채 남아있으나 **아무 소비자도 참조하지 않는 죽은 데이터**로 재확인, 추가 조치 불필요(기존 "우선순위 낮음" 판단이 옳았음). ②`shares_issued 우선주 포함` 문제(삼성전자 1.43배 등, 오랫동안 "미수정"으로 기록됨)를 재검증한 결과 **이미 해소됨**(전부 0.95~1.03배 정상, 코스피 시총상위 30종목 전수 확인) — 문서가 낡아있던 것으로 확인, 섹션 9 표 정정 완료. `EPS 저장값 괴리`/`TTM EPS 부정확`은 별개의 구조적 이슈라 여전히 유효.
-
-### 2026-09-19(4차) 알려진 이슈 표 전체 재점검 — 해결된 문서 4건 정정/삭제, 미해결 1건 수치 정정
-사용자 지시("클로드점엠디에 저장된 미완료 항도 재점검해서 완료된거면 삭제하거나 완료 표시")로 섹션 9 전체를 훑어 재검증:
-- **`investor_trading_daily`**: 여전히 buy-only 오염 자체는 사실이나(inst_net 450만행 중 음수 0건), 원천 API(공공데이터포털 getStocInvtTrdnInfo)가 서비스 폐지되어 2026-07-10 이후 죽은 테이블이고 `collectors/public_data.py`가 2026-08-24에 이미 호출 자체를 제거했음을 코드로 확인 — "미수정 잔존"에서 "조치 불필요(deprecated)"로 정정.
-- **`frontend/src/views/SemiconductorSectorView.jsx`**: 어디서도 import 안 되는 757줄 고아 파일 재확인 → **파일 삭제**(git 이력 보존, 복구 가능), 표에서 해당 행 제거.
-- **`_job_combo_daily`의 "6개 계좌 매수 0건"(2026-09-07)**: 같은 날 다른 항목에 기록된 리스크게이트 수정으로 이미 해결됐음을 실거래 확인(sc_sector_focus 09-17, ai_combo 09-18 매수 체결)으로 재검증, 스테일 경고문 제거.
-- **`dart_recollect 분기 NI 파싱실패`**: "점진 해소 예정"이라 적혀있었으나 실측 결과 5,228→**7,613건으로 오히려 증가** — 자연 해소되지 않았음을 확인, 수치 정정(실제 수정 작업은 미착수, 별도 파싱 로직 점검 필요로 남김).
-- 이 외 항목(TWSE/HKEX/PMI 등 외부 API 차단류, HS매핑/전략 백테스트류)은 외부 요인 또는 이번 세션 범위(가격·재무 데이터 무결성) 밖이라 재검증 보류.
-
-### 2026-09-19(5차) dart_recollect NI 파싱실패 근본원인 확정·수정 — 야간 스케줄러가 매일 크래시하고 있었음
-바로 위 항목("5,228→7,613건으로 증가")을 파고든 결과, "점진 해소 예정"이 실현 안 된 진짜 이유를 확정: 매일 00:30 `_job_dart_financial_recollect`가 실행하는 `scratch/legacy_dart_recollect.py`가 **금지경로 4곳**(`DB_PATH`·`CKPT_PATH`·`OUT_DIR`·DART API 키를 읽는 `.env` 경로, 전부 `/Applications/stock_dashboard/...`)을 하드코딩하고 있었는데, 이 경로 자체가 이 환경에 존재하지 않아 **`_load_dart_keys()`가 모듈 임포트 시점에 `FileNotFoundError`로 즉시 크래시** — 즉 이 스크립트는 실행될 때마다 한 줄도 처리 못 하고 매일 밤 실패해왔던 것으로 확인(정확히 언제부터인지는 로그 부족으로 미특정). 별도로 `_NET_KW`(순이익 키워드 목록)도 `collectors/dart_collector.py`보다 좁아서(분기순이익/반기순이익/연간순이익 등 누락) 설령 크래시가 없었어도 일부는 계속 놓쳤을 것으로 확인.
-
-**수정**: ①경로 4곳을 `Path(__file__).resolve().parents[1]`(런타임 루트) 기준 상대경로로 전환, 미사용 `DB_PATH` 상수는 제거(`connect_primary_db()`만 실사용). ②`_NET_KW`에 "분기순이익"·"반기순이익"·"당기순이익(손실)"·"당기순손익(이익)"·"연간순이익" 추가. **샘플검증(CLAUDE.md 규칙 준수, 8종목)**: 025980·051370·302440·048430·126560·103590·041460 **7/8건이 실제 DART 재호출로 net_income 정상 추출 확인**(수정 전 전부 NULL), 000650만 해당 분기 DART 응답 자체가 빈 값(별도 사유, 파싱 문제 아님). 스크립트 자체를 재실행하지는 않음 — **경로 수정으로 오늘 밤(00:30)부터 스케줄러가 정상 동작해 7,613건을 점진적으로 자동 해소할 것으로 예상**, 며칠 뒤 카운트 재확인 필요. 이 외 `/Applications/stock_dashboard` 참조는 전부 `scripts/archive/`(미사용 보관본)뿐임을 전수 검색으로 확인, 추가 조치 불필요.
-
-### 2026-09-19(6차) 재무 이상치/검증 테이블 스테일 플래그 재검증 — 사용자 지시("숫자 데이터 완결성 계속")
-`financial_anomalies`·`fin_quarterly_validation_flags` 모두 2026-05-25~31 무렵 일괄 감지된 후 재검증 없이 방치된 스테일 플래그가 대량 존재함을 확인·정리: - **`partial_coverage`(1,800건 미해결)**: 전부 "결손 연도: [2020, 2021]" 패턴 — 실제 financial_data를 재조회한 결과 **1,639건(91%)이 이미 데이터가 채워져 있음**(감지 이후 백필로 자연 해소, 재검증만 안 됨) → is_resolved=1 처리. 159건은 일부 연도만 남아 결손연도 목록 축소 갱신. 진짜 전부 미수집인 건 **014950(삼익제약, 이미 별도 확인된 종목)·101970 단 2건**뿐. - **`persistent_loss`(660건 미해결)**: 무작위… (전문: docs/CLAUDE_CHANGELOG_ARCHIVE.md '2026-09-19(6차) 재무 이상치/검증 테이블 스테일 플래그')
-
-### 2026-09-19 종합 정리 — 완료 vs 지속점검 명확화 (사용자 지시)
-오늘 하루 처리한 항목을 완료/지속점검으로 명확히 구분: **✅ 완료(추가 조치 불필요)** - `invalid_ohlcv` 1,546→38건(97.5%, 잔여는 검증소스 없음) - `externally_confirmed_internal_corruption` 1,090건 → 0건(2020-01~2021-02 배치오류 1,048종목 251,301행 복구) - `unresolved_active_common` 중 Naver 대조 가능분 6,657행 복구 - `financial_anomalies revenue_zero` 30→1건(29건은 SPAC/임상바이오텍 확인, 정상상황) - `data_quality_issues ANCHOR_MISMATCH` 4→1건(3건 CFS/OFS 설정 정정) - `shares_issued 우선주 포함` — 이미 해소 확… (전문: docs/CLAUDE_CHANGELOG_ARCHIVE.md '2026-09-19 종합 정리 — 완료 vs 지속점검 명확화 (사')
-
-### 2026-09-19(7차) financial_data 음수매출 78건 전량 정정 + cf_validation_flags AMBIGUOUS 재검증 실행 중
-①`financial_data.revenue < 0` 78건 전수 확인·정정. **25건**(`derived_annual_minus_quarters`, 대부분 Q4)은 연간-분기누적 역산 결과가 음수 — CLAUDE.md 규칙("소스 불일치시 Q4 강제산출 금지") 위반이라 NULL 처리. **53건**(`dart_ofs_backfill`/`dart_q2_verified`/`dart` 등, 004310 현대약품 24건·950170 JTC 9건 등)은 DART 실시간 재조회로 **완전히 다른 값**이 나옴을 확인(예: 004310 2023 Q2 저장값 -30.9억 vs 실제 DART 매출액 +488.5억) — 진짜 오염 확정, 재조회값으로 교체. 중 28건은 같은 (종목,연도,분기) 키에 이미 정상값을 가진 "형제 행"(legacy_collected/dart_recollect 등)이 별도로 존재하는 **중복행 구조**였음을 발견 — `id` 기준 정밀 타겟팅으로 정상 형제행은 건드리지 않고 오염된 행만 수정. `financial_fix_log`에 전건 기록(run_id 3종). **최종: 음수매출 78→0건**.
-②`cf_validation_flags` status=AMBIGUOUS(1,424건, 2026-08-02 배치, ai_verdict 전부 NULL) — 이미 존재하던 검증 파이프라인(`collectors/cf_triple_validator.py validate_recent()`, DART+FnGuide+Seibro 3중대조+자동보정 로직 포함)을 찾아 재실행 시작. 대상이 예상(864쌍)보다 넓어져 **5,577건**(관련 627종목의 전체 연도) 처리 중 — Seibro 실시간 조회 방식이라 시간 소요(추정 1시간+), **백그라운드 실행 중, 완료 시 결과 반영 예정**.
-③영업이익이 매출의 5배 이상인 1,991건 스팟체크 — 절반 이상이 "의료"(임상단계 바이오텍) 업종으로 확인, 이미 이번 세션에서 여러 번 확인된 "매출 미미+R&D손실 막대"의 정상적인 바이오텍 특성과 일치 — 노이즈가 커서 이번엔 깊이 파지 않음, 후속 필요시 참고용으로 기록만.
-
-### 2026-09-19(8차) cf_validation_flags AMBIGUOUS 1,424→485건 — 3중검증 실행 + FIN_CROSS 917건 사업보고서 재조회
-①`collectors/cf_triple_validator.validate_recent(days=9999, codes=627종목)` 실행 완료(5,577건, 오류 0, CONFIRMED 10,617/AMBIGUOUS 588 이벤트, `dart_fg_corrected` 보정 10건). 단 이 검증기는 현금흐름 3필드(영업CF/투자CF/기말현금)만 다루므로 AMBIGUOUS 테이블 감소는 66건에 그침. ②남은 AMBIGUOUS 중 `flag_type='FIN_CROSS'`(재무제표 본체 DART↔FnGuide 불일치: 매출373·순이익166·영업이익156·총자산113·총자본109, 917건)는 DART 연간 사업보고서(11011, CFS→OFS)를 실시간 재조회(`scratch/fin_cross_recheck_20260919.py`, DB 쓰기 없음)해 판별: **873건은 현재 financial_data 값이 공시 원문과 이미 일치하는 스테일 플래그**(플래그 저장값이 2026-08-02 시점 낡은 값) → 411건 CONFIRMED(DB=공시=FnGuide), 462건 STRUCTURAL(DB=공시, FnGuide는 기준차/오파싱, DART 앵커 우선) 처리, `ai_verdict`/`resolved_value`/`resolved_at` 기록. **financial_data는 한 행도 수정하지 않음**(모두 이미 정상이었음).
-③**미해결 유지(근거 불충분, 데이터 미변경)**: FIN_CROSS 44건(DB가 공시와도 불일치 19건 + 공시 조회 불가 25건 — 대부분 소형/외화보고(900·950번대) 종목으로 통화·단위 문제이거나 FnGuide 1억 단위 반올림값, 개별 확인 필요) + 현금흐름 필드 AMBIGUOUS 약 415건(투자CF 166·영업CF 141·기말현금 108, 검증기가 3자 불일치로 판정한 진짜 미해결). 최종 cf_validation_flags: CONFIRMED 102,831 / CLOSE_MATCH 3,441 / STRUCTURAL 479 / AMBIGUOUS 485. **지속점검**: 이 485건은 계속 추적 대상.
-
-### 2026-09-20 — FIN_CROSS 결과 재적용 및 현재 DB 기준 정정
-2026-09-19 기록의 `AMBIGUOUS=485`는 PostgreSQL 현재 상태와 일치하지 않았다. `/tmp/fin_cross_recheck.json`의 DART 재조회값을 현재 `financial_data`와 다시 대조한 결과, 917 FIN_CROSS 중 **409건**만 현재 저장값이 DART CFS/OFS 원문과 일치했다. 이 409건은 값 변경 없이 `STRUCTURAL` 및 `DART_LIVE_RECHECK_MATCH_FNGUIDE_DIFF`로 확정했다. 나머지 **508건**은 현재 저장값도 재조회 DART 값과 일치하지 않거나 대상 행이 없어 계속 미결이다. 현재 `cf_validation_flags`의 `AMBIGUOUS`는 **1,066건**이며, 근거 파일은 `research_outputs/fin_cross_rec… (전문: docs/CLAUDE_CHANGELOG_ARCHIVE.md '2026-09-20 — FIN_CROSS 결과 재적용 및 현재 D')
-
 ### 2026-09-24 소스/운영 저장소 통합 1~2단계 (runtime을 단일 기준으로)
 - 발견: `/Volumes/Realtek_NVME/stock_dashboard`(소스, 63커밋)와 `runtime/`(운영, 별도 git 저장소)은 **히스토리가 무관한 두 저장소**(같은 GitHub 원격). 코드는 runtime이 훨씬 앞서 있음(main.py 7,366 vs 5,549줄). 앞으로 코드 수정은 **runtime 한 곳**에서만 한다. - 1단계: runtime 미커밋 623건을 5개 논리 커밋으로 보호(`3c3a893`~`b05d613`, push 안 함, `data/`·`data_cache/`·`.verification/`·`hs_trade_lab/data/` 및 런타임 상태 json은 제외). - 2단계: 소스에만 있던 tracked 파일 80개를 덮어쓰기 없이 이식(`73965d5`) — `routes/peer_… (전문: docs/CLAUDE_CHANGELOG_ARCHIVE.md '2026-09-24 소스/운영 저장소 통합 1~2단계 (runti')
 
 ### 2026-09-24 문서 전면 최신화·최적화 (토큰 절약)
-- CLAUDE.md 243KB→~85KB: 섹션 1(구조)·2(테이블 행수 407개 기준)·6(줄번호) 재생성, 섹션 3(API)·4(스케줄러)는 자동 생성 정본(`docs/API_ENDPOINTS.md`/`SCHEDULER_JOBS.md`/`DB_TABLES_PG.md`, `scripts/ops/gen_*_doc.py`)으로 대체, 해결된 이슈 54건·이전 변경이력은 `docs/CLAUDE_KNOWN_ISSUES_RESOLVED.md`/`CLAUDE_CHANGELOG_ARCHIVE.md`로 이관(원본 백업 `backups/CLAUDE.runtime_before_optimize_20260924.md`).
-- hermes.md 138→63KB, hermes_change.md 50→12KB(9/23 이전 → `docs/hermes_*archive*`). PROJECT_MASTER 등 3~5월 SQLite 시대 문서 7개 → `docs/legacy/`, 루트 중복 md 13개 → `backups/root_md_duplicates_20260924/`.
-- 정정된 낡은 서술: runtime "레거시/심볼릭 링크" 문구, 키움 ka10059 "buy-only 버그"(2026-07-21 수정 완료), dart_recollect NI 결측 7,613→6,024건(감소 중), 존재하지 않는 `financial_data_backup_20260412` 행 삭제.
+- CLAUDE.md 243KB→~85KB: 섹션 1(구조)·2(테이블 행수 407개 기준)·6(줄번호) 재생성, 섹션 3(API)·4(스케줄러)는 자동 생성 정본(`docs/API_ENDPOINTS.md`/`SCHEDULER_JOBS.md`/`DB_TABLES_PG.md`, `scripts/ops/gen_*_doc.py`)으로 대체, 해결된 이슈 54건·이전 변경이력은 `docs/CLAUDE_KNOWN_ISSUES_RESOLVED.md`/`CLAUDE_CHANGELOG_ARCHIVE.md`로 이관(원본 백업 `backups/CLAUDE.runtime_before_optimize_20260924.md`). - hermes.md 138→63KB, hermes_change.md 50→12KB(9/23 이전 → `docs/hermes_*archive*`). PROJECT_MASTER 등 3~5월 SQ… (전문: docs/CLAUDE_CHANGELOG_ARCHIVE.md)
+
+
+(2026-09-21 이전 항목 제목 색인 — 전문은 docs/CLAUDE_CHANGELOG_ARCHIVE.md)
+- 2026-09-20 price_history 무결성 가드(P0) — close<=0 거부·수급 6필드 보존·비KR종목 공통필터
+- 2026-09-19 StockEasy 로직 일치율 재검토 — 모멘텀 Easy 0% 근본버그 수정 + 매수로직 개선
+- 2026-09-19(2차) StockEasy 매도 일치율 개선 — 채점 정상화 + 섹터 바스켓 전파
+- 2026-09-19 ETF Check 외부 수집 중단 및 만기 ETF 품질 게이트 수정 (Codex)
+- 2026-09-19 감사테이블 재빌드 완료 + invalid_ohlcv 163→38건(97.5% 해결)
+- 2026-09-19(2차) 가격 외 미해결 항목 처리 — financial_anomalies revenue_zero 29/30건, data_quality_issues ANCHOR_MISMATCH
+- 2026-09-19(3차) investor_trading_daily/kiwoom_investor_daily 재점검 — 컬렉터는 이미 수정됨, shares_issued 우선주 이슈는 이미 해소(문
+- 2026-09-19(4차) 알려진 이슈 표 전체 재점검 — 해결된 문서 4건 정정/삭제, 미해결 1건 수치 정정
+- 2026-09-19(5차) dart_recollect NI 파싱실패 근본원인 확정·수정 — 야간 스케줄러가 매일 크래시하고 있었음
+- 2026-09-19(6차) 재무 이상치/검증 테이블 스테일 플래그 재검증 — 사용자 지시("숫자 데이터 완결성 계속")
+- 2026-09-19 종합 정리 — 완료 vs 지속점검 명확화 (사용자 지시)
+- 2026-09-19(7차) financial_data 음수매출 78건 전량 정정 + cf_validation_flags AMBIGUOUS 재검증 실행 중
+- 2026-09-19(8차) cf_validation_flags AMBIGUOUS 1,424→485건 — 3중검증 실행 + FIN_CROSS 917건 사업보고서 재조회
+- 2026-09-20 — FIN_CROSS 결과 재적용 및 현재 DB 기준 정정
