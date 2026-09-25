@@ -7,6 +7,7 @@
 //   - 현금원장: GET cash-ledger
 //   - 개요: GET status, paper/positions, paper/pnl
 import React, { useEffect, useState, useCallback } from 'react';
+import TaskApprovalTab from './TaskApprovalTab';
 
 const API = (path) => path;
 
@@ -466,6 +467,7 @@ function LedgerTab() {
 }
 
 const TABS = [
+  { key: 'approvals', label: '작업 승인 대기' },
   { key: 'overview', label: '개요' },
   { key: 'check',    label: '사전 점검' },
   { key: 'history',  label: '판정 이력' },
@@ -492,6 +494,7 @@ export default function RiskGateMonitorView() {
           }}>{t.label}</button>
         ))}
       </div>
+      {tab === 'approvals' && <TaskApprovalTab />}
       {tab === 'overview' && <OverviewTab />}
       {tab === 'check' && <CheckTab />}
       {tab === 'history' && <HistoryTab />}
