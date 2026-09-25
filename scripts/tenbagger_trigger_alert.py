@@ -177,10 +177,10 @@ def detect_composite_signals(conn) -> list:
 
         if score >= 4:  # 복합 기준: 점수 4점 이상
             name_row = conn.execute(
-                "SELECT stock_name, market_cap, close FROM stock_universe su "
-                "LEFT JOIN (SELECT stock_code, close FROM price_history p "
-                "WHERE date=(SELECT MAX(date) FROM price_history p2 WHERE p2.stock_code=p.stock_code)) ph "
-                "ON ph.stock_code=su.stock_code WHERE su.stock_code=?", (code,)
+                "SELECT stock_name, market_cap, "
+                "(SELECT close FROM price_history p WHERE p.stock_code=su.stock_code AND p.close>0 "
+                " ORDER BY p.date DESC LIMIT 1) AS close "
+                "FROM stock_universe su WHERE su.stock_code=? ORDER BY su.base_date DESC LIMIT 1", (code,)
             ).fetchone()
             composite.append({
                 "stock_code": code,

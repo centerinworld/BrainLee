@@ -123,75 +123,69 @@ class USPaperOrderIn(BaseModel):
         return self
 
 
-def _latest_broad_us_date(c: sqlite3.Connection) -> str | None:
-    """Return the latest session that covers the active US price universe.
+_US_CORE_LOOKBACK_SESSIONS = 60
+_US_CORE_MIN_SHARE = 0.9
 
-    The universe changes as listings, delistings, and ticker changes occur, so
-    a fixed ticker count would eventually either accept partial data or block a
-    valid session forever. The coverage floor is a configurable ratio of the
-    best recent local universe coverage instead.
+
+def _us_core_session_coverage(c: sqlite3.Connection, sessions: int = 10) -> tuple[int, list[tuple[str, int]]]:
+    """Coverage of the CORE universe per recent session: (core size, [(date, core tickers present), newest first]).
+
+    Core = tickers that printed on >=90% of the last 60 sessions. Judging a session against the all-time peak ticker
+    count (the previous rule: 95% of the best day ever) makes every delisting/SPAC merger a permanent drag, and
+    illiquid names (SPACs, rights, warrants) legitimately have no print on some days - on 2026-09-22/23 that pushed a
+    complete session (3,446/3,424 vs a 3,442 floor set by a 3,623 peak) under the line and blocked US paper trading.
     """
-    ratio = min(1.0, max(0.5, float(os.getenv("US_PAPER_MIN_COVERAGE_RATIO", "0.95"))))
-    reference = c.execute(
-        """
-        SELECT MAX(ticker_count)
-        FROM (
-          SELECT COUNT(DISTINCT ticker) AS ticker_count
-          FROM us_price_history
-          GROUP BY date
-        ) coverage
-        """
-    ).fetchone()
-    max_coverage = int(reference[0] or 0) if reference else 0
-    minimum_coverage = max(1, int(max_coverage * ratio + 0.9999))
-    row = c.execute(
-        """
-        SELECT date
-        FROM (
-          SELECT date, COUNT(DISTINCT ticker) AS tickers
-          FROM us_price_history
-          GROUP BY date
-        )
-        WHERE tickers >= ?
-        ORDER BY date DESC
-        LIMIT 1
-        """,
-        (minimum_coverage,),
-    ).fetchone()
-    return row[0] if row else None
+    total = c.execute(
+        "SELECT COUNT(*) FROM (SELECT DISTINCT date FROM us_price_history ORDER BY date DESC LIMIT ?) d",
+        (_US_CORE_LOOKBACK_SESSIONS,),
+    ).fetchone()[0]
+    if not total:
+        return 0, []
+    need = max(1, int(total * _US_CORE_MIN_SHARE))
+    recent = "SELECT date FROM (SELECT DISTINCT date FROM us_price_history ORDER BY date DESC LIMIT %d) r"
+    core_sql = (
+        "SELECT ticker FROM us_price_history WHERE date IN (" + recent % _US_CORE_LOOKBACK_SESSIONS + ") "
+        "GROUP BY ticker HAVING COUNT(DISTINCT date) >= ?"
+    )
+    core_size = c.execute("SELECT COUNT(*) FROM (" + core_sql + ") k", (need,)).fetchone()[0]
+    rows = c.execute(
+        "SELECT date, COUNT(DISTINCT ticker) FROM us_price_history WHERE date IN ("
+        "SELECT date FROM (SELECT DISTINCT date FROM us_price_history ORDER BY date DESC LIMIT ?) s) "
+        "AND ticker IN (" + core_sql + ") GROUP BY date ORDER BY date DESC",
+        (sessions, need),
+    ).fetchall()
+    return int(core_size or 0), [(str(r[0])[:10], int(r[1])) for r in rows]
+
+
+def _us_min_coverage_ratio() -> float:
+    return min(1.0, max(0.5, float(os.getenv("US_PAPER_MIN_COVERAGE_RATIO", "0.95"))))
+
+
+def _latest_broad_us_date(c: sqlite3.Connection) -> str | None:
+    """Latest session whose CORE-universe coverage is >= the configured ratio (default 95%)."""
+    core, sessions = _us_core_session_coverage(c)
+    if not core:
+        return None
+    minimum = max(1, int(core * _us_min_coverage_ratio() + 0.9999))
+    for day, count in sessions:
+        if count >= minimum:
+            return day
+    return None
 
 
 def _latest_us_price_coverage(c: sqlite3.Connection) -> dict:
-    row = c.execute(
-        """
-        SELECT date, COUNT(DISTINCT ticker) AS ticker_count
-        FROM us_price_history
-        GROUP BY date
-        ORDER BY date DESC
-        LIMIT 1
-        """
-    ).fetchone()
-    reference = c.execute(
-        """
-        SELECT MAX(ticker_count)
-        FROM (
-          SELECT COUNT(DISTINCT ticker) AS ticker_count
-          FROM us_price_history
-          GROUP BY date
-        ) coverage
-        """
-    ).fetchone()
-    ratio = min(1.0, max(0.5, float(os.getenv("US_PAPER_MIN_COVERAGE_RATIO", "0.95"))))
-    maximum = int(reference[0] or 0) if reference else 0
-    minimum = max(1, int(maximum * ratio + 0.9999))
-    count = int(row["ticker_count"] or 0) if row else 0
+    core, sessions = _us_core_session_coverage(c)
+    ratio = _us_min_coverage_ratio()
+    minimum = max(1, int(core * ratio + 0.9999)) if core else 0
+    date, count = sessions[0] if sessions else (None, 0)
     return {
-        "date": str(row["date"])[:10] if row else None,
+        "date": date,
         "ticker_count": count,
-        "reference_ticker_count": maximum,
+        "reference_ticker_count": core,
         "minimum_required": minimum,
-        "coverage_ratio": round(count / maximum, 4) if maximum else 0.0,
-        "ready": bool(row and count >= minimum),
+        "coverage_ratio": round(count / core, 4) if core else 0.0,
+        "ready": bool(sessions and count >= minimum),
+        "basis": "core_universe(>=90% of last 60 sessions)",
     }
 
 

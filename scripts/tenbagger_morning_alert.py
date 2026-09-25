@@ -119,8 +119,9 @@ def _openai_mini_tenbagger_brief(stock_code: str, stock_name: str, score: int, r
     fin = conn.execute("""
         SELECT year, quarter, revenue, operating_profit, net_income
         FROM financial_data WHERE stock_code=? AND is_annual=0
+          AND report_type = (SELECT b.report_type FROM financial_data b WHERE b.stock_code=? AND b.is_annual=0  ORDER BY b.year DESC, b.quarter DESC, CASE b.report_type WHEN 'CFS' THEN 0 ELSE 1 END LIMIT 1)
         ORDER BY year DESC, quarter DESC LIMIT 4
-    """, (stock_code,)).fetchall()
+    """, (stock_code, stock_code)).fetchall()
     meta = conn.execute(
         "SELECT sector_large, market_cap, per, pbr, roe FROM stock_universe WHERE stock_code=?",
         (stock_code,)

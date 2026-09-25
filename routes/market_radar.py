@@ -1804,7 +1804,8 @@ def get_semiconductor_summary(
             f"SELECT stock_code, market_cap FROM stock_universe WHERE stock_code IN ({ph})",
             codes,
         ):
-            uni_map[r["stock_code"]] = (round(r["market_cap"] / 1e8) if r["market_cap"] else None)
+            # stock_universe.market_cap은 이미 억원 — 예전 `/ 1e8`로 거의 0이 되어 PSR이 항상 비었다(2026-09-24)
+            uni_map[r["stock_code"]] = (float(r["market_cap"]) if r["market_cap"] else None)
 
         ttm_map: Dict[str, Optional[float]] = {}
         for r in conn.execute(

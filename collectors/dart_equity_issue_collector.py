@@ -215,9 +215,15 @@ def _plausible_event_date(value: Optional[str], disclosed_at: str) -> Optional[s
         return None
     # 유/무상증자 기준일·상장예정일은 보통 공시일 전후 수개월이다.
     # 먼 미래 숫자(예: 법조문/오탈자 2052년)를 이벤트 일자로 쓰지 않는다.
-    if event_dt < disc_dt.replace(year=disc_dt.year - 1):
+    def _shift_years(dt: datetime, years: int) -> datetime:
+        try:
+            return dt.replace(year=dt.year + years)
+        except ValueError:  # 2/29 disclosure into a non-leap year (e.g. 2024-02-29 -> 2023-02-29): use 2/28
+            return dt.replace(year=dt.year + years, day=28)
+
+    if event_dt < _shift_years(disc_dt, -1):
         return None
-    if event_dt > disc_dt.replace(year=disc_dt.year + 3):
+    if event_dt > _shift_years(disc_dt, 3):
         return None
     return value
 

@@ -65,8 +65,8 @@ def find_missing_codes(conn, expected_date: str) -> list[str]:
     universe = {
         r[0] for r in conn.execute(
             "SELECT stock_code FROM stock_universe "
-            "WHERE market IN ('KOSPI','KOSDAQ') AND LENGTH(stock_code)=6 "
-            "AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
+            "WHERE market IN ('KOSPI','KOSDAQ','유가증권','코스닥') AND LENGTH(stock_code)=6 "
+            "AND stock_code ~ '^[0-9A-Z]{6}$'"
         )
     }
     covered = {

@@ -83,9 +83,9 @@ def get_all_codes():
     try:
         rows = conn.execute("""
             SELECT stock_code FROM stock_universe
-            WHERE (market = '유가증권' OR market = '코스닥')
+            WHERE market IN ('유가증권', '코스닥', 'KOSPI', 'KOSDAQ')
               AND length(stock_code) = 6
-              AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+              AND stock_code ~ '^[0-9A-Z]{6}$'
             ORDER BY market_cap DESC NULLS LAST
         """).fetchall()
         return [r[0] for r in rows]
@@ -175,7 +175,7 @@ def main():
     conn = connect_primary_db(timeout=30)
     existing = conn.execute(
         f"SELECT COUNT(*) FROM price_history WHERE date='{today_str}' "
-        f"AND close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
+        f"AND close>0 AND stock_code ~ '^[0-9A-Z]{6}$'"
     ).fetchone()[0]
     conn.close()
     log.info(f"기존 오늘 데이터: {existing}건")
@@ -232,7 +232,7 @@ def main():
     conn = connect_primary_db(timeout=30)
     final = conn.execute(
         f"SELECT COUNT(*) FROM price_history WHERE date='{today_str}' "
-        f"AND close>0 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'"
+        f"AND close>0 AND stock_code ~ '^[0-9A-Z]{6}$'"
     ).fetchone()[0]
     conn.close()
     print(f"  최종 오늘 종목 수: {final}개")

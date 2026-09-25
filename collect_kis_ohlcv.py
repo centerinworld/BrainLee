@@ -339,7 +339,7 @@ def main():
         SELECT stock_code FROM stock_universe
         WHERE market IN ('유가증권', '코스닥', 'KOSPI', 'KOSDAQ')
           AND length(stock_code) = 6
-          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+          AND stock_code ~ '^[0-9A-Z]{6}$'
         ORDER BY CAST(COALESCE(market_cap, 0) AS REAL) DESC
     """).fetchall()
     if args.missing_trade_amount:
@@ -408,7 +408,7 @@ def main():
     kr_today = conn.execute(f"""
         SELECT COUNT(*) FROM price_history
         WHERE date='{today_iso}' AND close>0
-          AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+          AND stock_code ~ '^[0-9A-Z]{6}$'
     """).fetchone()[0]
 
     # 샘플 확인
@@ -417,7 +417,7 @@ def main():
         FROM price_history p
         LEFT JOIN stock_universe u ON p.stock_code = u.stock_code
         WHERE p.date='{today_iso}' AND p.close>0
-          AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+          AND p.stock_code ~ '^[0-9A-Z]{6}$'
         ORDER BY CAST(COALESCE(u.market_cap,0) AS REAL) DESC
         LIMIT 5
     """).fetchall()

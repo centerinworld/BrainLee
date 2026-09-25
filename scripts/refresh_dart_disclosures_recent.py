@@ -158,6 +158,25 @@ def main() -> int:
         page_no += 1
         time.sleep(args.sleep)
 
+    # 2026-09-24: treasury_buyback은 PG 전환 후 적재 경로가 없어 7/10에서 멈춰 있었다 →
+    # 공시 갱신 직후 자기주식 공시를 증분 반영(실패해도 공시 갱신 결과에는 영향 없음).
+    buyback = None
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "ops"))
+        from sync_treasury_buyback_from_dart import sync as _sync_buyback
+        buyback = _sync_buyback(conn)
+        buyback = {k: buyback[k] for k in ("inserted", "reclassified", "max_rcept_dt")}
+    except Exception as exc:  # noqa: BLE001
+        buyback = {"error": str(exc)[:200]}
+    # 같은 이유(적재 경로 없음, 7/09 정지)로 특허·기술이전 트리거도 증분 반영
+    rd_patent = None
+    try:
+        from sync_rd_patent_signals_from_dart import sync as _sync_rd
+        rd_patent = _sync_rd(conn)
+        rd_patent = {k: rd_patent[k] for k in ("inserted", "exclude_marked", "max_rcept_dt")}
+    except Exception as exc:  # noqa: BLE001
+        rd_patent = {"error": str(exc)[:200]}
+
     conn.close()
     print(
         {
@@ -166,6 +185,8 @@ def main() -> int:
             "total_count": total_count,
             "upserted": inserted,
             "pages": page_no,
+            "treasury_buyback": buyback,
+            "dart_rd_patent_signals": rd_patent,
         }
     )
     return 0

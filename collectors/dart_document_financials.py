@@ -48,6 +48,10 @@ def extract_core_fact_details(xml_text: str) -> dict[str, tuple[float, bool]]:
                 value = _number(re.sub(r"<[^>]+>", "", match.group("value")))
                 if value is None:
                     continue
+                # ADECIMAL=-6 / -3 means the table is displayed in millions / thousands of won.
+                decimal = re.search(r'\bADECIMAL="(-?\d+)"', attrs)
+                if decimal and int(decimal.group(1)) < 0:
+                    value *= 10 ** (-int(decimal.group(1)))
                 # Current-period end facts use eFY; consolidated facts take precedence.
                 score = 0
                 if "eFY" in attrs:
@@ -67,12 +71,20 @@ def extract_core_facts(xml_text: str) -> dict[str, float]:
     return {field: value for field, (value, _) in extract_core_fact_details(xml_text).items()}
 
 
+def _decode(raw: bytes) -> str:
+    # DART document.xml declares utf-8 but many reports (incl. older/smaller filers) are cp949;
+    # decoding those as utf-8 silently drops all Korean text and tables.
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("cp949", errors="ignore")
+
+
 def _download_document_text(rcept_no: str, api_key: str, session=requests) -> str:
     response = session.get(DART_DOCUMENT_URL, params={"crtfc_key": api_key, "rcept_no": rcept_no}, timeout=30)
     response.raise_for_status()
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        texts = [archive.read(name).decode("utf-8", errors="ignore")
-                 for name in archive.namelist() if name.endswith(".xml")]
+        texts = [_decode(archive.read(name)) for name in archive.namelist() if name.endswith(".xml")]
     return "\n".join(texts)
 
 

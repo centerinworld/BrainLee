@@ -652,7 +652,7 @@ def create_analysis_views(client):
               t.stock_name,
               t.total_score,
               t.current_price,
-              t.market_cap / 1e8 AS market_cap_100m,
+              t.market_cap AS market_cap_100m,  -- stock_universe.market_cap은 이미 억원
               t.per,
               t.pbr,
               t.roe,
@@ -774,7 +774,7 @@ def create_analysis_views(client):
               ROUND(AVG(u.per), 1)                            AS avg_per,
               ROUND(AVG(u.pbr), 2)                            AS avg_pbr,
               ROUND(AVG(u.roe), 1)                            AS avg_roe,
-              ROUND(AVG(u.market_cap) / 1e8, 0)              AS avg_mktcap_100m,
+              ROUND(AVG(u.market_cap), 0)                    AS avg_mktcap_100m,
               ROUND(AVG(SAFE_DIVIDE(f.op_profit, f.revenue)) * 100, 1) AS avg_op_margin_pct
             FROM `{PROJECT_ID}.{DATASET_ID}.stock_universe` u
             LEFT JOIN tenbagger_codes t ON u.stock_code = t.stock_code
@@ -885,7 +885,7 @@ def create_analysis_views(client):
               u.stock_name,
               u.sector_large AS sector,
               u.market,
-              u.market_cap / 1e8   AS market_cap_100m_present,
+              u.market_cap         AS market_cap_100m_present,
               te.base_ym           AS surge_start_month,
               te.peak_ym           AS surge_peak_month,
               te.base_price        AS price_at_start,
@@ -1053,9 +1053,9 @@ def create_analysis_views(client):
               ROUND(AVG(t.months_to_peak), 1) AS avg_months_to_peak,
 
               --   (  :  )
-              ROUND(AVG(u.market_cap) / 1e8, 0) AS avg_mktcap_100m,
-              ROUND(MIN(u.market_cap) / 1e8, 0) AS min_mktcap_100m,
-              ROUND(MAX(u.market_cap) / 1e8, 0) AS max_mktcap_100m,
+              ROUND(AVG(u.market_cap), 0) AS avg_mktcap_100m,
+              ROUND(MIN(u.market_cap), 0) AS min_mktcap_100m,
+              ROUND(MAX(u.market_cap), 0) AS max_mktcap_100m,
 
               --
               ROUND(AVG(u.per), 1)  AS avg_per,
@@ -1063,11 +1063,11 @@ def create_analysis_views(client):
               ROUND(AVG(u.roe), 1)  AS avg_roe,
 
               --
-              COUNTIF(u.market_cap < 10000000000)               AS cnt_under_100100m,
-              COUNTIF(u.market_cap BETWEEN 10000000000 AND 50000000000)  AS cnt_100_500100m,
-              COUNTIF(u.market_cap BETWEEN 50000000000 AND 100000000000) AS cnt_500_1000100m,
-              COUNTIF(u.market_cap BETWEEN 100000000000 AND 500000000000) AS cnt_1000_5000100m,
-              COUNTIF(u.market_cap > 500000000000)              AS cnt_over_5000100m
+              COUNTIF(u.market_cap < 100)                       AS cnt_under_100100m,  -- 억원 단위
+              COUNTIF(u.market_cap BETWEEN 100 AND 500)         AS cnt_100_500100m,
+              COUNTIF(u.market_cap BETWEEN 500 AND 1000)        AS cnt_500_1000100m,
+              COUNTIF(u.market_cap BETWEEN 1000 AND 5000)       AS cnt_1000_5000100m,
+              COUNTIF(u.market_cap > 5000)                      AS cnt_over_5000100m
 
             FROM triple t
             JOIN `{PROJECT_ID}.{DATASET_ID}.stock_universe` u
@@ -1126,7 +1126,7 @@ def create_analysis_views(client):
               u.stock_name,
               u.sector_large AS sector,
               u.market,
-              u.market_cap / 100 AS mktcap_100m,
+              u.market_cap AS mktcap_100m,  -- 이미 억원(예전 /100은 단위 오류)
               u.per,
               u.pbr,
               u.roe,

@@ -24,6 +24,10 @@ from sqlalchemy import text
 
 OUTPUT_JSON = "/Volumes/Realtek_NVME/stock_dashboard/runtime/research_outputs/strategy_research_summary.json"
 SNAPSHOT_TABLE = "strategy_feature_snapshot"
+# 2026-09-24: with adjust_jumps the return/distance features AND the forward-return labels are computed on a close series whose
+# audited CORPORATE-ACTION days (only the four corporate_action_* audit classes - NOT unresolved/inactive/quarantined jumps, which are
+# real market moves or bad rows and must keep their return) carry a 0 return (raw closes jump at splits, capital reductions and the like, which
+# fabricated e.g. reverse-split "10x" labels and split-day -50% returns). close_price itself stays the raw as-traded close.
 
 FEATURE_COLUMNS = [
     "market_cap_log",
@@ -300,8 +304,14 @@ def build_strategy_research_dataset(
     start_snapshot_date: str = "2020-01-31",
     train_end_date: str = "2024-06-30",
     snapshot_table: str = SNAPSHOT_TABLE,
+    adjust_jumps: bool = False,
 ) -> dict:
     price, valuation, shares = _load_source_frames()
+    jump_events: dict[str, set] = {}
+    if adjust_jumps:
+        ev = pd.read_sql_query(text("SELECT stock_code, event_date FROM price_jump_audit WHERE classification IN ('confirmed_corporate_action','corporate_action_pending_confirmation','corporate_action_share_count_evidence','corporate_action_or_delisting_nearby')"), engine)
+        for code, d in zip(ev.stock_code, ev.event_date):
+            jump_events.setdefault(code, set()).add(str(d)[:10])
     if price.empty:
         raise RuntimeError("price_history source is empty")
 
@@ -335,13 +345,22 @@ def build_strategy_research_dataset(
         low = grp["low"]
         supply = (grp["inst_net_buy_amt"] + grp["frn_net_buy_amt"]) / 100.0
 
-        grp["ret_20d"] = close / close.shift(20) - 1.0
-        grp["ret_60d"] = close / close.shift(60) - 1.0
-        grp["ret_120d"] = close / close.shift(120) - 1.0
-        grp["high_252"] = high.rolling(252, min_periods=60).max()
-        grp["low_252"] = low.rolling(252, min_periods=60).min()
-        grp["dist_high_252"] = close / grp["high_252"] - 1.0
-        grp["dist_low_252"] = close / grp["low_252"] - 1.0
+        pc, ph, pl = close, high, low
+        if adjust_jumps and stock_code in jump_events:
+            r = close.pct_change()
+            flagged = grp["date"].dt.strftime("%Y-%m-%d").isin(jump_events[stock_code])
+            cum = (1 + r.where(~flagged, 0.0).fillna(0.0)).cumprod()
+            pc = cum * (close.iloc[-1] / cum.iloc[-1])  # anchored to the latest raw close
+            factor = pc / close
+            ph, pl = high * factor, low * factor
+        grp["px_ret"] = pc
+        grp["ret_20d"] = pc / pc.shift(20) - 1.0
+        grp["ret_60d"] = pc / pc.shift(60) - 1.0
+        grp["ret_120d"] = pc / pc.shift(120) - 1.0
+        grp["high_252"] = ph.rolling(252, min_periods=60).max()
+        grp["low_252"] = pl.rolling(252, min_periods=60).min()
+        grp["dist_high_252"] = pc / grp["high_252"] - 1.0
+        grp["dist_low_252"] = pc / grp["low_252"] - 1.0
         grp["vol_ratio_20d"] = volume / volume.rolling(20, min_periods=10).mean()
         grp["avg_turnover_20d_억"] = (
             (close * volume).rolling(20, min_periods=10).mean() / 100_000_000.0
@@ -358,7 +377,7 @@ def build_strategy_research_dataset(
             continue
 
         price_dates = grp.index.to_list()
-        price_values = grp["close"].to_numpy(dtype=float)
+        price_values = grp["px_ret"].to_numpy(dtype=float)
         val_grp = valuation_groups.get(stock_code)
         val_dates: list[pd.Timestamp] = []
         val_pbr: list[float] = []
@@ -593,10 +612,12 @@ if __name__ == "__main__":
     parser.add_argument("--snapshot-table", default=SNAPSHOT_TABLE)
     parser.add_argument("--start-snapshot-date", default="2020-01-31")
     parser.add_argument("--train-end-date", default="2024-06-30")
+    parser.add_argument("--adjust-jumps", action="store_true")
     args = parser.parse_args()
     out = build_strategy_research_dataset(
         start_snapshot_date=args.start_snapshot_date,
         train_end_date=args.train_end_date,
         snapshot_table=args.snapshot_table,
+        adjust_jumps=args.adjust_jumps,
     )
     print(json.dumps(out["dataset"], ensure_ascii=False, indent=2))
