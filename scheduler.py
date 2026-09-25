@@ -408,6 +408,7 @@ class CollectionScheduler:
             ("스크리너사전계산", self._loop_screener),
             ("공공데이터",      self._loop_public_data),
             ("KIS일별수집",    self._loop_kis_daily),         # ★ KIS API 전종목 OHLCV (KRX 차단 대체)
+            ("종가공식검증",    self._loop_close_verify),      # ★ 19:30 당일 종가 표본을 KRX 공식값과 대조(2026-09-25)
             ("KIS추정실적",    self._loop_kis_forward_estimates), # KIS Forward EPS/PER 등 순환 갱신
             ("전종목수급17시",  self._loop_supply_daily),      # ★ 17:30 KIS 전종목 수급
             ("전종목수급21시",  self._loop_supply_evening),    # ★ 21:00 재갱신
@@ -1255,13 +1256,32 @@ class CollectionScheduler:
             self._wait_until(18, 0, skip_weekend=True)
             if self._stop_event.is_set():
                 break
-            try:
-                self._job_kis_ohlcv_daily()
-            except Exception as e:
-                logger.error(f"[KIS일별] 잡 오류: {e}")
+            # 2026-09-25 (HANDOFF §10 P2-14): 실행 원장·데이터 계약 점검 편입(_run_job_safe). 이 잡은 내부에서 stock_db_write_lock을
+            # 직접 잡으므로 _DB_WRITE_JOBS에는 넣지 않는다(이중 잠금 방지).
+            _run_job_safe("KIS일별수집", self._job_kis_ohlcv_daily)
             # 다음 실행까지 1시간 대기 (같은 날 중복 실행 방지)
             self._wait_secs(3600)
         logger.info("[KIS일별] 루프 종료")
+
+    def _loop_close_verify(self) -> None:
+        """영업일 19:30 — 당일 종가를 KRX 공식값(pykrx)과 표본 대조(장마감 전 스냅샷이 최종값으로 저장되는 사고 감지)."""
+        self._wait_secs(120)
+        while not self._stop_event.is_set():
+            self._wait_until(19, 30, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("종가공식검증", self._job_close_verify)
+            self._wait_secs(3600)
+
+    def _job_close_verify(self) -> None:
+        py = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python"
+        if not os.path.exists(py):
+            py = sys.executable
+        res = subprocess.run([py, "scripts/verify_daily_close_vs_official.py"], capture_output=True, text=True, timeout=900,
+                             cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime")
+        logger.info(f"[종가검증] {res.stdout.strip()[-400:]}")
+        if res.returncode != 0:
+            raise RuntimeError(f"종가 공식 검증 실패(rc={res.returncode}): {res.stdout.strip()[-300:]}")
 
     def _loop_kis_forward_estimates(self) -> None:
         """영업일 20:10 - KIS 추정실적을 7일 stale 기준으로 순환 갱신."""
