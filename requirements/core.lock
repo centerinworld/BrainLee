@@ -1,0 +1,9 @@
+# Core version constraints shared by the operating (runtime/venv -> .venvs/py312) and research venvs.
+# Verified on Python 3.12.14 (2026-09-25): pytest 473 passed, API responses identical to 3.11.
+# Do NOT go to pandas 3.x, Python 3.14, and never `pip install -U` an existing venv in place (build a new one beside it).
+numpy==2.2.6
+pandas>=2.3,<3.0
+pykrx==1.2.9
+numba==0.61.2
+llvmlite==0.44.0
+pyarrow>=24,<26

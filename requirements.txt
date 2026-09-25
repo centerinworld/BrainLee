@@ -1,3 +1,6 @@
+# Version policy: core constraints in requirements/core.lock; exact operating freeze in requirements/py312.freeze.txt
+-c requirements/core.lock
+
 # ── Web Framework ─────────────────────────────────────────────
 fastapi
 uvicorn[standard]
@@ -18,7 +21,8 @@ pydantic
 
 # ── Korean Market Data ────────────────────────────────────────
 yfinance
-OpenDartReader
+# OpenDartReader 0.2.3: install with --no-deps --ignore-requires-python (see requirements/py312.freeze.txt header)
+# OpenDartReader
 pykrx
 finance-datareader  # installed 2026-09-20 (import name: FinanceDataReader), missing from this file until now
 
