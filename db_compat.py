@@ -617,11 +617,52 @@ def translate_sqlite_sql(sql: str) -> str:
     return _replace_qmark_placeholders(translated)
 
 
+_LEADING_SQL_COMMENT_RE = re.compile(r"^\s*(?:(?:--[^\n]*\n)|(?:/\*.*?\*/))*", re.DOTALL)
+_DML_HEAD_RE = re.compile(r"^\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b", re.IGNORECASE)
+_DML_IN_CTE_RE = re.compile(
+    r"\b(?:INSERT\s+INTO|UPDATE\s+[A-Za-z_\"\[]|DELETE\s+FROM)\b", re.IGNORECASE
+)
+
+
+def is_dml_statement(sql: str) -> bool:
+    """문장이 행을 변경하는 DML(INSERT/UPDATE/DELETE/REPLACE)인지 판정한다.
+
+    `total_changes` 는 sqlite3 에서 "커넥션 수명 동안 변경된 행 수" 이고 SELECT 는 세지 않는다.
+    psycopg 커서의 `rowcount` 는 SELECT 에서도 반환 행 수를 주므로, DML 만 골라 세지 않으면
+    차분 패턴(`before = conn.total_changes … conn.total_changes - before`)이 조용히 부풀려진다.
+    (`WITH … AS (…) INSERT/UPDATE/DELETE` 형태도 데이터를 바꾸므로 함께 잡는다.)
+    """
+    body = _LEADING_SQL_COMMENT_RE.sub("", sql or "")
+    if _DML_HEAD_RE.match(body):
+        return True
+    if body[:5].upper() == "WITH ":
+        return bool(_DML_IN_CTE_RE.search(body))
+    return False
+
+
 class PostgresCompatCursor:
-    def __init__(self, cursor: Any, id_column_cache: dict[str, bool]) -> None:
+    def __init__(
+        self,
+        cursor: Any,
+        id_column_cache: dict[str, bool],
+        change_counter: dict[str, int] | None = None,
+    ) -> None:
         self._cursor = cursor
         self._id_column_cache = id_column_cache
         self._lastrowid: int | None = None
+        # 커넥션과 공유하는 누적 변경행 카운터(total_changes). None 이면 집계하지 않는다.
+        self._change_counter = change_counter
+
+    def _count_changes(self, statement: str) -> None:
+        """DML 실행 성공 후 누적 카운터를 rowcount 만큼 증가시킨다."""
+        if self._change_counter is None or not is_dml_statement(statement):
+            return
+        try:
+            changed = int(self._cursor.rowcount)
+        except Exception:
+            return
+        if changed > 0:
+            self._change_counter["rows"] += changed
 
     def _insert_target_has_id(self, statement: str) -> bool:
         match = re.match(
@@ -714,6 +755,11 @@ class PostgresCompatCursor:
                 row = self._cursor.fetchone()
                 if row is not None:
                     self._lastrowid = row[0] if not hasattr(row, "keys") else row["id"]
+                # ⚠️ rowcount 는 반드시 INSERT **직후**에 읽어야 한다. 아래
+                # `RELEASE SAVEPOINT` 도 같은 커서로 실행되므로, 그 뒤에 읽으면 결과가
+                # 덮여 rowcount=-1 이 되고 차분 패턴이 **조용히 0** 이 된다(실측:
+                # quant_major_indicator_series INSERT … RETURNING id 16행 → release 후 -1).
+                self._count_changes(candidate)
                 self._cursor.execute("RELEASE SAVEPOINT lastrowid_probe")
                 return self
             except Exception as exc:
@@ -739,6 +785,7 @@ class PostgresCompatCursor:
             self._cursor.connection.rollback()
             logger.warning("PostgreSQL compatibility query failed: %s | %s", exc, " ".join(sql.split())[:240])
             raise
+        self._count_changes(translated)
         return self
 
     def _execute_named(self, sql: str, params: dict) -> "PostgresCompatCursor":
@@ -750,6 +797,7 @@ class PostgresCompatCursor:
         except Exception:
             self._cursor.connection.rollback()
             raise
+        self._count_changes(translated)
         return self
 
     def _execute_insert_or_replace(self, statement: str, values: Sequence[Any]):
@@ -814,6 +862,7 @@ class PostgresCompatCursor:
         except Exception:
             self._cursor.connection.rollback()
             raise
+        self._count_changes(translated)
         return self
 
     def executemany(self, sql: str, params: Sequence[Sequence[Any] | dict]):
@@ -829,6 +878,7 @@ class PostgresCompatCursor:
         except Exception:
             self._cursor.connection.rollback()
             raise
+        self._count_changes(translated)
         return self
 
     def _wrap(self, row: Sequence[Any] | None):
@@ -871,6 +921,8 @@ class PostgresCompatConnection:
             cursor.execute("SELECT set_config('statement_timeout', %s, false)", (str(max(1, round(timeout * 1000))),))
         self._row_factory = row_factory
         self._id_column_cache: dict[str, bool] = {}
+        # sqlite3 연결의 total_changes(커넥션 수명 누적 변경행 수)를 흉내내는 공유 카운터.
+        self._change_counter: dict[str, int] = {"rows": 0}
 
     @property
     def row_factory(self):
@@ -882,8 +934,24 @@ class PostgresCompatConnection:
         # retain their sqlite3.Row assignments without changing result shape.
         self._row_factory = value
 
+    @property
+    def total_changes(self) -> int:
+        """sqlite3 연결과 같은 **누적** semantics — 커넥션 수명 동안 변경된 행 수.
+
+        2026-09-25 결함 C: 이 속성이 없어 `AttributeError` 로 죽던 호출부가 최소 18곳이고,
+        그중 4곳은 `before = conn.total_changes … conn.total_changes - before` **차분 패턴**이다
+        (`scripts/ops/sync_cafe_existing_series_bridges.py` 3곳,
+        `scripts/backfill_naver_ohlcv_2015_2018.py`, `scripts/qa_dart_report_item_mapping.py`,
+        `scripts/backfill_stock_base_info_changes.py`). 절대값/커서 rowcount 로 대충 채우면
+        시끄러운 예외가 **조용히 틀린 건수**로 바뀌므로 누적 semantics 로 구현한다.
+        SELECT 는 세지 않는다(sqlite3 와 동일).
+        """
+        return self._change_counter["rows"]
+
     def cursor(self) -> PostgresCompatCursor:
-        return PostgresCompatCursor(self._connection.cursor(), self._id_column_cache)
+        return PostgresCompatCursor(
+            self._connection.cursor(), self._id_column_cache, self._change_counter
+        )
 
     def execute(self, sql: str, params: Sequence[Any] | dict | None = None) -> PostgresCompatCursor:
         return self.cursor().execute(sql, params)

@@ -1051,12 +1051,29 @@ class CollectionScheduler:
             logger.info(f"[장마감] {date.today()} 휴장일 — 스킵")
             return
 
-        # main.py의 기존 함수들 재사용 (점진적 전환)
+        # 2026-09-25 결함 B 수정: 이 자리에서 `main._save_index_history_today()` 를 호출했으나
+        # 그 함수는 런타임에 존재하지 않는다(runtime/main.py 정의 0건 — 옛 모놀리식
+        # frontend/main.py:610 에만 있음). 호출은 매 거래일 AttributeError → 아래 warning 으로
+        # 삼켜져 12거래일 연속 조용히 실패했고, 장마감 잡은 원장에 success 로 기록됐다.
+        # 지수 일봉(^KS11/^KQ11/^KS200/^KQ150) 적재는 KIS일별수집(18:00)과
+        # _startup_catchup ① 이 담당하므로 여기서는 **쓰지 않고** 당일 4종 존재 여부만 확인한다
+        # (중복 경로 제거 — 존재하지 않는 함수를 부르던 죽은 호출을 없앤다).
         try:
-            import main as _main
-            _main._save_index_history_today()
+            _idx_conn = connect_stock_db(timeout=15)
+            try:
+                _idx_have = _idx_conn.execute(
+                    "SELECT COUNT(*) FROM price_history "
+                    "WHERE stock_code IN ('^KS11','^KQ11','^KS200','^KQ150') AND date=?",
+                    (date.today().isoformat(),),
+                ).fetchone()[0]
+            finally:
+                _idx_conn.close()
+            if _idx_have < 4:
+                logger.info(
+                    f"[장마감] 당일 주요 지수 {_idx_have}/4 — 적재는 KIS일별수집(18:00)·기동 캐치업 담당"
+                )
         except Exception as e:
-            logger.warning(f"[장마감] 지수일봉: {e}")
+            logger.warning(f"[장마감] 지수일봉 확인: {e}")
 
         try:
             from database import SessionLocal

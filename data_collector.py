@@ -46,6 +46,28 @@ except ImportError:
     _USE_RL = False
 
 
+def index_supply_values(supply):
+    """KIS 지수 수급 응답 → ``(inst, frn, ind, have_supply)``.
+
+    2026-09-25 결함 A: 종전에는 `supply` 가 None(수급 조회 실패)일 때 여기서 `0.0` 을 채워
+    저장했다. 그래서 `^KS11/^KQ11` 수급 4컬럼이 2026-09-11~09-23 **9거래일 연속 0.0** 으로
+    남았고 "실제 0" 과 "수급 없음" 을 구분할 수 없게 됐다(같은 기간 원장은 `야간배치`·
+    `장중수급` 모두 success). 수급이 없으면 0.0 이 아니라 **None(→ NULL)** 을 돌려준다.
+
+    `have_supply=False` 는 호출부가 KRX/네이버 보완 경로를 계속 타게 하는 신호다
+    (결측을 0 으로 바꾸면서 보완 조건 `inst == 0 and frn == 0` 이 참이 되던 것을,
+    조건 자체를 "수급 없음 **또는** 0" 으로 넓혀 보완 시도는 유지한다).
+    """
+    if supply is None:
+        return None, None, None, False
+    inst = supply["inst_net_buy"]
+    frn = supply["frn_net_buy"]
+    ind = supply.get("ind_net_buy")
+    if ind is None:
+        ind = -(inst + frn)
+    return inst, frn, ind, True
+
+
 class DataCollector:
     def __init__(self, dart_api_key: str, base_url: str = "http://127.0.0.1:8000"):
         self.dart     = self._init_dart(dart_api_key)
@@ -401,9 +423,8 @@ class DataCollector:
                 time.sleep(1.1)
 
                 if price and price.get("value"):
-                    inst = supply["inst_net_buy"] if supply else 0.0
-                    frn  = supply["frn_net_buy"]  if supply else 0.0
-                    ind  = supply.get("ind_net_buy", -(inst+frn)) if supply else -(inst+frn)
+                    # 결측(None)을 0.0 으로 저장하지 않는다 — index_supply_values 참조.
+                    inst, frn, ind, have_supply = index_supply_values(supply)
                     now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
                     row  = {
                         "date":         now_str,
@@ -417,11 +438,15 @@ class DataCollector:
                     }
                     httpx.post(f"{self.base_url}/api/ingest/market-price",
                                json={"stock_code": symbol, "prices": [row]}, timeout=10)
-                    print(f"  [KIS지수] {name}: {price['value']:,.2f} "
-                          f"기관={inst:+,.0f} 외국인={frn:+,.0f} 개인={ind:+,.0f}")
+                    if have_supply:
+                        print(f"  [KIS지수] {name}: {price['value']:,.2f} "
+                              f"기관={inst:+,.0f} 외국인={frn:+,.0f} 개인={ind:+,.0f}")
+                    else:
+                        print(f"  [KIS지수] {name}: {price['value']:,.2f} "
+                              f"수급=결측(KIS 조회 실패) → 0으로 저장하지 않음")
 
-                    # KIS 수급이 0이면 KRX → 네이버 순으로 보완
-                    if inst == 0 and frn == 0:
+                    # KIS 수급이 없거나 0이면 KRX → 네이버 순으로 보완
+                    if (not have_supply) or (inst == 0 and frn == 0):
                         sup_done = False
                         # 1순위: KRX 투자자별
                         if _krx:

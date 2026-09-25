@@ -108,6 +108,24 @@ def _resolve_stock_code(raw_code: str, stock_name: str, conn: _sl.Connection) ->
 #  스케줄러·API 공용 헬퍼
 # ═══════════════════════════════════════════════════════
 
+def kis_tx_dup_date_floor(day_str: str):
+    """`portfolio_tx` 중복체결 방지용 날짜 하한 비교식 — **문자열 비교**.
+
+    ⚠️ `models.py` 의 `PortfolioTx.tx_date = Column(DateTime)` 은 라이브와 다르다.
+    PostgreSQL 실측 컬럼 타입은 **text** (`information_schema.columns`)이고 저장값은
+    전부 `YYYY-MM-DD[ HH:MM:SS]` ISO 접두 포맷이다(실측 min 2026-03-02 00:00:00 ~
+    max 2026-07-26 22:00:48). 그래서 이 컬럼에는 **문자열 비교 = 시간순 비교**가 성립한다.
+
+    datetime 을 넘기면 SQLAlchemy 가 timestamp 로 렌더해 PG 가
+    `operator does not exist: text >= timestamp without time zone`
+    (psycopg.errors.UndefinedFunction) 을 낸다 — INSERT 는 assignment cast 로 통과하지만
+    비교식에는 implicit cast 가 없기 때문("쓰기는 되는데 조회만 깨짐").
+    이 예외를 `sync_kis_executions()` 의 `except` 가 삼켜 0 을 반환하면, KIS 실체결이
+    있는 날 포트폴리오 평단·수량이 실계좌와 어긋난 채 굳는다(2026-09-25 결함 D).
+    """
+    return models.PortfolioTx.tx_date >= day_str
+
+
 def sync_kis_executions(db) -> int:
     """
     KIS 당일 체결내역을 조회하여 포트폴리오에 반영.
@@ -136,7 +154,7 @@ def sync_kis_executions(db) -> int:
             tx_time = ex.get("tx_time", "")
             existing_tx = db.query(models.PortfolioTx).filter(
                 models.PortfolioTx.stock_code == code,
-                models.PortfolioTx.tx_date   >= datetime.strptime(today_str, "%Y-%m-%d"),
+                kis_tx_dup_date_floor(today_str),
                 models.PortfolioTx.quantity  == qty,
                 models.PortfolioTx.price     == price,
                 models.PortfolioTx.tx_type   == tx,

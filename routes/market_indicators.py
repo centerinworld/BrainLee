@@ -67,6 +67,22 @@ def _is_kr_trading_day(d: str) -> bool:
     return _tc_is_kr_trading_day(dt)
 
 
+def _pick_supply_amount(amount, quantity):
+    """지수 수급 표시값 선택 — 금액(억원) 우선, 없으면 수량, **둘 다 NULL 이면 None(결측)**.
+
+    2026-09-25 결함 A: 종전 `round(amt or qty or 0)` 은 SQL 의 `COALESCE(...)` 와 겹쳐
+    "수급 없음"(NULL)을 0 으로 마스킹했다(`or 0` 때문에 NULL 로 복원해도 다시 0 으로 보임).
+    NULL(결측)과 실제 0(순매수 0주/0억)은 다른 사실이므로 구분해 돌려준다.
+    """
+    if amount is not None and amount != 0:
+        return round(amount)
+    if quantity is not None and quantity != 0:
+        return round(quantity)
+    if amount is None and quantity is None:
+        return None
+    return 0
+
+
 def _db():
     conn = connect_stock_db(timeout=30)
     conn.row_factory = _sl.Row
@@ -1021,9 +1037,11 @@ def get_attention_confirmation(limit: int = Query(default=50, ge=5, le=200)):
                     SELECT DISTINCT stock_code
                     FROM dart_rd_patent_signals
                     WHERE stock_code IN ({marks})
+                      AND exclude_reason IS NULL
                       AND rcept_dt >= ?
                     """,
-                    codes + [(datetime.now() - timedelta(days=45)).strftime("%Y%m%d")],
+                    # rcept_dt는 'YYYY-MM-DD' — 예전 '%Y%m%d'는 같은 해 구간이 항상 0건이었다(2026-09-24)
+                    codes + [(datetime.now() - timedelta(days=45)).strftime("%Y-%m-%d")],
                 ).fetchall()
                 disclosure_codes = {str(row["stock_code"]) for row in disclosure_rows}
             except Exception:
@@ -1725,10 +1743,10 @@ def get_index_investor(days: int = Query(default=20, ge=1, le=250)):
             rows = conn.execute(
                 """SELECT substr(date,1,10) AS d,
                           MAX(close) AS close,
-                          SUM(COALESCE(inst_net_buy,0))         AS inst_qty,
-                          SUM(COALESCE(frn_net_buy,0))          AS frn_qty,
-                          SUM(COALESCE(inst_net_buy_amt,0)/100) AS inst_amt,
-                          SUM(COALESCE(frn_net_buy_amt, 0)/100) AS frn_amt
+                          SUM(inst_net_buy)           AS inst_qty,
+                          SUM(frn_net_buy)            AS frn_qty,
+                          SUM(inst_net_buy_amt)/100.0 AS inst_amt,
+                          SUM(frn_net_buy_amt)/100.0  AS frn_amt
                    FROM price_history
                    WHERE stock_code=? AND date >= ?
                      AND strftime('%w', date) NOT IN ('0', '6')
@@ -1739,8 +1757,8 @@ def get_index_investor(days: int = Query(default=20, ge=1, le=250)):
                 {
                     "date":     str(r[0])[:10],
                     "close":    r[1],
-                    "inst_amt": round(r[4] or r[2] or 0),
-                    "frn_amt":  round(r[5] or r[3] or 0),
+                    "inst_amt": _pick_supply_amount(r[4], r[2]),
+                    "frn_amt":  _pick_supply_amount(r[5], r[3]),
                 }
                 for r in rows
                 if _is_kr_trading_day(str(r[0])[:10])  # 공휴일 제외
