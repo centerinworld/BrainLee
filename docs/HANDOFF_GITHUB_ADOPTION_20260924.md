@@ -801,7 +801,7 @@ S0(보안, 사용자 결정) → S1-1(python-multipart·starlette) → S6(커밋
 | shadow A안 적용 | ⏳ 백엔드 재시작 필요(`.env`는 반영됨) |
 | Cloudflare Access 재확인 | ⏳ 실측상 미적용 |
 | 새 스케줄러 잡 적용 | ⏳ 백엔드 재시작 필요 |
-| py312b 전환 | ⏳ 미실행(승인·실행 대기) |
+| py312b 전환 | ✅ 완료(사용자 실행: `venv`→`.venvs/py312b` 링크 22:51, 23:46 재시작 프로세스가 py312b 로드 확인). 이후 `cryptography` 48.0.1→50.0.0 추가 적용(임시 환경 시험 후, pytest 525·라우트 474·pip check 통과) — **재시작 후 반영**. 남은 감사 3건: cryptography 구버전 분(재시작 전 프로세스), curl_cffi 0.13.0(yfinance <0.14 요구로 유지) |
 | R3 플래그 켤지 | ⏳ 사용자 결정(기본 꺼짐) |
 | R6 enforce 여부 | ⏳ 사용자 결정(기본 shadow, 근거 약함) |
 | momentum·peak 원장 오염 수정 | ⏳ 사용자 결정 필요(미러링 경로 수정 범위) |
