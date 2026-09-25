@@ -36,9 +36,9 @@ CORPORATE_ACTION_CLASSES = ("confirmed_corporate_action", "corporate_action_pend
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     conn = connect_primary_db(timeout=900)
-    fac = pd.DataFrame([tuple(r) for r in conn.execute("SELECT * FROM strategy_feature_snapshot_pit_v2").fetchall()],
+    fac = pd.DataFrame([tuple(r) for r in conn.execute("SELECT * FROM strategy_feature_snapshot_rebuild_v4_20260925").fetchall()],
                        columns=[r[0] for r in conn.execute(
-                           "SELECT column_name FROM information_schema.columns WHERE table_name='strategy_feature_snapshot_pit_v2' ORDER BY ordinal_position").fetchall()])
+                           "SELECT column_name FROM information_schema.columns WHERE table_name='strategy_feature_snapshot_rebuild_v4_20260925' ORDER BY ordinal_position").fetchall()])
     fac.to_parquet(OUT / "factors.parquet")
     codes = sorted(fac.stock_code.unique())
     px = pd.DataFrame([tuple(r) for r in conn.execute(

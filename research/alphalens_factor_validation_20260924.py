@@ -17,6 +17,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import alphalens as al
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
+from alphalens_compat import tolerant_freq  # noqa: E402
 
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parents[1]
@@ -89,8 +92,9 @@ def main() -> None:
             keep = [bool(ok.at[d, a]) if (d in ok.index and a in ok.columns) else False for d, a in fac.index]
             fac = fac[keep]
         try:
-            data = al.utils.get_clean_factor_and_forward_returns(
-                fac, prices, quantiles=5, periods=PERIODS, max_loss=0.6, filter_zscore=None)
+            with tolerant_freq():
+                data = al.utils.get_clean_factor_and_forward_returns(
+                    fac, prices, quantiles=5, periods=PERIODS, max_loss=0.6, filter_zscore=None)
         except Exception as exc:  # noqa: BLE001
             rows.append({"factor": name, "error": repr(exc)[:160]})
             continue
