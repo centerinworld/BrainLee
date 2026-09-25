@@ -950,3 +950,5 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 2026-09-25(Claude) 연구 산출물 화면 반영(계획 A 1차): `routes/research_lab.py` 신설(읽기 전용 `/api/research/factor-validation`·`/quantstats`, research_outputs 파일만 읽음, `main.py` 등록), 전략센터에 "🔬 팩터 검증" 탭(`frontend/src/views/FactorValidationPanel.jsx`, StrategyHub.jsx 3줄). 백엔드 재시작+`npm run build` 후 반영. QuantStats 열 추가·데이터 품질 카드는 미구현.
 
 2026-09-25(Claude S0) 운영 API 무인증 인터넷 공개를 실측 확인(`/api/portfolio` 외부 200) → `security_gate.py`(터널 경유 쓰기·민감 GET에 `API_WRITE_TOKEN` 요구, 토큰 미설정 시 fail-closed)·프런트 `apiToken.js` 추가. Cloudflare Access는 사용자 설정. 적용은 재시작+`.env` 토큰+프런트 배포 후. 새 venv `.venvs/py312b`(취약점 86→19건)는 검증 완료·전환은 승인 대기.
+
+2026-09-25(Claude R1) 전략 채택 평가 완료(`research/strategy_adoption_review_20260925.py`): 백테스트 26개 전략 중 표본 외 비용 차감 초과·DSR>0.95·PBO<0.5·12개월 기대값>0을 모두 충족한 전략 0개(PBO 0.58, 초과수익 통과 5개는 근사 곡선이라 유보), 가상매매 momentum·peak는 KOSPI 대비 유의하게 열등. shadow 전환은 제안서(`research_outputs/strategy_shadow_proposal_20260925.md`)만 작성 — 사용자 승인 전 미실행. 원장 3건.

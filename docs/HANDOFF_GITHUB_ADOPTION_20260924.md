@@ -685,3 +685,11 @@ S0(보안, 사용자 결정) → S1-1(python-multipart·starlette) → S6(커밋
 | S0 보안 | 사용자 결정: **① Cloudflare Access(사용자가 대시보드에서 설정) + ② 쓰기 API 토큰**. ② 구현 완료: `security_gate.py`(터널 경유 = `Cf-Connecting-Ip`/`X-Forwarded-For` 헤더가 있는 요청만 검사, 로컬 호출은 무영향), 보호 = /api·/hs·/semiconductor-lab의 POST/PUT/PATCH/DELETE + 민감 GET(`/api/portfolio`·`/api/kis-trading`·`/api/commands`·`/api/live-orders`), 토큰 미설정 시 fail-closed(503), 프런트 `apiToken.js`(localStorage `api_write_token`, 401 시 1회 입력창). 테스트 5건. **적용은 서버 재시작 + `.env`의 `API_WRITE_TOKEN` 설정 + 프런트 배포 후.** 8011(CEO)·Access 정책은 사용자 |
 | S1-1 | `.venvs/py312b`(python-multipart 0.0.32·starlette 1.7.0·aiohttp 3.14.3·anthropic 1.8.0 등) 구축, pytest 통과, GET 242개 대조 차이 0, pip-audit 86→19건(남은 것: cryptography 48.0.1은 설치로 해소 예정, curl-cffi는 yfinance가 <0.14 요구로 보류). **전환(심볼릭 링크)은 사용자 승인 후** |
 | S2·S3·S4·S5 | 진행 중 — 아래 상태표 갱신 |
+
+### 12-5. §12 처리 결과 (2026-09-25 밤, Claude)
+| 단계 | 상태 |
+|---|---|
+| S0(§12-1 선행) | 코드 방어선 완료(토큰 게이트+프런트 토큰). **Cloudflare Access 정책은 사용자 설정 필요** — 설정·재시작·토큰(.env) 후 완전 해소 |
+| R1 전략 채택 평가 | ✅ 평가 완료. `research/strategy_adoption_review_20260925.py`(DSR·PBO CSCV 직접 구현), 결과 `research_outputs/strategy_adoption_review_20260925.md`. **백테스트 26개 중 4기준 통과 0개**(① 통과 5개는 전부 근사 곡선이라 유보, ② DSR>0.95 0개, ③ PBO 0.58). 가상매매 momentum·peak는 비용 차감 후 KOSPI 대비 유의하게 열등. 원장 3건 기록. **shadow 전환 제안서 `research_outputs/strategy_shadow_proposal_20260925.md` — 사용자 승인 대기(권고 A안)** |
+| R3~R9 | 진행 예정 |
+
