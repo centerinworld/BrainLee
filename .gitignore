@@ -84,6 +84,21 @@ research_outputs/*
 archives/
 backups/
 
+# 2026-09-25: 가상환경·로컬 상태·검증 산출물 (git status 오염 방지)
+#   `.venvs/` = 파이썬 3.12 venv 48,257 파일·1.5GB, `venv` = 그 심볼릭 링크(디렉터리 패턴 불일치)
+.venvs/
+/venv
+data_cache/
+.verification/
+agi_monitor_state.json
+telegram_agi_chat_history.json
+frontier_handoff_queue.json
+data/price_recover_dryrun_summary.json
+backup_crontab_*.txt
+hs_trade_lab/data/backfill_evidence/
+hs_trade_lab/data/daily_refresh_attempt.json
+hs_trade_lab/data/daily_refresh_verification.json
+
 # 캐시/생성 데이터 산출물 (재실행으로 재생성 가능, 커밋 불필요)
 data/us_13f_cache.json
 data/strict_generic_matrix_20260712.json
