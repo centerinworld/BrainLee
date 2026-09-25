@@ -511,6 +511,20 @@ def _sync_one_strategy(strategy: str) -> dict:
                 strategy, d["stock_name"], code, d.get("hold_days", 0), d.get("entry_date", "")
             )
             continue
+        # 2026-09-25 R1 A안(사용자 승인): VT_SHADOW_STRATEGIES에 든 전략은 신규 진입을 기록만 한다(가상 원장·실주문 모두 진입 안 함).
+        try:
+            from virtual_trade_guards import shadow_entry
+            _sc = _conn()
+            try:
+                _shadowed = shadow_entry(_sc, code, strategy, float(d.get("price") or 0) or None)
+            finally:
+                _sc.close()
+        except Exception as _e:  # 가드 자체 오류는 기존 동작을 바꾸지 않는다(fail-open)
+            logger.warning("[StockEasyAutoTrade] shadow 판정 오류(무시): %s", _e)
+            _shadowed = False
+        if _shadowed:
+            logger.info("[StockEasyAutoTrade] %s shadow(기록 전용) %s(%s)", strategy, d["stock_name"], code)
+            continue
         _upsert_trend_holding(strategy, code, d["stock_name"], d["price"], d["entry_date"])
         send_telegram(
             f"🟢 [StockEasy/{label}] 신규 편입\n{d['stock_name']}({code})\n감지: {now}",

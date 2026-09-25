@@ -6,6 +6,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import virtual_trade_guards as g
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_shadow_env(monkeypatch):
+    """운영 .env의 VT_SHADOW_STRATEGIES(momentum,peak)가 테스트에 새지 않게 한다."""
+    monkeypatch.delenv("VT_SHADOW_STRATEGIES", raising=False)
+
 
 def _conn(kospi_trend="down"):
     c = sqlite3.connect(":memory:")
@@ -74,3 +82,22 @@ def test_flags_off(monkeypatch):
     monkeypatch.setenv("VT_BREAKEVEN_STOP", "0")
     c.execute("INSERT INTO price_history VALUES ('000001', '2026-09-01', 120)")
     assert g.breakeven_exit(c, "000001", "momentum", "2026-09-01", 100.0, 99.0) is False
+
+
+def test_shadow_strategies_block_only_listed_and_log(monkeypatch):
+    logged = []
+    monkeypatch.setattr(g, "_log", lambda conn, code, strat, guard, decision, detail, price=None, kospi=None:
+                        logged.append((strat, guard, decision, price)))
+    monkeypatch.setenv("VT_SHADOW_STRATEGIES", "momentum, peak")
+    c = _conn("up")
+    r = g.check_entry(c, "005930", "momentum", 10, 1000)
+    assert r == {"allowed": False, "reasons": ["shadow_strategy: momentum 신규 진입은 기록 전용"], "shadow": True}
+    assert logged == [("momentum", "shadow_strategy", "shadow_would_block", 1000)]   # 다른 가드 로그 없음
+    assert g.check_entry(c, "005930", "v_recovery", 10, 1000)["allowed"]             # 목록 밖 전략은 그대로
+    assert g.shadow_entry(c, "005930", "peak", 900) is True and g.shadow_entry(c, "005930", "value", 900) is False
+
+
+def test_shadow_default_empty_is_noop(monkeypatch):
+    monkeypatch.delenv("VT_SHADOW_STRATEGIES", raising=False)
+    assert g.shadow_strategies() == set()
+    assert g.check_entry(_conn("up"), "005930", "momentum", 10, 1000)["allowed"]

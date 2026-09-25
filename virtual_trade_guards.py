@@ -15,6 +15,9 @@
   VT_EXPOSURE_LIMIT=1       종목당 동시 보유 상한(VT_MAX_POS_PER_STOCK, 기본 2) · 섹터 비중 상한(VT_SECTOR_CAP_PCT, 기본 35%)
   VT_BREAKEVEN_STOP=1       +VT_BREAKEVEN_ARM_PCT(기본 10)% 도달 후 매입가 이하로 내려오면 청산
   VT_ENTRY_CONFIRM=shadow   off | shadow(로그만) | enforce — 당일 등락 <+3% 진입을 기록/차단
+  VT_SHADOW_STRATEGIES=     쉼표 구분 전략 키 — 해당 전략의 **신규 진입만** 기록 전용(진입하지 않고 `virtual_guard_log`에
+                            guard='shadow_strategy', decision='shadow_would_block', 가격·KOSPI 포함 기록 → 사후 5/20/60일 수익 추적).
+                            기존 보유분 청산·실주문 경로는 건드리지 않는다. 2026-09-25 사용자 승인(R1 A안): momentum,peak. 기본값 빈 값.
 """
 from __future__ import annotations
 
@@ -41,6 +44,21 @@ ENTRY_CONFIRM_MIN_PCT = 3.0
 REGIME_EXEMPT = {"v_recovery", "value"}
 # 공통 손절 제외(자체 청산 로직 보유, 기존 _auto_hardstop_all_strategies 정책과 동일)
 BREAKEVEN_EXEMPT = {"gpt_v18"}
+
+
+def shadow_strategies() -> set[str]:
+    return {x.strip() for x in os.getenv("VT_SHADOW_STRATEGIES", "").split(",") if x.strip()}
+
+
+def shadow_entry(conn, code: str, strategy: str, price: float | None) -> bool:
+    """True면 이 전략의 신규 진입은 기록 전용(shadow)이다 — 호출자는 진입하지 않는다. 기록은 여기서 남긴다(하루 1건 중복 제거)."""
+    strategy = str(strategy or "")
+    if strategy not in shadow_strategies():
+        return False
+    _log(conn, str(code), strategy, "shadow_strategy", "shadow_would_block",
+         f"shadow_strategy: {strategy} 신규 진입 기록 전용 (R1 채택 기준 미달, 2026-09-25 승인)",
+         price=price, kospi=_kospi_snapshot(conn))
+    return True
 
 
 def _entry_confirm_mode() -> str:
@@ -134,6 +152,10 @@ def check_entry(conn, code: str, strategy: str, qty: int, price: float) -> dict:
     """신규 가상매수 허용 여부. {'allowed': bool, 'reasons': [...]}"""
     reasons: list[str] = []
     code, strategy = str(code), str(strategy or "")
+
+    # 0) 전략 shadow(R1 승인): 신규 진입 기록 전용. 다른 가드 판정·로그는 건너뛴다(중복 방지).
+    if shadow_entry(conn, code, strategy, price):
+        return {"allowed": False, "reasons": [f"shadow_strategy: {strategy} 신규 진입은 기록 전용"], "shadow": True}
 
     # 1) 시장국면 필터
     if REGIME_FILTER() and strategy not in REGIME_EXEMPT:

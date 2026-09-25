@@ -9,6 +9,14 @@ spec = importlib.util.spec_from_file_location("fill_guard_log_outcomes", ROOT / 
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_shadow_env(monkeypatch):
+    """운영 .env의 VT_SHADOW_STRATEGIES(momentum,peak)가 테스트에 새지 않게 한다."""
+    monkeypatch.delenv("VT_SHADOW_STRATEGIES", raising=False)
+
 
 def test_forward_returns_only_elapsed_horizons():
     closes = [101.0] * 4 + [110.0] + [90.0] * 14 + [120.0]      # 5일째 110, 20일째 120, 60일째 없음
