@@ -39,7 +39,9 @@ def strategy_returns(g: pd.DataFrame) -> tuple[pd.Series, dict]:
         return pd.Series(dtype=float), {}
     r = pd.concat(parts).sort_index()
     return r[~r.index.duplicated()], {"periods": len(parts), "engine_periods": sum(s == "engine" for s in srcs),
-                                       "reconstructed_periods": sum(s != "engine" for s in srcs)}
+                                       "reconstructed_periods": sum(s != "engine" for s in srcs),
+                                       "assumed_capital_periods": sum(s == "realized_pnl_assumed_100m" for s in srcs),
+                                       "step_curve_periods": sum(s == "realized_pnl" for s in srcs)}
 
 
 def main() -> None:
@@ -55,6 +57,11 @@ def main() -> None:
             rows.append({"strategy": strat, "note": "too few return days", **meta}); continue
         rets[strat] = r
         b = bm.reindex(r.index).fillna(0)
+        if meta.get("assumed_capital_periods"):
+            # capital was ASSUMED (100M) for these periods, so CAGR/MDD/Sharpe are not trustworthy - report, do not rank
+            rows.append({"strategy": strat, "start": str(r.index.min().date()), "end": str(r.index.max().date()), "days": len(r), **meta,
+                         "note": "assumed_capital: risk metrics excluded"})
+            continue
         g_ = qs.stats.greeks(r, b)
         rows.append({
             "strategy": strat, "start": str(r.index.min().date()), "end": str(r.index.max().date()), "days": len(r), **meta,

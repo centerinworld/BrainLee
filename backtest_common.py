@@ -1785,7 +1785,22 @@ def _save_result(run_id: str, result: dict):
         result.get('summary', ''),
         run_id,
     ))
-    conn.commit(); conn.close()
+    conn.commit()
+    # 2026-09-25 (HANDOFF §10 P1-7): keep the daily equity curve (engine curve if the engine produced one, else a trade-log +
+    # price mark-to-market reconstruction). Never let curve storage break saving the result itself.
+    try:
+        import backtest_equity
+        meta = conn.execute("SELECT start_date,end_date,per_stock,max_pos FROM backtest_runs WHERE run_id=?", (run_id,)).fetchone()
+        if meta:
+            backtest_equity.save_run_curve(conn, run_id, result, meta[0], meta[1], meta[2] or 1e7, meta[3] or 10)
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        logging.getLogger(__name__).warning("equity curve not stored for %s: %s", run_id, exc)
+    conn.close()
 
 
 # ══════════════════════════════════════════════════════════════

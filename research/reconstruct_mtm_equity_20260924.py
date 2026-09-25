@@ -100,7 +100,7 @@ def main(all_runs: bool) -> None:
         stats["mtm_runs"] += 1
     ids = sorted({r[0] for r in out_rows})
     for i in range(0, len(ids), 200):
-        conn.execute("DELETE FROM backtest_equity_curve WHERE run_id = ANY(?)", (ids[i:i + 200],))
+        conn.execute("DELETE FROM backtest_equity_curve WHERE run_id = ANY(?) AND source='mtm_reconstructed'", (ids[i:i + 200],))
     conn.executemany("INSERT INTO backtest_equity_curve(run_id,date,equity,source) VALUES(?,?,?,?)", out_rows)
     conn.commit()
     print(dict(stats), "rows", len(out_rows))

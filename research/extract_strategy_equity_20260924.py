@@ -17,7 +17,7 @@ conn = connect_primary_db(timeout=600)
 rows = conn.execute("""SELECT s.strategy, m.period_label, sp.run_id, b.start_date, b.end_date, e.date, e.equity, e.source
   FROM selected_run_registry s JOIN backtest_run_set_members m ON m.suite_hash=s.run_hash
   JOIN backtest_run_specs sp ON sp.run_hash=m.run_hash JOIN backtest_runs b ON b.run_id=sp.run_id
-  JOIN backtest_equity_curve e ON e.run_id=sp.run_id WHERE s.report_type='strategy_center' ORDER BY 1,4,6""").fetchall()
+  JOIN backtest_equity_curve_best_v e ON e.run_id=sp.run_id WHERE s.report_type='strategy_center' ORDER BY 1,4,6""").fetchall()
 df = pd.DataFrame([tuple(r) for r in rows], columns=["strategy", "period", "run_id", "start", "end", "date", "equity", "source"])
 out = ROOT / "data_cache" / "research"; out.mkdir(parents=True, exist_ok=True)
 df.to_parquet(out / "strategy_period_equity.parquet")

@@ -45,7 +45,7 @@ def exit_date_and_pnl(t: dict):
 def main(rebuild: bool) -> None:
     conn = connect_primary_db(timeout=900)
     native_script(conn, DDL)
-    have = set() if rebuild else {r[0] for r in conn.execute("SELECT DISTINCT run_id FROM backtest_equity_curve").fetchall()}
+    have = set() if rebuild else {r[0] for r in conn.execute("SELECT DISTINCT run_id FROM backtest_equity_curve WHERE source IN ('engine','realized_pnl','realized_pnl_assumed_100m')").fetchall()}
     stats = defaultdict(int)
     rows_out = []
     for run_id, start, end, per_stock, max_pos, tj in conn.execute(
@@ -86,10 +86,12 @@ def main(rebuild: bool) -> None:
         if end and str(end)[:10] > max(pnl_by_day):
             rows_out.append((run_id, str(end)[:10], eq, src))
         stats["realized_pnl"] += 1
-    if rebuild:
-        conn.execute("DELETE FROM backtest_equity_curve")
+    import backtest_equity
+    backtest_equity.ensure_schema(conn)          # PK (run_id, source, date) + best-source view
+    if rebuild:  # only the sources THIS script owns; mtm_reconstructed (reconstruct_mtm_equity_20260924.py) is left alone
+        conn.execute("DELETE FROM backtest_equity_curve WHERE source IN ('engine','realized_pnl','realized_pnl_assumed_100m')")
     conn.executemany("INSERT INTO backtest_equity_curve(run_id,date,equity,source) VALUES(?,?,?,?) "
-                     "ON CONFLICT (run_id,date) DO UPDATE SET equity=excluded.equity, source=excluded.source", rows_out)
+                     "ON CONFLICT (run_id,source,date) DO UPDATE SET equity=excluded.equity", rows_out)
     conn.commit()
     print(dict(stats), "rows", len(rows_out))
 
