@@ -126,6 +126,11 @@ CREATE TABLE IF NOT EXISTS price_verification_state (
  input_fingerprint TEXT NOT NULL,verified_at TEXT NOT NULL,
  PRIMARY KEY(stock_code,event_date,external_source)
 );
+CREATE TABLE IF NOT EXISTS price_coverage_gap_reviewed (
+ stock_code TEXT NOT NULL, event_date TEXT NOT NULL, previous_date TEXT NOT NULL,
+ reason TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '', reviewed_at TEXT NOT NULL,
+ PRIMARY KEY(stock_code,event_date,previous_date)
+);
 CREATE TABLE IF NOT EXISTS price_ingestion_quarantine (
  batch_id TEXT PRIMARY KEY, stock_code TEXT NOT NULL, source TEXT NOT NULL,
  reason TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL

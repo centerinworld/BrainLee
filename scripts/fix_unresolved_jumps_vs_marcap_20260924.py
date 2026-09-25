@@ -64,7 +64,7 @@ def main(apply: bool) -> None:
     cmp["near_t"] = [(c, d) in tset for c, d in zip(cmp.code, cmp.date)]
     off_runs = cmp[cmp.off].groupby("run").agg(has_t=("near_t", "any"), n=("near_t", "size"))
     # Long off-runs are a legitimately different basis for that code (adjusted history), not a glitch.
-    good = off_runs[off_runs.has_t & (off_runs.n <= 60)].index
+    good = off_runs[off_runs.has_t & (off_runs.n <= 600)].index
     sel = cmp[cmp.off & cmp.run.isin(good)][["code", "date"]]
     win = sel.merge(mm, on=["code", "date"]).merge(tgt[["code", "date"]], on=["code", "date"], how="left", indicator=True)
     win = win[win["_merge"] == "left_only"].drop(columns="_merge")
@@ -84,6 +84,9 @@ def main(apply: bool) -> None:
              WHERE (ph.open<>m.open OR ph.high<>m.high OR ph.low<>m.low OR ph.close<>m.close)
                AND (m.is_t OR ABS(ph.close/m.close-1)>0.10)"""
     n = conn.execute(f"SELECT count(*) {frm}").fetchone()[0]
+    if "--profile" in sys.argv:
+        for r in conn.execute(f"SELECT DATE(ph.created_at), count(*) {frm} GROUP BY 1 ORDER BY 2 DESC LIMIT 8").fetchall():
+            print("created", tuple(r))
     print({"rows_to_fix": n, "apply": apply})
     if apply and n:
         run_id = f"unresolved_jump_marcap_fix_{datetime.now().strftime('%Y%m%d_%H%M%S')}"

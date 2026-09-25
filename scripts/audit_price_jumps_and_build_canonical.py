@@ -153,6 +153,13 @@ def run(conn: sqlite3.Connection) -> dict:
         if not (code.isdigit() and len(code) == 6):
             classification, usable = "non_equity_symbol", 0
             evidence = "Index/macro symbol mixed into price_history"
+        elif row["quality_status"] == 'coverage_gap' and (gap_review := conn.execute(
+                "SELECT reason,evidence FROM price_coverage_gap_reviewed WHERE stock_code=? AND event_date=? AND previous_date=?",
+                (code, event_date, row["previous_date"])).fetchone()):
+            # 2026-09-24: a gap already investigated (suspension/delisting/no source anywhere) is recorded in
+            # price_coverage_gap_reviewed so it is not re-queued for backfill on every audit. Still not return-usable.
+            classification, usable = "coverage_gap_reviewed", 0
+            evidence = f"{gap_review[0]}: {gap_review[1]}"
         elif row["quality_status"] in ('coverage_gap','invalid_ohlcv','invalid_previous_price','quarantined_basis'):
             classification, usable = row["quality_status"], 0
             evidence = "Structural price safety check; quote agreement cannot override"
