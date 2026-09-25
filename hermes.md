@@ -976,3 +976,5 @@ created_at='2026-07-12 07:21:53' & date<2019 & marcap과 OHLC 상이한 **827,72
 - (2026-09-25) 계획 A 1차 구현: 팩터 검증 탭 + /api/research/* 라우터(읽기 전용). 빌드·API 단위 확인 완료, 브라우저 렌더 확인은 재시작 후 필요. 남음: QuantStats 열(성과 매트릭스), 가격 무결성 카드, 종목 상세 기업행위 마커.
 
 - (2026-09-25 밤, S5) **"추가 계획 A"와 실제 구현 범위 정정**: 계획 A 1차가 이미 구현·배포돼 있다 — `routes/research_lab.py`(`/api/research/factor-validation`·`quantstats`·`price-integrity`, 읽기 전용), `FactorValidationPanel.jsx`(팩터 IC·이벤트 스터디·QuantStats 표), `PriceIntegrityCard.jsx`(데이터 라우팅 탭 상단). 미구현: 성과 매트릭스 표에 QuantStats 열, 종목 상세 기업행위 타임라인, 텐배거 문구, 시스템 런타임 표시. **검토 전 노출 차단**: 탭은 `localStorage.research_lab_tab='1'`일 때만 표시(가림), `/api/research/*`는 터널 경유 시 `API_WRITE_TOKEN` 필요(`security_gate.py`). 검토 후 플래그·게이트 제거.
+
+- (2026-09-25 밤) §12 R2~R9·shadow A안 처리 완료 — HANDOFF §14. 재시작·Cloudflare Access 재확인·py312b 전환·R3 플래그·momentum/peak 원장 수정 범위가 사용자 결정 대기.

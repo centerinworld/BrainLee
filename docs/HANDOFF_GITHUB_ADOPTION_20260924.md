@@ -691,7 +691,7 @@ S0(보안, 사용자 결정) → S1-1(python-multipart·starlette) → S6(커밋
 |---|---|
 | S0(§12-1 선행) | ② 코드 방어선 **적용·실측 검증 완료**(2026-09-25 22:45, 토큰 `.env` 설정·백엔드 재시작·프런트 빌드 후 외부 실측: `/api/portfolio`·`/api/research/quantstats`·무토큰 POST 모두 401, 로컬 직접 호출 200). ⏳ ① Cloudflare Access 정책은 사용자 설정 필요 |
 | R1 전략 채택 평가 | ✅ 평가 완료. `research/strategy_adoption_review_20260925.py`(DSR·PBO CSCV 직접 구현), 결과 `research_outputs/strategy_adoption_review_20260925.md`. **백테스트 26개 중 4기준 통과 0개**(① 통과 5개는 전부 근사 곡선이라 유보, ② DSR>0.95 0개, ③ PBO 0.58). 가상매매 momentum·peak는 비용 차감 후 KOSPI 대비 유의하게 열등. 원장 3건 기록. **shadow 전환 제안서 `research_outputs/strategy_shadow_proposal_20260925.md` — 사용자 승인 대기(권고 A안)** |
-| R3~R9 | 진행 예정 |
+| R2~R9 | ✅ 처리 완료(§14) — 결론: 채택 기준을 통과한 전략·모델 없음, 낙폭 완화·감시 인프라 구축 |
 
 ---
 
@@ -749,4 +749,63 @@ S0(보안, 사용자 결정) → S1-1(python-multipart·starlette) → S6(커밋
 - `cloudflared tunnel run --token …`이 프로세스 인자에 토큰을 노출한다(`ps`로 같은 계정에서 조회 가능). 토큰 파일/환경변수 방식으로 바꾸는 것을 권고(미수정, 서비스 정의는 사용자 영역).
 - 가드 로그의 기존 8건은 `guard='entry'`·가격 없음(소급 불가). 새 기록부터 사후 성과가 채워진다.
 - R1의 표본 외 구간은 1.3년, 가상매매 표본은 5개월이다(통계력 한계는 R1 문서에 명시).
+
+---
+
+## 14. §12 R2~R9·shadow 전환 처리 (2026-09-25 밤, Claude) — §13 형식
+
+기준 시점 2026-09-25 23:30. 사용자 승인: shadow 전환 A안(momentum·peak), 남은 항목 진행.
+
+### 14-1. 사용자 확인 사항 (실측)
+| 항목 | 결과 |
+|---|---|
+| Cloudflare Access(① S0) | **사용자는 설정 완료라고 했으나 실측상 미적용**: `https://stock.leanguy.cloud/`가 로그인(302) 없이 200, `/api/portfolio`는 원본 서버의 401(`api_token_required`, 우리 게이트), `https://api.newsinfo.cloud/health` 200. 설정한 애플리케이션의 호스트명·정책(Allow/Bypass)·배포 여부 재확인 필요. ②(토큰 게이트)만 유효 |
+| shadow A안 | 코드+`.env` 반영 완료, **백엔드 재시작 후 적용** |
+
+### 14-2. 코드·설정 변경
+| # | 대상 | 변경 | 검증 | 롤백 |
+|---|---|---|---|---|
+| 1 | `virtual_trade_guards.py`, `stockeasy_autotrade.py`, `.env`(`VT_SHADOW_STRATEGIES=momentum,peak`) | **shadow A안**: 목록 전략의 신규 진입은 진입하지 않고 `virtual_guard_log`에 `guard='shadow_strategy'`·`shadow_would_block`·가격·KOSPI 기록. 두 진입 경로 모두 적용 — API `trend_buy`(`_paper_buy_gate`→`check_entry`)와 **스케줄러 StockEasy 동기화(`_upsert_trend_holding`, 기존엔 가드를 거치지 않던 경로)**. 기존 보유분 청산·실주문 경로 불변 | 테스트, PG 실측(2회 호출→1행), 목록 밖 전략 무영향 | `.env`의 줄 삭제 후 재시작 |
+| 2 | `virtual_trade_guards.py` | **R3** 기본 꺼짐 플래그 `VT_MIN_MCAP_EOK`(권고 1000)·`VT_REENTRY_COOLDOWN_DAYS`(권고 28) | 테스트 | 미설정=꺼짐 |
+| 3 | `virtual_trade_guards.py`, `scripts/compute_virtual_account_equity_20260925.py` | **R6** 가상 계좌 낙폭 규칙(-10% 격번 축소, -15% 중단, KOSPI>MA60 & -5% 이내에서만 해제), `VT_ACCOUNT_DD_GUARD=shadow`(기본, 기록만)/enforce/off | 테스트, 평가액 재구성(83영업일, 최대 낙폭 -3.4% → 발동 0회) | `off` |
+| 4 | `scripts/measure_execution_gap_20260925.py` | **R7** 신호-체결 시점 괴리 측정 → `execution_slippage_log`, 진입(매수)만 판정·가정 슬리피지 대비 +0.2%p 초과·n≥20이면 텔레그램 | 실행: 54건, **진입 평균 역방향 괴리 +0.29% vs 가정 0.13%**(n=19, 경고 미발동) | 잡 제거 |
+| 5 | `scripts/strategy_decay_monitor_20260925.py`, `routes/research_lab.py` | **R8** 월 1회 감쇠 감시 + `/api/research/strategy-decay` | 실행: `v_gc` 3M -25.1% < 하위 5% -17.7% **경고 1건(텔레그램 발송됨)** | 잡 제거 |
+| 6 | `scripts/data_contract_audit_20260925.py` | **R9** 일일 계약 점검 6종 → `data_contract_check_log`, 실패 시 텔레그램+`data_fix_log` | 첫 실행: default_missing ok, **cfs_ofs_mixed_ttm 15.25%(warn, 426/2,793종목)**, snapshot_lookahead 1.99%(임계 warn 2·fail 4), unit_inversion 0.54%(15/2,765), date_format 0, close_verify ok | 잡 제거 |
+| 7 | `scheduler.py` | 잡 추가: `가드사후성과`(20:50)에 **가상계좌평가·실행괴리 측정** 포함, `전략감쇠감시`(매월 첫 영업일 06:30), `데이터계약점검`(07:10) | 컴파일·pytest 525 | 등록 줄·함수 삭제 |
+| 8 | `research/*_20260925.py` | R2 `core_satellite`, R3 `turnover_rules`, R4 `extract_alpha_sources`+`alpha_sources`, R5 `lightgbm_ranking`, R6 `account_dd_rule` | 아래 14-3 | 파일 삭제 |
+| 9 | 연구 venv(`research_venv312`) | `lightgbm 4.7.0`(MIT) 설치 — 운영 venv에는 미설치 | 학습 확인 | pip uninstall |
+
+### 14-3. 연구 결과 (모두 시스템 검증 결과이며 투자 권유가 아님)
+| 단계 | 결론 |
+|---|---|
+| R1 보강 | 재구성 곡선을 엔진 MDD로 검증: golden_cross·contract_momentum 6구간 평균 절대 차이 0.8%p(최대 3.7%p) → 신뢰. 그래도 DSR 0.096/0.331로 **여전히 채택 0개**. earnings_conviction·se_momentum은 검증 불가, turnaround는 계단 곡선이라 유보. 엔진 재실행은 이 엔진들이 일별 곡선을 산출하지 않아(거래 목록만 반환) 엔진 수정이 필요해 보류 |
+| R3 회전율 | 시총을 **시점 정합(신호일 직전 스냅샷)**으로 쓰자 결과가 뒤집힘 — 최신 시총을 쓰면 생존·성장 편향으로 시총 하한이 과대평가됐음(시행착오). 108개 규칙 중 학습·검증 CAGR 개선+Sharpe 유지+급락 창 악화 없음을 모두 충족한 것 23개, 모두 시총 ≥1000억 포함. 단독 규칙은 모두 미채택(학습 구간 개선 없음). 가드 플래그 2개는 기본 꺼짐 |
+| R4 알파 원천 | 직교화(시총·수익률·52주고점·거래량 제거) 후 통과: **sue_op(영업이익 서프라이즈 대용) IC 0.026~0.032, 20D·60D 모두**, sue_ni(20D), borrow_pct(음의 신호), short_ratio_20d(해석 불확실 — 금지 기간 시장조성 헤지 흐름 가능성). credit_chg는 검증 구간 약화, credit_ratio는 직교화 후 소멸. 컨센서스 이력 27개월·EPS 리비전 2.7개월(`forward_estimate_snapshots`의 snapshot_date는 2026-07~09 201종목뿐)로 판정 불가. 원장 8건 |
+| R5 LightGBM | walk-forward(43개월) IC 0.159 > 3팩터 합성 0.127 > 기존 model_score -0.079(음수). 그러나 상위 20% 동일가중 롱온리는 KOSPI 대비 월 -1.6%p(비용 차감 -2.0%p) — R1 ① 미충족, 합성과 차이 작아 **미채택**. 저변동성이 중요도 29% |
+| R2 코어-위성 | 위성 비중 20/30/50%: 일관된 효과는 **MDD 완화**뿐(v11 -34.6→-23.5%@50%, 합성 -22.2→-9.0%). 엔진 전략 위성의 초과수익은 정보비율 0.02~0.14로 무의미, 합성은 음. **위성 0%(또는 실험 소액 가상) 유지 권고** |
+| R6 계좌 낙폭 | 가상 원장(83일)은 임계 미도달로 검증 불가 → 대용 포트폴리오로 대체: R3 규칙과 함께 쓰면 검증 CAGR +2.8→+19.1%이나 **전체 MDD -40.8→-44.5%로 악화·급락 창 악화**(반등 놓침) → shadow만, enforce는 사용자 결정 |
+| R7 | live_orders 55건은 전부 PAPER(모의)라 실제 브로커 슬리피지는 측정 불가. 대신 신호-체결 시점 괴리 측정 |
+
+### 14-4. 새로 발견한 결함·주의
+- **`momentum`·`peak` 가상 현금 계좌가 오염됨**: 매도 기록만 있고 매수 기록이 없어 잔고가 429.9M·178.5M으로 부풀려짐(계좌가 2026-08-18에 생성되기 전 미러링된 포지션이 청산되며 대금만 입금). 총평가액 계산에서 제외했고(`excluded` 컬럼), 원인 수정(미러링 경로의 원장 기록)은 미실시 — shadow 전환으로 신규 발생은 멈춤.
+- 가상 원장의 일부 매수(v_gc 등)는 임시 음수 `holding_id`와 빈 종목코드로 기록돼 이후 매도(실제 ID)와 연결되지 않음 → 수량 일치 매칭으로 복원(오탐 방지).
+- 문서 §12-2 R4의 "forward_estimate_snapshots 2025-04~"는 `estimate_date` 기준이며 스냅샷 이력은 2026-07~09.
+- 스케줄러가 시작하는 새 잡(월간 스냅샷·가드사후성과·전략감쇠·데이터계약)은 **백엔드 재시작 후** 동작. 재시작 전까지 수동 실행 가능.
+
+### 14-5. DB 변경 (추가 방식, 삭제 없음)
+신규 테이블(전부 DEFAULT 명시): `virtual_account_equity_daily`(83행), `virtual_strategy_equity_daily`(17전략×83일), `execution_slippage_log`(54행), `strategy_decay_check`, `data_contract_check_log`. 기존 `virtual_guard_log`는 §13의 9컬럼에 더해 사용. `signal_experiment_ledger` +8행(R4 7 + R5 1), R1 행 1건 보강(UPDATE). `data_fix_log`에는 감사 실패 시에만 기록.
+
+### 14-6. 사용자 조치 상태
+| 조치 | 상태 |
+|---|---|
+| shadow A안 적용 | ⏳ 백엔드 재시작 필요(`.env`는 반영됨) |
+| Cloudflare Access 재확인 | ⏳ 실측상 미적용 |
+| 새 스케줄러 잡 적용 | ⏳ 백엔드 재시작 필요 |
+| py312b 전환 | ⏳ 미실행(승인·실행 대기) |
+| R3 플래그 켤지 | ⏳ 사용자 결정(기본 꺼짐) |
+| R6 enforce 여부 | ⏳ 사용자 결정(기본 shadow, 근거 약함) |
+| momentum·peak 원장 오염 수정 | ⏳ 사용자 결정 필요(미러링 경로 수정 범위) |
+
+### 14-7. 커밋
+`620e35d` shadow · `d4c938d` R3 · `f866be9` R4 · `4fc05ae` R5 · `b21f1e8` R2 · `ab00377` R6 · `41845b1` R7 · `572ee57` R8 · `01aa928` R9 · `043f6ef` R1 곡선 신뢰 기준. (푸시 안 함, `research_outputs/*.md·csv`는 .gitignore 대상)
 
