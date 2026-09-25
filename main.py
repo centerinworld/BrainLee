@@ -35,6 +35,9 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="주식 분석 백엔드 (프로젝트 안티그래비티)")
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
+# 2026-09-25 (§11 S0): 터널(인터넷) 경유 쓰기·민감 API는 API_WRITE_TOKEN 필요. 로컬 호출은 영향 없음. security_gate.py 참고.
+from security_gate import api_token_gate as _api_token_gate
+app.middleware("http")(_api_token_gate)
 app.mount("/hs", hs_trade_lab_app)
 app.mount("/semiconductor-lab", semiconductor_value_lab_app)
 
@@ -178,6 +181,7 @@ from routes.us_13f            import router as _us_13f_router
 from routes.company_intelligence import router as _company_intelligence_router
 from routes.investment_decisions import router as _investment_decisions_router
 from routes.task_approvals import router as _task_approvals_router
+from routes.research_lab import router as _research_lab_router
 from routes.insider            import router as _insider_router
 from routes.notices            import router as _notices_router
 from routes.antigravity_status import router as _antigravity_status_router
@@ -229,6 +233,8 @@ app.include_router(_investment_decisions_router, prefix="/api/investment-decisio
 # 2026-09-24: 사람 승인 대기 큐(리스크게이트 화면 "작업 승인 대기" 탭).
 # LIVE 주문 경로와 무관 — task_approvals/task_approval_events 에만 기록한다.
 app.include_router(_task_approvals_router, prefix="/api/task-approvals", tags=["task-approvals"])
+# 2026-09-25: 연구 산출물(research_outputs) 읽기 전용 조회 — 전략센터 "🔬 팩터 검증" 탭. DB 쓰기 없음.
+app.include_router(_research_lab_router, prefix="/api/research", tags=["research-lab"])
 # 2026-08-26: routes/insider.py·routes/notices.py는 완성되어 있었으나 여기 등록이 빠져
 # 개별종목 페이지의 임원·대주주 지분변동/공지사항 패널이 항상 404였음 — 등록 누락 수정.
 app.include_router(_insider_router,  prefix="/api/insider",  tags=["insider"])

@@ -8,6 +8,8 @@
 import React from 'react';
 import { API } from '../utils';
 import BacktestView from './BacktestView';
+import FactorValidationPanel, { QuantStatsPanel } from './FactorValidationPanel';
+import PriceIntegrityCard from './PriceIntegrityCard';
 import Screener from './Screener';
 
 const STRATEGY_HUB_STRATEGIES = [
@@ -567,6 +569,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
 	            { key:'continuous', label:'💰 1억원 연속운용' },
 	            { key:'desc',   label:'📘 전략 설명' },
 	            { key:'ledger', label:'🧪 검증 이력' },
+	            { key:'factor', label:'🔬 팩터 검증' },
 	            { key:'data-lab', label:'🧭 데이터 라우팅' },
 	          ].map(t => (
             <button key={t.key}
@@ -989,9 +992,11 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
 	        )}
 
 	        {hubTab === 'ledger' && <ExperimentLedgerPanel />}
+	        {hubTab === 'factor' && <><FactorValidationPanel /><QuantStatsPanel /></>}
 
         {hubTab === 'data-lab' && (
           <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+            <PriceIntegrityCard />
             <div className="glass-panel" style={{padding:'0.85rem 1rem',border:'1px solid rgba(45,212,191,0.28)'}}>
               <div style={{display:'flex',justifyContent:'space-between',gap:'0.75rem',alignItems:'center',flexWrap:'wrap'}}>
                 <div>
