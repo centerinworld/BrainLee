@@ -1340,6 +1340,12 @@ class CollectionScheduler:
         logger.info(f"[가드사후성과] {res.stdout.strip()[-300:]}")
         if res.returncode != 0:
             raise RuntimeError(f"가드 사후 성과 실패(rc={res.returncode}): {res.stdout.strip()[-200:]}{res.stderr.strip()[-200:]}")
+        # R6: 가상 계좌 일별 총평가액·낙폭 상태 갱신(계좌 낙폭 가드 입력) — 사후 성과와 같은 시각에 함께 수행
+        res = subprocess.run([py, "scripts/compute_virtual_account_equity_20260925.py"], capture_output=True, text=True, timeout=900,
+                             cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime")
+        logger.info(f"[가상계좌평가] {res.stdout.strip()[-200:]}")
+        if res.returncode != 0:
+            raise RuntimeError(f"가상 계좌 평가액 갱신 실패(rc={res.returncode}): {res.stdout.strip()[-200:]}{res.stderr.strip()[-200:]}")
 
     def _loop_kis_forward_estimates(self) -> None:
         """영업일 20:10 - KIS 추정실적을 7일 stale 기준으로 순환 갱신."""

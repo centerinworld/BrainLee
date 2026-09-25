@@ -17,6 +17,9 @@
   VT_ENTRY_CONFIRM=shadow   off | shadow(로그만) | enforce — 당일 등락 <+3% 진입을 기록/차단
   VT_MIN_MCAP_EOK=0         (R3, 기본 꺼짐) 시총이 이 값(억원) 미만이면 신규 진입 차단 — 슬리피지 0.4~0.8%/편도 구간 회피. 연구 권고 1000
   VT_REENTRY_COOLDOWN_DAYS=0 (R3, 기본 꺼짐) 같은 종목을 청산한 뒤 이 일수(달력일) 이내 재진입 차단. 연구 권고 28(≈20거래일)
+  VT_ACCOUNT_DD_GUARD=shadow (R6) off | shadow(기록만, 기본) | enforce — 가상 계좌 총평가액이 60일 고점 대비 -10%면 신규 진입 격번(50% 축소),
+                            -15%면 중단(KOSPI>MA60 & 낙폭 -5% 이내에서만 해제). 상태는 `virtual_account_equity_daily`(scripts/compute_virtual_account_equity_20260925.py).
+                            연구(account_dd_rule_20260925.md) 결과가 일관되지 않아(MDD 개선 불명확) enforce는 사용자 결정.
   VT_SHADOW_STRATEGIES=     쉼표 구분 전략 키 — 해당 전략의 **신규 진입만** 기록 전용(진입하지 않고 `virtual_guard_log`에
                             guard='shadow_strategy', decision='shadow_would_block', 가격·KOSPI 포함 기록 → 사후 5/20/60일 수익 추적).
                             기존 보유분 청산·실주문 경로는 건드리지 않는다. 2026-09-25 사용자 승인(R1 A안): momentum,peak. 기본값 빈 값.
@@ -25,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
+import zlib
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -63,6 +67,20 @@ def shadow_entry(conn, code: str, strategy: str, price: float | None) -> bool:
          f"shadow_strategy: {strategy} 신규 진입 기록 전용 (R1 채택 기준 미달, 2026-09-25 승인)",
          price=price, kospi=_kospi_snapshot(conn))
     return True
+
+
+def _account_dd_mode() -> str:
+    m = os.getenv("VT_ACCOUNT_DD_GUARD", "shadow").strip().lower()
+    return m if m in ("off", "shadow", "enforce") else "shadow"
+
+
+def account_dd_state(conn) -> tuple[str, float | None]:
+    """최신 가상 계좌 낙폭 상태 ('normal'|'half'|'stop', dd%). 테이블·데이터가 없으면 ('normal', None) — fail-open."""
+    try:
+        r = conn.execute("SELECT state, dd_pct FROM virtual_account_equity_daily ORDER BY trade_date DESC LIMIT 1").fetchone()
+        return (str(r[0]), float(r[1])) if r else ("normal", None)
+    except Exception:
+        return "normal", None
 
 
 def _entry_confirm_mode() -> str:
@@ -213,6 +231,18 @@ def check_entry(conn, code: str, strategy: str, qty: int, price: float) -> dict:
                     reasons.append(f"reentry_cooldown: 마지막 청산 {days}일 전 < {REENTRY_COOLDOWN_DAYS()}일")
         except Exception as e:
             logger.warning(f"[가드] 재진입 쿨다운 판정 실패(fail-open): {e}")
+
+    # 2c) 계좌 낙폭 규칙(R6): shadow는 기록만(기본), enforce는 half=격번 차단·stop=차단
+    dd_mode = _account_dd_mode()
+    if dd_mode != "off":
+        state, dd = account_dd_state(conn)
+        if state in ("half", "stop"):
+            msg = f"account_dd_{state}: 가상 계좌 낙폭 {dd:+.1f}% — 신규 진입 {'50% 축소' if state == 'half' else '중단'}"
+            skip = state == "stop" or (zlib.crc32(f"{code}{datetime.now():%Y%m%d}".encode()) % 2 == 0)
+            if dd_mode == "enforce" and skip:
+                reasons.append(msg)
+            elif dd_mode == "shadow" and skip:
+                _log(conn, code, strategy, f"account_dd_{state}", "shadow_would_block", msg, price=price, kospi=_kospi_snapshot(conn))
 
     # 3) 진입 확인(당일 등락 <+3%): shadow는 기록만, enforce는 차단
     mode = _entry_confirm_mode()

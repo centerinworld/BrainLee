@@ -119,3 +119,22 @@ def test_min_mcap_and_cooldown_flags(monkeypatch):
     monkeypatch.setenv("VT_REENTRY_COOLDOWN_DAYS", "28")
     r = g.check_entry(c, "222222", "momentum", 10, 1000)
     assert not r["allowed"] and any(x.startswith("reentry_cooldown") for x in r["reasons"])
+
+
+def test_account_dd_guard_shadow_and_enforce(monkeypatch):
+    logged = []
+    monkeypatch.setattr(g, "_log", lambda conn, code, strat, guard, decision, detail, price=None, kospi=None:
+                        logged.append((guard, decision)))
+    c = _conn("up")
+    c.execute("CREATE TABLE virtual_account_equity_daily (trade_date TEXT, state TEXT, dd_pct REAL)")
+    c.execute("INSERT INTO virtual_account_equity_daily VALUES ('2026-09-23', 'stop', -16.0)")
+    assert g.account_dd_state(c) == ("stop", -16.0)
+    assert g.check_entry(c, "005930", "v_recovery", 10, 1000)["allowed"]           # shadow(기본): 기록만, 진입 허용
+    assert ("account_dd_stop", "shadow_would_block") in logged
+    monkeypatch.setenv("VT_ACCOUNT_DD_GUARD", "enforce")
+    r = g.check_entry(c, "005930", "v_recovery", 10, 1000)
+    assert not r["allowed"] and any(x.startswith("account_dd_stop") for x in r["reasons"])
+    monkeypatch.setenv("VT_ACCOUNT_DD_GUARD", "off")
+    assert g.check_entry(c, "005930", "v_recovery", 10, 1000)["allowed"]
+    c2 = _conn("up")                                                               # 테이블 없음 → fail-open
+    assert g.account_dd_state(c2) == ("normal", None)
