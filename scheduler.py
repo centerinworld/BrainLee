@@ -1346,6 +1346,12 @@ class CollectionScheduler:
         logger.info(f"[가상계좌평가] {res.stdout.strip()[-200:]}")
         if res.returncode != 0:
             raise RuntimeError(f"가상 계좌 평가액 갱신 실패(rc={res.returncode}): {res.stdout.strip()[-200:]}{res.stderr.strip()[-200:]}")
+        # R7: 신호-체결 시점 괴리(백테스트 다음날 시가 가정 vs 모의 체결가) 측정 — 가정 슬리피지보다 크면 텔레그램 경고
+        res = subprocess.run([py, "scripts/measure_execution_gap_20260925.py"], capture_output=True, text=True, timeout=900,
+                             cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime")
+        logger.info(f"[실행괴리] {res.stdout.strip()[-200:]}")
+        if res.returncode != 0:
+            raise RuntimeError(f"실행 괴리 측정 실패(rc={res.returncode}): {res.stdout.strip()[-200:]}{res.stderr.strip()[-200:]}")
 
     def _loop_kis_forward_estimates(self) -> None:
         """영업일 20:10 - KIS 추정실적을 7일 stale 기준으로 순환 갱신."""
