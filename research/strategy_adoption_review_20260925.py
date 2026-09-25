@@ -155,7 +155,11 @@ def main() -> None:
     df["c2_dsr"] = df.dsr_n38 > 0.95
     df["c3_pbo"] = pbo["pbo"] < 0.5
     df["c4_t12m_ev"] = df.t12m_expectancy_pct > 0
-    df["curve_ok"] = df.engine_share >= 0.99      # 엔진 산출 곡선만 신뢰(근사 곡선은 고정 크기·자본 제약 없음 가정 → 초과수익 과대 가능)
+    # 엔진 산출 곡선은 신뢰. 거래로그 재구성(mtm_reconstructed) 곡선은 엔진이 보고한 MDD와 대조해 검증된 경우에만 신뢰한다:
+    # golden_cross·contract_momentum은 6개 구간 MDD 평균 절대 차이 0.8%p(최대 3.7%p)로 검증됨(2026-09-25). earnings_conviction·se_momentum은 엔진 MDD가 없어 미검증,
+    # turnaround는 실현손익 계단 곡선이라 미실현 낙폭을 반영하지 못함.
+    FIDELITY_VERIFIED = {"golden_cross", "contract_momentum"}
+    df["curve_ok"] = (df.engine_share >= 0.99) | df.strategy.isin(FIDELITY_VERIFIED)
     df["adopt"] = df[["c1_oos_excess", "c2_dsr", "c3_pbo", "c4_t12m_ev", "curve_ok"]].all(axis=1)
     df.to_csv(OUT / "strategy_adoption_review_20260925.csv", index=False)
 
@@ -194,7 +198,7 @@ def main() -> None:
           "본 문서는 시스템 검증 결과이며 투자 권유가 아니다. 기준(모두 충족): ① 표본 외(2025-01~) 비용 차감 초과수익 > 0 ② DSR > 0.95 ③ PBO < 0.5 ④ 최근 12개월 거래 기대값 > 0.", "",
           "## 요약",
           f"- 백테스트 전략 {len(df)}개 중 **4개 기준을 모두 통과한 전략: {len(passed)}개** {passed if passed else ''}",
-          f"- ① 통과 {int(df.c1_oos_excess.sum())}개 / ② 통과 {int(df.c2_dsr.sum())}개 / ④ 통과 {int(df.c4_t12m_ev.sum())}개. **①을 통과한 전략 {df[df.c1_oos_excess].strategy.tolist()} 중 엔진 곡선(engine_share≥0.99)인 것은 {int((df.c1_oos_excess & df.curve_ok).sum())}개** — 나머지는 거래로그+가격 근사 곡선(고정 크기·자본 제약 없음)이라 표본 외 초과수익이 과대일 수 있어 판정을 유보한다(엔진 재실행으로 곡선을 새로 만들어야 확정 가능). **③ PBO = {pbo['pbo']:.2f}** (전략 {pbo['n_strategies']}개, 공통 구간 {pbo_full_span[0]}~{pbo_full_span[1]} {pbo['obs']}거래일, CSCV {pbo['splits']:,}분할) → {'기준(<0.5) 충족' if pbo['pbo'] < 0.5 else '기준 미충족: 전략 집합에서 IS 최고 전략이 OOS에서 중앙값 이하가 되는 비율이 절반 이상 — 선택 절차 자체가 과최적화 위험'}.",
+          f"- ① 통과 {int(df.c1_oos_excess.sum())}개 / ② 통과 {int(df.c2_dsr.sum())}개 / ④ 통과 {int(df.c4_t12m_ev.sum())}개. **①을 통과한 전략 {df[df.c1_oos_excess].strategy.tolist()} 중 곡선을 신뢰할 수 있는(엔진 곡선 또는 엔진 MDD로 검증된 재구성 곡선) 것은 {int((df.c1_oos_excess & df.curve_ok).sum())}개({df[df.c1_oos_excess & df.curve_ok].strategy.tolist()})** — 그 전략들도 DSR이 0.95에 크게 못 미쳐 채택되지 않는다. 나머지(미검증 재구성·계단 곡선)는 판정을 유보한다. **③ PBO = {pbo['pbo']:.2f}** (전략 {pbo['n_strategies']}개, 공통 구간 {pbo_full_span[0]}~{pbo_full_span[1]} {pbo['obs']}거래일, CSCV {pbo['splits']:,}분할) → {'기준(<0.5) 충족' if pbo['pbo'] < 0.5 else '기준 미충족: 전략 집합에서 IS 최고 전략이 OOS에서 중앙값 이하가 되는 비율이 절반 이상 — 선택 절차 자체가 과최적화 위험'}.",
           f"- DSR은 탐색 규모에 민감하다: N=38(전략 수)과 N=3,319(실행 수)를 모두 표기(N={N_TRIALS_STRATEGIES}를 판정에 사용). 전략 간 일별 Sharpe 분산 V={var_sr:.2e}.",
           f"- KOSPI 보유(같은 표본 외 구간) CAGR: {df.oos_kospi_cagr_pct.iloc[0]}% — 표본 외 구간은 {int(df.oos_days.max())}거래일(약 {df.oos_days.max()/252:.1f}년)로 짧아 ①의 통계적 힘이 약하다.", "",
           "## A. 백테스트 전략 (strategy_center 선정 실행 세트)", "",
