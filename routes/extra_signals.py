@@ -452,7 +452,9 @@ def _get_exports_signal(code: str) -> dict:
                FROM dart_contracts
                WHERE stock_code=? AND disclosed_at >= ?
                ORDER BY disclosed_at DESC""",
-            (code, since.isoformat()),
+            # dart_contracts.disclosed_at은 'YYYYMMDD' — isoformat('YYYY-MM-DD')과 문자열 비교하면
+            # '20250101' >= '2025-09-24'가 참이라 1년 창이 전년 1월부터로 늘어났다(2026-09-24 수정)
+            (code, since.strftime("%Y%m%d")),
         ).fetchall()
         if rows:
             total_amt = sum((r["contract_amount_krw"] or 0) for r in rows)

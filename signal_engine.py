@@ -1764,8 +1764,11 @@ def _get_market_danger(conn) -> int:
 
 def _get_stock_sector(conn, stock_code: str) -> str:
     """종목 섹터 조회 (stock_universe → stock_meta 순서)."""
+    # 스냅샷 중 섹터가 빈 행(2026-09-04)이 먼저 잡히지 않도록 비어있지 않은 최신 값 우선
     row = conn.execute(
-        "SELECT sector_large FROM stock_universe WHERE stock_code=? LIMIT 1",
+        "SELECT sector_large FROM stock_universe WHERE stock_code=? "
+        "AND sector_large IS NOT NULL AND sector_large NOT IN ('', 'nan') "
+        "ORDER BY base_date DESC LIMIT 1",
         (stock_code,)
     ).fetchone()
     if row and row[0]:
@@ -1978,6 +1981,117 @@ def _get_closes(conn, symbol, limit=210):
     return [r[0] for r in rows]  # 최신→오래된 순
 
 
+def _load_latest_universe_rows(conn) -> dict:
+    """stock_universe 종목당 1행(최신 base_date) + 섹터는 과거 스냅샷에서 상속.
+
+    stock_universe는 (stock_code, base_date) 스냅샷 테이블이라 종목당 여러 행이 있고,
+    월간 갱신(update_from_krx)이 만든 최신 스냅샷(2026-09-04)은 섹터가 비어 있다.
+    무조건 `WHERE stock_code=?`/JOIN 하면 중복·섹터 누락이 생기므로 이 헬퍼를 쓴다.
+    market_cap은 억원 단위(섹션 2 '중요 단위 규칙').
+    반환: {stock_code: dict}
+    """
+    rows = conn.execute("""
+        WITH sec AS (
+            SELECT stock_code,
+                   MAX(NULLIF(NULLIF(sector_large, ''), 'nan')) AS sector_large,
+                   MAX(NULLIF(NULLIF(sector_mid,   ''), 'nan')) AS sector_mid,
+                   MAX(NULLIF(NULLIF(sector_small, ''), 'nan')) AS sector_small
+            FROM stock_universe GROUP BY stock_code
+        )
+        SELECT DISTINCT ON (u.stock_code)
+               u.stock_code, u.stock_name, u.market, u.market_cap, u.per, u.pbr, u.roe,
+               u.trading_value,
+               COALESCE(NULLIF(NULLIF(u.sector_large, ''), 'nan'), sec.sector_large) AS sector_large,
+               COALESCE(NULLIF(NULLIF(u.sector_mid,   ''), 'nan'), sec.sector_mid)   AS sector_mid,
+               COALESCE(NULLIF(NULLIF(u.sector_small, ''), 'nan'), sec.sector_small) AS sector_small
+        FROM stock_universe u
+        LEFT JOIN sec ON sec.stock_code = u.stock_code
+        WHERE u.stock_code ~ '^[0-9A-Z]{6}$'
+        ORDER BY u.stock_code, u.base_date DESC, u.id DESC
+    """).fetchall()
+    cols = ("stock_code", "stock_name", "market", "market_cap", "per", "pbr", "roe",
+            "trading_value", "sector_large", "sector_mid", "sector_small")
+    return {r[0]: dict(zip(cols, r)) for r in rows}
+
+
+def _load_quarterly_pl_pivot(conn, require_revenue: bool = True) -> list:
+    """종목별 최근 5개 분기 영업이익/매출 피벗 (V10/V11용).
+
+    financial_data 분기행은 CFS/OFS가 같은 (연도,분기)에 공존한다(2,246종목).
+    report_type을 가리지 않고 ROW_NUMBER를 매기면 rn=2/3이 같은 분기의 CFS·OFS가 되고
+    rn=5가 '전년 동기'가 아니게 된다. 종목마다 가장 최신 분기를 가진 report_type
+    하나(동률이면 CFS)만 사용하고, 5개 분기가 연속인지(idx0-idx4==4)도 반환한다.
+    """
+    rev_cond = "AND revenue IS NOT NULL" if require_revenue else ""
+    rows = conn.execute(f"""
+        WITH base AS (
+            SELECT stock_code, year, quarter, report_type, operating_profit, revenue,
+                   (CAST(year AS INTEGER) * 4 + CAST(quarter AS INTEGER)) AS qidx
+            FROM financial_data
+            WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
+              AND operating_profit IS NOT NULL {rev_cond}
+        ),
+        pick AS (
+            SELECT stock_code, report_type,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY stock_code
+                       ORDER BY MAX(qidx) DESC,
+                                CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+                   ) AS prn
+            FROM base GROUP BY stock_code, report_type
+        ),
+        q AS (
+            SELECT b.*,
+                   ROW_NUMBER() OVER (PARTITION BY b.stock_code ORDER BY b.qidx DESC) AS rn
+            FROM base b
+            JOIN pick p ON p.stock_code = b.stock_code
+                       AND p.report_type = b.report_type AND p.prn = 1
+        )
+        SELECT stock_code,
+               MAX(CASE WHEN rn=1 THEN year END)             AS yr0,
+               MAX(CASE WHEN rn=1 THEN quarter END)          AS qr0,
+               MAX(CASE WHEN rn=1 THEN operating_profit END) AS op0,
+               MAX(CASE WHEN rn=2 THEN operating_profit END) AS op1,
+               MAX(CASE WHEN rn=3 THEN operating_profit END) AS op2,
+               MAX(CASE WHEN rn=4 THEN operating_profit END) AS op3,
+               MAX(CASE WHEN rn=5 THEN operating_profit END) AS op_ya,
+               MAX(CASE WHEN rn=1 THEN revenue END)          AS rev0,
+               MAX(CASE WHEN rn=2 THEN revenue END)          AS rev1,
+               MAX(CASE WHEN rn=5 THEN revenue END)          AS rev_ya,
+               MAX(CASE WHEN rn=1 THEN qidx END) - MAX(CASE WHEN rn=5 THEN qidx END) AS span5
+        FROM q WHERE rn <= 5
+        GROUP BY stock_code
+        HAVING COUNT(*) = 5
+    """).fetchall()
+    cols = ("stock_code", "yr0", "qr0", "op0", "op1", "op2", "op3", "op_ya",
+            "rev0", "rev1", "rev_ya", "span5")
+    return [dict(zip(cols, tuple(r))) for r in rows]
+
+
+def _last_two_consecutive_q(conn, table: str, stock_code: str, field: str,
+                            extra_where: str = "", q_range: str = "1 AND 4"):
+    """같은 report_type에서 연속한 최근 두 분기 (cur, prev), 없으면 None.
+    (CFS·OFS가 같은 분기에 공존해 LIMIT 2가 같은 분기의 두 basis를 비교하던 문제 방지 —
+    tenbagger_engine._last_two_consecutive_quarters와 동일 규칙)"""
+    rows = conn.execute(f"""
+        SELECT year, quarter, report_type, {field}
+        FROM {table}
+        WHERE stock_code=? AND is_annual=0 AND quarter BETWEEN {q_range}
+          AND {field} IS NOT NULL {extra_where}
+        ORDER BY year DESC, quarter DESC, CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+        LIMIT 12
+    """, (stock_code,)).fetchall()
+    if not rows:
+        return None
+    same = [r for r in rows if r[2] == rows[0][2]]
+    if len(same) < 2:
+        return None
+    (y0, q0, _, v0), (y1, q1, _, v1) = same[0], same[1]
+    if (int(y0) * 4 + int(q0)) - (int(y1) * 4 + int(q1)) != 1:
+        return None
+    return float(v0), float(v1)
+
+
 def _load_universe_maps(conn) -> dict:
     """stock_universe + stock_meta 를 한 번에 로드.
     반환: {"mktcap", "market", "sector", "sector_mid", "tvol", "name"}  (모두 stock_code → 값)
@@ -1985,20 +2099,16 @@ def _load_universe_maps(conn) -> dict:
     mktcap: dict = {}; market: dict = {}
     sector: dict = {}; sector_mid: dict = {}
     tvol:   dict = {}; name:   dict = {}
-    for sc, sl, sm, nm, mc, mkt, tv in conn.execute("""
-        SELECT DISTINCT ON (stock_code)
-               stock_code, sector_large, sector_mid, stock_name,
-               market_cap, market, trading_value
-        FROM stock_universe
-        WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
-        ORDER BY stock_code, updated_at DESC, id DESC
-    """).fetchall():
-        mktcap[sc]     = mc or 0
-        market[sc]     = mkt or ''
-        sector[sc]     = sl  or ''
-        sector_mid[sc] = sm  or ''
-        tvol[sc]       = tv  or 0
-        name[sc]       = nm  or sc
+    # 2026-09-24: 예전엔 updated_at DESC로 골랐는데 스냅샷 전 행의 updated_at이 같아
+    # 섹터가 비어 있는 2026-09-04 스냅샷이 선택됨 → 2,713종목 중 28종목만 섹터가 잡혔다.
+    for r in _load_latest_universe_rows(conn).values():
+        sc = r["stock_code"]
+        mktcap[sc]     = r["market_cap"] or 0
+        market[sc]     = r["market"] or ''
+        sector[sc]     = r["sector_large"] or ''
+        sector_mid[sc] = r["sector_mid"] or ''
+        tvol[sc]       = r["trading_value"] or 0
+        name[sc]       = r["stock_name"] or sc
     for sc, nm in conn.execute(
         "SELECT stock_code, stock_name FROM stock_meta WHERE stock_name IS NOT NULL"
     ).fetchall():
@@ -2846,8 +2956,9 @@ def _calc_financial(conn, params, stock_code):
     rows = conn.execute("""
         SELECT year, quarter, revenue, operating_profit, net_income, eps, is_annual
         FROM financial_data WHERE stock_code=? AND is_annual=0
+          AND report_type = (SELECT b.report_type FROM financial_data b WHERE b.stock_code=? AND b.is_annual=0  ORDER BY b.year DESC, b.quarter DESC, CASE b.report_type WHEN 'CFS' THEN 0 ELSE 1 END LIMIT 1)
         ORDER BY year DESC, quarter DESC LIMIT 5
-    """, (stock_code,)).fetchall()
+    """, (stock_code, stock_code)).fetchall()  # 2026-09-24: CFS/OFS 혼재 시 rows[4]가 전년동기가 아니었음
     if not rows: return 'gray', None, '재무 데이터 없음'
 
     if check_eps:
@@ -2859,7 +2970,9 @@ def _calc_financial(conn, params, stock_code):
 
     op  = rows[0][3] or 0
     rev_now = rows[0][2] or 0
-    rev_yoy = rows[4][2] or 0 if len(rows) >= 5 else 0
+    # rows[4]는 분기 누락이 없을 때만 전년 동기
+    rev_yoy = (rows[4][2] or 0) if (len(rows) >= 5 and int(rows[4][0]) == int(rows[0][0]) - 1
+                                    and int(rows[4][1]) == int(rows[0][1])) else 0
     yoy = (rev_now-rev_yoy)/abs(rev_yoy)*100 if rev_yoy != 0 else 0
 
     if op > 0 and yoy > 5:
@@ -3816,27 +3929,11 @@ def calc_stockeasy_trend_candidates(conn=None) -> list:
         if len(kospi_rows) >= 126 and kospi_rows[125][0] > 0:
             kospi_ret_6m = (kospi_rows[0][0] - kospi_rows[125][0]) / kospi_rows[125][0] * 100
 
-        fin_rows = conn.execute("""
-            WITH q AS (
-                SELECT stock_code, revenue, operating_profit,
-                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) rn
-                FROM financial_data
-                WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
-                  AND revenue IS NOT NULL
-                  AND operating_profit IS NOT NULL
-            )
-            SELECT
-                stock_code,
-                MAX(CASE WHEN rn=1 THEN revenue END)          AS rev0,
-                MAX(CASE WHEN rn=2 THEN revenue END)          AS rev1,
-                MAX(CASE WHEN rn=5 THEN revenue END)          AS rev_ya,
-                MAX(CASE WHEN rn=1 THEN operating_profit END) AS op0,
-                MAX(CASE WHEN rn=2 THEN operating_profit END) AS op1,
-                MAX(CASE WHEN rn=3 THEN operating_profit END) AS op2,
-                MAX(CASE WHEN rn=5 THEN operating_profit END) AS op_ya
-            FROM q
-            GROUP BY stock_code
-        """).fetchall()
+        # 2026-09-24: CFS/OFS 혼재로 rn=2/5가 같은 분기의 다른 basis·전년동기 아님 → 단일 basis 피벗
+        fin_rows = [
+            (r["stock_code"], r["rev0"], r["rev1"], r["rev_ya"], r["op0"], r["op1"], r["op2"], r["op_ya"])
+            for r in _load_quarterly_pl_pivot(conn, require_revenue=True) if r["span5"] == 4
+        ]
         fin_map = {}
         for fr in fin_rows:
             sc, rev0, rev1, rev_ya, op0, op1, op2, op_ya = fr
@@ -4658,9 +4755,10 @@ def _calc_earnings_quality(conn, stock_code: str) -> tuple:
             FROM financial_data
             WHERE stock_code=? AND is_annual=0
               AND operating_profit IS NOT NULL
+              AND report_type = (SELECT b.report_type FROM financial_data b WHERE b.stock_code=? AND b.is_annual=0 AND b.operating_profit IS NOT NULL ORDER BY b.year DESC, b.quarter DESC, CASE b.report_type WHEN 'CFS' THEN 0 ELSE 1 END LIMIT 1)
             ORDER BY year DESC, quarter DESC
             LIMIT 8
-        """, (stock_code,)).fetchall()
+        """, (stock_code, stock_code)).fetchall()  # 2026-09-24: 단일 basis(8행=실제 8분기)
 
         if not rows:
             return 0, "실적데이터없음"
@@ -5029,14 +5127,10 @@ def calc_combo_v2(conn=None) -> list:
                 try:
                     _qoq_parts = []
                     # 매출 QoQ
-                    _rv_rows = conn.execute("""
-                        SELECT revenue FROM financial_data
-                        WHERE stock_code=? AND is_annual=0 AND revenue IS NOT NULL
-                          AND quarter BETWEEN 1 AND 3
-                        ORDER BY year DESC, quarter DESC LIMIT 2
-                    """, (stock_code,)).fetchall()
-                    if len(_rv_rows) == 2 and _rv_rows[1][0] and _rv_rows[1][0] > 0:
-                        _rv_qoq = (_rv_rows[0][0] - _rv_rows[1][0]) / _rv_rows[1][0] * 100
+                    _rv = _last_two_consecutive_q(conn, "financial_data", stock_code, "revenue",
+                                                  "", "1 AND 3")
+                    if _rv and _rv[1] > 0:
+                        _rv_qoq = (_rv[0] - _rv[1]) / _rv[1] * 100
                         if _rv_qoq >= 10:
                             _qoq_bonus += 1; _qoq_parts.append(f"매출QoQ+{_rv_qoq:.0f}%")
                         elif _rv_qoq < -20:
@@ -5065,14 +5159,11 @@ def calc_combo_v2(conn=None) -> list:
                         if _bl_qoq >= 10:
                             _qoq_bonus += 1; _qoq_parts.append(f"수주QoQ+{_bl_qoq:.0f}%")
                     # 감가상각비 QoQ (설비 투자 확대)
-                    _dp_rows = conn.execute("""
-                        SELECT depreciation FROM cash_flow_data
-                        WHERE stock_code=? AND is_annual=0 AND depreciation IS NOT NULL
-                          AND depreciation > 0
-                        ORDER BY year DESC, quarter DESC LIMIT 2
-                    """, (stock_code,)).fetchall()
-                    if len(_dp_rows) == 2 and _dp_rows[1][0] > 0:
-                        _dp_qoq = (_dp_rows[0][0] - _dp_rows[1][0]) / _dp_rows[1][0] * 100
+                    # depreciation 컬럼은 누적/분기 혼재(value_type) → 분기값 depreciation_q, 단일 basis
+                    _dp = _last_two_consecutive_q(conn, "cash_flow_data", stock_code, "depreciation_q",
+                                                  "AND depreciation_q > 0")
+                    if _dp and _dp[1] > 0:
+                        _dp_qoq = (_dp[0] - _dp[1]) / _dp[1] * 100
                         if _dp_qoq >= 10:
                             _qoq_bonus += 1; _qoq_parts.append(f"D&AQoQ+{_dp_qoq:.0f}%")
                     if _qoq_parts and _qoq_bonus > 0:
@@ -5223,50 +5314,22 @@ def calc_earnings_explosion(conn=None) -> list:
         conn.row_factory = sqlite3.Row
 
     try:
-        # ── 1. 분기 재무 데이터 피벗 (최근 6개 분기 + 1년 전 동분기) ────
-        rows = conn.execute("""
-            WITH q AS (
-                SELECT stock_code, year, quarter, operating_profit, revenue,
-                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) rn
-                FROM financial_data
-                WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
-                  AND operating_profit IS NOT NULL AND revenue IS NOT NULL
-            ),
-            yago AS (
-                SELECT stock_code, year, quarter, operating_profit as op_ya, revenue as rev_ya
-                FROM financial_data
-                WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
-                  AND operating_profit IS NOT NULL AND revenue IS NOT NULL
-            )
-            SELECT
-                q.stock_code,
-                MAX(CASE WHEN q.rn=1 THEN q.year END)             as yr0,
-                MAX(CASE WHEN q.rn=1 THEN q.quarter END)          as qr0,
-                MAX(CASE WHEN q.rn=1 THEN q.operating_profit END) as op0,
-                MAX(CASE WHEN q.rn=1 THEN q.revenue END)          as rev0,
-                MAX(CASE WHEN q.rn=2 THEN q.operating_profit END) as op1,
-                MAX(CASE WHEN q.rn=2 THEN q.revenue END)          as rev1,
-                MAX(CASE WHEN q.rn=3 THEN q.operating_profit END) as op2,
-                MAX(CASE WHEN q.rn=5 THEN q.operating_profit END) as op_ya,
-                MAX(CASE WHEN q.rn=5 THEN q.revenue END)          as rev_ya
-            FROM q GROUP BY q.stock_code
-            HAVING MAX(CASE WHEN q.rn=1 THEN q.operating_profit END) IS NOT NULL
-               AND MAX(CASE WHEN q.rn=1 THEN q.revenue END) IS NOT NULL
-               AND MAX(CASE WHEN q.rn=5 THEN q.operating_profit END) IS NOT NULL
-               AND MAX(CASE WHEN q.rn=5 THEN q.revenue END) IS NOT NULL
-        """).fetchall()
+        # ── 1. 분기 재무 데이터 피벗 (최근 5개 분기, 단일 report_type) ────
+        rows = _load_quarterly_pl_pivot(conn, require_revenue=True)
 
-        # ── 2. 종목 마스터 일괄 조회 ────────────────────────────────────
-        su = {r["stock_code"]: r for r in conn.execute(
-            "SELECT stock_code, stock_name, sector_large, market_cap, per, pbr "
-            "FROM stock_universe WHERE market_cap BETWEEN 5e9 AND 2e13"
-        ).fetchall()}
+        # ── 2. 종목 마스터 일괄 조회 (market_cap 억원: 50억~20조) ─────────
+        # 2026-09-24: 예전 필터 `BETWEEN 5e9 AND 2e13`은 원 단위 가정이라 억원 컬럼에서
+        # 0종목 → V10 결과가 항상 [] 였다.
+        su = {sc: r for sc, r in _load_latest_universe_rows(conn).items()
+              if r["market_cap"] and 50 <= r["market_cap"] <= 200_000}
 
         candidates = []
 
         for row in rows:
             sc = row["stock_code"]
             if sc not in su:
+                continue
+            if row["span5"] != 4:  # rn=5가 정확히 전년 동기 분기일 때만 YoY 계산
                 continue
 
             op0  = row["op0"]  or 0.0
@@ -5293,8 +5356,8 @@ def calc_earnings_explosion(conn=None) -> list:
             # ── 주가 추세 확인 (MA60 이상) ─────────────────────────────
             ph = conn.execute("""
                 SELECT close FROM price_history
-                WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 80
-            """, (sc,)).fetchall()
+                WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 260
+            """, (sc,)).fetchall()  # 52주 고점 계산용(예전 LIMIT 80이라 high52_pct가 항상 0)
             if len(ph) < 60:
                 continue
             closes = [r[0] for r in ph]
@@ -5304,9 +5367,12 @@ def calc_earnings_explosion(conn=None) -> list:
                 continue
 
             # ── 수급 (기관+외인 5일 합산) ──────────────────────────────
+            # 2026-09-24: SUM(...) ... ORDER BY LIMIT 5는 집계 결과 1행에 LIMIT이 걸려
+            # 상장 이후 전체 누적 수급이 들어갔다 → 최근 5거래일 서브쿼리로 제한.
             sup = conn.execute("""
-                SELECT SUM(inst_net_buy_amt + frn_net_buy_amt) as net_amt
-                FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 5
+                SELECT SUM(COALESCE(inst_net_buy_amt,0) + COALESCE(frn_net_buy_amt,0)) as net_amt
+                FROM (SELECT inst_net_buy_amt, frn_net_buy_amt FROM price_history
+                      WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 5) t
             """, (sc,)).fetchone()
             supply_5d_억 = round((sup[0] or 0) / 100) if sup else 0
 
@@ -5318,7 +5384,7 @@ def calc_earnings_explosion(conn=None) -> list:
                 pct_from_high52 = 0
 
             info = su[sc]
-            mktcap_억 = round((info["market_cap"] or 0) / 1e8)
+            mktcap_억 = round(info["market_cap"] or 0)  # 이미 억원
 
             # ── 스코어 (0~100) ─────────────────────────────────────────
             score = 0
@@ -5392,40 +5458,20 @@ def calc_turnaround_momentum(conn=None) -> list:
         conn.row_factory = sqlite3.Row
 
     try:
-        # ── 1. 분기 재무 피벗 ──────────────────────────────────────────
-        rows = conn.execute("""
-            WITH q AS (
-                SELECT stock_code, year, quarter, operating_profit, revenue,
-                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) rn
-                FROM financial_data
-                WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
-                  AND operating_profit IS NOT NULL
-            )
-            SELECT
-                stock_code,
-                MAX(CASE WHEN rn=1 THEN operating_profit END) as op0,
-                MAX(CASE WHEN rn=2 THEN operating_profit END) as op1,
-                MAX(CASE WHEN rn=3 THEN operating_profit END) as op2,
-                MAX(CASE WHEN rn=4 THEN operating_profit END) as op3,
-                MAX(CASE WHEN rn=1 THEN revenue END)          as rev0,
-                MAX(CASE WHEN rn=5 THEN revenue END)          as rev_ya
-            FROM q GROUP BY stock_code
-            HAVING MAX(CASE WHEN rn=1 THEN operating_profit END) IS NOT NULL
-               AND MAX(CASE WHEN rn=2 THEN operating_profit END) IS NOT NULL
-               AND MAX(CASE WHEN rn=3 THEN operating_profit END) IS NOT NULL
-               AND MAX(CASE WHEN rn=4 THEN operating_profit END) IS NOT NULL
-        """).fetchall()
+        # ── 1. 분기 재무 피벗 (단일 report_type, 연속 5개 분기) ────────────
+        rows = _load_quarterly_pl_pivot(conn, require_revenue=False)
 
-        su = {r["stock_code"]: r for r in conn.execute(
-            "SELECT stock_code, stock_name, sector_large, market_cap, per, pbr "
-            "FROM stock_universe WHERE market_cap BETWEEN 5e9 AND 2e13"
-        ).fetchall()}
+        # market_cap 억원: 50억~20조 (예전 `BETWEEN 5e9 AND 2e13`은 원 단위 가정 → 항상 0종목)
+        su = {sc: r for sc, r in _load_latest_universe_rows(conn).items()
+              if r["market_cap"] and 50 <= r["market_cap"] <= 200_000}
 
         candidates = []
 
         for row in rows:
             sc = row["stock_code"]
             if sc not in su:
+                continue
+            if row["span5"] != 4:  # 분기 누락이 있으면 Q-2/Q-3·전년동기 비교가 틀어짐
                 continue
 
             op0 = row["op0"] or 0.0
@@ -5479,7 +5525,7 @@ def calc_turnaround_momentum(conn=None) -> list:
             reversal_power = (op0 - worst_past) / 1e8  # 억원 단위
 
             info = su[sc]
-            mktcap_억 = round((info["market_cap"] or 0) / 1e8)
+            mktcap_억 = round(info["market_cap"] or 0)  # 이미 억원
 
             score = 0
             score += min(reversal_power / 10, 40)       # 전환 강도 최대 40점
@@ -5566,14 +5612,13 @@ def calc_sector_megatrend(conn=None) -> list:
 
         # ── 2. 섹터별 평균 3개월 수익률 ──────────────────────────────
         # sector_small 우선, 없으면 sector_large 사용 (더 세밀한 섹터 분류)
-        sector_stocks = conn.execute("""
-            SELECT stock_code,
-                   COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,'')) as sector
-            FROM stock_universe
-            WHERE COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,'')) IS NOT NULL
-              AND COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,'')) NOT IN ('nan')
-              AND market_cap > 500  -- 500억원 (억원 단위)
-        """).fetchall()
+        # 종목당 최신 1행 + 섹터 상속 (스냅샷 중복/섹터 누락 방지)
+        _su_latest = _load_latest_universe_rows(conn)
+        sector_stocks = [
+            (sc, r["sector_small"] or r["sector_large"])
+            for sc, r in _su_latest.items()
+            if (r["sector_small"] or r["sector_large"]) and (r["market_cap"] or 0) > 500  # 500억원
+        ]
 
         # 각 종목 현재가/3개월전가 일괄 조회 (최근 65일 데이터)
         sc_list = [r[0] for r in sector_stocks]
@@ -5614,29 +5659,15 @@ def calc_sector_megatrend(conn=None) -> list:
             return []
 
         # ── 4. 강세 섹터 내 우수 종목 선별 ──────────────────────────
-        su = {r["stock_code"]: r for r in conn.execute(
-            """SELECT stock_code, stock_name,
-                      COALESCE(NULLIF(sector_small,''), NULLIF(sector_large,'')) as sector_large,
-                      market_cap, per, pbr, roe
-               FROM stock_universe WHERE market_cap > 5e10"""
-        ).fetchall()}
+        # market_cap 억원: 500억 이상 (예전 `> 5e10`은 원 단위 가정 → 항상 0종목, V12 결과 [])
+        su = {sc: r for sc, r in _su_latest.items() if (r["market_cap"] or 0) > 500}
 
         # 최근 분기 매출 YoY
+        # CFS/OFS 혼재 행 때문에 rn=5가 전년 동기가 아니던 문제 → 단일 report_type 피벗 사용
         fin_data = {}
-        for r in conn.execute("""
-            WITH q AS (
-                SELECT stock_code, revenue,
-                       ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY year DESC, quarter DESC) rn
-                FROM financial_data WHERE is_annual=0 AND quarter BETWEEN 1 AND 4
-                  AND revenue IS NOT NULL
-            )
-            SELECT stock_code,
-                   MAX(CASE WHEN rn=1 THEN revenue END) as rev0,
-                   MAX(CASE WHEN rn=5 THEN revenue END) as rev_ya
-            FROM q GROUP BY stock_code
-        """).fetchall():
-            if r[1] and r[2] and r[2] > 0:
-                fin_data[r[0]] = (r[1] - r[2]) / abs(r[2]) * 100
+        for r in _load_quarterly_pl_pivot(conn, require_revenue=True):
+            if r["span5"] == 4 and r["rev0"] and r["rev_ya"] and r["rev_ya"] > 0:
+                fin_data[r["stock_code"]] = (r["rev0"] - r["rev_ya"]) / abs(r["rev_ya"]) * 100
 
         candidates = []
         for sc, ph in ph_data.items():
@@ -5685,7 +5716,7 @@ def calc_sector_megatrend(conn=None) -> list:
             supply_20d_억 = (inst_20 + frn_20) / 100
 
             info = su[sc]
-            mktcap_억 = round((info["market_cap"] or 0) / 1e8)
+            mktcap_억 = round(info["market_cap"] or 0)  # 이미 억원
 
             score = 0
             score += min(sector_alpha / 2, 25)      # 섹터 강도 최대 25점

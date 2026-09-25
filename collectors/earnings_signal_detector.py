@@ -72,39 +72,57 @@ SIGNAL_TYPES = {
 }
 
 
+def _pick_basis(conn: sqlite3.Connection, stock_code: str, year: int, quarter: int) -> Optional[str]:
+    """대상 분기의 report_type(CFS 우선). 2026-09-24: financial_data 분기행은 CFS·OFS가
+    같은 (연도,분기)에 공존(2,246종목)해 report_type 없이 LIMIT 4를 걸면 두 분기를 두 번씩
+    더한 'TTM'이 나왔다. 모든 TTM/QoQ 값은 이 basis 하나로만 계산한다(CFS/OFS 혼합 금지)."""
+    row = conn.execute("""
+        SELECT report_type FROM financial_data
+        WHERE stock_code=? AND is_annual=0 AND year=? AND quarter=?
+        ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+        LIMIT 1
+    """, (stock_code, year, quarter)).fetchone()
+    return row[0] if row else None
+
+
 def _get_ttm(conn: sqlite3.Connection, stock_code: str, year: int, quarter: int,
-             field: str = "operating_profit") -> Optional[float]:
-    """주어진 분기 기준 최근 4개 분기 합산 (TTM)"""
+             field: str = "operating_profit", basis: Optional[str] = None) -> Optional[float]:
+    """주어진 분기로 끝나는 연속 4개 분기 합산 (TTM). 4개 분기가 모두 있어야 한다
+    (예전엔 3개 분기 합도 TTM으로 인정해 25% 과소, 분기 누락 시 1년 넘는 구간 합산)."""
+    end_idx = int(year) * 4 + int(quarter)
+    basis = basis or _pick_basis(conn, stock_code, year, quarter)
+    if not basis:
+        return None
     rows = conn.execute(f"""
         SELECT {field}, year, quarter
         FROM financial_data
-        WHERE stock_code=? AND is_annual=0 AND quarter>0
+        WHERE stock_code=? AND is_annual=0 AND quarter BETWEEN 1 AND 4
+          AND report_type=?
           AND {field} IS NOT NULL
-          AND (year < ? OR (year=? AND quarter<=?))
-        ORDER BY year DESC, quarter DESC
-        LIMIT 4
-    """, (stock_code, year, year, quarter)).fetchall()
-
-    if len(rows) < 3:  # 최소 3분기 있어야 TTM 의미 있음
+          AND (CAST(year AS INTEGER) * 4 + CAST(quarter AS INTEGER)) BETWEEN ? AND ?
+    """, (stock_code, basis, end_idx - 3, end_idx)).fetchall()
+    quarters = {(int(r[1]), int(r[2])): r[0] for r in rows}
+    if len(quarters) < 4:
         return None
-    return sum(r[0] for r in rows)
+    return sum(quarters.values())
+
+
+def _shift_quarter(year: int, quarter: int, n: int) -> tuple[int, int]:
+    idx = int(year) * 4 + (int(quarter) - 1) - n
+    return idx // 4, idx % 4 + 1
 
 
 def _get_prev_ttm(conn: sqlite3.Connection, stock_code: str, year: int, quarter: int,
-                  field: str = "operating_profit") -> Optional[float]:
+                  field: str = "operating_profit", basis: Optional[str] = None) -> Optional[float]:
     """한 분기 이전 기준 TTM (전분기 TTM)"""
-    pq = quarter - 1
-    py = year
-    if pq < 1:
-        pq = 4
-        py = year - 1
-    return _get_ttm(conn, stock_code, py, pq, field)
+    py, pq = _shift_quarter(year, quarter, 1)
+    return _get_ttm(conn, stock_code, py, pq, field, basis)
 
 
 def _get_yoy_ttm(conn: sqlite3.Connection, stock_code: str, year: int, quarter: int,
-                 field: str = "revenue") -> Optional[float]:
-    """전년 동기 기준 TTM (YoY 비교용)"""
-    return _get_ttm(conn, stock_code, year - 1, quarter, field)
+                 field: str = "revenue", basis: Optional[str] = None) -> Optional[float]:
+    """전년 동기 기준 TTM (YoY 비교용) — year는 '현재' 연도를 넘긴다(내부에서 -1)."""
+    return _get_ttm(conn, stock_code, year - 1, quarter, field, basis)
 
 
 def detect_signals_for_stock(
@@ -121,27 +139,32 @@ def detect_signals_for_stock(
         [{"signal_type": "TTM_OP_INFLECT", "ttm_op_cur": 123, ...}, ...]
     """
     signals = []
+    basis = _pick_basis(conn, stock_code, year, quarter)
+    if not basis:
+        return signals
 
     # ── TTM 영업이익 계산 ────────────────────────────────────────────
-    ttm_op_cur  = _get_ttm(conn, stock_code, year, quarter, "operating_profit")
-    ttm_op_prev = _get_prev_ttm(conn, stock_code, year, quarter, "operating_profit")
-    ttm_op_yoy  = _get_yoy_ttm(conn, stock_code, year - 1, quarter, "operating_profit")
+    ttm_op_cur  = _get_ttm(conn, stock_code, year, quarter, "operating_profit", basis)
+    ttm_op_prev = _get_prev_ttm(conn, stock_code, year, quarter, "operating_profit", basis)
+    # 2026-09-24: 예전엔 _get_yoy_ttm(year - 1)로 호출해 내부 -1과 겹쳐 '2년 전' TTM과 비교했다
+    ttm_op_yoy  = _get_yoy_ttm(conn, stock_code, year, quarter, "operating_profit", basis)
 
     # ── TTM 매출 계산 ─────────────────────────────────────────────────
-    ttm_rev_cur  = _get_ttm(conn, stock_code, year, quarter, "revenue")
-    ttm_rev_yoy  = _get_yoy_ttm(conn, stock_code, year, quarter, "revenue")
+    ttm_rev_cur  = _get_ttm(conn, stock_code, year, quarter, "revenue", basis)
+    ttm_rev_yoy  = _get_yoy_ttm(conn, stock_code, year, quarter, "revenue", basis)
 
-    # ── 당분기/전분기 매출 (QoQ) ─────────────────────────────────────
+    # ── 당분기/전분기 매출 (QoQ) — 같은 basis만 (예전 LIMIT 1은 CFS/OFS 임의 선택) ──
     def _get_quarter_rev(y, q):
         row = conn.execute("""
             SELECT revenue FROM financial_data
             WHERE stock_code=? AND year=? AND quarter=? AND is_annual=0 AND revenue>0
+              AND report_type=?
             LIMIT 1
-        """, (stock_code, y, q)).fetchone()
+        """, (stock_code, y, q, basis)).fetchone()
         return row[0] if row else None
 
-    pq, py = (quarter - 1, year) if quarter > 1 else (4, year - 1)
-    ppq, ppy = (pq - 1, py) if pq > 1 else (4, py - 1)
+    py, pq = _shift_quarter(year, quarter, 1)
+    ppy, ppq = _shift_quarter(year, quarter, 2)
     rev_cur  = _get_quarter_rev(year, quarter)
     rev_prev = _get_quarter_rev(py, pq)
     rev_pp   = _get_quarter_rev(ppy, ppq)
@@ -313,7 +336,9 @@ def run_full_scan(days_back: int = 30, min_mktcap_억: int = 100) -> dict:
               AND (su.market_cap IS NULL
                    OR su.market_cap >= {min_mktcap_억}
                    OR su.market_cap >= {min_mktcap_억* 100000000})
-              AND f.created_at >= '{cutoff}'
+              -- 2026-09-24: created_at은 PG 이관 후 DEFAULT가 없어 NULL인 행이 있었고, 보정·재수집된 행은
+              -- updated_at만 바뀐다 → 둘 중 최신값 기준
+              AND COALESCE(NULLIF(f.updated_at, ''), f.created_at) >= '{cutoff}'
         )
         SELECT stock_code, stock_name, year, quarter, market_cap
         FROM ranked

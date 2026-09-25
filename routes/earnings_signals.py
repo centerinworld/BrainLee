@@ -75,11 +75,11 @@ def get_latest_signals(
                  ELSE NULL END AS return_since_signal
         FROM earnings_signals es
         LEFT JOIN stock_universe su ON es.stock_code = su.stock_code
-        LEFT JOIN (
-            SELECT stock_code, close FROM price_history p1
-            WHERE date = (SELECT MAX(date) FROM price_history p2
-                         WHERE p2.stock_code=p1.stock_code AND p2.close>0)
-        ) ph ON es.stock_code = ph.stock_code
+        LEFT JOIN LATERAL (
+            SELECT p.close FROM price_history p
+            WHERE p.stock_code = es.stock_code AND p.close > 0
+            ORDER BY p.date DESC LIMIT 1
+        ) ph ON TRUE
         {where}
         ORDER BY
             CASE es.signal_type WHEN 'TTM_BOTH' THEN 0 WHEN 'TTM_OP_INFLECT' THEN 1
@@ -174,11 +174,12 @@ def get_signal_stats():
                         THEN (ph.close - es.price_at_signal)/es.price_at_signal*100
                         ELSE NULL END AS return_since_signal
             FROM earnings_signals es
-            LEFT JOIN (
-                SELECT stock_code, close FROM price_history p1
-                WHERE date=(SELECT MAX(date) FROM price_history p2
-                            WHERE p2.stock_code=p1.stock_code AND p2.close>0)
-            ) ph ON es.stock_code=ph.stock_code
+            LEFT JOIN LATERAL (
+                -- 2026-09-24: 전 종목 최신가를 상관 서브쿼리로 스캔(10초)하던 것을 신호 종목별 인덱스 조회로
+                SELECT p.close FROM price_history p
+                WHERE p.stock_code=es.stock_code AND p.close>0
+                ORDER BY p.date DESC LIMIT 1
+            ) ph ON TRUE
             WHERE es.is_active=1
         ) GROUP BY signal_type
     """).fetchall()

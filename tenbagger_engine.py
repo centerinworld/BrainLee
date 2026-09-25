@@ -45,7 +45,7 @@ import logging
 from services.gemini_openai_compat import OpenAI
 import sqlite3
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 
 import config
@@ -255,20 +255,26 @@ def _fetch_price_data(conn, stock_code: str) -> dict:
 
 def _fetch_financials(conn, stock_code: str) -> dict:
     """최근 2개년 연간 재무 데이터 → 성장률 계산."""
-    rows = conn.execute("""
+    # 2026-09-24: 연간행도 CFS·OFS가 같은 연도에 공존(1,185종목)해 LIMIT 3이 같은 해의
+    # CFS/OFS를 집어 '성장률'을 계산했다 → 최신 연도의 basis(동률 CFS) 하나로 고정.
+    all_rows = conn.execute("""
         SELECT year, revenue, operating_profit, net_income,
-               total_equity, total_assets, eps
+               total_equity, total_assets, eps, report_type
         FROM   financial_data
         WHERE  stock_code = ?
           AND  is_annual = 1
           AND  quarter = 4
           AND  revenue IS NOT NULL
           AND  revenue > 0
-        ORDER  BY year DESC
-        LIMIT  3
+        ORDER  BY year DESC, CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+        LIMIT  12
     """, (stock_code,)).fetchall()
+    if not all_rows:
+        return {}
+    _basis = all_rows[0][7]
+    rows = [r[:7] for r in all_rows if r[7] == _basis][:3]
 
-    if len(rows) < 2:
+    if len(rows) < 2 or int(rows[0][0]) - int(rows[1][0]) != 1:
         return {}
 
     def safe_pct(new, old):
@@ -460,6 +466,36 @@ def _fetch_supply(conn, stock_code: str) -> dict:
     }
 
 
+def _last_two_consecutive_quarters(conn, table: str, stock_code: str, field: str,
+                                   extra_where: str = "", q_range: str = "1 AND 4"):
+    """같은 report_type에서 연속한 최근 두 분기 (cur, prev) 값을 반환, 없으면 None.
+
+    2026-09-24: financial_data/cash_flow_data 분기행은 CFS·OFS가 같은 (연도,분기)에 공존해
+    `ORDER BY year DESC, quarter DESC LIMIT 2`가 같은 분기의 CFS와 OFS를 집어 가짜 QoQ를
+    만들었다(예: 삼성전자 2026Q1 CFS 133.9조 vs OFS 109.3조 → '+22%'). 최신 분기의 basis
+    (동률이면 CFS) 하나만 쓰고, 두 분기가 연속(분기 인덱스 차 1)일 때만 비교한다.
+    """
+    rows = conn.execute(f"""
+        SELECT year, quarter, report_type, {field}
+        FROM {table}
+        WHERE stock_code=? AND is_annual=0 AND quarter BETWEEN {q_range}
+          AND {field} IS NOT NULL {extra_where}
+        ORDER BY year DESC, quarter DESC,
+                 CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END
+        LIMIT 12
+    """, (stock_code,)).fetchall()
+    if not rows:
+        return None
+    basis = rows[0][2]
+    same = [r for r in rows if r[2] == basis]
+    if len(same) < 2:
+        return None
+    (y0, q0, _, v0), (y1, q1, _, v1) = same[0], same[1]
+    if (int(y0) * 4 + int(q0)) - (int(y1) * 4 + int(q1)) != 1:
+        return None
+    return float(v0), float(v1)
+
+
 def _fetch_extra_signals(conn, stock_code: str) -> dict:
     """수주잔고, CB/BW 희석 이력 + 원가구조 개선 조회."""
     # 수주잔고 (최신 분기)
@@ -596,20 +632,24 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
             SELECT COUNT(*)
             FROM dart_contracts
             WHERE stock_code=?
-              AND disclosed_at >= date('now', '-365 days')
+              AND disclosed_at >= ?
               AND COALESCE(report_nm, '') NOT LIKE '%정정%'
-        """, (stock_code,)).fetchone()[0] or 0)
+        """, (stock_code, (datetime.now() - timedelta(days=365)).strftime("%Y%m%d"))).fetchone()[0] or 0)
+        # 2026-09-24: disclosed_at은 'YYYYMMDD'라 date('now','-365 days')('YYYY-MM-DD')와 문자열 비교 시
+        # '20250101' >= '2025-09-24'가 참 → 1년 창이 전년 1월까지 늘어났었다
     except Exception:
         pass
 
     # 원가구조 개선 신호 (cost_structure) — cogs_ratio YoY 감소 = 마진 개선 선행 신호
+    # 2026-09-24: 조회가 LIMIT 4(최근 4분기)라 '전년 동기'가 결과에 들어올 수 없어 이 신호와
+    # 아래 fixed_ratio_delta가 한 번도 계산되지 않았다 → LIMIT 8.
     cost_improvement = None
     try:
         cost_rows = conn.execute("""
             SELECT year, quarter, cogs_ratio, total_cogs, revenue
             FROM cost_structure
             WHERE stock_code = ? AND cogs_ratio IS NOT NULL AND cogs_ratio > 0
-            ORDER BY year DESC, quarter DESC LIMIT 4
+            ORDER BY year DESC, quarter DESC LIMIT 8
         """, (stock_code,)).fetchall()
         if len(cost_rows) >= 2:
             latest = cost_rows[0]
@@ -633,7 +673,7 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
                    labor_ratio, material_ratio, total_cogs, revenue
             FROM cost_breakdown
             WHERE stock_code=? AND fixed_cost_ratio IS NOT NULL
-            ORDER BY year DESC, quarter DESC LIMIT 4
+            ORDER BY year DESC, quarter DESC LIMIT 8
         """, (stock_code,)).fetchall()
         if cb_rows:
             latest_cb = cb_rows[0]
@@ -662,13 +702,15 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
         bb_rows = conn.execute("""
             SELECT COUNT(*) as cnt, MAX(rcept_dt) as last_dt
             FROM treasury_buyback
-            WHERE stock_code=? AND event_type IN ('취득결정','취득결과')
+            WHERE stock_code=? AND event_class IN ('취득결정','취득결과','신탁체결')
               AND rcept_dt >= date('now', '-180 days')
+              -- 2026-09-24: event_type은 두 어휘(취득결정/acquisition/trust/기타)가 섞여 신탁 매입·영문 라벨을
+              -- 놓쳤다 → scripts/ops/sync_treasury_buyback_from_dart.py가 채우는 정규 분류 event_class 사용
         """, (stock_code,)).fetchone()
         if bb_rows and bb_rows[0] > 0:
             cancel_cnt = conn.execute("""
                 SELECT COUNT(*) FROM treasury_buyback
-                WHERE stock_code=? AND event_type='소각'
+                WHERE stock_code=? AND event_class='소각'
                   AND rcept_dt >= date('now', '-365 days')
             """, (stock_code,)).fetchone()[0]
             buyback_signal = {
@@ -709,6 +751,7 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
             SELECT signal_type, COUNT(*) as cnt, MAX(rcept_dt) as latest
             FROM dart_rd_patent_signals
             WHERE stock_code = ? AND rcept_dt >= date('now', '-365 days')
+              AND exclude_reason IS NULL  -- 2026-09-24: 특허소송·계약해지 등 부정 공시 제외
             GROUP BY signal_type
         """, (stock_code,)).fetchall()
         if rp_rows:
@@ -821,30 +864,18 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
                 qoq_signals["backlog_qoq"] = round((bl_cur - bl_prev) / bl_prev * 100, 1)
 
         # 2) 최근 2개 분기 매출 QoQ (Q4 파생 제외)
-        rev_q_rows = conn.execute("""
-            SELECT year, quarter, revenue
-            FROM financial_data
-            WHERE stock_code=? AND is_annual=0
-              AND revenue IS NOT NULL AND revenue > 0
-              AND quarter BETWEEN 1 AND 3
-            ORDER BY year DESC, quarter DESC LIMIT 2
-        """, (stock_code,)).fetchall()
-        if len(rev_q_rows) >= 2:
-            rq_cur, rq_prev = rev_q_rows[0][2], rev_q_rows[1][2]
+        _rv = _last_two_consecutive_quarters(conn, "financial_data", stock_code, "revenue",
+                                             "AND revenue > 0", "1 AND 3")
+        if _rv:
+            rq_cur, rq_prev = _rv
             if rq_prev > 0:
                 qoq_signals["revenue_qoq"] = round((rq_cur - rq_prev) / rq_prev * 100, 1)
 
         # 3) 영업이익 QoQ (흑자전환 포함)
-        op_q_rows = conn.execute("""
-            SELECT year, quarter, operating_profit
-            FROM financial_data
-            WHERE stock_code=? AND is_annual=0
-              AND operating_profit IS NOT NULL
-              AND quarter BETWEEN 1 AND 3
-            ORDER BY year DESC, quarter DESC LIMIT 2
-        """, (stock_code,)).fetchall()
-        if len(op_q_rows) >= 2:
-            oq_cur, oq_prev = op_q_rows[0][2], op_q_rows[1][2]
+        _op = _last_two_consecutive_quarters(conn, "financial_data", stock_code, "operating_profit",
+                                             "", "1 AND 3")
+        if _op:
+            oq_cur, oq_prev = _op
             if oq_prev < 0 and oq_cur > 0:
                 qoq_signals["op_turnaround"] = True
             elif oq_prev > 0:
@@ -864,28 +895,18 @@ def _fetch_extra_signals(conn, stock_code: str) -> dict:
                 qoq_signals["inventory_qoq"] = round((iq_cur - iq_prev) / iq_prev * 100, 1)
 
         # 5) 감가상각비 QoQ (설비 투자 확대 증거)
-        dep_q_rows = conn.execute("""
-            SELECT year, quarter, depreciation
-            FROM cash_flow_data
-            WHERE stock_code=? AND is_annual=0
-              AND depreciation IS NOT NULL AND depreciation > 0
-            ORDER BY year DESC, quarter DESC LIMIT 2
-        """, (stock_code,)).fetchall()
-        if len(dep_q_rows) >= 2:
-            dq_cur, dq_prev = dep_q_rows[0][2], dep_q_rows[1][2]
+        # depreciation 컬럼은 누적/분기 값이 섞여 있어(value_type) 분기값 depreciation_q 사용
+        _dp = _last_two_consecutive_quarters(conn, "cash_flow_data", stock_code, "depreciation_q",
+                                             "AND depreciation_q > 0")
+        if _dp:
+            dq_cur, dq_prev = _dp
             if dq_prev > 0:
                 qoq_signals["depreciation_qoq"] = round((dq_cur - dq_prev) / dq_prev * 100, 1)
 
         # 6) EPS QoQ
-        eps_q_rows = conn.execute("""
-            SELECT year, quarter, eps
-            FROM financial_data
-            WHERE stock_code=? AND is_annual=0
-              AND eps IS NOT NULL AND quarter BETWEEN 1 AND 3
-            ORDER BY year DESC, quarter DESC LIMIT 2
-        """, (stock_code,)).fetchall()
-        if len(eps_q_rows) >= 2:
-            eq_cur, eq_prev = eps_q_rows[0][2], eps_q_rows[1][2]
+        _ep = _last_two_consecutive_quarters(conn, "financial_data", stock_code, "eps", "", "1 AND 3")
+        if _ep:
+            eq_cur, eq_prev = _ep
             if eq_prev is not None and eq_prev < 0 and eq_cur > 0:
                 qoq_signals["eps_turnaround"] = True
             elif eq_prev is not None and eq_prev > 0 and eq_cur is not None:

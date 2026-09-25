@@ -220,8 +220,10 @@ def _score_stock(conn, code: str, kospi_ret3m: float, sector_act: dict) -> dict 
         FROM financial_data
         WHERE stock_code=? AND is_annual=0
           AND revenue IS NOT NULL
+          -- 2026-09-24: CFS·OFS 공존 분기에서 두 basis가 섞여 성장률/연속성 점수가 왜곡 → 최신 분기 basis 하나만
+          AND report_type = (SELECT b.report_type FROM financial_data b WHERE b.stock_code=? AND b.is_annual=0 AND b.revenue IS NOT NULL ORDER BY b.year DESC, b.quarter DESC, CASE b.report_type WHEN 'CFS' THEN 0 ELSE 1 END LIMIT 1)
         ORDER BY year DESC, quarter DESC LIMIT 8
-    """, (code,)).fetchall()
+    """, (code, code)).fetchall()
 
     if len(q_rows) < 3:
         return None

@@ -221,6 +221,7 @@ def _load_recent_rd_signals(conn: sqlite3.Connection, stock_code: str) -> list[d
         SELECT rcept_dt, report_nm, signal_type, amount_krw, notes
         FROM dart_rd_patent_signals
         WHERE stock_code=?
+          AND exclude_reason IS NULL
         ORDER BY rcept_dt DESC, id DESC
         LIMIT 6
         """,
@@ -686,7 +687,7 @@ def _compute_cherry_screener(min_mktcap: float = 300.0, max_mktcap: float = 3000
 
         # 꿈촉매(특허/기술이전/R&D계약/라이선스, 트레일링365일) — turnaround-watch와 동일
         patent_events: dict[str, list[str]] = {}
-        for r in conn.execute("SELECT stock_code, rcept_dt FROM dart_rd_patent_signals"):
+        for r in conn.execute("SELECT stock_code, rcept_dt FROM dart_rd_patent_signals WHERE exclude_reason IS NULL"):
             patent_events.setdefault(r[0], []).append(r[1])
         for c in patent_events:
             patent_events[c].sort()

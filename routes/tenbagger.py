@@ -3059,16 +3059,20 @@ def _build_tenbagger_context(stock_code: str) -> dict:
         SELECT year, quarter, revenue, operating_profit, net_income, total_assets, total_equity
         FROM financial_data
         WHERE stock_code=? AND is_annual=0
+          AND report_type = (SELECT b.report_type FROM financial_data b WHERE b.stock_code=? AND b.is_annual=0  ORDER BY b.year DESC, b.quarter DESC, CASE b.report_type WHEN 'CFS' THEN 0 ELSE 1 END LIMIT 1)  -- 2026-09-24: CFS/OFS 혼재 방지
         ORDER BY year DESC, quarter DESC LIMIT 5
-    """, (stock_code,)).fetchall()
+    """, (stock_code, stock_code)).fetchall()
 
     # 연간 재무 2년
     ann_rows = conn.execute("""
-        SELECT year, revenue, operating_profit, net_income, total_assets, total_equity
+        SELECT DISTINCT ON (year) year, revenue, operating_profit, net_income, total_assets, total_equity
         FROM financial_data
         WHERE stock_code=? AND is_annual=1
-        ORDER BY year DESC LIMIT 2
-    """, (stock_code,)).fetchall()
+          AND report_type = (SELECT b.report_type FROM financial_data b WHERE b.stock_code=? AND b.is_annual=1 ORDER BY b.year DESC, CASE b.report_type WHEN 'CFS' THEN 0 ELSE 1 END LIMIT 1)
+        -- 연간행은 quarter=0(FnGuide)/4(DART)로 중복 저장됨 → 연도당 1행, DART(quarter=4) 우선
+        ORDER BY year DESC, CASE WHEN quarter=4 THEN 0 ELSE 1 END
+        LIMIT 2
+    """, (stock_code, stock_code)).fetchall()
 
     # 최근 현금흐름
     cf_rows = conn.execute("""
@@ -3076,8 +3080,9 @@ def _build_tenbagger_context(stock_code: str) -> dict:
                (COALESCE(operating_cf_q,operating_cf,0) - ABS(COALESCE(capex_q,capex,0))) AS free_cf
         FROM cash_flow_data
         WHERE stock_code=? AND is_annual=0
+          AND report_type = (SELECT b.report_type FROM cash_flow_data b WHERE b.stock_code=? AND b.is_annual=0  ORDER BY b.year DESC, b.quarter DESC, CASE b.report_type WHEN 'CFS' THEN 0 ELSE 1 END LIMIT 1)
         ORDER BY year DESC, quarter DESC LIMIT 4
-    """, (stock_code,)).fetchall()
+    """, (stock_code, stock_code)).fetchall()
 
     # 수급 (최근 60일)
     supply = conn.execute("""
@@ -4193,8 +4198,8 @@ def get_treasury_buyback_top(days: int = Query(365, ge=30, le=3650), limit: int 
         rows = conn.execute("""
             SELECT tb.stock_code, MAX(su.stock_name) AS stock_name, MAX(su.market) AS market,
                    COUNT(*) as total_events,
-                   SUM(CASE WHEN tb.event_type IN ('취득결정','취득결과') THEN 1 ELSE 0 END) as acquisitions,
-                   SUM(CASE WHEN tb.event_type='소각' THEN 1 ELSE 0 END) as cancellations,
+                   SUM(CASE WHEN tb.event_class IN ('취득결정','취득결과','신탁체결') THEN 1 ELSE 0 END) as acquisitions,
+                   SUM(CASE WHEN tb.event_class='소각' THEN 1 ELSE 0 END) as cancellations,
                    MAX(tb.rcept_dt) as last_event
             FROM treasury_buyback tb
             JOIN stock_universe su ON su.stock_code=tb.stock_code
@@ -5489,6 +5494,7 @@ def get_rd_patent_signals(stock_code: str):
             SELECT signal_type, rcept_dt, report_nm, amount_krw, notes, rcept_no
             FROM dart_rd_patent_signals
             WHERE stock_code = ?
+              AND exclude_reason IS NULL
             ORDER BY rcept_dt DESC LIMIT 100
         """, (stock_code,)).fetchall()
         signals = [dict(r) for r in rows]
@@ -5498,6 +5504,7 @@ def get_rd_patent_signals(stock_code: str):
             SELECT signal_type, COUNT(*) as cnt, MAX(rcept_dt) as latest
             FROM dart_rd_patent_signals
             WHERE stock_code = ? AND rcept_dt >= date('now', '-365 days')
+              AND exclude_reason IS NULL
             GROUP BY signal_type
         """, (stock_code,)).fetchall()
         summary = {r["signal_type"]: {"cnt": r["cnt"], "latest": r["latest"]} for r in summary_rows}
@@ -5712,7 +5719,7 @@ def _compute_turnaround_watch(min_mktcap: float = 300.0) -> dict:
         # 전형적 꿈/테마주 분포. 수주잔고서지(order_backlog YoY)는 train/test 부호가 뒤집혀
         # (학습 -13.7%/검증 +17.7%) 기각 — 채택하지 않음.
         patent_events: dict[str, list[str]] = {}
-        for r in conn.execute("SELECT stock_code, rcept_dt FROM dart_rd_patent_signals"):
+        for r in conn.execute("SELECT stock_code, rcept_dt FROM dart_rd_patent_signals WHERE exclude_reason IS NULL"):
             patent_events.setdefault(r["stock_code"], []).append(r["rcept_dt"])
         for c in patent_events:
             patent_events[c].sort()
@@ -6389,8 +6396,8 @@ def get_turnaround_watch_detail(stock_code: str):
 
         patent_rows = conn.execute("""
             SELECT rcept_dt, report_nm, signal_type, amount_krw FROM dart_rd_patent_signals
-            WHERE stock_code=? AND rcept_dt >= ? ORDER BY rcept_dt DESC
-        """, (stock_code, cutoff3y.replace("-", ""))).fetchall()
+            WHERE stock_code=? AND rcept_dt >= ? AND exclude_reason IS NULL ORDER BY rcept_dt DESC
+        """, (stock_code, cutoff3y)).fetchall()  # rcept_dt는 'YYYY-MM-DD' — YYYYMMDD로 바꿔 비교하면 첫 해가 통째로 빠졌다
         patent_history = [{
             "date": r["rcept_dt"], "report": r["report_nm"], "type": r["signal_type"],
             "amount_백만": round(r["amount_krw"] / 1e6) if r["amount_krw"] else None,
