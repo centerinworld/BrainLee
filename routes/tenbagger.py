@@ -3961,7 +3961,7 @@ def get_valuation_history(stock_code: str, quarters: int = Query(20, ge=4, le=40
     conn = _get_conn()
     try:
         rows = conn.execute("""
-            SELECT year, quarter, period_end, close_price, eps, bps, per, pbr, market_cap_억
+            SELECT year, quarter, period_end, close_price, eps, bps, per, pbr, market_cap_억, per_ttm, ttm_net_income
             FROM valuation_history
             WHERE stock_code=?
             ORDER BY year DESC, quarter DESC

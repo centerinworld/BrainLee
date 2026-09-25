@@ -17,9 +17,14 @@ from bisect import bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
+
+# numpy 2.x + macOS Accelerate emits spurious FP warnings from matmul even on clean finite data (verified) - not a fit problem.
+warnings.filterwarnings("ignore", message=".*encountered in matmul", category=RuntimeWarning)
 
 
 OUTPUT_JSON = "/Volumes/Realtek_NVME/stock_dashboard/runtime/research_outputs/strategy_research_summary.json"
@@ -48,12 +53,16 @@ class LogisticModel:
     weights: np.ndarray
     mean: np.ndarray
     std: np.ndarray
+    lo: np.ndarray | None = None   # 1/99 percentile clip bounds of the TRAINING features (raw per/supply/return outliers diverged the fit)
+    hi: np.ndarray | None = None
 
     def predict_proba(self, frame: pd.DataFrame) -> np.ndarray:
         if frame.empty:
             return np.array([])
         x = frame[FEATURE_COLUMNS].to_numpy(dtype=float)
         x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+        if self.lo is not None:
+            x = np.clip(x, self.lo, self.hi)
         xs = (x - self.mean) / self.std
         xb = np.c_[np.ones(len(xs)), xs]
         z = np.clip(xb @ self.weights, -30, 30)
@@ -162,7 +171,11 @@ def _load_source_frames(start_price_date: str = "2018-01-01") -> tuple[pd.DataFr
           AND m.market IN ('KOSPI', 'KOSDAQ')
           AND m.is_tradable=1
           AND m.is_etf_etn=0
-          AND m.security_type IN ('주권','common_or_unknown')
+          AND m.security_type IN ('주권','common_or_unknown','listed_equity')
+          -- 2026-09-25: every delisted/merged common stock (549 in security_master_history) carries security_type='listed_equity',
+          -- so the old two-type filter silently dropped ALL of them (survivorship bias in the whole snapshot, labels and factor
+          -- research). Include them, but keep parity with the active universe, which excludes preferreds.
+          AND NOT (m.security_type = 'listed_equity' AND m.stock_name ~ '우(B|\\(.*\\))?$')
           AND m.stock_name NOT LIKE '%스팩%'
         ORDER BY p.stock_code, p.date
     """), engine, params={"start_date": start_price_date})
@@ -242,6 +255,8 @@ def _fit_logistic(frame: pd.DataFrame, label_col: str, lr: float = 0.08, epochs:
     x = train[FEATURE_COLUMNS].to_numpy(dtype=float)
     x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
     y = train[label_col].astype(float).to_numpy()
+    lo, hi = np.percentile(x, 1, axis=0), np.percentile(x, 99, axis=0)
+    x = np.clip(x, lo, hi)
     mean = x.mean(axis=0)
     std = x.std(axis=0)
     std[std == 0] = 1.0
@@ -259,7 +274,7 @@ def _fit_logistic(frame: pd.DataFrame, label_col: str, lr: float = 0.08, epochs:
         grad = (xb.T @ ((p - y) * sample_weight)) / len(y)
         grad[1:] += l2 * w[1:]
         w -= lr * grad
-    return LogisticModel(weights=w, mean=mean, std=std)
+    return LogisticModel(weights=w, mean=mean, std=std, lo=lo, hi=hi)
 
 
 def _evaluate_monthly_topk(frame: pd.DataFrame, score_col: str, label_col: str, k: int) -> dict:
@@ -305,16 +320,48 @@ def build_strategy_research_dataset(
     train_end_date: str = "2024-06-30",
     snapshot_table: str = SNAPSHOT_TABLE,
     adjust_jumps: bool = False,
+    legit_only: bool = False,
+    ttm_valuation: bool = False,
 ) -> dict:
     price, valuation, shares = _load_source_frames()
     jump_events: dict[str, set] = {}
     if adjust_jumps:
         ev = pd.read_sql_query(text("SELECT stock_code, event_date FROM price_jump_audit WHERE classification IN ('confirmed_corporate_action','corporate_action_pending_confirmation','corporate_action_share_count_evidence','corporate_action_or_delisting_nearby')"), engine)
+        if legit_only:
+            # keep only events with independent evidence of a real capital action: DART factor-confirmed, or marcap shares
+            # outstanding moved by ~1/price_ratio (market cap continuous). 'pending_confirmation'/'nearby' rows without that
+            # evidence may be genuine market moves and are NOT masked (a masked real surge would delete a true winner).
+            from marcap_client import share_count_evidence
+            ev2 = pd.read_sql_query(text("SELECT stock_code, event_date, classification, price_ratio FROM price_jump_audit WHERE classification IN ('confirmed_corporate_action','corporate_action_share_count_evidence','corporate_action_pending_confirmation','corporate_action_or_delisting_nearby')"), engine)
+            keep = []
+            for r in ev2.itertuples():
+                if r.classification in ('confirmed_corporate_action', 'corporate_action_share_count_evidence'):
+                    keep.append((r.stock_code, r.event_date))
+                elif r.price_ratio and r.price_ratio > 0 and share_count_evidence(r.stock_code, str(r.event_date)[:10], float(r.price_ratio)):
+                    keep.append((r.stock_code, r.event_date))
+            ev = pd.DataFrame(keep, columns=["stock_code", "event_date"])
         for code, d in zip(ev.stock_code, ev.event_date):
             jump_events.setdefault(code, set()).add(str(d)[:10])
     if price.empty:
         raise RuntimeError("price_history source is empty")
 
+    ttm_q: dict[str, pd.DataFrame] = {}
+    if ttm_valuation:
+        # 2026-09-24: valuation_history.per is price/quarterly-EPS for Q1-Q3 rows but price/annual-EPS for Q4 rows (Samsung
+        # 2025Q3 per 52.15 vs Q4 15.7) and is frozen at the period-end price, so it is neither comparable across quarters nor
+        # point-in-time. Rebuild PER/PBR at every snapshot date from financial_data quarterly (3-month) net income:
+        #   TTM net income = sum of the latest 4 consecutive quarters AVAILABLE at the snapshot (Q1-Q3 filed <=45d, Q4 <=90d after
+        #   quarter end); per = close*shares / TTM NI (NaN if TTM NI <= 0); pbr = close / latest available bps.
+        fd = pd.read_sql_query(text(
+            "SELECT stock_code, year, quarter, report_type, net_income, bps FROM financial_data "
+            "WHERE is_annual = false AND quarter BETWEEN 1 AND 4 AND year >= 2017 AND net_income IS NOT NULL"), engine)
+        fd["prio"] = (fd.report_type != "CFS").astype(int)   # prefer consolidated
+        fd = fd.sort_values(["stock_code", "year", "quarter", "prio"]).drop_duplicates(["stock_code", "year", "quarter"], keep="first")
+        fd["period_end"] = pd.to_datetime(fd.year.astype(int).astype(str) + "-" + (fd.quarter * 3).astype(int).map("{:02d}".format) + "-01") + pd.offsets.MonthEnd(0)
+        fd["avail"] = fd.period_end + pd.to_timedelta(np.where(fd.quarter == 4, 90, 45), unit="D")
+        fd["qidx"] = fd.year * 4 + fd.quarter
+        for code, g in fd.groupby("stock_code", sort=False):
+            ttm_q[code] = g.sort_values("qidx").reset_index(drop=True)
     price["date"] = pd.to_datetime(price["date"], format="mixed", errors="coerce")
     valuation["period_end"] = pd.to_datetime(valuation["period_end"], format="mixed", errors="coerce")
     shares["effective_from"] = pd.to_datetime(shares["effective_from"], format="mixed", errors="coerce")
@@ -422,7 +469,9 @@ def build_strategy_research_dataset(
                 future_24m_dates = price_dates[pos + 1:horizon_24m_end]
                 max_24m = float(np.max(future_24m))
                 max_36m = float(np.max(price_values[pos + 1:min(len(price_values), pos + 1 + 756)]))
-                cur_close = float(row["close"])
+                # base = the SAME series the forward prices come from (adjusted when adjust_jumps); using the raw snapshot close
+                # against an adjusted forward path inflated/deflated labels for any stock with a later jump (e.g. reverse split)
+                cur_close = float(price_values[pos])
                 if cur_close > 0:
                     fwd_6m = max_6m / cur_close - 1.0
                     fwd_12m = max_12m / cur_close - 1.0
@@ -464,6 +513,21 @@ def build_strategy_research_dataset(
                     if pd.isna(share_end) or snapshot_date <= share_end:
                         share_mcap = float(row["close"]) * share_values[share_pos] / 100_000_000.0
             market_cap = mcap_hist if pd.notna(mcap_hist) else share_mcap
+            if ttm_valuation:
+                per, pbr = np.nan, np.nan
+                q = ttm_q.get(stock_code)
+                if q is not None:
+                    avail_q = q[q.avail <= snapshot_date]
+                    if len(avail_q):
+                        last4 = avail_q.tail(4)
+                        if len(last4) == 4 and last4.qidx.iloc[-1] - last4.qidx.iloc[0] == 3:   # four consecutive quarters
+                            ttm_ni = float(last4.net_income.sum())
+                            mcap_won = (share_mcap if pd.notna(share_mcap) else (market_cap if pd.notna(market_cap) else np.nan)) * 100_000_000.0
+                            if ttm_ni > 0 and pd.notna(mcap_won):
+                                per = mcap_won / ttm_ni
+                        bps_last = avail_q.bps.iloc[-1]
+                        if pd.notna(bps_last) and bps_last > 0:
+                            pbr = float(row["close"]) / float(bps_last)
             record = {
                 "snapshot_date": snapshot_date.strftime("%Y-%m-%d"),
                 "stock_code": stock_code,
@@ -613,11 +677,15 @@ if __name__ == "__main__":
     parser.add_argument("--start-snapshot-date", default="2020-01-31")
     parser.add_argument("--train-end-date", default="2024-06-30")
     parser.add_argument("--adjust-jumps", action="store_true")
+    parser.add_argument("--ttm-valuation", action="store_true", help="PIT TTM PER/PBR from financial_data instead of valuation_history")
+    parser.add_argument("--legit-only", action="store_true", help="with --adjust-jumps: mask only events with share-count/DART evidence")
     args = parser.parse_args()
     out = build_strategy_research_dataset(
         start_snapshot_date=args.start_snapshot_date,
         train_end_date=args.train_end_date,
         snapshot_table=args.snapshot_table,
         adjust_jumps=args.adjust_jumps,
+        legit_only=args.legit_only,
+        ttm_valuation=args.ttm_valuation,
     )
     print(json.dumps(out["dataset"], ensure_ascii=False, indent=2))

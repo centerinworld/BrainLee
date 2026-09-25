@@ -55,7 +55,6 @@ REQUIRED_TABLES = [
     "segment_revenue",
     "short_sell_daily",
     "stock_collection_config",
-    "strategy_feature_snapshot",
     "treasury_buyback",
     "valuation_history",
 ]

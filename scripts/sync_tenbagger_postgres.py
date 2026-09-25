@@ -73,7 +73,6 @@ TABLE_FILTERS: dict[str, tuple[str, tuple[Any, ...]]] = {
     "segment_revenue": ("WHERE year >= ?", (_year(3),)),
     "short_sell_daily": ("WHERE bas_dt >= ?", (_ymd(45),)),
     "stock_collection_config": ("", ()),
-    "strategy_feature_snapshot": ("", ()),
     "treasury_buyback": (
         "WHERE (rcept_dt LIKE '%-%' AND rcept_dt >= ?) OR (rcept_dt NOT LIKE '%-%' AND rcept_dt >= ?)",
         (_iso(730), _ymd(730)),
