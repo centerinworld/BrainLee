@@ -2199,11 +2199,56 @@ class CollectionScheduler:
             _run_job_safe("HOT섹터블로그", self._job_sector_blog)
 
     def _loop_sector_index_rebuild(self) -> None:
-        """매일 18:40 — price_history 기반 파생 섹터지수 보완."""
+        """매일 18:40 + 19:30 두 번 — price_history 기반 파생 섹터지수 보완.
+
+        19:30 재시도가 필요한 이유(2026-09-25 실측): 당일 종가 커버리지가 2000종목을
+        넘는 시점은 KIS일별수집(18:00)·가격커버리지백필(19:15) 이후다. 18:40 한 번만
+        돌면 그날 파생지수가 통째로 빠지고(`start > end` → `inserted_or_updated: 0`),
+        그 사실은 다음 날에야 lag 로 드러난다(09-23 18:40 run_id 37215 = 계약 healthy·
+        원장 success 인데 `sector_index_daily` max 는 09-22 그대로).
+        """
         self._wait_secs(72)
         while not self._stop_event.is_set():
             self._wait_until(18, 40, skip_weekend=True)
             _run_job_safe("섹터지수보완", self._job_sector_index_rebuild)
+            # 19:30 재시도 — 가격 파이프라인(19:15 백필) 이후 커버리지가 찬 뒤 한 번 더.
+            self._wait_until(19, 30, skip_weekend=True)
+            _run_job_safe("섹터지수보완", self._job_sector_index_rebuild)
+
+    @staticmethod
+    def _parse_sector_index_payload(stdout: str) -> dict | None:
+        """rebuild 스크립트가 stdout 에 찍는 dict repr 을 파싱한다(없으면 None)."""
+        import ast
+
+        for line in reversed((stdout or "").strip().splitlines()):
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                value = ast.literal_eval(line)
+            except (ValueError, SyntaxError):
+                continue
+            if isinstance(value, dict):
+                return value
+        return None
+
+    @staticmethod
+    def _sector_index_noop_reason(payload: dict) -> str | None:
+        """`inserted_or_updated == 0` + `start > end`(채울 구간 없음)이면 사유 문자열.
+
+        이 조합은 "아직 채울 게 없다"는 정상 상태(휴장일 또는 이미 최신)와
+        "당일 커버리지 부족으로 하루를 건너뛰었다"를 구분하지 못하므로 실패로 승격하지
+        않고 경고만 남긴다. 두 경우 모두 19:30 재시도가 판정을 확정한다.
+        """
+        try:
+            start = str(payload.get("start") or "")
+            end = str(payload.get("end") or "")
+            inserted = int(payload.get("inserted_or_updated") or 0)
+        except (TypeError, ValueError):
+            return None
+        if inserted == 0 and start and end and start > end:
+            return f"0행 — start({start}) > end({end}): 당일 종가 커버리지 부족"
+        return None
 
     def _job_sector_index_rebuild(self) -> None:
         """Rebuild derived sector_index_daily rows from local OHLCV."""
@@ -2221,6 +2266,13 @@ class CollectionScheduler:
             logger.info(f"[섹터지수보완] 완료: {(r.stdout or '')[-500:]}")
             if r.returncode != 0:
                 raise RuntimeError((r.stderr or r.stdout or "")[-1000:])
+            payload = self._parse_sector_index_payload(r.stdout)
+            if payload is None:
+                logger.warning("[섹터지수보완] 결과 파싱 실패 — 0행/구간 판정 불가(stdout 비어 있음)")
+                return
+            reason = self._sector_index_noop_reason(payload)
+            if reason:
+                logger.warning(f"[섹터지수보완] {reason} — 19:30 재시도에서 보정된다")
         except Exception as e:
             logger.error(f"[섹터지수보완] 오류: {e}", exc_info=True)
 
