@@ -168,6 +168,11 @@ JOB_DATASET_KEYS = {
     # 2026-09-24: ka00190 대량체결도 무검증이었다(09-22·09-23 success 79건 / 테이블 0행).
     "키움대량체결": ("kiwoom_large_trade_rank",),
     "섹터지수보완": ("sector_index",),
+    # 2026-09-25: ETF 구성 수집은 스케줄러 밖(launchd 21:15·22:05 / cron retry)에서 돌았다.
+    # 그래서 원장에 ETF 잡이 0건이었고(`%etf%` LIKE 0행), 파이프라인이 죽어도(실측: 09-18 이후
+    # stale·lag 3) 계약이 잡 실행을 볼 수 없어 테이블 워터마크만이 유일한 감지기였다.
+    # 점검 잡을 계약에 묶어 원장·실패 알림 경로로 편입한다.
+    "ETF수집점검": ("etf",),
     "미국일별시세팩터수집": ("us_price", "us_factor"),
     "글로벌매크로수집": ("global_macro_fast",),
     "퀀트주요지표일일": ("quant_macro_bridge",),

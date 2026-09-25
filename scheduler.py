@@ -119,6 +119,9 @@ _DB_WRITE_JOBS = {
 #     10분 주기로 락을 다투다 2026-07 이후에만 404회 lock_timeout을 냈다.
 #   - 페이지데이터감사: scripts/audit_all_page_data_quality.py는 전 테이블을 읽고
 #     research_outputs/*.md만 쓴다 (DB write 0건).
+#   - ETF수집점검: 계약 평가(읽기)가 본체이고 쓰기는 launchd 파이프라인 스크립트에 위임한다.
+#     락을 잡으면 같은 시각 writer 와 충돌할 뿐이고, 재시도 예산(0+60+300초)으로 수십 분짜리
+#     파이프라인을 3회 돌리는 사고를 막는다(단일 시도).
 
 _DB_LOCK_RETRY_DELAYS = tuple(
     int(value.strip())
@@ -424,7 +427,8 @@ class CollectionScheduler:
             ("미국13F거물공시", self._loop_us_13f_refresh), # ★ 매일 07:12 SEC 13F + House PTR 갱신
             ("시장시그널브리핑", self._loop_market_signal_briefing), # ★ 매일 07:00 시장 5단계 국면 + AI 브리핑
             ("HOT섹터블로그",   self._loop_sector_blog),          # ★ 매일 07:00 블로그 신규 포스트 파싱
-            ("섹터지수보완",    self._loop_sector_index_rebuild),  # ★ 매일 18:40 가격히스토리 기반 섹터지수 보완
+            ("섹터지수보완",    self._loop_sector_index_rebuild),  # ★ 매일 18:40 + 19:30 가격히스토리 기반 섹터지수 보완
+            ("ETF수집점검",      self._loop_etf_freshness),          # ★ 매일 21:45 launchd ETF 파이프라인 계약 검증(미실행 시 1회 재시도)
             ("섹터로테이션캐시", self._loop_sector_rotation_cache), # ★ 장중 1시간 + 장마감 기준 주도섹터 캐시
             ("AI주도섹터",      self._loop_ai_leading_sector),    # ★ 매일 07:20 미국 증시 기반 주도 섹터 판독
             ("섹터오전텔레그램", self._loop_sector_morning_tg),    # ★ 매일 08:30 섹터 AI 리포트 텔레그램
@@ -2275,6 +2279,105 @@ class CollectionScheduler:
                 logger.warning(f"[섹터지수보완] {reason} — 19:30 재시도에서 보정된다")
         except Exception as e:
             logger.error(f"[섹터지수보완] 오류: {e}", exc_info=True)
+
+    def _loop_etf_freshness(self) -> None:
+        """매일 21:45 — launchd ETF 파이프라인이 실제로 적재했는지 검증한다.
+
+        ETF 구성 수집은 스케줄러 밖(launchd `com.stock-dashboard.etf-daily` 21:15 ·
+        `etf-direct-publish` 22:05 + cron retry 스크립트)에서 돌아 원장
+        (`collection_job_runs`)에 잡이 0건이었다 → 계약이 잡 실행을 볼 수 없어 파이프라인이
+        조용히 멈춰도(실측: 2026-09-18 이후 stale·lag 3) 테이블 워터마크만이 유일한
+        감지기였다(섹터지수와 같은 침묵 실패 클래스). 이 잡이 `etf` 계약을 원장에 묶는다.
+        """
+        self._wait_secs(76)
+        while not self._stop_event.is_set():
+            self._wait_until(21, 45, skip_weekend=True)
+            _run_job_safe("ETF수집점검", self._job_etf_freshness_check)
+
+    @staticmethod
+    def _etf_contract_state() -> dict:
+        """`etf` 계약의 현재 판정(없으면 빈 dict)."""
+        for item in evaluate_job_outputs("ETF수집점검"):
+            if item.get("key") == "etf":
+                return item
+        return {}
+
+    @staticmethod
+    def _etf_pipeline_run_today(log_path: Path, day: str) -> tuple[bool, list[str]]:
+        """오늘 파이프라인 실행 여부와 실패 스테이지 목록을 로그에서 읽는다.
+
+        `run_etf_daily_pipeline.sh` 는 `[YYYY-MM-DD HH:MM:SS] STAGE_END <name> exit=<n>` 를
+        남긴다. 이미 오늘 돌았다면 다시 돌리지 않고 그 결과를 실패 근거로 보고한다
+        (수십 분짜리 파이프라인을 하루에 두 번 돌리지 않는다).
+        """
+        if not log_path.exists():
+            return False, []
+        try:
+            text = log_path.read_text(errors="replace")
+        except OSError:
+            return False, []
+        started = False
+        failed: list[str] = []
+        for line in text.splitlines():
+            if not line.startswith(f"[{day}"):
+                continue
+            if "START base_date=" in line:
+                started = True
+            elif "STAGE_END" in line and "exit=" in line:
+                try:
+                    exit_code = int(line.rsplit("exit=", 1)[1].strip())
+                except ValueError:
+                    continue
+                if exit_code != 0:
+                    failed.append(line.split("STAGE_END", 1)[1].split("exit=")[0].strip())
+        return started, failed
+
+    def _job_etf_freshness_check(self) -> None:
+        """계약이 비정상이면 (오늘 미실행일 때만) 파이프라인을 한 번 돌린다.
+
+        그래도 비정상이면 예외로 올려 원장에 실패로 남긴다 — 조용한 정지를 금지한다.
+        """
+        import subprocess
+
+        item = self._etf_contract_state()
+        if item.get("status") == "healthy":
+            logger.info(
+                f"[ETF수집점검] healthy (source_as_of={item.get('source_as_of')}, "
+                f"coverage={item.get('latest_coverage')})"
+            )
+            return
+
+        root = Path(__file__).resolve().parent
+        log_path = root / "ETF_check" / "logs" / "daily_pipeline.log"
+        ran_today, failed_stages = self._etf_pipeline_run_today(log_path, date.today().isoformat())
+        detail = (
+            f"status={item.get('status')} lag={item.get('lag')} "
+            f"source_as_of={item.get('source_as_of')} expected={item.get('expected_as_of')}"
+        )
+        if ran_today:
+            raise RuntimeError(
+                f"ETF 구성 데이터 비정상({detail}) — 오늘 파이프라인은 이미 실행됨"
+                f"(실패 스테이지: {failed_stages or '기록 없음'}). launchd·원천 점검 필요."
+            )
+
+        script = root / "scripts" / "run_etf_daily_pipeline.sh"
+        if not script.exists():
+            raise RuntimeError(f"ETF 구성 데이터 비정상({detail}) — 파이프라인 스크립트 없음: {script}")
+        logger.warning(f"[ETF수집점검] {detail} — 오늘 미실행, 파이프라인 1회 실행")
+        r = subprocess.run(
+            ["/bin/zsh", str(script)], capture_output=True, text=True, timeout=2700, cwd=str(root)
+        )
+        after = self._etf_contract_state()
+        logger.info(
+            f"[ETF수집점검] 재시도 후: exit={r.returncode} status={after.get('status')} "
+            f"lag={after.get('lag')} source_as_of={after.get('source_as_of')}"
+        )
+        if after.get("status") != "healthy":
+            raise RuntimeError(
+                f"ETF 구성 데이터 재시도 후에도 비정상(status={after.get('status')}, "
+                f"lag={after.get('lag')}, exit={r.returncode}) — 원천 확인 필요: "
+                f"{(r.stdout or r.stderr or '')[-300:]}"
+            )
 
     def _loop_market_signal_briefing(self) -> None:
         """매일 07:00 — 5단계 시장 국면 점수 계산 + OpenAI 아침 브리핑 저장."""
