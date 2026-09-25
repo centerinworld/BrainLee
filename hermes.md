@@ -898,3 +898,79 @@ created_at='2026-07-12 07:21:53' & date<2019 & marcap과 OHLC 상이한 **827,72
 - 부수 발견·수리: price_history의 2026-09-14~23 일봉이 장마감 동시호가 전 스냅샷 값으로 저장돼 있었음(9/21 67% 불일치). KRX 공식(marcap 9/14~21, pykrx 9/22~23)으로 7,653행 교체(`scripts/fix_recent_close_from_official_20260924.py`, run_id recent_close_official_fix_20260925_002046). pykrx 호출을 ThreadPoolExecutor 안에서 돌리면 10분 이상 멈춤(순차 호출은 0.03초/건) → 순차로 변경.
   근본 원인(어떤 수집기가 마감 전 값을 최종으로 저장하는지)은 미확인 — 수집 시각/소스 점검 필요.
 - 스냅샷 재구축: `scripts/build_strategy_research_dataset.py --adjust-jumps`(기업행위 분류 4종만 수익률 0 처리) 추가, 결과 테이블 strategy_feature_snapshot_rebuild_adj_20260924(원본 테이블 미변경). PER은 2026-06 이후 스냅샷에서 99.7% NULL(valuation_history가 2026-03-31에서 끝남).
+
+### 스냅샷 조정 라벨 검증 결과 (Claude, 2026-09-25)
+- 첫 `--adjust-jumps` 결과(3x_12m 양성 10,176→24,392)는 **내 버그**: 미래 경로는 조정 종가, 기준가는 스냅샷 시점 원본 종가 → 이후 역분할·감자 종목의 기준이 어긋남(추가 양성 14,729 중 창 안에 마스크 이벤트가 있는 것은 976건뿐). 기준가를 같은 조정 시리즈(`price_values[pos]`)로 수정해 재구축.
+- 수정 후: 원본(raw) label_10x_24m 1,474(1.23%) → `_adj` 813(0.68%) / `_adj_legit` 980(0.82%); label_3x_12m 10,176(6.83%) → 8,275(5.55%) / 8,885(5.96%). 변경 행의 96%(2,181/2,269)가 12개월 창 안에 마스크 이벤트를 가짐.
+  제거된 10x 라벨 720 중 505(70%)는 DART확정/발행주식수 근거가 있는 진짜 기업행위, 203(28%)은 근거 없는 pending 이벤트(82%가 상승 점프)만 있음 → 실제 급등일 수 있어 `--legit-only`(근거 있는 이벤트만 마스크)를 권장안으로 삼음.
+  결론: raw 라벨은 역분할·감자로 10x 양성을 ~50% 과대계상. 권장 테이블 `strategy_feature_snapshot_rebuild_adj_legit_20260924`(원본 미변경).
+- CEO 플랫폼(8011): 3.12 전환 완료 확인. 기존 500 원인 — `psutil` 미설치(3.11에도 없었음, 설치 후 monitoring-status/unified_metrics 200), `/health`는 응답모델 `Dict[str,str]`에 중첩 dict(`autonomous_state`) 반환 → ResponseValidationError(미수정, 파일 수정 중).
+
+## ⚠️ PER 결함 발견·수정 — 이전 연구 결과 무효화 (Claude, 2026-09-25)
+- **결함**: `valuation_history.per`는 1~3분기 행이 종가/분기EPS(연 환산 안 함), 4분기 행이 종가/연간EPS이고 분기말 종가로 고정돼 분기마다 정의가 다르고 시점 정합이 아님(삼성전자 2025년 PER 60→144→52, 실제 10~20대). 스냅샷 생성기가 이 값을 그대로 써서 `per`(및 PER 기반 model_score/heuristic)가 오염, 2026-06 이후는 99.7% NULL.
+- **수정**: `scripts/build_strategy_research_dataset.py --ttm-valuation` — 스냅샷 시점마다 직전 4개 연속 분기(공시 시차 Q1~Q3 45일/Q4 90일 반영) 순이익 합으로 `per = 시가총액/TTM순이익`(≤0이면 NULL), `pbr = 종가/직전 공시 bps`. 결과 PER 채움률 최근 스냅샷 ~62%(이전 0.3%), 삼성 2025-03~11 = 9.9→20.4(타당).
+  권장 테이블 **`strategy_feature_snapshot_rebuild_v3_20260924`**(`--adjust-jumps --legit-only --ttm-valuation`, 원본 테이블 미변경). `research/extract_research_inputs_20260924.py`도 이 테이블을 읽도록 변경.
+- **영향(재계산 완료, md 정정)**: Alphalens 저PER IC 0.104→0.072(t 6.5→3.3, Q5-Q1 +3.7→+1.0%p), 저PBR 0.098→0.071. 저변동성은 견고(0.159→0.154). vectorbt/PyPortfolioOpt는 **종목 선정 자체가 달라져 이전 수치 무효**: 동일비중 CAGR 18.1%→7.0%, Sharpe 0.82→0.41, MDD -39%→-52%; 규칙 없음 훈련 CAGR 1.9%(KOSPI 5.7% 미만). 즉 "저PER+저변동성+신고가 20종목" 롱온리는 초과수익이 없음.
+  마스크 대상도 4개 분류 전부→근거 있는 기업행위로 좁혀 마스크된 수익률 5,878→988건.
+- 남은 한계: PER은 CFS 우선·분기 순이익(3개월) 합 기준이라 financial_data 품질(예: 2026Q2 삼성 total_equity 4.4조 이상치)에 의존, 지배주주 귀속 순이익이 아닌 전체 순이익 사용. PER 기반 `model_score`는 재학습됨(여전히 음의 IC).
+
+## 📋 추가 계획 — 사용자 검토 대기 (Claude, 2026-09-25)
+> 아래는 **제안**이며 아직 구현하지 않았습니다(프런트엔드·서버 재시작·운영 패키지 변경은 승인 후). 우선순위/범위를 알려주시면 진행합니다.
+
+### A. 프런트엔드 반영 및 페이지 배치 검토
+| 기능 | 배치 후보(기존 화면) | 필요한 것 | 규모 | 권고 |
+|---|---|---|---|---|
+| QuantStats 성과(Sortino, KOSPI 대비 알파·베타, CAGR, 곡선 출처 배지) | **전략센터 → 📊 성과 매트릭스**(StrategyHub.jsx, `/api/backtest/matrix`) 컬럼 추가 + HTML 티어시트 링크 | `GET /api/research/quantstats`(research_outputs/quantstats_summary_*.json 읽기), 곡선 출처(engine/mtm) 배지 | 소 | **권고 1순위** — 기존 표에 열 추가 |
+| Alphalens 팩터 검증(IC/IR/분위수익) | **전략센터에 신규 탭 "🔬 팩터 검증"**(탭 배열에 1항목, `hubTab==='factor'`) | `GET /api/research/factor-validation`(csv/json), 팩터×기간 표+t값 색상, "PER 결함 정정" 배너 | 중 | 권고 2순위 |
+| vectorbt 규칙 탐색·PyPortfolioOpt 결론 | **전략센터 → 🧪 검증 이력**(ExperimentLedgerPanel, `signal_experiment_ledger`)에 **실험 기록으로 등록**(별도 UI 불필요) | 원장 INSERT(기각/보류 결론+수치+근거 파일 경로) | 소 | 권고 — 이미 "기각이 정상"인 곳 |
+| 가격 무결성(미해결 점프 146, coverage_gap_reviewed 524, 격리 8,396, 복구 run 목록) | **전략센터 → 🧭 데이터 라우팅** 탭 또는 **RiskGateMonitorView**에 "데이터 품질" 카드 | `GET /api/research/price-integrity`(price_jump_audit 분류 집계, fix_log 최근 run) | 중 | 권고(백테스트 신뢰도와 직결) |
+| 기업행위 이벤트 951건·발행주식수 증거 | **종목 상세**(StockDecisionEvidencePanel) "기업행위" 타임라인 + 가격 차트 마커(문서 §7-6 Lightweight Charts 도입 시 함께) | `GET /api/stock/{code}/corporate-actions` | 중 | Lightweight Charts 도입과 묶어 진행 |
+| 텐배거 라벨 정정(raw 10x 1.23% → 0.82%) | **TenbaggerProjectView**의 기준율 문구·임계값 | 문구/상수 갱신, 학습 데이터 v3 테이블로 교체 검토 | 소 | 모델 재학습 전 결정 필요 |
+| 미국 가상매매 거래일 기준(핵심 유니버스) | **StrategyCenterView(미국 종이운용)** 준비상태 카드 | 이미 API가 `basis`, `reference_ticker_count` 반환 — 문구만 표시 | 소 | 서버 재시작 후 |
+| Python/라이브러리 버전 | 관리자/시스템 정보(있다면) 또는 `/api/system/runtime` | 버전·venv 경로 표시 | 소 | 선택 |
+- 프런트엔드 빌드/배포 절차(`frontend/dist`, 백엔드 재시작)는 운영 배포에 해당 — 반영 시점 합의 필요. 신규 라우터는 `routes/research_lab.py` 한 파일로 격리(파일 읽기 전용, DB 쓰기 없음) 제안.
+
+### B. 라이브러리·환경 (docs/LIBRARY_INVENTORY_20260925.md)
+1. **취약점 패치**(pip-audit): 운영 venv 14개 패키지(aiohttp 14건, starlette 5건, python-multipart 5건, cryptography 4건, soupsieve 4건 등). 제안: (a) 마이너/패치 묶음(aiohttp≥3.14.3, anyio, click, idna, lxml≥6.1, pyasn1, requests≥2.33, soupsieve≥2.9, urllib3≥2.7, curl-cffi≥0.15, anthropic≥0.87, python-multipart≥0.0.31)을 **새 venv `.venvs/py312b`에 적용→pytest 473+API 비교→전환**(이번 3.12 전환과 같은 절차), (b) starlette 1.x·cryptography 50은 FastAPI 호환/의존 확인 후 별도, (c) CEO 플랫폼 starlette 0.47.3(6건)도 동일.
+2. 연구 venv: setuptools 83+ 업그레이드(간단), alphalens 로컬 패치 재적용 스크립트화.
+3. OpenDartReader 복사 설치를 `requirements`에 명시(주석)하거나 PyPI 0.2.3 사용 가능 여부 확인.
+4. vectorbt 라이선스(Commons Clause) 저장소에서 확인.
+5. pykrx: KRX_ID/KRX_PW를 제공하면 1.2.9의 로그인 기반 기능이 열릴 수 있음(자격증명은 사용자가 직접 `.env`에 — 저는 입력하지 않음). ETF는 두 버전 모두 불가 → FDR/Naver 대체 유지.
+
+### C. 데이터·수집기 (미해결)
+1. **일봉 마감 전 스냅샷 원인 수집기 특정**: 9/14~23 일봉이 동시호가 전 값으로 저장(7,653행 교체함). 수집 시각/소스(`collect_naver_ohlcv_today` 등)·재발 방지(저장 전 KRX 공식값 재확인 또는 16:00 이후 확정 저장) 필요. 매일 자동 검증(marcap/pykrx 대비 종가 불일치율 알림) 크론 제안.
+2. **7/12 SQLite 재적재 배치 원인 스크립트** 미특정(같은 초 223만행). 가드는 소수점만 차단 → 정수 배율 오류용 가드(전일 대비 가격제한폭 초과+공시 없음이면 격리) 검토.
+3. 수급 수량 컬럼(inst/frn/ind_net_buy) 9/14~18 ~2,335종목 NULL — 소스 없음(금액은 다른 세션이 백필함). 수량이 필요한 곳(tenbagger_engine 등) 영향 조사 후 금액/종가 근사 여부 결정.
+4. 미국 데이터: 9/22 핵심종목 100개는 Yahoo 자체 결측. 수집기 stale-only 로직이 중간 구멍(하루 누락)은 복구 못 함 → 일자 구멍 재수집 모드 제안. 핵심종목 98개가 9/22에 동시 결측된 원인은 미확인.
+5. 미해결 점프 146건(DART 증거 없는 진짜 점프 ~60): 공시 조회 창/유형 확대 또는 수동 검토 목록 제공.
+6. 소수점 8,396행(ETF 이전 구간, 원본 없음) 격리 유지 — 격리 행이 백테스트에서 실제로 제외되는지 회귀 테스트 필요.
+7. 스냅샷: v3 테이블을 `strategy_feature_snapshot`로 승격할지(기존 소비자: tenbagger_engine, research 스크립트) 결정 — 승격 전 소비자 영향 점검 및 PIT(공시 시차) 확인. 스냅샷 월별 갱신 크론이 없음(07-24/08-11에서 멈춤).
+8. 쓰기 가드 자동 테스트(Postgres 필요) — 테스트 DB 픽스처 도입 여부.
+
+### D. 연구 후속
+1. 종목 선정이 약함(TTM PER 기준 롱온리 20종목 CAGR 7%) → 다음 후보: 팩터 결합을 Alphalens IC 가중으로(고정 가중치 금지), 섹터 중립화, 거래비용 민감도, 하락장 포함 검증. 저변동성만 견고 → 저변동성+품질/수익성 결합 검증 제안.
+2. 기존 전략 26개 성과의 KOSPI 대비 초과수익이 대부분 베타(0.3~0.9) 수준 — 엔진에서 **일별 평가곡선 저장**으로 QuantStats 재계산(현재 15개는 MTM 근사).
+3. Alphalens를 전략 신호 단위로(44개 전략의 진입 신호 로그 필요) — 신호 로깅 스키마 제안 필요.
+4. 텍스트 감성(FinGPT 대체=이미 설치된 API), Qlib은 Alpha158 정의·walk-forward 방식만 차용 — 우선순위 낮음.
+
+### E. 알려진 미수정 버그
+- CEO 플랫폼 `/health` 500: 응답모델 `Dict[str,str]`에 중첩 dict 반환(`main.py:784` 부근, 다른 세션이 파일 수정 중이라 미수정).
+- 터미널에서 서버를 `&`로 띄울 때 `< /dev/null & disown` 없으면 tty output으로 정지(8011에서 발생).
+
+## HANDOFF §10 "적용 후 검토" 처리 (Claude, 2026-09-25) — 상세는 docs/HANDOFF_GITHUB_ADOPTION_20260924.md §10-4
+- **⛔ P0-1 스냅샷 정본 교체 차단**: 자동 권한 분류기가 정본 교체(공유 운영 테이블 변경)와 교체 스크립트 파일 작성을 차단 → 미실행. **v4**(`strategy_feature_snapshot_rebuild_v4_20260925`)를 준비하고 SQL 절차를 §10-4에 기록(사용자 실행/승인 대기). 이에 종속된 P0-2(valuation_history per_ttm)·P0-3(월간 재생성 잡)·aqr 재백테스트·소비처 점검은 미착수.
+- **🔴 신규 발견 — 스냅샷 생존편향**: `security_master_history`의 폐지·합병 보통주 549개가 전부 `security_type='listed_equity'`인데 생성기 필터가 `'주권'/'common_or_unknown'`만 통과 → **폐지 종목이 스냅샷·라벨·팩터 연구에서 전부 누락**. 필터 수정(우선주 제외 유지) 후 v4: 190,609행/2,708종목(+205 폐지), 10x_24m 0.82%→0.91%. 연구 입력(`extract_research_inputs_20260924.py`)도 v4로 전환, 폐지 200종목이 수익률에 포함됨(팩터 결론은 거의 불변: 저변동성 견고).
+- 연구 결과(정정): 학습/검증 분할에서 저변동성 IC 0.168→0.165, 저PER 0.070→0.114, 저PBR 0.077→0.082 유지, 모멘텀 -0.05→+0.01 반전(기간 특이), model_score -0.03→-0.15(악화), 수급 -0.06→-0.015(약화), small_size 부호 반전. 이벤트 스터디(공시 익일 진입·시장 중앙값 대비·윈저라이즈): 자사주 취득결정 +6.0%p(검증 t 5.3)·신탁체결 +5.6%p(t 8.9)·CB 발행 -2.6%p(t -4.5, 지속). 수주·특허는 평균이 꼬리 의존(중앙값≈0). 원장 13건 기록(`scripts/record_research_ledger_20260925.py`).
+- P1-4: 모멘텀·돌파 대용 신호로 운영 규칙(KOSPI<MA60) on/off 비교(운영 `_tx_cost` 동일 비용, 2026-07~09 급락 창 포함) → 필터 ON이 전 구간 CAGR·MDD 개선(급락 창 MDD -41.6%→-23.7%), 유지. 대용 신호 자체는 손실(회전율 과다) — 최종 확정은 운영 전략 신호 로그로.
+- P1-7/8: `backtest_equity.py`(엔진 곡선 또는 거래로그+가격 MTM 저장), PK `(run_id,source,date)`·뷰 `backtest_equity_curve_best_v` 적용 완료, QuantStats는 가정 자본 곡선 위험지표 제외.
+- P2: `requirements/` 추적 경로·`-c core.lock`, OpenDartReader 설치 절차, 연구 venv 3.12 재생성(+`research/alphalens_compat.py`로 패치 제거, 재현 검증 diff 0), `research_venv→research_venv312`.
+- P2-13: Lightweight Charts(`PriceChart.jsx`, App.jsx 분기, `chart_engine=svg` 롤백) — 브라우저 검증 완료, `dist` 배포 미실행. P2-14: 종가 공식 검증 잡(19:30)·KIS 일별수집 원장 편입 — 서버 재시작 후 반영. P2-15: CEO `/health` 수정(8011 재시작 후 반영).
+- **서버 재시작이 필요한 반영분**(운영 배포로 분류돼 미실행): 스케줄러(종가공식검증·KIS 원장), `backtest_common._save_result` 곡선 저장, 프런트 `dist` 빌드, CEO 8011. 운영 백엔드는 `bash scripts/safe_restart_backend.sh`(CLAUDE.md 규칙), 프런트는 `cd frontend && npm run build` 후 재시작.
+
+- (2026-09-25) P0-1 정본 교체 완료(사용자 실행). P0-3 월간 재생성 잡은 스크립트 작성 차단 → 사용자 승인/직접 작성 필요, P0-2(`valuation_history` TTM)·aqr_multifactor 재백테스트 대기.
+
+- (2026-09-25) aqr 재백테스트 완료: 구→신 수익률 +98→+55, -30→-20, -9.5→-1.7, +31→+5, +13→+20, +6.7→+9.1 (look-ahead PER 제거). 월간 스냅샷 스크립트 검증 완료, 스케줄러 등록·P0-2(valuation_history TTM)만 남음.
+
+- (2026-09-25) P0-2 완료: valuation_history.per_ttm/ttm_net_income 추가(중앙값 PER 약 10~12배, 삼성 9~15배로 안정). 남은 항목: 스케줄러에 월간피처스냅샷 등록(편집 권한 대기).
+
+- (2026-09-25) 계획 A 1차 구현: 팩터 검증 탭 + /api/research/* 라우터(읽기 전용). 빌드·API 단위 확인 완료, 브라우저 렌더 확인은 재시작 후 필요. 남음: QuantStats 열(성과 매트릭스), 가격 무결성 카드, 종목 상세 기업행위 마커.
