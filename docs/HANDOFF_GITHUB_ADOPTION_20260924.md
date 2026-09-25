@@ -689,7 +689,64 @@ S0(보안, 사용자 결정) → S1-1(python-multipart·starlette) → S6(커밋
 ### 12-5. §12 처리 결과 (2026-09-25 밤, Claude)
 | 단계 | 상태 |
 |---|---|
-| S0(§12-1 선행) | 코드 방어선 완료(토큰 게이트+프런트 토큰). **Cloudflare Access 정책은 사용자 설정 필요** — 설정·재시작·토큰(.env) 후 완전 해소 |
+| S0(§12-1 선행) | ② 코드 방어선 **적용·실측 검증 완료**(2026-09-25 22:45, 토큰 `.env` 설정·백엔드 재시작·프런트 빌드 후 외부 실측: `/api/portfolio`·`/api/research/quantstats`·무토큰 POST 모두 401, 로컬 직접 호출 200). ⏳ ① Cloudflare Access 정책은 사용자 설정 필요 |
 | R1 전략 채택 평가 | ✅ 평가 완료. `research/strategy_adoption_review_20260925.py`(DSR·PBO CSCV 직접 구현), 결과 `research_outputs/strategy_adoption_review_20260925.md`. **백테스트 26개 중 4기준 통과 0개**(① 통과 5개는 전부 근사 곡선이라 유보, ② DSR>0.95 0개, ③ PBO 0.58). 가상매매 momentum·peak는 비용 차감 후 KOSPI 대비 유의하게 열등. 원장 3건 기록. **shadow 전환 제안서 `research_outputs/strategy_shadow_proposal_20260925.md` — 사용자 승인 대기(권고 A안)** |
 | R3~R9 | 진행 예정 |
+
+---
+
+## 13. 수정·보강 내역 (2026-09-25 후속 세션, Claude) — §10-4 형식
+
+기준 시점 2026-09-25 22:45. 모든 코드는 `stock_dashboard/runtime`에 반영했고, 커밋은 13개(아래 §13-5)다. 푸시는 하지 않았다.
+
+### 13-1. 코드·설정 변경
+| # | 대상 | 변경 | 검증 | 롤백 |
+|---|---|---|---|---|
+| 1 | `security_gate.py`(신규), `main.py`(미들웨어 등록 3줄) | **§11 S0 ②** 터널 경유(`Cf-Connecting-Ip`/`X-Forwarded-For`/`Cf-Ray` 헤더) 요청 중 (a) /api·/hs·/semiconductor-lab의 POST/PUT/PATCH/DELETE, (b) 민감 GET(`/api/portfolio`·`/api/kis-trading`·`/api/commands`·`/api/live-orders`·`/api/research`)에 `API_WRITE_TOKEN`(`X-API-Token` 또는 `Authorization: Bearer`, 상수시간 비교) 요구. 토큰 미설정 시 fail-closed(503). 로컬 호출(스케줄러·스크립트)은 헤더가 없어 무영향 | 테스트 5건. **외부 실측**: 401×3(portfolio·research·무토큰 POST), 로컬 200, 가짜 터널 헤더 401 | `main.py`의 미들웨어 2줄 제거 후 재시작 |
+| 2 | `frontend/src/apiToken.js`(신규), `main.jsx` | `fetch` 래퍼: /api·/hs·/semiconductor-lab 요청에 localStorage `api_write_token`을 `X-API-Token`으로 첨부, 401(`api_token_required`)이면 1회 입력창 후 재시도. 토큰은 코드·저장소에 없음 | 빌드 통과, `dist` 배포됨(22:41) | `main.jsx`의 `installApiTokenFetch()` 2줄 제거 |
+| 3 | `routes/research_lab.py`(신규), `main.py` | 읽기 전용 `/api/research/factor-validation`·`/quantstats`·`/price-integrity`(파일 + DB SELECT만) | 실제 파일로 호출: 팩터 56행·이벤트 24행·QuantStats 26개·무결성 분류 13종 | main.py 등록 2줄 제거 |
+| 4 | `FactorValidationPanel.jsx`(신규, `QuantStatsPanel` 포함), `PriceIntegrityCard.jsx`(신규), `StrategyHub.jsx` | 전략센터 "🔬 팩터 검증" 탭(IC 학습/검증 분할·이벤트 스터디·QuantStats 표) + "🧭 데이터 라우팅" 상단 가격 무결성 카드. **탭은 `localStorage.research_lab_tab='1'`일 때만 표시(검토 전 노출 차단)** | 빌드 통과. 브라우저 렌더 확인은 미실시 | 플래그 미설정 시 이미 숨김 |
+| 5 | `scheduler.py` | 잡 3개 등록: `종가공식검증`(19:30, §10-14), **`월간피처스냅샷`**(월 마지막 거래일 20:30, 실패 시 익일 06:30 재시도, `_DB_WRITE_JOBS` 포함, `is_kr_trading_day` 기반 — 2026-09-30·10-30·12-30 판정 확인), **`가드사후성과`**(영업일 20:50) | 컴파일·pytest·판정 함수 검증. 백엔드 재시작(22:41) 후 대기 상태(로그는 실행 시각에 생성) | 등록 줄 3개 + 함수 삭제 |
+| 6 | `scripts/refresh_feature_snapshot_monthly.py`(신규) | 정본을 직접 지우지 않는다: 스테이징 `strategy_feature_snapshot_stage`에 v4 옵션(`--adjust-jumps --legit-only --ttm-valuation`)으로 빌드 → 점검(행수 ≥ 기존 85%, 최신 월 PER 채움 ≥ 40%) → 한 트랜잭션 교체. 실패 시 롤백·텔레그램 | **사용자 수동 실행 성공**(190,609→190,609행, PER 62.3%) | 백업 `strategy_feature_snapshot_legacy_20260925` |
+| 7 | `scripts/build_strategy_research_dataset.py` | (a) 로지스틱 특성 1/99% 클리핑(`model_score`가 0/1로 포화되던 것 해소: 범위 0.07~0.95, 기존과 상관 0.92), (b) numpy 2.2+macOS Accelerate의 무해한 `matmul` 경고 필터(정상 유한 데이터에서도 재현 확인) | 새 테이블에 빌드해 비교 후 삭제(`..._v5test_...` 드롭) | git revert. **현재 정본의 `model_score`는 클리핑 이전 값 — 다음 월간 재생성에 반영** |
+| 8 | `virtual_trade_guards.py` | **§11 S3** 판정 로직은 불변, 기록만 보강: 사유마다 실제 가드명(`regime_filter`/`exposure_stock`/`exposure_sector`/`entry_confirm`)으로 행 분리, `price_at_block`·`kospi_close`·`kospi_ma60` 기록, 같은 (종목·전략·가드·판정) 하루 1건으로 합침 | 테스트 4건(SQLite) + **PG 실측**: 3회 호출→1행, 사유별 2행, 삭제 후 정리 확인 | git revert(컬럼은 남아도 무해) |
+| 9 | `scripts/fill_guard_log_outcomes_20260925.py`(신규) | `virtual_guard_log`의 차단·shadow 진입에 5/20/60거래일 사후 수익(종목·KOSPI)을 채움, 미경과 지평은 NULL 유지, 멱등 | 테스트 3건, 드라이런(대상 0건 — 기존 8건은 가격 미기록) | 스케줄러 잡 제거 |
+| 10 | `scripts/add_valuation_history_per_ttm_20260925.py`(신규), `routes/tenbagger.py` | **§10 P0-2** `valuation_history`에 `per_ttm`·`ttm_net_income` 추가·채움. 기존 `per`/`eps` 불변. valuation-history 응답에 두 필드 추가 | 삼성전자 `per`(60/144/52/15.7) vs `per_ttm`(9~15배), 전 종목 중앙값 9~12.6배, Q2/Q1 순이익 중앙값 1.05~1.26배로 누적값 아님 확인 | `ALTER TABLE valuation_history DROP COLUMN per_ttm, DROP COLUMN ttm_net_income` |
+| 11 | `scripts/sync_tenbagger_postgres.py`, `verify_tenbagger_postgres.py` | 동기화·검증 목록에서 `strategy_feature_snapshot` 제거(SQLite 옛 값이 정본을 덮어쓰는 것 방지) | pytest | git revert |
+| 12 | `.venvs/py312b`(신규 venv), `requirements/py312b.freeze.txt` | **§11 S1 1·2·3**: python-multipart 0.0.32, starlette 1.7.0, aiohttp 3.14.3, anyio 4.14.2, urllib3 2.8.0, requests 2.34.2, idna 3.20, lxml 6.1.3, soupsieve 2.10, pyasn1 0.6.4, click 8.5.0, anthropic 1.8.0, cryptography 48.0.1(설치 후 미재감사). `curl_cffi`는 0.13.0 유지(yfinance 1.2.0이 <0.14 요구). OpenDartReader는 운영 venv에서 폴더 복사 | pip check 통과, pytest 513(당시), 앱 로드 라우트 473 동일, **GET 242개 상태코드 운영 venv와 차이 0**(200×225, 422×11, 500×6 — 500은 양쪽 동일한 기존 문제), pip-audit 86→19건(재감사 전 cryptography 3건 포함) | **전환 전**이라 운영 무영향 |
+| 13 | `research/extract_adoption_inputs_20260925.py`, `strategy_adoption_review_20260925.py`(신규), `scripts/record_adoption_review_ledger_20260925.py` | **§12 R1** 채택 평가(DSR·PBO CSCV 수식 직접 구현) + 원장 기록 | §12-5 참조 | 파일 삭제, 원장 3행은 experiment_name으로 삭제 가능 |
+
+### 13-2. DB 변경 (모두 추가·표시 방식, 삭제 없음)
+| 대상 | 변경 |
+|---|---|
+| `strategy_feature_snapshot` | 정본 교체(사용자 실행, 190,609행 v4), 6개 라벨 컬럼 추가. 백업 `strategy_feature_snapshot_legacy_20260925` |
+| `valuation_history` | `per_ttm`, `ttm_net_income` 컬럼 추가·채움(37,904행) |
+| `virtual_guard_log` | 9개 컬럼 추가(`price_at_block`, `kospi_close`, `kospi_ma60`, `ret_5/20/60d`, `kospi_ret_5/20/60d`, 전부 DEFAULT NULL) — 코드가 `ALTER … ADD COLUMN IF NOT EXISTS`로 자동 추가 |
+| `backtest_runs` | aqr_multifactor 기존 38행 이름에 `[look-ahead 오염·폐기 2026-09-25]` 접두, 새 실행 6건 `aqr_multifactor v4snap_20260925 …` |
+| `signal_experiment_ledger` | +3행(`adoption_review_*_20260925`) — 이전 13행과 합쳐 §10-5 |
+| 임시 테이블 | `strategy_feature_snapshot_v5test_20260925` 생성 후 삭제, 스테이징 테이블은 월간 잡이 교체 후 삭제 |
+
+### 13-3. 수치 변화 (aqr_multifactor, look-ahead PER 제거 후 재백테스트)
+2020-03~2021-11 +98.4→+55.2% / 2021-12~2022-10 -30.2→-20.2% / 2022-11~2023-10 -9.5→-1.7% / 2023-11~2024-12 +31.0→+5.0% / 2024-06~2025-05 +13.1→+20.4% / 2025-06~2026-03 +6.7→+9.1%.
+
+### 13-4. 사용자 조치 상태
+| 조치 | 상태 |
+|---|---|
+| `.env`에 `API_WRITE_TOKEN` 추가 | ✅ 완료(2026-09-25 22:4x, 값은 확인·기록하지 않음) |
+| 백엔드 재시작(`safe_restart_backend.sh`) | ✅ 완료(PID 92448→32902, 22:41) |
+| 프런트 `dist` 빌드 | ✅ 완료(`StrategyHub` 61.84 kB, `index` 853.38 kB) |
+| Cloudflare Access 정책(① S0) | ⏳ 미설정 — 설정 전까지 ②만 방어선(공개 GET 중 비민감 엔드포인트는 여전히 무인증) |
+| venv 전환(`ln -sfn .venvs/py312b venv` + 재시작) | ⏳ 승인·실행 대기(롤백 `ln -sfn .venvs/py312 venv`). CEO 8011의 starlette 0.47.3은 별도 |
+| shadow 전환(R1 제안서 A안) | ⏳ 승인 대기(`research_outputs/strategy_shadow_proposal_20260925.md`) |
+| 외부에서 쓰기 기능 사용 시 | 브라우저 입력창에 `.env`의 `API_WRITE_TOKEN` 입력(1회, localStorage 저장) |
+| 근사 곡선 전략 5개 엔진 재실행 | ⏳ 승인 후 |
+
+### 13-5. 커밋(브랜치 `claude/sqlite-migration-completion-x0h891`, 푸시 안 함)
+`5b475c9` env/requirements · `83e572c` 백테스트 곡선 · `f20bf9a` 스냅샷·밸류에이션 · `ea80b45` 종가검증 잡 · `e5c3fd7` 가격 차트 · `b39b578` 보안 게이트+연구 API/패널 · `cb6afd1` 연구 스크립트 · `3809b5e` 문서 · `692783f` 월간 스냅샷 잡 · `446d404` 가드 로그·사후 성과 · `fa76f7d` 연구 탭 플래그·/api/research 게이트 · `fd5459a` R1 평가 · `f37b777` py312b freeze. 제외(다른 세션 파일): `ETF_check/*`, `scripts/*etf*`, `tests/test_etf_universe_sync_v3.py`, `scripts/fix_cfs_old_quarterly_rows_20260925.py`·`fix_ofs_quarterly_op_20260924.py`·`fix_q4_derived_rows_20260925.py`. `research_outputs/*.md·csv`는 .gitignore 대상이라 로컬 보관.
+
+### 13-6. 알려진 한계
+- 게이트는 `Cf-Connecting-Ip`/`X-Forwarded-For`/`Cf-Ray` 헤더가 없는 요청을 "로컬"로 본다. 같은 LAN에서 vite preview(5173, `host:true`)로 직접 접속하면 헤더가 없어 토큰 없이 통과한다(LAN 신뢰 가정). 터널 우회 경로가 필요 없으면 preview 바인딩 제한(S0 ③)을 병행할 것.
+- `cloudflared tunnel run --token …`이 프로세스 인자에 토큰을 노출한다(`ps`로 같은 계정에서 조회 가능). 토큰 파일/환경변수 방식으로 바꾸는 것을 권고(미수정, 서비스 정의는 사용자 영역).
+- 가드 로그의 기존 8건은 `guard='entry'`·가격 없음(소급 불가). 새 기록부터 사후 성과가 채워진다.
+- R1의 표본 외 구간은 1.3년, 가상매매 표본은 5개월이다(통계력 한계는 R1 문서에 명시).
 
