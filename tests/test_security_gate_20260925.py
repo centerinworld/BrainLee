@@ -23,6 +23,10 @@ def _client():
     def qs():
         return {"ok": 1}
 
+    @app.get("/api/market-regime")
+    def regime():
+        return {"ok": 1}
+
     @app.post("/api/thing")
     def post_thing():
         return {"done": 1}
@@ -38,7 +42,8 @@ class SecurityGateTests(unittest.TestCase):
         self.assertTrue(is_protected("GET", "/api/portfolio"))
         self.assertTrue(is_protected("GET", "/api/kis-trading/paper/status"))
         self.assertTrue(is_protected("GET", "/api/commands/status"))
-        self.assertFalse(is_protected("GET", "/api/research/quantstats"))
+        self.assertTrue(is_protected("GET", "/api/research/quantstats"))
+        self.assertFalse(is_protected("GET", "/api/market-regime"))
         self.assertFalse(is_protected("OPTIONS", "/api/portfolio"))
         self.assertFalse(is_protected("POST", "/static/x"))
 
@@ -59,7 +64,9 @@ class SecurityGateTests(unittest.TestCase):
 
     def test_tunnel_public_reads_still_open(self):
         with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
-            self.assertEqual(_client().get("/api/research/quantstats", headers=TUNNEL).status_code, 200)
+            c = _client()
+            self.assertEqual(c.get("/api/market-regime", headers=TUNNEL).status_code, 200)
+            self.assertEqual(c.get("/api/research/quantstats", headers=TUNNEL).status_code, 401)   # 연구 API는 토큰 필요
 
     def test_fail_closed_without_configured_token(self):
         env = {k: v for k, v in os.environ.items() if k != "API_WRITE_TOKEN"}

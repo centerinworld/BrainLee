@@ -7,7 +7,7 @@
   · 검사 대상 = 터널을 거친 요청(Cloudflare가 항상 붙이는 `Cf-Connecting-Ip` 또는 `X-Forwarded-For` 헤더가 있음).
     서버 내부·스케줄러·스크립트의 로컬 호출(헤더 없음, 루프백)은 그대로 통과한다.
   · 보호 경로 = (/api, /hs, /semiconductor-lab 아래의 쓰기 메서드 POST/PUT/PATCH/DELETE)
-              + (민감 GET: /api/portfolio, /api/kis-trading, /api/commands, /api/live-orders)
+              + (민감 GET: /api/portfolio, /api/kis-trading, /api/commands, /api/live-orders, /api/research[연구 API — 사용자 검토 전])
   · 토큰 = 환경변수 API_WRITE_TOKEN. 요청 헤더 `X-API-Token` 또는 `Authorization: Bearer <token>`과 상수시간 비교.
   · 토큰이 서버에 설정돼 있지 않으면 보호 경로의 터널 요청은 전부 거부한다(fail-closed, 503).
   · OPTIONS(CORS 사전요청)는 통과한다.
@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 API_PREFIXES = ("/api", "/hs", "/semiconductor-lab")
-SENSITIVE_GET_PREFIXES = ("/api/portfolio", "/api/kis-trading", "/api/commands", "/api/live-orders")
+SENSITIVE_GET_PREFIXES = ("/api/portfolio", "/api/kis-trading", "/api/commands", "/api/live-orders", "/api/research")
 
 
 def _via_tunnel(request: Request) -> bool:

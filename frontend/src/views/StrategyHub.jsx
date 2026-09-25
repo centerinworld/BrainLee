@@ -283,6 +283,8 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
       },
     ];
 
+    // 연구 화면(팩터 검증)은 사용자 검토 전이라 기능 플래그로 가린다: 브라우저 콘솔에서 localStorage.setItem('research_lab_tab','1') 후 새로고침
+    const showFactorTab = (() => { try { return localStorage.getItem('research_lab_tab') === '1'; } catch { return false; } })();
     const hubTabStyle = (key) => ({
       padding:'0.35rem 1rem', borderRadius:'8px', cursor:'pointer', fontSize:'0.82rem',
       fontWeight: hubTab===key ? 700 : 400,
@@ -571,7 +573,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
 	            { key:'ledger', label:'🧪 검증 이력' },
 	            { key:'factor', label:'🔬 팩터 검증' },
 	            { key:'data-lab', label:'🧭 데이터 라우팅' },
-	          ].map(t => (
+	          ].filter(t => t.key !== 'factor' || showFactorTab).map(t => (
             <button key={t.key}
               onClick={() => setHubTab(t.key)}
               style={hubTabStyle(t.key)}>
@@ -992,7 +994,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
 	        )}
 
 	        {hubTab === 'ledger' && <ExperimentLedgerPanel />}
-	        {hubTab === 'factor' && <><FactorValidationPanel /><QuantStatsPanel /></>}
+	        {hubTab === 'factor' && showFactorTab && <><FactorValidationPanel /><QuantStatsPanel /></>}
 
         {hubTab === 'data-lab' && (
           <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
