@@ -42,6 +42,8 @@ const PeakView = React.lazy(() => import('./views/StrategyCenterView'));
 const BacktestView = React.lazy(() => import('./views/BacktestView'));
 const Screener = React.lazy(() => import('./views/Screener'));
 const StrategyHub = React.lazy(() => import('./views/StrategyHub'));
+// 2026-09-25: 종목 분석 가격 차트를 Lightweight Charts로 교체(HANDOFF §7-6). localStorage chart_engine='svg'면 기존 SVG 차트로 되돌림.
+const PriceChart = React.lazy(() => import('./views/PriceChart'));
 const SectorRotationView = React.lazy(() => import('./views/SectorRotationView'));
 const PeerCompareView = React.lazy(() => import('./views/PeerCompareView'));
 const GlobalForeignFlowView = React.lazy(() => import('./views/GlobalForeignFlowView'));
@@ -15786,6 +15788,10 @@ const App = () => {
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'260px', gap:'0.6rem' }}>
                 {collecting ? <><div style={{width:'22px',height:'22px',borderRadius:'50%',border:'2px solid var(--accent-mint)',borderTopColor:'transparent',animation:'spin 0.8s linear infinite'}}/><span style={{color:'var(--accent-mint)',fontSize:'0.8rem'}}>주가 수집 중...</span></> : <span style={{color:'var(--text-secondary)',fontSize:'0.8rem'}}>주가 데이터 없음</span>}
               </div>
+            ) : (typeof window !== 'undefined' && window.localStorage.getItem('chart_engine') !== 'svg') ? (
+              <React.Suspense fallback={<div style={{height:'340px'}} />}>
+                <PriceChart data={displayChartData} actions={corporateActions} height={340} />
+              </React.Suspense>
             ) : (() => {
               const mc=(arr,n)=>arr.map((_,i)=>{if(i<n-1)return null;return arr.slice(i-n+1,i+1).reduce((s,d)=>s+(d.close||0),0)/n;});
               const ma5=mc(displayChartData,5),ma20=mc(displayChartData,20),ma60=mc(displayChartData,60);
