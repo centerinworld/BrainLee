@@ -48,24 +48,59 @@ def _entry_confirm_mode() -> str:
     return m if m in ("off", "shadow", "enforce") else "shadow"
 
 
+_LOG_EXTRA_COLUMNS = (
+    # 2026-09-25 (§11 S3): 차단 시점 기준가·시장 상태와 사후 성과 — "막은 진입"의 이후 수익을 비교하기 위한 컬럼
+    ("price_at_block", "DOUBLE PRECISION DEFAULT NULL"),
+    ("kospi_close", "DOUBLE PRECISION DEFAULT NULL"),
+    ("kospi_ma60", "DOUBLE PRECISION DEFAULT NULL"),
+    ("ret_5d", "DOUBLE PRECISION DEFAULT NULL"),
+    ("ret_20d", "DOUBLE PRECISION DEFAULT NULL"),
+    ("ret_60d", "DOUBLE PRECISION DEFAULT NULL"),
+    ("kospi_ret_5d", "DOUBLE PRECISION DEFAULT NULL"),
+    ("kospi_ret_20d", "DOUBLE PRECISION DEFAULT NULL"),
+    ("kospi_ret_60d", "DOUBLE PRECISION DEFAULT NULL"),
+)
+
+
 def _ensure_log(conn) -> None:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS virtual_guard_log ("
         "id SERIAL PRIMARY KEY, logged_at TIMESTAMP DEFAULT now(), stock_code TEXT, strategy TEXT, "
         "guard TEXT, decision TEXT, detail TEXT)"
     )
+    for col, ddl in _LOG_EXTRA_COLUMNS:
+        conn.execute(f"ALTER TABLE virtual_guard_log ADD COLUMN IF NOT EXISTS {col} {ddl}")
 
 
-def _log(conn, code: str, strategy: str, guard: str, decision: str, detail: str) -> None:
+def _log(conn, code: str, strategy: str, guard: str, decision: str, detail: str,
+         price: float | None = None, kospi: tuple[float, float] | None = None) -> None:
+    """가드 판정 기록. 같은 (종목, 전략, 가드, 판정)은 하루 1건만 남긴다(분 단위 재시도 중복 방지)."""
     try:
         _ensure_log(conn)
+        dup = conn.execute(
+            "SELECT 1 FROM virtual_guard_log WHERE stock_code=? AND strategy=? AND guard=? AND decision=? "
+            "AND CAST(logged_at AS DATE)=CURRENT_DATE LIMIT 1",
+            (code, strategy, guard, decision),
+        ).fetchone()
+        if dup:
+            return
         conn.execute(
-            "INSERT INTO virtual_guard_log (stock_code, strategy, guard, decision, detail) VALUES (?,?,?,?,?)",
-            (code, strategy, guard, decision, detail[:500]),
+            "INSERT INTO virtual_guard_log (stock_code, strategy, guard, decision, detail, price_at_block, kospi_close, kospi_ma60) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (code, strategy, guard, decision, detail[:500],
+             float(price) if price else None, kospi[0] if kospi else None, kospi[1] if kospi else None),
         )
         conn.commit()
     except Exception as e:  # 로그 실패가 매매를 막지 않도록
         logger.warning(f"[가드로그] 기록 실패: {e}")
+
+
+def _kospi_snapshot(conn) -> tuple[float, float] | None:
+    try:
+        _above, cur, ma = kospi_above_ma60(conn)
+        return (cur, ma) if cur and ma else None
+    except Exception:
+        return None
 
 
 def _dedup_closes(rows) -> list[float]:
@@ -149,12 +184,17 @@ def check_entry(conn, code: str, strategy: str, qty: int, price: float) -> dict:
                     if mode == "enforce":
                         reasons.append(msg)
                     else:
-                        _log(conn, code, strategy, "entry_confirm", "shadow_would_block", msg)
+                        _log(conn, code, strategy, "entry_confirm", "shadow_would_block", msg,
+                             price=price, kospi=_kospi_snapshot(conn))
         except Exception as e:
             logger.warning(f"[가드] 진입확인 판정 실패(무시): {e}")
 
     if reasons:
-        _log(conn, code, strategy, "entry", "blocked", " | ".join(reasons))
+        # 사유마다 실제 가드명(regime_filter / exposure_stock / exposure_sector / entry_confirm)으로 한 행씩 기록
+        snap = _kospi_snapshot(conn)
+        for reason in reasons:
+            _log(conn, code, strategy, reason.split(":", 1)[0].strip() or "entry", "blocked", reason,
+                 price=price, kospi=snap)
     return {"allowed": not reasons, "reasons": reasons}
 
 

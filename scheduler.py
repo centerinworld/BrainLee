@@ -411,6 +411,7 @@ class CollectionScheduler:
             ("KIS일별수집",    self._loop_kis_daily),         # ★ KIS API 전종목 OHLCV (KRX 차단 대체)
             ("종가공식검증",    self._loop_close_verify),      # ★ 19:30 당일 종가 표본을 KRX 공식값과 대조(2026-09-25)
             ("월간피처스냅샷",  self._loop_feature_snapshot_monthly), # ★ 월 마지막 거래일 20:30 정본 스냅샷 재생성(스테이징→점검→교체, 2026-09-25 §11 S2)
+            ("가드사후성과",    self._loop_guard_outcomes),    # ★ 영업일 20:50 virtual_guard_log 차단 진입의 5/20/60일 사후 수익 채움(§11 S3)
             ("KIS추정실적",    self._loop_kis_forward_estimates), # KIS Forward EPS/PER 등 순환 갱신
             ("전종목수급17시",  self._loop_supply_daily),      # ★ 17:30 KIS 전종목 수급
             ("전종목수급21시",  self._loop_supply_evening),    # ★ 21:00 재갱신
@@ -1319,6 +1320,26 @@ class CollectionScheduler:
         logger.info(f"[월간스냅샷] {res.stdout.strip()[-400:]}")
         if res.returncode != 0:
             raise RuntimeError(f"월간 스냅샷 재생성 실패(rc={res.returncode}): {res.stdout.strip()[-300:]}{res.stderr.strip()[-200:]}")
+
+    def _loop_guard_outcomes(self) -> None:
+        """영업일 20:50 — 가상매매 가드가 막은 진입의 사후 성과(5/20/60거래일)를 채운다."""
+        self._wait_secs(200)
+        while not self._stop_event.is_set():
+            self._wait_until(20, 50, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("가드사후성과", self._job_guard_outcomes)
+            self._wait_secs(3600)
+
+    def _job_guard_outcomes(self) -> None:
+        py = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python"
+        if not os.path.exists(py):
+            py = sys.executable
+        res = subprocess.run([py, "scripts/fill_guard_log_outcomes_20260925.py"], capture_output=True, text=True, timeout=900,
+                             cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime")
+        logger.info(f"[가드사후성과] {res.stdout.strip()[-300:]}")
+        if res.returncode != 0:
+            raise RuntimeError(f"가드 사후 성과 실패(rc={res.returncode}): {res.stdout.strip()[-200:]}{res.stderr.strip()[-200:]}")
 
     def _loop_kis_forward_estimates(self) -> None:
         """영업일 20:10 - KIS 추정실적을 7일 stale 기준으로 순환 갱신."""
