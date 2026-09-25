@@ -26,12 +26,16 @@ DDL = """CREATE TABLE IF NOT EXISTS virtual_account_equity_daily (
   positions_value DOUBLE PRECISION DEFAULT NULL, n_accounts INTEGER DEFAULT 0, excluded TEXT DEFAULT '',
   peak_60d DOUBLE PRECISION DEFAULT NULL, dd_pct DOUBLE PRECISION DEFAULT NULL, state TEXT DEFAULT 'normal',
   updated_at TIMESTAMP DEFAULT now())"""
+DDL_STRAT = """CREATE TABLE IF NOT EXISTS virtual_strategy_equity_daily (
+  strategy TEXT NOT NULL, trade_date TEXT NOT NULL, equity DOUBLE PRECISION DEFAULT NULL, initial_cash DOUBLE PRECISION DEFAULT NULL,
+  updated_at TIMESTAMP DEFAULT now(), PRIMARY KEY (strategy, trade_date))"""
 
 
 def main(dry_run: bool = False) -> int:
     conn = connect_primary_db(timeout=300)
     if not dry_run:
         conn.execute(DDL)
+        conn.execute(DDL_STRAT)
         conn.commit()
     accts = {r[0]: float(r[1]) for r in conn.execute("SELECT strategy, initial_cash FROM virtual_cash_accounts").fetchall()}
     ev = pd.DataFrame([tuple(r) for r in conn.execute(
@@ -70,12 +74,13 @@ def main(dry_run: bool = False) -> int:
     ks = ks.set_index("date").close
     ks_ok = (ks > ks.rolling(60).mean()).reindex(days).ffill().fillna(True)
 
-    rows, prev_state, hist = [], "normal", []
+    rows, prev_state, hist, strat_rows = [], "normal", [], []
     for d in days:
         cash = pos_val = 0.0
-        for s in use:
+        for s in accts:
             e = ev[(ev.strategy == s) & (ev.day <= d)]
-            cash += accts[s] + float(e.cash_delta.sum())
+            s_cash = accts[s] + float(e.cash_delta.sum())
+            s_pos = 0.0
             held = defaultdict(float)
             for code, et, q in zip(e.code, e.event_type, e.qty):
                 if pd.isna(code):
@@ -83,11 +88,15 @@ def main(dry_run: bool = False) -> int:
                 held[code] += q if et == "buy" else -q
             for code, q in held.items():
                 if q > 0 and code in close.columns and pd.notna(close.at[d, code]):
-                    pos_val += q * float(close.at[d, code])
+                    s_pos += q * float(close.at[d, code])
             # buys whose code could not be recovered: cost basis until their matching sell (closed_day); never-sold ones stay at cost
             unc = e[(e.event_type == "buy") & e.code.isna() & (e.closed_day.isna() | (e.closed_day > d))]
-            pos_val += float(unc.gross.sum())
-            # coded buys that were paired to a sell whose day has not come yet are still held (held[] already counts them until the sell row)
+            s_pos += float(unc.gross.sum())
+            if s in bad:
+                continue                                    # inconsistent ledger (sells without buys): no trustworthy equity, excluded everywhere
+            cash += s_cash
+            pos_val += s_pos
+            strat_rows.append((s, d.strftime("%Y-%m-%d"), s_cash + s_pos, accts[s]))
         equity = cash + pos_val
         hist.append(equity)
         peak = max(hist[-60:])
@@ -108,6 +117,9 @@ def main(dry_run: bool = False) -> int:
     print("state counts:", df.state.value_counts().to_dict(), "min dd:", round(df.dd_pct.min(), 2))
     if dry_run:
         return 0
+    conn.executemany(
+        "INSERT INTO virtual_strategy_equity_daily(strategy,trade_date,equity,initial_cash) VALUES(?,?,?,?) "
+        "ON CONFLICT (strategy,trade_date) DO UPDATE SET equity=excluded.equity, initial_cash=excluded.initial_cash, updated_at=now()", strat_rows)
     conn.executemany(
         "INSERT INTO virtual_account_equity_daily(trade_date,equity,cash,positions_value,n_accounts,excluded,peak_60d,dd_pct,state) VALUES(?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT (trade_date) DO UPDATE SET equity=excluded.equity, cash=excluded.cash, positions_value=excluded.positions_value, n_accounts=excluded.n_accounts, "

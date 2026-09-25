@@ -412,6 +412,7 @@ class CollectionScheduler:
             ("종가공식검증",    self._loop_close_verify),      # ★ 19:30 당일 종가 표본을 KRX 공식값과 대조(2026-09-25)
             ("월간피처스냅샷",  self._loop_feature_snapshot_monthly), # ★ 월 마지막 거래일 20:30 정본 스냅샷 재생성(스테이징→점검→교체, 2026-09-25 §11 S2)
             ("가드사후성과",    self._loop_guard_outcomes),    # ★ 영업일 20:50 virtual_guard_log 차단 진입의 5/20/60일 사후 수익 채움(§11 S3)
+            ("전략감쇠감시",    self._loop_strategy_decay),    # ★ 매월 첫 영업일 06:30 운영 전략 최근 3/6/12개월 vs 백테스트 기대 분포 하위 5% 이탈 경고(§12 R8)
             ("KIS추정실적",    self._loop_kis_forward_estimates), # KIS Forward EPS/PER 등 순환 갱신
             ("전종목수급17시",  self._loop_supply_daily),      # ★ 17:30 KIS 전종목 수급
             ("전종목수급21시",  self._loop_supply_evening),    # ★ 21:00 재갱신
@@ -1352,6 +1353,31 @@ class CollectionScheduler:
         logger.info(f"[실행괴리] {res.stdout.strip()[-200:]}")
         if res.returncode != 0:
             raise RuntimeError(f"실행 괴리 측정 실패(rc={res.returncode}): {res.stdout.strip()[-200:]}{res.stderr.strip()[-200:]}")
+
+    def _loop_strategy_decay(self) -> None:
+        """매월 첫 영업일 06:30 — 운영 전략 성과 감쇠 감시(§12 R8)."""
+        self._wait_secs(220)
+        while not self._stop_event.is_set():
+            self._wait_until(6, 30, skip_weekend=False)
+            if self._stop_event.is_set():
+                break
+            today = datetime.now().date()
+            prev = today - timedelta(days=1)
+            while not is_kr_trading_day(prev):
+                prev -= timedelta(days=1)
+            if is_kr_trading_day(today) and prev.month != today.month:
+                _run_job_safe("전략감쇠감시", self._job_strategy_decay)
+            self._wait_secs(3600)
+
+    def _job_strategy_decay(self) -> None:
+        py = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python"
+        if not os.path.exists(py):
+            py = sys.executable
+        res = subprocess.run([py, "scripts/strategy_decay_monitor_20260925.py"], capture_output=True, text=True, timeout=900,
+                             cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime")
+        logger.info(f"[전략감쇠] {res.stdout.strip()[-300:]}")
+        if res.returncode != 0:
+            raise RuntimeError(f"전략 감쇠 감시 실패(rc={res.returncode}): {res.stdout.strip()[-200:]}{res.stderr.strip()[-200:]}")
 
     def _loop_kis_forward_estimates(self) -> None:
         """영업일 20:10 - KIS 추정실적을 7일 stale 기준으로 순환 갱신."""

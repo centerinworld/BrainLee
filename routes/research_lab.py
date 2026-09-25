@@ -2,6 +2,7 @@
 
   GET /api/research/factor-validation   Alphalens 팩터 IC(학습/검증 분할) + 공시 이벤트 스터디
   GET /api/research/quantstats          QuantStats 전략 성과 요약(곡선 출처 배지 포함)
+  GET /api/research/strategy-decay      전략 성과 감쇠 감시(최근 3/6/12개월 vs 백테스트 기대 분포)
   GET /api/research/price-integrity     가격 무결성 현황(점프 감사 분류 집계·최근 복구 run·종가 공식 검증)
 
 파일 읽기와 DB SELECT만 한다 — DB 쓰기·외부 호출 없음. 산출물이 없으면 items=[]와 note를 돌려준다.
@@ -85,5 +86,25 @@ def price_integrity():
                       "FROM price_close_verify_log ORDER BY id DESC LIMIT 10").fetchall()]
         return {"classes": classes, "recent_fix_runs": fixes, "close_verify": verify,
                 "notes": ["격리·검토 행은 수익률 계산에서 제외/가드됩니다. 미해결(활성 보통주)이 줄어들수록 백테스트 신뢰도가 올라갑니다."]}
+    finally:
+        conn.close()
+
+
+@router.get("/strategy-decay")
+def strategy_decay():
+    from db_compat import connect_primary_db
+    conn = connect_primary_db(readonly=True)
+    try:
+        last = conn.execute("SELECT MAX(check_date) FROM strategy_decay_check").fetchone()[0]
+        if not last:
+            return {"items": [], "note": "감시 결과 없음(월 1회 실행)"}
+        rows = conn.execute(
+            "SELECT strategy, win, backtest_strategy, recent_ret_pct, p05_pct, p50_pct, pctile, n_hist, flagged, note FROM strategy_decay_check "
+            "WHERE check_date=? ORDER BY flagged DESC, strategy, win", (last,)).fetchall()
+        return {"check_date": str(last), "items": [dict(zip(("strategy", "window", "backtest_strategy", "recent_ret_pct", "p05_pct", "p50_pct", "pctile",
+                                                              "n_hist", "flagged", "note"), tuple(r))) for r in rows],
+                "notes": ["가상 계좌 전체(1억원) 대비 수익률이라 현금 비중이 큰 계좌는 0에 가깝게 나온다. 기대 분포=같은 전략 백테스트의 같은 길이 롤링 수익률."]}
+    except Exception as exc:  # table not created yet
+        return {"items": [], "note": f"감시 결과 없음: {str(exc)[:80]}"}
     finally:
         conn.close()
