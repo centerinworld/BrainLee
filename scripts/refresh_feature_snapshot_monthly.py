@@ -22,6 +22,14 @@ MIN_ROW_RATIO = 0.85     # new rows >= 85% of current canonical rows
 MIN_PER_FILL = 0.40      # latest snapshot month PER fill rate
 
 
+def _alert(text: str) -> None:
+    try:
+        import notifier
+        notifier.send(text, key="feature_snapshot_monthly")
+    except Exception as exc:  # noqa: BLE001
+        print("alert failed:", exc, file=sys.stderr)
+
+
 def main() -> int:
     from db_compat import connect_primary_db
     from build_strategy_research_dataset import build_strategy_research_dataset
@@ -38,6 +46,7 @@ def main() -> int:
     print(f"canonical={old_n} stage={new_n} latest_per_fill={fill}")
     if new_n < old_n * MIN_ROW_RATIO or (fill or 0) < MIN_PER_FILL:
         print("점검 실패 — 정본 유지, 스테이징 테이블 보존")
+        _alert(f"⚠️ 월간 피처 스냅샷 점검 실패(정본 유지): 신규 {new_n}행/기존 {old_n}행, 최신월 PER 채움 {fill}")
         return 2
 
     cols = conn.execute(
@@ -54,6 +63,7 @@ def main() -> int:
     except Exception as exc:
         conn.rollback()
         print(f"교체 롤백: {exc}")
+        _alert(f"⚠️ 월간 피처 스냅샷 교체 롤백(정본 유지): {exc}")
         return 3
     conn.execute(f"DROP TABLE IF EXISTS {STAGE}")
     conn.commit()
@@ -62,4 +72,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - build failure must alert, canonical table is untouched
+        _alert(f"⚠️ 월간 피처 스냅샷 생성 실패(정본 유지): {exc}")
+        raise
