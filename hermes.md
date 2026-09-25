@@ -831,3 +831,70 @@ ETF/naver 기준 복구(451K+156K행)를 별도로 수행함.
 (3) 전략 백테스트 시작 2020-03이라 2015~2018은 지표 lookback용이라 영향 작음. `fix_batch0712_to_raw_20260924.py`로
 created_at='2026-07-12 07:21:53' & date<2019 & marcap과 OHLC 상이한 **827,724행**을 marcap raw로 교체(run_id batch0712_raw_basis_fix_20260924_121832).
 재감사: unresolved 1,718→**1,251**, 전체 점프 21,423→**21,026**(신규 점프 폭증 없음), share_count_evidence 434건.
+
+### coverage_gap 채우기 (Claude, 2026-09-24)
+`scripts/fill_coverage_gaps_20260924.py`: 감사 coverage_gap 16,592건 중 간격≤30일(진짜 빠진 거래일) 대상, 달력 기준 빠진 (코드,날짜) 36,295쌍 중
+**35,496행 삽입**(marcap raw 14,593 + FDR 20,903; FDR은 앞뒤 실제 DB 종가 ±30% 밴드 검증, 정수/OHLC 형태 검증). run_id coverage_gap_fill_20260924_123721,
+백업 테이블에 old=NULL로 기록(롤백=해당 행 삭제). 재감사: coverage_gap 16,592→**612**, 전체 점프 21,026→**5,133**, unresolved 1,251→1,290(가려졌던 진짜 점프 39건 노출).
+테스트 295 passed, 전략 감사 23/4 유지, golden_cross 1.95%.
+잔존: 소수점 8,396행/86종목은 FDR 캐시에 해당 날짜 데이터 자체가 없음(ETF 상장 이전/구간 미제공) → 소스 없음. unresolved 1,290건은 marcap도 동일 점프(실제 사건)이거나 증거 부재.
+
+## 기업이벤트 등록 + coverage_gap 사유 기록 (Claude, 2026-09-24 저녁)
+사용자 지적 2건 반영:
+1. **미해결 점프 → 기업이벤트 등록**: `scripts/register_corporate_events_from_dart_20260924.py`. marcap raw와 일치하는 "진짜" 점프 997건에 대해
+   로컬 dart_disclosures(2016-05~) 우선, 없으면 OpenDART list.json 실시간 조회(corpCode.xml 매핑, B/I 유형, -300/+10일)로 분할/병합/감자/합병/
+   주식교환/거래정지 공시를 찾아 **951건을 corporate_action_events에 등록**(source='dart_disclosure+marcap_jump_2026-09-24', review_required,
+   거래정지류는 not_price_adjusting, 가격팩터는 미도출). 증거 없는 46건은 등록 안 함. 롤백: 해당 source 행 DELETE.
+   (id 시퀀스가 max(id)보다 뒤처져 충돌 → setval로 보정함.)
+2. **coverage_gap 재검토 방지**: `price_coverage_gap_reviewed` 테이블 신설(price_integrity.TABLES) + 감사 스크립트가 해당 행을
+   `coverage_gap_reviewed`(return_usable=0)로 분류. `review_coverage_gaps_20260924.py`가 사유+근거 기록:
+   source_row_invalid 358(원본에 행은 있으나 종가>고가 등 OHLC 무효 → 값을 만들어 넣지 않음), source_basis_mismatch 109(FDR이 분할조정 기준),
+   no_source_data 38, dormant_no_record 18, trading_halt 1(DART 거래정지 rcept 기록).
+3. 그 전에 채울 수 있는 행 채움: `fill_coverage_gaps_20260924.py --max-gap` (FDR 밴드검증, 수렴할 때까지 반복; FDR 캐시 범위 stale 버그 수정) +
+   `fill_suspension_gaps_from_marcap_20260924.py`(marcap 정지 마커행 21,783행).
+4. 결과(전체 재감사): 미해결 점프 **353→146**(marcap과 다른 데이터 글리치 620행 추가 교체 포함), pending_confirmation 1,057,
+   coverage_gap 16,592→**1**(+reviewed 524). 테스트 399 passed, 전략 감사 23/4 유지, golden_cross 1.95%.
+5. 남은 것: unresolved 146건(DART 증거 없는 진짜 점프 ~60 + 글리치/무marcap), 소수점 8,396행은 격리 상태 유지.
+
+### 마무리 (2026-09-24)
+- 신규 회귀 테스트 `tests/test_audit_extensions_20260924.py`: refresh_calendar 증분/full, share_count_evidence 조건, 발행주식수 증거 분류가 return_usable=0 유지,
+  coverage_gap_reviewed 기록 시 재큐잉 안 됨(쓰기 가드 트리거는 Postgres 필요 → 수동 검증만).
+- marcap이 종가만 있고 OHL 없는 날짜에서 DB 종가와 다른 23행은 `price_integrity_quarantine`(reason=disagrees_with_marcap_close_no_ohl_source)로 격리.
+- 잔존(내가 더 못 고치는 것): 미해결 점프 ~146건 중 DART 증거 없는 진짜 점프 ~60건/marcap 미커버 10건, 소수점 8,396행(격리), 7/12 배치 원인 스크립트 미특정.
+
+## 연구 도구 도입 1~2단계 (Claude, 2026-09-24)
+- 연구용 venv: `stock_dashboard/research_venv`(numpy 2.4.6, quantstats/alphalens-reloaded/vectorbt/PyPortfolioOpt). 운영 venv(numpy 1.26.4/pandas 2.3.3)는 미변경.
+  DB는 운영 venv의 `research/extract_research_inputs_20260924.py`가 parquet(data_cache/research)로 추출 → 연구 venv는 parquet만 읽음(자격증명 불필요).
+- alphalens-reloaded 로컬 패치: `alphalens/utils.py`의 `df.index.levels[0].freq = freq`를 try/except(월말처럼 희소한 날짜는 BusinessDay freq 설정 불가). 재설치 시 재적용 필요.
+- 결과: research_outputs/alphalens_factor_validation_20260924.{md,csv,json}. 요약: 저변동성/저PER/저PBR 유효, 60~120일 모멘텀은 역효과, 수급(supply_20d)·기존 model_score는 음의 IC.
+- 문서(PDF "GitHub 추천 20선")의 pykrx 중심 전제는 현재 사실과 다름(pykrx 전 종목 빈 결과) → marcap/FDR/DART 유지.
+- 1단계(QuantStats): `research/build_backtest_equity_curves_20260924.py`로 `backtest_equity_curve` 테이블 신설(engine 929, realized_pnl 1,122, realized_pnl_assumed_100m 575 = 2,626/3,035 run;
+  409건은 거래별 손익 없음). `research/quantstats_strategy_report_20260924.py` 결과: research_outputs/quantstats_summary_20260924.{md,csv,json} + HTML 3종.
+  복원곡선(15개 전략)은 계단형이라 Sortino/베타 신뢰 불가 → 엔진이 일별 평가곡선을 저장하도록 개선 필요.
+- 3단계(vectorbt): `research/vectorbt_rule_sweep_20260924.py`(vectorbt 1.0.0은 plotly<6 필요 → 연구 venv에 plotly 5.x 설치, 트레일링은 sl_trail). 결과 research_outputs/vectorbt_rule_sweep_20260924.{md,csv,json}:
+  국면필터는 훈련 MDD만 개선·검증 수익 반토막, 훈련 최적값이 검증에서 유지되지 않음 → 운영 기본값 변경 근거 아님(기존 엔진 재현 + 하락장 표본 필요).
+- 4단계(PyPortfolioOpt): `research/pyportfolioopt_sidebyside_20260924.py`. 동일비중(CAGR 18.1%, Sharpe 0.82)이 HRP(14.0%/0.74)·MinVol(4.9%/0.33)보다 우수 → 최적화 비중 도입 보류.
+  vectorbt(고정금액 진입)와 이 스크립트(월 복리 재배분)의 절대수익 정의가 달라 통일 필요.
+- **미국 가상매매 9/23 차단 원인 확정·수정**(`routes/us_virtual_trading.py`): 거래일 인정 기준이 "전 종목 수 vs 역대 최대(3,623, 2026-05-22)의 95%(=3,442)"였음.
+  9/21 3,546 → 9/22 3,446 → 9/23 3,424로 스팩/권리/워런트 등 비유동 종목이 빠져(9/22 106종목 중 43종목은 이후 다시 등장 = 그날 거래 없음) 9/23이 기준 미달.
+  전 종목 수는 상장폐지가 쌓일수록 영구히 기준 아래로 내려가는 구조적 결함(docstring이 경고한 바로 그 문제)이라, 기준을 **핵심 유니버스**(최근 60세션 중 90% 이상 출현 종목, 현재 3,527개)의
+  당일 출현 비율 ≥95%로 변경. 9/23은 3,411/3,527=96.7%로 통과. 테스트 tests/test_us_paper_core_coverage_20260924.py(3건). 서버(uvicorn) 재기동 후 반영됨.
+  주의: 핵심 종목 98개가 9/22에 한꺼번에 사라진 것은 상장폐지/합병인지 수집 누락인지 미확인(ANY, ALF, GV, GLMD 등 실제 회사 포함) → 수집기 로그 확인 필요.
+- QuantStats 후속: `research/reconstruct_mtm_equity_20260924.py`로 거래로그+가격 기반 일별 평가곡선 재구성(선정 전략 79개 run, source='mtm_reconstructed'). 첫 시도는 조정종가 수준과 로그 진입가 수준이 달라(분할 종목) MDD -90%로 왜곡 → 같은 가격 시리즈의 진입일 값을 기준으로 수정. 결과 베타 0.3~0.9로 정상화.
+- 미국 데이터: 9/22~23 핵심종목 156개가 수집기에서 누락(Yahoo엔 정상 존재, 39/40 확인) → `scripts/ops/sync_us_daily_quotes_and_factors.py --tickers ... --period 1mo`로 재수집, 9/23 종목수 3,424→3,538 복구.
+  9/22는 100개 종목에 Yahoo 자체가 바를 주지 않음(소스 측 공백, 채울 수 없음). 재수집이 쓴 9/24 장중 34행은 삭제(미완성 봉).
+- 수급 공백(2026-09-14~18): 다른 세션이 14:01에 `scripts/backfill_supply_from_kiwoom_20260924.py`로 금액 컬럼(*_net_buy_amt) 11,488행을 이미 백필함(검증 완료 확인). 남은 것은 **수량 컬럼**(inst/frn/ind_net_buy) ~2,335종목×5일 NULL —
+  kiwoom_investor_daily에는 수량 컬럼이 없어 같은 방식으로 못 채움, KRX OpenAPI(collect_krx_investors.py)는 HTML 오류 페이지 반환(서비스/권한 문제)이라 사용 불가. 중복 작업 피해 미조치.
+  (수집기 collect_krx_investors.py는 '오늘' 날짜만 처리하고, 가격행이 없으면 close=0 플레이스홀더를 INSERT하는데 write guard(close<=0 차단)에 걸림 - 기존 충돌, 미수정.)
+- 미완: 피처 스냅샷(strategy_feature_snapshot[_pit_v2], 각 07-24/08-11에서 정지) 생성기가 저장소에 없음 → 재생성 스크립트 신규 작성 필요.
+
+## Python 3.12 전환 준비·검증 (Claude, 2026-09-25) — 운영 전환은 미실행(승인 대기)
+- 설치: Homebrew python@3.12.14(`/opt/homebrew/opt/python@3.12/bin/python3.12`). 새 venv `runtime/.venvs/py312`(numpy 2.2.6, pandas 2.3.3, pykrx 1.2.9, 운영 115패키지 = 3.11 freeze 기준; `.venvs/freeze_py311_20260924.txt`, `.venvs/requirements-py312-candidate.txt`, `.venvs/requirements-core.lock`).
+  OpenDartReader: PyPI의 0.2.3 sdist는 Requires-Python>=3.13이라 pip가 거부 → 3.11 venv의 순수 파이썬 패키지 디렉터리(OpenDartReader + dist-info)를 복사해 사용(import 정상, 정규식 이스케이프 SyntaxWarning 1파일만).
+- 검증(3.12): pytest 448 passed / 주요 모듈 import 전부 OK / TestClient로 API 8종 3.11 대비 동일(cash-conversion-signals/top은 정렬 비결정성 — 3.11끼리도 달라짐, 순서 무시 시 동일) / 지표(_calc_metrics·MDD)·가격 팩터 해시 동일 / db_compat numpy 스칼라 바인딩 동일.
+  numpy2 차이: repr(np.float64)='np.float64(1.0)', uint8 산술 오버플로(NEP 50) — 코드에서 int8/uint8 사용 0건, `!r`는 문자열 값만이라 영향 없음.
+- pykrx 1.2.9: 종목 OHLCV는 1.2.4와 동일값(175330 2022-02-04=8,400 = DB). ETF(get_etf_ohlcv_by_date)는 1.2.9에서 `'isin'` 오류, 1.2.4는 빈 결과 → 둘 다 사용 불가. 전종목 일괄(get_market_ohlcv_by_ticker)은 KRX 응답 형식 변경으로 실패. import 시 'KRX_ID/KRX_PW 없음' 안내만 출력(OHLCV엔 영향 없음).
+- 전환 미실행 사유: 자동 분류기가 "운영 배포"로 차단(운영 venv 교체 + 백엔드 재시작). 절차(사용자 승인 후): `mv venv .venvs/py311 && ln -s .venvs/py312 venv && scripts/safe_restart_backend.sh`; 롤백: `rm venv && ln -s .venvs/py311 venv` 후 재시작. 실행 중 3.11 프로세스는 백엔드(uvicorn, launchd com.stock-dashboard.local)뿐이었음.
+- 부수 발견·수리: price_history의 2026-09-14~23 일봉이 장마감 동시호가 전 스냅샷 값으로 저장돼 있었음(9/21 67% 불일치). KRX 공식(marcap 9/14~21, pykrx 9/22~23)으로 7,653행 교체(`scripts/fix_recent_close_from_official_20260924.py`, run_id recent_close_official_fix_20260925_002046). pykrx 호출을 ThreadPoolExecutor 안에서 돌리면 10분 이상 멈춤(순차 호출은 0.03초/건) → 순차로 변경.
+  근본 원인(어떤 수집기가 마감 전 값을 최종으로 저장하는지)은 미확인 — 수집 시각/소스 점검 필요.
+- 스냅샷 재구축: `scripts/build_strategy_research_dataset.py --adjust-jumps`(기업행위 분류 4종만 수익률 0 처리) 추가, 결과 테이블 strategy_feature_snapshot_rebuild_adj_20260924(원본 테이블 미변경). PER은 2026-06 이후 스냅샷에서 99.7% NULL(valuation_history가 2026-03-31에서 끝남).

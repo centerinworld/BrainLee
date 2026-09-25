@@ -1,0 +1,21 @@
+# Runtime Stock Dashboard — Agent Rules
+
+## Authoritative live boundary
+- Work only in this `runtime/` Git root. The serving API is `uvicorn main:app` on 127.0.0.1:8000; verify its PID, CWD, and active datastore before making operational claims.
+- PostgreSQL is the primary store. Use `connect_primary_db()` or `connect_stock_db()` in live paths; do not use direct `sqlite3.connect()` for primary data.
+- Price/financial repair scripts default to read-only. A live `--apply` requires an explicit approval, an idempotency rule, backup/audit rows, and independent post-write read-back.
+
+## Price-integrity safety
+- `price_history` has no `quality_status` column. Suspension status is derived by `price_integrity.rebuild_views()` from `volume=0 AND open=high=low=0`; the canonical read view `canonical_price_history_v` (and `canonical_price_returns_v`, which adds `safe_daily_return`) carries the derived `return_usable` flag — `price_history_quality_v` only carries `quality_status`. Rows classified `suspended` have `return_usable=0`.
+- Corporate-action/basis evidence must be point-in-time and fail closed. Never infer a price adjustment from a large price jump alone.
+- Historical price-limit checks must use the date-sensitive policy in `price_integrity.price_band(day)`: ±15% before 2015-06-15 and ±30% on/after it. For a comparison to the next candle, use that next candle's effective-date band in the inverse direction.
+
+## Current change-control hold (2026-09-24)
+- `scripts/fill_suspension_gaps_from_marcap_20260924.py` gate refinement is under independent verification. Do not run it with `--apply`; no new live repair writes are approved.
+- Existing 57,874 same-day coverage-fill rows are not to be rewritten or deleted automatically. Any rollback/quarantine must be a separately reviewed, auditable operation.
+
+## Change history
+| Date | Change |
+|---|---|
+| 2026-09-24 | Added runtime agent safety addendum and recorded the unapproved suspension-gap gate verification hold. |
+| 2026-09-24 | Applied the reviewer's rulings to `scripts/fill_suspension_gaps_from_marcap_20260924.py` + `scripts/fill_coverage_gaps_20260924.py`: (a) one refused row still HOLDS the whole event — the 5,100 already-written rows are to stay in place as queue/return-quarantine targets, NOT to be auto-rolled back; (b) replaced the flat `BAND_LOW/BAND_HIGH` constants with the date-sensitive `price_integrity.price_band(day)` (previous-side step judged by the candidate day's band, next-side step by the NEXT trading day's band inverted; a missing date raises instead of returning a silent verdict); (c) corrected the `quality_status` doc error — `price_history` has no such column, `price_history_quality_v` derives `suspended` from the OHLCV pattern. Tests: 4 files, 118 passed. |
