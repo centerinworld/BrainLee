@@ -101,3 +101,21 @@ def test_shadow_default_empty_is_noop(monkeypatch):
     monkeypatch.delenv("VT_SHADOW_STRATEGIES", raising=False)
     assert g.shadow_strategies() == set()
     assert g.check_entry(_conn("up"), "005930", "momentum", 10, 1000)["allowed"]
+
+
+def test_min_mcap_and_cooldown_flags(monkeypatch):
+    from datetime import datetime, timedelta
+    c = _conn("up")
+    c.execute("DROP TABLE stock_universe")
+    c.execute("CREATE TABLE stock_universe (stock_code TEXT, sector_large TEXT, market_cap REAL, base_date TEXT)")
+    c.execute("INSERT INTO stock_universe VALUES ('111111', '반도체', 500, '2026-09-01'), ('222222', '반도체', 5000, '2026-09-01')")
+    c.execute("ALTER TABLE peak_holding ADD COLUMN sold_at TEXT")
+    c.execute("INSERT INTO peak_holding VALUES (9, '222222', 'x', 1000, 10, 0, ?)", ((datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S"),))
+    assert g.check_entry(c, "111111", "momentum", 10, 1000)["allowed"]            # 기본 꺼짐 → 그대로
+    monkeypatch.setenv("VT_MIN_MCAP_EOK", "1000")
+    r = g.check_entry(c, "111111", "momentum", 10, 1000)
+    assert not r["allowed"] and any(x.startswith("min_mcap") for x in r["reasons"])
+    assert g.check_entry(c, "222222", "momentum", 10, 1000)["allowed"]
+    monkeypatch.setenv("VT_REENTRY_COOLDOWN_DAYS", "28")
+    r = g.check_entry(c, "222222", "momentum", 10, 1000)
+    assert not r["allowed"] and any(x.startswith("reentry_cooldown") for x in r["reasons"])

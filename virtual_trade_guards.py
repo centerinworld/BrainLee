@@ -15,6 +15,8 @@
   VT_EXPOSURE_LIMIT=1       종목당 동시 보유 상한(VT_MAX_POS_PER_STOCK, 기본 2) · 섹터 비중 상한(VT_SECTOR_CAP_PCT, 기본 35%)
   VT_BREAKEVEN_STOP=1       +VT_BREAKEVEN_ARM_PCT(기본 10)% 도달 후 매입가 이하로 내려오면 청산
   VT_ENTRY_CONFIRM=shadow   off | shadow(로그만) | enforce — 당일 등락 <+3% 진입을 기록/차단
+  VT_MIN_MCAP_EOK=0         (R3, 기본 꺼짐) 시총이 이 값(억원) 미만이면 신규 진입 차단 — 슬리피지 0.4~0.8%/편도 구간 회피. 연구 권고 1000
+  VT_REENTRY_COOLDOWN_DAYS=0 (R3, 기본 꺼짐) 같은 종목을 청산한 뒤 이 일수(달력일) 이내 재진입 차단. 연구 권고 28(≈20거래일)
   VT_SHADOW_STRATEGIES=     쉼표 구분 전략 키 — 해당 전략의 **신규 진입만** 기록 전용(진입하지 않고 `virtual_guard_log`에
                             guard='shadow_strategy', decision='shadow_would_block', 가격·KOSPI 포함 기록 → 사후 5/20/60일 수익 추적).
                             기존 보유분 청산·실주문 경로는 건드리지 않는다. 2026-09-25 사용자 승인(R1 A안): momentum,peak. 기본값 빈 값.
@@ -38,6 +40,8 @@ BREAKEVEN_STOP = lambda: _flag("VT_BREAKEVEN_STOP")
 MAX_POS_PER_STOCK = lambda: int(os.getenv("VT_MAX_POS_PER_STOCK", "2"))
 SECTOR_CAP_PCT = lambda: float(os.getenv("VT_SECTOR_CAP_PCT", "35"))
 BREAKEVEN_ARM_PCT = lambda: float(os.getenv("VT_BREAKEVEN_ARM_PCT", "10"))
+MIN_MCAP_EOK = lambda: float(os.getenv("VT_MIN_MCAP_EOK", "0") or 0)
+REENTRY_COOLDOWN_DAYS = lambda: int(float(os.getenv("VT_REENTRY_COOLDOWN_DAYS", "0") or 0))
 ENTRY_CONFIRM_MIN_PCT = 3.0
 
 # 역발상(낙폭반등·저평가) 계열은 약세장이 정상 진입 구간 → 국면 필터 제외.
@@ -190,6 +194,25 @@ def check_entry(conn, code: str, strategy: str, qty: int, price: float) -> dict:
                         f"exposure_sector: {sector} 비중 {(in_sec + new_amt) / (tot + new_amt) * 100:.0f}% > 상한 {SECTOR_CAP_PCT():.0f}%")
         except Exception as e:
             logger.warning(f"[가드] 노출 한도 판정 실패(fail-open): {e}")
+
+    # 2b) 회전율 규칙(R3, 기본 꺼짐): 시총 하한 · 재진입 쿨다운 — research_outputs/turnover_rules_20260925.md
+    if MIN_MCAP_EOK() > 0:
+        try:
+            r = conn.execute("SELECT market_cap FROM stock_universe WHERE stock_code=? ORDER BY base_date DESC LIMIT 1", (code,)).fetchone()
+            if r and r[0] is not None and float(r[0]) < MIN_MCAP_EOK():
+                reasons.append(f"min_mcap: 시총 {float(r[0]):,.0f}억 < 하한 {MIN_MCAP_EOK():,.0f}억")
+        except Exception as e:
+            logger.warning(f"[가드] 시총 하한 판정 실패(fail-open): {e}")
+    if REENTRY_COOLDOWN_DAYS() > 0:
+        try:
+            r = conn.execute("SELECT MAX(sold_at) FROM peak_holding WHERE stock_code=? AND is_active=0", (code,)).fetchone()
+            if r and r[0]:
+                last = datetime.fromisoformat(str(r[0])[:19].replace("T", " "))
+                days = (datetime.now() - last).days
+                if days < REENTRY_COOLDOWN_DAYS():
+                    reasons.append(f"reentry_cooldown: 마지막 청산 {days}일 전 < {REENTRY_COOLDOWN_DAYS()}일")
+        except Exception as e:
+            logger.warning(f"[가드] 재진입 쿨다운 판정 실패(fail-open): {e}")
 
     # 3) 진입 확인(당일 등락 <+3%): shadow는 기록만, enforce는 차단
     mode = _entry_confirm_mode()
