@@ -12925,6 +12925,13 @@ const App = () => {
   const [pwPromptValue, setPwPromptValue] = useState('');
   const [pwPromptError, setPwPromptError] = useState(false);
   const [pwPromptMsg, setPwPromptMsg] = useState('비밀번호가 틀렸습니다.');
+  // 새로고침해도 서버의 열람 쿠키(12시간)가 유효하면 계좌현황 비밀번호를 다시 묻지 않는다.
+  React.useEffect(() => {
+    fetch(API('/api/portfolio-access/status'), { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && d.authenticated) setPortfolioAuth(true); })
+      .catch(() => {});
+  }, []);
   const [selectedStock, setSelectedStock] = useState(() => _lsGet('sd_selectedStock', '005930'));
   const [shortData, setShortData]         = React.useState(null); // 대차잔고 + 실제 공매도 거래
   const [execData, setExecData]           = React.useState(null); // 체결강도(나무API)
