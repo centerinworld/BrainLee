@@ -932,8 +932,8 @@ V1(보안 코드) → V2 → V6 → V3 → V4 → V5 → V8(09-28·09-30 확인)
 ### 16-4. 사용자 조치 상태
 | 조치 | 상태 |
 |---|---|
-| Cloudflare Access | ⏳ 앱 생성 완료 여부 미확인(09-25 실측: 미적용). 완료 후 `.env`에 `CF_ACCESS_TEAM_DOMAIN`·`CF_ACCESS_AUD` 추가 → 토큰 입력 불필요 |
-| CEO 플랫폼: 위험 쓰기 엔드포인트에 세션 인증, `.venv312b` 전환·8011 재시작 | ⏳ 사용자/다른 세션 |
+| Cloudflare Access | ✅ 적용·실측 완료(09-26 10:09). **원인**: 앱 `stock`에 붙은 정책 `Stock_dashboard`(Service Auth, Include `Country=Korea, South`, 00:01 생성)가 Access 평가 순서상 가장 먼저 실행되어 한국발 요청 전부를 로그인 없이 통과시키고 익명 앱 토큰(`type=app`, 이메일 없음)을 발급. 조치(사용자): 앱에서 해당 정책 제거 + `newsinfo.cloud` 앱에 `api` 호스트명 추가(기존엔 `api.newsinfo.cloud` 미보호였음). 실측: `stock.leanguy.cloud` 전 경로·`api.newsinfo.cloud`가 로그인(302)으로 리다이렉트, 익명 토큰 발급 0건. 서버: `.env`에 `CF_ACCESS_TEAM_DOMAIN=macmini-stock.cloudflareaccess.com`·`CF_ACCESS_AUD`(공개 값, 앱 로그인 URL의 `kid`)·`CF_ACCESS_ALLOWED_EMAILS` 추가, 재시작 후 로드·JWKS 조회 확인, 위조 JWT·무토큰 401. 로그인한 본인 이메일 JWT는 API 토큰 없이 통과(실제 브라우저 로그인 확인은 사용자) |
+| CEO 플랫폼: 위험 쓰기 엔드포인트에 세션 인증, `.venv312b` 전환·8011 재시작 | ⏳ 사용자/다른 세션(Access로 외부 접근은 이미 보호됨 — 남은 것은 다층 방어) |
 | V7 결정(v_gc shadow, LAN 제한) | ⏳ 사용자 |
 | R3 플래그·R6 enforce | ⏳ 사용자(기본 꺼짐/기록 전용) |
 
