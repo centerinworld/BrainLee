@@ -130,6 +130,16 @@ class SecurityGateTests(unittest.TestCase):
         other = rsa.generate_private_key(65537, 2048)
         self.assertIsNone(sg.verify_access_jwt(make_jwt(key=other), TEAM, AUD, keys=JWKS))                        # not signed by Cloudflare
         self.assertIsNone(sg.verify_access_jwt("garbage", TEAM, AUD, keys=JWKS))
+        # 익명 앱 토큰(Bypass 정책에서 무인증 방문자에게 발급됨): 서명·aud·iss·exp가 모두 유효해도 이메일이 없으면 거부
+        anon = make_jwt(type="app", sub="")
+        anon_payload = json.loads(base64.urlsafe_b64decode(anon.split(".")[1] + "=="))
+        anon_payload.pop("email", None)
+        head = anon.split(".")[0]
+        body = _b64(json.dumps(anon_payload).encode())
+        sig = KEY.sign(f"{head}.{body}".encode(), padding.PKCS1v15(), hashes.SHA256())
+        self.assertIsNone(sg.verify_access_jwt(f"{head}.{body}.{_b64(sig)}", TEAM, AUD, keys=JWKS))
+        self.assertIsNone(sg.verify_access_jwt(make_jwt(email=""), TEAM, AUD, keys=JWKS))
+        self.assertIsNone(sg.verify_access_jwt(make_jwt(type="app"), TEAM, AUD, keys=JWKS))
 
     def test_access_login_replaces_token(self):
         env = {"CF_ACCESS_TEAM_DOMAIN": TEAM, "CF_ACCESS_AUD": AUD, "API_WRITE_TOKEN": "s3cret"}

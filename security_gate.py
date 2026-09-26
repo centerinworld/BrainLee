@@ -10,7 +10,7 @@
           ③ API_GATE_MODE=strict 이면 /api GET 전부(엄격 모드, 기본은 sensitive).
   · 인증 = 다음 중 하나
           (a) Cloudflare Access 로그인 JWT(`Cf-Access-Jwt-Assertion` 헤더 또는 `CF_Authorization` 쿠키) — CF_ACCESS_TEAM_DOMAIN·CF_ACCESS_AUD가 설정된 경우 서명·만료·aud·iss를
-              서버가 직접 검증한다. 링크 다운로드처럼 헤더를 붙일 수 없는 브라우저 요청도 쿠키로 통과하고, 사용자는 토큰을 입력할 필요가 없다.
+              서버가 직접 검증한다(로그인한 사용자의 email 클레임이 있는 토큰만 인정 — 익명·Bypass 앱 토큰은 거부). 링크 다운로드처럼 헤더를 붙일 수 없는 브라우저 요청도 쿠키로 통과하고, 사용자는 토큰을 입력할 필요가 없다.
           (b) API 토큰: 환경변수 API_WRITE_TOKEN ↔ 헤더 `X-API-Token` 또는 `Authorization: Bearer`(상수시간 비교) — 스크립트·Access 미설정 시.
   · 인증 수단이 하나도 설정돼 있지 않으면 보호 경로의 터널 요청은 거부한다(fail-closed, 503). OPTIONS는 통과. 프런트 정적 파일은 보호 대상이 아니다.
 """
@@ -122,6 +122,10 @@ def verify_access_jwt(token: str, team: str, aud: str, *, keys: dict | None = No
         if aud not in ([auds] if isinstance(auds, str) else (auds or [])):
             return None
         if payload.get("iss") != f"https://{team}":
+            return None
+        # 로그인한 사람의 토큰만 인정한다: Access가 Bypass/익명 방문자에게 발급하는 앱 토큰(type='app', email·sub 없음)은 서명이 유효해도 거부
+        # (2026-09-26 실측: 무인증 curl에도 서명된 CF_Authorization 앱 토큰이 발급됨).
+        if payload.get("type") == "app" or not str(payload.get("email", "")).strip():
             return None
         return payload
     except Exception:  # noqa: BLE001 - any parse/signature failure = not authenticated
