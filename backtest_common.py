@@ -1769,6 +1769,8 @@ def _max_drawdown_pct(equity_values: list[float]) -> float:
 
 
 def _save_result(run_id: str, result: dict):
+    # The stored/returned result keeps the historical 252-point tail; the FULL daily curve goes only to backtest_equity_curve.
+    full_curve = result.pop('_equity_full', None)
     conn = connect_primary_db(timeout=120)
     conn.execute("""
         UPDATE backtest_runs SET
@@ -1792,7 +1794,8 @@ def _save_result(run_id: str, result: dict):
         import backtest_equity
         meta = conn.execute("SELECT start_date,end_date,per_stock,max_pos FROM backtest_runs WHERE run_id=?", (run_id,)).fetchone()
         if meta:
-            backtest_equity.save_run_curve(conn, run_id, result, meta[0], meta[1], meta[2] or 1e7, meta[3] or 10)
+            backtest_equity.save_run_curve(conn, run_id, {**result, 'equity_curve': full_curve} if full_curve else result,
+                                           meta[0], meta[1], meta[2] or 1e7, meta[3] or 10)
             conn.commit()
     except Exception as exc:  # noqa: BLE001
         try:
@@ -2342,6 +2345,7 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
         result = {
             **metrics,
             'equity_curve': equity_curve[-252:],
+            '_equity_full': equity_curve,   # full daily curve for backtest_equity_curve storage only; popped in _save_result (2026-09-26)
             'trades':       sorted(trades, key=lambda x: x.get('exit_date', ''), reverse=True),
             'top_winners':  [{'name': k, 'profit': int(v)} for k, v in top_winners],
             'top_losers':   [{'name': k, 'profit': int(v)} for k, v in top_losers],
@@ -3095,6 +3099,7 @@ def _run_generic_backtest(version: str, signal_fn,
             **metrics,
             'monthly':      [{'month': k, 'profit': v} for k, v in sorted(monthly.items())],
             'equity_curve': equity_curve[-252:],
+            '_equity_full': equity_curve,   # full daily curve for backtest_equity_curve storage only; popped in _save_result (2026-09-26)
             'top_winners':  [{'name': k, 'profit': int(v)} for k, v in sorted(per_name.items(), key=lambda x: -x[1])[:5]],
             'top_losers':   [{'name': k, 'profit': int(v)} for k, v in sorted(per_name.items(), key=lambda x:  x[1])[:5]],
             'exit_reasons': dict(exit_reasons),

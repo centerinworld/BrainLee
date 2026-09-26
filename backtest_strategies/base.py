@@ -422,6 +422,7 @@ def run_backtest(start_date: str, end_date: str,
             **metrics,
             'monthly':      monthly_list,
             'equity_curve': equity_curve[-252:],
+            '_equity_full': equity_curve,   # full daily curve, storage only (popped in _save_result)
             'top_winners':  [{'name': k, 'profit': int(v)} for k, v in top_winners],
             'top_losers':   [{'name': k, 'profit': int(v)} for k, v in top_losers],
             'exit_reasons': dict(exit_reasons),

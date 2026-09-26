@@ -449,6 +449,7 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
             **metrics,
             'monthly':      [{'month': k, 'profit': v} for k, v in sorted(monthly.items())],
             'equity_curve': equity_curve[-252:],
+            '_equity_full': equity_curve,   # full daily curve, storage only (popped in _save_result)
             'top_winners':  [{'name': k, 'profit': int(v)} for k, v in sorted(per_name.items(), key=lambda x: -x[1])[:5]],
             'top_losers':   [{'name': k, 'profit': int(v)} for k, v in sorted(per_name.items(), key=lambda x:  x[1])[:5]],
             'exit_reasons': dict(exit_reasons),

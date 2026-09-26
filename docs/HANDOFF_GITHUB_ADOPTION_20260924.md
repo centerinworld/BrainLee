@@ -984,3 +984,10 @@ V1(보안 코드) → V2 → V6 → V3 → V4 → V5 → V8(09-28·09-30 확인)
 | QuantStats 열 | 전략센터 성과 매트릭스에 `QuantStats(Sharpe·MDD)` 열 추가 — `/api/research/quantstats` 사용, 근사 곡선(거래로그 재구성)은 "근사" 배지, 툴팁에 CAGR·KOSPI·알파. `frontend/dist` 재빌드 |
 | 텐배거 기저율 문구 | CLAUDE.md의 0.82%/1.23%는 옛 18.1만행(v2/v3) 기준. 운영 v4(190,609행) 실측은 10x/24m 1,171건(0.61%), 3x/12m 9,432건(4.95%)로 정정 |
 | 대기(날짜 의존) | 종가 이전 봉 수집 원인 특정은 9/28 `종가공식검증` 결과 필요. 근사 곡선 전략(엔진이 일간 곡선을 안 내는 전략)은 엔진 개조가 필요해 미착수. curl_cffi는 yfinance<0.14 제약으로 보류 |
+
+### 16-10. 2026-09-26 근사 곡선 해소(전체 일간 곡선 저장) · yfinance 업그레이드
+
+1. **원인**: 엔진(`_run_generic_backtest*`, `base.py`, `regime_adaptive`, `v8`, `v12`)은 일간 평가곡선을 만들지만 결과 dict에 `equity_curve[-252:]`(마지막 252일)만 넣어 `backtest_equity_curve`에도 252점만 저장됨(엔진 967 run, 평균 227점). `contract_momentum`은 곡선을 계산하고도 저장하지 않아 거래로그 재구성(근사)으로 떨어짐.
+2. **수정**(백테스트 결과 저장 형식만 변경, 전략·비중·실거래 경로 무관): 위 엔진 결과에 `_equity_full`(전체 곡선) 추가 → `_save_result`가 pop 해서 `backtest_equity.save_run_curve`에만 전달(저장·반환되는 결과 JSON은 기존 252점 유지). `contract_momentum`은 계산한 곡선을 `save_run_curve`로 저장. 테스트 `tests/test_backtest_full_curve_storage_20260926.py`(2건), 전체 545 통과.
+3. **반영 방법**: 코드는 **서버 재시작 후** 새 run부터 적용. 재시작 후 **일요일 01:30 `전략센터주간재검증`**(등록 전략 전량 재실행)이 새 run 을 만들며 전체 곡선이 쌓임 → 그 뒤 `research/quantstats_strategy_report_20260924.py` 재실행 시 "근사" 대신 엔진 곡선 사용(수동 전량 재실행은 서버 부하·레지스트리 오염을 피하려고 하지 않음). 기존 run 은 그대로(과거 곡선 소급 없음).
+4. **yfinance 1.2.0→1.7.0, curl_cffi 0.13.0→0.16.3**: 1.7.0 이 curl_cffi>=0.15 를 요구해 이전 `<0.14` 제약이 해소됨. 임시 경로 검증(다운로드·Ticker) 후 운영 venv 적용, `pip check` 이상 없음, `collect_yahoo_macro(5)` 104행 정상, 테스트 통과. 프로세스는 재시작해야 새 버전을 사용. `requirements/py312b.freeze.txt` 갱신. 롤백: `pip install yfinance==1.2.0 curl_cffi==0.13.0`.

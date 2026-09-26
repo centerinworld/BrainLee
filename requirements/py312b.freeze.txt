@@ -1,4 +1,4 @@
-# Operating venv (Python 3.12, 2026-09-25) - patched libraries; venv -> .venvs/py312b since 2026-09-25 22:51. pip-audit 86 -> 3 findings (curl_cffi 0.13.0 stays: yfinance requires <0.14).
+# Operating venv (Python 3.12, 2026-09-25) - patched libraries; venv -> .venvs/py312b since 2026-09-25 22:51. pip-audit 86 -> 3 findings; 2026-09-26 yfinance 1.7.0 + curl_cffi 0.16.3 (the <0.14 pin was lifted by yfinance 1.7).
 # Rebuild as in py312.freeze.txt header; then: cp -R <old venv>/lib/python3.12/site-packages/OpenDartReader <new>/lib/python3.12/site-packages/
 aiohappyeyeballs==2.6.1
 aiohttp==3.14.3
@@ -15,7 +15,7 @@ charset-normalizer==3.4.6
 click==8.5.0
 contourpy==1.3.3
 cryptography==50.0.0
-curl_cffi==0.13.0
+curl_cffi==0.16.3
 cycler==0.12.1
 db-dtypes==1.5.1
 Deprecated==1.3.1
@@ -117,4 +117,4 @@ websockets==16.0
 wrapt==2.1.2
 xlrd==2.0.2
 yarl==1.23.0
-yfinance==1.2.0
+yfinance==1.7.0

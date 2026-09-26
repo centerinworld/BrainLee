@@ -372,6 +372,15 @@ def run_backtest_contract_momentum(
               json.dumps({"trades": trades, "sharpe": sharpe, "pl_ratio": pl_ratio,
                           "max_drawdown_pct": round(max_dd, 2)}), run_id))
         conn.commit()
+        try:  # daily mark-to-market curve -> backtest_equity_curve (2026-09-26); never break the run itself
+            import backtest_equity
+            backtest_equity.save_run_curve(conn, run_id, {'equity_curve': equity_curve})
+            conn.commit()
+        except Exception:  # noqa: BLE001
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
         conn.close()
         _register_execution_artifacts(run_id, total_capital, cash, asof_mktcap=False)
         return run_id
