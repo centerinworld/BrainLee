@@ -1210,3 +1210,26 @@ Yahoo/yfinance, Nasdaq 공개 API, KIS 해외일봉을 ABMD·ATVI로 직접 대�
 `research_grade=false`가 유지된다.
 
 검증: 미국 전용 21 passed, 전체 정식 스위트 572 passed/54 subtests passed.
+
+## Codex 미국 Minervini 현재 생존종목 백테스트 (2026-09-26 21:50 KST)
+
+사용자 요청대로 상장폐지·인수 종목을 제외하고, 2026-09-25 최신 SPY 세션에도 가격이
+있는 현재 S&P 500 구성 499종목만 사용했다. `scripts/run_us_minervini_survivors.py`를
+신설해 D일 종가 신호→다음 세션 시가, 주간 첫 거래일 최대 10종목 동일비중, 편도 5bp,
+SEC 실제 `avail_date` 기준으로 Trend Template/SEPA/SEPA+VCP를 비교했다. 첫 실행의
+0거래는 공통 엔진이 SPY를 신호 후보에서 숨긴 것을 전략이 상대강도 입력까지 없는 것으로
+오해한 배선 결함이었고, SPY 시계열을 별도 시점 안전 입력으로 전달해 바로 수정했다.
+
+2022-01-03~2026-09-25 결과: Trend Template +629.33%(CAGR 52.53%, MDD -37.17%,
+Sharpe 1.406, 2,616체결), SEPA +212.98%(CAGR 27.43%, MDD -25.33%, Sharpe
+1.161, 1,071체결), SEPA+VCP +18.44%(CAGR 3.66%, MDD -10.23%, Sharpe 0.659,
+16체결), SPY +72.03%. 엄격 VCP는 표본이 지나치게 희소해 SPY에 뒤졌다.
+
+이 결과는 현재 생존자를 과거에 소급한 사용자 지정 실험이므로 명시적으로
+`survivorship_bias=true`, `research_grade=false`다. +629%를 전략센터 유효 성과나
+채택 근거로 등록하지 않았다. 또한 주간 목표비중 스크리너 연구이며 원전의 재량적 피벗,
+개별 -8% 손절·부분익절을 완전히 복제한 거래관리 모델은 아니다. 상세 방법론과 해석은
+`docs/us_minervini_survivors_20260926.md`, 원시는
+`research_outputs/us_minervini_survivors_20260926.json`에 저장했다.
+
+검증: 신규 전용 2 passed, 전체 정식 스위트 574 passed/54 subtests passed.
