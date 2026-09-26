@@ -41,8 +41,10 @@ def make_jwt(key=KEY, **over):
 
 
 def _client():
+    from routes.portfolio_access import router as access_router
     app = FastAPI()
     app.middleware("http")(api_token_gate)
+    app.include_router(access_router, prefix="/api/portfolio-access")
 
     @app.get("/api/portfolio")
     def pf():
@@ -56,6 +58,10 @@ def _client():
     def regime():
         return {"ok": 1}
 
+    @app.get("/api/buy-candidates")
+    def cands():
+        return {"c": 1}
+
     @app.get("/api/dart-excel/download/{job_id}")
     def dl(job_id: str):
         return {"file": job_id}
@@ -64,29 +70,55 @@ def _client():
     def post_thing():
         return {"done": 1}
 
-    return TestClient(app)
+    return TestClient(app, base_url="https://testserver")   # tunnel traffic is HTTPS; the Secure view cookie is only sent over HTTPS
 
 
 class SecurityGateTests(unittest.TestCase):
     def setUp(self):
-        for k in ("API_GATE_MODE", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "CF_ACCESS_ALLOWED_EMAILS"):
+        sg._HITS.clear()
+        for k in ("API_GATE_MODE", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "CF_ACCESS_ALLOWED_EMAILS", "API_RATE_LIMIT_PER_MIN", "API_PUBLIC_WRITE_PATTERNS", "API_PUBLIC_WRITE_LIMIT_PER_MIN", "PORTFOLIO_VIEW_PASSWORD", "VIEW_COOKIE_SECRET"):
             os.environ.pop(k, None)
 
-    def test_policy_writes_and_sensitive_reads_only(self):
-        for m, p in (("POST", "/api/anything"), ("DELETE", "/api/portfolio/005930"), ("POST", "/hs/run"), ("GET", "/api/portfolio"),
-                     ("GET", "/api/kis-trading/paper/status"), ("GET", "/api/commands/status"), ("GET", "/api/research/quantstats"),
-                     ("GET", "/api/realtime/prices"), ("GET", "/api/buy-candidates"), ("GET", "/api/trend/holdings"), ("GET", "/api/us-virtual/positions"),
-                     ("GET", "/api/dart-excel/download/abc"), ("GET", "/api/x/export/all"), ("GET", "/api/backup/list"), ("GET", "/openapi.json")):
-            self.assertTrue(is_protected(m, p), f"{m} {p}")
-        for m, p in (("GET", "/api/market-regime"), ("GET", "/api/tenbagger/empirical-scoreboard"), ("GET", "/api/market-indicators/market-summary"),
-                     ("GET", "/api/cash-conversion-signals/top"), ("GET", "/"), ("GET", "/assets/index-abc.js"), ("OPTIONS", "/api/portfolio"),
-                     ("POST", "/static/x")):
-            self.assertFalse(is_protected(m, p), f"{m} {p}")
+    def test_access_levels(self):
+        for m, p in (("POST", "/api/anything"), ("DELETE", "/api/portfolio/005930"), ("POST", "/hs/run"), ("GET", "/api/dart-excel/download/abc"),
+                     ("GET", "/api/x/export/all"), ("GET", "/api/backup/list"), ("GET", "/api/x/settings"), ("GET", "/openapi.json")):
+            self.assertEqual(sg.access_level(m, p), "owner", f"{m} {p}")
+        for p in ("/api/portfolio", "/api/portfolio/summary", "/api/realtime/prices", "/api/kis-trading/account/summary", "/api/live-orders", "/api/commands/status"):
+            self.assertEqual(sg.access_level("GET", p), "viewer", p)
+        for m, p in (("GET", "/api/market-regime"), ("GET", "/api/buy-candidates"), ("GET", "/api/trend/holdings"), ("GET", "/api/research/quantstats"),
+                     ("GET", "/api/tenbagger/empirical-scoreboard"), ("GET", "/api/cash-conversion-signals/top"), ("GET", "/"), ("GET", "/assets/index-abc.js"),
+                     ("OPTIONS", "/api/portfolio"), ("POST", "/static/x"), ("POST", "/api/portfolio-access/login"), ("GET", "/api/portfolio-access/status")):
+            self.assertEqual(sg.access_level(m, p), "public", f"{m} {p}")
 
-    def test_strict_mode_protects_every_api_get(self):
+    def test_public_interactive_writes_are_allowlisted_and_limited(self):
+        self.assertEqual(sg.access_level("POST", "/api/commands/analyze/005930"), "public")
+        self.assertEqual(sg.access_level("POST", "/api/sector-define/parse"), "public")
+        for p in ("/api/commands/screener-refresh", "/api/portfolio/transaction", "/api/reports/generate/005930", "/api/tenbagger/run",
+                  "/api/commands/analyze/005930/extra"):
+            self.assertEqual(sg.access_level("POST", p), "owner", p)
+        self.assertEqual(sg.access_level("DELETE", "/api/commands/watchlist/005930"), "owner")
+        with mock.patch.dict(os.environ, {"API_PUBLIC_WRITE_PATTERNS": ""}):
+            self.assertEqual(sg.access_level("POST", "/api/commands/analyze/005930"), "owner")
+
+    def test_public_write_rate_limit(self):
+        from fastapi import FastAPI as _F
+        app = _F()
+        app.middleware("http")(api_token_gate)
+
+        @app.post("/api/commands/analyze/{code}")
+        def analyze(code: str):
+            return {"ok": code}
+        c = TestClient(app, base_url="https://testserver")
+        sg._HITS.clear()
+        with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret", "API_PUBLIC_WRITE_LIMIT_PER_MIN": "3"}):
+            codes = [c.post("/api/commands/analyze/005930", headers=TUNNEL).status_code for _ in range(5)]
+            self.assertEqual(codes, [200, 200, 200, 429, 429])
+        sg._HITS.clear()
+
+    def test_strict_mode_makes_every_api_get_owner_only(self):
         with mock.patch.dict(os.environ, {"API_GATE_MODE": "strict"}):
-            self.assertTrue(is_protected("GET", "/api/market-regime"))
-            self.assertFalse(is_protected("GET", "/assets/x.js"))
+            self.assertEqual(sg.access_level("GET", "/api/market-regime"), "owner")
+            self.assertEqual(sg.access_level("GET", "/assets/x.js"), "public")
 
     def test_local_calls_unaffected(self):
         with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
@@ -94,28 +126,83 @@ class SecurityGateTests(unittest.TestCase):
             self.assertEqual(c.post("/api/thing").status_code, 200)
             self.assertEqual(c.get("/api/portfolio").status_code, 200)
 
-    def test_tunnel_ordinary_reads_need_no_token(self):
-        with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
-            self.assertEqual(_client().get("/api/market-regime", headers=TUNNEL).status_code, 200)
-
-    def test_tunnel_writes_and_sensitive_reads_need_token(self):
+    def test_public_reads_need_nothing(self):
         with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
             c = _client()
-            for path in ("/api/portfolio", "/api/realtime/prices", "/api/dart-excel/download/1"):
-                self.assertEqual(c.get(path, headers=TUNNEL).status_code, 401, path)
+            for path in ("/api/market-regime", "/api/buy-candidates"):
+                self.assertEqual(c.get(path, headers=TUNNEL).status_code, 200, path)
+
+    def test_owner_actions_need_admin_token(self):
+        with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
+            c = _client()
+            self.assertEqual(c.get("/api/dart-excel/download/1", headers=TUNNEL).status_code, 401)
             self.assertEqual(c.post("/api/thing", headers=TUNNEL).status_code, 401)
             self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "X-API-Token": "wrong"}).status_code, 401)
             self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "X-API-Token": "s3cret"}).status_code, 200)
-            self.assertEqual(c.get("/api/portfolio", headers={**TUNNEL, "Authorization": "Bearer s3cret"}).status_code, 200)
+            self.assertEqual(c.get("/api/dart-excel/download/1", headers={**TUNNEL, "Authorization": "Bearer s3cret"}).status_code, 200)
+
+    def test_account_pages_need_server_verified_password_cookie(self):
+        env = {"API_WRITE_TOKEN": "s3cret", "PORTFOLIO_VIEW_PASSWORD": "pw-1234"}
+        with mock.patch.dict(os.environ, env):
+            c = _client()
+            r = c.get("/api/portfolio", headers=TUNNEL)
+            self.assertEqual((r.status_code, r.json()["detail"]), (401, "portfolio_password_required"))   # NOT api_token_required: friends are never asked for a token
+            self.assertEqual(c.get("/api/realtime/prices", headers=TUNNEL).status_code, 401)
+            self.assertEqual(c.post("/api/portfolio-access/login", json={"password": "nope"}, headers=TUNNEL).status_code, 401)
+            ok = c.post("/api/portfolio-access/login", json={"password": "pw-1234"}, headers=TUNNEL)
+            self.assertEqual(ok.status_code, 200)
+            self.assertIn("pf_view=", ok.headers["set-cookie"])
+            self.assertIn("HttpOnly", ok.headers["set-cookie"])
+            # the client keeps the cookie: viewer pages open, but owner actions stay closed
+            self.assertEqual(c.get("/api/portfolio", headers=TUNNEL).status_code, 200)
+            self.assertEqual(c.get("/api/realtime/prices", headers=TUNNEL).status_code, 200)
+            self.assertEqual(c.get("/api/portfolio-access/status", headers=TUNNEL).json(), {"authenticated": True})
+            self.assertEqual(c.post("/api/thing", headers=TUNNEL).status_code, 401)
+            self.assertEqual(c.get("/api/dart-excel/download/1", headers=TUNNEL).status_code, 401)
+
+    def test_view_cookie_forgery_and_expiry(self):
+        with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
+            good = sg.make_view_cookie()
+            self.assertTrue(sg.valid_view_cookie(good))
+            exp, sig = good.split(".")
+            self.assertFalse(sg.valid_view_cookie(f"{int(exp) + 999}.{sig}"))                 # extended expiry
+            self.assertFalse(sg.valid_view_cookie(f"{exp}.{'0' * len(sig)}"))
+            self.assertFalse(sg.valid_view_cookie(""))
+            self.assertFalse(sg.valid_view_cookie(sg.make_view_cookie(now=time.time() - 13 * 3600)))   # expired
+        with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "other"}):
+            self.assertFalse(sg.valid_view_cookie(good))                                       # signed with a different secret
+
+    def test_admin_token_opens_account_pages_without_password(self):
+        with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
+            self.assertEqual(_client().get("/api/portfolio", headers={**TUNNEL, "X-API-Token": "s3cret"}).status_code, 200)
+
+    def test_login_brute_force_is_limited(self):
+        import routes.portfolio_access as pa
+        pa._ATTEMPTS.clear()
+        with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret", "PORTFOLIO_VIEW_PASSWORD": "pw"}):
+            c = _client()
+            codes = [c.post("/api/portfolio-access/login", json={"password": "x"}, headers=TUNNEL).status_code for _ in range(10)]
+            self.assertEqual(codes[:8], [401] * 8)
+            self.assertEqual(codes[8:], [429, 429])
+        pa._ATTEMPTS.clear()
+
+    def test_rate_limit_for_bulk_scraping(self):
+        sg._HITS.clear()
+        with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret", "API_RATE_LIMIT_PER_MIN": "5"}):
+            c = _client()
+            codes = [c.get("/api/market-regime", headers=TUNNEL).status_code for _ in range(7)]
+            self.assertEqual(codes, [200] * 5 + [429, 429])
+            self.assertEqual(c.get("/api/market-regime").status_code, 200)                     # local calls are not limited
+        sg._HITS.clear()
 
     def test_fail_closed_without_any_auth_configured(self):
-        with mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("API_WRITE_TOKEN", None)
+        env = {k: v for k, v in os.environ.items() if k not in ("API_WRITE_TOKEN", "PORTFOLIO_VIEW_PASSWORD", "VIEW_COOKIE_SECRET")}
+        with mock.patch.dict(os.environ, env, clear=True):
             c = _client()
             self.assertEqual(c.post("/api/thing", headers=TUNNEL).status_code, 503)
             self.assertEqual(c.get("/api/portfolio", headers=TUNNEL).status_code, 503)
-            self.assertEqual(c.post("/api/thing").status_code, 200)   # local still fine
-            self.assertEqual(c.get("/api/market-regime", headers=TUNNEL).status_code, 200)   # ordinary reads unaffected
+            self.assertEqual(c.post("/api/thing").status_code, 200)                             # local still fine
+            self.assertEqual(c.get("/api/market-regime", headers=TUNNEL).status_code, 200)     # public reads unaffected
 
     # ── Cloudflare Access JWT ──
     def test_verify_access_jwt(self):
@@ -141,33 +228,30 @@ class SecurityGateTests(unittest.TestCase):
         self.assertIsNone(sg.verify_access_jwt(make_jwt(email=""), TEAM, AUD, keys=JWKS))
         self.assertIsNone(sg.verify_access_jwt(make_jwt(type="app"), TEAM, AUD, keys=JWKS))
 
-    def test_access_login_replaces_token(self):
-        env = {"CF_ACCESS_TEAM_DOMAIN": TEAM, "CF_ACCESS_AUD": AUD, "API_WRITE_TOKEN": "s3cret"}
+    def test_access_login_of_owner_email_replaces_token(self):
+        env = {"CF_ACCESS_TEAM_DOMAIN": TEAM, "CF_ACCESS_AUD": AUD, "CF_ACCESS_ALLOWED_EMAILS": "owner@example.com", "API_WRITE_TOKEN": "s3cret"}
         with mock.patch.dict(os.environ, env), mock.patch.object(sg, "_fetch_jwks", return_value=JWKS):
             c = _client()
             jwt = make_jwt()
-            # header form (edge-injected) and cookie form (browser navigation / link download) both work without any API token
             self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": jwt}).status_code, 200)
             self.assertEqual(c.get("/api/dart-excel/download/9", headers=TUNNEL, cookies={"CF_Authorization": jwt}).status_code, 200)
-            # invalid Access JWT falls back to the token requirement
+            self.assertEqual(c.get("/api/portfolio", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": jwt}).status_code, 200)
+            # a friend who also passes Access is NOT an owner
+            friend = make_jwt(email="friend@example.com")
+            self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": friend}).status_code, 401)
+            self.assertEqual(c.get("/api/dart-excel/download/9", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": friend}).status_code, 401)
+            # invalid signature falls back to the token requirement
             bad = make_jwt(key=rsa.generate_private_key(65537, 2048))
             self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": bad}).status_code, 401)
             self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": bad, "X-API-Token": "s3cret"}).status_code, 200)
 
-    def test_access_email_allowlist(self):
-        env = {"CF_ACCESS_TEAM_DOMAIN": TEAM, "CF_ACCESS_AUD": AUD, "CF_ACCESS_ALLOWED_EMAILS": "owner@example.com"}
-        with mock.patch.dict(os.environ, env), mock.patch.object(sg, "_fetch_jwks", return_value=JWKS):
-            c = _client()
-            self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": make_jwt()}).status_code, 200)
-            self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": make_jwt(email="x@y.com")}).status_code, 401)
-
-    def test_access_only_configuration_needs_no_api_token(self):
+    def test_access_without_owner_list_grants_nothing(self):
         env = {"CF_ACCESS_TEAM_DOMAIN": TEAM, "CF_ACCESS_AUD": AUD}
         with mock.patch.dict(os.environ, env), mock.patch.object(sg, "_fetch_jwks", return_value=JWKS):
+            os.environ.pop("CF_ACCESS_ALLOWED_EMAILS", None)
             os.environ.pop("API_WRITE_TOKEN", None)
             c = _client()
-            self.assertEqual(c.post("/api/thing", headers=TUNNEL).status_code, 401)     # not 503: Access is the configured auth
-            self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": make_jwt()}).status_code, 200)
+            self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": make_jwt()}).status_code, 503)
 
 
 if __name__ == "__main__":

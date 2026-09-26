@@ -12924,6 +12924,7 @@ const App = () => {
   const [pwPromptOpen, setPwPromptOpen] = useState(false);
   const [pwPromptValue, setPwPromptValue] = useState('');
   const [pwPromptError, setPwPromptError] = useState(false);
+  const [pwPromptMsg, setPwPromptMsg] = useState('비밀번호가 틀렸습니다.');
   const [selectedStock, setSelectedStock] = useState(() => _lsGet('sd_selectedStock', '005930'));
   const [shortData, setShortData]         = React.useState(null); // 대차잔고 + 실제 공매도 거래
   const [execData, setExecData]           = React.useState(null); // 체결강도(나무API)
@@ -18616,16 +18617,26 @@ const App = () => {
         >
           <div className="glass-panel" style={{width:'min(320px, 88vw)', padding:'1.3rem'}}>
             <h3 style={{margin:'0 0 0.9rem', fontSize:'0.95rem', fontWeight:800}}>🔒 계좌현황 비밀번호</h3>
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
-              if (pwPromptValue === '5133') {
-                setPortfolioAuth(true);
-                setPwPromptOpen(false);
-                changeTab('portfolio');
-              } else {
-                setPwPromptError(true);
-                setPwPromptValue('');
+              // 2026-09-26: 비밀번호는 서버가 확인한다(예전엔 브라우저 코드에 하드코딩돼 API를 직접 부르면 보호가 없었음). 성공하면 서버가 12시간 열람 쿠키를 발급한다.
+              try {
+                const res = await fetch(API('/api/portfolio-access/login'), {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+                  body: JSON.stringify({ password: pwPromptValue }),
+                });
+                if (res.ok) {
+                  setPortfolioAuth(true);
+                  setPwPromptOpen(false);
+                  changeTab('portfolio');
+                  return;
+                }
+                setPwPromptMsg(res.status === 429 ? '시도 횟수가 많습니다. 잠시 후 다시 시도하세요.' : res.status === 503 ? '서버 설정이 필요합니다(관리자에게 문의).' : '비밀번호가 틀렸습니다.');
+              } catch (err) {
+                setPwPromptMsg('서버에 연결할 수 없습니다. 잠시 후 다시 시도하세요.');
               }
+              setPwPromptError(true);
+              setPwPromptValue('');
             }}>
               <input
                 type="password"
@@ -18639,7 +18650,7 @@ const App = () => {
                   background:'rgba(255,255,255,0.05)', color:'var(--text-primary)', fontSize:'0.9rem'}}
               />
               {pwPromptError && (
-                <p style={{margin:'0.5rem 0 0', fontSize:'0.75rem', color:'#ef4444'}}>비밀번호가 틀렸습니다.</p>
+                <p style={{margin:'0.5rem 0 0', fontSize:'0.75rem', color:'#ef4444'}}>{pwPromptMsg}</p>
               )}
               <div style={{display:'flex', gap:'0.5rem', marginTop:'1rem'}}>
                 <button type="button" onClick={() => setPwPromptOpen(false)}

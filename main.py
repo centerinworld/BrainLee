@@ -182,6 +182,7 @@ from routes.company_intelligence import router as _company_intelligence_router
 from routes.investment_decisions import router as _investment_decisions_router
 from routes.task_approvals import router as _task_approvals_router
 from routes.research_lab import router as _research_lab_router
+from routes.portfolio_access import router as _portfolio_access_router
 from routes.insider            import router as _insider_router
 from routes.notices            import router as _notices_router
 from routes.antigravity_status import router as _antigravity_status_router
@@ -235,6 +236,8 @@ app.include_router(_investment_decisions_router, prefix="/api/investment-decisio
 app.include_router(_task_approvals_router, prefix="/api/task-approvals", tags=["task-approvals"])
 # 2026-09-25: 연구 산출물(research_outputs) 읽기 전용 조회 — 전략센터 "🔬 팩터 검증" 탭. DB 쓰기 없음.
 app.include_router(_research_lab_router, prefix="/api/research", tags=["research-lab"])
+# 2026-09-26: 계좌현황 열람 로그인(서버가 비밀번호 확인 → 열람 쿠키). security_gate.py의 viewer 단계와 짝.
+app.include_router(_portfolio_access_router, prefix="/api/portfolio-access", tags=["portfolio-access"])
 # 2026-08-26: routes/insider.py·routes/notices.py는 완성되어 있었으나 여기 등록이 빠져
 # 개별종목 페이지의 임원·대주주 지분변동/공지사항 패널이 항상 404였음 — 등록 누락 수정.
 app.include_router(_insider_router,  prefix="/api/insider",  tags=["insider"])
