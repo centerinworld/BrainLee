@@ -6,7 +6,10 @@
                        Also reported: stocks whose latest 4 quarters mix CFS/OFS (informational; they get no TTM or a single-basis TTM by construction).
   snapshot_lookahead   (V3) real leakage measures: (a) share of stocks whose snapshot PER equals the SAME-quarter valuation_history.per (the legacy quarter-frozen value; leaked
                        original 99%, rebuilt v4 0%) - FAIL > 1%; (b) sampled snapshot PERs whose implied TTM only exists in a window not yet filed at snapshot_date - FAIL if any
-  unit_inversion       share of stocks where market_cap(억) vs close*shares_issued/1e8 differ by >5x (억/원 unit inversion)
+  unit_inversion       (V4) stocks where market_cap(억) vs close*shares_issued/1e8 differ by >5x, CLASSIFIED: if the latest price_history close differs from the universe row's close by >=3x
+                       the row is STALE (post-base_date reverse split / liquidation-trading crash), otherwise it is a real unit inversion. FAIL only for real inversions; the list with
+                       causes is stored in detail.
+  universe_fresh       stock_universe.base_date age in days (the universe stopped refreshing on 2026-09-04): warn > 5, fail > 10
   date_format          rows in the last 30 days violating the expected text-date format of key tables
   close_verify_fresh   the official-close comparison (price_close_verify_log) ran within 5 days and its last run was ok
 Thresholds are in CHECKS. Idempotent per (check_date, check_name). Exit code 2 on any FAIL.
@@ -43,7 +46,10 @@ def main() -> int:
         "SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name IN ('created_at','updated_at') "
         "AND column_default IS NULL AND table_name NOT ILIKE '%backup%'").fetchall()})
     prev = conn.execute("SELECT detail FROM data_contract_check_log WHERE check_name='default_missing' ORDER BY check_date DESC LIMIT 1").fetchone()
-    base = set(json.loads(prev[0])["tables"]) if prev and prev[0].startswith("{") else None
+    try:
+        base = set(json.loads(prev[0])["tables"]) if prev and prev[0].startswith("{") else None
+    except Exception:  # noqa: BLE001 - a truncated/corrupt baseline must not break the audit: treat as "no baseline" (first-run behaviour)
+        base = None
     new = sorted(set(tabs) - base) if base is not None else []
     results.append(("default_missing", "fail" if new else "ok", float(len(new)), 0.0,
                     json.dumps({"tables": tabs, "new": new}, ensure_ascii=False)))
@@ -119,11 +125,26 @@ def main() -> int:
         look_value = max(look_value, float(len(viol)))
     results.append(("snapshot_lookahead", look_status, round(look_value, 2), 1.0, json.dumps(look_detail, ensure_ascii=False)))
 
-    # unit_inversion
-    r = conn.execute("""SELECT count(*) FILTER (WHERE market_cap*1e8/(close*shares_issued) > 5 OR market_cap*1e8/(close*shares_issued) < 0.2), count(*)
-        FROM stock_universe WHERE base_date=(SELECT max(base_date) FROM stock_universe) AND shares_issued>0 AND close>0 AND market_cap>0""").fetchone()
-    share = float(r[0]) / max(float(r[1]), 1) * 100
-    results.append(("unit_inversion", "fail" if share > 3 else ("warn" if share > 1 else "ok"), round(share, 2), 3.0, f"{r[0]}/{r[1]} stocks off by >5x"))
+    # unit_inversion (V4) — classify each flagged stock instead of just counting
+    flagged = conn.execute("""SELECT u.stock_code, u.stock_name, u.close, u.shares_issued, u.market_cap, u.base_date::text,
+        u.market_cap*1e8/(u.close*u.shares_issued) AS ratio,
+        (SELECT p.close FROM price_history p WHERE p.stock_code=u.stock_code AND p.close>0 ORDER BY p.date DESC LIMIT 1) AS px_now
+        FROM stock_universe u WHERE u.base_date=(SELECT max(base_date) FROM stock_universe) AND u.shares_issued>0 AND u.close>0 AND u.market_cap>0
+          AND (u.market_cap*1e8/(u.close*u.shares_issued) > 5 OR u.market_cap*1e8/(u.close*u.shares_issued) < 0.2)""").fetchall()
+    total_u = conn.execute("SELECT count(*) FROM stock_universe WHERE base_date=(SELECT max(base_date) FROM stock_universe) AND shares_issued>0 AND close>0 AND market_cap>0").fetchone()[0]
+    stale, real = [], []
+    for code, name, cl, shs, mc, bd, ratio, px_now in flagged:
+        move = (float(px_now) / float(cl)) if (px_now and cl) else None
+        if move is not None and (move >= 3 or move <= 1 / 3):
+            cause = "post-base_date reverse split (price x%.1f)" % move if move >= 3 else "liquidation-trading crash (price x%.3f)" % move
+            stale.append({"code": code, "name": name, "ratio": round(float(ratio), 3), "cause": cause})
+        else:
+            real.append({"code": code, "name": name, "ratio": round(float(ratio), 3)})
+    results.append(("unit_inversion", "fail" if len(real) / max(total_u, 1) * 100 > 0.5 or len(real) > 5 else ("warn" if real else "ok"), float(len(real)), 5.0,
+                    json.dumps({"flagged": len(flagged), "stale_universe_rows": stale, "real_unit_inversions": real}, ensure_ascii=False)))
+    age = conn.execute("SELECT (CURRENT_DATE - max(base_date)::date) FROM stock_universe").fetchone()[0]
+    results.append(("universe_fresh", "fail" if age and age > 10 else ("warn" if age and age > 5 else "ok"), float(age or 0), 5.0,
+                    f"stock_universe max base_date is {age} days old (collector stalled since 2026-09-04; splits/liquidations after that date leave stale rows)"))
 
     # date_format
     bad_all, detail = 0, {}
@@ -153,7 +174,7 @@ def main() -> int:
     for name, status, value, thr, det in results:
         conn.execute("INSERT INTO data_contract_check_log(check_date,check_name,status,value,threshold,detail) VALUES(?,?,?,?,?,?) "
                      "ON CONFLICT (check_date,check_name) DO UPDATE SET status=excluded.status, value=excluded.value, threshold=excluded.threshold, detail=excluded.detail, created_at=now()",
-                     (today, name, status, value, thr, det[:1500]))
+                     (today, name, status, value, thr, det if name == "default_missing" else det[:4000]))
         print(f"{name:20s} {status:5s} value={value} thr={thr} {det[:110]}")
         if status == "fail":
             fails.append(f"{name}={value} (임계 {thr})")

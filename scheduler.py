@@ -1607,6 +1607,13 @@ class CollectionScheduler:
                             WHERE stock_code=? AND date=? AND (trade_amount IS NULL OR trade_amount=0)
                         """, (trade_amount, code, today_str))
                 # stock_universe 일별 갱신: 시가총액 + 상장주식수 + 소속부
+                # 2026-09-26 (HANDOFF §15 V4): 종가·기준일도 함께 갱신한다. 예전에는 시총·주식수만 갱신해 close/base_date가 2026-09-04에 굳었고, 병합·정리매매가 생기면
+                # 최신 시총과 오래된 종가가 어긋났다(5.0·10.0배/0.01배 '단위 역전' 15종목의 원인). 값은 오늘 KRX 행 그대로.
+                if close > 0:
+                    conn.execute(
+                        "UPDATE stock_universe SET close=?, open=?, high=?, low=?, volume=?, base_date=? WHERE stock_code=? AND (base_date IS NULL OR base_date <= ?)",
+                        (close, open_ or None, high or None, low or None, volume, today_str, code, today_str),
+                    )
                 if mktcap > 0:
                     conn.execute(
                         "UPDATE stock_universe SET market_cap=? WHERE stock_code=?",
