@@ -77,6 +77,19 @@ def available_cash(conn, strategy: str, initial_cash: float) -> float:
     return initialize_account(conn, strategy, initial_cash)
 
 
+def _has_matching_buy(conn, strategy: str, holding_id, stock_code: str) -> bool:
+    if holding_id is not None:
+        if conn.execute("SELECT 1 FROM virtual_cash_ledger WHERE strategy=? AND event_type='buy' AND holding_id=? LIMIT 1",
+                        (strategy, holding_id)).fetchone():
+            return True
+    if stock_code:
+        net = conn.execute(
+            "SELECT COALESCE(SUM(CASE WHEN event_type='buy' THEN quantity ELSE -quantity END),0) FROM virtual_cash_ledger "
+            "WHERE strategy=? AND stock_code=?", (strategy, stock_code)).fetchone()[0]
+        return float(net or 0) > 0
+    return False
+
+
 def record_trade(
     conn,
     *,
@@ -91,8 +104,14 @@ def record_trade(
     ref_key: str,
     occurred_at: str,
     gross_profit: float = 0.0,
+    allow_unmatched_sell: bool = False,
 ) -> dict:
-    """Record one idempotent paper fill and update account cash atomically."""
+    """Record one idempotent paper fill and update account cash atomically.
+
+    2026-09-26 (HANDOFF §15 V6): a SELL is only booked when the ledger holds a matching BUY (same holding_id, or - for legacy rows - a positive net
+    position of the same stock in the same strategy). Selling a position that was never bought through the ledger (StockEasy mirror entries, positions
+    opened before the account existed) used to credit the sale proceeds with no cash debit and inflated the account (momentum 4.3x, peak 1.8x).
+    Such sells return {"inserted": False, "skipped": "no_matching_buy"}; pass allow_unmatched_sell=True only for deliberate repairs."""
     side = side.lower()
     if side not in {"buy", "sell"} or quantity <= 0 or price <= 0:
         raise ValueError("valid side, positive quantity and price are required")
@@ -102,6 +121,9 @@ def record_trade(
     ).fetchone()
     if existing:
         return {"inserted": False, "balance_after": float(existing[0]), "realized_pnl_net": float(existing[1])}
+
+    if side == "sell" and not allow_unmatched_sell and not _has_matching_buy(conn, strategy, holding_id, stock_code):
+        return {"inserted": False, "skipped": "no_matching_buy", "balance_after": None, "realized_pnl_net": 0.0}
 
     balance = initialize_account(conn, strategy, initial_cash)
     gross = float(quantity) * float(price)

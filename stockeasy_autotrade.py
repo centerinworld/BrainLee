@@ -168,6 +168,19 @@ def _reconfirm_buy_signal(strategy: str, stock_code: str) -> tuple[bool, str]:
         return False, f"reconfirm_error:{e}"
 
 
+def _ledger_record(c, *, strategy: str, side: str, code: str, name: str, holding_id, qty: int, price: float, trade_id, occurred_at: str,
+                   gross_profit: float = 0.0) -> None:
+    """가상 현금 원장에 이 미러링 체결을 기록한다(HANDOFF §15 V6). 지금까지 StockEasy 동기화는 원장을 전혀 쓰지 않아, 다른 경로(API 청산)가 남긴 매도만 입금되어
+    momentum·peak 계좌가 4.3배·1.8배로 부풀려졌다. 원장 오류(현금 부족·중복)는 동기화를 멈추지 않는다. 매도는 record_trade가 대응 매수가 없으면 건너뛴다."""
+    try:
+        from virtual_trading_ledger import record_trade
+        record_trade(c, strategy=strategy, initial_cash=100_000_000.0, side=side, stock_code=code, stock_name=name,
+                     holding_id=int(holding_id) if holding_id else None, quantity=int(qty), price=float(price),
+                     ref_key=f"peak_trade:{trade_id}", occurred_at=occurred_at, gross_profit=gross_profit)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[StockEasyAutoTrade] 가상 원장 기록 실패(%s %s %s): %s", strategy, side, name, exc)
+
+
 def _upsert_trend_holding(strategy: str, stock_code: str, stock_name: str, price: float, entry_date: str):
     c = _conn()
     row = c.execute(
@@ -181,7 +194,7 @@ def _upsert_trend_holding(strategy: str, stock_code: str, stock_name: str, price
         return
     qty = int(TREND_HOLDING_TICKET_KRW // price) if price and price > 0 else 0
     amount = round(price * qty)
-    c.execute(
+    hcur = c.execute(
         """
         INSERT INTO peak_holding(
             stock_code, stock_name, sector, buy_price, current_price, quantity,
@@ -190,10 +203,13 @@ def _upsert_trend_holding(strategy: str, stock_code: str, stock_name: str, price
         """,
         (stock_code, stock_name, "", price, price, qty, entry_date, strategy),
     )
-    c.execute(
+    tcur = c.execute(
         "INSERT INTO peak_trade(stock_name, tx_type, price, quantity, total_amount, profit, profit_pct, tx_at, strategy) VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP,?)",
         (stock_name, "buy", price, qty, amount, 0, 0.0, strategy),
     )
+    if qty > 0 and hcur.lastrowid and tcur.lastrowid:
+        _ledger_record(c, strategy=strategy, side="buy", code=stock_code, name=stock_name, holding_id=hcur.lastrowid, qty=qty, price=price,
+                       trade_id=tcur.lastrowid, occurred_at=_now_str())
     c.commit()
     c.close()
 
@@ -215,10 +231,14 @@ def _deactivate_trend_holding(strategy: str, stock_name: str, sell_price: float)
         "UPDATE peak_holding SET is_active=0, sell_price=?, sold_at=?, current_price=?, profit_pct=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (sell_price, _now_str(), sell_price, profit_pct, row["id"]),
     )
-    c.execute(
+    scur = c.execute(
         "INSERT INTO peak_trade(stock_name, tx_type, price, quantity, total_amount, profit, profit_pct, tx_at, strategy) VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP,?)",
         (stock_name, "sell", sell_price, qty, round(sell_price * qty), profit, profit_pct, strategy),
     )
+    if qty > 0 and sell_price > 0 and scur.lastrowid:
+        code_row = c.execute("SELECT stock_code FROM peak_holding WHERE id=?", (row["id"],)).fetchone()
+        _ledger_record(c, strategy=strategy, side="sell", code=(code_row[0] if code_row else "") or "", name=stock_name, holding_id=row["id"], qty=qty,
+                       price=sell_price, trade_id=scur.lastrowid, occurred_at=_now_str(), gross_profit=profit)
     c.commit()
     c.close()
 
