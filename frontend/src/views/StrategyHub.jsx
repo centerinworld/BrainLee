@@ -90,6 +90,14 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
     const [strategyDataLab, setStrategyDataLab] = React.useState(null);
     const [backtestMatrix, setBacktestMatrix] = React.useState(() => _strategyHubMatrixCache);
     const [backtestMatrixError, setBacktestMatrixError] = React.useState('');
+    // QuantStats 요약(연구 산출물): 전략별 Sharpe·MDD·CAGR와 곡선 출처(engine=실측, 근사=거래로그+가격 MTM)
+    const [qsMap, setQsMap] = React.useState({});
+    React.useEffect(() => {
+      fetch(API('/api/research/quantstats'))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setQsMap(Object.fromEntries((d?.items || []).map(x => [x.strategy, x]))))
+        .catch(() => setQsMap({}));
+    }, []);
     // 병합계좌 실측 run 목록 (2026-07-18 — 가중평균 목업 대체)
     const [comboRuns, setComboRuns] = React.useState([]);
     React.useEffect(() => {
@@ -664,6 +672,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
 	                        title="클릭: 누적수익 정렬 (오름/내림 토글)"
 	                        onClick={() => setStratSort(p => ({ key:'cum', dir: p.key==='cum' && p.dir==='desc' ? 'asc' : 'desc' }))}
 	                      >연속운용 실측 {stratSort.key==='cum' ? (stratSort.dir==='desc' ? '▼' : '▲') : '↕'}<br/><span style={{fontSize:'0.55rem',opacity:0.7}}>2020.03~2026.03 단일계좌, 참고용(미등록)</span></th>
+                      <th style={{...thSt,minWidth:'96px',textAlign:'center',fontSize:'0.66rem'}} title="QuantStats 일간 곡선 기준. 근사=거래로그+가격 MTM 재구성(엔진 MDD와 일치 확인된 전략만 신뢰)">QuantStats<br/><span style={{fontSize:'0.55rem',opacity:0.6}}>Sharpe · MDD</span></th>
                       <th style={{...thSt,minWidth:'130px',textAlign:'left',fontSize:'0.66rem'}}>강점 요약</th>
                     </tr>
                   </thead>
@@ -765,6 +774,18 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
                                   {cumRet == null ? '미실측' : (cumRet >= 0 ? '+' : '') + cumRet + '%'}
                                 </td>
                               </React.Fragment>
+                            );
+                          })()}
+                          {(() => {
+                            const q = qsMap[s.key];
+                            const approx = q && q.reconstructed_periods > 0;
+                            return (
+                              <td style={{padding:'0.35rem 0.4rem',textAlign:'center',fontSize:'0.72rem',whiteSpace:'nowrap',
+                                borderBottom:'1px solid rgba(255,255,255,0.04)',color: q ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.25)'}}
+                                title={q ? `CAGR ${q.cagr_pct.toFixed(1)}% · KOSPI ${q.kospi_cagr_pct.toFixed(1)}% · 알파 ${q.alpha_annual_pct.toFixed(1)}% · ${q.start}~${q.end}${approx ? ' · 거래로그 재구성 근사 곡선' : ' · 엔진 실측 곡선'}` : 'QuantStats 산출물 없음'}>
+                                {q ? `${q.sharpe.toFixed(2)} · ${q.max_drawdown_pct.toFixed(0)}%` : '-'}
+                                {q && approx && <span style={{marginLeft:'0.25rem',fontSize:'0.55rem',color:'#f59e0b'}}>근사</span>}
+                              </td>
                             );
                           })()}
                           <td style={{padding:'0.35rem 0.6rem',fontSize:'0.67rem',

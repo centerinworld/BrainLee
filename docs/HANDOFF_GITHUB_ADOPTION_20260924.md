@@ -971,3 +971,16 @@ V1(보안 코드) → V2 → V6 → V3 → V4 → V5 → V8(09-28·09-30 확인)
 3. **R3(회전 규칙)/R6(계좌 낙폭 규칙) 판단(위임받음)**: R3 플래그(`VT_MIN_MCAP_EOK`, `VT_REENTRY_COOLDOWN_DAYS`)는 **기본 off 유지**(학습·검증·급락 3구간 모두 개선한 단일 규칙 없음, 다중검정), R6 는 **shadow 유지**(전 구간 MDD 악화). 실거래 경로 변경 없음.
 4. **`unresolved_active_common` 126건 KRX 교차검증**(`scripts/resolve_unresolved_jumps_krx_20260926.py`, 결과 `research_outputs/unresolved_jumps_krx_20260926.csv`): KRX 원시·수정 종가 모두 점프 43건 → `raw_source_confirmed_jump_review`, 원시만 점프·수정계열 매끈 19건 → `corporate_action_pending_confirmation`(KRX 계수 증거), **우리 값이 KRX 원시와 0.5% 이상 다른 54건과 KRX 무자료 10건은 수동 검토로 남김**(2010–2014 집중, 자동 교정 안 함 — 수정계열 조회 불가로 원인 확정 불가). 잔여 `unresolved_active_common` 64건. `data_fix_log` 기록됨, 가격 데이터·return_usable 변경 없음.
 5. **미처리(다음)**: 일일 미설명 점프 점검을 data_contract_audit 에 추가, 종가 이전 봉 수집 원인 확인(9/28 검증 결과 필요), US 결측 재수집 모드, 컨센서스 이력 백필 타당성, 텐배거 기준선 문구(v4 수치) 정정, 09-30 월간 스냅샷 교체·10-01 감쇠 감시 확인.
+
+### 16-9. 2026-09-26 C 기술과제 후속 처리
+
+| 항목 | 결과 |
+|---|---|
+| 일일 미설명 점프 점검 | `data_contract_audit_20260925.py`에 `unexplained_jump` 추가(최근 10일, ±31% 이상이면서 `price_jump_audit` 미분류; 정수배 비율=fail, 그 외 warn — 7/12 SQLite 배치 같은 혼합기준 오염의 전형). 첫 실행: 196490 2026-09-23 6,090→202(거래정지 후 재개, 다음 점프감사에서 분류 예정) 1건 warn |
+| 격리 종목 후보 제외 | 격리(`quarantined_basis`) 118종목 중 2026년 이후 이벤트 0 → 현재 후보엔 영향 없음. 대신 `ingestion_quarantine_recent`(최근 2일 KR 수집 거부 종목, 중복일자 배치 제외, 50종목 초과 시 warn) 추가. 첫 실행 1,170종목 warn = 9/26 09:30 KIS itemchart 1회성 배치(1,168종목 `historical_overlap_basis_mismatch`)를 게이트가 정상 거부한 것 — 일일 반복 아님, 2일 뒤 자연 해소 |
+| US 결측 재수집 | 3,670종목·1,342 거래일 점검: 5일 초과 결측 56종목(대부분 권리·워런트 등 저유동 심볼, 합계 3,829 — 실제 수집 실패 아님), 정체(9/20 이전 종료) 115종목은 상장폐지 추정. **재수집 모드 불필요**로 판단(별도 구현 안 함). 9/25 3,421종목은 수집 진행 중 스냅샷 |
+| 컨센서스/EPS 이력 백필 | `consensus_targets` 8,665행(2024-05-08~, 목표가·직전목표가 포함) — 목표가 수정 이력은 약 2.3년치. `forward_estimates`(EPS 등) 1,011행·스냅샷 4,066행은 2025-04~로 **현재 시점 추정치만 제공하는 원천**이라 과거 EPS 수정 이력은 소급 불가. 결론: EPS 수정 팩터는 앞으로 스냅샷을 쌓아야 검증 가능(현재 워크포워드에 쓰기엔 표본 부족), 목표가 수정은 약 2년 창으로 참고용만 |
+| Postgres 가드 테스트 | `tests/test_price_write_guard_postgres_20260926.py`(5건): 실제 트리거 함수를 TEMP 테이블+롤백 트랜잭션에서 검증(close<=0, 소수 OHLC는 checked여도 거부, 미검증 과거 INSERT 거부/checked 허용, 당일·비KR 통과, 무변경 UPDATE 허용/변경 UPDATE 거부). 운영 `price_history` 무접촉 |
+| QuantStats 열 | 전략센터 성과 매트릭스에 `QuantStats(Sharpe·MDD)` 열 추가 — `/api/research/quantstats` 사용, 근사 곡선(거래로그 재구성)은 "근사" 배지, 툴팁에 CAGR·KOSPI·알파. `frontend/dist` 재빌드 |
+| 텐배거 기저율 문구 | CLAUDE.md의 0.82%/1.23%는 옛 18.1만행(v2/v3) 기준. 운영 v4(190,609행) 실측은 10x/24m 1,171건(0.61%), 3x/12m 9,432건(4.95%)로 정정 |
+| 대기(날짜 의존) | 종가 이전 봉 수집 원인 특정은 9/28 `종가공식검증` 결과 필요. 근사 곡선 전략(엔진이 일간 곡선을 안 내는 전략)은 엔진 개조가 필요해 미착수. curl_cffi는 yfinance<0.14 제약으로 보류 |

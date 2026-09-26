@@ -11,6 +11,7 @@
                        causes is stored in detail.
   universe_fresh       stock_universe.base_date age in days (the universe stopped refreshing on 2026-09-04): warn > 5, fail > 10
   date_format          rows in the last 30 days violating the expected text-date format of key tables
+  unexplained_jump     unaudited >=31% close moves in the last 10 days (integer ratios = fail, otherwise warn)
   close_verify_fresh   the official-close comparison (price_close_verify_log) ran within 5 days and its last run was ok
 Thresholds are in CHECKS. Idempotent per (check_date, check_name). Exit code 2 on any FAIL.
 """
@@ -169,6 +170,35 @@ def main() -> int:
         results.append(("close_verify_fresh", "fail" if (r[1] != "ok" or age > 5) else "ok", float(age), 5.0, f"last trade_date {r[0]} status {r[1]} ({age}d ago)"))
     else:
         results.append(("close_verify_fresh", "warn", None, 5.0, "no verification run recorded yet"))
+
+    # unexplained_jump: last 10 days, close-to-close move beyond the KRX daily limit (>=31%) that price_jump_audit has not classified.
+    # (integer ratios such as x10/x5/x2 are the typical signature of a mixed-basis batch like the 2026-07-12 SQLite incident)
+    try:
+        jr = conn.execute("""
+            WITH x AS (SELECT stock_code, date, close, LAG(close) OVER (PARTITION BY stock_code ORDER BY date) pc
+                       FROM price_history WHERE date >= (CURRENT_DATE - 20)::text)
+            SELECT stock_code, date, close, pc FROM x
+            WHERE pc > 0 AND close > 0 AND date >= (CURRENT_DATE - 10)::text AND (close/pc >= 1.31 OR close/pc <= 0.69)
+              AND NOT EXISTS (SELECT 1 FROM price_jump_audit a WHERE a.stock_code=x.stock_code AND CAST(a.event_date AS TEXT) LIKE x.date || '%')
+        """).fetchall()
+        integer_like = [r for r in jr if abs((r[2] / r[3]) - round(r[2] / r[3])) < 0.02 or abs((r[3] / r[2]) - round(r[3] / r[2])) < 0.02]
+        det = "; ".join(f"{r[0]} {r[1]} {r[3]:.0f}->{r[2]:.0f}" for r in jr[:15])
+        results.append(("unexplained_jump", "fail" if integer_like else ("warn" if jr else "ok"), float(len(jr)), 0.0,
+                        f"{len(jr)} unaudited >=31% moves (integer-ratio {len(integer_like)}): {det}"))
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        results.append(("unexplained_jump", "warn", None, 0.0, f"check error {str(exc)[:80]}"))
+
+    # ingestion_quarantine_recent: KR rows the ingestion gate rejected in the last 2 days (excluding harmless duplicate-date batches).
+    # A burst (> 50 stocks) means a collector is sending a different price basis -> warn; the list is what a reviewer should exclude from candidates.
+    try:
+        qr = conn.execute("SELECT stock_code, COUNT(*), MIN(reason) FROM price_ingestion_quarantine WHERE substr(created_at,1,10) >= (CURRENT_DATE - 2)::text "
+                          "AND reason <> 'duplicate_input_dates' AND stock_code ~ '^[0-9A-Z]{6}$' GROUP BY stock_code ORDER BY 2 DESC").fetchall()
+        results.append(("ingestion_quarantine_recent", "warn" if len(qr) > 50 else "ok", float(len(qr)), 50.0,
+                        f"{len(qr)} KR stocks with rejected ingestion rows in 2d: " + ", ".join(f"{r[0]}({r[1]},{r[2]})" for r in qr[:12])))
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        results.append(("ingestion_quarantine_recent", "warn", None, 50.0, f"check error {str(exc)[:80]}"))
 
     fails = []
     for name, status, value, thr, det in results:
