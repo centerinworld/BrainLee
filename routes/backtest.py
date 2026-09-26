@@ -1684,13 +1684,34 @@ def list_strategy_combinations():
               AND COALESCE(br.total_trades,0) >= 10   -- 1~2건짜리 인프라 테스트 잔재 제외
               AND br.created_at >= '2026-07-25'       -- daily mark-to-market 버그 수정 이후만
               AND br.end_date >= date(?, '-14 days')  -- 최신 측정시점 기준 14일 이내만 "현재 유효"
-            ORDER BY br.total_return_pct DESC LIMIT 5
+            ORDER BY br.total_return_pct DESC LIMIT 20
         """, (latest_end,)).fetchall()
+        try:
+            current_financial_updated_row = conn.execute(
+                "SELECT MAX(updated_at) FROM financial_data"
+            ).fetchone()
+            current_financial_updated = current_financial_updated_row[0] if current_financial_updated_row else None
+        except Exception:
+            conn.rollback()
+            current_financial_updated = None
+        contract_failure = None
+        try:
+            contract_failure = conn.execute(
+                """SELECT check_name,status,value,detail FROM data_contract_check_log
+                   WHERE check_name='cfs_ofs_mixed_ttm'
+                   ORDER BY check_date DESC LIMIT 1"""
+            ).fetchone()
+        except Exception:
+            conn.rollback()
         out = []
+        invalidated = []
         for r in rows:
+            if len(out) >= 5:
+                break
             components = []
             initial_cash = None
             tiebreak = None
+            pj = {}
             try:
                 pj = json.loads(r["parameter_json"])
                 initial_cash = (pj.get("config") or {}).get("initial_cash")
@@ -1707,6 +1728,48 @@ def list_strategy_combinations():
                                        "label": STRATEGY_LABELS.get(skey, skey)})
             except Exception:
                 pass
+            validity_artifact = None
+            try:
+                validity_artifact = conn.execute(
+                    """SELECT passed,details_json FROM run_verification_artifacts
+                       WHERE run_hash=? AND artifact_type='result_validity' LIMIT 1""",
+                    (r["run_hash"],),
+                ).fetchone()
+            except Exception:
+                conn.rollback()
+            if validity_artifact and not bool(validity_artifact[0]):
+                try:
+                    invalidation_detail = json.loads(validity_artifact[1] or "{}")
+                except Exception:
+                    invalidation_detail = {}
+                invalidated.append({
+                    "run_id": r["run_id"], "run_hash": r["run_hash"],
+                    "reason": invalidation_detail.get("reason") or "stored result invalidated by a later audit",
+                })
+                continue
+
+            snapshot = pj.get("source_snapshot") or pj.get("_source_snapshot") or {}
+            financial_snapshot = (snapshot.get("datasets") or {}).get("financial_data") or []
+            run_financial_updated = financial_snapshot[3] if len(financial_snapshot) > 3 else None
+
+            def _timestamp_key(value):
+                return str(value or "").replace("T", " ")[:19]
+
+            financial_data_changed = bool(
+                current_financial_updated and run_financial_updated
+                and _timestamp_key(current_financial_updated) > _timestamp_key(run_financial_updated)
+            )
+            contract_failed = bool(contract_failure and str(contract_failure[1]).lower() == "fail")
+            revalidation_reasons = []
+            if financial_data_changed:
+                revalidation_reasons.append(
+                    f"financial_data changed after run ({run_financial_updated} -> {current_financial_updated})"
+                )
+            if contract_failed:
+                revalidation_reasons.append(
+                    f"{contract_failure[0]} contract is failing ({contract_failure[2]})"
+                )
+            validation_status = "revalidation_required" if revalidation_reasons else "verified_at_snapshot"
             # 2026-09-11: 사용자 제보 계기 — 헤드라인 수익률(예: 688.94%) 하나만 보여주면
             # "폭넓은 전략 우위"처럼 보이지만 실제로는 단일 종목(HD현대일렉트릭 등) 손익이
             # 전체의 30%+를 차지하는 경우가 있었다(corp-action 미조정 버그는 아니었고 실제
@@ -1728,8 +1791,24 @@ def list_strategy_combinations():
                 "initial_cash": initial_cash, "components": components,
                 "tiebreak_stability": tiebreak,
                 "pnl_concentration": concentration,
+                "validation_status": validation_status,
+                "revalidation_reasons": revalidation_reasons,
+                "run_financial_updated_at": run_financial_updated,
+                "current_financial_updated_at": current_financial_updated,
             })
-        return {"combinations": out}
+        revalidation_required = any(
+            row["validation_status"] == "revalidation_required" for row in out
+        )
+        return {
+            "combinations": out,
+            "revalidation_required": revalidation_required,
+            "performance_notice": (
+                "재무 기준 변경과 TTM 계약 실패가 해소된 뒤 병합 백테스트를 다시 실행해야 합니다. "
+                "그 전까지 저장 수익률은 과거 실행 기록이며 현재 유효 성과가 아닙니다."
+                if revalidation_required else ""
+            ),
+            "invalidated_runs": invalidated,
+        }
     finally:
         conn.close()
 

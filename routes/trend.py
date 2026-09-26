@@ -3135,7 +3135,7 @@ COMBO_DEFS = {
     # 재현되지 않음(컴포넌트 조합에 따라 신호 유효성이 달라지는 사례). 원상복구(bear_gate 제거)
     # 완료, 재검증 스크립트는 scratch/verify_beargate_on_combo605_exact.py 참조.
     "combo_605": {
-        "label": "조합①552% (7전략)",
+        "label": "조합① (7전략 · 성과 재검증 대기)",
         "max_positions": 20,
         "components": [
             ("earnings_conviction", 4.0), ("moonshot_turnaround", 3.0), ("sector_focus", 1.0),
@@ -3146,7 +3146,7 @@ COMBO_DEFS = {
     # combo_605와 달리 이 콤보들엔 recovery/v10이 없어 trail=-0.30이 순수 개선으로 작용함을
     # 확인(scratch/test_percombo_sector_split_20260724.py).
     "combo_539": {
-        "label": "조합②577% (5전략, sector우선)",
+        "label": "조합② (5전략 · sector우선 · 재검증 대기)",
         "max_positions": 20,
         "components": [
             ("earnings_conviction", 4.0), ("moonshot_turnaround", 3.0), ("sector_focus_v30", 1.0),
@@ -3154,7 +3154,7 @@ COMBO_DEFS = {
         ],
     },
     "combo_510": {
-        "label": "조합③530% (5전략, v4우선)",
+        "label": "조합③ (5전략 · v4우선 · 재검증 대기)",
         "max_positions": 20,
         "components": [
             ("earnings_conviction", 4.0), ("moonshot_turnaround", 3.0), ("v4", 1.0),
@@ -3162,7 +3162,7 @@ COMBO_DEFS = {
         ],
     },
     "combo_474": {
-        "label": "조합④487% (3전략)",
+        "label": "조합④ (3전략 · 성과 재검증 대기)",
         "max_positions": 10,
         "components": [
             ("sector_focus_v30", 4.0), ("v4", 3.0), ("v2", 1.0),
@@ -3176,7 +3176,7 @@ COMBO_DEFS = {
     # (scratch/claude_holdout_contract_momentum_20260724.py). 2026-07-25 시뮬레이터 수정 후
     # 재계산 결과 5개 콤보 중 실제 최고 성과(584.59%).
     "combo_546": {
-        "label": "조합⑤585% (577%+수주부스트)",
+        "label": "조합⑤ (5전략 · 수주부스트 · 재검증 대기)",
         "max_positions": 20,
         "components": [
             ("earnings_conviction", 4.0), ("moonshot_turnaround", 3.0), ("sector_focus_v30", 1.0),

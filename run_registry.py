@@ -223,6 +223,14 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
         r["artifact_type"]: {"passed": bool(r["passed"]), "details": json.loads(r["details_json"] or "{}")}
         for r in conn.execute("SELECT * FROM run_verification_artifacts WHERE run_hash=?", (run_hash,))
     }
+    # A run can be invalidated after registration when a later data audit proves
+    # that its stored P&L used a corrupt quote.  Keep the original run for the
+    # audit trail, but prevent it from retaining execution-strict status or from
+    # being reused as a component of a newly registered combined account.
+    result_validity = bool(
+        "result_validity" not in artifacts
+        or artifacts.get("result_validity", {}).get("passed")
+    )
     # Older runs predate this artifact. Once present, it becomes a real gate so
     # broad symbol exclusion cannot be hidden behind an otherwise clean run.
     universe_integrity = bool(
@@ -240,6 +248,7 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
         and artifacts.get("survivorship_integrity", {}).get("passed")
         and artifacts.get("corporate_action_integrity", {}).get("passed")
         and universe_integrity
+        and result_validity
     )
     universe = str(spec["universe_version"] or "").lower()
     # 2026-08-12: 시총 필터 자체를 쓰지 않는 전략(market_cap_mode='not_applicable')은
@@ -277,6 +286,7 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
         "survivorship_integrity": bool(artifacts.get("survivorship_integrity", {}).get("passed")),
         "corporate_action_integrity": bool(artifacts.get("corporate_action_integrity", {}).get("passed")),
         "universe_integrity": universe_integrity,
+        "result_validity": result_validity,
         "data_availability": bool(artifacts.get("data_availability", {}).get("passed")),
         "point_in_time_exact": pit_pass,
         "forward_validation": forward,

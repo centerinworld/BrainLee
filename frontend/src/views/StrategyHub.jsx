@@ -100,10 +100,17 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
     }, []);
     // 병합계좌 실측 run 목록 (2026-07-18 — 가중평균 목업 대체)
     const [comboRuns, setComboRuns] = React.useState([]);
+    const [comboRunMeta, setComboRunMeta] = React.useState({revalidation_required:false, performance_notice:''});
     React.useEffect(() => {
       fetch(API('/api/backtest/combinations/list'))
         .then(r => r.ok ? r.json() : null)
-        .then(d => setComboRuns(Array.isArray(d?.combinations) ? d.combinations : []))
+        .then(d => {
+          setComboRuns(Array.isArray(d?.combinations) ? d.combinations : []);
+          setComboRunMeta({
+            revalidation_required: Boolean(d?.revalidation_required),
+            performance_notice: d?.performance_notice || '',
+          });
+        })
         .catch(() => setComboRuns([]));
     }, []);
     // 연속운용 실측 결과 (2026-08-30 — 사용자 지시 "백테스트가 돌고나면 자동으로
@@ -822,6 +829,11 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
                       여러 전략의 주문을 하나의 1억원 계좌에서 실제 병합 체결 (가중평균 아님 · 구성 run 검증 게이트 통과분만)
                     </span>
                   </div>
+                  {comboRunMeta.revalidation_required && (
+                    <div style={{padding:'0.65rem 1rem', background:'rgba(251,191,36,0.1)', borderBottom:'1px solid rgba(251,191,36,0.3)', color:'#fbbf24', fontSize:'0.72rem'}}>
+                      ⚠️ {comboRunMeta.performance_notice}
+                    </div>
+                  )}
                   {rows.length === 0 ? (
                     <div style={{padding:'1rem', fontSize:'0.75rem', color:'var(--text-secondary)'}}>
                       등록된 병합 run이 없습니다.
@@ -845,7 +857,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
                             <tr key={run.run_id} style={{borderTop:'1px solid rgba(255,255,255,0.05)',
                               opacity: idx === 0 ? 1 : 0.55}}>
                               <td style={{padding:'0.45rem 1rem'}}>
-                                {idx === 0 && (
+                                {idx === 0 && !comboRunMeta.revalidation_required && (
                                   <span style={{display:'inline-block', margin:'0.1rem 0.4rem 0.1rem 0',
                                     padding:'0.1rem 0.5rem', borderRadius:'999px', fontSize:'0.66rem', fontWeight:700,
                                     background:'rgba(251,191,36,0.18)', border:'1px solid rgba(251,191,36,0.5)', color:'#fbbf24'}}>
@@ -865,7 +877,9 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
                               </td>
                               <td style={{padding:'0.45rem 0.6rem', textAlign:'right', fontWeight:800,
                                 color: (run.total_return_pct ?? 0) > 0 ? '#f87171' : '#60a5fa', fontSize:'0.85rem'}}>
-                                {(run.total_return_pct ?? 0) >= 0 ? '+' : ''}{(run.total_return_pct ?? 0).toFixed(1)}%
+                                {run.validation_status === 'revalidation_required'
+                                  ? '재검증 대기'
+                                  : `${(run.total_return_pct ?? 0) >= 0 ? '+' : ''}${(run.total_return_pct ?? 0).toFixed(1)}%`}
                                 {/* 2026-09-11: 헤드라인 수익률만 보면 "폭넓은 전략 우위"처럼 보이지만
                                     실제로는 단일 종목 손익이 대부분을 차지할 수 있다(사용자 제보 계기,
                                     merged_simulator.pnl_concentration() 참조) — 상위1종목 기여도를 함께 노출 */}
@@ -886,7 +900,12 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
                                 {run.total_trades?.toLocaleString() ?? '-'}건
                               </td>
                               <td style={{padding:'0.45rem 0.6rem', whiteSpace:'nowrap'}}>
-                                {idx === 0 ? (
+                                {run.validation_status === 'revalidation_required' ? (
+                                  <span title={(run.revalidation_reasons || []).join('\n')} style={{padding:'0.1rem 0.45rem', borderRadius:'4px', fontSize:'0.64rem',
+                                    background:'rgba(251,191,36,0.14)', border:'1px solid rgba(251,191,36,0.4)', color:'#fbbf24'}}>
+                                    입력데이터 변경
+                                  </span>
+                                ) : idx === 0 ? (
                                   <span style={{padding:'0.1rem 0.45rem', borderRadius:'4px', fontSize:'0.64rem',
                                     background:'rgba(16,185,129,0.14)', border:'1px solid rgba(16,185,129,0.4)', color:'#34d399'}}>
                                     병합체결 검증
@@ -903,9 +922,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {
                         </tbody>
                       </table>
                       <div style={{padding:'0.5rem 1rem', fontSize:'0.66rem', color:'var(--text-secondary)', borderTop:'1px solid rgba(255,255,255,0.05)'}}>
-                        원리: 전략별 신호 공백기의 유휴자본을 다른 전략이 재활용. 2026-07-28 재검증: v4/V-EARNINGS/V-MOONSHOT의 시총 필터가 현재시총 기준(룩어헤드)이었던 버그를 as-of로 고치자, 이 세 전략을 포함한 5~7전략 조합은 전부 큰 폭으로 하락했고, <b>V3 재무우량 + V-SECTOR 주도섹터 2개만 남긴 조합</b>이 최고 기록으로 올라섬.
-                        2026-07-29 추가검증: 이 655.6%는 측정기간이 2026-03-31에서 멈춰있던 것으로, 최신 거래일까지 다시 계산하면 <b>+612.9%(MDD -34.6%)</b>가 정직한 현재 수치. 이어서 v4/megatrend/V-EARNINGS/V-MOONSHOT/V10/V-RECOVERY 6개를 신선한(2026-07-28 기준) 소스로 하나씩·여러개씩 추가해봤으나 <b>전부 수익률이 크게 하락(324~486%)</b>했고, 포지션수·티켓크기·섹터집중한도를 바꾼 안정성(MDD) 튜닝도 수익을 깎지 않고 낙폭만 줄이는 조합은 찾지 못함 — 현재 2전략 구성이 탐색된 범위 내 최선.
-                        ⚠️ 소스 신호는 각 전략 단독 1억 운용 가정에서 생성된 1차 근사 — 공유자본 신호 재생성(완전 결합 시뮬)은 후속 과제. 이 표는 2026-07-25 merged_simulator.py 일별 마킹버그 수정 이후 등록분 중 <b>가장 최신 데이터까지 측정된 1건</b>만 표시.
+                        원리: 전략별 신호 공백기의 유휴자본을 다른 전략이 재활용합니다. 저장 수익률은 실행 당시 데이터 스냅샷에만 해당합니다. 이후 가격·재무 데이터가 바뀌면 현재 성과로 표시하지 않고 재검증 대기로 전환합니다. 구성 전략의 신호는 각 전략 단독 계좌에서 생성된 1차 근사이므로 공유자본 완전 결합 시뮬레이션과 구분해 해석해야 합니다.
                       </div>
                     </div>
                   )}
