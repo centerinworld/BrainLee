@@ -23,6 +23,10 @@ def _client():
     def qs():
         return {"ok": 1}
 
+    @app.get("/api/realtime/prices")
+    def prices():
+        return {"holdings": 47}
+
     @app.get("/api/market-regime")
     def regime():
         return {"ok": 1}
@@ -43,7 +47,13 @@ class SecurityGateTests(unittest.TestCase):
         self.assertTrue(is_protected("GET", "/api/kis-trading/paper/status"))
         self.assertTrue(is_protected("GET", "/api/commands/status"))
         self.assertTrue(is_protected("GET", "/api/research/quantstats"))
-        self.assertFalse(is_protected("GET", "/api/market-regime"))
+        # V1: 이전 차단 목록에 없어 새던 경로들 — 이제 GET도 보호
+        for leaked in ("/api/realtime/prices", "/api/buy-candidates", "/api/trend/holdings", "/api/us-virtual/positions", "/api/market-regime"):
+            self.assertTrue(is_protected("GET", leaked), leaked)
+        self.assertTrue(is_protected("GET", "/openapi.json"))
+        self.assertTrue(is_protected("GET", "/docs"))
+        self.assertFalse(is_protected("GET", "/"))                     # 프런트 정적 파일
+        self.assertFalse(is_protected("GET", "/assets/index-abc.js"))
         self.assertFalse(is_protected("OPTIONS", "/api/portfolio"))
         self.assertFalse(is_protected("POST", "/static/x"))
 
@@ -62,11 +72,15 @@ class SecurityGateTests(unittest.TestCase):
             self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "X-API-Token": "s3cret"}).status_code, 200)
             self.assertEqual(c.get("/api/portfolio", headers={**TUNNEL, "Authorization": "Bearer s3cret"}).status_code, 200)
 
-    def test_tunnel_public_reads_still_open(self):
+    def test_tunnel_reads_need_token_after_v1(self):
         with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
             c = _client()
-            self.assertEqual(c.get("/api/market-regime", headers=TUNNEL).status_code, 200)
-            self.assertEqual(c.get("/api/research/quantstats", headers=TUNNEL).status_code, 401)   # 연구 API는 토큰 필요
+            # V1: 터널 경유 GET은 무토큰이면 전부 401(허용 목록이 비어 있음), 토큰이 있으면 통과
+            self.assertEqual(c.get("/api/market-regime", headers=TUNNEL).status_code, 401)
+            self.assertEqual(c.get("/api/realtime/prices", headers=TUNNEL).status_code, 401)
+            self.assertEqual(c.get("/api/research/quantstats", headers=TUNNEL).status_code, 401)
+            self.assertEqual(c.get("/api/realtime/prices", headers={**TUNNEL, "X-API-Token": "s3cret"}).status_code, 200)
+            self.assertEqual(c.get("/api/realtime/prices").status_code, 200)                          # 로컬 호출은 무영향
 
     def test_fail_closed_without_configured_token(self):
         env = {k: v for k, v in os.environ.items() if k != "API_WRITE_TOKEN"}
