@@ -43,22 +43,26 @@ def main(dry_run: bool = False) -> int:
         "FROM virtual_cash_ledger l LEFT JOIN peak_holding h ON h.id = l.holding_id ORDER BY l.occurred_at, l.id").fetchall()],
         columns=["strategy", "event_type", "code", "holding_id", "qty", "cash_delta", "gross", "occurred"])
     ev["day"] = pd.to_datetime(ev.occurred.astype(str).str[:10])
-    # Older buys carry a placeholder (negative) holding_id and no stock_code, while the later sell references the real holding: pair each sell
-    # with the earliest uncoded buy of the SAME quantity in the same strategy to recover the stock code.
+    # Pair every SELL with a BUY of the same strategy: first by identical holding_id, otherwise the earliest still-open buy of the SAME quantity.
+    # A paired buy is closed on the sell's day (its stock code is inherited from the sell when the buy has none). Positions are then valued from OPEN buys only,
+    # so it does not matter whether a sell row carries a stock code. A strategy is INCONSISTENT when a sell cannot be paired to any buy (sells without buys).
     ev = ev.reset_index(drop=True)
     ev["closed_day"] = pd.NaT
+    bad_set = set()
     for strat, g in ev.groupby("strategy"):
-        unmatched = [i for i in g.index[(g.event_type == "buy") & g.code.isna()]]
+        open_buys = [i for i in g.index[g.event_type == "buy"]]
         for i in g.index[g.event_type == "sell"]:
-            hit = next((j for j in unmatched if ev.at[j, "qty"] == ev.at[i, "qty"] and ev.at[j, "day"] <= ev.at[i, "day"]), None)
-            if hit is not None:
-                if pd.notna(ev.at[i, "code"]):
-                    ev.at[hit, "code"] = ev.at[i, "code"]
-                ev.at[hit, "closed_day"] = ev.at[i, "day"]       # sold on this day even when the sell row has no stock code
-                unmatched.remove(hit)
-    # inconsistent ledger: a stock sold more than it was bought (momentum/peak: sells only)
-    net = ev.dropna(subset=["code"]).assign(sq=lambda d: d.qty.where(d.event_type == "buy", -d.qty)).groupby(["strategy", "code"]).sq.sum()
-    bad = sorted(net[net < 0].index.get_level_values(0).unique())
+            hit = next((j for j in open_buys if pd.notna(ev.at[i, "holding_id"]) and ev.at[j, "holding_id"] == ev.at[i, "holding_id"]), None)
+            if hit is None:
+                hit = next((j for j in open_buys if ev.at[j, "qty"] == ev.at[i, "qty"] and ev.at[j, "day"] <= ev.at[i, "day"]), None)
+            if hit is None:
+                bad_set.add(strat)
+                continue
+            if pd.isna(ev.at[hit, "code"]) and pd.notna(ev.at[i, "code"]):
+                ev.at[hit, "code"] = ev.at[i, "code"]
+            ev.at[hit, "closed_day"] = ev.at[i, "day"]
+            open_buys.remove(hit)
+    bad = sorted(bad_set)
     use = [s for s in accts if s not in bad]
     start, end = ev.day.min(), pd.Timestamp(conn.execute("SELECT MAX(date) FROM price_history WHERE stock_code='^KS11'").fetchone()[0])
     days = pd.bdate_range(start, end)
@@ -81,17 +85,12 @@ def main(dry_run: bool = False) -> int:
             e = ev[(ev.strategy == s) & (ev.day <= d)]
             s_cash = accts[s] + float(e.cash_delta.sum())
             s_pos = 0.0
-            held = defaultdict(float)
-            for code, et, q in zip(e.code, e.event_type, e.qty):
-                if pd.isna(code):
-                    continue
-                held[code] += q if et == "buy" else -q
-            for code, q in held.items():
-                if q > 0 and code in close.columns and pd.notna(close.at[d, code]):
-                    s_pos += q * float(close.at[d, code])
-            # buys whose code could not be recovered: cost basis until their matching sell (closed_day); never-sold ones stay at cost
-            unc = e[(e.event_type == "buy") & e.code.isna() & (e.closed_day.isna() | (e.closed_day > d))]
-            s_pos += float(unc.gross.sum())
+            open_b = e[(e.event_type == "buy") & (e.closed_day.isna() | (e.closed_day > d))]
+            for code, q, gross in zip(open_b.code, open_b.qty, open_b.gross):
+                if pd.notna(code) and code in close.columns and pd.notna(close.at[d, code]):
+                    s_pos += float(q) * float(close.at[d, code])
+                else:
+                    s_pos += float(gross)                       # code/price unknown: cost basis
             if s in bad:
                 continue                                    # inconsistent ledger (sells without buys): no trustworthy equity, excluded everywhere
             cash += s_cash
