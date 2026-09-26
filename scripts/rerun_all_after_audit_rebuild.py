@@ -18,7 +18,11 @@ if str(ROOT) not in sys.path:
 
 from db_utils import connect_stock_db
 from run_registry import register_run_set, select_run
-from scripts.rerun_selected_after_price_repair import _run_one, OUT
+from scripts.rerun_selected_after_price_repair import (
+    OUT,
+    _run_one,
+    audit_selected_integrity,
+)
 
 
 def _all_selected_specs(only: set[str] | None = None) -> dict[str, list[dict]]:
@@ -79,6 +83,15 @@ def run(only: set[str], workers: int = 4, selected_by: str = "audit_rebuild_2026
         except Exception as exc:
             item.update({"status": "failed", "error": str(exc)})
         OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    integrity = audit_selected_integrity()
+    result["post_selection_integrity"] = {
+        "checked_at": integrity["checked_at"],
+        "policy_version": integrity["policy_version"],
+        "strategy_count": integrity["strategy_count"],
+        "passed": integrity["passed"],
+        "failed": integrity["failed"],
+        "no_trade_evidence": integrity["no_trade_evidence"],
+    }
     result["completed_at"] = datetime.now().isoformat(timespec="seconds")
     OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result

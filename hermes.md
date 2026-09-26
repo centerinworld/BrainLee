@@ -980,3 +980,31 @@ created_at='2026-07-12 07:21:53' & date<2019 & marcap과 OHLC 상이한 **827,72
 - (2026-09-25 밤) §12 R2~R9·shadow A안 처리 완료 — HANDOFF §14. 재시작·Cloudflare Access 재확인·py312b 전환·R3 플래그·momentum/peak 원장 수정 범위가 사용자 결정 대기.
 
 - (2026-09-26) §15 V1~V9 처리 완료 — HANDOFF §16. 남은 결정: Cloudflare Access 앱 확인·`CF_ACCESS_*` 설정, CEO 8011 위험 쓰기 엔드포인트 세션 인증(다른 세션)·`.venv312b` 전환, V7(`v_gc` shadow·LAN 제한).
+
+## Codex 최신 문서·운영 상태 재검토 및 보완 (2026-09-26 12:48 KST)
+
+`runtime/AGENTS.md`, 루트/런타임 `CLAUDE.md`, 이 파일의 최근 이력과 운영 PostgreSQL을 대조했다. 루트는 공용 데이터 경로이고 실제 코드·git 정본은 `runtime/`이며, 단수 `AGENT.md`는 없고 `runtime/AGENTS.md`가 현재 규칙 정본이다. Claude의 FnGuide 분기 스냅샷 수집(`scripts/collect_fnguide_quarterly_snapshot_20260926.py`)은 이 점검 중에도 별도 프로세스로 실행 중이므로 해당 파일·수집 행은 수정하지 않았다. `fill_suspension_gaps_from_marcap_20260924.py --apply` 금지와 기존 57,874행 자동 롤백 금지도 그대로 유지한다.
+
+### 새로 발견해 수정한 사각지대
+
+1. **기본 pytest가 실험 스크립트를 실행하는 문제**: pytest 설정이 없어 저장소 루트에서 `pytest`를 실행하면 `scratch/`의 `*test*.py` 63개와 루트 `test_interp.py`까지 수집했다. 이 파일들은 import 단계에서 운영 PostgreSQL 연결·백테스트 실행·없는 로컬 파일 접근을 수행하므로, 단순 회귀검사가 운영 작업을 건드릴 수 있었다. `pytest.ini`에 `testpaths=tests`, `python_files=test_*.py`를 추가해 기본 명령이 정식 테스트만 수집하도록 고정했다.
+2. **전략 스위트 교체 후 검증 아티팩트 누락**: 2026-09-25 가격 기준 재실행으로 선택 run hash가 바뀌었지만 새 hash에는 `survivorship_integrity`와 `corporate_action_integrity`가 재등록되지 않았다. 이 때문에 실제 가격 감사 통과 여부와 무관하게 27개 선택 전략 중 13개가 `legacy`였고, v4 최신 선택 스위트 `3a1df776883808d8`도 문서 설명과 달리 `legacy`였다. `audit_selected_strategy_price_integrity.py`를 현재 정본 뷰로 재실행해 27개 전부의 아티팩트를 다시 만들었고, v4는 **`point_in_time_verified`로 복구**됐다(남은 미통과 사유는 `forward_validation`뿐).
+3. **재발 방지 배선**: `scripts/rerun_selected_after_price_repair.py`와 `scripts/rerun_all_after_audit_rebuild.py`가 새 스위트 선택을 마친 뒤 전체 선택 전략 무결성 감사를 반드시 실행하고, 결과 요약(`checked_at`, 정책 버전, 통과/실패/무거래 수)을 재실행 결과 JSON에 저장하도록 수정했다. 향후 가격 복구·감사 재빌드 뒤 새 run hash가 검증 행 없이 남는 문제를 막는다.
+
+### 운영 DB 실측 스냅샷
+
+- **가격 감사(12:43 KST)**: `unresolved_active_common` 64건, `quarantined_basis` 8,448건, `coverage_gap_reviewed` 524건, 미검토 `coverage_gap` 1건이다. 따라서 이 파일 앞부분의 “미해결 146 / 소수점 8,396”은 과거 시점 수치이며 현재값으로 사용하면 안 된다. 정본 뷰의 `return_usable=0`에는 거래정지 파생행 263,458건도 별도로 포함된다.
+- **선택 전략 가격 무결성 재감사(12:47 KST)**: 27개 중 23개 통과, 4개 실패. 실패는 `deep_recovery`(가격오염 9.34% + survivorship 2), `extreme_dd_volume`(12.63%), `low_base_breakout`(3.64% + survivorship 5), `v12`(0.34% + survivorship 1)다. 5%·7% 민감도 모두 23개 통과라 현재 결과는 7% 경계에 의존하지 않는다. **이 23/4는 가격·상장구간 감사 결과**이며 전략 전체 등급과 동일한 숫자가 아니다. 전체 게이트 기준 현재 분포는 `point_in_time_verified` 1(v4), `point_in_time_approx` 14, `execution_strict` 3, `legacy` 9다.
+- **재무 검증(12:43 KST)**: `QUARTERLY_4WAY`는 OPEN 4,270, AMBIGUOUS 15, CONFIRMED 52,840이다. `OFS_ANNUAL_CONSISTENCY` OPEN 13,231·AMBIGUOUS 1,215는 여전히 후속 분류 대상이다.
+- **FnGuide 진행 중 스냅샷(12:43 KST)**: 2026Q1·Q2 각각 188종목이 `financial_source_snapshot(data_source='fnguide')`에 수집됐다. 실행 중인 장기 수집이므로 완료 수치로 간주하지 않는다.
+- **피처 스냅샷**: 정본 `strategy_feature_snapshot`은 190,609행, 최대 기준일 2026-09-23으로 확인됐다.
+
+### 검증
+
+- Python 3.12 운영 venv에서 수정 파일 `py_compile` 통과.
+- `venv/bin/python -m pytest -q`가 이제 정식 스위트만 실행하며 **543 passed, 54 subtests passed**(경고 2건: Pydantic v1 validator, Starlette TestClient cookies deprecation).
+- 가격 원시행·재무 원시행은 이번 Codex 점검에서 쓰지 않았다. 운영 DB 쓰기는 현재 선택 run hash에 대한 검증 아티팩트 갱신뿐이다.
+
+### 현재 판단
+
+v4의 과거 데이터/PIT 문제는 최신 선택 스위트 기준으로 다시 검증 완료됐지만 시스템 전체가 완료된 것은 아니다. 가격 감사 실패 4개 전략, 재무 OPEN/AMBIGUOUS 플래그, 진행 중인 FnGuide 전수 수집, 그리고 `forward_validation`은 계속 남아 있다. Claude의 동시 작업 결과는 완료 시 이 스냅샷 이후 수치로 다시 갱신해야 한다.

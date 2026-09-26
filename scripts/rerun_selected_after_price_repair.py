@@ -18,7 +18,10 @@ if str(ROOT) not in sys.path:
 import backtest as bt  # noqa: E402
 from db_utils import connect_stock_db  # noqa: E402
 from run_registry import register_artifact, register_run_set, select_run  # noqa: E402
-from scripts.audit_selected_strategy_price_integrity import holding_windows  # noqa: E402
+from scripts.audit_selected_strategy_price_integrity import (  # noqa: E402
+    audit as audit_selected_integrity,
+    holding_windows,
+)
 
 OUT = ROOT / "research_outputs" / "selected_price_repair_rerun_latest.json"
 FUNCTIONS = {
@@ -182,6 +185,20 @@ def run(only: set[str], workers: int) -> dict:
         except Exception as exc:
             item.update({"status": "failed", "error": str(exc)})
         OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Selecting a new suite changes every component run hash.  The backtest
+    # runner registers execution/price artifacts, but survivorship and
+    # corporate-action artifacts are derived from the final selected suite.
+    # Refresh them after all replacements so a sound suite is not silently
+    # left at `legacy` solely because its new hashes have no audit rows.
+    integrity = audit_selected_integrity()
+    result["post_selection_integrity"] = {
+        "checked_at": integrity["checked_at"],
+        "policy_version": integrity["policy_version"],
+        "strategy_count": integrity["strategy_count"],
+        "passed": integrity["passed"],
+        "failed": integrity["failed"],
+        "no_trade_evidence": integrity["no_trade_evidence"],
+    }
     result["completed_at"] = datetime.now().isoformat(timespec="seconds")
     OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
