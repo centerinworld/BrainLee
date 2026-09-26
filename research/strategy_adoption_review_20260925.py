@@ -114,6 +114,22 @@ def main() -> None:
     bm_close.index = pd.to_datetime(bm_close.index)
     bm = bm_close.pct_change().dropna()
 
+    # ---- V5 auxiliary benchmarks (informational; the adoption rule stays "beat KOSPI"): cap-weighted KOSPI EXCLUDING Samsung Electronics + SK hynix, and the equal-weight liquid universe
+    adj = pd.read_parquet(IN / "adj_close.parquet").astype(float)
+    adj.index = pd.to_datetime(adj.index)
+    vol = pd.read_parquet(IN / "volume.parquet").astype(float).reindex(adj.index)
+    snapf = pd.read_parquet(IN / "factors.parquet")
+    snapf["snapshot_date"] = pd.to_datetime(snapf.snapshot_date)
+    rets = adj.pct_change(fill_method=None).clip(-0.31, 0.31)
+    liquid = ((adj * vol).rolling(60, min_periods=40).mean().rank(axis=1, ascending=False) <= 1000).shift(1, fill_value=False)
+    bm_ew = rets.where(liquid).mean(axis=1)
+    kospi_codes = set(snapf[snapf.market == "KOSPI"].stock_code) - {"005930", "000660"}
+    w = snapf[snapf.stock_code.isin(kospi_codes)].pivot_table(index="snapshot_date", columns="stock_code", values="market_cap_억").reindex(columns=adj.columns).sort_index()
+    w = w.reindex(adj.index, method="ffill").shift(1)
+    rk = rets.where(w.notna())
+    bm_ex2 = (rk * w).sum(axis=1) / w.where(rk.notna()).sum(axis=1)
+    bm_ex2, bm_ew = bm_ex2.dropna(), bm_ew.dropna()
+
     R = stitched_returns(eq)
     sr_all = R.apply(sharpe_daily)
     var_sr = float(sr_all.var())
@@ -144,6 +160,8 @@ def main() -> None:
             "kospi_cagr_same_span_pct": round(cagr(b_full) * 100, 1),
             "oos_days": len(oos), "oos_cagr_pct": round(cagr(oos) * 100, 1), "oos_kospi_cagr_pct": round(cagr(b_oos) * 100, 1),
             "oos_excess_pct": round((cagr(oos) - cagr(b_oos)) * 100, 1),
+            "oos_excess_vs_ex2_pct": round((cagr(oos) - cagr(bm_ex2.reindex(oos.index).fillna(0))) * 100, 1),
+            "oos_excess_vs_ew_pct": round((cagr(oos) - cagr(bm_ew.reindex(oos.index).fillna(0))) * 100, 1),
             "oos_info_ratio": round(float(active.mean() / active.std() * math.sqrt(252)), 2) if active.std() > 0 else np.nan,
             "oos_beta": round(beta, 2),
             "dsr_n38": round(dsr(r, N_TRIALS_STRATEGIES, var_sr), 3), "dsr_n3319": round(dsr(r, N_TRIALS_RUNS, var_sr), 3),
@@ -202,8 +220,10 @@ def main() -> None:
           f"- DSR은 탐색 규모에 민감하다: N=38(전략 수)과 N=3,319(실행 수)를 모두 표기(N={N_TRIALS_STRATEGIES}를 판정에 사용). 전략 간 일별 Sharpe 분산 V={var_sr:.2e}.",
           f"- KOSPI 보유(같은 표본 외 구간) CAGR: {df.oos_kospi_cagr_pct.iloc[0]}% — 표본 외 구간은 {int(df.oos_days.max())}거래일(약 {df.oos_days.max()/252:.1f}년)로 짧아 ①의 통계적 힘이 약하다.", "",
           "## A. 백테스트 전략 (strategy_center 선정 실행 세트)", "",
-          df[["strategy", "cagr_pct", "mdd_pct", "sharpe_ann", "oos_cagr_pct", "oos_kospi_cagr_pct", "oos_excess_pct", "oos_info_ratio", "oos_beta",
+          df[["strategy", "cagr_pct", "mdd_pct", "sharpe_ann", "oos_cagr_pct", "oos_kospi_cagr_pct", "oos_excess_pct", "oos_excess_vs_ex2_pct", "oos_excess_vs_ew_pct", "oos_info_ratio", "oos_beta",
               "dsr_n38", "dsr_n3319", "t12m_expectancy_pct", "t12m_trades", "trades_per_year", "engine_share", "curve_ok", "adopt"]].to_markdown(index=False), "",
+          f"보조 벤치마크(참고, 판정 규칙은 KOSPI 기준 유지): 표본 외 CAGR 삼성·하이닉스 제외 KOSPI {cagr(bm_ex2[bm_ex2.index >= OOS_START]) * 100:.1f}%, 유니버스 동일가중 {cagr(bm_ew[bm_ew.index >= OOS_START]) * 100:.1f}% (KOSPI {df.oos_kospi_cagr_pct.iloc[0]}%). "
+          f"표본 외 초과수익 > 0인 전략 수: KOSPI 기준 {int((df.oos_excess_pct > 0).sum())}개 / 삼성·하이닉스 제외 KOSPI 기준 {int((df.oos_excess_vs_ex2_pct > 0).sum())}개 / 동일가중 기준 {int((df.oos_excess_vs_ew_pct > 0).sum())}개.", "",
           "engine_share = 자본곡선이 엔진 산출인 실행 비율(나머지는 거래로그+가격 MTM 근사). t12m = 자료 마지막 12개월(2025-04~2026-03)에 청산된 거래의 평균 손익%(엔진 비용 포함).", "",
           "## B. 가상매매(paper) 전략 — 실제 진입 기록 (peak_holding 청산 309건, 2026-05-04~09-25)", "",
           "`profit_pct`는 비용 미차감 값(매도/매수-1과 일치)이라 운영 비용 모델(수수료 0.015%/편도·매도세 0.18%·시총 구간 슬리피지)을 차감했다. 비교 기준은 같은 보유 기간의 KOSPI.", "",

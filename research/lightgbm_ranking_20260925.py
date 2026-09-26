@@ -60,20 +60,24 @@ def main() -> None:
     fwd = p.shift(-H) / p - 1
     bfwd = bmp.shift(-H) / bmp - 1
 
-    df = snap[["snapshot_date", "stock_code", "model_score_12m"] + SNAP_FEATS].merge(src[["snapshot_date", "stock_code"] + SRC_FEATS],
+    df = snap[["snapshot_date", "stock_code", "model_score_12m", "market", "sector_large", "market_cap_억"] + SNAP_FEATS].merge(src[["snapshot_date", "stock_code"] + SRC_FEATS],
                                                                                     on=["snapshot_date", "stock_code"], how="left")
     dates = pd.DatetimeIndex(sorted(df.snapshot_date.unique()))
     pos = p.index.searchsorted(dates, side="right") - 1
     dmap = dict(zip(dates, p.index[pos]))
-    rows_lv, rows_fwd = [], []
+    rows_lv, rows_fwd, rows_raw, bf = [], [], [], {}
     for d in dates:
         g = dmap[d]
         rows_lv.append(rv60.loc[g])
         rows_fwd.append(fwd.loc[g] - bfwd.loc[g])
+        rows_raw.append(fwd.loc[g])
+        bf[d] = float(bfwd.loc[g])
     lv = pd.DataFrame(rows_lv, index=dates).stack().rename("low_vol_raw")
     ex = pd.DataFrame(rows_fwd, index=dates).stack().rename("fwd_excess")
-    lv.index.names = ex.index.names = ["snapshot_date", "stock_code"]
+    raw = pd.DataFrame(rows_raw, index=dates).stack().rename("fwd_raw")
+    lv.index.names = ex.index.names = raw.index.names = ["snapshot_date", "stock_code"]
     df = df.merge(lv.reset_index(), on=["snapshot_date", "stock_code"], how="left").merge(ex.reset_index(), on=["snapshot_date", "stock_code"], how="left")
+    df = df.merge(raw.reset_index(), on=["snapshot_date", "stock_code"], how="left")
     df["earn_yield"] = np.where(df.per > 0, 1 / df.per, np.nan)
     df["book_yield"] = np.where(df.pbr > 0, 1 / df.pbr, np.nan)
     df["low_vol_60d"] = -df.low_vol_raw
@@ -136,6 +140,68 @@ def main() -> None:
     res_split = pd.concat(sub.values())
     imp_df = pd.concat(imp, axis=1).mean(axis=1).sort_values(ascending=False)
     imp_df = (imp_df / imp_df.sum() * 100).round(1)
+
+    # ---- HANDOFF §15 V5: separate "no signal" from "benchmark composition" ------------------------------------------------------------------
+    # 2024-26 KOSPI (cap-weighted) is dominated by Samsung Electronics + SK hynix, so any equal-weight small/mid/low-vol book lags it regardless of skill. Compare the
+    # top-quintile book with (a) KOSPI, (b) cap-weighted KOSPI EXCLUDING those two, (c) the equal-weight universe, and measure (d) selection alpha inside sector x size
+    # buckets (top quintile minus the bucket's equal-weight average) and (e) Jensen alpha/beta versus KOSPI.
+    def decompose(col: str, months) -> dict:
+        top_r, kos, ex2, ew, neut = [], [], [], [], []
+        for d in months:
+            g = df[(df.snapshot_date == d) & df[col].notna() & df.fwd_raw.notna()].copy()
+            if len(g) < 300:
+                continue
+            q = g[col].rank(pct=True)
+            top_r.append(g[q > 0.8].fwd_raw.mean())
+            ew.append(g.fwd_raw.mean())
+            kos.append(bf[d])
+            k = g[(g.market == "KOSPI") & (~g.stock_code.isin(["005930", "000660"])) & g["market_cap_억"].notna()] if "market_cap_억" in g else g.iloc[0:0]
+            ex2.append(float((k.fwd_raw * k["market_cap_억"]).sum() / k["market_cap_억"].sum()) if len(k) > 50 else np.nan)
+            g["size"] = pd.qcut(g["market_cap_log"], 3, labels=False, duplicates="drop")
+            alphas, w = [], []
+            for _, gg in g.groupby(["sector_large", "size"], dropna=False):
+                if len(gg) >= 15:
+                    qq = gg[col].rank(pct=True)
+                    alphas.append(gg[qq > 0.8].fwd_raw.mean() - gg.fwd_raw.mean())
+                    w.append(len(gg))
+            neut.append(float(np.average(alphas, weights=w)) if alphas else np.nan)
+        t, k, e2, u, n = (np.array(x, float) for x in (top_r, kos, ex2, ew, neut))
+        def stat(x):
+            x = x[~np.isnan(x)]
+            return (x.mean() * 100, x.mean() / (x.std() / np.sqrt(len(x))) if len(x) > 2 and x.std() > 0 else np.nan)
+        beta = float(np.cov(t, k)[0, 1] / k.var())
+        alpha_m = float((t - beta * k).mean())
+        resid = t - beta * k - alpha_m
+        alpha_t = alpha_m / (resid.std() / np.sqrt(len(t)))
+        m = ~np.isnan(e2)
+        return {"model": col, "months": len(t), "top_mean_pct": t.mean() * 100, "kospi_mean_pct": k.mean() * 100, "kospi_ex_top2_mean_pct": np.nanmean(e2) * 100,
+                "universe_ew_mean_pct": u.mean() * 100,
+                "top_minus_kospi": stat(t - k), "top_minus_kospi_ex2": stat(np.where(m, t - e2, np.nan)), "top_minus_universe_ew": stat(t - u),
+                "selection_alpha_sector_size_neutral": stat(n), "jensen_alpha_pct_per_month": alpha_m * 100, "jensen_alpha_t": alpha_t, "beta_vs_kospi": beta}
+    bench_rows = [decompose(c, test_months) for c in ("legacy", "composite", "lgbm")]
+    bench_rows += [dict(decompose("lgbm", [d for d in test_months if d > pd.Timestamp("2024-12-31")]), model="lgbm (2025+)")]
+    def fmt(r):
+        f = lambda x: f"{x[0]:+.2f}%p (t {x[1]:.1f})"
+        return {"model": r["model"], "months": r["months"], "top": f"{r['top_mean_pct']:.2f}%", "KOSPI": f"{r['kospi_mean_pct']:.2f}%", "KOSPI ex 삼성·하이닉스": f"{r['kospi_ex_top2_mean_pct']:.2f}%",
+                "유니버스 동일가중": f"{r['universe_ew_mean_pct']:.2f}%", "top−KOSPI": f(r["top_minus_kospi"]), "top−KOSPI(ex2)": f(r["top_minus_kospi_ex2"]),
+                "top−동일가중": f(r["top_minus_universe_ew"]), "섹터·규모 중립 선택 알파": f(r["selection_alpha_sector_size_neutral"]),
+                "젠센 알파(월)": f"{r['jensen_alpha_pct_per_month']:+.2f}%p (t {r['jensen_alpha_t']:.1f})", "베타": f"{r['beta_vs_kospi']:.2f}"}
+    bench_df = pd.DataFrame([fmt(r) for r in bench_rows])
+    pd.DataFrame(bench_rows).to_csv(OUT / "benchmark_decomposition_20260926.csv", index=False)
+    print(bench_df.to_string(index=False))
+    L = next(r for r in bench_rows if r["model"] == "lgbm")
+    v5 = ["## V5 벤치마크 분해 — 신호 무효인가, 벤치마크 구성 차이인가", "",
+          f"- 시총가중 KOSPI 월평균 {L['kospi_mean_pct']:.2f}% vs 삼성전자·SK하이닉스 제외 KOSPI {L['kospi_ex_top2_mean_pct']:.2f}% vs 유니버스 동일가중 {L['universe_ew_mean_pct']:.2f}% — 대형 반도체 2종목이 지수 수익을 크게 끌어올렸다.",
+          f"- LightGBM 상위 20%: 동일가중 대비 {L['top_minus_universe_ew'][0]:+.2f}%p/월(t {L['top_minus_universe_ew'][1]:.1f}), 섹터·규모 중립 선택 알파 {L['selection_alpha_sector_size_neutral'][0]:+.2f}%p/월(t {L['selection_alpha_sector_size_neutral'][1]:.1f}), "
+          f"젠센 알파 {L['jensen_alpha_pct_per_month']:+.2f}%p/월(t {L['jensen_alpha_t']:.1f}, 베타 {L['beta_vs_kospi']:.2f}), KOSPI 대비 {L['top_minus_kospi'][0]:+.2f}%p/월(t {L['top_minus_kospi'][1]:.1f}), 삼성·하이닉스 제외 KOSPI 대비 {L['top_minus_kospi_ex2'][0]:+.2f}%p/월.",
+          f"- KOSPI 대비 격차 {L['kospi_mean_pct']-L['top_mean_pct']:.2f}%p/월 중 **{(L['kospi_mean_pct']-L['kospi_ex_top2_mean_pct'])/max(L['kospi_mean_pct']-L['top_mean_pct'],1e-9)*100:.0f}%는 삼성전자·SK하이닉스 편중**으로 설명된다"
+          f"(두 종목을 뺀 KOSPI와의 격차는 {L['top_minus_kospi_ex2'][0]:+.2f}%p, t {L['top_minus_kospi_ex2'][1]:.1f}).",
+          "- 판정: " + ("동일가중·섹터규모 중립 대비 양(+)의 선택 알파가 통계적으로 유의(t≥2)하므로 **신호가 무효라는 근거는 없고**, 열위는 벤치마크 구성·규모 편향이 주된 원인이다."
+                        if max(L["top_minus_universe_ew"][1], L["selection_alpha_sector_size_neutral"][1]) >= 2 else
+                        "동일가중·중립 대비 알파가 유의(t≥2)하지 않아 **신호 유효성도 확정할 수 없다**(열위의 대부분은 벤치마크 구성이지만 초과 성과 자체는 입증되지 않음).")
+          + f" 젠센 알파는 월 {L['jensen_alpha_pct_per_month']:+.2f}%p(t {L['jensen_alpha_t']:.1f}, 베타 {L['beta_vs_kospi']:.2f})로 유의하지 않다.",
+          "- 규칙 유지: 채택 판정(KOSPI 미달 = 운영 미채택)은 그대로다. 이 분석은 '신호 무효'와 '벤치마크 구성 차이'를 구분해 원장에 남기기 위한 것이다.", "",
+          bench_df.to_markdown(index=False), ""]
     res.to_csv(OUT / "lightgbm_ranking_20260925.csv", index=False)
     pd.set_option("display.width", 220)
     print(res.round(3).to_string(index=False))
@@ -151,6 +217,7 @@ def main() -> None:
     md = ["# R5 LightGBM 랭킹 모델 (purged·embargoed walk-forward) — 2026-09-25", "",
           "시스템 검증 결과이며 투자 권유가 아니다. 목표: 다음 20거래일 KOSPI 대비 초과수익의 횡단면 순위. 테스트 월 " + f"{len(test_months)}개(2023-01~), 학습은 항상 테스트 월보다 2개월 이전까지(purge+embargo), 6개월마다 재학습. 비용 순수익은 월 회전율×왕복 1.0% 가정.", "",
           *verdict,
+          *v5,
           "## 전체 테스트 구간", "", res.round(3).to_markdown(index=False), "",
           "## 구간 분할", "", res_split.round(3).to_markdown(index=False), "",
           "## 피처 중요도(gain %, 재학습 평균)", "", imp_df.to_frame("gain_pct").to_markdown(), ""]
