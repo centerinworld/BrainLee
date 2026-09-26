@@ -1190,3 +1190,23 @@ alias로 대신 쓰면 합병비율·현금대가를 잃으므로 자동 추론�
 구성 원천 최신일보다 늦은 종료일을 요청하면 `pit_reference_complete=false`로
 연구등급을 차단하도록 추가 보완했다. 2026-09-25 종료 기본 실행에서 이 게이트가
 실제로 동작함을 확인했다. 전용 테스트 17개, 전체 568 passed/54 subtests passed.
+
+### 미국 상폐·합병 후속 처리 (21:30 KST 이후)
+
+`us_security_outcomes`와 엔진 v2 기업행위 변환을 추가했다. 공식 발행사/SEC 근거가
+있는 ABMD($380 현금+미확정 CVR), ATVI($95 현금), CERN($95 현금), DISH(0.350877
+SATS), DRE(0.475 PLD), INFO(0.2838 SPGI), XLNX(1.7234 AMD) 7건을 운영 PG에
+verified로 적재했다. 주말 효력일은 다음 시장 세션에 처리하며 현금·후속주식 전환은
+거래 수수료나 슬리피지를 붙이지 않는다. 미확정 CVR이 실제 보유에 적용되면
+`unmodeled_contingent_value=true`로 연구등급을 차단한다.
+
+Yahoo/yfinance, Nasdaq 공개 API, KIS 해외일봉을 ABMD·ATVI로 직접 대조했으나 모두
+상장폐지 종목 과거 일봉을 반환하지 않았다(KIS는 정상코드+0행; 같은 요청의 AAPL은
+100행). 검토한 공개 GitHub 파이프라인도 delisted backfill은 Tiingo 키를 요구한다.
+이에 `scripts/backfill_us_delisted_prices.py`를 구현했다. Tiingo adjusted OHLCV만
+허용하고 기존 행 보존, 기본 dry-run, `--apply` 시 `data_fix_log`, 트랜잭션, 독립
+재조회 검증을 강제한다. 현재 `.env`에는 `TIINGO_API_KEY`가 없어 실제 37종목 가격
+적재는 실행되지 않았다. 가격이 없으므로 기준 실행의 outcome 적용은 0건이고
+`research_grade=false`가 유지된다.
+
+검증: 미국 전용 21 passed, 전체 정식 스위트 572 passed/54 subtests passed.

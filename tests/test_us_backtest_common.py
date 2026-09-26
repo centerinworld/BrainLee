@@ -4,6 +4,7 @@ import pytest
 
 from us_backtest_common import (
     USBacktestConfig,
+    USSecurityOutcome,
     USBar,
     USTarget,
     _valid_bar,
@@ -163,3 +164,45 @@ def test_incomplete_membership_reference_fails_research_grade_closed():
     assert result.quality["pit_reference_complete"] is False
     assert result.quality["survivorship_bias"] is True
     assert result.quality["research_grade"] is False
+
+
+def test_verified_cash_outcome_closes_position_without_future_price():
+    bars = {
+        "OLD": [bar("OLD", "2026-01-02", 10), bar("OLD", "2026-01-03", 10)],
+        "SPY": [bar("SPY", "2026-01-02", 100), bar("SPY", "2026-01-03", 100),
+                bar("SPY", "2026-01-05", 100),
+                bar("SPY", "2026-01-06", 100)],
+    }
+    cfg = USBacktestConfig("2026-01-02", "2026-01-06", rebalance="daily",
+                           allow_fractional_shares=True, slippage_bps=0)
+    signal = lambda day, _history: [USTarget("OLD", 1.0)] if day == "2026-01-02" else []
+    result = run_us_backtest(
+        bars, cfg, signal,
+        security_outcomes=[USSecurityOutcome("OLD", "2026-01-04", "cash_acquisition", 15.0)],
+    )
+    assert result.quality["security_outcomes_applied"] == 1
+    assert result.quality["open_positions_at_end"] == []
+    assert result.metrics["ending_equity"] == 150000.0
+
+
+def test_verified_stock_outcome_converts_position_at_fixed_ratio():
+    bars = {
+        "OLD": [bar("OLD", "2026-01-02", 10), bar("OLD", "2026-01-03", 10)],
+        "NEW": [bar("NEW", "2026-01-02", 20), bar("NEW", "2026-01-03", 20),
+                bar("NEW", "2026-01-05", 20),
+                bar("NEW", "2026-01-06", 20)],
+    }
+    cfg = USBacktestConfig("2026-01-02", "2026-01-06", rebalance="daily",
+                           benchmark="", allow_fractional_shares=True, slippage_bps=0)
+    signal = lambda day, _history: [USTarget("OLD", 1.0)] if day == "2026-01-02" else []
+    result = run_us_backtest(
+        bars, cfg, signal,
+        security_outcomes=[USSecurityOutcome(
+            "OLD", "2026-01-04", "stock_merger", successor_ticker="NEW",
+            successor_shares_per_share=0.5,
+        )],
+    )
+    assert result.quality["security_outcomes_applied"] == 1
+    assert any(t["ticker"] == "OLD" and t["side"] == "corporate_action" for t in result.trades)
+    assert any(t["ticker"] == "NEW" and t["side"] == "sell" for t in result.trades)
+    assert result.metrics["ending_equity"] == 100000.0

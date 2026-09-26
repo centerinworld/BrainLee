@@ -32,7 +32,7 @@ from typing import Callable, Iterable, Mapping, Sequence
 from db_compat import connect_primary_db
 
 
-ENGINE_VERSION = "us-event-v1"
+ENGINE_VERSION = "us-event-v2"
 PRICE_SOURCE = "us_price_history.adjusted_ohlc_contract_v1"
 
 
@@ -97,6 +97,17 @@ class USPosition:
     entry_date: str
     entry_price: float
     cost_basis: float
+
+
+@dataclass(frozen=True)
+class USSecurityOutcome:
+    ticker: str
+    effective_date: str
+    outcome_type: str
+    cash_per_share: float = 0.0
+    successor_ticker: str | None = None
+    successor_shares_per_share: float = 0.0
+    contingent_value_unmodeled: bool = False
 
 
 @dataclass
@@ -270,6 +281,30 @@ def membership_eligibility(intervals: Sequence[tuple[str, str, str | None]]) -> 
     return eligible
 
 
+def load_us_security_outcomes(tickers: Sequence[str], *, conn=None) -> list[USSecurityOutcome]:
+    if not tickers:
+        return []
+    own = conn is None
+    conn = conn or connect_primary_db(readonly=True, timeout=120)
+    try:
+        placeholders = ",".join("?" for _ in tickers)
+        rows = conn.execute(f"""SELECT ticker,effective_date,outcome_type,cash_per_share,
+                                       successor_ticker,successor_shares_per_share,
+                                       contingent_value_unmodeled
+                                  FROM us_security_outcomes
+                                 WHERE status='verified' AND ticker IN ({placeholders})
+                                 ORDER BY effective_date,ticker""", tuple(tickers)).fetchall()
+        return [USSecurityOutcome(
+            ticker=str(r[0]), effective_date=str(r[1])[:10], outcome_type=str(r[2]),
+            cash_per_share=float(r[3] or 0), successor_ticker=str(r[4]) if r[4] else None,
+            successor_shares_per_share=float(r[5] or 0),
+            contingent_value_unmodeled=bool(r[6]),
+        ) for r in rows]
+    finally:
+        if own:
+            conn.close()
+
+
 def load_available_us_financials(ticker: str, as_of_date: str, *, conn=None) -> list[dict]:
     """Load only statements that were public by ``as_of_date``.
 
@@ -347,6 +382,7 @@ def run_us_backtest(
     bars_by_ticker: Mapping[str, Sequence[USBar]], config: USBacktestConfig,
     signal_fn: SignalFunction, eligibility_fn: EligibilityFunction | None = None,
     *, eligibility_reference_complete: bool = True,
+    security_outcomes: Sequence[USSecurityOutcome] = (),
 ) -> USBacktestResult:
     """Run a long-only, target-weight event simulation.
 
@@ -380,9 +416,47 @@ def run_us_backtest(
     pit_coverage: list[float] = []
     pit_missing_tickers: set[str] = set()
     last_close: dict[str, float] = {}
+    applied_outcomes: list[dict] = []
+    processed_outcomes: set[tuple[str, str]] = set()
+    unmodeled_contingent_value = False
 
     for i, day in enumerate(sessions):
         today = by_day[day]
+
+        # Apply verified merger/delisting consideration before new orders.
+        # No fee or slippage is charged because this is a mandatory security
+        # conversion rather than an exchange order.
+        for outcome in (
+            x for x in security_outcomes
+            if x.effective_date <= day and (x.ticker, x.effective_date) not in processed_outcomes
+        ):
+            processed_outcomes.add((outcome.ticker, outcome.effective_date))
+            position = positions.pop(outcome.ticker, None)
+            if position is None:
+                continue
+            cash_value = position.shares * outcome.cash_per_share
+            cash += cash_value
+            successor_shares = position.shares * outcome.successor_shares_per_share
+            if outcome.successor_ticker and successor_shares > 0:
+                existing = positions.get(outcome.successor_ticker)
+                if existing:
+                    total = existing.shares + successor_shares
+                    positions[outcome.successor_ticker] = USPosition(
+                        outcome.successor_ticker, total, existing.entry_date,
+                        existing.entry_price, existing.cost_basis + position.cost_basis,
+                    )
+                else:
+                    positions[outcome.successor_ticker] = USPosition(
+                        outcome.successor_ticker, successor_shares, position.entry_date,
+                        position.entry_price, position.cost_basis,
+                    )
+            trades.append(USTrade(
+                outcome.ticker, "corporate_action", outcome.effective_date, day,
+                position.shares, outcome.cash_per_share, cash_value, 0.0,
+                outcome.outcome_type,
+            ))
+            unmodeled_contingent_value |= outcome.contingent_value_unmodeled
+            applied_outcomes.append(asdict(outcome))
 
         # Execute yesterday's close signal at today's open.
         if pending is not None:
@@ -513,6 +587,7 @@ def run_us_backtest(
         and eligibility_reference_complete
         and (min(pit_coverage) if pit_coverage else 0.0) >= 0.98
         and not large_jumps
+        and not unmodeled_contingent_value
         and rejected_missing_open == 0
         and not open_positions
     )
@@ -547,6 +622,10 @@ def run_us_backtest(
         "large_jump_events": large_jumps[:100],
         "large_jump_count": len(large_jumps),
         "missing_open_rejections": rejected_missing_open,
+        "security_outcomes_loaded": len(security_outcomes),
+        "security_outcomes_applied": len(applied_outcomes),
+        "applied_security_outcomes": applied_outcomes,
+        "unmodeled_contingent_value": unmodeled_contingent_value,
         "open_positions_at_end": open_positions,
         "execution_complete": not open_positions,
         "research_grade": research_grade,
@@ -645,6 +724,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             tickers = sorted({x[0] for x in intervals})
         else:
             tickers = load_current_us_universe(args.index, conn=conn)
+        outcomes = load_us_security_outcomes(tickers, conn=conn)
+        tickers.extend(x.successor_ticker for x in outcomes if x.successor_ticker)
+        tickers = sorted(set(tickers))
         if args.limit:
             tickers = tickers[:args.limit]
         if "SPY" not in tickers:
@@ -666,6 +748,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     result = run_us_backtest(
         bars, config, momentum_signal(args.top), eligible_fn,
         eligibility_reference_complete=reference_complete,
+        security_outcomes=outcomes,
     )
     result.config["strategy"] = f"momentum_{126}d_top{args.top}_ma200"
     result.quality["load"] = load_quality
