@@ -954,3 +954,12 @@ V1(보안 코드) → V2 → V6 → V3 → V4 → V5 → V8(09-28·09-30 확인)
 | `196490` 디에이테크놀로지 | ✅ KRX 공식(pykrx) 9/23 시가 450·고가 473·저가 202·종가 202·거래량 3,277,513이 `price_history`와 정확히 일치 → 가격은 정확, `stock_universe.market_cap` 691억(=정지 중 기준가 6,090원×주식수)만 stale → 22.9억으로 정정(`data_fix_log`), 단위 역전 점검 0건 |
 | **CEO 플랫폼 노출(신규 발견, 심각)** | `api.newsinfo.cloud`가 Access 앱 삭제 후 **무인증 공개(200)**. 관리자 확인이 `role: Literal["admin","ceo","staff"]` **쿼리 파라미터**(요청자가 적는 값, 서버 세션 검증 아님)라 `?role=admin`만으로 `PUT /telegram-settings`(봇 토큰 교체)·`POST/PUT/DELETE /app-users`(관리자 계정)·`/openai-settings`·피드 삭제 등이 가능한 구조(코드 확인, 악용 시험은 하지 않음). 사용자 결정: **Cloudflare Access 재설정**(본인·직원 이메일만 허용, Service Auth·Bypass·국가 조건 금지). 근본 수정(role을 로그인 세션에서 서버 검증)은 CEO 백엔드를 편집 중인 다른 세션의 과제로 남김 |
 
+### 16-7. 잔여 항목 추가 처리 (2026-09-26 오후)
+| 항목 | 처리 |
+|---|---|
+| CEO 백엔드 환경 전환 | ✅ `codex/ceo-briefing-platform/backend/.venv`→`.venv312b`(fastapi 0.141.1·starlette 1.7.0) 링크 전환, 8011 재기동(PID 86404→85381, 사용자 셸에서 띄운 프로세스라 `nohup … uvicorn` 방식으로 동일 재기동), 로컬·공개 /health 200, OpenAPI 작업 135개 전환 전과 동일, `/agentic-code` 200, pip-audit 0건. 롤백=`ln -sfn .venv312 .venv` 후 재기동. **프런트(5500 포트, `newsinfo.cloud` 원본)는 꺼져 있어 502 — Access 재설정 전에는 켜지 않음**(취약한 백엔드 사용 유도 방지) |
+| 연구 venv | ✅ setuptools 84.0.0. 라이선스 확인: vectorbt 1.0.0 = Apache-2.0 + **Commons Clause**(제3자에게 이 소프트웨어 기능이 가치의 대부분인 상품·서비스를 유료 제공(호스팅 포함)하는 것 금지 → 내부 연구용은 무방, 유료 서비스에 탑재 금지·현재 연구 venv에만 존재), quantstats·alphalens-reloaded Apache-2.0, PyPortfolioOpt·LightGBM MIT |
+| 수급 수량 NULL(09-14~18) | 조사 완료 — 수량 컬럼(`inst/frn/ind_net_buy`) 약 2,420종목 결측(정상 ~250), 금액 컬럼은 정상. 사용처: 스크리너 최근 5거래일 수량 합만 영향(창에서 빠지는 09-29에 자동 해소), 텐배거 엔진은 금액 사용. **추정값 채우기 안 함**(amt/close 근사는 오해 소지) |
+| 격리 가격행의 백테스트 노출 | 측정 완료(`scripts/report_quarantine_backtest_exposure_20260926.py`): `backtest_common`이 `price_history`를 직접 12곳에서 읽고 `return_usable`을 거르지 않음(사실). 그러나 선정 실행 청산 거래 14,595건 중 격리 날짜를 지나는 거래는 **33건(0.23%)**, 전략별 최대 low_base_breakout 2.27%·extreme_dd_volume 1.86% → **12곳 조회 수정·전 결과 재기준화는 불필요**, 권고=격리 종목·구간을 신호 후보에서 제외하는 가드(별도 결정) |
+| 종목 상세 기업행위 마커 | 이미 구현·연결됨(차트 `actions` prop ← 기존 이벤트 조회). 추가 작업 없음 |
+
