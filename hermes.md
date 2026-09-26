@@ -1157,3 +1157,36 @@ GitHub의 LEAN·bt·vectorbt·backtesting.py·QuantStats를 검토했다. LEAN�
 
 검증은 전용 테스트 10개와 전체 정식 스위트 **561 passed, 54 subtests passed**다.
 운영 가격·재무 원장은 수정하지 않았고 전체 기준 실행도 읽기 전용으로 수행했다.
+
+## Codex 미국 PIT 유니버스·티커 연속성 후속 (2026-09-26 21시대 KST)
+
+공개 재구성 S&P 500 이력(`fja05680/sp500`) 2,720개 스냅샷
+(1996-01-02~2026-08-18, SHA-256
+`36326709d46d6cd25834de5df457b16f5f96fad3a06b9beac28f7b88aa0b0d54`)을
+`us_index_membership_intervals` 1,262구간과 `us_index_constituent_events` 1,534건으로
+적재했다. `scripts/sync_us_backtest_reference.py`는 기본 dry-run이고 `--apply`만 트랜잭션
+교체·독립 건수 재조회를 수행하며, 원천 URL·해시·시각·상태를
+`us_reference_source_runs`에 남긴다. 이 자료는 공식 S&P 라이선스 피드가 아니라
+공개 보조자료이므로 품질 상태는 `public_reconstructed`다.
+
+발행사 또는 SEC 문서로 동일 상장증권의 티커 변경임이 확인된 14건만
+`us_ticker_aliases`에 `verified`로 저장했다(ABC→COR, ANTM→ELV, BLL→BALL,
+FB→META, VIAC→PARA, WLTW→WTW, NLOK→GEN, PKI→RVTY, RE→EG, FLT→CPAY,
+CDAY→DAY, FI→FISV, MMC→MRSH, BK→BNY). 인수·합병 종목은 후속 회사에 연결하지
+않는다. PIT 로더가 이 매핑을 가격키에 적용하며 적용 수를 결과에 기록한다.
+
+운영 PostgreSQL 적용 run은 `usref_2c3004f854e845e0ba51fbfad0c901a0`이다. 동일 기간
+기준선 재실행 결과 최저 가격 커버리지 90.69%→93.07%, 평균 96.10%→96.97%, 결측
+51→37종목으로 개선됐다. 수익률 +166.663%, CAGR 23.7703%, MDD -42.1351%, SPY
++70.7393%였으나 상폐·인수 최종 수익이 아직 없고 종료 보유 5종목도 남아
+`survivorship_bias=true`, `execution_complete=false`, `research_grade=false`다.
+따라서 이는 엔진·데이터 인프라 점검값이며 전략 유효성 결론이 아니다.
+
+다음 필수 작업은 결측 37개 가격의 원천 복원과, 인수·상폐별 현금·주식 교환 조건을
+증거 날짜와 함께 저장하는 `us_security_outcomes` 계층이다. 거래 상대 회사의 가격을
+alias로 대신 쓰면 합병비율·현금대가를 잃으므로 자동 추론하지 않는다. 세부 계약과
+현재 결과는 `docs/us_backtest_engine_20260926.md`에 기록했다.
+
+구성 원천 최신일보다 늦은 종료일을 요청하면 `pit_reference_complete=false`로
+연구등급을 차단하도록 추가 보완했다. 2026-09-25 종료 기본 실행에서 이 게이트가
+실제로 동작함을 확인했다. 전용 테스트 17개, 전체 568 passed/54 subtests passed.

@@ -128,6 +128,7 @@ class USBacktestResult:
 
 
 SignalFunction = Callable[[str, Mapping[str, Sequence[USBar]]], Sequence[USTarget]]
+EligibilityFunction = Callable[[str], set[str]]
 
 
 def _valid_bar(row: Sequence[object]) -> USBar | None:
@@ -214,6 +215,61 @@ def load_current_us_universe(index_name: str = "S&P500", *, conn=None) -> list[s
             conn.close()
 
 
+def load_us_membership_intervals(
+    start_date: str, end_date: str, index_name: str = "S&P500", *, conn=None,
+) -> tuple[list[tuple[str, str, str | None]], dict]:
+    """Load public reconstructed index intervals overlapping the test period."""
+    own = conn is None
+    conn = conn or connect_primary_db(readonly=True, timeout=120)
+    try:
+        rows = [tuple(r) for r in conn.execute(
+            """SELECT COALESCE(a.price_ticker,i.ticker),i.effective_from,i.effective_to
+                 FROM us_index_membership_intervals i
+                 LEFT JOIN us_ticker_aliases a
+                   ON a.old_ticker=i.ticker
+                  AND a.identity_continuity=1 AND a.status='verified'
+                WHERE index_name=? AND effective_from<=?
+                  AND (effective_to IS NULL OR effective_to>?)
+                ORDER BY COALESCE(a.price_ticker,i.ticker),i.effective_from""",
+            (index_name, end_date, start_date),
+        ).fetchall()]
+        meta = conn.execute(
+            """SELECT source,source_hash,first_effective_date,last_effective_date,collected_at
+                 FROM us_reference_source_runs
+                WHERE source='github_fja05680_sp500' AND status='success'
+                ORDER BY collected_at DESC LIMIT 1""").fetchone()
+        if not rows or not meta:
+            raise RuntimeError("US point-in-time membership reference is not loaded")
+        alias_count = conn.execute(
+            """SELECT COUNT(DISTINCT a.old_ticker)
+                 FROM us_index_membership_intervals i
+                 JOIN us_ticker_aliases a ON a.old_ticker=i.ticker
+                  AND a.identity_continuity=1 AND a.status='verified'
+                WHERE i.index_name=? AND i.effective_from<=?
+                  AND (i.effective_to IS NULL OR i.effective_to>?)""",
+            (index_name, end_date, start_date),
+        ).fetchone()[0]
+        return rows, {
+            "source": meta[0], "source_hash": meta[1], "first_date": meta[2],
+            "last_date": meta[3], "collected_at": meta[4],
+            "covers_end": str(meta[3]) >= end_date,
+            "verified_aliases_applied": alias_count,
+        }
+    finally:
+        if own:
+            conn.close()
+
+
+def membership_eligibility(intervals: Sequence[tuple[str, str, str | None]]) -> EligibilityFunction:
+    normalized = [(str(t), str(start)[:10], str(end)[:10] if end else None)
+                  for t, start, end in intervals]
+
+    def eligible(day: str) -> set[str]:
+        return {ticker for ticker, start, end in normalized if start <= day and (end is None or day < end)}
+
+    return eligible
+
+
 def load_available_us_financials(ticker: str, as_of_date: str, *, conn=None) -> list[dict]:
     """Load only statements that were public by ``as_of_date``.
 
@@ -289,7 +345,8 @@ def _metrics(curve: Sequence[dict], trades: Sequence[USTrade], initial_cash: flo
 
 def run_us_backtest(
     bars_by_ticker: Mapping[str, Sequence[USBar]], config: USBacktestConfig,
-    signal_fn: SignalFunction,
+    signal_fn: SignalFunction, eligibility_fn: EligibilityFunction | None = None,
+    *, eligibility_reference_complete: bool = True,
 ) -> USBacktestResult:
     """Run a long-only, target-weight event simulation.
 
@@ -320,6 +377,8 @@ def run_us_backtest(
     curve: list[dict] = []
     rejected_missing_open = 0
     large_jumps: list[dict] = []
+    pit_coverage: list[float] = []
+    pit_missing_tickers: set[str] = set()
     last_close: dict[str, float] = {}
 
     for i, day in enumerate(sessions):
@@ -420,10 +479,16 @@ def run_us_backtest(
         curve.append({"date": day, "equity": round(equity, 6)})
 
         if i < len(sessions) - 1 and _is_rebalance_session(i, sessions, config.rebalance):
+            eligible = eligibility_fn(day) if eligibility_fn else set(histories)
             signal_history = {
                 k: tuple(v) for k, v in histories.items()
-                if not config.benchmark or k != config.benchmark
+                if k in eligible and (not config.benchmark or k != config.benchmark)
+                and v and v[-1].date == day
             }
+            if eligibility_fn:
+                expected = len(eligible - ({config.benchmark} if config.benchmark else set()))
+                pit_coverage.append(len(signal_history) / expected if expected else 0.0)
+                pit_missing_tickers.update(eligible - set(signal_history))
             targets = list(signal_fn(day, signal_history))
             pending = (day, targets)
 
@@ -436,8 +501,17 @@ def run_us_backtest(
         if b.date <= config.end_date
     ]
     fingerprint = hashlib.sha256(json.dumps(fingerprint_payload, separators=(",", ":")).encode()).hexdigest()
+    residual_survivorship_risk = (
+        config.universe_mode != "point_in_time"
+        or eligibility_fn is None
+        or not eligibility_reference_complete
+        or (min(pit_coverage) if pit_coverage else 0.0) < 0.98
+    )
     research_grade = (
         config.universe_mode == "point_in_time"
+        and eligibility_fn is not None
+        and eligibility_reference_complete
+        and (min(pit_coverage) if pit_coverage else 0.0) >= 0.98
         and not large_jumps
         and rejected_missing_open == 0
         and not open_positions
@@ -462,7 +536,13 @@ def run_us_backtest(
         "benchmark": config.benchmark or None,
         "benchmark_available": len(benchmark_bars) >= 2,
         "universe_mode": config.universe_mode,
-        "survivorship_bias": config.universe_mode != "point_in_time",
+        "pit_universe_applied": eligibility_fn is not None,
+        "pit_reference_complete": eligibility_reference_complete if eligibility_fn else None,
+        "pit_price_coverage_min": round(min(pit_coverage), 6) if pit_coverage else None,
+        "pit_price_coverage_mean": round(sum(pit_coverage) / len(pit_coverage), 6) if pit_coverage else None,
+        "pit_missing_ticker_count": len(pit_missing_tickers),
+        "pit_missing_tickers": sorted(pit_missing_tickers)[:500],
+        "survivorship_bias": residual_survivorship_risk,
         "invalid_ohlc_policy": "excluded",
         "large_jump_events": large_jumps[:100],
         "large_jump_count": len(large_jumps),
@@ -553,13 +633,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--index", default="S&P500")
     parser.add_argument("--top", type=int, default=5)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--universe-mode", choices=("pit", "current"), default="pit")
     parser.add_argument("--persist", action="store_true")
     args = parser.parse_args(argv)
     conn = connect_primary_db(readonly=not args.persist, timeout=120)
     try:
-        tickers = load_current_us_universe(args.index, conn=conn)
+        interval_meta = None
+        intervals = None
+        if args.universe_mode == "pit":
+            intervals, interval_meta = load_us_membership_intervals(args.start, args.end, args.index, conn=conn)
+            tickers = sorted({x[0] for x in intervals})
+        else:
+            tickers = load_current_us_universe(args.index, conn=conn)
         if args.limit:
-            tickers = tickers[: args.limit]
+            tickers = tickers[:args.limit]
         if "SPY" not in tickers:
             tickers.append("SPY")
         bars, load_quality = load_us_bars(tickers, args.start, args.end, conn=conn)
@@ -567,11 +654,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         conn.close()
     config = USBacktestConfig(
         start_date=args.start, end_date=args.end, max_positions=args.top,
-        universe_name=args.index, universe_mode="current_membership",
+        universe_name=args.index,
+        universe_mode="point_in_time" if args.universe_mode == "pit" else "current_membership",
     )
-    result = run_us_backtest(bars, config, momentum_signal(args.top))
+    eligible_fn = membership_eligibility(intervals) if intervals is not None else None
+    reference_complete = bool(
+        interval_meta
+        and str(interval_meta["first_date"]) <= args.start
+        and interval_meta["covers_end"]
+    ) if eligible_fn else True
+    result = run_us_backtest(
+        bars, config, momentum_signal(args.top), eligible_fn,
+        eligibility_reference_complete=reference_complete,
+    )
     result.config["strategy"] = f"momentum_{126}d_top{args.top}_ma200"
     result.quality["load"] = load_quality
+    if interval_meta:
+        result.quality["membership_reference"] = interval_meta
     if args.persist:
         persist_us_backtest(result)
     print(json.dumps({

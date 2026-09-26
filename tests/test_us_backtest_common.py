@@ -131,3 +131,35 @@ def test_benchmark_is_measured_but_hidden_from_signal_universe():
     result = run_us_backtest(bars, cfg, lambda _day, history: seen.extend(history) or [])
     assert seen == ["AAA"]
     assert result.metrics["benchmark_return_pct"] == 10.0
+
+
+def test_point_in_time_membership_filters_signal_candidates():
+    bars = {
+        "OLD": [bar("OLD", "2026-01-02", 10), bar("OLD", "2026-01-05", 11)],
+        "NEW": [bar("NEW", "2026-01-02", 20), bar("NEW", "2026-01-05", 21)],
+    }
+    seen = []
+    cfg = USBacktestConfig("2026-01-02", "2026-01-05", universe_mode="point_in_time")
+    result = run_us_backtest(
+        bars, cfg, lambda _day, history: seen.extend(history) or [],
+        lambda day: {"OLD"} if day < "2026-01-05" else {"NEW"},
+    )
+    assert seen == ["OLD"]
+    assert result.quality["pit_universe_applied"] is True
+    assert result.quality["pit_price_coverage_min"] == 1.0
+    assert result.quality["survivorship_bias"] is False
+
+
+def test_incomplete_membership_reference_fails_research_grade_closed():
+    bars = {
+        "AAA": [bar("AAA", "2026-01-02", 10), bar("AAA", "2026-01-05", 11)],
+    }
+    cfg = USBacktestConfig("2026-01-02", "2026-01-05", universe_mode="point_in_time")
+    result = run_us_backtest(
+        bars, cfg, lambda _day, _history: [], lambda _day: {"AAA"},
+        eligibility_reference_complete=False,
+    )
+    assert result.quality["pit_price_coverage_min"] == 1.0
+    assert result.quality["pit_reference_complete"] is False
+    assert result.quality["survivorship_bias"] is True
+    assert result.quality["research_grade"] is False
