@@ -1,6 +1,6 @@
 # API 엔드포인트 목록 (자동 생성)
 
-> `scripts/ops/gen_api_doc.py` 생성 — 2026-09-24 기준 459개 / 그룹 51개. **수동 편집 금지**(서버 기동 후 재실행). 파라미터는 `http://127.0.0.1:8000/docs`.
+> `scripts/ops/gen_api_doc.py` 생성 — 2026-09-26 기준 476개 / 그룹 55개. **수동 편집 금지**(서버 기동 후 재실행). 파라미터는 `http://127.0.0.1:8000/docs`.
 
 ## `/` (1)
 `GET /`
@@ -107,6 +107,9 @@
 ## `/api/portfolio` (11)
 `GET /`, `GET /export/excel`, `POST /import/excel`, `POST /kakao-parse`, `POST /recalculate-avg`, `POST /sync-kis`, `POST /transaction`, `GET /transactions`, `PUT /{stock_code}`, `DELETE /{stock_code}`, `PATCH /{stock_code}/bought-at`
 
+## `/api/portfolio-access` (3)
+`POST /login`, `POST /logout`, `GET /status`
+
 ## `/api/quant-major-indicators` (6)
 `GET /catalog`, `GET /cross-context/{indicator_key}`, `GET /hs-sector-context/{sector_key}`, `GET /series/{indicator_key}`, `GET /stock-context/{stock_code}`, `GET /summary`
 
@@ -116,6 +119,9 @@
 ## `/api/reports` (9)
 `GET /download/{report_id}`, `POST /extract/{report_id}`, `GET /extracts/{stock_code}`, `POST /generate/{stock_code}`, `GET /latest/{stock_code}`, `GET /ready`, `GET /sector/{sector}`, `GET /sectors`, `GET /stock/{stock_code}`
 
+## `/api/research` (4)
+`GET /factor-validation`, `GET /price-integrity`, `GET /quantstats`, `GET /strategy-decay`
+
 ## `/api/search` (1)
 `GET /`
 
@@ -124,6 +130,9 @@
 
 ## `/api/sector-rotation` (8)
 `GET /dashboard-summary`, `GET /flow-signal-validation`, `GET /history/{sector_key}`, `GET /leadership`, `POST /refresh-cache`, `GET /rotation-map`, `GET /scores`, `GET /top-picks/{sector_key}`
+
+## `/api/sector-taxonomy` (5)
+`GET /overview`, `GET /peer-groups`, `GET /stock/{stock_code}`, `GET /stocks`, `GET /tree`
 
 ## `/api/signals` (24)
 `GET /combo-candidates`, `GET /combo-v2`, `GET /config`, `POST /config`, `PUT /config/{config_id}`, `DELETE /config/{config_id}`, `GET /consensus-revisions`, `GET /fin-screener`, `GET /high-profit-candidates`, `GET /kiwoom-conditions`, `POST /manual/{config_id}`, `GET /market`, `GET /market-regime`, `POST /market-regime/briefing`, `GET /market-regime/qa`, `GET /meta`, `GET /overheat-risk`, `GET /stock/{stock_code}`, `GET /trend-candidates`, `GET /trigger-ranking`, `GET /v10-earnings-explosion`, `GET /v11-turnaround`, `GET /v12-sector-megatrend`, `GET /value-candidates`
@@ -136,6 +145,9 @@
 
 ## `/api/strategy-data-lab` (1)
 `GET /overview`
+
+## `/api/task-approvals` (5)
+`POST /approve`, `GET /ledger`, `GET /pending`, `GET /policy`, `POST /revoke`
 
 ## `/api/telegram` (7)
 `GET /channels`, `POST /channels`, `DELETE /channels/{channel_id}`, `POST /collect`, `GET /mentions/daily`, `GET /mentions/monthly`, `GET /mentions/weekly`

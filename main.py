@@ -172,6 +172,7 @@ from routes.tenbagger          import router as _tenbagger_router
 from routes.cherry_screener    import router as _cherry_screener_router
 from routes.sector_rotation    import router as _sector_rotation_router
 from routes.peer_compare       import router as _peer_compare_router
+from routes.sector_taxonomy    import router as _sector_taxonomy_router
 from routes.detailed_analysis  import router as _detailed_analysis_router
 from routes.global_macro       import router as _global_macro_router
 from routes.global_foreign_flow import router as _global_foreign_flow_router
@@ -223,6 +224,7 @@ app.include_router(_consensus_router,       prefix="/api/consensus",      tags=[
 app.include_router(_tenbagger_router,       prefix="/api/tenbagger",      tags=["tenbagger"])
 app.include_router(_sector_rotation_router, prefix="/api/sector-rotation", tags=["sector-rotation"])
 app.include_router(_peer_compare_router, prefix="/api/peer-compare", tags=["peer-compare"])
+app.include_router(_sector_taxonomy_router, prefix="/api/sector-taxonomy", tags=["sector-taxonomy"])
 app.include_router(_detailed_analysis_router, prefix="/api/detailed-analysis", tags=["detailed-analysis"])
 app.include_router(_global_macro_router,      prefix="/api/global-macro",      tags=["global-macro"])
 app.include_router(_global_foreign_flow_router, prefix="/api/global-foreign-flow", tags=["global-foreign-flow"])

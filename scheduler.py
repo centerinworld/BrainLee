@@ -434,6 +434,7 @@ class CollectionScheduler:
             ("시장시그널브리핑", self._loop_market_signal_briefing), # ★ 매일 07:00 시장 5단계 국면 + AI 브리핑
             ("HOT섹터블로그",   self._loop_sector_blog),          # ★ 매일 07:00 블로그 신규 포스트 파싱
             ("섹터지수보완",    self._loop_sector_index_rebuild),  # ★ 매일 18:40 + 19:30 가격히스토리 기반 섹터지수 보완
+            ("종목다중분류",    self._loop_sector_taxonomy),       # ★ 매일 20:10 StockEasy·Kiwoom 업종/테마 + 내부 밸류체인 갱신
             ("ETF수집점검",      self._loop_etf_freshness),          # ★ 매일 21:45 launchd ETF 파이프라인 계약 검증(미실행 시 1회 재시도)
             ("섹터로테이션캐시", self._loop_sector_rotation_cache), # ★ 장중 1시간 + 장마감 기준 주도섹터 캐시
             ("AI주도섹터",      self._loop_ai_leading_sector),    # ★ 매일 07:20 미국 증시 기반 주도 섹터 판독
@@ -2362,6 +2363,26 @@ class CollectionScheduler:
             # 19:30 재시도 — 가격 파이프라인(19:15 백필) 이후 커버리지가 찬 뒤 한 번 더.
             self._wait_until(19, 30, skip_weekend=True)
             _run_job_safe("섹터지수보완", self._job_sector_index_rebuild)
+
+    def _loop_sector_taxonomy(self) -> None:
+        """매일 20:10 — 출처별 다중 분류 스냅샷을 원자적으로 갱신."""
+        self._wait_secs(76)
+        while not self._stop_event.is_set():
+            self._wait_until(20, 10)
+            _run_job_safe("종목다중분류", self._job_sector_taxonomy)
+
+    def _job_sector_taxonomy(self) -> None:
+        script = str(Path(__file__).resolve().parent / "scripts" / "rebuild_sector_taxonomy.py")
+        result = subprocess.run(
+            [sys.executable, script],
+            cwd=str(Path(__file__).resolve().parent),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "분류 갱신 실패")[-1500:])
+        logger.info("[종목다중분류] %s", (result.stdout or "")[-1200:])
 
     @staticmethod
     def _parse_sector_index_payload(stdout: str) -> dict | None:

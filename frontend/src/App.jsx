@@ -46,6 +46,7 @@ const StrategyHub = React.lazy(() => import('./views/StrategyHub'));
 const PriceChart = React.lazy(() => import('./views/PriceChart'));
 const SectorRotationView = React.lazy(() => import('./views/SectorRotationView'));
 const PeerCompareView = React.lazy(() => import('./views/PeerCompareView'));
+const SectorTaxonomyView = React.lazy(() => import('./views/SectorTaxonomyView'));
 const GlobalForeignFlowView = React.lazy(() => import('./views/GlobalForeignFlowView'));
 const QuantMajorIndicatorsView = React.lazy(() => import('./views/QuantMajorIndicatorsView'));
 const DartExcelView = React.lazy(() => import('./views/DartExcelView'));
@@ -12889,6 +12890,7 @@ const NAV_ITEMS = [
   { key: 'tenbagger_proj',   icon: <span style={{fontSize:'14px',lineHeight:1}}>🚀</span>,   label: '텐버거 프로젝트' },
   { key: 'sector_rotation',  icon: <span style={{fontSize:'14px',lineHeight:1}}>🔄</span>,   label: '섹터 로테이션' },
   { key: 'peer_compare',     icon: <span style={{fontSize:'14px',lineHeight:1}}>⚖️</span>,   label: '동종기업 비교' },
+  { key: 'sector_taxonomy',  icon: <span style={{fontSize:'14px',lineHeight:1}}>🧬</span>,   label: '종목 다중분류' },
   { key: 'global_foreign_flow', icon: <span style={{fontSize:'14px',lineHeight:1}}>🌏</span>, label: '외국인 자금흐름' },
   { key: 'dart_excel',      icon: <span style={{fontSize:'14px',lineHeight:1}}>📊</span>,   label: 'DART v22 엑셀' },
   { key: 'dart_contracts',   icon: <span style={{fontSize:'14px',lineHeight:1}}>📋</span>,   label: '수주공시 알림' },
@@ -18576,6 +18578,7 @@ const App = () => {
           {activeTab === 'tenbagger_proj' && <TenbaggerProjectView megatrendView={<MegatrendView setActiveTab={setActiveTab} changeStock={changeStock} />} />}
           {activeTab === 'sector_rotation' && <SectorRotationView />}
           {activeTab === 'peer_compare' && <PeerCompareView />}
+          {activeTab === 'sector_taxonomy' && <SectorTaxonomyView />}
           {activeTab === 'global_foreign_flow' && <GlobalForeignFlowView />}
           {activeTab === 'dart_excel' && <DartExcelView />}
           {activeTab === 'dart_contracts' && <DartContractView />}

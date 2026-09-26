@@ -1,17 +1,24 @@
 from __future__ import annotations
 
-from db_compat import connect_primary_db
 import argparse
 import re
 import sqlite3
+import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 import requests
 
-DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db")
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from db_compat import connect_primary_db
+
+DB_PATH = ROOT / "stock.db"
 URL = "https://stockeasy.intellio.kr/stock-analysis"
+API_URL = "https://stockeasy.intellio.kr/stockdata/api/v1/valuation/data"
 
 ROW_RE = re.compile(
     r'\\\"stockCode\\\":\\\"(\d{6})\\\",\\\"stockName\\\":\\\"([^\\\"]+)\\\",\\\"industry\\\":\\\"([^\\\"]+)\\\",\\\"middleCategory\\\":\\\"([^\\\"]*)\\\"'
@@ -38,6 +45,42 @@ def parse_rows(html: str) -> list[tuple[str, str, str, str]]:
     for code, name, major, mid in rows:
         dedup[(code, name)] = (code, name, major.strip(), (mid or "").strip())
     return list(dedup.values())
+
+
+def fetch_api_rows() -> tuple[list[tuple[str, str, str, str]], str]:
+    """Read the live valuation payload used by StockEasy's own frontend.
+
+    The Next.js page stopped embedding ``stockCode`` rows in September 2026,
+    making the old HTML regex silently return zero records.  Fail closed on a
+    coverage collapse so an empty response can never replace a good snapshot.
+    """
+    response = requests.get(
+        API_URL,
+        timeout=60,
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    data = payload.get("data", {}).get("data")
+    if not payload.get("success") or not isinstance(data, dict):
+        raise RuntimeError("StockEasy valuation API payload shape changed")
+    rows = []
+    for code, item in data.items():
+        if not re.fullmatch(r"[0-9A-Za-z]{6}", str(code)) or not isinstance(item, dict):
+            continue
+        rows.append(
+            (
+                str(code).upper(),
+                str(item.get("name") or "").strip(),
+                str(item.get("대분류") or "").strip(),
+                str(item.get("중분류") or "").strip(),
+            )
+        )
+    if len(rows) < 2000:
+        raise RuntimeError(f"StockEasy coverage collapse: {len(rows)} stocks")
+    raw_date = str(payload.get("data", {}).get("date") or datetime.now().strftime("%Y%m%d"))
+    snapshot_date = datetime.strptime(raw_date[:8], "%Y%m%d").strftime("%Y-%m-%d")
+    return rows, snapshot_date
 
 
 def ensure_tables(conn: sqlite3.Connection) -> None:
@@ -117,19 +160,19 @@ def upsert(conn: sqlite3.Connection, rows: list[tuple[str, str, str, str]], snap
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--snapshot-date", default=datetime.now().strftime("%Y-%m-%d"))
+    ap.add_argument("--snapshot-date", default=None, help="Override API snapshot date (normally unnecessary)")
     args = ap.parse_args()
 
-    html = fetch_html()
-    rows = parse_rows(html)
+    rows, api_snapshot_date = fetch_api_rows()
+    snapshot_date = args.snapshot_date or api_snapshot_date
 
     conn = connect_primary_db(timeout=60)
     try:
-        inserted = upsert(conn, rows, args.snapshot_date)
+        inserted = upsert(conn, rows, snapshot_date)
         major_counter = Counter(r[2] for r in rows if r[2])
         print(
             {
-                "snapshot_date": args.snapshot_date,
+                "snapshot_date": snapshot_date,
                 "stocks": len(rows),
                 "major_sector_count": len(major_counter),
                 "major_top10": major_counter.most_common(10),
@@ -142,4 +185,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
