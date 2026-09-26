@@ -65,6 +65,7 @@ def holding_windows(trades: list[dict], period_end: str) -> list[tuple[str, str,
     open_buys: dict[str, deque[str]] = defaultdict(deque)
     windows = []
     events = []
+    completed_entries: set[tuple[str, str]] = set()
     for trade in trades:
         code = _first_text(trade, "code", "stock_code", "sc", "ticker")
         entry = _first_text(trade, "entry_date", "buy_date")[:10]
@@ -76,6 +77,7 @@ def holding_windows(trades: list[dict], period_end: str) -> list[tuple[str, str,
             exit_date = str(trade["exit"])[:10]
         if len(code) == 6 and entry and exit_date:
             windows.append((code, entry, exit_date))
+            completed_entries.add((code, entry))
             continue
 
         action = str(trade.get("action") or trade.get("side") or "").upper()
@@ -93,6 +95,13 @@ def holding_windows(trades: list[dict], period_end: str) -> list[tuple[str, str,
         if len(code) != 6 or not day:
             continue
         if action == "BUY":
+            # Several legacy ledgers retain both the original BUY event and a
+            # later completed round-trip row for the same entry.  The latter
+            # already defines the real holding window; opening the BUY again
+            # here creates a phantom position through period_end and attaches
+            # months of unrelated suspensions/corporate actions to it.
+            if (code, day) in completed_entries:
+                continue
             open_buys[code].append(day)
         elif action == "SELL" and open_buys[code]:
             windows.append((code, open_buys[code].popleft(), day))

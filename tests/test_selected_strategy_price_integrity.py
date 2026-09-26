@@ -36,6 +36,18 @@ class HoldingWindowNormalizationTest(unittest.TestCase):
             ("051910", "2025-05-01", "2025-06-30"),
         ])
 
+    def test_buy_event_plus_completed_row_is_not_reopened_to_period_end(self):
+        trades = [
+            {"code": "011690", "buy_date": "2020-03-03", "action": "buy"},
+            {
+                "code": "011690", "buy_date": "2020-03-03",
+                "sell_date": "2020-03-17", "reason": "stop",
+            },
+        ]
+        self.assertEqual(holding_windows(trades, "2021-11-30"), [
+            ("011690", "2020-03-03", "2020-03-17"),
+        ])
+
 
 class ContaminationPolicyTest(unittest.TestCase):
     """2026-09-12 policy: zero-tolerance never passed (even v11's 1/483=0.21%

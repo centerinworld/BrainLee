@@ -12,6 +12,28 @@ DB_PATH = Path(__file__).resolve().parent / "stock.db"
 
 _KR_CODE_RE = __import__("re").compile(r"^[0-9A-Z]{6}$")
 
+# KRX KOSPI/KOSDAQ daily reference snapshots do not contain KONEX history.
+# A blanket "pre-reference = ineligible" rule is therefore correct for SPAC
+# predecessor identities, but wrong for verified KONEX-to-KOSDAQ transfers.
+# Keep this list evidence-based and deliberately small; a price series alone
+# is never enough to admit an interval.
+_VERIFIED_KONEX_INTERVALS = (
+    {
+        "stock_code": "126340",
+        "effective_from": "2013-07-01",
+        "effective_to": "2020-09-23",
+        "stock_name": "비나텍",
+        "source_note": "KRX KIND 공시: 2013-07-01 KONEX 공개, 2020-09-23 KOSDAQ 이전상장",
+    },
+    {
+        "stock_code": "107640",
+        "effective_from": "2013-12-10",
+        "effective_to": "2024-06-24",
+        "stock_name": "한중엔시에스",
+        "source_note": "KRX KIND 공시: 2013-12-10 KONEX 상장, 2024-06-24 KOSDAQ 이전상장",
+    },
+)
+
 
 def is_kr_equity_code(code: object) -> bool:
     """True only for the exact six-char KR security-code shape.
@@ -91,6 +113,47 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
           ON security_share_history(stock_code, effective_from, effective_to);
         """
     )
+
+
+def apply_verified_security_history_overrides(conn: sqlite3.Connection) -> int:
+    """Apply explicit exchange-history evidence missing from the daily API.
+
+    The operation is idempotent.  It replaces only the synthetic
+    pre-official interval for the exact code/transfer boundary and leaves SPAC
+    predecessor intervals fail-closed.
+    """
+    applied = 0
+    for row in _VERIFIED_KONEX_INTERVALS:
+        conn.execute(
+            """DELETE FROM security_master_history
+               WHERE stock_code=? AND effective_to=?
+                 AND interval_quality='pre_official_equity_reference_ineligible'""",
+            (row["stock_code"], row["effective_to"]),
+        )
+        conn.execute(
+            """INSERT INTO security_master_history
+               (stock_code,effective_from,effective_to,stock_name,market,security_type,
+                is_etf_etn,is_tradable,interval_quality,source,source_note)
+               VALUES (?,?,?,?,'KONEX','주권',0,1,
+                       'official_disclosure_verified','KRX_KIND_DISCLOSURE',?)
+               ON CONFLICT(stock_code,effective_from) DO UPDATE SET
+                 effective_to=excluded.effective_to,
+                 stock_name=excluded.stock_name,
+                 market=excluded.market,
+                 security_type=excluded.security_type,
+                 is_etf_etn=excluded.is_etf_etn,
+                 is_tradable=excluded.is_tradable,
+                 interval_quality=excluded.interval_quality,
+                 source=excluded.source,
+                 source_note=excluded.source_note,
+                 updated_at=CURRENT_TIMESTAMP""",
+            (
+                row["stock_code"], row["effective_from"], row["effective_to"],
+                row["stock_name"], row["source_note"],
+            ),
+        )
+        applied += 1
+    return applied
 
 
 def _name_map(conn: sqlite3.Connection) -> dict[str, str]:
@@ -274,6 +337,8 @@ def rebuild_security_master(db_path: Path | str = DB_PATH) -> dict:
                 "현재 종목은 공식 상장일, 비현재 종목은 가격 관측 첫날~마지막날+1 근사",
             ),
         )
+
+    apply_verified_security_history_overrides(conn)
 
     conn.execute("DELETE FROM security_share_history")
     masters = conn.execute(
