@@ -1125,3 +1125,35 @@ v4의 과거 데이터/PIT 문제는 최신 선택 스위트 기준으로 다시
 - 운영 API의 overview/094970 상세/peer-groups 200 응답과 근거 내용을 확인했다.
 - 자동 API 문서 476개/55그룹, DB 문서 310개 정식 테이블로 재생성했다.
 - `safe_restart_backend.sh`로 PID 9818→21069, 고아 프로세스 없음, HTTP 200.
+
+## Codex 미국 전용 백테스트 엔진 (2026-09-26)
+
+한국 시장 전제의 `backtest_common.py`를 재사용하지 않고 `us_backtest_common.py`를
+신설했다. 운영 PostgreSQL 실측은 `us_price_history` 4,045,930행·3,670 ticker,
+2021-05-24~2026-09-25이며 `adj_close` 컬럼은 없다. 실제 수집 경로가 yfinance
+`auto_adjust=True`라 OHLC 전체가 분할·배당 보정 기준이고, NVDA 2024-06 10:1 분할
+경계도 연속 가격으로 확인했다. 미국 재무 78,630행은 SEC 실제 접수 기반
+`avail_date`가 모두 채워져 있으며 엔진은 `avail_date<=signal_date`만 공개한다.
+
+엔진은 D일 종가 신호를 다음 미국 시장 세션 시가에만 체결한다. 같은 날 종가 체결,
+시가 결측 시 종가 대체, 가격 급변만으로 분할 추정은 금지했다. 목표 비중 재조정,
+USD 현금·주당/최소/매도 수수료·슬리피지, 일별 MTM, 데이터 지문, 대형 가격 단절,
+미체결·종료 미청산 품질 플래그와 SPY 벤치마크 비교를 구현했다. 현재 원장에는 SPY가
+없어 기준 실행은 `benchmark_available=false`로 표시되고 초과수익을 산출하지 않는다.
+저장을 요청한 실행만 한국 원장과 분리된 `us_backtest_runs/trades/equity`에 기록한다.
+
+GitHub의 LEAN·bt·vectorbt·backtesting.py·QuantStats를 검토했다. LEAN은 가장
+완전하지만 별도 C#/Docker 데이터 계층이 필요하고, 나머지도 과거 구성종목·상폐
+수익·SEC 가능일을 자동 해결하지 않는다. 따라서 현재 의존성을 늘리지 않고 이들의
+이벤트 순서·비용·성과곡선 원칙만 반영했다. 세부 비교와 사용법은
+`docs/us_backtest_engine_20260926.md`에 기록했다.
+
+기준 모멘텀 전략을 2022-01-03~2026-09-25 현재 S&P 500 전체로 읽기 전용 실행해
+1,187세션과 65만여 유효 OHLC 행을 처리했다. 실행 자체는 완료됐지만 현재 구성종목을
+과거에 소급한 결과이므로 `survivorship_bias=true`, 종료 보유 5종목으로
+`execution_complete=false`, `research_grade=false`가 정확히 표시된다. 이 성과는
+전략 유효성 근거로 사용하지 않는다. 연구 등급의 다음 필수 데이터는 날짜별 지수
+구성 이력, 상장폐지·합병 최종 수익, ticker 변경 이력이다.
+
+검증은 전용 테스트 10개와 전체 정식 스위트 **561 passed, 54 subtests passed**다.
+운영 가격·재무 원장은 수정하지 않았고 전체 기준 실행도 읽기 전용으로 수행했다.
