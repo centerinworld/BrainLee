@@ -445,6 +445,13 @@ Qlib 프레임워크 자체는 7단계(ML 고도화)에서 선택 사항으로 �
     KIS 일별 수집(`_loop_kis_daily`)은 `_run_job_safe`를 거치지 않아 실행 원장·데이터 계약 점검 밖에 있다. 원장 편입을 권장한다.
 15. CEO 플랫폼(8011) `/health` 500(`Dict[str,str]` 응답모델에 중첩 dict)이 남아 있다.
 
+### 10-3. 권장 처리 순서
+P0-1 → P0-2 → P0-3 (스냅샷·밸류에이션 정본화) → P1-7·8 (엔진 곡선 저장) → P1-5 → P1-4 → P1-6 → P2-9~12 (환경 재현성) → P2-14 → P2-13 → P2-15
+
+**§10-4 추가 기록 (2026-09-25)** — aqr_multifactor를 정본(v4) 기준 6개 창으로 재실행(run 이름 `aqr_multifactor v4snap_20260925 …`), 기존 38개 행 이름에 `[look-ahead 오염·폐기 2026-09-25]` 접두. 수익률 변화(구 → 신): 2020-03~2021-11 +98.4%→+55.2%, 2021-12~2022-10 -30.2%→-20.2%, 2022-11~2023-10 -9.5%→-1.7%, 2023-11~2024-12 +31.0%→+5.0%, 2024-06~2025-05 +13.1%→+20.4%, 2025-06~2026-03 +6.7%→+9.1%. 첫 창·2023~24 창의 과대 수익이 look-ahead PER 영향이었음. 생성기: 로지스틱 특성 1/99 클리핑 추가(model_score 0/1 포화 해소), matmul 경고는 numpy 2.2+Accelerate의 무해한 오탐이라 필터.
+
+---
+
 ### 10-4. 처리 결과 (2026-09-25 후속 세션, Claude) — 항목별 상태
 
 | # | 상태 | 내용 |
@@ -480,13 +487,6 @@ INSERT INTO strategy_feature_snapshot (<공통 컬럼>) SELECT <공통 컬럼> F
 COMMIT;
 ```
 교체 전 점검: v4 행수(190,609) ≥ 기존(189,561)의 85%, 최신 월 PER 채움률 ≥ 40%. `scripts/sync_tenbagger_postgres.py`의 `"strategy_feature_snapshot": ("", ())` 항목은 SQLite 브리지의 옛 데이터를 되덮어쓸 수 있으므로 교체 후 그 목록에서 제거할 것. 교체 후 aqr_multifactor(73·256행)·dual_momentum·routes/tenbagger.py·routes/backtest.py의 per/pbr/model_score 사용처와 기존 aqr 결과("look-ahead 오염" 표시)를 점검.
-
-### 10-3. 권장 처리 순서
-P0-1 → P0-2 → P0-3 (스냅샷·밸류에이션 정본화) → P1-7·8 (엔진 곡선 저장) → P1-5 → P1-4 → P1-6 → P2-9~12 (환경 재현성) → P2-14 → P2-13 → P2-15
-
-**§10-4 추가 기록 (2026-09-25)** — aqr_multifactor를 정본(v4) 기준 6개 창으로 재실행(run 이름 `aqr_multifactor v4snap_20260925 …`), 기존 38개 행 이름에 `[look-ahead 오염·폐기 2026-09-25]` 접두. 수익률 변화(구 → 신): 2020-03~2021-11 +98.4%→+55.2%, 2021-12~2022-10 -30.2%→-20.2%, 2022-11~2023-10 -9.5%→-1.7%, 2023-11~2024-12 +31.0%→+5.0%, 2024-06~2025-05 +13.1%→+20.4%, 2025-06~2026-03 +6.7%→+9.1%. 첫 창·2023~24 창의 과대 수익이 look-ahead PER 영향이었음. 생성기: 로지스틱 특성 1/99 클리핑 추가(model_score 0/1 포화 해소), matmul 경고는 numpy 2.2+Accelerate의 무해한 오탐이라 필터.
-
----
 
 ## 11. 2차 적용 점검 (2026-09-25 22:10, Claude) — §10-4 "완료" 주장 실측 + 추가 지시
 
@@ -798,14 +798,142 @@ S0(보안, 사용자 결정) → S1-1(python-multipart·starlette) → S6(커밋
 ### 14-6. 사용자 조치 상태
 | 조치 | 상태 |
 |---|---|
-| shadow A안 적용 | ⏳ 백엔드 재시작 필요(`.env`는 반영됨) |
+| shadow A안 적용 | ✅ 반영 완료(23:52·09-26 09:37 재시작, `VT_SHADOW_STRATEGIES=momentum,peak` 로드 확인). 실제 shadow 기록은 신규 진입 신호가 나와야 확인 가능 |
 | Cloudflare Access 재확인 | ⏳ 실측상 미적용 |
-| 새 스케줄러 잡 적용 | ⏳ 백엔드 재시작 필요 |
-| py312b 전환 | ✅ 완료(사용자 실행: `venv`→`.venvs/py312b` 링크 22:51, 23:46 재시작 프로세스가 py312b 로드 확인). 이후 `cryptography` 48.0.1→50.0.0 추가 적용(임시 환경 시험 후, pytest 525·라우트 474·pip check 통과) — **재시작 후 반영**. 남은 감사 3건: cryptography 구버전 분(재시작 전 프로세스), curl_cffi 0.13.0(yfinance <0.14 요구로 유지) |
+| 새 스케줄러 잡 적용 | ✅ 반영 완료(재시작됨). 추석 연휴로 첫 실행은 09-28(월간 스냅샷은 09-30) |
+| py312b 전환 | ✅ 완료(사용자 실행: `venv`→`.venvs/py312b` 링크 22:51, 23:46 재시작 프로세스가 py312b 로드 확인). 이후 `cryptography` 48.0.1→50.0.0 추가 적용(임시 환경 시험 후, pytest 525·라우트 474·pip check 통과) — 23:52 재시작으로 반영 완료. 남은 감사 1건: curl_cffi 0.13.0(yfinance <0.14 요구로 유지) |
 | R3 플래그 켤지 | ⏳ 사용자 결정(기본 꺼짐) |
 | R6 enforce 여부 | ⏳ 사용자 결정(기본 shadow, 근거 약함) |
-| momentum·peak 원장 오염 수정 | ⏳ 사용자 결정 필요(미러링 경로 수정 범위) |
+| momentum·peak 원장 오염 수정 | ✅ 완료(§16 V6) |
 
 ### 14-7. 커밋
 `620e35d` shadow · `d4c938d` R3 · `f866be9` R4 · `4fc05ae` R5 · `b21f1e8` R2 · `ab00377` R6 · `41845b1` R7 · `572ee57` R8 · `01aa928` R9 · `043f6ef` R1 곡선 신뢰 기준. (푸시 안 함, `research_outputs/*.md·csv`는 .gitignore 대상)
+
+
+---
+
+## 15. 3차 적용 점검 (2026-09-25 23:55, Claude) — §13·§14 실측 + 추가 지시
+
+Cloudflare Access 설정은 사용자 영역이라 제외했다. 이 절도 기록만 한다(코드·DB·설정 미변경).
+
+### 15-1. 실측 확인
+| 항목 | 결과 |
+|---|---|
+| 커밋 | §13·§14 변경이 23개 커밋으로 정리됨. 미커밋은 다른 세션의 ETF 파일·일회성 스크립트 3개뿐 |
+| 서버·환경 | `venv → .venvs/py312b`, 운영 8000 프로세스 **23:52 재시작**, py312b 로드, cryptography 50.0.0. → **§14-6의 "재시작 필요" 3건(shadow A안·새 잡·cryptography)은 이미 반영됨**(문서 갱신 필요) |
+| shadow A안 | `.env` `VT_SHADOW_STRATEGIES=momentum,peak`, 재시작 후 적용 |
+| 스케줄러 | `종가공식검증`·`월간피처스냅샷`(`_DB_WRITE_JOBS` 포함)·`가드사후성과`·`전략감쇠감시`·`데이터계약점검` 등록 확인. 원장상 아직 미실행(추석 휴장) |
+| 보안 게이트 | 외부 무토큰: `/api/portfolio`·`/api/research/*` 401, POST 401 → 동작함 |
+| R1~R9 연구 결론 | 문서 기재와 결과 파일 일치. "채택 0개", "LightGBM 미채택", "위성 0% 권고"는 보수적이고 타당 |
+
+### 15-2. 추가 지시 (우선순위순)
+
+**V1 (P0 보안·코드 측) — 게이트 민감 목록 누락으로 실제 보유 종목이 공개 중**
+- 2026-09-25 23:55 외부 무토큰 GET 결과:
+  - `https://stock.leanguy.cloud/api/realtime/prices` **200** — `holdings`에 **실보유 47종목**(국내 43·미국 4) + `summary`.
+  - `/api/buy-candidates` 200(개인 매수 후보), `/api/trend/holdings` 200(가상 보유 258KB), `/api/us-virtual/positions` 200.
+- 원인: `security_gate.SENSITIVE_GET_PREFIXES`가 5개 경로(portfolio·kis-trading·commands·live-orders·research)뿐이다.
+- 조치(권장): **터널 경유 `/api/*`·`/hs`·`/semiconductor-lab` 요청은 GET까지 전부 토큰을 요구**한다.
+  프론트 `apiToken.js`가 이미 모든 /api 요청에 토큰을 붙이므로 사용자 불편은 없다. 공개가 필요한 GET이 있으면 **허용 목록(allowlist)**으로 예외를 둔다(차단 목록 방식은 신규 엔드포인트마다 누락이 반복된다).
+  테스트에 "터널 헤더 + 무토큰 → /api/realtime/prices 401"을 추가한다.
+- **CEO 플랫폼(`api.newsinfo.cloud` → 8011)은 게이트가 없다.** 외부에서 `/docs` 200, OpenAPI 123개 경로 중 쓰기 54개가 공개돼 있다. 같은 게이트를 적용하고, starlette 0.47.3도 업그레이드한다(§11 S1).
+- LAN 우회(§13-6): `vite preview`의 `host:true`(`*:5173`)를 `127.0.0.1`로 제한한다. cloudflared는 같은 Mac에서 로컬로 접속하므로 영향이 없다. 적용 여부는 사용자 결정.
+
+**V2 (P0 데이터) — TTM PER이 CFS/OFS를 분기별로 섞는다**
+- `scripts/add_valuation_history_per_ttm_20260925.py`와 `build_strategy_research_dataset.py`(스냅샷 TTM)가 **분기마다 독립적으로 "CFS 우선"을 골라** 4개 분기를 더한다.
+  데이터계약점검이 잡은 `cfs_ofs_mixed_ttm` 426/2,793종목(15.25%)은 한 TTM 안에 연결·별도 순이익이 섞인다(CLAUDE.md "CFS/OFS 혼합 역산 금지" 위반). 시총(연결)÷별도 순이익이 되어 PER이 왜곡된다.
+- 조치:
+  - TTM 창(4분기) 단위로 basis를 고정한다: 4개 모두 CFS면 CFS, 아니면 4개 모두 OFS면 OFS, 둘 다 불가하면 NULL.
+  - `per_ttm`·`ttm_net_income`을 재계산(`data_fix_log` 기록)하고 정본 스냅샷을 재생성(월간 잡 또는 수동)한다.
+  - 이후 Alphalens earn_yield를 재실행해 원장을 갱신한다.
+  - `cfs_ofs_mixed_ttm` 점검은 "TTM 소비처가 혼재 창을 쓰는지"(값이 채워진 혼재 창 수)를 기준으로 fail 판정하도록 바꾼다.
+
+**V3 (P1) — `snapshot_lookahead` 점검이 누설이 아니라 정체를 잰다**
+- 현재 지표는 "PER이 전달과 같은 비율"(31/1,558)이다. 이 방식으로는 오늘 발견한 누설을 잡지 못한다.
+- 교체: ① 스냅샷 PER과 **같은 분기** `valuation_history.per` 일치율(누설 지표, 2026-09-25 기준 원본 99%·v4 0%), ② 스냅샷 각 재무 피처의 원천 공시일(`_release_date`) ≤ snapshot_date 위반 건수. ①이 1% 초과면 fail.
+
+**V4 (P1) — 단위 역전 15종목 후속 미처리**
+- `unit_inversion`(15/2,765종목이 5배 이상 어긋남)은 ok 판정이지만 목록·원인이 기록되지 않았다.
+- 조치: 목록을 `data_contract_check_log.detail`에 남기고, 원인(시총 억/원, 수급 백만원, 재무 원/천원)을 분류해 정정한다(`data_fix_log`).
+
+**V5 (P1 연구 해석) — 벤치마크가 대형 반도체 2종목에 지배된다**
+- R1·R2·R5가 "KOSPI 대비 열위"로 결론 냈다. 그런데 2024~26 KOSPI(시총가중)는 삼성전자·SK하이닉스 비중이 매우 커서, 중소형·저변동성 편향 포트폴리오는 신호와 무관하게 불리하다.
+- R5 LightGBM은 IC 0.159(양호)인데 롱온리 상위 20%는 월 -1.6%p다. 이는 신호 부재보다 **베타·규모·섹터 편향**일 가능성을 먼저 배제해야 한다.
+- 조치: 모든 채택 평가에 보조 벤치마크를 추가한다.
+  - ① 유니버스 동일가중
+  - ② KOSPI200 동일가중 또는 상위 2종목 제외
+  - ③ 회귀 기반 알파(젠센 알파, 베타 조정)와 섹터(`sector_large`)·규모 중립 포트폴리오 성과
+- 판정 규칙은 유지한다(KOSPI 미달 = 운영 미채택). 다만 "신호 무효"와 "벤치마크 구성 차이"를 구분해 원장에 기록한다.
+
+**V6 (P1 데이터) — 가상 원장 오염의 원인 수정**
+- §14-4: `momentum`·`peak` 현금 계좌가 매수 없이 매도 대금만 입금돼 429.9M·178.5M으로 부풀려졌다. `v_gc` 등의 매수가 음수 임시 `holding_id`·빈 종목코드로 기록된다.
+- 조치:
+  - 미러링 경로(StockEasy 동기화 `_upsert_trend_holding`)와 GC 매수 경로(`routes/trend.py`)에서 원장 매수 기록을 실제 `holding_id`·`stock_code`로 남기게 한다.
+  - 오염 계좌는 거래 로그로 재구성한 값으로 정정한다(백업·`data_fix_log`).
+  - 수정 전까지 `virtual_account_equity_daily`의 `excluded` 처리를 유지한다.
+
+**V7 (사용자 결정) — `v_gc` 감쇠 경고**
+- 전략감쇠감시가 `v_gc` 3개월 -25.1%(백테스트 분포 하위 5% = -17.7%)로 경고를 보냈다. R1에서도 불합격이다(표본 n<30이라 A안에서 제외).
+- 선택지:
+  - ① `VT_SHADOW_STRATEGIES`에 `v_gc` 추가(신규 진입만 중단, 보유분 유지)
+  - ② 3개월 추가 관찰
+- 결정은 사용자가 한다.
+
+**V8 (확인) — 첫 거래일(2026-09-28)·월말(09-30) 실행 검증 체크리스트**
+- 09-28 19:30 `종가공식검증`: `price_close_verify_log` 불일치율. 불일치가 있으면 해당 시각 `price_history.created_at`과 수집 원장을 대조해 **원인 수집기를 특정**한다(§11 S7).
+- 09-28 18:00 `KIS일별수집`이 `collection_job_runs`에 success로 남는지 확인한다.
+- 09-28 20:50 `가드사후성과`: momentum·peak 진입이 `guard='shadow_strategy'`로 기록되는지(가격·KOSPI 포함), 실제 `peak_holding` 신규 진입이 0인지 확인한다.
+- 매일 07:10 `데이터계약점검`: V2·V3 수정 전에는 warn이 계속 나올 수 있다.
+- 09-30 20:30 `월간피처스냅샷`:
+  - 2026-09-23 월중 시점이 09-30 월말로 대체되는지 확인한다.
+  - `model_score`가 클리핑 버전(0.07~0.95)으로 바뀌는지 확인한다.
+  - 점검(행수 85%, PER 40%)이 통과하는지 확인한다.
+- 10-01 06:30 `전략감쇠감시` 두 번째 실행.
+- 실행괴리(R7): 진입 역방향 괴리 +0.29%(가정 0.13%, n=19)가 n≥20에서도 유지되면 `_SLIP_TIERS` 상향을 검토한다.
+
+**V9 (문서) — 상태 갱신**
+- §14-6 표를 갱신한다: shadow A안·새 잡·cryptography 50은 23:52 재시작으로 반영 완료.
+- §10-3/§10-4 순서를 정리하고, §10-4 1번 행의 "(이전 기록:)" 옛 설명을 삭제한다.
+
+### 15-3. 처리 순서
+V1(보안 코드) → V2 → V6 → V3 → V4 → V5 → V8(09-28·09-30 확인) → V9 / V7은 사용자 결정
+
+---
+
+## 16. §15 지시(V1~V9) 처리 결과 (2026-09-26, Claude) — §13 형식
+
+### 16-1. 사용자 요청으로 정책이 바뀐 부분 (V1)
+| 항목 | 내용 |
+|---|---|
+| 게이트 정책 | §15 V1은 "터널 경유 `/api` GET까지 전부 토큰"을 권고했고 이를 먼저 적용했으나(`30a5c5f`), 사용자가 "접속할 때마다 토큰을 계속 입력하라고 한다. **수정하거나 데이터를 빼갈 때만** 요구해야 한다"고 정정 → **수정(POST/PUT/PATCH/DELETE) + 민감 GET(보유·계좌·주문·후보·연구·다운로드·내보내기·백업·관리·설정)에만 인증**으로 재개정. 일반 조회는 무토큰. 엄격 모드는 `API_GATE_MODE=strict`로 되돌릴 수 있음(§15 V1 권고안). 트레이드오프: 민감 목록은 명시적 관리라 **새 민감 엔드포인트를 목록에 넣지 않으면 공개**된다(테스트 `test_policy_writes_and_sensitive_reads_only`가 알려진 경로 고정) |
+| Cloudflare Access 로그인 인정 | `CF_ACCESS_TEAM_DOMAIN`·`CF_ACCESS_AUD`가 설정되면 서버가 Access JWT(`Cf-Access-Jwt-Assertion` 헤더 또는 `CF_Authorization` 쿠키)의 RS256 서명·만료·aud·iss를 직접 검증해 토큰 없이 통과(링크 다운로드 포함). `CF_ACCESS_ALLOWED_EMAILS`로 이메일 제한 가능. 검증 테스트 10건(위조·만료·다른 앱·변조 거부). **Access 앱 생성 후 `.env`에 두 값을 넣어야 활성화** |
+| 프런트 토큰 입력 | 원인 = 옛 프런트의 동시 요청마다 입력창, 잘못 저장된 토큰 반복 거부, 저장소 차단. 개선: 입력창 1개 공유, 붙여넣기 정리(`API_WRITE_TOKEN=`·따옴표·공백 제거, 8유형 시험), 거부 사유 안내, 취소 시 10분 무질문, 저장소 차단 시 메모리 유지. 09-26 09:37 재시작·`dist` 재빌드로 반영, 외부 실측(일반 GET 200, 민감 GET·POST 401, 올바른 토큰 200) |
+| CEO 플랫폼(8011) | **코드 미변경**(다른 세션이 `main.py`·세션 인증을 활발히 수정 중). 정적 분석: 쓰기 54개 중 **세션 인증 없는 것 38개** — 위험(`/app-users` 생성·수정·삭제, `/telegram-settings`, `/openai-settings`, `/naver-news-settings`, `/api/agi/*` 제출·트리거, `/api/gemini/register-second-key`)과 공개 의도(`/app-login`, `/requests` 생성)가 섞여 있어 토큰 게이트를 씌우면 로그인 화면이 깨질 수 있음 → **그 세션이 `require_admin_session`을 위험 엔드포인트에 적용**할 것. 임시 방어는 Cloudflare Access(`api.newsinfo.cloud` 별도 앱). starlette 취약점(0.47.3): 새 환경 `codex/ceo-briefing-platform/backend/.venv312b`(fastapi 0.141.1·starlette 1.7.0)를 만들어 자체 테스트 통과·OpenAPI 135작업 동일·pip-audit 0건 확인 — **전환은 `.venv` 링크 변경 + 8011 재시작(사용자)** |
+
+### 16-2. 처리 표
+| # | 상태 | 내용 |
+|---|---|---|
+| V2 | ✅ | TTM PER의 CFS/OFS 혼재 수정: 4분기 창 단위 단일 기준(CFS 4개→CFS, 아니면 OFS 4개→OFS, 아니면 NULL). `valuation_history.ttm_basis` 추가, `per_ttm` 재계산(채움 37,904→35,053; CFS 48,926·OFS 7,036·기준 없음 10,118 창), `data_fix_log` 109. 스냅샷 생성기(`build_strategy_research_dataset.py`)도 동일 규칙, 정본 스냅샷 재생성(190,609행, PER 채움 62.28%). 연구 입력 추출이 옛 v4 스테이징 테이블을 하드코딩해 읽고 있던 결함도 정본 테이블로 수정. Alphalens 재검증: earn_yield 60D IC 0.080→0.076(t 8.1→7.6, 학습 0.065·검증 0.112), 결론 불변, R4·R5·R2 재실행 결론 유지 |
+| V3 | ✅ | `snapshot_lookahead` 점검을 실제 누설 지표로 교체: (a) 스냅샷 PER과 같은 분기 `valuation_history.per` 일치율(옛 스냅샷 100%·새 0.1%로 판별력 확인, 1% 초과 fail), (b) 표본 400행의 공시 시차 위반(0건). `cfs_ofs_mixed_ttm`은 저장된 `per_ttm`이 단일 기준 4분기 합과 일치하는지로 판정(불일치 0, 참고로 최근 4분기 혼재 종목 426/2,793) |
+| V4 | ✅ | 단위 역전 15종목의 **근본 원인 확정**: KRX 일별 잡이 `stock_universe`의 시총·주식수·소속부만 UPDATE하고 종가·기준일은 갱신하지 않아 close/base_date가 09-04에 굳음(2,765행 중 2,497행이 최신 가격과 0.5% 초과 차이). 병합 후 5.0·10.0배(12종목: 진흥기업·SDN·신라섬유 등), 정리매매 급락 0.01~0.03배(카프로 43원·코스나인 1원·코다코 140원). 조치: `scheduler.py` 일별 잡이 close/open/high/low/volume/base_date도 갱신, 일회성 정정 `refresh_stock_universe_price_fields_20260926.py`(2,768행, 백업 `stock_universe_backup_v4_20260926`, `data_fix_log`), 점검이 원인별 분류(stale universe row vs 실제 단위 역전) + `universe_fresh` 신설. 정정 후 14종목 해소, **`196490` 디에이테크놀로지 1종목은 감자(30:1)·유상증자·거래정지(5~9월) 후 재개가(202원 vs 직전 6,090원)의 기준 불일치로 개별 검토 대상(warn)** |
+| V5 | ✅ | 벤치마크 분해(R5·R1): 월평균 KOSPI 2.74% vs 삼성·하이닉스 제외 1.49% vs 동일가중 0.42%. LightGBM 상위 20%(1.10%)의 KOSPI 격차 -1.64%p 중 **76%가 삼성·하이닉스 편중**으로 설명(제외 KOSPI 대비 -0.39%p, t -0.5), 동일가중 대비 +0.68%p(t 1.8), 섹터·규모 중립 선택 알파 +0.66%p(t 2.2), 젠센 알파 +0.64%p(t 1.0, 베타 0.17) → 신호 무효 근거 없음·초과성과도 미확정. R1: 표본 외 CAGR KOSPI 78.4%·제외 KOSPI 42.1%·동일가중 11.5%, 초과수익>0 전략 5개(KOSPI)→11개→18개. **판정 규칙(KOSPI 기준)·결론(채택 0개)은 유지**. 원장 `benchmark_decomposition_20260926` 신규, R1·R5 행 보강 |
+| V6 | ✅ | 원장 오염: 원인 확정 — StockEasy 동기화가 원장 매수·매도를 전혀 기록하지 않는데 청산 API만 매도를 기록해 매수 없는 매도 대금만 입금됨(momentum 429.9M·peak 178.5M). 옛 음수 `holding_id`·빈 종목코드 매수 73건은 `scripts/backfill_virtual_cash_ledger.py`(07월 일회성 백필)의 산물이고 08-14 이후 신규 발생 0건(GC 등 현행 경로는 정상). 조치: (1) `record_trade`가 대응 매수 없는 매도를 거부(`allow_unmatched_sell=True`는 정정 전용), 테스트 2건, (2) StockEasy 동기화가 매수·매도를 원장에 기록(원장 오류가 동기화를 멈추지 않음), (3) 정정 `repair_virtual_ledger_20260926.py`: 옛 매수 73건 종목코드·실제 holding_id 복원, momentum 36건·peak 8건 보정 매수(ref_key `repair_buy:<id>`) 추가 → **momentum 429.9M→72.8M, peak 178.5M→99.0M**(검산: 1억 − 실현손실 1,724만원 − 보유 1,000만원). 백업 `virtual_cash_ledger_backup_v6_20260926`·`virtual_cash_accounts_backup_v6_20260926`, `data_fix_log`. 계좌 평가액 재구성도 holding_id 우선·수량 차선 매칭으로 재작성(19개 계좌 모두 포함, 총평가액 18.83억 vs 초기 19억) |
+| V7 | ⏳ 사용자 결정 | `v_gc` 감쇠 경고(3개월 -25.1%): 신규 진입 shadow 추가(`VT_SHADOW_STRATEGIES`에 `v_gc`) vs 3개월 관찰. LAN 접속 제한(`vite preview`를 127.0.0.1로): 사용자 결정 |
+| V8 | ⏳ 시각 도래 후 | 아래 16-3 체크리스트 |
+| V9 | ✅ | §10-3/§10-4 순서 정정, §14-6 상태 갱신(shadow·새 잡·cryptography 반영 완료, 원장 수정 완료), 본 절 추가 |
+
+### 16-3. 첫 거래일(09-28)·월말(09-30) 실행 검증 체크리스트 (V8)
+- 09-28 18:00 `KIS일별수집`이 `collection_job_runs`에 success, **19:30 `종가공식검증`** → `price_close_verify_log` 불일치율(불일치 시 그 시각 `price_history.created_at`과 수집 원장으로 원인 수집기 특정, §11 S7).
+- 09-28 20:50 `가드사후성과`(가상계좌평가·실행괴리 포함): momentum·peak 신규 진입이 `guard='shadow_strategy'`로 기록(가격·KOSPI)되고 `peak_holding` 신규 진입 0인지, `virtual_account_equity_daily`·`execution_slippage_log` 갱신.
+- 매일 07:10 `데이터계약점검`: 현재 기대 상태 = default_missing ok · cfs_ofs ok · snapshot_lookahead ok · unit_inversion warn(196490 1건) · universe_fresh ok(다음 KRX 일별 잡부터 자동 유지) · date_format ok · close_verify ok.
+- 09-30 20:30 `월간피처스냅샷`: 09-23 월중 시점이 09-30 월말로 대체되는지, `model_score`가 클리핑 버전(0.07~0.95)인지, 점검(85%·PER 40%) 통과, **정본 PER 채움률이 62% 안팎으로 유지**되는지.
+- 10-01 06:30 `전략감쇠감시` 두 번째 실행, 실행괴리 n≥20 도달 시 `_SLIP_TIERS` 상향 검토(현재 진입 역방향 괴리 +0.29% vs 가정 0.13%, n=19).
+
+### 16-4. 사용자 조치 상태
+| 조치 | 상태 |
+|---|---|
+| Cloudflare Access | ⏳ 앱 생성 완료 여부 미확인(09-25 실측: 미적용). 완료 후 `.env`에 `CF_ACCESS_TEAM_DOMAIN`·`CF_ACCESS_AUD` 추가 → 토큰 입력 불필요 |
+| CEO 플랫폼: 위험 쓰기 엔드포인트에 세션 인증, `.venv312b` 전환·8011 재시작 | ⏳ 사용자/다른 세션 |
+| V7 결정(v_gc shadow, LAN 제한) | ⏳ 사용자 |
+| R3 플래그·R6 enforce | ⏳ 사용자(기본 꺼짐/기록 전용) |
 

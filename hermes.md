@@ -978,3 +978,5 @@ created_at='2026-07-12 07:21:53' & date<2019 & marcap과 OHLC 상이한 **827,72
 - (2026-09-25 밤, S5) **"추가 계획 A"와 실제 구현 범위 정정**: 계획 A 1차가 이미 구현·배포돼 있다 — `routes/research_lab.py`(`/api/research/factor-validation`·`quantstats`·`price-integrity`, 읽기 전용), `FactorValidationPanel.jsx`(팩터 IC·이벤트 스터디·QuantStats 표), `PriceIntegrityCard.jsx`(데이터 라우팅 탭 상단). 미구현: 성과 매트릭스 표에 QuantStats 열, 종목 상세 기업행위 타임라인, 텐배거 문구, 시스템 런타임 표시. **검토 전 노출 차단**: 탭은 `localStorage.research_lab_tab='1'`일 때만 표시(가림), `/api/research/*`는 터널 경유 시 `API_WRITE_TOKEN` 필요(`security_gate.py`). 검토 후 플래그·게이트 제거.
 
 - (2026-09-25 밤) §12 R2~R9·shadow A안 처리 완료 — HANDOFF §14. 재시작·Cloudflare Access 재확인·py312b 전환·R3 플래그·momentum/peak 원장 수정 범위가 사용자 결정 대기.
+
+- (2026-09-26) §15 V1~V9 처리 완료 — HANDOFF §16. 남은 결정: Cloudflare Access 앱 확인·`CF_ACCESS_*` 설정, CEO 8011 위험 쓰기 엔드포인트 세션 인증(다른 세션)·`.venv312b` 전환, V7(`v_gc` shadow·LAN 제한).
