@@ -83,8 +83,13 @@ class SecurityGateTests(unittest.TestCase):
         for m, p in (("POST", "/api/anything"), ("DELETE", "/api/portfolio/005930"), ("POST", "/hs/run"), ("GET", "/api/dart-excel/download/abc"),
                      ("GET", "/api/x/export/all"), ("GET", "/api/backup/list"), ("GET", "/api/x/settings"), ("GET", "/openapi.json")):
             self.assertEqual(sg.access_level(m, p), "owner", f"{m} {p}")
-        for p in ("/api/portfolio", "/api/portfolio/summary", "/api/realtime/prices", "/api/kis-trading/account/summary", "/api/live-orders", "/api/commands/status"):
+        for p in ("/api/portfolio", "/api/portfolio/transactions", "/api/realtime/prices", "/api/kis-trading/account/summary", "/api/kis-trading/cash-ledger"):
             self.assertEqual(sg.access_level("GET", p), "viewer", p)
+        # everything else a friend can browse stays public: watchlist/collect status, paper (virtual) trading, risk gates
+        for p in ("/api/commands/watchlist", "/api/commands/collect-status/005930", "/api/kis-trading/paper/positions", "/api/kis-trading/paper/pnl",
+                  "/api/kis-trading/paper/orders", "/api/kis-trading/risk-gates/recent", "/api/kis-trading/status", "/api/kis-trading/orders/lifecycle"):
+            self.assertEqual(sg.access_level("GET", p), "public", p)
+        self.assertEqual(sg.access_level("GET", "/api/portfolio/export/excel"), "owner")       # 내보내기는 비밀번호로 열리지 않는다
         for m, p in (("GET", "/api/market-regime"), ("GET", "/api/buy-candidates"), ("GET", "/api/trend/holdings"), ("GET", "/api/research/quantstats"),
                      ("GET", "/api/tenbagger/empirical-scoreboard"), ("GET", "/api/cash-conversion-signals/top"), ("GET", "/"), ("GET", "/assets/index-abc.js"),
                      ("OPTIONS", "/api/portfolio"), ("POST", "/static/x"), ("POST", "/api/portfolio-access/login"), ("GET", "/api/portfolio-access/status")):

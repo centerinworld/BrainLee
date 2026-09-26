@@ -5,7 +5,7 @@
 
 접근 단계 (터널 = Cloudflare가 붙이는 `Cf-Connecting-Ip`/`X-Forwarded-For`/`Cf-Ray` 헤더가 있는 요청만 검사, 서버 내부·스케줄러·스크립트의 로컬 호출은 무영향)
   · public : 일반 조회(시세·랭킹·차트·전략 화면 등) — 인증 없음. 대량 수집 방지용으로 IP당 분당 요청 수만 제한(API_RATE_LIMIT_PER_MIN, 기본 300, 0=끔).
-  · viewer : 계좌현황 계열 GET(VIEWER_GET_PREFIXES) — **서버가 확인한 계좌현황 비밀번호**로 발급한 열람 쿠키(`pf_view`, 12시간) 또는 관리자 자격이 필요.
+  · viewer : 계좌현황 GET(VIEWER_GET_PREFIXES: 보유·거래내역·보유종목 시세·실계좌 요약·현금원장) — **서버가 확인한 계좌현황 비밀번호**로 발급한 열람 쿠키(`pf_view`, 12시간) 또는 관리자 자격이 필요.
              (로그인은 POST /api/portfolio-access/login. 친구는 지금처럼 비밀번호만 입력하면 되고 토큰은 묻지 않는다.)
   · public write: 일반 사용자 기능인 안전한 쓰기(종목 검색·분석 요청, 텍스트 파싱)는 PUBLIC_WRITE_PATTERNS 허용 목록에만 열고 IP당 분당 30회로 제한한다
              (환경변수 API_PUBLIC_WRITE_PATTERNS=쉼표 구분 정규식으로 조정). 나머지 쓰기는 전부 owner.
@@ -35,8 +35,8 @@ WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 API_PREFIXES = ("/api", "/hs", "/semiconductor-lab")
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
 PUBLIC_PREFIXES = ("/api/portfolio-access/",)          # 열람 로그인·상태 — 자체 검증
-# 계좌현황 계열(실보유·계좌·주문·운영 명령) — 서버 검증 비밀번호 쿠키 필요
-VIEWER_GET_PREFIXES = ("/api/portfolio", "/api/realtime/prices", "/api/kis-trading", "/api/live-orders", "/api/commands")
+# 계좌현황(소유자의 실제 보유·거래·실계좌) — 서버 검증 비밀번호 쿠키 필요. 그 밖의 화면(관심종목·수집 상태·가상매매(paper)·리스크게이트 등)은 모두 공개.
+VIEWER_GET_PREFIXES = ("/api/portfolio", "/api/realtime/prices", "/api/kis-trading/account", "/api/kis-trading/cash-ledger", "/api/live-orders")
 # 반출·관리성 세그먼트가 있는 GET — 관리자만
 OWNER_GET_PATTERN = re.compile(r"/(download|export|backup|admin|settings?|secrets?|tokens?|credentials?)(/|$)", re.IGNORECASE)
 # 일반 사용자가 쓰는 안전한 쓰기(저장·삭제·외부 호출 비용이 거의 없는 요청) — 그 외 쓰기는 모두 관리자 전용
