@@ -963,3 +963,11 @@ V1(보안 코드) → V2 → V6 → V3 → V4 → V5 → V8(09-28·09-30 확인)
 | 격리 가격행의 백테스트 노출 | 측정 완료(`scripts/report_quarantine_backtest_exposure_20260926.py`): `backtest_common`이 `price_history`를 직접 12곳에서 읽고 `return_usable`을 거르지 않음(사실). 그러나 선정 실행 청산 거래 14,595건 중 격리 날짜를 지나는 거래는 **33건(0.23%)**, 전략별 최대 low_base_breakout 2.27%·extreme_dd_volume 1.86% → **12곳 조회 수정·전 결과 재기준화는 불필요**, 권고=격리 종목·구간을 신호 후보에서 제외하는 가드(별도 결정) |
 | 종목 상세 기업행위 마커 | 이미 구현·연결됨(차트 `actions` prop ← 기존 이벤트 조회). 추가 작업 없음 |
 
+
+### 16-8. 2026-09-26 후속: CEO 로그인 · KRX 별칭 · R3/R6 판단 · 점프 재분류
+
+1. **CEO 플랫폼(newsinfo.cloud) 로그인**: `backend/role_gate.py`(순수 ASGI RoleGate — 터널 경유 요청은 세션 필수, `?role=` 은 서버 세션 role 로 덮어씀, `/app-login` 10회/10분 제한), `frontend/ceo-auth.js`(ID/PIN 모달·Bearer 자동 첨부). 8011(uvicorn)·5500(정적)은 nohup 으로 재기동됨(launchd 아님 → 재부팅 시 자동 복구 안 됨). **주의**: 기본 계정 admin/ceo/staff 의 PIN 이 4자리 평문 저장 → 강한 값으로 교체 + 해시 저장 권장(미구현). CEO 저장소 변경은 커밋하지 않음(다른 세션 작업과 혼재).
+2. **KRX 인증**: `.env` 는 `KRX_DATA_ID/PASS` 이고 pykrx 는 `KRX_ID/PW` 를 읽음 → `config.py` 에서 별칭 연결. `import config` 후 pykrx 로그인 성공(ETF 1,175 / 전체 2,870). KRX 는 반복 로그인 시 일시 차단(JSON 파싱 오류)될 수 있음 → 스크립트는 pykrx 를 지연 import.
+3. **R3(회전 규칙)/R6(계좌 낙폭 규칙) 판단(위임받음)**: R3 플래그(`VT_MIN_MCAP_EOK`, `VT_REENTRY_COOLDOWN_DAYS`)는 **기본 off 유지**(학습·검증·급락 3구간 모두 개선한 단일 규칙 없음, 다중검정), R6 는 **shadow 유지**(전 구간 MDD 악화). 실거래 경로 변경 없음.
+4. **`unresolved_active_common` 126건 KRX 교차검증**(`scripts/resolve_unresolved_jumps_krx_20260926.py`, 결과 `research_outputs/unresolved_jumps_krx_20260926.csv`): KRX 원시·수정 종가 모두 점프 43건 → `raw_source_confirmed_jump_review`, 원시만 점프·수정계열 매끈 19건 → `corporate_action_pending_confirmation`(KRX 계수 증거), **우리 값이 KRX 원시와 0.5% 이상 다른 54건과 KRX 무자료 10건은 수동 검토로 남김**(2010–2014 집중, 자동 교정 안 함 — 수정계열 조회 불가로 원인 확정 불가). 잔여 `unresolved_active_common` 64건. `data_fix_log` 기록됨, 가격 데이터·return_usable 변경 없음.
+5. **미처리(다음)**: 일일 미설명 점프 점검을 data_contract_audit 에 추가, 종가 이전 봉 수집 원인 확인(9/28 검증 결과 필요), US 결측 재수집 모드, 컨센서스 이력 백필 타당성, 텐배거 기준선 문구(v4 수치) 정정, 09-30 월간 스냅샷 교체·10-01 감쇠 감시 확인.

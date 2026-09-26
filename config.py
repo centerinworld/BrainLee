@@ -89,6 +89,14 @@ KIS_ACCOUNT_NO   = _require_env("KIS_ACCOUNT_NO")
 KIS_ACCOUNT_PROD = os.getenv("KIS_ACCOUNT_PROD", "01")
 KIS_RATE_LIMIT_SECS = float(os.getenv("KIS_RATE_LIMIT_SECS", "1.05"))
 
+# ── pykrx 로그인 연결 (2026-09-26) ─────────────────────────────────────────
+# pykrx 1.2.9는 임포트 시점에 환경변수 KRX_ID / KRX_PW로 KRX(data.krx.co.kr)에 로그인한다. 이 프로젝트는 같은 계정을 KRX_DATA_ID / KRX_DATA_PASS 이름으로 .env에 두므로,
+# 프로세스 환경에서만 이름을 연결한다(.env에 비밀번호를 중복 저장하지 않는다). 명시적으로 KRX_ID/KRX_PW가 이미 있으면 그대로 둔다. pykrx보다 먼저 config를 임포트해야 한다.
+if os.environ.get("KRX_DATA_ID") and not os.environ.get("KRX_ID"):
+    os.environ["KRX_ID"] = os.environ["KRX_DATA_ID"]
+if (os.environ.get("KRX_DATA_PASS") or os.environ.get("KRX_DATA_PW")) and not os.environ.get("KRX_PW"):
+    os.environ["KRX_PW"] = os.environ.get("KRX_DATA_PASS") or os.environ.get("KRX_DATA_PW", "")
+
 # 지수 코드 (config에서 override 가능)
 KIS_INDEX_KOSPI  = os.getenv("KIS_INDEX_KOSPI",  "0001")
 KIS_INDEX_KOSDAQ = os.getenv("KIS_INDEX_KOSDAQ", "1001")
