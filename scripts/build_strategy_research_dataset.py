@@ -345,7 +345,8 @@ def build_strategy_research_dataset(
     if price.empty:
         raise RuntimeError("price_history source is empty")
 
-    ttm_q: dict[str, pd.DataFrame] = {}
+    ttm_q: dict[str, dict[str, pd.DataFrame]] = {}
+    ttm_pref: dict[str, pd.DataFrame] = {}
     if ttm_valuation:
         # 2026-09-24: valuation_history.per is price/quarterly-EPS for Q1-Q3 rows but price/annual-EPS for Q4 rows (Samsung
         # 2025Q3 per 52.15 vs Q4 15.7) and is frozen at the period-end price, so it is neither comparable across quarters nor
@@ -355,13 +356,18 @@ def build_strategy_research_dataset(
         fd = pd.read_sql_query(text(
             "SELECT stock_code, year, quarter, report_type, net_income, bps FROM financial_data "
             "WHERE is_annual = false AND quarter BETWEEN 1 AND 4 AND year >= 2017 AND net_income IS NOT NULL"), engine)
-        fd["prio"] = (fd.report_type != "CFS").astype(int)   # prefer consolidated
-        fd = fd.sort_values(["stock_code", "year", "quarter", "prio"]).drop_duplicates(["stock_code", "year", "quarter"], keep="first")
+        # 2026-09-26 (HANDOFF §15 V2): ONE statement basis per 4-quarter window. The earlier "CFS first per quarter" rule mixed consolidated and separate
+        # quarters inside one TTM for ~15% of stocks (consolidated market cap / partly-separate net income). Now: 4 consecutive CFS quarters -> CFS,
+        # else 4 consecutive OFS quarters -> OFS, else no PER. `ttm_pref` (CFS-first per quarter) is kept only for the latest-bps PBR.
+        fd["basis"] = np.where(fd.report_type == "CFS", "CFS", "OFS")
+        fd = fd.sort_values(["stock_code", "year", "quarter"]).drop_duplicates(["stock_code", "year", "quarter", "basis"], keep="last")
         fd["period_end"] = pd.to_datetime(fd.year.astype(int).astype(str) + "-" + (fd.quarter * 3).astype(int).map("{:02d}".format) + "-01") + pd.offsets.MonthEnd(0)
         fd["avail"] = fd.period_end + pd.to_timedelta(np.where(fd.quarter == 4, 90, 45), unit="D")
         fd["qidx"] = fd.year * 4 + fd.quarter
         for code, g in fd.groupby("stock_code", sort=False):
-            ttm_q[code] = g.sort_values("qidx").reset_index(drop=True)
+            ttm_q[code] = {b: g[g.basis == b].sort_values("qidx").reset_index(drop=True) for b in ("CFS", "OFS")}
+            pref = g.assign(prio=(g.basis != "CFS").astype(int)).sort_values(["qidx", "prio"]).drop_duplicates("qidx", keep="first")
+            ttm_pref[code] = pref.sort_values("qidx").reset_index(drop=True)
     price["date"] = pd.to_datetime(price["date"], format="mixed", errors="coerce")
     valuation["period_end"] = pd.to_datetime(valuation["period_end"], format="mixed", errors="coerce")
     shares["effective_from"] = pd.to_datetime(shares["effective_from"], format="mixed", errors="coerce")
@@ -517,17 +523,22 @@ def build_strategy_research_dataset(
                 per, pbr = np.nan, np.nan
                 q = ttm_q.get(stock_code)
                 if q is not None:
-                    avail_q = q[q.avail <= snapshot_date]
-                    if len(avail_q):
-                        last4 = avail_q.tail(4)
+                    for basis in ("CFS", "OFS"):                      # one basis for the whole window (V2)
+                        av = q[basis][q[basis].avail <= snapshot_date]
+                        last4 = av.tail(4)
                         if len(last4) == 4 and last4.qidx.iloc[-1] - last4.qidx.iloc[0] == 3:   # four consecutive quarters
                             ttm_ni = float(last4.net_income.sum())
                             mcap_won = (share_mcap if pd.notna(share_mcap) else (market_cap if pd.notna(market_cap) else np.nan)) * 100_000_000.0
                             if ttm_ni > 0 and pd.notna(mcap_won):
                                 per = mcap_won / ttm_ni
-                        bps_last = avail_q.bps.iloc[-1]
-                        if pd.notna(bps_last) and bps_last > 0:
-                            pbr = float(row["close"]) / float(bps_last)
+                            break
+                    pref_q = ttm_pref.get(stock_code)
+                    if pref_q is not None:
+                        avail_p = pref_q[pref_q.avail <= snapshot_date]
+                        if len(avail_p):
+                            bps_last = avail_p.bps.iloc[-1]
+                            if pd.notna(bps_last) and bps_last > 0:
+                                pbr = float(row["close"]) / float(bps_last)
             record = {
                 "snapshot_date": snapshot_date.strftime("%Y-%m-%d"),
                 "stock_code": stock_code,

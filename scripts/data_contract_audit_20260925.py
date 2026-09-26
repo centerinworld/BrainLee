@@ -2,8 +2,10 @@
 """HANDOFF §12 R9: daily data-contract audit for the defect types found repeatedly in 2026-09 -> data_contract_check_log (+ Telegram and data_fix_log on FAIL).
 
   default_missing      NEW tables (vs the stored baseline) whose created_at/updated_at columns have no PG DEFAULT (INSERTs that omit them would store NULL)
-  cfs_ofs_mixed_ttm    share of stocks whose latest 4 quarters mix consolidated (CFS) and separate (OFS) statements (TTM built from different bases)
-  snapshot_lookahead   share of stocks whose PER is IDENTICAL in the last two snapshot dates (a quarter-frozen/leaked valuation would repeat exactly; normal 0-2% = halted names; warn >2%, fail >4%)
+  cfs_ofs_mixed_ttm    (V2) valuation_history rows whose stored per_ttm/ttm_net_income does NOT equal the sum of four quarters of ONE basis (ttm_basis); FAIL if any.
+                       Also reported: stocks whose latest 4 quarters mix CFS/OFS (informational; they get no TTM or a single-basis TTM by construction).
+  snapshot_lookahead   (V3) real leakage measures: (a) share of stocks whose snapshot PER equals the SAME-quarter valuation_history.per (the legacy quarter-frozen value; leaked
+                       original 99%, rebuilt v4 0%) - FAIL > 1%; (b) sampled snapshot PERs whose implied TTM only exists in a window not yet filed at snapshot_date - FAIL if any
   unit_inversion       share of stocks where market_cap(억) vs close*shares_issued/1e8 differ by >5x (억/원 unit inversion)
   date_format          rows in the last 30 days violating the expected text-date format of key tables
   close_verify_fresh   the official-close comparison (price_close_verify_log) ran within 5 days and its last run was ok
@@ -46,23 +48,76 @@ def main() -> int:
     results.append(("default_missing", "fail" if new else "ok", float(len(new)), 0.0,
                     json.dumps({"tables": tabs, "new": new}, ensure_ascii=False)))
 
-    # cfs_ofs_mixed_ttm
+    # cfs_ofs_mixed_ttm (V2): consistency of the stored TTM with ONE statement basis
+    fdq = {}
+    for code, y, q, rt, ni in conn.execute("SELECT stock_code,year,quarter,report_type,net_income FROM financial_data "
+                                           "WHERE is_annual IS FALSE AND quarter BETWEEN 1 AND 4 AND net_income IS NOT NULL").fetchall():
+        fdq.setdefault(code, {"CFS": {}, "OFS": {}})["CFS" if rt == "CFS" else "OFS"][int(y) * 4 + int(q)] = float(ni)
+    lastyq = conn.execute("SELECT year, quarter FROM valuation_history WHERE per_ttm IS NOT NULL ORDER BY year DESC, quarter DESC LIMIT 1").fetchone()
+    bad_rows, checked = [], 0
+    for code, y, q, ttm, basis in conn.execute(
+            "SELECT stock_code, year, quarter, ttm_net_income, ttm_basis FROM valuation_history WHERE per_ttm IS NOT NULL AND year >= ?",
+            (int(lastyq[0]) - 1 if lastyq else 2025,)).fetchall():
+        checked += 1
+        k = int(y) * 4 + int(q)
+        qs = fdq.get(code, {}).get(basis or "", {})
+        if not basis or not all((k - i) in qs for i in range(4)) or abs(sum(qs[k - i] for i in range(4)) - float(ttm)) > max(1.0, abs(float(ttm)) * 1e-9):
+            bad_rows.append(code)
     r = conn.execute("""WITH q AS (SELECT stock_code, year*4+quarter AS qi, report_type FROM financial_data
         WHERE is_annual IS FALSE AND quarter BETWEEN 1 AND 4 AND net_income IS NOT NULL),
       pref AS (SELECT stock_code, qi, CASE WHEN bool_or(report_type='CFS') THEN 'CFS' ELSE min(report_type) END AS rt FROM q GROUP BY 1,2),
       lastq AS (SELECT stock_code, qi, rt, ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY qi DESC) rn FROM pref)
       SELECT count(*) FILTER (WHERE mixed), count(*) FROM (SELECT stock_code, count(DISTINCT rt) > 1 AS mixed FROM lastq WHERE rn<=4 GROUP BY 1) s""").fetchone()
-    share = float(r[0]) / max(float(r[1]), 1) * 100
-    results.append(("cfs_ofs_mixed_ttm", "fail" if share > 25 else ("warn" if share > 10 else "ok"), round(share, 2), 25.0,
-                    f"{r[0]}/{r[1]} stocks mix CFS/OFS in the latest 4 quarters"))
+    results.append(("cfs_ofs_mixed_ttm", "fail" if bad_rows else "ok", float(len(bad_rows)), 0.0,
+                    json.dumps({"inconsistent_ttm_rows": len(bad_rows), "checked": checked, "examples": bad_rows[:5],
+                                "info_stocks_mixing_in_latest_4q": f"{r[0]}/{r[1]}"}, ensure_ascii=False)))
 
-    # snapshot_lookahead
-    d2 = [x[0] for x in conn.execute("SELECT DISTINCT snapshot_date FROM strategy_feature_snapshot ORDER BY 1 DESC LIMIT 2").fetchall()]
-    if len(d2) == 2:
-        r = conn.execute("SELECT count(*) FILTER (WHERE a.per = b.per), count(*) FROM strategy_feature_snapshot a JOIN strategy_feature_snapshot b "
-                         "ON a.stock_code=b.stock_code AND a.snapshot_date=? AND b.snapshot_date=? WHERE a.per IS NOT NULL AND b.per IS NOT NULL", (d2[0], d2[1])).fetchone()
+    # snapshot_lookahead (V3)
+    look_detail, look_status, look_value = {}, "ok", 0.0
+    yq = conn.execute("SELECT MAX(snapshot_date) FROM strategy_feature_snapshot WHERE snapshot_date IN "
+                      "(SELECT period_end::text FROM valuation_history WHERE per IS NOT NULL)").fetchone()
+    if yq and yq[0]:
+        r = conn.execute("""SELECT count(*) FILTER (WHERE abs(a.per - v.per) <= abs(v.per) * 1e-4), count(*)
+            FROM strategy_feature_snapshot a JOIN valuation_history v ON v.stock_code=a.stock_code AND v.period_end::text=a.snapshot_date
+            WHERE a.snapshot_date=? AND a.per IS NOT NULL AND v.per IS NOT NULL""", (yq[0],)).fetchone()
         share = float(r[0]) / max(float(r[1]), 1) * 100
-        results.append(("snapshot_lookahead", "fail" if share > 4 else ("warn" if share > 2 else "ok"), round(share, 2), 4.0, f"{r[0]}/{r[1]} identical PER between {d2[1]} and {d2[0]}"))
+        look_detail["same_quarter_match"] = f"{r[0]}/{r[1]} at {yq[0]} ({share:.2f}%)"
+        look_value = share
+        if share > 1:
+            look_status = "fail"
+    import random
+    random.seed(11)
+    sample = conn.execute("""SELECT stock_code, snapshot_date, market_cap_억, per FROM strategy_feature_snapshot
+        WHERE per IS NOT NULL AND market_cap_억 > 0 AND snapshot_date >= ? ORDER BY snapshot_date DESC LIMIT 4000""",
+        ((date.today() - timedelta(days=400)).isoformat(),)).fetchall()
+    sample = random.sample(sample, min(400, len(sample)))
+    viol, tested = [], 0
+    for code, sd, mc, per in sample:
+        implied = float(mc) * 1e8 / float(per)
+        sdt = date.fromisoformat(str(sd)[:10])
+        match_ok = match_future = False
+        for basis, qs in (fdq.get(code) or {}).items():
+            for qi in list(qs):
+                if not all((qi - i) in qs for i in range(4)):
+                    continue
+                if abs(sum(qs[qi - i] for i in range(4)) - implied) > abs(implied) * 0.03:
+                    continue
+                yy, qq = divmod(qi - 1, 4)
+                qq += 1
+                pe = date(yy + (1 if qq == 4 else 0), (qq * 3) % 12 + 1, 1) - timedelta(days=1)
+                avail = pe + timedelta(days=90 if qq == 4 else 45)
+                if avail <= sdt:
+                    match_ok = True
+                else:
+                    match_future = True
+        tested += 1
+        if match_future and not match_ok:
+            viol.append((code, str(sd)[:10]))
+    look_detail["filing_lag_violations"] = f"{len(viol)}/{tested} sampled rows (examples {viol[:3]})"
+    if viol:
+        look_status = "fail"
+        look_value = max(look_value, float(len(viol)))
+    results.append(("snapshot_lookahead", look_status, round(look_value, 2), 1.0, json.dumps(look_detail, ensure_ascii=False)))
 
     # unit_inversion
     r = conn.execute("""SELECT count(*) FILTER (WHERE market_cap*1e8/(close*shares_issued) > 5 OR market_cap*1e8/(close*shares_issued) < 0.2), count(*)
