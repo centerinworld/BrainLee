@@ -53,6 +53,7 @@ VERIFIED_TICKER_ALIASES = (
     ("FI", "FISV", "2025-11-11", "https://investors.fiserv.com/news-releases/news-release-details/fiserv-announces-transfer-stock-exchange-listing-nasdaq"),
     ("MMC", "MRSH", "2026-01-14", "https://www.sec.gov/Archives/edgar/data/62709/000006270926000022/mrsh-20251231.htm"),
     ("BK", "BNY", "2026-05-21", "https://www.bny.com/corporate/global/en/about-us/newsroom/press-release/bny-announces-planned-change-of-stock-ticker-symbol-to-bny-130465.html"),
+    ("PSTG", "P", "2026-04-17", "https://www.everpuredata.com/uk/company/newsroom/press-releases/everpure-to-change-ticker-symbol.html"),
 )
 
 

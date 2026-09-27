@@ -77,9 +77,28 @@ def test_large_discontinuity_is_reported_not_silently_adjusted():
     assert result.quality["research_grade"] is False
 
 
+@pytest.mark.parametrize("close", [13.01, 6.99])
+def test_us_large_jump_gate_uses_explicit_plus_minus_30_percent(close):
+    bars = {"AAA": [bar("AAA", "2026-01-02", 10),
+                    bar("AAA", "2026-01-05", close)]}
+    cfg = USBacktestConfig("2026-01-02", "2026-01-05", max_positions=1,
+                           universe_mode="point_in_time")
+    result = run_us_backtest(bars, cfg, lambda *_: [])
+    assert result.quality["large_jump_count"] == 1
+    assert result.quality["large_jump_bounds"] == {
+        "lower_ratio": 0.70, "upper_ratio": 1.30,
+    }
+
+
 def test_malformed_ohlc_fails_closed():
     assert _valid_bar(("AAA", "2026-01-02", None, 11, 9, 10, 1)) is None
     assert _valid_bar(("AAA", "2026-01-02", 10, 9, 8, 10, 1)) is None
+
+
+def test_machine_epsilon_adjusted_ohlc_is_normalized_not_dropped():
+    row = _valid_bar(("AAA", "2026-01-02", 10.0, 10.999999999999998, 9.0, 11.0, 1))
+    assert row is not None
+    assert row.high == 11.0
 
 
 def test_target_constraints_are_enforced():

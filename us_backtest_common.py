@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from typing import Callable, Iterable, Mapping, Sequence
 
 from db_compat import connect_primary_db
+from us_price_integrity import LOWER_DAILY_RATIO, UPPER_DAILY_RATIO
 
 
 ENGINE_VERSION = "us-event-v2"
@@ -71,7 +72,8 @@ class USBacktestConfig:
     universe_name: str = "explicit"
     universe_mode: str = "point_in_time"
     price_basis: str = "adjusted_ohlc"
-    large_jump_ratio: float = 5.0
+    large_jump_upper_ratio: float = UPPER_DAILY_RATIO
+    large_jump_lower_ratio: float = LOWER_DAILY_RATIO
 
     def __post_init__(self) -> None:
         if self.start_date > self.end_date:
@@ -84,6 +86,8 @@ class USBacktestConfig:
             raise ValueError("unsupported universe_mode")
         if self.price_basis != "adjusted_ohlc":
             raise ValueError("US engine requires the adjusted_ohlc source contract")
+        if self.large_jump_upper_ratio <= 1 or not 0 < self.large_jump_lower_ratio < 1:
+            raise ValueError("large-jump bounds must straddle 1.0")
         for value in (self.slippage_bps, self.commission_per_share,
                       self.minimum_commission, self.sell_notional_fee_bps):
             if value < 0:
@@ -150,8 +154,15 @@ def _valid_bar(row: Sequence[object]) -> USBar | None:
     opn, high, low, close = (float(v) for v in values)
     if not all(math.isfinite(v) and v > 0 for v in (opn, high, low, close)):
         return None
-    if high < max(opn, close) or low > min(opn, close) or high < low:
+    tolerance = max(opn, high, low, close) * 1e-9
+    if (high + tolerance < max(opn, close)
+            or low - tolerance > min(opn, close)
+            or high + tolerance < low):
         return None
+    # yfinance's dividend adjustment can create machine-epsilon inversions.
+    # Normalize those only after the strict material-error test above.
+    high = max(high, opn, close)
+    low = min(low, opn, close)
     return USBar(str(ticker), str(day)[:10], opn, high, low, close, float(volume or 0))
 
 
@@ -251,6 +262,28 @@ def load_us_membership_intervals(
                 ORDER BY collected_at DESC LIMIT 1""").fetchone()
         if not rows or not meta:
             raise RuntimeError("US point-in-time membership reference is not loaded")
+        verified_events: list[tuple[str, str, str]] = []
+        official_as_of = None
+        event_columns = conn.execute(
+            "PRAGMA table_info(us_index_membership_verified_events)"
+        ).fetchall()
+        run_columns = conn.execute(
+            "PRAGMA table_info(us_index_membership_event_runs)"
+        ).fetchall()
+        if event_columns and run_columns:
+            verified_events = [tuple(r) for r in conn.execute(
+                """SELECT ticker,effective_date,action
+                     FROM us_index_membership_verified_events
+                    WHERE index_name=? AND status='verified' AND effective_date<=?
+                    ORDER BY effective_date,action,ticker""",
+                (index_name, end_date),
+            ).fetchall()]
+            official_as_of_row = conn.execute(
+                """SELECT MAX(as_of_date) FROM us_index_membership_event_runs
+                    WHERE index_name=? AND status='success'""", (index_name,)
+            ).fetchone()
+            official_as_of = official_as_of_row[0] if official_as_of_row else None
+        rows = apply_verified_membership_events(rows, verified_events)
         alias_count = conn.execute(
             """SELECT COUNT(DISTINCT a.old_ticker)
                  FROM us_index_membership_intervals i
@@ -262,9 +295,12 @@ def load_us_membership_intervals(
         ).fetchone()[0]
         return rows, {
             "source": meta[0], "source_hash": meta[1], "first_date": meta[2],
-            "last_date": meta[3], "collected_at": meta[4],
-            "covers_end": str(meta[3]) >= end_date,
+            "last_date": max(str(meta[3]), str(official_as_of or "")),
+            "collected_at": meta[4],
+            "covers_end": max(str(meta[3]), str(official_as_of or "")) >= end_date,
             "verified_aliases_applied": alias_count,
+            "verified_official_events_applied": len(verified_events),
+            "official_events_as_of": official_as_of,
         }
     finally:
         if own:
@@ -279,6 +315,27 @@ def membership_eligibility(intervals: Sequence[tuple[str, str, str | None]]) -> 
         return {ticker for ticker, start, end in normalized if start <= day and (end is None or day < end)}
 
     return eligible
+
+
+def apply_verified_membership_events(
+    intervals: Sequence[tuple[str, str, str | None]],
+    events: Sequence[tuple[str, str, str]],
+) -> list[tuple[str, str, str | None]]:
+    """Overlay official add/remove events onto a lagging public reconstruction."""
+    out = [(str(t), str(start)[:10], str(end)[:10] if end else None)
+           for t, start, end in intervals]
+    for ticker, day, action in sorted(events, key=lambda x: (str(x[1]), str(x[2]), str(x[0]))):
+        ticker, day, action = str(ticker), str(day)[:10], str(action).lower()
+        if action == "remove":
+            out = [(t, start, day if t == ticker and start <= day and (end is None or day < end) else end)
+                   for t, start, end in out]
+        elif action == "add":
+            if not any(t == ticker and start <= day and (end is None or day < end)
+                       for t, start, end in out):
+                out.append((ticker, day, None))
+        else:
+            raise ValueError(f"unsupported verified membership action: {action}")
+    return sorted(out, key=lambda x: (x[0], x[1], x[2] or "9999-12-31"))
 
 
 def load_us_security_outcomes(tickers: Sequence[str], *, conn=None) -> list[USSecurityOutcome]:
@@ -535,8 +592,13 @@ def run_us_backtest(
         # Today's close becomes visible only after the open executions.
         for ticker, bar in today.items():
             prev = last_close.get(ticker)
-            if prev and max(bar.close / prev, prev / bar.close) > config.large_jump_ratio:
-                large_jumps.append({"ticker": ticker, "date": day, "ratio": round(bar.close / prev, 6)})
+            ratio = bar.close / prev if prev else None
+            if ratio is not None and (
+                ratio > config.large_jump_upper_ratio
+                or ratio < config.large_jump_lower_ratio
+            ):
+                large_jumps.append({"ticker": ticker, "date": day,
+                                    "ratio": round(ratio, 6)})
             last_close[ticker] = bar.close
             histories.setdefault(ticker, []).append(bar)
 
@@ -621,6 +683,10 @@ def run_us_backtest(
         "invalid_ohlc_policy": "excluded",
         "large_jump_events": large_jumps[:100],
         "large_jump_count": len(large_jumps),
+        "large_jump_bounds": {
+            "lower_ratio": config.large_jump_lower_ratio,
+            "upper_ratio": config.large_jump_upper_ratio,
+        },
         "missing_open_rejections": rejected_missing_open,
         "security_outcomes_loaded": len(security_outcomes),
         "security_outcomes_applied": len(applied_outcomes),

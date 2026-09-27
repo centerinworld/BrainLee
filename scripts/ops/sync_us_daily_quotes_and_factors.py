@@ -29,6 +29,9 @@ sys.path.insert(0, PROJECT_ROOT)
 
 import yfinance as yf
 from db_utils import connect_stock_db
+from us_price_integrity import (
+    USPricePoint, basis_whiplashes, overlap_basis_mismatches, valid_ohlc,
+)
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("sync_us_daily")
@@ -268,6 +271,7 @@ def sync_us_quotes_and_factors(batch_size: int = 100, stale_only: bool = False,
 
     total_batches = math.ceil(len(tickers) / batch_size)
     processed_count = 0
+    integrity_failures: list[dict] = []
     for b_idx in range(total_batches):
         batch_tickers = tickers[b_idx * batch_size: (b_idx + 1) * batch_size]
         logger.info(f"[{b_idx+1}/{total_batches}] 배치 다운로드 중... ({len(batch_tickers)}종목)")
@@ -302,6 +306,7 @@ def sync_us_quotes_and_factors(batch_size: int = 100, stale_only: bool = False,
 
                     # ── OHLCV 적재 ──────────────────────────────
                     rows_to_insert = []
+                    invalid_incoming_ohlc = []
                     for idx, row in df_clean.iterrows():
                         d_str = str(idx)[:10]
                         c_val = _safe_float(row.get("Close"))
@@ -310,9 +315,58 @@ def sync_us_quotes_and_factors(batch_size: int = 100, stale_only: bool = False,
                         h_val = _safe_float(row.get("High"))
                         l_val = _safe_float(row.get("Low"))
                         if c_val and c_val > 0:
+                            if (None in (o_val, h_val, l_val)
+                                    or not valid_ohlc(o_val, h_val, l_val, c_val)):
+                                invalid_incoming_ohlc.append(d_str)
+                                continue
                             rows_to_insert.append((tk, d_str, o_val, h_val, l_val, c_val, v_val))
 
+                    if invalid_incoming_ohlc:
+                        integrity_failures.append({
+                            "ticker": tk,
+                            "reason": "incoming_invalid_ohlc",
+                            "count": len(invalid_incoming_ohlc),
+                            "dates": invalid_incoming_ohlc[:20],
+                        })
+                        logger.error("%s 원천 OHLC 내부 불일치 %s건 차단",
+                                     tk, len(invalid_incoming_ohlc))
+                        continue
+
                     if rows_to_insert:
+                        points = [USPricePoint(row[1], row[5]) for row in rows_to_insert]
+                        whiplashes = basis_whiplashes(points)
+                        first_day, last_day = rows_to_insert[0][1], rows_to_insert[-1][1]
+                        existing = c.execute(
+                            """SELECT date,close FROM us_price_history
+                                WHERE ticker=? AND date BETWEEN ? AND ? AND close>0
+                                ORDER BY date""",
+                            (tk, first_day, last_day),
+                        ).fetchall()
+                        mismatches = overlap_basis_mismatches(
+                            [(row[0], row[1]) for row in existing],
+                            [(row[1], row[5]) for row in rows_to_insert],
+                        )
+                        if mismatches:
+                            integrity_failures.append({
+                                "ticker": tk,
+                                "reason": "stored_adjustment_basis_differs_from_source",
+                                "mismatch_count": len(mismatches),
+                                "sample": mismatches[:10],
+                            })
+                            logger.error(
+                                "%s 조정주가 기준 변경 %s건 차단; 전체이력 감사 복구 필요",
+                                tk, len(mismatches),
+                            )
+                            continue
+
+                        if whiplashes:
+                            # A rapid reversal can be real (for example AIG in
+                            # September 2008).  Same-date agreement with the
+                            # stored series makes it an observed market path,
+                            # not a newly introduced adjustment-basis splice.
+                            logger.warning("%s 큰 변동 후 반전 %s건; 동일날짜 기준 일치로 허용",
+                                           tk, len(whiplashes))
+
                         c.executemany("""
                             INSERT OR REPLACE INTO us_price_history (ticker, date, open, high, low, close, volume)
                             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -510,7 +564,8 @@ def sync_us_quotes_and_factors(batch_size: int = 100, stale_only: bool = False,
             logger.warning(f"배치 {b_idx+1} 처리 중 오류 발생: {ex}")
 
     logger.info(f"미국 종목 OHLCV 및 팩터 적재 완료! 총 {processed_count:,}개 종목 처리됨.")
-    return {"target_count": len(tickers), "processed_count": processed_count, "dry_run": False}
+    return {"target_count": len(tickers), "processed_count": processed_count,
+            "integrity_failures": integrity_failures, "dry_run": False}
 
 
 if __name__ == "__main__":
@@ -527,7 +582,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--dry-run", action="store_true", help="Show the target ticker count without downloading or writing data")
     args = parser.parse_args()
-    sync_us_quotes_and_factors(
+    result = sync_us_quotes_and_factors(
         batch_size=max(1, args.batch_size),
         stale_only=args.stale_only,
         stale_before=args.stale_before,
@@ -536,3 +591,6 @@ if __name__ == "__main__":
         history_period=args.period,
         dry_run=args.dry_run,
     )
+    print(result)
+    if result.get("integrity_failures"):
+        raise SystemExit(2)

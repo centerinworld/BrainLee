@@ -5,7 +5,7 @@ from scripts.sync_us_backtest_reference import (
     derive_intervals,
     parse_snapshots,
 )
-from us_backtest_common import membership_eligibility
+from us_backtest_common import apply_verified_membership_events, membership_eligibility
 
 
 def sample():
@@ -48,5 +48,16 @@ def test_verified_aliases_are_ticker_only_identity_changes():
     assert aliases["FB"][:2] == ("META", "2022-06-09")
     assert aliases["VIAC"][:2] == ("PARA", "2022-02-17")
     assert aliases["PKI"][:2] == ("RVTY", "2023-05-16")
+    assert aliases["PSTG"][:2] == ("P", "2026-04-17")
     assert "ATVI" not in aliases  # acquisition: requires a terminal outcome, not an alias
     assert all(source.startswith("https://") for _, _, source in aliases.values())
+
+
+def test_official_events_overlay_lagging_reconstructed_intervals():
+    result = apply_verified_membership_events(
+        [("OLD", "2020-01-01", None), ("KEEP", "2020-01-01", None)],
+        [("OLD", "2026-09-21", "remove"), ("NEW", "2026-09-21", "add")],
+    )
+    fn = membership_eligibility(result)
+    assert fn("2026-09-18") == {"OLD", "KEEP"}
+    assert fn("2026-09-21") == {"NEW", "KEEP"}

@@ -19,7 +19,8 @@ sys.path.insert(0, str(ROOT))
 
 from db_compat import connect_primary_db
 from us_backtest_common import (
-    USBacktestConfig, USTarget, load_us_bars, run_us_backtest,
+    USBacktestConfig, USTarget, load_us_bars, load_us_membership_intervals,
+    load_us_security_outcomes, membership_eligibility, run_us_backtest,
 )
 
 
@@ -155,15 +156,26 @@ def main() -> int:
     parser.add_argument("--start", default="2022-01-03")
     parser.add_argument("--end", default="2026-09-25")
     parser.add_argument("--top", type=int, default=10)
-    parser.add_argument("--output", default=str(ROOT / "research_outputs/us_minervini_survivors_20260926.json"))
+    parser.add_argument("--universe-mode", choices=("current", "pit"), default="current")
+    parser.add_argument("--output")
     args = parser.parse_args()
     conn = connect_primary_db(readonly=True, timeout=120)
     try:
-        latest = conn.execute("SELECT MAX(date) FROM us_price_history WHERE ticker='SPY'").fetchone()[0]
-        tickers = [str(r[0]) for r in conn.execute("""SELECT DISTINCT m.ticker
-            FROM us_stock_meta m JOIN us_price_history p ON p.ticker=m.ticker
-            WHERE m.index_name='S&P500' GROUP BY m.ticker HAVING MAX(p.date)>=? ORDER BY m.ticker""",
-            (latest,)).fetchall()]
+        interval_meta = None
+        intervals = None
+        if args.universe_mode == "pit":
+            intervals, interval_meta = load_us_membership_intervals(
+                args.start, args.end, "S&P500", conn=conn,
+            )
+            tickers = sorted({x[0] for x in intervals})
+        else:
+            latest = conn.execute("SELECT MAX(date) FROM us_price_history WHERE ticker='SPY'").fetchone()[0]
+            tickers = [str(r[0]) for r in conn.execute("""SELECT DISTINCT m.ticker
+                FROM us_stock_meta m JOIN us_price_history p ON p.ticker=m.ticker
+                WHERE m.index_name='S&P500' GROUP BY m.ticker HAVING MAX(p.date)>=? ORDER BY m.ticker""",
+                (latest,)).fetchall()]
+        outcomes = load_us_security_outcomes(tickers, conn=conn) if intervals else []
+        tickers = sorted(set(tickers) | {x.successor_ticker for x in outcomes if x.successor_ticker})
         financials = load_financials(tickers, conn)
         bars, load_quality = load_us_bars(tickers + ["SPY"], args.start, args.end, conn=conn)
     finally:
@@ -174,25 +186,39 @@ def main() -> int:
         "sepa_vcp": (True, True),
     }
     results = {}
+    eligibility_fn = membership_eligibility(intervals) if intervals else None
+    reference_complete = bool(
+        interval_meta and str(interval_meta["first_date"]) <= args.start
+        and interval_meta["covers_end"]
+    ) if eligibility_fn else True
     for name, (use_sepa, use_vcp) in variants.items():
         config = USBacktestConfig(
             args.start, args.end, max_positions=args.top, rebalance="week_start",
-            universe_name="current_surviving_S&P500", universe_mode="current_membership",
+            universe_name="S&P500",
+            universe_mode="point_in_time" if intervals else "current_membership",
         )
         result = run_us_backtest(
             bars, config, make_signal(
                 financials, bars["SPY"], use_sepa=use_sepa, use_vcp=use_vcp, top_n=args.top,
             ),
+            eligibility_fn,
+            eligibility_reference_complete=reference_complete,
+            security_outcomes=outcomes,
         )
         results[name] = {"metrics": result.metrics, "quality": result.quality,
                          "trade_count": len(result.trades), "data_fingerprint": result.data_fingerprint}
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(), "start": args.start, "end": args.end,
-        "universe": "current surviving S&P500 members with price on latest SPY session",
-        "survivorship_bias": True, "survivor_count": len(tickers), "load_quality": load_quality,
+        "universe": ("point-in-time S&P500 membership" if intervals else
+                     "current surviving S&P500 members with price on latest SPY session"),
+        "survivorship_bias": not bool(intervals and reference_complete),
+        "universe_ticker_count": len(tickers), "load_quality": load_quality,
+        "membership_reference": interval_meta,
         "variants": results,
     }
-    path = Path(args.output)
+    default_name = ("us_minervini_pit_20260927.json" if intervals else
+                    "us_minervini_survivors_20260926.json")
+    path = Path(args.output or (ROOT / "research_outputs" / default_name))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
