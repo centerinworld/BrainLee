@@ -389,7 +389,7 @@ const MarketRadarView = React.memo(({ initialSector = 'semiconductor' } = {}) =>
           <div style={{display:'flex', alignItems:'center', gap:'0.8rem'}}>
             <h2 style={{margin:0, fontSize:'1.05rem', fontWeight:700}}>🛰 섹터 분류</h2>
             <span style={{fontSize:'0.78rem', color:'var(--text-secondary)'}}>
-              글로벌 선행지표 — 해외 대표 기업 시세로 섹터 방향성 포착
+              글로벌 선행지표 — 해외 대표 기업 시세로 섹터 방향성 포착 (지금 어느 섹터·종목이 주도주인지 점수·단계로 판정하려면 <b>섹터 로테이션</b>)
             </span>
           </div>
           <div style={{display:'flex', gap:'0.5rem', alignItems:'center'}}>
