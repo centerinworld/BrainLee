@@ -341,6 +341,19 @@ def _fetch_bench_series(conn: sqlite3.Connection, as_of: str | None = None) -> d
     }
 
 
+def _fetch_ibd_rs_map(conn) -> tuple[dict[str, int], str | None]:
+    """가장 최근 ibd_rs_daily 기준일의 {stock_code: rs_score(1~99)}. 계산 안 된 날은 빈 dict."""
+    try:
+        d = conn.execute("SELECT MAX(date) FROM ibd_rs_daily").fetchone()
+        latest = d[0] if d else None
+        if not latest:
+            return {}, None
+        rows = conn.execute("SELECT stock_code, rs_score FROM ibd_rs_daily WHERE date=?", (latest,)).fetchall()
+        return {str(r["stock_code"]): int(r["rs_score"]) for r in rows}, str(latest)
+    except Exception:
+        return {}, None
+
+
 def _base36(n: int) -> str:
     chars = "0123456789abcdefghijklmnopqrstuvwxyz"
     if n == 0:
@@ -397,6 +410,15 @@ def _compute_rs_dashboard() -> dict:
         major_map, middle_map = _fetch_sector_maps(conn)
         by_code = _fetch_recent_prices(conn, code_meta, 260, as_of=as_of)
         bench = _fetch_bench_series(conn, as_of=as_of)
+        ibd_rs_map, ibd_rs_as_of = _fetch_ibd_rs_map(conn)
+
+        def simple_ret(closes: list[float], n: int) -> float | None:
+            """단순(무보정) n거래일 수익률 — 섹터 로테이션(routes/sector_rotation.py)과 같은 방식."""
+            if len(closes) <= n or not closes[n]:
+                return None
+            return (closes[0] - closes[n]) / closes[n] * 100.0
+
+        kospi_closes = bench.get("KOSPI") or []
 
         def bench_ret(market: str, n: int) -> float:
             arr = bench["KOSPI"] if market == "KOSPI" else bench["KOSDAQ"]
@@ -461,6 +483,29 @@ def _compute_rs_dashboard() -> dict:
             major_list = major_map.get(code) or ["미분류"]
             middle_list = middle_map.get(code) or []
 
+            # ── 5가지 RS 방식 병기(2026-09-27, docs/RS_METHODS_REVIEW_20260927.md) ──────────────────
+            # ② 섹터 로테이션 방식: 무보정 단순수익률 − KOSPI(섹터·시장 무관 고정, routes/sector_rotation.py와 동일 관례). 4주=20거래일, 12주=60거래일(③의 3M과 창이 같음).
+            _s20 = simple_ret(closes, 20)
+            _s60 = simple_ret(closes, 60)
+            _k20 = simple_ret(kospi_closes, 20)
+            _k60 = simple_ret(kospi_closes, 60)
+            sector_style_4w = round(_s20 - _k20, 2) if _s20 is not None and _k20 is not None else None
+            sector_style_12w = round(_s60 - _k60, 2) if _s60 is not None and _k60 is not None else None
+            # ③ 신호등 RS: 3개월 초과수익(무보정, rs_3m_raw)을 signal_engine._calc_rs 와 같은 임계값(+5/0/-5)으로 등급화.
+            if rs_3m_raw > 5: signal_light = "green"
+            elif rs_3m_raw > 0: signal_light = "green"
+            elif rs_3m_raw > -5: signal_light = "yellow"
+            else: signal_light = "red"
+            # ④ Track R(스크리너 0~4점): 1M/3M/6M 초과수익 양전환 개수(signal_logic.V2_RS_* 규칙과 동일).
+            _win_1m, _win_3m, _win_6m = rs_1m_raw > 0, rs_3m_raw > 0, rs_6m_raw > 0
+            if _win_1m and _win_3m and _win_6m: track_r = 4
+            elif _win_3m and _win_6m: track_r = 3
+            elif _win_3m: track_r = 2
+            elif _win_1m: track_r = 1
+            else: track_r = 0
+            # ⑤ IBD RS(O'Neil, 1~99): 별도 일별 집계(ibd_rs_daily) 조인 — 시총 1,000억 미만 등은 그 산식 유니버스 밖이라 없을 수 있음.
+            ibd_rs = ibd_rs_map.get(code)
+
             row = {
                 "stock_code": code,
                 "stock_name": meta["stock_name"],
@@ -479,6 +524,14 @@ def _compute_rs_dashboard() -> dict:
                 "rs_3m_raw": round(rs_3m_raw, 4),
                 "rs_6m_raw": round(rs_6m_raw, 4),
                 "rs_12m_raw": round(rs_12m_raw, 4),
+                "rs_methods": {
+                    "percentile": None,  # ① 종합 RS 백분위 — 아래에서 rs_12m 확정 후 채움
+                    "sector_rotation_4w": sector_style_4w,
+                    "sector_rotation_12w": sector_style_12w,
+                    "signal_light": signal_light,
+                    "track_r": track_r,
+                    "ibd_rs": ibd_rs,
+                },
                 "market_cap": round(meta["market_cap"], 2) if meta["market_cap"] else 0.0,
                 "current_price": round(current, 2),
                 "change_rate": round(change_rate, 2),
@@ -522,6 +575,7 @@ def _compute_rs_dashboard() -> dict:
         for i, row in enumerate(rs_list):
             row["mmt"] = pm[i]
             row["rs"] = p12[i]  # 12M 기본 RS
+            row["rs_methods"]["percentile"] = p12[i]
             mcap = max(float(row.get("market_cap") or 0.0), 1.0)
             
             p_map = {
@@ -622,6 +676,7 @@ def _compute_rs_dashboard() -> dict:
                     "count": len(rs_list),
                     "sector_rs_source_major": sector_rs_source_major,
                     "sector_rs_source_mid": sector_rs_source_mid,
+                    "ibd_rs_as_of": ibd_rs_as_of,
                 },
             },
         }
@@ -818,6 +873,28 @@ def get_rs_dashboard_data():
         }
     except Exception as e:
         return {"success": False, "reason": str(e), "data": {"sector_rs": [], "benchmarks": {}, "metadata": {}}}
+
+
+@router.get("/stock/{code}")
+def get_stock_rs(code: str):
+    """개별 종목 RS(5가지 방식 포함) — 대시보드 캐시를 재사용해 값만 골라 반환(재계산 없음, 국내 종목 상세 페이지용, 2026-09-27)."""
+    try:
+        payload = _cached_or_compute("dashboard_data", _compute_rs_dashboard, OPEN_TTL_SEC, CLOSED_TTL_SEC)
+        data = payload.get("data") or {}
+        row = next((r for r in (data.get("rs_list") or []) if r.get("stock_code") == code), None)
+        if not row:
+            return {"success": True, "data": None, "target_date": data.get("metadata", {}).get("target_date")}
+        return {
+            "success": True,
+            "data": {
+                "rs": row.get("rs"), "rs_1m": row.get("rs_1m"), "rs_3m": row.get("rs_3m"),
+                "rs_6m": row.get("rs_6m"), "rs_12m": row.get("rs_12m"), "mmt": row.get("mmt"),
+                "major_name": row.get("major_name"), "rs_methods": row.get("rs_methods"),
+            },
+            "target_date": data.get("metadata", {}).get("target_date"),
+        }
+    except Exception as e:
+        return {"success": False, "reason": str(e), "data": None}
 
 
 @router.get("/theme-composition")

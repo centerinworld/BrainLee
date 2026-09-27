@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 /**
  * FactorValidationPanel — 전략센터 "🔬 팩터 검증" 탭 (2026-09-25)
  * Alphalens 팩터 IC(학습/검증 분할)와 공시 이벤트 스터디를 읽기 전용으로 보여준다(GET /api/research/factor-validation).
@@ -20,9 +27,9 @@ const EVENT_LABEL = {
 const KIND_LABEL = { raw: '원시', sector_neutral: '섹터중립' };
 
 const fmt = (v, d = 3) => (v == null || Number.isNaN(Number(v)) ? '-' : Number(v).toFixed(d));
-const tColor = (t) => (t == null ? 'inherit' : Math.abs(t) >= 2 ? (t > 0 ? '#34d399' : '#f87171') : 'rgba(255,255,255,0.55)');
+const tColor = (t) => (t == null ? 'inherit' : Math.abs(t) >= 2 ? (t > 0 ? '#047857' : '#dc2626') : 'rgba(15,23,42,0.55)');
 
-const th = { textAlign: 'right', padding: '0.35rem 0.5rem', fontWeight: 600, fontSize: '0.7rem', color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap' };
+const th = { textAlign: 'right', padding: '0.35rem 0.5rem', fontWeight: 600, fontSize: '0.7rem', color: 'rgba(15,23,42,0.88)', whiteSpace: 'nowrap' };
 const td = { textAlign: 'right', padding: '0.3rem 0.5rem', fontSize: '0.75rem', whiteSpace: 'nowrap' };
 
 export default function FactorValidationPanel() {
@@ -37,8 +44,8 @@ export default function FactorValidationPanel() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  if (error) return <div className="glass-panel" style={{ padding: '1rem', color: '#f87171' }}>오류: {error}</div>;
-  if (!data) return <div className="glass-panel" style={{ padding: '1rem', color: 'rgba(255,255,255,0.5)' }}>불러오는 중...</div>;
+  if (error) return <div className="glass-panel" style={{ padding: '1rem', color: '#dc2626' }}>오류: {error}</div>;
+  if (!data) return <div className="glass-panel" style={{ padding: '1rem', color: 'rgba(15,23,42,0.88)' }}>불러오는 중...</div>;
 
   const factors = (data.factors || []).filter((f) => f.horizon === horizon);
   const horizons = [...new Set((data.factors || []).map((f) => f.horizon))];
@@ -46,8 +53,8 @@ export default function FactorValidationPanel() {
 
   return (
     <div className="glass-panel" style={{ padding: '1rem' }}>
-      <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#e2e8f0', marginBottom: '0.3rem' }}>🔬 팩터·이벤트 검증 (Alphalens)</div>
-      <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.55)', lineHeight: 1.6, marginBottom: '0.8rem' }}>
+      <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#1e293b', marginBottom: '0.3rem' }}>🔬 팩터·이벤트 검증 (Alphalens)</div>
+      <div style={{ fontSize: '0.75rem', color: 'rgba(15,23,42,0.88)', lineHeight: 1.6, marginBottom: '0.8rem' }}>
         {(data.notes || []).map((n, i) => <div key={i}>· {n}</div>)}
         <div>· |t| ≥ 2만 색으로 표시합니다. 학습과 검증의 부호가 다르면(부호 유지 ✗) 기간 특이 현상으로 봅니다.</div>
       </div>
@@ -57,9 +64,9 @@ export default function FactorValidationPanel() {
           <button key={h} onClick={() => setHorizon(h)}
             style={{
               padding: '0.25rem 0.65rem', borderRadius: '7px', fontSize: '0.72rem', cursor: 'pointer',
-              border: horizon === h ? '1px solid #f59e0b' : '1px solid var(--glass-border)',
-              background: horizon === h ? 'rgba(245,158,11,0.15)' : 'transparent',
-              color: horizon === h ? '#fbbf24' : 'rgba(255,255,255,0.7)',
+              border: horizon === h ? '1px solid #b45309' : '1px solid var(--glass-border)',
+              background: horizon === h ? 'rgba(217,119,6,0.15)' : 'transparent',
+              color: horizon === h ? '#b45309' : 'rgba(15,23,42,0.88)',
             }}>{h}</button>
         ))}
       </div>
@@ -82,7 +89,7 @@ export default function FactorValidationPanel() {
                 <td style={{ ...td, color: tColor(f.train_t) }}>{fmt(f.train_t, 2)}</td>
                 <td style={td}>{fmt(f.valid_ic)}</td>
                 <td style={{ ...td, color: tColor(f.valid_t) }}>{fmt(f.valid_t, 2)}</td>
-                <td style={{ ...td, color: f.sign_kept ? '#34d399' : '#f87171' }}>{f.sign_kept ? '✓' : '✗'}</td>
+                <td style={{ ...td, color: f.sign_kept ? '#047857' : '#dc2626' }}>{f.sign_kept ? '✓' : '✗'}</td>
               </tr>
             ))}
             {factors.length === 0 && <tr><td colSpan={7} style={{ ...td, textAlign: 'center' }}>데이터 없음</td></tr>}
@@ -90,7 +97,7 @@ export default function FactorValidationPanel() {
         </table>
       </div>
 
-      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#e2e8f0', marginBottom: '0.4rem' }}>📢 공시 이벤트 스터디 (시장 대비 초과수익 %p)</div>
+      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1e293b', marginBottom: '0.4rem' }}>📢 공시 이벤트 스터디 (시장 대비 초과수익 %p)</div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -114,7 +121,7 @@ export default function FactorValidationPanel() {
           </tbody>
         </table>
       </div>
-      <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginTop: '0.6rem' }}>
+      <div style={{ fontSize: '0.7rem', color: 'rgba(15,23,42,0.88)', marginTop: '0.6rem' }}>
         수주·특허는 평균이 소수 종목에 좌우됩니다(중앙값≈0). 공시 익일 진입 기준이며 거래비용은 포함하지 않았습니다.
       </div>
     </div>
@@ -132,8 +139,8 @@ export function QuantStatsPanel() {
   const rows = [...d.items].sort((a, b) => (b.sortino ?? -9) - (a.sortino ?? -9));
   return (
     <div className="glass-panel" style={{ padding: '1rem', marginTop: '0.75rem' }}>
-      <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#e2e8f0', marginBottom: '0.3rem' }}>📈 전략 성과 지표 (QuantStats)</div>
-      <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.55)', lineHeight: 1.6, marginBottom: '0.6rem' }}>
+      <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#1e293b', marginBottom: '0.3rem' }}>📈 전략 성과 지표 (QuantStats)</div>
+      <div style={{ fontSize: '0.75rem', color: 'rgba(15,23,42,0.88)', lineHeight: 1.6, marginBottom: '0.6rem' }}>
         {(d.notes || []).map((n, i) => <div key={i}>· {n}</div>)}
         <div>· KOSPI 대비 알파·베타는 전략 자본곡선 기준입니다. 베타가 낮고 초과수익이 음수면 시장을 이기지 못한 것입니다.</div>
       </div>
@@ -152,8 +159,8 @@ export function QuantStatsPanel() {
                 <td style={td}>{fmt(r.cagr_pct, 1)}</td><td style={td}>{fmt(r.sharpe, 2)}</td><td style={td}>{fmt(r.sortino, 2)}</td>
                 <td style={td}>{fmt(r.max_drawdown_pct, 1)}</td><td style={td}>{fmt(r.alpha_annual_pct, 1)}</td>
                 <td style={td}>{fmt(r.beta, 2)}</td>
-                <td style={{ ...td, color: (r.excess_cagr_pct ?? 0) >= 0 ? '#34d399' : '#f87171' }}>{fmt(r.excess_cagr_pct, 1)}</td>
-                <td style={{ ...td, color: r.engine_periods > 0 && !r.reconstructed_periods ? '#34d399' : '#fbbf24' }}>
+                <td style={{ ...td, color: (r.excess_cagr_pct ?? 0) >= 0 ? '#047857' : '#dc2626' }}>{fmt(r.excess_cagr_pct, 1)}</td>
+                <td style={{ ...td, color: r.engine_periods > 0 && !r.reconstructed_periods ? '#047857' : '#b45309' }}>
                   {r.engine_periods > 0 && !r.reconstructed_periods ? '엔진' : '근사'}
                 </td>
               </tr>

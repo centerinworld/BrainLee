@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React from 'react';
 
 const SectorFollowupView = React.memo(({ API }) => {
@@ -36,7 +43,7 @@ const SectorFollowupView = React.memo(({ API }) => {
   const fmtPct = (v) => {
     if (v == null) return <span style={{color:'var(--text-secondary)'}}>-</span>;
     const sign = v > 0 ? '+' : '';
-    const color = v > 0 ? '#ef4444' : v < 0 ? '#3b82f6' : 'var(--text-secondary)';
+    const color = v > 0 ? '#dc2626' : v < 0 ? '#2563eb' : 'var(--text-secondary)';
     return <span style={{color, fontWeight:600}}>{sign}{v.toFixed(1)}%</span>;
   };
 
@@ -56,7 +63,7 @@ const SectorFollowupView = React.memo(({ API }) => {
   const thStyle = { padding:'0.45rem 0.6rem', fontSize:'0.72rem', color:'var(--text-secondary)',
                     fontWeight:600, whiteSpace:'nowrap', background:'rgba(0,0,0,0.25)',
                     borderBottom:'1px solid var(--glass-border)' };
-  const tdStyle = { padding:'0.4rem 0.6rem', fontSize:'0.8rem', borderBottom:'1px solid rgba(255,255,255,0.04)' };
+  const tdStyle = { padding:'0.4rem 0.6rem', fontSize:'0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)' };
 
   const PriceCell = ({price, chg, bold}) => (
     <td style={{...tdStyle, textAlign:'right', verticalAlign:'middle'}}>
@@ -65,7 +72,7 @@ const SectorFollowupView = React.memo(({ API }) => {
           <span style={{fontWeight: bold ? 700 : 500, fontSize:'0.8rem'}}>{fmtPrice(price)}</span>
           {chg != null
             ? <span style={{fontSize:'0.7rem', fontWeight:600,
-                color: chg > 0 ? '#ef4444' : chg < 0 ? '#3b82f6' : 'var(--text-secondary)'}}>
+                color: chg > 0 ? '#dc2626' : chg < 0 ? '#2563eb' : 'var(--text-secondary)'}}>
                 {chg > 0 ? '+' : ''}{chg.toFixed(1)}%
               </span>
             : <span style={{fontSize:'0.7rem', color:'var(--text-secondary)'}}>-</span>}
@@ -93,7 +100,7 @@ const SectorFollowupView = React.memo(({ API }) => {
           블로그 "돈의흐름 팔로잉" 분석 — 핫한 섹터 및 관련 종목 추적
         </span>
         <button onClick={() => fetch(API('/api/sector-define/parse'), {method:'POST'}).then(()=>loadPosts())} 
-          style={{marginLeft:'auto', padding:'0.2rem 0.6rem', fontSize:'0.7rem', borderRadius:'4px', cursor:'pointer', background:'rgba(45,212,191,0.1)', border:'1px solid var(--accent-mint)', color:'var(--accent-mint)'}}>
+          style={{marginLeft:'auto', padding:'0.2rem 0.6rem', fontSize:'0.7rem', borderRadius:'4px', cursor:'pointer', background:'rgba(37,99,235,0.1)', border:'1px solid var(--accent-mint)', color:'var(--accent-mint)'}}>
           즉시 업데이트
         </button>
       </div>
@@ -104,7 +111,7 @@ const SectorFollowupView = React.memo(({ API }) => {
             padding:'0.35rem 0.8rem', borderRadius:'20px', fontSize:'0.78rem', fontWeight:600,
             cursor:'pointer', transition:'all 0.15s', whiteSpace:'nowrap',
             border: activePostId === p.id ? '1px solid var(--accent-mint)' : '1px solid var(--glass-border)',
-            background: activePostId === p.id ? 'rgba(45,212,191,0.15)' : 'transparent',
+            background: activePostId === p.id ? 'rgba(37,99,235,0.15)' : 'transparent',
             color: activePostId === p.id ? 'var(--accent-mint)' : 'var(--text-secondary)',
           }}>
             {p.title}
@@ -113,7 +120,7 @@ const SectorFollowupView = React.memo(({ API }) => {
       </div>
 
       {loading && <div style={{color:'var(--text-secondary)', padding:'2rem', textAlign:'center'}}>로딩 중...</div>}
-      {error   && <div style={{color:'#f87171', padding:'1rem'}}>{error}</div>}
+      {error   && <div style={{color:'#dc2626', padding:'1rem'}}>{error}</div>}
 
       {!loading && data && (
         <div className="fade-in">
@@ -137,8 +144,8 @@ const SectorFollowupView = React.memo(({ API }) => {
                   <th style={{...thStyle, textAlign:'right'}}>시가총액</th>
                   <th style={{...thStyle, textAlign:'right'}}>PBR</th>
                   <th style={{...thStyle, textAlign:'right'}}>PER</th>
-                  <th style={{...thStyle, textAlign:'right', background:'rgba(45,212,191,0.05)'}}>기준 주가</th>
-                  <th style={{...thStyle, textAlign:'right', background:'rgba(45,212,191,0.05)'}}>기준 대비 변동</th>
+                  <th style={{...thStyle, textAlign:'right', background:'rgba(37,99,235,0.05)'}}>기준 주가</th>
+                  <th style={{...thStyle, textAlign:'right', background:'rgba(37,99,235,0.05)'}}>기준 대비 변동</th>
                 </tr>
               </thead>
               <tbody>
@@ -146,11 +153,11 @@ const SectorFollowupView = React.memo(({ API }) => {
                   const rowSpan = catSpans[i];
                   return (
                     <tr key={i} style={{transition:'background 0.1s'}}
-                      onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
+                      onMouseOver={e=>e.currentTarget.style.background='rgba(15,23,42,0.03)'}
                       onMouseOut={e=>e.currentTarget.style.background='transparent'}>
                       
                       {rowSpan != null && (
-                        <td rowSpan={rowSpan} style={{...tdStyle, fontWeight:700, color:'var(--accent-mint)', verticalAlign:'middle', background:'rgba(45,212,191,0.02)', borderRight:'1px solid rgba(255,255,255,0.06)'}}>
+                        <td rowSpan={rowSpan} style={{...tdStyle, fontWeight:700, color:'var(--accent-mint)', verticalAlign:'middle', background:'rgba(37,99,235,0.02)', borderRight:'1px solid rgba(15,23,42,0.2)'}}>
                           {s.category}
                         </td>
                       )}
@@ -160,8 +167,8 @@ const SectorFollowupView = React.memo(({ API }) => {
                       <td style={{...tdStyle, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{fmtMktCap(s.market_cap)}</td>
                       <td style={{...tdStyle, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{s.pbr?.toFixed(2) || '-'}</td>
                       <td style={{...tdStyle, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{s.per?.toFixed(2) || '-'}</td>
-                      <td style={{...tdStyle, textAlign:'right', fontSize:'0.8rem', background:'rgba(255,255,255,0.01)'}}>{fmtPrice(s.ref_price)}</td>
-                      <td style={{...tdStyle, textAlign:'right', background:'rgba(255,255,255,0.01)'}}>{fmtPct(s.ref_chg_pct)}</td>
+                      <td style={{...tdStyle, textAlign:'right', fontSize:'0.8rem', background:'rgba(15,23,42,0.01)'}}>{fmtPrice(s.ref_price)}</td>
+                      <td style={{...tdStyle, textAlign:'right', background:'rgba(15,23,42,0.01)'}}>{fmtPct(s.ref_chg_pct)}</td>
                     </tr>
                   );
                 })}

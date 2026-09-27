@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 // RiskGateMonitorView.jsx
 // 실전 자동매매 리스크게이트 + 주문 생애주기 모니터 (2026-07-23 신규)
 //   백엔드: routes/kis_trading.py (prefix /api/kis-trading)
@@ -13,15 +20,15 @@ const API = (path) => path;
 
 const fmtKrw = (v) => v == null ? '-' : Math.round(v).toLocaleString('ko-KR') + '원';
 const fmtPct = (v) => v == null ? '-' : (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
-const pnlColor = (v) => v > 0 ? '#ef4444' : v < 0 ? '#3b82f6' : 'var(--text-secondary)';
+const pnlColor = (v) => v > 0 ? '#dc2626' : v < 0 ? '#2563eb' : 'var(--text-secondary)';
 
 const DECISION_META = {
-  BUY_ALLOWED:       { label: '매수 허용',       color: '#22c55e' },
-  SELL_OK:           { label: '매도 허용',       color: '#22c55e' },
-  WAIT_CONFIRM:      { label: '확인 대기(409)',  color: '#f59e0b' },
-  SIZE_REDUCED:      { label: '수량 축소',       color: '#38bdf8' },
-  BLOCKED_RISK:      { label: '리스크 차단',     color: '#ef4444' },
-  BLOCKED_STALE_DATA:{ label: '데이터 정체 차단', color: '#ef4444' },
+  BUY_ALLOWED:       { label: '매수 허용',       color: '#15803d' },
+  SELL_OK:           { label: '매도 허용',       color: '#15803d' },
+  WAIT_CONFIRM:      { label: '확인 대기(409)',  color: '#b45309' },
+  SIZE_REDUCED:      { label: '수량 축소',       color: '#0284c7' },
+  BLOCKED_RISK:      { label: '리스크 차단',     color: '#dc2626' },
+  BLOCKED_STALE_DATA:{ label: '데이터 정체 차단', color: '#dc2626' },
 };
 
 const GATE_LABELS = {
@@ -60,11 +67,11 @@ function GateTable({ gates }) {
           <tr key={key}>
             <td style={{ whiteSpace: 'nowrap' }}>{GATE_LABELS[key] || key}</td>
             <td>
-              <span style={{ color: g.ok ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+              <span style={{ color: g.ok ? '#15803d' : '#dc2626', fontWeight: 700 }}>
                 {g.ok ? '통과' : '차단'}
               </span>
               {g.data_available === false && (
-                <span style={{ marginLeft: '0.4rem', fontSize: '0.68rem', color: 'rgba(245,158,11,0.8)' }}>(데이터없음)</span>
+                <span style={{ marginLeft: '0.4rem', fontSize: '0.68rem', color: 'rgba(217,119,6,0.9)' }}>(데이터없음)</span>
               )}
             </td>
             <td style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>{g.reason}</td>
@@ -100,7 +107,7 @@ function OverviewTab() {
   useEffect(() => { load(); }, [load]);
 
   const cards = [
-    { label: '거래 모드', val: status?.mode || '-', color: status?.mode === 'LIVE' ? '#ef4444' : '#22c55e' },
+    { label: '거래 모드', val: status?.mode || '-', color: status?.mode === 'LIVE' ? '#dc2626' : '#15803d' },
     { label: '현금 잔고', val: fmtKrw(ledger?.current_balance), color: 'inherit' },
     { label: '보유 포지션', val: `${positions?.summary?.position_count ?? 0}종목`, color: 'inherit' },
     { label: '평가 손익', val: fmtKrw(positions?.summary?.total_unrealized_pnl), color: pnlColor(positions?.summary?.total_unrealized_pnl || 0) },
@@ -116,7 +123,7 @@ function OverviewTab() {
         </div>
         <button onClick={load} style={{
           padding: '0.3rem 0.7rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer',
-          background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
+          background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
         }}>새로고침</button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}>
@@ -187,12 +194,12 @@ function CheckTab() {
         <div>
           <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>종목코드</label>
           <input value={stockCode} onChange={e => setStockCode(e.target.value.trim())} placeholder="005930" maxLength={6}
-            style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'inherit', width: '110px' }} />
+            style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'inherit', width: '110px' }} />
         </div>
         <div>
           <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>매매구분</label>
           <select value={side} onChange={e => setSide(e.target.value)}
-            style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'inherit' }}>
+            style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'inherit' }}>
             <option value="buy">매수</option>
             <option value="sell">매도</option>
           </select>
@@ -200,21 +207,21 @@ function CheckTab() {
         <div>
           <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>수량</label>
           <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
-            style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'inherit', width: '90px' }} />
+            style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'inherit', width: '90px' }} />
         </div>
         <div>
           <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>전략키(선택)</label>
           <input value={strategyKey} onChange={e => setStrategyKey(e.target.value.trim())} placeholder="combo_605"
-            style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'inherit', width: '130px' }} />
+            style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'inherit', width: '130px' }} />
         </div>
         <button onClick={runCheck} disabled={loading} style={{
           padding: '0.45rem 1rem', borderRadius: '6px', cursor: loading ? 'wait' : 'pointer',
-          background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', color: 'var(--accent-purple)', fontWeight: 700,
+          background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.35)', color: 'var(--accent-purple)', fontWeight: 700,
         }}>{loading ? '점검 중...' : '게이트 점검'}</button>
       </div>
 
       {error && (
-        <div className="glass-panel" style={{ padding: '0.8rem 1rem', color: '#ef4444', fontSize: '0.8rem' }}>⚠️ {error}</div>
+        <div className="glass-panel" style={{ padding: '0.8rem 1rem', color: '#dc2626', fontSize: '0.8rem' }}>⚠️ {error}</div>
       )}
 
       {result && (
@@ -224,7 +231,7 @@ function CheckTab() {
             <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>gate_decision_id: {result.gate_decision_id}</span>
           </div>
           {result.reasons?.length > 0 && (
-            <div style={{ fontSize: '0.78rem', color: '#f59e0b', marginBottom: '0.4rem' }}>
+            <div style={{ fontSize: '0.78rem', color: '#b45309', marginBottom: '0.4rem' }}>
               {result.reasons.map((r, i) => <div key={i}>· {r}</div>)}
             </div>
           )}
@@ -259,14 +266,14 @@ function HistoryTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
         <select value={decision} onChange={e => setDecision(e.target.value)} style={{
-          padding: '0.35rem 0.6rem', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'inherit',
+          padding: '0.35rem 0.6rem', borderRadius: '6px', background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'inherit',
         }}>
           <option value="">전체 판정</option>
           {Object.keys(DECISION_META).map(k => <option key={k} value={k}>{DECISION_META[k].label}</option>)}
         </select>
         <button onClick={load} style={{
           padding: '0.35rem 0.7rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer',
-          background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
+          background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
         }}>새로고침</button>
         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{rows.length}건</span>
       </div>
@@ -291,9 +298,9 @@ function HistoryTab() {
                   </tr>
                   {expanded === r.id && (
                     <tr>
-                      <td colSpan={6} style={{ background: 'rgba(255,255,255,0.02)' }}>
+                      <td colSpan={6} style={{ background: 'rgba(15,23,42,0.02)' }}>
                         {Array.isArray(r.reasons) && r.reasons.length > 0 && (
-                          <div style={{ fontSize: '0.76rem', color: '#f59e0b', margin: '0.4rem 0' }}>
+                          <div style={{ fontSize: '0.76rem', color: '#b45309', margin: '0.4rem 0' }}>
                             {r.reasons.map((x, i) => <div key={i}>· {x}</div>)}
                           </div>
                         )}
@@ -345,7 +352,7 @@ function OrdersTab() {
           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{rows.length}건</span>
           <button onClick={load} style={{
             padding: '0.3rem 0.7rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer',
-            background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
+            background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
           }}>새로고침</button>
         </div>
         {loading ? (
@@ -359,13 +366,13 @@ function OrdersTab() {
               <tbody>
                 {rows.map(o => (
                   <tr key={o.order_id} onClick={() => openDetail(o.order_id)}
-                    style={{ cursor: 'pointer', background: detail?.order?.order_id === o.order_id ? 'rgba(167,139,250,0.08)' : undefined }}>
+                    style={{ cursor: 'pointer', background: detail?.order?.order_id === o.order_id ? 'rgba(124,58,237,0.08)' : undefined }}>
                     <td>{o.order_id}</td>
                     <td>{o.stock_code}</td>
                     <td>{o.side === 'buy' ? '매수' : '매도'}</td>
                     <td>{o.filled_qty}/{o.qty}</td>
                     <td>{fmtKrw(o.avg_fill_price)}</td>
-                    <td style={{ color: o.status === 'FILLED' ? '#22c55e' : 'var(--text-secondary)' }}>{o.status}</td>
+                    <td style={{ color: o.status === 'FILLED' ? '#15803d' : 'var(--text-secondary)' }}>{o.status}</td>
                     <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{o.strategy_key || '-'}</td>
                   </tr>
                 ))}
@@ -436,7 +443,7 @@ function LedgerTab() {
         <div style={{ fontSize: '0.85rem' }}>현재 잔고: <strong style={{ color: 'var(--accent-purple)' }}>{fmtKrw(data?.current_balance)}</strong></div>
         <button onClick={load} style={{
           padding: '0.3rem 0.7rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer',
-          background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
+          background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
         }}>새로고침</button>
       </div>
       {loading ? (
@@ -479,8 +486,8 @@ export default function RiskGateMonitorView() {
   const [tab, setTab] = useState('overview');
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ padding: '0.5rem 0.9rem', background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.2)',
-        borderRadius: '8px', fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
+      <div style={{ padding: '0.5rem 0.9rem', background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.2)',
+        borderRadius: '8px', fontSize: '0.72rem', color: 'rgba(15,23,42,0.88)', lineHeight: 1.5 }}>
         🛡️ PAPER 모드 리스크게이트/주문 모니터입니다. LIVE 주문은 명시적 승인 전까지 항상 403 차단됩니다.
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -489,7 +496,7 @@ export default function RiskGateMonitorView() {
             padding: '0.4rem 0.9rem', borderRadius: '7px', fontSize: '0.82rem', cursor: 'pointer',
             fontWeight: tab === t.key ? 700 : 500,
             border: `1px solid ${tab === t.key ? 'var(--accent-purple)' : 'var(--glass-border)'}`,
-            background: tab === t.key ? 'rgba(167,139,250,0.15)' : 'transparent',
+            background: tab === t.key ? 'rgba(124,58,237,0.15)' : 'transparent',
             color: tab === t.key ? 'var(--accent-purple)' : 'var(--text-secondary)',
           }}>{t.label}</button>
         ))}

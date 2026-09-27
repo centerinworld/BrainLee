@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React from 'react';
 import {
   ResponsiveContainer,
@@ -238,7 +245,7 @@ const SemiconductorView = React.memo(() => {
   }, [rows, filterLv1, search, sortKey, sortDir]);
 
   // 색상 헬퍼
-  const chgColor = (v) => v == null ? '#888' : v > 0 ? '#f87171' : v < 0 ? '#60a5fa' : '#888';
+  const chgColor = (v) => v == null ? '#888' : v > 0 ? '#dc2626' : v < 0 ? '#2563eb' : '#888';
   const fmtPct = (v) => v == null ? '-' : (v > 0 ? '+' : '') + Math.round(v).toLocaleString('ko-KR') + '%';
   const fmtPrc = (v) => v == null ? '-' : Math.round(v).toLocaleString('ko-KR');
   const fmtMkt = (v) => v == null ? '-' : (v >= 10000 ? Math.round(v/10000).toLocaleString('ko-KR')+'조' : Math.round(v).toLocaleString('ko-KR')+'억');
@@ -249,9 +256,9 @@ const SemiconductorView = React.memo(() => {
     return (
       <span style={{
         display:'inline-block', padding:'2px 8px', borderRadius:'999px',
-        border:`1px solid ${out ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.5)'}`,
-        background: out ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
-        color: out ? '#34d399' : '#f87171', fontWeight:700, fontSize:'0.72rem'
+        border:`1px solid ${out ? 'rgba(5,150,105,0.5)' : 'rgba(220,38,38,0.5)'}`,
+        background: out ? 'rgba(5,150,105,0.15)' : 'rgba(220,38,38,0.15)',
+        color: out ? '#047857' : '#dc2626', fontWeight:700, fontSize:'0.72rem'
       }}>
         {out ? '🟢 아웃퍼폼' : '🔴 언더퍼폼'}
       </span>
@@ -324,9 +331,9 @@ const SemiconductorView = React.memo(() => {
 
   const thSt = {
     padding: '0.55rem 0.6rem', textAlign: 'right',
-    color: '#cffafe', fontWeight: 800, fontSize: '0.74rem',
-    background: '#10243f',
-    backgroundImage: 'linear-gradient(180deg, #1e3a5f 0%, #10243f 100%)',
+    color: '#0e7490', fontWeight: 800, fontSize: '0.74rem',
+    background: '#f4f6fb',
+    backgroundImage: 'linear-gradient(180deg, #1e3a5f 0%, #f4f6fb 100%)',
     borderBottom: '2px solid rgba(34,211,238,0.72)',
     borderTop: '1px solid rgba(125,211,252,0.18)',
     boxShadow: '0 6px 14px rgba(0,0,0,0.32)',
@@ -336,20 +343,20 @@ const SemiconductorView = React.memo(() => {
   };
   const tdSt = {
     padding: '0.38rem 0.6rem', fontSize: '0.78rem',
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-    color: 'rgba(255,255,255,0.85)',
+    borderBottom: '1px solid rgba(15,23,42,0.2)',
+    color: 'rgba(15,23,42,0.88)',
     whiteSpace: 'nowrap',
   };
 
   // LV1 그룹 색상
   const LV1_COLORS = {
-    '종합': '#6366f1', '제조': '#8b5cf6', '설계': '#a78bfa', '공정설계': '#c084fc',
-    '클린룸': '#06b6d4', '전공정 장비': '#0ea5e9', '전공정 원료/소재': '#38bdf8',
-    '전공정 부품': '#7dd3fc', 'OSAT': '#f59e0b', '기판': '#fbbf24',
-    '후공정 장비': '#34d399', '후공정 소재/부품': '#6ee7b7',
-    'EDS Test 부품': '#f87171', '테스트소켓': '#fca5a5',
-    '반도체+로봇(이송)': '#fb923c', 'EMS': '#fdba74',
-    '반도체 유동': '#a3e635', '기타': '#d1d5db', '확인중': '#6b7280',
+    '종합': '#4f46e5', '제조': '#8b5cf6', '설계': '#7c3aed', '공정설계': '#9333ea',
+    '클린룸': '#0891b2', '전공정 장비': '#0284c7', '전공정 원료/소재': '#0284c7',
+    '전공정 부품': '#0284c7', 'OSAT': '#b45309', '기판': '#b45309',
+    '후공정 장비': '#047857', '후공정 소재/부품': '#047857',
+    'EDS Test 부품': '#dc2626', '테스트소켓': '#b91c1c',
+    '반도체+로봇(이송)': '#c2410c', 'EMS': '#c2410c',
+    '반도체 유동': '#65a30d', '기타': '#d1d5db', '확인중': '#374151',
   };
 
   const parsePeriodOrder = (label, quarterly = false) => {
@@ -535,26 +542,26 @@ const SemiconductorView = React.memo(() => {
       {/* 헤더 */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 40,
-        background: 'rgba(10,10,22,0.97)', backdropFilter: 'blur(14px)',
+        background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(14px)',
         padding: '0.6rem 0.2rem 0.5rem', marginBottom: '0',
-        borderBottom: '1px solid rgba(59,130,246,0.18)',
+        borderBottom: '1px solid rgba(37,99,235,0.18)',
       }}>
         <div style={{display:'flex', alignItems:'center', gap:'0.8rem', flexWrap:'wrap'}}>
-          <h2 style={{margin:0, fontSize:'1rem', fontWeight:700, color:'#fff'}}>
+          <h2 style={{margin:0, fontSize:'1rem', fontWeight:700, color:'var(--text-primary)'}}>
             🔬 반도체 밸류스트림 전종목
           </h2>
-          <button onClick={() => setTab('lights')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='lights'?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)', background: tab==='lights'?'rgba(34,211,238,0.14)':'rgba(255,255,255,0.04)', color: tab==='lights'?'#67e8f9':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>🚦카테고리 신호등</button>
-          <button onClick={() => setTab('megatrend')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='megatrend'?'1px solid #f472b6':'1px solid rgba(148,163,184,0.35)', background: tab==='megatrend'?'rgba(244,114,182,0.14)':'rgba(255,255,255,0.04)', color: tab==='megatrend'?'#f9a8d4':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>🚀메가트렌드 탐지</button>
-          <button onClick={() => setTab('details')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='details'?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)', background: tab==='details'?'rgba(34,211,238,0.14)':'rgba(255,255,255,0.04)', color: tab==='details'?'#67e8f9':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>전종목</button>
-          <button onClick={() => setTab('summary')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='summary'?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)', background: tab==='summary'?'rgba(34,211,238,0.14)':'rgba(255,255,255,0.04)', color: tab==='summary'?'#67e8f9':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>종합현황</button>
-          <button onClick={() => setTab('performance')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='performance'?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)', background: tab==='performance'?'rgba(34,211,238,0.14)':'rgba(255,255,255,0.04)', color: tab==='performance'?'#67e8f9':'#cbd5e1', fontWeight:700, cursor:'pointer'}}>종목실적</button>
+          <button onClick={() => setTab('lights')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='lights'?'1px solid #0891b2':'1px solid rgba(100,116,139,0.35)', background: tab==='lights'?'rgba(34,211,238,0.14)':'rgba(15,23,42,0.04)', color: tab==='lights'?'#0891b2':'#1e293b', fontWeight:700, cursor:'pointer'}}>🚦카테고리 신호등</button>
+          <button onClick={() => setTab('megatrend')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='megatrend'?'1px solid #db2777':'1px solid rgba(100,116,139,0.35)', background: tab==='megatrend'?'rgba(244,114,182,0.14)':'rgba(15,23,42,0.04)', color: tab==='megatrend'?'#f9a8d4':'#1e293b', fontWeight:700, cursor:'pointer'}}>🚀메가트렌드 탐지</button>
+          <button onClick={() => setTab('details')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='details'?'1px solid #0891b2':'1px solid rgba(100,116,139,0.35)', background: tab==='details'?'rgba(34,211,238,0.14)':'rgba(15,23,42,0.04)', color: tab==='details'?'#0891b2':'#1e293b', fontWeight:700, cursor:'pointer'}}>전종목</button>
+          <button onClick={() => setTab('summary')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='summary'?'1px solid #0891b2':'1px solid rgba(100,116,139,0.35)', background: tab==='summary'?'rgba(34,211,238,0.14)':'rgba(15,23,42,0.04)', color: tab==='summary'?'#0891b2':'#1e293b', fontWeight:700, cursor:'pointer'}}>종합현황</button>
+          <button onClick={() => setTab('performance')} style={{padding:'4px 10px', borderRadius:'8px', border: tab==='performance'?'1px solid #0891b2':'1px solid rgba(100,116,139,0.35)', background: tab==='performance'?'rgba(34,211,238,0.14)':'rgba(15,23,42,0.04)', color: tab==='performance'?'#0891b2':'#1e293b', fontWeight:700, cursor:'pointer'}}>종목실적</button>
           {data && tab==='details' && (
-            <span style={{fontSize:'0.75rem', color:'#60a5fa'}}>
+            <span style={{fontSize:'0.75rem', color:'#2563eb'}}>
               {sortedRows.length}/{rows.length}종목
             </span>
           )}
           {data?.as_of_date && tab==='details' && (
-            <span style={{fontSize:'0.72rem', color:'rgba(148,163,184,0.85)'}}>
+            <span style={{fontSize:'0.72rem', color:'#1e293b'}}>
               가격 기준일 {data.as_of_date}
               {data.price_basis === 'realtime'
                 ? ` · 실시간 ${Number(data.realtime_price_count || 0).toLocaleString('ko-KR')}종목`
@@ -567,8 +574,8 @@ const SemiconductorView = React.memo(() => {
             placeholder="기업명 / 업종 검색..."
             style={{
               padding: '0.3rem 0.7rem', borderRadius: '6px',
-              background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)',
-              color: '#fff', fontSize: '0.78rem', width: '160px',
+              background: 'rgba(15,23,42,0.07)', border: '1px solid rgba(15,23,42,0.2)',
+              color: 'var(--text-primary)', fontSize: '0.78rem', width: '160px',
             }}
           />
           {/* LV1 필터 */}
@@ -576,8 +583,8 @@ const SemiconductorView = React.memo(() => {
             value={filterLv1} onChange={e => setFilterLv1(e.target.value)}
             style={{
               padding:'0.28rem 0.5rem', borderRadius:'6px', fontSize:'0.74rem', cursor:'pointer',
-              background:'rgba(15,23,42,0.9)', border:'1px solid rgba(255,255,255,0.15)',
-              color:'#e2e8f0', maxWidth:'160px',
+              background:'rgba(255,255,255,0.9)', border:'1px solid rgba(15,23,42,0.2)',
+              color:'#1e293b', maxWidth:'160px',
             }}
           >
             {lv1List.map(l => <option key={l} value={l}>{l === 'ALL' ? '전체 카테고리' : l}</option>)}
@@ -586,14 +593,14 @@ const SemiconductorView = React.memo(() => {
       </div>
 
       {loading ? (
-        <div style={{padding:'3rem', textAlign:'center', color:'rgba(255,255,255,0.4)'}}>
+        <div style={{padding:'3rem', textAlign:'center', color:'rgba(15,23,42,0.88)'}}>
           로딩 중...
         </div>
       ) : tab === 'lights' ? (
         <div style={{padding:'0.8rem 0.4rem'}}>
-          <div style={{fontSize:'0.76rem', color:'rgba(255,255,255,0.55)', marginBottom:'0.8rem', lineHeight:1.5}}>
+          <div style={{fontSize:'0.76rem', color:'rgba(15,23,42,0.88)', marginBottom:'0.8rem', lineHeight:1.5}}>
             🚦 각 카테고리(공정 단계)의 {refDates[0] ? formatRefLabel(refDates[0]) : ''} 평균 등락을 신호등으로 요약합니다.
-            <b style={{color:'#fbbf24'}}> 🔥 다이버전스</b> 배지는 반도체 전체 평균(
+            <b style={{color:'#b45309'}}> 🔥 다이버전스</b> 배지는 반도체 전체 평균(
             <span style={{color: chgColor(categoryLights.overallAvg[refDates[0]])}}>{fmtPct(categoryLights.overallAvg[refDates[0]])}</span>
             )과 반대 방향으로 15%p 이상 벌어진 카테고리 — "전체는 하락하는데 이 카테고리만 오른다" 같은 흐름을 자동으로 잡아냅니다.
           </div>
@@ -602,27 +609,27 @@ const SemiconductorView = React.memo(() => {
               <div key={c.category} onClick={() => { setFilterLv1(c.category); setTab('details'); }}
                 style={{
                   cursor:'pointer', padding:'0.7rem 0.8rem', borderRadius:'10px',
-                  background: c.diverging ? 'rgba(251,191,36,0.08)' : 'rgba(255,255,255,0.03)',
-                  border: c.diverging ? '1px solid rgba(251,191,36,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                  background: c.diverging ? 'rgba(217,119,6,0.08)' : 'rgba(15,23,42,0.03)',
+                  border: c.diverging ? '1px solid rgba(217,119,6,0.5)' : '1px solid rgba(15,23,42,0.08)',
                 }}>
                 <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.35rem'}}>
                   <span style={{display:'flex', alignItems:'center', gap:'0.4rem'}}>
                     <span style={{fontSize:'1.1rem'}}>{c.light}</span>
                     <span style={{
                       fontSize:'0.78rem', fontWeight:800,
-                      color: LV1_COLORS[c.category] || '#94a3b8',
+                      color: LV1_COLORS[c.category] || '#334155',
                     }}>{c.category}</span>
                   </span>
-                  <span style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.4)'}}>{c.count}종목</span>
+                  <span style={{fontSize:'0.68rem', color:'rgba(15,23,42,0.88)'}}>{c.count}종목</span>
                 </div>
                 {c.diverging && (
-                  <div style={{fontSize:'0.68rem', color:'#fbbf24', fontWeight:700, marginBottom:'0.3rem'}}>
+                  <div style={{fontSize:'0.68rem', color:'#b45309', fontWeight:700, marginBottom:'0.3rem'}}>
                     🔥 시장과 반대로 {c.avgByRef[refDates[0]] > 0 ? '나홀로 상승' : '나홀로 하락'} 중
                   </div>
                 )}
                 <div style={{display:'flex', gap:'0.6rem', flexWrap:'wrap'}}>
                   {refDates.map(rd => (
-                    <div key={rd} style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.5)'}}>
+                    <div key={rd} style={{fontSize:'0.68rem', color:'rgba(15,23,42,0.88)'}}>
                       {formatRefLabel(rd).replace(' 대비','')}
                       <div style={{fontSize:'0.82rem', fontWeight:700, color: chgColor(c.avgByRef[rd])}}>
                         {fmtPct(c.avgByRef[rd])}
@@ -631,7 +638,7 @@ const SemiconductorView = React.memo(() => {
                   ))}
                 </div>
                 {c.topMover && c.topMover.name && (
-                  <div style={{fontSize:'0.66rem', color:'rgba(255,255,255,0.45)', marginTop:'0.4rem'}}>
+                  <div style={{fontSize:'0.66rem', color:'rgba(15,23,42,0.88)', marginTop:'0.4rem'}}>
                     최고 상승: {c.topMover.name} <span style={{color: chgColor(c.topMover.chg)}}>{fmtPct(c.topMover.chg)}</span>
                   </div>
                 )}
@@ -642,31 +649,31 @@ const SemiconductorView = React.memo(() => {
       ) : tab === 'megatrend' ? (
         <div style={{padding:'0.8rem 0.4rem'}}>
           {megatrendLoading || !megatrend ? (
-            <div style={{padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)'}}>로딩 중...</div>
+            <div style={{padding:'2rem', textAlign:'center', color:'rgba(15,23,42,0.88)'}}>로딩 중...</div>
           ) : (
             <>
               <div style={{
-                fontSize:'0.76rem', color:'rgba(255,255,255,0.7)', marginBottom:'0.9rem', lineHeight:1.6,
+                fontSize:'0.76rem', color:'rgba(15,23,42,0.88)', marginBottom:'0.9rem', lineHeight:1.6,
                 padding:'0.7rem 0.9rem', borderRadius:'8px',
                 background:'rgba(244,114,182,0.06)', border:'1px solid rgba(244,114,182,0.25)',
               }}>
-                <b style={{color:'#f9a8d4'}}>조건: 6개월 수익률 +100%↑ &amp; 52주 고점 대비 -15% 이내</b>
+                <b style={{color:'#be185d'}}>조건: 6개월 수익률 +100%↑ &amp; 52주 고점 대비 -15% 이내</b>
                 {' '}— 지금 이 조건에 해당하는 종목을 빠짐없이 노출하는 <b>스크리너</b>입니다.
-                <div style={{marginTop:'0.4rem', color:'rgba(255,255,255,0.5)'}}>
+                <div style={{marginTop:'0.4rem', color:'rgba(15,23,42,0.88)'}}>
                   ⚠️ 검증 결과(walk-forward, n=232건): 여기 뜬 종목의 <b>개별 승률은 19~31%</b>로 낮고,
                   중앙값 12개월 forward 수익률은 마이너스입니다 — "이미 급등"만으로는 다음 승자를 골라낼 수 없다는
                   기존 연구(avoid_overheat)와 일치합니다. 단, <b>-20% 손절 + 승자는 무제한 보유</b>를 전제로 한
                   분산 바스켓 접근에서는 건당 기대값이 학습(+12.1%)·검증(+6.9%) 양쪽에서 플러스로 확인됐습니다.
-                  <b style={{color:'#fbbf24'}}> 개별 종목 매수 확신용이 아니라, 분산 투자 + 엄격한 손절 규율 전제하에서만 참고하세요.</b>
+                  <b style={{color:'#b45309'}}> 개별 종목 매수 확신용이 아니라, 분산 투자 + 엄격한 손절 규율 전제하에서만 참고하세요.</b>
                 </div>
               </div>
-              <div style={{fontSize:'0.75rem', color:'rgba(255,255,255,0.5)', marginBottom:'0.6rem'}}>
+              <div style={{fontSize:'0.75rem', color:'rgba(15,23,42,0.88)', marginBottom:'0.6rem'}}>
                 {megatrend.count}개 종목 해당
               </div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.8rem'}}>
                   <thead>
-                    <tr style={{borderBottom:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.55)'}}>
+                    <tr style={{borderBottom:'1px solid rgba(15,23,42,0.2)', color:'rgba(15,23,42,0.88)'}}>
                       <th style={{textAlign:'left', padding:'0.4rem 0.6rem'}}>종목</th>
                       <th style={{textAlign:'left', padding:'0.4rem 0.6rem'}}>카테고리</th>
                       <th style={{textAlign:'right', padding:'0.4rem 0.6rem'}}>6개월 수익률</th>
@@ -677,15 +684,15 @@ const SemiconductorView = React.memo(() => {
                   </thead>
                   <tbody>
                     {(megatrend.results || []).map(r => (
-                      <tr key={r.stock_code} style={{borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
-                        <td style={{padding:'0.4rem 0.6rem', color:'#fff', fontWeight:600}}>{r.stock_name}</td>
-                        <td style={{padding:'0.4rem 0.6rem', color: LV1_COLORS[r.lv1] || '#94a3b8'}}>
+                      <tr key={r.stock_code} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
+                        <td style={{padding:'0.4rem 0.6rem', color:'var(--text-primary)', fontWeight:600}}>{r.stock_name}</td>
+                        <td style={{padding:'0.4rem 0.6rem', color: LV1_COLORS[r.lv1] || '#334155'}}>
                           {r.lv1}{r.lv1_concurrent_count >= 3 ? ` (동반 ${r.lv1_concurrent_count})` : ''}
                         </td>
-                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'#4ade80', fontWeight:700}}>+{r.ret_6m_pct}%</td>
-                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'rgba(255,255,255,0.6)'}}>{r.dist_from_52w_high_pct}%</td>
-                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'#e2e8f0'}}>{Number(r.current_price).toLocaleString('ko-KR')}</td>
-                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'rgba(255,255,255,0.4)', fontSize:'0.72rem'}}>{r.as_of_date}</td>
+                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'#15803d', fontWeight:700}}>+{r.ret_6m_pct}%</td>
+                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'rgba(15,23,42,0.88)'}}>{r.dist_from_52w_high_pct}%</td>
+                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'#1e293b'}}>{Number(r.current_price).toLocaleString('ko-KR')}</td>
+                        <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'rgba(15,23,42,0.88)', fontSize:'0.72rem'}}>{r.as_of_date}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -710,13 +717,13 @@ const SemiconductorView = React.memo(() => {
                 <th style={{...thSt, textAlign:'center', width:'32px'}} onClick={() => handleSort('sort_order')}>#</th>
                 <th style={{...thSt, textAlign:'left', minWidth:'90px'}}>카테고리</th>
                 <th style={{...thSt, textAlign:'left', minWidth:'100px'}} onClick={() => handleSort('company_name')}>기업명{sortInd('company_name')}</th>
-                <th style={{...thSt, textAlign:'left', maxWidth:'200px', borderRight:'1px solid rgba(148,163,184,0.35)'}}>주요사업</th>
+                <th style={{...thSt, textAlign:'left', maxWidth:'200px', borderRight:'1px solid rgba(100,116,139,0.35)'}}>주요사업</th>
                 <th style={{...thSt, textAlign:'right'}} onClick={() => handleSort('price')}>현재가{sortInd('price')}</th>
-                <th style={{...thSt, textAlign:'right', borderRight:'1px solid rgba(148,163,184,0.35)'}} onClick={() => handleSort('market_cap')}>시총{sortInd('market_cap')}</th>
+                <th style={{...thSt, textAlign:'right', borderRight:'1px solid rgba(100,116,139,0.35)'}} onClick={() => handleSort('market_cap')}>시총{sortInd('market_cap')}</th>
                 <th style={{...thSt, textAlign:'right'}} onClick={() => handleSort('etf_amount')}>ETF편입금액(시총비중){sortInd('etf_amount')}</th>
-                <th style={{...thSt, textAlign:'right', borderLeft:'1px solid rgba(148,163,184,0.35)'}} onClick={() => handleSort('pbr')}>PBR{sortInd('pbr')}</th>
+                <th style={{...thSt, textAlign:'right', borderLeft:'1px solid rgba(100,116,139,0.35)'}} onClick={() => handleSort('pbr')}>PBR{sortInd('pbr')}</th>
                 <th style={{...thSt, textAlign:'right'}} onClick={() => handleSort('per')}>PER{sortInd('per')}</th>
-                <th style={{...thSt, textAlign:'right', borderRight:'1px solid rgba(148,163,184,0.35)'}} onClick={() => handleSort('psr')}>PSR{sortInd('psr')}</th>
+                <th style={{...thSt, textAlign:'right', borderRight:'1px solid rgba(100,116,139,0.35)'}} onClick={() => handleSort('psr')}>PSR{sortInd('psr')}</th>
                 {refDates.map(rd => (
                   <th key={rd} style={{...thSt, textAlign:'right'}} onClick={() => handleSort(`__ref_${rd}`)}>
                     {formatRefLabel(rd)}{sortInd(`__ref_${rd}`)}
@@ -728,9 +735,9 @@ const SemiconductorView = React.memo(() => {
               {sortedRows.map((r, idx) => {
                 return (
                   <tr key={r.stock_code || idx}
-                      onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.04)'}
+                      onMouseOver={e => e.currentTarget.style.background='rgba(15,23,42,0.04)'}
                       onMouseOut={e  => e.currentTarget.style.background='transparent'}>
-                    <td style={{...tdSt, textAlign:'center', color:'rgba(255,255,255,0.35)', fontSize:'0.7rem'}}>
+                    <td style={{...tdSt, textAlign:'center', color:'rgba(15,23,42,0.88)', fontSize:'0.7rem'}}>
                       {r.sort_order}
                     </td>
                     {/* LV1 배지 */}
@@ -739,9 +746,9 @@ const SemiconductorView = React.memo(() => {
                         <span style={{
                           display:'inline-block', padding:'0.1rem 0.4rem', borderRadius:'4px',
                           fontSize:'0.68rem', fontWeight:600, whiteSpace:'nowrap',
-                          color: LV1_COLORS[r.lv1] || '#94a3b8',
-                          background: `${LV1_COLORS[r.lv1] || '#94a3b8'}18`,
-                          border: `1px solid ${LV1_COLORS[r.lv1] || '#94a3b8'}40`,
+                          color: LV1_COLORS[r.lv1] || '#334155',
+                          background: `${LV1_COLORS[r.lv1] || '#334155'}18`,
+                          border: `1px solid ${LV1_COLORS[r.lv1] || '#334155'}40`,
                         }}>
                           {r.lv1 || '-'}
                         </span>
@@ -754,14 +761,14 @@ const SemiconductorView = React.memo(() => {
                         <span style={{cursor: r.main_business ? 'help' : 'default'}}>{r.company_name}</span>
                       </div>
                       {r.main_business && (
-                        <div style={{fontSize:'0.65rem', color:'rgba(255,255,255,0.4)', marginTop:'1px',
+                        <div style={{fontSize:'0.65rem', color:'rgba(15,23,42,0.88)', marginTop:'1px',
                           maxWidth:'130px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                           {r.main_business}
                         </div>
                       )}
                     </td>
                     {/* 주요사업 (짧게) */}
-                    <td style={{...tdSt, textAlign:'left', color:'rgba(255,255,255,0.45)', maxWidth:'180px', borderRight:'1px solid rgba(148,163,184,0.25)',
+                    <td style={{...tdSt, textAlign:'left', color:'rgba(15,23,42,0.88)', maxWidth:'180px', borderRight:'1px solid rgba(100,116,139,0.25)',
                       overflow:'hidden', textOverflow:'ellipsis'}}>
                       {r.customers || '-'}
                     </td>
@@ -769,7 +776,7 @@ const SemiconductorView = React.memo(() => {
                     <td style={{...tdSt, textAlign:'right', fontFamily:'monospace', fontWeight:600}}>
                       {fmtPrc(r.price)} <span style={{color: chgColor(r.day_change_pct)}}>({fmtPct(r.day_change_pct)})</span>
                     </td>
-                    <td style={{...tdSt, textAlign:'right', color:'#94a3b8', borderRight:'1px solid rgba(148,163,184,0.25)'}}>
+                    <td style={{...tdSt, textAlign:'right', color:'#334155', borderRight:'1px solid rgba(100,116,139,0.25)'}}>
                       {fmtMkt(r.market_cap)}
                     </td>
                     <td style={{...tdSt, textAlign:'right'}}>
@@ -781,7 +788,7 @@ const SemiconductorView = React.memo(() => {
                     <td style={{...tdSt, textAlign:'right'}}>
                       {fmt1(r.per)}
                     </td>
-                    <td style={{...tdSt, textAlign:'right', borderRight:'1px solid rgba(148,163,184,0.25)'}}>
+                    <td style={{...tdSt, textAlign:'right', borderRight:'1px solid rgba(100,116,139,0.25)'}}>
                       {fmt1(r.psr)}
                     </td>
                     {/* 기준일 가격 + 변동률 */}
@@ -800,23 +807,23 @@ const SemiconductorView = React.memo(() => {
           {/* 기준일 수정 — 테이블 최하단 */}
           <div style={{
             marginTop: '1rem', padding: '0.7rem 1rem',
-            background: 'rgba(30,41,59,0.6)', borderRadius: '8px',
-            border: '1px solid rgba(255,255,255,0.08)',
-            fontSize: '0.74rem', color: 'rgba(255,255,255,0.5)',
+            background: 'rgba(248,250,252,0.6)', borderRadius: '8px',
+            border: '1px solid rgba(15,23,42,0.2)',
+            fontSize: '0.74rem', color: 'rgba(15,23,42,0.88)',
             display: 'flex', gap: '1.5rem', flexWrap: 'wrap',
           }}>
-            <span style={{fontWeight:600, color:'rgba(255,255,255,0.7)'}}>📅 기준일</span>
+            <span style={{fontWeight:600, color:'rgba(15,23,42,0.88)'}}>📅 기준일</span>
             <label style={{display:'flex', alignItems:'center', gap:'6px'}}>기준1:
-              <input type="date" value={ref1} onChange={e => setRef1(e.target.value)} style={{background:'#0f172a', color:'#e2e8f0', border:'1px solid rgba(148,163,184,0.3)', borderRadius:'6px', padding:'2px 6px'}} />
+              <input type="date" value={ref1} onChange={e => setRef1(e.target.value)} style={{background:'#ffffff', color:'#1e293b', border:'1px solid rgba(100,116,139,0.3)', borderRadius:'6px', padding:'2px 6px'}} />
             </label>
             <label style={{display:'flex', alignItems:'center', gap:'6px'}}>기준2:
-              <input type="date" value={ref2} onChange={e => setRef2(e.target.value)} style={{background:'#0f172a', color:'#e2e8f0', border:'1px solid rgba(148,163,184,0.3)', borderRadius:'6px', padding:'2px 6px'}} />
+              <input type="date" value={ref2} onChange={e => setRef2(e.target.value)} style={{background:'#ffffff', color:'#1e293b', border:'1px solid rgba(100,116,139,0.3)', borderRadius:'6px', padding:'2px 6px'}} />
             </label>
             <label style={{display:'flex', alignItems:'center', gap:'6px'}}>기준3:
-              <input type="date" value={ref3} onChange={e => setRef3(e.target.value)} style={{background:'#0f172a', color:'#e2e8f0', border:'1px solid rgba(148,163,184,0.3)', borderRadius:'6px', padding:'2px 6px'}} />
+              <input type="date" value={ref3} onChange={e => setRef3(e.target.value)} style={{background:'#ffffff', color:'#1e293b', border:'1px solid rgba(100,116,139,0.3)', borderRadius:'6px', padding:'2px 6px'}} />
             </label>
-            <button onClick={applyRefDates} style={{padding:'4px 10px', borderRadius:'6px', border:'1px solid rgba(96,165,250,0.45)', background:'rgba(37,99,235,0.18)', color:'#bfdbfe', cursor:'pointer'}}>적용</button>
-            <span style={{color:'rgba(255,255,255,0.3)'}}>
+            <button onClick={applyRefDates} style={{padding:'4px 10px', borderRadius:'6px', border:'1px solid rgba(37,99,235,0.45)', background:'rgba(37,99,235,0.18)', color:'#2563eb', cursor:'pointer'}}>적용</button>
+            <span style={{color:'rgba(15,23,42,0.88)'}}>
               변동률 = (현재가 − 기준일가) / 기준일가 × 100
             </span>
           </div>
@@ -824,9 +831,9 @@ const SemiconductorView = React.memo(() => {
       ) : tab === 'summary' ? (
         <div style={{padding:'0.5rem 0.1rem'}}>
           {summaryError && (
-            <div style={{marginBottom:'0.55rem', color:'#f87171', fontSize:'0.78rem'}}>{summaryError}</div>
+            <div style={{marginBottom:'0.55rem', color:'#dc2626', fontSize:'0.78rem'}}>{summaryError}</div>
           )}
-          <div style={{fontSize:'0.75rem', color:'#93c5fd', marginBottom:'10px'}}>
+          <div style={{fontSize:'0.75rem', color:'#2563eb', marginBottom:'10px'}}>
             코스피 {summaryDisplay.kospi_change_pct != null ? `${summaryDisplay.kospi_change_pct}%` : '-'} · 나스닥 {summaryDisplay.nasdaq_change_pct != null ? `${summaryDisplay.nasdaq_change_pct}%` : '-'}
           </div>
           <div style={{overflowX:'auto'}}>
@@ -834,44 +841,44 @@ const SemiconductorView = React.memo(() => {
               <thead>
                 <tr>
                   {['No','섹터','주가 변동률(%)','종목 수','상승 종목 수','PBR평균','PER평균','PSR평균','코스피 대비','나스닥 대비'].map((h)=>(
-                    <th key={h} style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0', fontWeight:700, textAlign:'center'}}>{h}</th>
+                    <th key={h} style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b', fontWeight:700, textAlign:'center'}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {summaryDisplay?.summary && (
-                  <tr style={{background:'rgba(34,197,94,0.08)', cursor:'pointer'}}
+                  <tr style={{background:'rgba(22,163,74,0.08)', cursor:'pointer'}}
                       onClick={() => { setTab('details'); setFilterLv1('ALL'); }}>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'center', fontWeight:700}}>1</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'center', fontWeight:700}}>전체</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right', color:chgColor(summaryDisplay.summary.avg_change_pct), fontWeight:700}}>{summaryDisplay.summary.avg_change_pct != null ? `${summaryDisplay.summary.avg_change_pct}%` : '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{summaryDisplay.summary.stock_count?.toLocaleString('ko-KR') || '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{summaryDisplay.summary.up_count?.toLocaleString('ko-KR') || 0} ({summaryDisplay.summary.up_ratio_pct || 0}%)</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{summaryDisplay.summary.avg_pbr != null ? summaryDisplay.summary.avg_pbr.toLocaleString('ko-KR') : '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{summaryDisplay.summary.avg_per != null ? summaryDisplay.summary.avg_per.toLocaleString('ko-KR') : '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{summaryDisplay.summary.avg_psr != null ? summaryDisplay.summary.avg_psr.toLocaleString('ko-KR') : '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'center'}}>{perfBadge(summaryDisplay.summary.vs_kospi)}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'center'}}>{perfBadge(summaryDisplay.summary.vs_nasdaq)}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'center', fontWeight:700}}>1</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'center', fontWeight:700}}>전체</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right', color:chgColor(summaryDisplay.summary.avg_change_pct), fontWeight:700}}>{summaryDisplay.summary.avg_change_pct != null ? `${summaryDisplay.summary.avg_change_pct}%` : '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{summaryDisplay.summary.stock_count?.toLocaleString('ko-KR') || '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{summaryDisplay.summary.up_count?.toLocaleString('ko-KR') || 0} ({summaryDisplay.summary.up_ratio_pct || 0}%)</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{summaryDisplay.summary.avg_pbr != null ? summaryDisplay.summary.avg_pbr.toLocaleString('ko-KR') : '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{summaryDisplay.summary.avg_per != null ? summaryDisplay.summary.avg_per.toLocaleString('ko-KR') : '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{summaryDisplay.summary.avg_psr != null ? summaryDisplay.summary.avg_psr.toLocaleString('ko-KR') : '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'center'}}>{perfBadge(summaryDisplay.summary.vs_kospi)}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'center'}}>{perfBadge(summaryDisplay.summary.vs_nasdaq)}</td>
                   </tr>
                 )}
                 {(summaryDisplay?.rows || []).map((r, i) => (
                   <tr key={r.sector} style={{cursor:'pointer'}}
                       onClick={() => { setTab('details'); setFilterLv1(r.sector || 'ALL'); }}>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'center'}}>{i+2}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'center', fontWeight:600}}>{r.sector}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right', color:chgColor(r.avg_change_pct), fontWeight:700}}>{r.avg_change_pct != null ? `${r.avg_change_pct}%` : '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{r.stock_count?.toLocaleString('ko-KR') || '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{r.up_count?.toLocaleString('ko-KR') || 0} ({r.up_ratio_pct || 0}%)</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{r.avg_pbr != null ? r.avg_pbr.toLocaleString('ko-KR') : '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{r.avg_per != null ? r.avg_per.toLocaleString('ko-KR') : '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{r.avg_psr != null ? r.avg_psr.toLocaleString('ko-KR') : '-'}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'center'}}>{perfBadge(r.vs_kospi)}</td>
-                    <td style={{padding:'8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'center'}}>{perfBadge(r.vs_nasdaq)}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'center'}}>{i+2}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'center', fontWeight:600}}>{r.sector}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right', color:chgColor(r.avg_change_pct), fontWeight:700}}>{r.avg_change_pct != null ? `${r.avg_change_pct}%` : '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{r.stock_count?.toLocaleString('ko-KR') || '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{r.up_count?.toLocaleString('ko-KR') || 0} ({r.up_ratio_pct || 0}%)</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{r.avg_pbr != null ? r.avg_pbr.toLocaleString('ko-KR') : '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{r.avg_per != null ? r.avg_per.toLocaleString('ko-KR') : '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{r.avg_psr != null ? r.avg_psr.toLocaleString('ko-KR') : '-'}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'center'}}>{perfBadge(r.vs_kospi)}</td>
+                    <td style={{padding:'8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'center'}}>{perfBadge(r.vs_nasdaq)}</td>
                   </tr>
                 ))}
                 {(!summaryDisplay?.summary && (!summaryDisplay?.rows || summaryDisplay.rows.length === 0)) && (
                   <tr>
-                    <td colSpan={10} style={{padding:'14px', textAlign:'center', color:'rgba(255,255,255,0.5)', border:'1px solid rgba(148,163,184,0.25)'}}>
+                    <td colSpan={10} style={{padding:'14px', textAlign:'center', color:'rgba(15,23,42,0.88)', border:'1px solid rgba(100,116,139,0.25)'}}>
                       표시할 종합현황 데이터가 없습니다.
                     </td>
                   </tr>
@@ -880,35 +887,35 @@ const SemiconductorView = React.memo(() => {
             </table>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:'10px', flexWrap:'wrap', marginTop:'16px'}}>
-            <label style={{color:'#cbd5e1', fontSize:'0.8rem'}}>시작일
-              <input type="date" value={sumStart} onChange={e=>setSumStart(e.target.value)} style={{marginLeft:'6px', background:'#0f172a', color:'#e2e8f0', border:'1px solid rgba(148,163,184,0.35)', borderRadius:'6px', padding:'2px 6px'}} />
+            <label style={{color:'#1e293b', fontSize:'0.8rem'}}>시작일
+              <input type="date" value={sumStart} onChange={e=>setSumStart(e.target.value)} style={{marginLeft:'6px', background:'#ffffff', color:'#1e293b', border:'1px solid rgba(100,116,139,0.35)', borderRadius:'6px', padding:'2px 6px'}} />
             </label>
-            <label style={{color:'#cbd5e1', fontSize:'0.8rem'}}>종료일
-              <input type="date" value={sumEnd} onChange={e=>setSumEnd(e.target.value)} style={{marginLeft:'6px', background:'#0f172a', color:'#e2e8f0', border:'1px solid rgba(148,163,184,0.35)', borderRadius:'6px', padding:'2px 6px'}} />
+            <label style={{color:'#1e293b', fontSize:'0.8rem'}}>종료일
+              <input type="date" value={sumEnd} onChange={e=>setSumEnd(e.target.value)} style={{marginLeft:'6px', background:'#ffffff', color:'#1e293b', border:'1px solid rgba(100,116,139,0.35)', borderRadius:'6px', padding:'2px 6px'}} />
             </label>
-            <button onClick={loadSummary} style={{padding:'4px 10px', borderRadius:'6px', border:'1px solid rgba(96,165,250,0.45)', background:'rgba(37,99,235,0.18)', color:'#bfdbfe', cursor:'pointer'}}>적용</button>
-            <span style={{fontSize:'0.74rem', color:'rgba(148,163,184,0.9)'}}>시작일/종료일은 코스피·나스닥 대비(언더/아웃퍼폼) 판정 기준입니다.</span>
+            <button onClick={loadSummary} style={{padding:'4px 10px', borderRadius:'6px', border:'1px solid rgba(37,99,235,0.45)', background:'rgba(37,99,235,0.18)', color:'#2563eb', cursor:'pointer'}}>적용</button>
+            <span style={{fontSize:'0.74rem', color:'#1e293b'}}>시작일/종료일은 코스피·나스닥 대비(언더/아웃퍼폼) 판정 기준입니다.</span>
           </div>
         </div>
       ) : (
         <div style={{padding:'0.5rem 0.1rem', display:'flex', flexDirection:'column', gap:'0.8rem'}}>
           <div style={{display:'flex', alignItems:'center', justifyContent:'flex-start', gap:'0.7rem', flexWrap:'wrap'}}>
             <div style={{display:'flex', gap:'0.4rem', alignItems:'center', flexWrap:'wrap'}}>
-              <span style={{fontSize:'0.8rem', color:'#cbd5e1', fontWeight:700}}>카테고리</span>
+              <span style={{fontSize:'0.8rem', color:'#1e293b', fontWeight:700}}>카테고리</span>
               {categoryList.map(cat => (
                 <button key={cat} onClick={() => setPickedCategory(cat)}
                   style={{
                     padding:'3px 9px', borderRadius:'999px', cursor:'pointer',
-                    border: pickedCategory===cat?'1px solid #22d3ee':'1px solid rgba(148,163,184,0.35)',
-                    background: pickedCategory===cat?'rgba(34,211,238,0.15)':'rgba(255,255,255,0.04)',
-                    color: pickedCategory===cat?'#67e8f9':'#cbd5e1', fontWeight:700, fontSize:'0.72rem',
+                    border: pickedCategory===cat?'1px solid #0891b2':'1px solid rgba(100,116,139,0.35)',
+                    background: pickedCategory===cat?'rgba(34,211,238,0.15)':'rgba(15,23,42,0.04)',
+                    color: pickedCategory===cat?'#0891b2':'#1e293b', fontWeight:700, fontSize:'0.72rem',
                   }}>{cat}</button>
               ))}
             </div>
             <div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>
-              <span style={{fontSize:'0.8rem', color:'#cbd5e1', fontWeight:700}}>기업</span>
+              <span style={{fontSize:'0.8rem', color:'#1e293b', fontWeight:700}}>기업</span>
               <select value={pickedCode} onChange={e => setPickedCode(e.target.value)}
-                style={{padding:'0.35rem 0.55rem', borderRadius:'8px', background:'rgba(15,23,42,0.9)', border:'1px solid rgba(148,163,184,0.35)', color:'#e2e8f0'}}>
+                style={{padding:'0.35rem 0.55rem', borderRadius:'8px', background:'rgba(255,255,255,0.9)', border:'1px solid rgba(100,116,139,0.35)', color:'#1e293b'}}>
                 {categoryStocks.map(r => (
                   <option key={r.stock_code} value={r.stock_code}>{r.company_name} ({r.stock_code})</option>
                 ))}
@@ -917,56 +924,56 @@ const SemiconductorView = React.memo(() => {
           </div>
 
           {finLoading ? (
-            <div style={{padding:'1.6rem', textAlign:'center', color:'rgba(255,255,255,0.45)'}}>실적 데이터 로딩 중...</div>
+            <div style={{padding:'1.6rem', textAlign:'center', color:'rgba(15,23,42,0.88)'}}>실적 데이터 로딩 중...</div>
           ) : (
             <>
               <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(360px,1fr))', gap:'0.8rem'}}>
-                <div style={{border:'1px solid rgba(148,163,184,0.2)', borderRadius:'10px', background:'rgba(15,23,42,0.8)', padding:'0.6rem'}}>
+                <div style={{border:'1px solid rgba(100,116,139,0.2)', borderRadius:'10px', background:'rgba(255,255,255,0.8)', padding:'0.6rem'}}>
                   <h4 style={{margin:'0 0 0.4rem', fontSize:'0.84rem'}}>연간 실적 (매출: 막대 / 이익: 선)</h4>
                   <div style={{height:'260px'}}>
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={annualSeries}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                        <XAxis dataKey="period" tick={{fill:'#cbd5e1', fontSize:11}} />
-                        <YAxis yAxisId="l" tick={{fill:'#94a3b8', fontSize:11}}
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.2)" />
+                        <XAxis dataKey="period" tick={{fill:'#1e293b', fontSize:11}} />
+                        <YAxis yAxisId="l" tick={{fill:'#334155', fontSize:11}}
                           domain={annualChartDomains ? [annualChartDomains.leftMin, annualChartDomains.leftMax] : [0, 'auto']} />
-                        <YAxis yAxisId="r" orientation="right" tick={{fill:'#94a3b8', fontSize:11}} tickFormatter={(v)=>`${v}%`}
+                        <YAxis yAxisId="r" orientation="right" tick={{fill:'#334155', fontSize:11}} tickFormatter={(v)=>`${v}%`}
                           domain={annualChartDomains ? [annualChartDomains.opmMin, annualChartDomains.opmMax] : ['auto', 'auto']} />
-                        <ReferenceLine yAxisId="l" y={0} stroke="rgba(255,255,255,0.35)" strokeDasharray="4 2" />
+                        <ReferenceLine yAxisId="l" y={0} stroke="rgba(15,23,42,0.35)" strokeDasharray="4 2" />
                         <Tooltip formatter={(v, n)=> n==='이익률(%)' ? `${v}%` : Number(v).toLocaleString('ko-KR')} />
                         <Legend />
-                        <Bar yAxisId="l" dataKey="revenue" fill="#22d3ee" radius={[4,4,0,0]}>
-                          <LabelList dataKey="revenue" position="top" formatter={(v)=>v==null?'':Number(v).toLocaleString('ko-KR')} style={{fill:'#7dd3fc', fontSize:10}} />
+                        <Bar yAxisId="l" dataKey="revenue" fill="#0891b2" radius={[4,4,0,0]}>
+                          <LabelList dataKey="revenue" position="top" formatter={(v)=>v==null?'':Number(v).toLocaleString('ko-KR')} style={{fill:'#0284c7', fontSize:10}} />
                         </Bar>
-                        <Line yAxisId="r" type="monotone" dataKey="margin_pct" name="이익률(%)" stroke="#fb7185" strokeWidth={2}>
-                          <LabelList dataKey="margin_pct" position="top" formatter={(v)=>v==null?'':`${v}%`} style={{fill:'#fda4af', fontSize:10}} />
+                        <Line yAxisId="r" type="monotone" dataKey="margin_pct" name="이익률(%)" stroke="#e11d48" strokeWidth={2}>
+                          <LabelList dataKey="margin_pct" position="top" formatter={(v)=>v==null?'':`${v}%`} style={{fill:'#be123c', fontSize:10}} />
                         </Line>
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <div style={{border:'1px solid rgba(148,163,184,0.2)', borderRadius:'10px', background:'rgba(15,23,42,0.8)', padding:'0.6rem'}}>
+                <div style={{border:'1px solid rgba(100,116,139,0.2)', borderRadius:'10px', background:'rgba(255,255,255,0.8)', padding:'0.6rem'}}>
                   <h4 style={{margin:'0 0 0.4rem', fontSize:'0.84rem'}}>분기 실적 (매출: 막대 / 이익: 선)</h4>
                   <div style={{height:'260px'}}>
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={quarterSeriesSimple}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                        <XAxis dataKey="period" tick={{fill:'#cbd5e1', fontSize:11}} />
-                        <YAxis yAxisId="l" tick={{fill:'#94a3b8', fontSize:11}}
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.2)" />
+                        <XAxis dataKey="period" tick={{fill:'#1e293b', fontSize:11}} />
+                        <YAxis yAxisId="l" tick={{fill:'#334155', fontSize:11}}
                           domain={quarterChartDomains ? [quarterChartDomains.leftMin, quarterChartDomains.leftMax] : [0, 'auto']} />
-                        <YAxis yAxisId="r" orientation="right" tick={{fill:'#94a3b8', fontSize:11}} tickFormatter={(v)=>`${v}%`}
+                        <YAxis yAxisId="r" orientation="right" tick={{fill:'#334155', fontSize:11}} tickFormatter={(v)=>`${v}%`}
                           domain={quarterChartDomains ? [quarterChartDomains.opmMin, quarterChartDomains.opmMax] : ['auto', 'auto']} />
-                        <ReferenceLine yAxisId="l" y={0} stroke="rgba(255,255,255,0.35)" strokeDasharray="4 2" />
+                        <ReferenceLine yAxisId="l" y={0} stroke="rgba(15,23,42,0.35)" strokeDasharray="4 2" />
                         <Tooltip formatter={(v, n)=> n==='이익률(%)' ? `${v}%` : Number(v).toLocaleString('ko-KR')} />
                         <Legend />
-                        <Bar yAxisId="l" dataKey="revenue" fill="#38bdf8" radius={[4,4,0,0]}>
-                          <LabelList dataKey="revenue" position="top" formatter={(v)=>v==null?'':Number(v).toLocaleString('ko-KR')} style={{fill:'#7dd3fc', fontSize:9}} />
+                        <Bar yAxisId="l" dataKey="revenue" fill="#0284c7" radius={[4,4,0,0]}>
+                          <LabelList dataKey="revenue" position="top" formatter={(v)=>v==null?'':Number(v).toLocaleString('ko-KR')} style={{fill:'#0284c7', fontSize:9}} />
                         </Bar>
-                        <Line yAxisId="r" type="monotone" dataKey="margin_pct" name="이익률(%)" stroke="#f97316" strokeWidth={2} dot={false} />
+                        <Line yAxisId="r" type="monotone" dataKey="margin_pct" name="이익률(%)" stroke="#c2410c" strokeWidth={2} dot={false} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
-                  <div style={{fontSize:'0.72rem', color:'rgba(148,163,184,0.9)', marginTop:'0.35rem'}}>최근 12개 분기만 표시</div>
+                  <div style={{fontSize:'0.72rem', color:'#1e293b', marginTop:'0.35rem'}}>최근 12개 분기만 표시</div>
                 </div>
               </div>
 
@@ -974,10 +981,10 @@ const SemiconductorView = React.memo(() => {
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.8rem', minWidth:'760px'}}>
                   <thead>
                     <tr>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>항목</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>값</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>항목</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>값</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>항목</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>값</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>항목</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>값</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -993,10 +1000,10 @@ const SemiconductorView = React.memo(() => {
                       [`매입재료비(억)${finDetail?.material_purchase?.year ? ' ' + finDetail.material_purchase.year : ''}`, finDetail?.material_purchase?.amount_uk != null ? fmtEok(finDetail.material_purchase.amount_uk) : '-', `수주잔고(억)${finDetail?.order_backlog?.period ? ' ' + finDetail.order_backlog.period : ''}`, finDetail?.order_backlog?.amount_uk != null ? fmtEok(finDetail.order_backlog.amount_uk) : '-'],
                     ].map((r, i) => (
                       <tr key={i}>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', background:'rgba(99,102,241,0.12)', color:'#c7d2fe', fontWeight:700}}>{r[0]}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right', fontWeight:600}}>{r[1]}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', background:'rgba(99,102,241,0.12)', color:'#c7d2fe', fontWeight:700}}>{r[2]}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right', fontWeight:600}}>{r[3]}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', background:'rgba(79,70,229,0.12)', color:'#6366f1', fontWeight:700}}>{r[0]}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right', fontWeight:600}}>{r[1]}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', background:'rgba(79,70,229,0.12)', color:'#6366f1', fontWeight:700}}>{r[2]}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right', fontWeight:600}}>{r[3]}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1007,14 +1014,14 @@ const SemiconductorView = React.memo(() => {
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.78rem', minWidth:'980px'}}>
                   <thead>
                     <tr>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>구분</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>기준연도</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>매출</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>영업이익</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>순이익</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>자산</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>부채</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>자본</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>구분</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>기준연도</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>매출</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>영업이익</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>순이익</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>자산</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>부채</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>자본</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1023,14 +1030,14 @@ const SemiconductorView = React.memo(() => {
                       ['별도(OFS)', finDetail?.financial?.ofs],
                     ].map(([lbl, d]) => (
                       <tr key={lbl}>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', background:'rgba(99,102,241,0.12)', color:'#c7d2fe', fontWeight:700}}>{lbl}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.year ?? '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.revenue != null ? fmtEok(d.revenue) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.operating_profit != null ? fmtEok(d.operating_profit) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.net_income != null ? fmtEok(d.net_income) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.total_assets != null ? fmtEok(d.total_assets) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.total_liabilities != null ? fmtEok(d.total_liabilities) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.total_equity != null ? fmtEok(d.total_equity) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', background:'rgba(79,70,229,0.12)', color:'#6366f1', fontWeight:700}}>{lbl}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.year ?? '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.revenue != null ? fmtEok(d.revenue) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.operating_profit != null ? fmtEok(d.operating_profit) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.net_income != null ? fmtEok(d.net_income) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.total_assets != null ? fmtEok(d.total_assets) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.total_liabilities != null ? fmtEok(d.total_liabilities) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.total_equity != null ? fmtEok(d.total_equity) : '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1041,13 +1048,13 @@ const SemiconductorView = React.memo(() => {
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.78rem', minWidth:'980px'}}>
                   <thead>
                     <tr>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>현금흐름 구분</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>기준연도</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>영업CF</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>투자CF</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>재무CF</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>CAPEX</th>
-                      <th style={{padding:'8px', border:'1px solid rgba(148,163,184,0.35)', background:'rgba(15,23,42,0.95)', color:'#e2e8f0'}}>FCF(영업-CAPEX)</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>현금흐름 구분</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>기준연도</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>영업CF</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>투자CF</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>재무CF</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>CAPEX</th>
+                      <th style={{padding:'8px', border:'1px solid rgba(100,116,139,0.35)', background:'rgba(255,255,255,0.95)', color:'#1e293b'}}>FCF(영업-CAPEX)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1056,13 +1063,13 @@ const SemiconductorView = React.memo(() => {
                       ['별도(OFS)', finDetail?.cashflow?.ofs],
                     ].map(([lbl, d]) => (
                       <tr key={lbl}>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', background:'rgba(16,185,129,0.12)', color:'#a7f3d0', fontWeight:700}}>{lbl}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.year ?? '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.operating_cf != null ? fmtEok(d.operating_cf) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.investing_cf != null ? fmtEok(d.investing_cf) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.financing_cf != null ? fmtEok(d.financing_cf) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.capex != null ? fmtEok(d.capex) : '-'}</td>
-                        <td style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.25)', textAlign:'right'}}>{d?.free_cf != null ? fmtEok(d.free_cf) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', background:'rgba(5,150,105,0.12)', color:'#047857', fontWeight:700}}>{lbl}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.year ?? '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.operating_cf != null ? fmtEok(d.operating_cf) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.investing_cf != null ? fmtEok(d.investing_cf) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.financing_cf != null ? fmtEok(d.financing_cf) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.capex != null ? fmtEok(d.capex) : '-'}</td>
+                        <td style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.25)', textAlign:'right'}}>{d?.free_cf != null ? fmtEok(d.free_cf) : '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1072,8 +1079,8 @@ const SemiconductorView = React.memo(() => {
               {/* ── 재무 이력 종합표 ───────────────────────────────────── */}
               {histData && (() => {
                 const fmtN = (v) => v == null ? '-' : v.toLocaleString('ko-KR');
-                const numClr = (v) => v == null ? '#e2e8f0' : v >= 0 ? '#86efac' : '#fb7185';
-                const pctClr = (v) => v == null ? '#e2e8f0' : v >= 10 ? '#4ade80' : v >= 0 ? '#fde68a' : '#fb7185';
+                const numClr = (v) => v == null ? '#1e293b' : v >= 0 ? '#15803d' : '#e11d48';
+                const pctClr = (v) => v == null ? '#1e293b' : v >= 10 ? '#15803d' : v >= 0 ? '#a16207' : '#e11d48';
 
                 const periodKey = (r) => (Number(r?.year || 0) * 10) + Number(r?.quarter || 0);
 
@@ -1091,48 +1098,48 @@ const SemiconductorView = React.memo(() => {
                 }));
 
                 const ANN_ROWS = [
-                  { label: '매출(억)',    fn: r => fmtN(r.revenue),           clr: () => '#7dd3fc' },
+                  { label: '매출(억)',    fn: r => fmtN(r.revenue),           clr: () => '#0284c7' },
                   { label: '영업이익(억)',fn: r => fmtN(r.operating_profit),  clr: r => numClr(r.operating_profit) },
                   { label: '영업이익률', fn: r => r.opm != null ? `${r.opm}%` : '-', clr: r => pctClr(r.opm) },
                   { label: '순이익(억)', fn: r => fmtN(r.net_income),        clr: r => numClr(r.net_income) },
-                  { label: 'EPS(원)',    fn: r => fmtN(r.eps),               clr: () => '#e2e8f0' },
+                  { label: 'EPS(원)',    fn: r => fmtN(r.eps),               clr: () => '#1e293b' },
                   { label: '영업CF(억)', fn: r => fmtN(r.operating_cf),      clr: r => numClr(r.operating_cf) },
-                  { label: 'CapEx(억)',  fn: r => fmtN(r.capex),             clr: () => '#fcd34d' },
-                  { label: '감가상각(억)',fn: r => fmtN(r.depreciation),     clr: () => '#e2e8f0' },
+                  { label: 'CapEx(억)',  fn: r => fmtN(r.capex),             clr: () => '#b45309' },
+                  { label: '감가상각(억)',fn: r => fmtN(r.depreciation),     clr: () => '#1e293b' },
                   { label: '자유CF(억)', fn: r => fmtN(r.free_cf),           clr: r => numClr(r.free_cf) },
-                  { label: '매입재료비(억)', fn: r => fmtN(r.material_purchase), clr: () => '#e2e8f0' },
+                  { label: '매입재료비(억)', fn: r => fmtN(r.material_purchase), clr: () => '#1e293b' },
                 ];
                 const QTR_ROWS = [
-                  { label: '매출(억)',    fn: r => fmtN(r.revenue),           clr: () => '#7dd3fc' },
+                  { label: '매출(억)',    fn: r => fmtN(r.revenue),           clr: () => '#0284c7' },
                   { label: '영업이익(억)',fn: r => fmtN(r.operating_profit),  clr: r => numClr(r.operating_profit) },
                   { label: '영업이익률', fn: r => r.opm != null ? `${r.opm}%` : '-', clr: r => pctClr(r.opm) },
                   { label: '순이익(억)', fn: r => fmtN(r.net_income),        clr: r => numClr(r.net_income) },
-                  { label: 'EPS(원)',    fn: r => fmtN(r.eps),               clr: () => '#e2e8f0' },
-                  { label: 'CapEx(억)',  fn: r => fmtN(r.capex),             clr: () => '#fcd34d' },
-                  { label: '감가상각(억)',fn: r => fmtN(r.depreciation),     clr: () => '#e2e8f0' },
+                  { label: 'EPS(원)',    fn: r => fmtN(r.eps),               clr: () => '#1e293b' },
+                  { label: 'CapEx(억)',  fn: r => fmtN(r.capex),             clr: () => '#b45309' },
+                  { label: '감가상각(억)',fn: r => fmtN(r.depreciation),     clr: () => '#1e293b' },
                   { label: '자유CF(억)', fn: r => fmtN(r.free_cf),           clr: r => numClr(r.free_cf) },
                   { label: '수주잔고(억)',fn: r => fmtN(r.order_backlog),    clr: () => '#a5f3fc' },
                 ];
                 const cols = histTab === 'annual' ? annCols : qtrCols;
                 const rowDefs = histTab === 'annual' ? ANN_ROWS : QTR_ROWS;
-                const thBg = 'rgba(15,23,42,0.95)';
+                const thBg = 'rgba(255,255,255,0.95)';
                 const lbStyle = {
-                  padding:'6px 8px', border:'1px solid rgba(148,163,184,0.25)',
-                  background:'rgba(99,102,241,0.12)', color:'#c7d2fe',
+                  padding:'6px 8px', border:'1px solid rgba(100,116,139,0.25)',
+                  background:'rgba(79,70,229,0.12)', color:'#6366f1',
                   fontWeight:700, whiteSpace:'nowrap', textAlign:'left',
                 };
                 return (
                   <div style={{marginTop:'1.4rem'}}>
                     <div style={{display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.6rem'}}>
-                      <h4 style={{margin:0, fontSize:'0.88rem', color:'#e2e8f0'}}>재무 이력 종합표</h4>
+                      <h4 style={{margin:0, fontSize:'0.88rem', color:'#1e293b'}}>재무 이력 종합표</h4>
                       <div style={{display:'flex', gap:'0.3rem'}}>
                         {[['annual','연간'],['quarterly','분기']].map(([v,lbl]) => (
                           <button key={v} onClick={() => setHistTab(v)}
                             style={{
                               padding:'3px 10px', fontSize:'0.76rem', borderRadius:'5px',
-                              border:'1px solid rgba(148,163,184,0.4)', cursor:'pointer',
-                              background: histTab===v ? 'rgba(56,189,248,0.22)' : 'transparent',
-                              color: histTab===v ? '#38bdf8' : '#94a3b8',
+                              border:'1px solid rgba(100,116,139,0.4)', cursor:'pointer',
+                              background: histTab===v ? 'rgba(2,132,199,0.22)' : 'transparent',
+                              color: histTab===v ? '#0284c7' : '#334155',
                             }}>
                             {lbl}
                           </button>
@@ -1143,12 +1150,12 @@ const SemiconductorView = React.memo(() => {
                       <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.77rem'}}>
                         <thead>
                           <tr>
-                            <th style={{padding:'7px 8px', border:'1px solid rgba(148,163,184,0.35)', background:thBg, color:'#e2e8f0', textAlign:'left', minWidth:'88px'}}>항목</th>
+                            <th style={{padding:'7px 8px', border:'1px solid rgba(100,116,139,0.35)', background:thBg, color:'#1e293b', textAlign:'left', minWidth:'88px'}}>항목</th>
                             {cols.map(c => (
                               <th key={c.key} style={{
-                                padding:'7px 6px', border:'1px solid rgba(148,163,184,0.35)',
-                                background: c.isTtm ? 'rgba(56,189,248,0.18)' : thBg,
-                                color: c.isTtm ? '#38bdf8' : '#94a3b8',
+                                padding:'7px 6px', border:'1px solid rgba(100,116,139,0.35)',
+                                background: c.isTtm ? 'rgba(2,132,199,0.18)' : thBg,
+                                color: c.isTtm ? '#0284c7' : '#334155',
                                 minWidth:'70px', textAlign:'right',
                               }}>
                                 {c.label}
@@ -1166,10 +1173,10 @@ const SemiconductorView = React.memo(() => {
                                 return (
                                   <td key={c.key} style={{
                                     padding:'6px 7px',
-                                    border:'1px solid rgba(148,163,184,0.25)',
+                                    border:'1px solid rgba(100,116,139,0.25)',
                                     textAlign:'right',
                                     color: color,
-                                    background: c.isTtm ? 'rgba(56,189,248,0.06)' : undefined,
+                                    background: c.isTtm ? 'rgba(2,132,199,0.06)' : undefined,
                                     fontWeight: c.isTtm ? 600 : undefined,
                                   }}>
                                     {val}
@@ -1181,7 +1188,7 @@ const SemiconductorView = React.memo(() => {
                         </tbody>
                       </table>
                     </div>
-                    <div style={{fontSize:'0.7rem', color:'rgba(148,163,184,0.6)', marginTop:'0.3rem'}}>
+                    <div style={{fontSize:'0.7rem', color:'#1e293b', marginTop:'0.3rem'}}>
                       {histTab === 'annual'
                         ? '연결(CFS) 기준 · 최근 8년 · TTM=최근4분기합산 · 단위: 억원/원'
                         : '연결(CFS) 기준 · 최근 16분기 · 단위: 억원/원'}

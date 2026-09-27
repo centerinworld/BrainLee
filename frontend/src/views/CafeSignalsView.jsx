@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React from 'react';
 import { RefreshCw, ExternalLink, Newspaper, Layers, BarChart3, FileText } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
@@ -12,7 +19,7 @@ const fetchJson = async (path, fallback) => {
   return await res.json();
 };
 
-const Badge = ({ children, tone = '#60a5fa' }) => (
+const Badge = ({ children, tone = '#2563eb' }) => (
   <span style={{
     display: 'inline-flex',
     alignItems: 'center',
@@ -52,15 +59,15 @@ const RankingTable = ({ title, icon, rows, kind }) => (
           </thead>
           <tbody>
             {rows.slice(0, 15).map((r, i) => (
-              <tr key={`${kind}-${r.mention_key || r.key || i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <tr key={`${kind}-${r.mention_key || r.key || i}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                 <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{i + 1}</td>
                 <td style={{ padding: '0.5rem', fontWeight: 700 }}>
                   {r.mention_name || r.name}
                   {r.stock_code && <span style={{ marginLeft: '0.35rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.72rem' }}>{r.stock_code}</span>}
                 </td>
                 <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmt(r.mention_count || r.score)}</td>
-                <td style={{ padding: '0.5rem', textAlign: 'right', color: '#34d399' }}>{fmt(r.positive_count)}</td>
-                <td style={{ padding: '0.5rem', textAlign: 'right', color: '#f87171' }}>{fmt(r.negative_count)}</td>
+                <td style={{ padding: '0.5rem', textAlign: 'right', color: '#047857' }}>{fmt(r.positive_count)}</td>
+                <td style={{ padding: '0.5rem', textAlign: 'right', color: '#dc2626' }}>{fmt(r.negative_count)}</td>
               </tr>
             ))}
           </tbody>
@@ -83,10 +90,10 @@ const SummaryList = ({ title, items }) => (
             gridTemplateColumns: '34px 1fr auto',
             alignItems: 'center',
             gap: '0.65rem',
-            borderBottom: '1px solid rgba(255,255,255,0.05)',
+            borderBottom: '1px solid rgba(15,23,42,0.2)',
             paddingBottom: '0.55rem',
           }}>
-            <Badge tone={idx < 3 ? '#34d399' : '#60a5fa'}>{idx + 1}</Badge>
+            <Badge tone={idx < 3 ? '#047857' : '#2563eb'}>{idx + 1}</Badge>
             <div>
               <div style={{ fontWeight: 800 }}>{item.name}</div>
               {item.examples?.[0] && (
@@ -96,7 +103,7 @@ const SummaryList = ({ title, items }) => (
                 </a>
               )}
             </div>
-            <div style={{ fontWeight: 800, color: '#fbbf24' }}>{fmt(item.score)}</div>
+            <div style={{ fontWeight: 800, color: '#b45309' }}>{fmt(item.score)}</div>
           </div>
         ))}
       </div>
@@ -107,10 +114,10 @@ const SummaryList = ({ title, items }) => (
 const pctText = (v) => (v == null || Number.isNaN(Number(v)) ? '-' : `${Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}%`);
 
 const trafficMeta = {
-  green: { label: '좋음', color: '#34d399', bg: 'rgba(52,211,153,0.12)' },
-  red: { label: '나쁨', color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
-  yellow: { label: '주의', color: '#fbbf24', bg: 'rgba(251,191,36,0.12)' },
-  gray: { label: '중립', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
+  green: { label: '좋음', color: '#047857', bg: 'rgba(5,150,105,0.12)' },
+  red: { label: '나쁨', color: '#dc2626', bg: 'rgba(220,38,38,0.12)' },
+  yellow: { label: '주의', color: '#b45309', bg: 'rgba(217,119,6,0.12)' },
+  gray: { label: '중립', color: '#334155', bg: 'rgba(100,116,139,0.12)' },
 };
 
 const TrafficBadge = ({ light, label }) => {
@@ -167,9 +174,9 @@ const PriceRiskBadge = ({ item }) => {
       gap: '0.25rem',
       padding: '0.18rem 0.42rem',
       borderRadius: '999px',
-      border: `1px solid ${avoid ? 'rgba(248,113,113,0.42)' : 'rgba(251,191,36,0.42)'}`,
-      background: avoid ? 'rgba(248,113,113,0.12)' : 'rgba(251,191,36,0.12)',
-      color: avoid ? '#fca5a5' : '#fbbf24',
+      border: `1px solid ${avoid ? 'rgba(220,38,38,0.42)' : 'rgba(217,119,6,0.42)'}`,
+      background: avoid ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.12)',
+      color: avoid ? '#b91c1c' : '#b45309',
       fontSize: '0.68rem',
       fontWeight: 900,
       whiteSpace: 'nowrap',
@@ -205,12 +212,12 @@ const LeadershipTable = ({ title, rows, type }) => (
                 ? r.related_companies.slice(0, 3).map((c) => c.stock_name).join(', ')
                 : '';
               return (
-                <tr key={`${type}-${r.rank_no}-${r.hs_code || r.indicator_key}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <tr key={`${type}-${r.rank_no}-${r.hs_code || r.indicator_key}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                   <td style={{ padding: '0.48rem', color: 'var(--text-secondary)' }}>{r.rank_no}</td>
                   <td style={{ padding: '0.48rem', fontWeight: 800 }}>
                     {type === 'hs' ? (
                       <>
-                        <span style={{ fontFamily: 'monospace', color: '#93c5fd' }}>{r.hs_code}</span>
+                        <span style={{ fontFamily: 'monospace', color: '#2563eb' }}>{r.hs_code}</span>
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', maxWidth: '320px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.hs_name}</div>
                       </>
                     ) : r.sector_name}
@@ -220,8 +227,8 @@ const LeadershipTable = ({ title, rows, type }) => (
                       ? `${(Number(r.export_value_usd || 0) / 1_000_000).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}백만$`
                       : `${Number(r.export_value_musd || 0).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}백만$`}
                   </td>
-                  <td style={{ padding: '0.48rem', textAlign: 'right', color: Number(r.export_yoy_pct) >= 0 ? '#34d399' : '#f87171' }}>{pctText(r.export_yoy_pct)}</td>
-                  <td style={{ padding: '0.48rem', textAlign: 'right', color: Number(r.export_mom_pct) >= 0 ? '#34d399' : '#f87171' }}>{pctText(r.export_mom_pct)}</td>
+                  <td style={{ padding: '0.48rem', textAlign: 'right', color: Number(r.export_yoy_pct) >= 0 ? '#047857' : '#dc2626' }}>{pctText(r.export_yoy_pct)}</td>
+                  <td style={{ padding: '0.48rem', textAlign: 'right', color: Number(r.export_mom_pct) >= 0 ? '#047857' : '#dc2626' }}>{pctText(r.export_mom_pct)}</td>
                   <td style={{ padding: '0.48rem', color: 'var(--text-secondary)' }}>
                     {type === 'hs' ? (companies || '매핑 검토') : pctText(r.unit_price_yoy_pct)}
                   </td>
@@ -263,36 +270,36 @@ const IndicatorTrafficLightTable = ({ rows }) => (
               const stocks = Array.isArray(r.related_stocks) ? r.related_stocks.slice(0, 4) : [];
               const meta = trafficMeta[r.traffic_light] || trafficMeta.gray;
               return (
-                <tr key={`${r.indicator_key}-${r.series_name}-${r.period}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <tr key={`${r.indicator_key}-${r.series_name}-${r.period}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                   <td style={{ padding: '0.5rem' }}><TrafficBadge light={r.traffic_light} label={r.signal_label} /></td>
                   <td style={{ padding: '0.5rem', minWidth: '260px' }}>
                     <div style={{ fontWeight: 850, color: meta.color }}>{r.indicator_name || r.indicator_key}</div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>{r.series_name}</div>
                     {r.quality && r.quality !== 'official' && (
-                      <div style={{ color: '#fbbf24', fontSize: '0.66rem', marginTop: '0.12rem' }}>
+                      <div style={{ color: '#b45309', fontSize: '0.66rem', marginTop: '0.12rem' }}>
                         {r.quality.includes('proxy') ? '대리지표' : r.quality.includes('partial') ? '부분지표' : r.quality}
                         {r.source_name ? ` · ${r.source_name}` : ''}
                       </div>
                     )}
                     {r.is_fresh === false && (
-                      <div style={{ color: '#f87171', fontSize: '0.66rem', marginTop: '0.12rem' }}>갱신 지연 · 매매점수 제외</div>
+                      <div style={{ color: '#dc2626', fontSize: '0.66rem', marginTop: '0.12rem' }}>갱신 지연 · 매매점수 제외</div>
                     )}
-                    <div style={{ color: 'rgba(255,255,255,0.52)', fontSize: '0.68rem', marginTop: '0.15rem' }}>{r.reason}</div>
+                    <div style={{ color: 'rgba(15,23,42,0.88)', fontSize: '0.68rem', marginTop: '0.15rem' }}>{r.reason}</div>
                   </td>
-                  <td style={{ padding: '0.5rem', fontFamily: 'monospace', color: '#93c5fd' }}>{r.period}</td>
+                  <td style={{ padding: '0.5rem', fontFamily: 'monospace', color: '#2563eb' }}>{r.period}</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right', whiteSpace: 'nowrap' }}>{valueText(r.value, r.unit)}</td>
-                  <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(r.mom_pct) >= 0 ? '#34d399' : '#f87171' }}>{pctText(r.mom_pct)}</td>
-                  <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(r.yoy_pct) >= 0 ? '#34d399' : '#f87171' }}>{pctText(r.yoy_pct)}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(r.mom_pct) >= 0 ? '#047857' : '#dc2626' }}>{pctText(r.mom_pct)}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(r.yoy_pct) >= 0 ? '#047857' : '#dc2626' }}>{pctText(r.yoy_pct)}</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right' }}>{r.z_score == null ? '-' : Number(r.z_score).toFixed(2)}</td>
                   <td style={{ padding: '0.5rem', minWidth: '240px' }}>
                     <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                       {stocks.length ? stocks.map((s) => (
-                        <Badge key={`${r.indicator_key}-${s.stock_code}`} tone="#60a5fa">
+                        <Badge key={`${r.indicator_key}-${s.stock_code}`} tone="#2563eb">
                           {s.stock_name} {relationshipLabel(s)}
                         </Badge>
                       )) : <span style={{ color: 'var(--text-secondary)' }}>매핑 없음</span>}
                     </div>
-                    <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.68rem', marginTop: '0.28rem' }}>{r.direction_note}</div>
+                    <div style={{ color: 'rgba(15,23,42,0.88)', fontSize: '0.68rem', marginTop: '0.28rem' }}>{r.direction_note}</div>
                   </td>
                 </tr>
               );
@@ -331,19 +338,19 @@ const SectorTrafficLightTable = ({ rows }) => (
               const signals = Array.isArray(r.top_signals) ? r.top_signals.slice(0, 3) : [];
               const stocks = Array.isArray(r.related_stocks) ? r.related_stocks.slice(0, 5) : [];
               return (
-                <tr key={r.sector_name} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <tr key={r.sector_name} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                   <td style={{ padding: '0.5rem' }}><TrafficBadge light={r.traffic_light} label={r.signal_label} /></td>
                   <td style={{ padding: '0.5rem', fontWeight: 900, color: meta.color, whiteSpace: 'nowrap' }}>{r.sector_name}</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right', fontFamily: 'monospace', color: meta.color }}>{Number(r.sector_score || 0).toFixed(2)}</td>
                   <td style={{ padding: '0.5rem', whiteSpace: 'nowrap' }}>
-                    <span style={{ color: '#34d399' }}>+{r.positive_indicators || 0}</span>
+                    <span style={{ color: '#047857' }}>+{r.positive_indicators || 0}</span>
                     <span style={{ color: 'var(--text-secondary)' }}> / </span>
-                    <span style={{ color: '#f87171' }}>-{r.negative_indicators || 0}</span>
+                    <span style={{ color: '#dc2626' }}>-{r.negative_indicators || 0}</span>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.68rem' }}>총 {r.indicator_count || 0}개 지표</div>
                   </td>
                   <td style={{ padding: '0.5rem', minWidth: '230px' }}>
                     {signals.map((s) => (
-                      <div key={`${r.sector_name}-${s.indicator_key}`} style={{ color: Number(s.score) >= 0 ? '#86efac' : '#fca5a5', fontSize: '0.72rem', marginBottom: '0.2rem' }}>
+                      <div key={`${r.sector_name}-${s.indicator_key}`} style={{ color: Number(s.score) >= 0 ? '#15803d' : '#b91c1c', fontSize: '0.72rem', marginBottom: '0.2rem' }}>
                         {s.indicator_name} {Number(s.score) >= 0 ? '+' : ''}{Number(s.score || 0).toFixed(2)}
                       </div>
                     ))}
@@ -351,7 +358,7 @@ const SectorTrafficLightTable = ({ rows }) => (
                   <td style={{ padding: '0.5rem', minWidth: '300px' }}>
                     <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                       {stocks.length ? stocks.map((s) => (
-                        <Badge key={`${r.sector_name}-${s.stock_code}`} tone={s.mapping_status === 'confirmed_exposure' ? '#34d399' : '#60a5fa'}>
+                        <Badge key={`${r.sector_name}-${s.stock_code}`} tone={s.mapping_status === 'confirmed_exposure' ? '#047857' : '#2563eb'}>
                           {s.stock_name} {relationshipLabel(s)}
                         </Badge>
                       )) : <span style={{ color: 'var(--text-secondary)' }}>연결 종목 없음</span>}
@@ -372,9 +379,9 @@ const StockTradeSignalTable = ({ rows, counts }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
       <h3 style={{ fontSize: '1rem', fontWeight: 900 }}>종목 매수·매도 시그널</h3>
       <div style={{ display: 'flex', gap: '0.65rem', fontSize: '0.72rem' }}>
-        <span style={{ color: '#34d399' }}>매수 {counts?.buy || 0}</span>
-        <span style={{ color: '#f87171' }}>매도/위험 {counts?.sell_risk || 0}</span>
-        <span style={{ color: '#fbbf24' }}>관찰 {counts?.watch || 0}</span>
+        <span style={{ color: '#047857' }}>매수 {counts?.buy || 0}</span>
+        <span style={{ color: '#dc2626' }}>매도/위험 {counts?.sell_risk || 0}</span>
+        <span style={{ color: '#b45309' }}>관찰 {counts?.watch || 0}</span>
       </div>
     </div>
     {!rows?.length ? (
@@ -395,7 +402,7 @@ const StockTradeSignalTable = ({ rows, counts }) => (
             {rows.map((r) => {
               const drivers = Array.isArray(r.drivers) ? r.drivers.slice(0, 3) : [];
               return (
-                <tr key={r.stock_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <tr key={r.stock_code} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                   <td style={{ padding: '0.5rem' }}><TrafficBadge light={r.traffic_light} label={r.action} /></td>
                   <td style={{ padding: '0.5rem', minWidth: '150px' }}>
                     <div style={{ fontWeight: 900 }}>{r.stock_name}</div>
@@ -415,7 +422,7 @@ const StockTradeSignalTable = ({ rows, counts }) => (
                   </td>
                   <td style={{ padding: '0.5rem', minWidth: '360px' }}>
                     {drivers.map((d) => (
-                      <div key={`${r.stock_code}-${d.indicator_key}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.3rem', color: d.traffic_light === 'green' ? '#86efac' : '#fca5a5' }}>
+                      <div key={`${r.stock_code}-${d.indicator_key}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.3rem', color: d.traffic_light === 'green' ? '#15803d' : '#b91c1c' }}>
                         <span>{d.indicator_name} · {d.series_name}</span>
                         <span style={{ whiteSpace: 'nowrap' }}>
                           {d.revenue_exposure_pct != null ? `매출 ${Number(d.revenue_exposure_pct).toFixed(1)}%` : d.mapping_status === 'confirmed_relationship' ? '직접관계' : '비중확인'} · {Number(d.contribution) >= 0 ? '+' : ''}{Number(d.contribution || 0).toFixed(2)}
@@ -451,14 +458,14 @@ const QuantMappingTable = ({ rows }) => (
           </thead>
           <tbody>
             {rows.slice(0, 80).map((r) => (
-              <tr key={`${r.sector_name}-${r.indicator_key}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <tr key={`${r.sector_name}-${r.indicator_key}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                 <td style={{ padding: '0.48rem', fontWeight: 800 }}>{r.sector_name}</td>
-                <td style={{ padding: '0.48rem', textAlign: 'right', color: '#fbbf24' }}>{fmt(r.mention_count)}</td>
+                <td style={{ padding: '0.48rem', textAlign: 'right', color: '#b45309' }}>{fmt(r.mention_count)}</td>
                 <td style={{ padding: '0.48rem' }}>
-                  <span style={{ fontFamily: 'monospace', color: '#93c5fd', marginRight: '0.45rem' }}>{r.indicator_key}</span>
+                  <span style={{ fontFamily: 'monospace', color: '#2563eb', marginRight: '0.45rem' }}>{r.indicator_key}</span>
                   {r.indicator_name || '-'}
                 </td>
-                <td style={{ padding: '0.48rem', color: r.status?.includes('ready') || r.indicator_key?.startsWith('public:') ? '#34d399' : r.status === 'source_discontinued' ? '#f87171' : '#fbbf24' }}>
+                <td style={{ padding: '0.48rem', color: r.status?.includes('ready') || r.indicator_key?.startsWith('public:') ? '#047857' : r.status === 'source_discontinued' ? '#dc2626' : '#b45309' }}>
                   {mappingStatusLabel(r.status)}
                 </td>
               </tr>
@@ -492,21 +499,21 @@ const IndicatorSignalTable = ({ rows }) => (
             {rows.slice(0, 20).map((r) => {
               const stocks = Array.isArray(r.related_stocks) ? r.related_stocks.slice(0, 4) : [];
               return (
-                <tr key={`${r.indicator_key}-${r.series_name}-${r.period}-${r.signal_type}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <tr key={`${r.indicator_key}-${r.series_name}-${r.period}-${r.signal_type}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                   <td style={{ padding: '0.5rem' }}>
-                    <div style={{ fontWeight: 800, color: r.signal_type === 'spike_up' ? '#34d399' : '#f87171' }}>
+                    <div style={{ fontWeight: 800, color: r.signal_type === 'spike_up' ? '#047857' : '#dc2626' }}>
                       {r.signal_type === 'spike_up' ? '▲' : '▼'} {r.indicator_name || r.indicator_key}
                     </div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>{r.series_name}</div>
                   </td>
-                  <td style={{ padding: '0.5rem', fontFamily: 'monospace', color: '#93c5fd' }}>{r.period}</td>
-                  <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(r.mom_pct) >= 0 ? '#34d399' : '#f87171' }}>{pctText(r.mom_pct)}</td>
-                  <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(r.yoy_pct) >= 0 ? '#34d399' : '#f87171' }}>{pctText(r.yoy_pct)}</td>
+                  <td style={{ padding: '0.5rem', fontFamily: 'monospace', color: '#2563eb' }}>{r.period}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(r.mom_pct) >= 0 ? '#047857' : '#dc2626' }}>{pctText(r.mom_pct)}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right', color: Number(r.yoy_pct) >= 0 ? '#047857' : '#dc2626' }}>{pctText(r.yoy_pct)}</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right' }}>{r.z_score == null ? '-' : Number(r.z_score).toFixed(2)}</td>
                   <td style={{ padding: '0.5rem' }}>
                     <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                       {stocks.map((s) => (
-                        <Badge key={`${r.id}-${s.stock_code}`} tone="#60a5fa">
+                        <Badge key={`${r.id}-${s.stock_code}`} tone="#2563eb">
                           {s.stock_name} {s.stock_code} {relationshipLabel(s)}
                         </Badge>
                       ))}
@@ -658,19 +665,19 @@ export function QuantCafeSignalsPanel({ mode = 'sector' }) {
             </span>
           </div>
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.76rem', minWidth:760 }}>
-            <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(255,255,255,0.1)' }}>
+            <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(15,23,42,0.2)' }}>
               {['지표','섹터','관측','60일 평균','60일 중앙','승률','PF','60일 MDD'].map((head) => <th key={head} style={{ padding:'0.46rem', textAlign:['지표','섹터'].includes(head) ? 'left' : 'right' }}>{head}</th>)}
             </tr></thead>
             <tbody>{(macroBacktests?.items || []).slice(0, 12).map((row) => (
-              <tr key={`${row.indicator_key}-${row.sector_name}`} style={{ borderBottom:'1px solid rgba(255,255,255,0.05)' }}>
+              <tr key={`${row.indicator_key}-${row.sector_name}`} style={{ borderBottom:'1px solid rgba(15,23,42,0.2)' }}>
                 <td style={{ padding:'0.5rem', fontWeight:800 }}>{row.indicator_name || row.indicator_key}</td>
-                <td style={{ padding:'0.5rem', color:'#93c5fd' }}>{row.sector_name}</td>
+                <td style={{ padding:'0.5rem', color:'#2563eb' }}>{row.sector_name}</td>
                 <td style={{ padding:'0.5rem', textAlign:'right' }}>{row.observation_count}</td>
-                <td style={{ padding:'0.5rem', textAlign:'right', color:Number(row.avg_ret_60d) >= 0 ? '#34d399' : '#f87171' }}>{pctText(row.avg_ret_60d)}</td>
+                <td style={{ padding:'0.5rem', textAlign:'right', color:Number(row.avg_ret_60d) >= 0 ? '#047857' : '#dc2626' }}>{pctText(row.avg_ret_60d)}</td>
                 <td style={{ padding:'0.5rem', textAlign:'right' }}>{pctText(row.median_ret_60d)}</td>
                 <td style={{ padding:'0.5rem', textAlign:'right' }}>{pctText(row.hit_rate_60d)}</td>
                 <td style={{ padding:'0.5rem', textAlign:'right' }}>{row.profit_factor_60d == null ? '-' : Number(row.profit_factor_60d).toFixed(2)}</td>
-                <td style={{ padding:'0.5rem', textAlign:'right', color:'#fbbf24' }}>{pctText(row.avg_mdd_60d)}</td>
+                <td style={{ padding:'0.5rem', textAlign:'right', color:'#b45309' }}>{pctText(row.avg_mdd_60d)}</td>
               </tr>
             ))}</tbody>
           </table>
@@ -679,17 +686,17 @@ export function QuantCafeSignalsPanel({ mode = 'sector' }) {
         <div className="glass-panel" style={{ padding:'0.9rem 1rem', overflowX:'auto' }}>
           <div style={{ fontWeight:850, marginBottom:'0.65rem' }}>전체 섹터 신호 현황</div>
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.78rem', minWidth:680 }}>
-            <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(255,255,255,0.1)' }}>
+            <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(15,23,42,0.2)' }}>
               {['섹터','신호','점수','지표','긍정','부정','연결 종목'].map((head) => <th key={head} style={{ padding:'0.5rem', textAlign:['점수','지표','긍정','부정','연결 종목'].includes(head) ? 'right' : 'left' }}>{head}</th>)}
             </tr></thead>
             <tbody>{sectorRows.map((item) => (
-              <tr key={item.sector_name} onClick={() => setSelectedSector(item.sector_name)} style={{ borderBottom:'1px solid rgba(255,255,255,0.05)', cursor:'pointer', background:selectedSector === item.sector_name ? 'rgba(45,212,191,0.08)' : 'transparent' }}>
+              <tr key={item.sector_name} onClick={() => setSelectedSector(item.sector_name)} style={{ borderBottom:'1px solid rgba(15,23,42,0.2)', cursor:'pointer', background:selectedSector === item.sector_name ? 'rgba(37,99,235,0.08)' : 'transparent' }}>
                 <td style={{ padding:'0.52rem', fontWeight:850 }}>{item.sector_name}</td>
                 <td style={{ padding:'0.52rem' }}><TrafficBadge light={item.traffic_light} label={item.signal_label} /></td>
                 <td style={{ padding:'0.52rem', textAlign:'right' }}>{Number(item.sector_score || 0).toFixed(2)}</td>
                 <td style={{ padding:'0.52rem', textAlign:'right' }}>{item.indicator_count || 0}</td>
-                <td style={{ padding:'0.52rem', textAlign:'right', color:'#34d399' }}>{item.positive_indicators || 0}</td>
-                <td style={{ padding:'0.52rem', textAlign:'right', color:'#f87171' }}>{item.negative_indicators || 0}</td>
+                <td style={{ padding:'0.52rem', textAlign:'right', color:'#047857' }}>{item.positive_indicators || 0}</td>
+                <td style={{ padding:'0.52rem', textAlign:'right', color:'#dc2626' }}>{item.negative_indicators || 0}</td>
                 <td style={{ padding:'0.52rem', textAlign:'right' }}>{Array.isArray(item.related_stocks) ? item.related_stocks.length : 0}</td>
               </tr>
             ))}</tbody>
@@ -698,7 +705,7 @@ export function QuantCafeSignalsPanel({ mode = 'sector' }) {
         <div className="glass-panel" style={{ padding:'1rem' }}>
           <label style={{ display:'grid', gap:'0.4rem', maxWidth:520 }}>
             <span style={{ fontSize:'0.76rem', color:'var(--text-secondary)' }}>섹터 선택</span>
-            <select value={selectedSector} onChange={(e) => setSelectedSector(e.target.value)} style={{ padding:'0.62rem 0.75rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}>
+            <select value={selectedSector} onChange={(e) => setSelectedSector(e.target.value)} style={{ padding:'0.62rem 0.75rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }}>
               {sectorRows.map((item) => <option key={item.sector_name} value={item.sector_name}>{item.sector_name} · {item.signal_label}</option>)}
             </select>
           </label>
@@ -710,31 +717,31 @@ export function QuantCafeSignalsPanel({ mode = 'sector' }) {
             <span style={{ color:'var(--text-secondary)', fontSize:'0.78rem' }}>점수 {Number(row.sector_score || 0).toFixed(2)} · 지표 {row.indicator_count || 0}개</span>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))', gap:'0.7rem' }}>
-            {signals.map((signal) => <div key={signal.indicator_key} style={{ padding:'0.75rem', border:'1px solid rgba(255,255,255,0.09)', borderRadius:8 }}>
-              <div style={{ fontWeight:850, color:Number(signal.score) >= 0 ? '#86efac' : '#fca5a5' }}>{signal.indicator_name}</div>
+            {signals.map((signal) => <div key={signal.indicator_key} style={{ padding:'0.75rem', border:'1px solid rgba(15,23,42,0.2)', borderRadius:8 }}>
+              <div style={{ fontWeight:850, color:Number(signal.score) >= 0 ? '#15803d' : '#b91c1c' }}>{signal.indicator_name}</div>
               <div style={{ marginTop:'0.3rem', color:'var(--text-secondary)', fontSize:'0.75rem' }}>{signal.series_name || signal.indicator_key} · {Number(signal.score) >= 0 ? '+' : ''}{Number(signal.score || 0).toFixed(2)}</div>
-              {signal.direction_note && <div style={{ marginTop:'0.32rem', color:'rgba(255,255,255,0.48)', fontSize:'0.7rem', lineHeight:1.45 }}>{signal.direction_note}</div>}
+              {signal.direction_note && <div style={{ marginTop:'0.32rem', color:'rgba(15,23,42,0.88)', fontSize:'0.7rem', lineHeight:1.45 }}>{signal.direction_note}</div>}
             </div>)}
           </div>
           {!!signals.length && <div style={{ marginTop:'0.9rem' }}>
             <label style={{ display:'grid', gap:'0.35rem', maxWidth:520, marginBottom:'0.7rem' }}>
               <span style={{ color:'var(--text-secondary)', fontSize:'0.74rem' }}>세부 지표 추세</span>
-              <select value={selectedSectorIndicator} onChange={(e) => setSelectedSectorIndicator(e.target.value)} style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}>
+              <select value={selectedSectorIndicator} onChange={(e) => setSelectedSectorIndicator(e.target.value)} style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }}>
                 {signals.map((signal) => <option key={signal.indicator_key} value={signal.indicator_key}>{signal.indicator_name}</option>)}
               </select>
             </label>
-            <div style={{ height:280, border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'0.65rem' }}>
+            <div style={{ height:280, border:'1px solid rgba(15,23,42,0.2)', borderRadius:8, padding:'0.65rem' }}>
               {sectorSeries.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={sectorSeries} margin={{ top:8, right:18, left:4, bottom:8 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
-                <XAxis dataKey="period" tick={{ fill:'#94a3b8', fontSize:11 }} />
-                <YAxis tick={{ fill:'#94a3b8', fontSize:11 }} />
-                <Tooltip contentStyle={{ background:'#0f172a', border:'1px solid rgba(255,255,255,0.12)', borderRadius:8 }} />
-                <Line type="monotone" dataKey="value" stroke="#2dd4bf" strokeWidth={2} dot={false} />
+                <CartesianGrid stroke="rgba(15,23,42,0.08)" strokeDasharray="3 3" />
+                <XAxis dataKey="period" tick={{ fill:'#334155', fontSize:11 }} />
+                <YAxis tick={{ fill:'#334155', fontSize:11 }} />
+                <Tooltip contentStyle={{ background:'#ffffff', border:'1px solid rgba(15,23,42,0.2)', borderRadius:8 }} />
+                <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} dot={false} />
               </LineChart></ResponsiveContainer> : <div style={{ color:'var(--text-secondary)' }}>선택한 지표의 시계열이 없습니다.</div>}
             </div>
           </div>}
           <div style={{ marginTop:'0.9rem', display:'flex', gap:'0.4rem', flexWrap:'wrap' }}>
-            {stocks.map((stock) => <Badge key={stock.stock_code} tone={stock.mapping_status === 'confirmed_exposure' ? '#34d399' : '#60a5fa'}>{stock.stock_name} {relationshipLabel(stock)}</Badge>)}
+            {stocks.map((stock) => <Badge key={stock.stock_code} tone={stock.mapping_status === 'confirmed_exposure' ? '#047857' : '#2563eb'}>{stock.stock_name} {relationshipLabel(stock)}</Badge>)}
           </div>
         </div>}
       </div>
@@ -750,25 +757,25 @@ export function QuantCafeSignalsPanel({ mode = 'sector' }) {
     <div style={{ display:'grid', gap:'0.85rem' }}>
       <div className="glass-panel" style={{ padding:'0.9rem 1rem' }}>
         <div style={{ display:'grid', gridTemplateColumns:'minmax(180px, 1fr) repeat(3, minmax(140px, 0.45fr))', gap:'0.65rem' }}>
-          <input value={stockSearch} onChange={(e) => setStockSearch(e.target.value)} placeholder="종목명·코드·연관 지표 검색" style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }} />
-          <select value={stockSectorFilter} onChange={(e) => setStockSectorFilter(e.target.value)} style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}><option value="all">전체 섹터</option>{stockSectors.map((sector) => <option key={sector} value={sector}>{sector}</option>)}</select>
-              <select value={relationshipFilter} onChange={(e) => setRelationshipFilter(e.target.value)} style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}><option value="confirmed">확정·백테스트 통과</option><option value="candidate">문맥 후보만</option><option value="all">전체 관계</option></select>
-          <select value={signalFilter} onChange={(e) => setSignalFilter(e.target.value)} style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}><option value="all">전체 신호</option><option value="매수 후보">매수 후보</option><option value="매도/위험">매도·위험</option><option value="관찰">관찰</option></select>
+          <input value={stockSearch} onChange={(e) => setStockSearch(e.target.value)} placeholder="종목명·코드·연관 지표 검색" style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }} />
+          <select value={stockSectorFilter} onChange={(e) => setStockSectorFilter(e.target.value)} style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }}><option value="all">전체 섹터</option>{stockSectors.map((sector) => <option key={sector} value={sector}>{sector}</option>)}</select>
+              <select value={relationshipFilter} onChange={(e) => setRelationshipFilter(e.target.value)} style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }}><option value="confirmed">확정·백테스트 통과</option><option value="candidate">문맥 후보만</option><option value="all">전체 관계</option></select>
+          <select value={signalFilter} onChange={(e) => setSignalFilter(e.target.value)} style={{ padding:'0.58rem 0.7rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }}><option value="all">전체 신호</option><option value="매수 후보">매수 후보</option><option value="매도/위험">매도·위험</option><option value="관찰">관찰</option></select>
         </div>
         <div style={{ marginTop:'0.5rem', color:'var(--text-secondary)', fontSize:'0.72rem' }}>기본값은 매출·이익 비중, 직접 사업 관계, 또는 매크로 백테스트를 통과한 종목만 표시합니다. 문맥 후보는 매매 점수에서 제외됩니다.</div>
       </div>
       <div className="glass-panel" style={{ padding:'0.9rem 1rem', overflowX:'auto' }}>
         <div style={{ fontWeight:850, marginBottom:'0.65rem' }}>투자 테마별 연결 종목 현황</div>
         <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.78rem', minWidth:680 }}>
-          <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(255,255,255,0.1)' }}>
+          <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(15,23,42,0.2)' }}>
             <th style={{ padding:'0.5rem', textAlign:'left', width:150 }}>투자 테마</th><th style={{ padding:'0.5rem', textAlign:'left' }}>종목 · 시장 섹터</th><th style={{ padding:'0.5rem', textAlign:'right', width:80 }}>수</th>
           </tr></thead>
           <tbody>{stocksBySector.map((group) => (
-            <tr key={group.sector} style={{ borderBottom:'1px solid rgba(255,255,255,0.05)' }}>
-              <td style={{ padding:'0.58rem', fontWeight:850, color:'#93c5fd' }}>{group.sector}</td>
+            <tr key={group.sector} style={{ borderBottom:'1px solid rgba(15,23,42,0.2)' }}>
+              <td style={{ padding:'0.58rem', fontWeight:850, color:'#2563eb' }}>{group.sector}</td>
               <td style={{ padding:'0.58rem' }}><div style={{ display:'flex', gap:'0.38rem', flexWrap:'wrap' }}>{group.stocks.map((stock) => {
                 const signal = tradeRows.find((row) => row.stock_code === stock.code);
-                return <button key={stock.code} title={`${stock.name} · ${stock.sector}`} onClick={() => setSelectedStock(stock.code)} style={{ padding:'0.24rem 0.48rem', borderRadius:6, cursor:'pointer', border:selectedStock === stock.code ? '1px solid #2dd4bf' : '1px solid rgba(255,255,255,0.12)', background:selectedStock === stock.code ? 'rgba(45,212,191,0.12)' : 'rgba(255,255,255,0.035)', color:signal?.traffic_light === 'green' ? '#86efac' : signal?.traffic_light === 'red' ? '#fca5a5' : 'var(--text-primary)', fontSize:'0.72rem' }}>{stock.name} · {stock.sector}{signal ? ` · ${signal.action}` : ''}</button>;
+                return <button key={stock.code} title={`${stock.name} · ${stock.sector}`} onClick={() => setSelectedStock(stock.code)} style={{ padding:'0.24rem 0.48rem', borderRadius:6, cursor:'pointer', border:selectedStock === stock.code ? '1px solid #2563eb' : '1px solid rgba(15,23,42,0.2)', background:selectedStock === stock.code ? 'rgba(37,99,235,0.12)' : 'rgba(15,23,42,0.035)', color:signal?.traffic_light === 'green' ? '#15803d' : signal?.traffic_light === 'red' ? '#b91c1c' : 'var(--text-primary)', fontSize:'0.72rem' }}>{stock.name} · {stock.sector}{signal ? ` · ${signal.action}` : ''}</button>;
               })}</div></td>
               <td style={{ padding:'0.58rem', textAlign:'right' }}>{group.stocks.length}</td>
             </tr>
@@ -778,7 +785,7 @@ export function QuantCafeSignalsPanel({ mode = 'sector' }) {
       <div className="glass-panel" style={{ padding:'1rem' }}>
         <label style={{ display:'grid', gap:'0.4rem', maxWidth:520 }}>
           <span style={{ fontSize:'0.76rem', color:'var(--text-secondary)' }}>종목 선택</span>
-          <select value={selectedStock} onChange={(e) => setSelectedStock(e.target.value)} style={{ padding:'0.62rem 0.75rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}>
+          <select value={selectedStock} onChange={(e) => setSelectedStock(e.target.value)} style={{ padding:'0.62rem 0.75rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }}>
             {stockOptions.map((item) => <option key={item.code} value={item.code}>{item.name} ({item.code})</option>)}
           </select>
         </label>
@@ -793,7 +800,7 @@ export function QuantCafeSignalsPanel({ mode = 'sector' }) {
           </span>}
           <PriceRiskBadge item={trade} />
         </div>
-        {trade?.price_risk_note && <div style={{ marginBottom:'0.85rem', color:'#fbbf24', fontSize:'0.76rem' }}>{trade.price_risk_note}</div>}
+        {trade?.price_risk_note && <div style={{ marginBottom:'0.85rem', color:'#b45309', fontSize:'0.76rem' }}>{trade.price_risk_note}</div>}
         {trade?.market_confirmation && (() => {
           const market = trade.market_confirmation;
           const checks = [
@@ -802,30 +809,30 @@ export function QuantCafeSignalsPanel({ mode = 'sector' }) {
             ['거래량 확대', market.checks?.volume_expansion],
             ['5일 수급+', market.checks?.positive_flow_5d],
           ];
-          return <div style={{ padding:'0.72rem', border:'1px solid rgba(96,165,250,0.18)', borderRadius:8, marginBottom:'0.85rem', background:'rgba(96,165,250,0.05)' }}>
+          return <div style={{ padding:'0.72rem', border:'1px solid rgba(37,99,235,0.18)', borderRadius:8, marginBottom:'0.85rem', background:'rgba(37,99,235,0.05)' }}>
             <div style={{ display:'flex', justifyContent:'space-between', gap:'0.6rem', flexWrap:'wrap', marginBottom:'0.55rem' }}>
-              <strong style={{ color:market.score >= 3 ? '#34d399' : market.score >= 2 ? '#fbbf24' : '#94a3b8' }}>시장 확인 {market.score}/4 · {market.label}</strong>
+              <strong style={{ color:market.score >= 3 ? '#047857' : market.score >= 2 ? '#b45309' : '#334155' }}>시장 확인 {market.score}/4 · {market.label}</strong>
               <span style={{ color:'var(--text-secondary)', fontSize:'0.7rem' }}>{market.as_of} · 거래량 {market.volume_ratio_20d == null ? '-' : `${Number(market.volume_ratio_20d).toFixed(2)}배`} · 외인 {Number(market.foreign_5d_억 || 0).toFixed(1)}억 · 기관 {Number(market.institution_5d_억 || 0).toFixed(1)}억</span>
             </div>
-            <div style={{ display:'flex', gap:'0.38rem', flexWrap:'wrap' }}>{checks.map(([label, ok]) => <span key={label} style={{ padding:'0.2rem 0.45rem', borderRadius:6, fontSize:'0.7rem', border:`1px solid ${ok ? 'rgba(52,211,153,0.35)' : 'rgba(248,113,113,0.3)'}`, color:ok ? '#86efac' : '#fca5a5', background:ok ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.06)' }}>{ok ? '충족' : '미충족'} · {label}</span>)}</div>
+            <div style={{ display:'flex', gap:'0.38rem', flexWrap:'wrap' }}>{checks.map(([label, ok]) => <span key={label} style={{ padding:'0.2rem 0.45rem', borderRadius:6, fontSize:'0.7rem', border:`1px solid ${ok ? 'rgba(5,150,105,0.35)' : 'rgba(220,38,38,0.3)'}`, color:ok ? '#15803d' : '#b91c1c', background:ok ? 'rgba(5,150,105,0.08)' : 'rgba(220,38,38,0.06)' }}>{ok ? '충족' : '미충족'} · {label}</span>)}</div>
           </div>;
         })()}
         {performance && <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))', gap:'0.55rem', marginBottom:'0.85rem' }}>
-          <div style={{ padding:'0.65rem', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8 }}><div style={{ color:'var(--text-secondary)', fontSize:'0.68rem' }}>검증 상태</div><strong>{performance.evaluation_status} · {performance.trading_days_elapsed}거래일</strong></div>
-          {[5,20,60,120].map((days) => { const value = performance[`return_${days}d_pct`]; return <div key={days} style={{ padding:'0.65rem', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8 }}><div style={{ color:'var(--text-secondary)', fontSize:'0.68rem' }}>{days}일 수익률</div><strong style={{ color:value == null ? '#94a3b8' : Number(value) >= 0 ? '#34d399' : '#f87171' }}>{value == null ? '평가대기' : `${Number(value).toFixed(2)}%`}</strong></div>; })}
+          <div style={{ padding:'0.65rem', border:'1px solid rgba(15,23,42,0.2)', borderRadius:8 }}><div style={{ color:'var(--text-secondary)', fontSize:'0.68rem' }}>검증 상태</div><strong>{performance.evaluation_status} · {performance.trading_days_elapsed}거래일</strong></div>
+          {[5,20,60,120].map((days) => { const value = performance[`return_${days}d_pct`]; return <div key={days} style={{ padding:'0.65rem', border:'1px solid rgba(15,23,42,0.2)', borderRadius:8 }}><div style={{ color:'var(--text-secondary)', fontSize:'0.68rem' }}>{days}일 수익률</div><strong style={{ color:value == null ? '#334155' : Number(value) >= 0 ? '#047857' : '#dc2626' }}>{value == null ? '평가대기' : `${Number(value).toFixed(2)}%`}</strong></div>; })}
         </div>}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))', gap:'0.7rem' }}>
 	          {mappings.map((item) => {
 	            const traffic = item.traffic || {};
 	            const cross = stockCrossContext?.quant_indicators?.find((row) => row.indicator_key === item.indicator_key);
-	            return <div key={`${item.stock_code}-${item.indicator_key}`} style={{ padding:'0.78rem', border:'1px solid rgba(255,255,255,0.09)', borderRadius:8 }}>
+	            return <div key={`${item.stock_code}-${item.indicator_key}`} style={{ padding:'0.78rem', border:'1px solid rgba(15,23,42,0.2)', borderRadius:8 }}>
 	              <div style={{ display:'flex', justifyContent:'space-between', gap:'0.5rem' }}><strong>{item.indicator_name}</strong><TrafficBadge light={traffic.traffic_light || 'gray'} label={traffic.is_fresh === false ? '갱신 지연' : traffic.signal_label} /></div>
-	              <div style={{ marginTop:'0.42rem', color:'#93c5fd', fontSize:'0.74rem' }}>{traffic.series_name || item.indicator_key} · {traffic.period || '-'}</div>
-	              <div style={{ marginTop:'0.3rem', color:cross?.cross_validation === 'cross_confirmed' ? '#34d399' : '#fbbf24', fontSize:'0.72rem' }}>
+	              <div style={{ marginTop:'0.42rem', color:'#2563eb', fontSize:'0.74rem' }}>{traffic.series_name || item.indicator_key} · {traffic.period || '-'}</div>
+	              <div style={{ marginTop:'0.3rem', color:cross?.cross_validation === 'cross_confirmed' ? '#047857' : '#b45309', fontSize:'0.72rem' }}>
 	                {cross?.cross_validation === 'cross_confirmed' ? `HS 일치 · ${(cross.matching_hs_mappings || []).map((h) => `${h.hs_code} ${h.display_name || h.hs_name}`).join(' · ')}` : '퀀트 근거만 · 동일 HS 품목 미확인'}
 	              </div>
-              <div style={{ marginTop:'0.32rem', color:item.mapping_status === 'candidate_context' || item.mapping_status === 'candidate_macro_context' ? '#94a3b8' : '#fbbf24', fontSize:'0.74rem' }}>{item.mapping_status === 'candidate_context' || item.mapping_status === 'candidate_macro_context' ? '문맥 후보 · 매매점수 제외' : relationshipLabel(item)}</div>
-              <div style={{ marginTop:'0.25rem', color:'rgba(255,255,255,0.55)', fontSize:'0.7rem' }}>{item.revenue_exposure_pct != null ? `매출 민감도 ${Number(item.revenue_exposure_pct).toFixed(1)}%` : item.profit_exposure_pct != null ? `이익 민감도 ${Number(item.profit_exposure_pct).toFixed(1)}%` : item.cost_exposure_pct != null ? `원가 민감도 ${Number(item.cost_exposure_pct).toFixed(1)}%` : '민감도 비중 미공시'} · {traffic.is_fresh === false ? '최신성 기준 제외' : '최신 데이터'}</div>
+              <div style={{ marginTop:'0.32rem', color:item.mapping_status === 'candidate_context' || item.mapping_status === 'candidate_macro_context' ? '#334155' : '#b45309', fontSize:'0.74rem' }}>{item.mapping_status === 'candidate_context' || item.mapping_status === 'candidate_macro_context' ? '문맥 후보 · 매매점수 제외' : relationshipLabel(item)}</div>
+              <div style={{ marginTop:'0.25rem', color:'rgba(15,23,42,0.88)', fontSize:'0.7rem' }}>{item.revenue_exposure_pct != null ? `매출 민감도 ${Number(item.revenue_exposure_pct).toFixed(1)}%` : item.profit_exposure_pct != null ? `이익 민감도 ${Number(item.profit_exposure_pct).toFixed(1)}%` : item.cost_exposure_pct != null ? `원가 민감도 ${Number(item.cost_exposure_pct).toFixed(1)}%` : '민감도 비중 미공시'} · {traffic.is_fresh === false ? '최신성 기준 제외' : '최신 데이터'}</div>
               <div style={{ marginTop:'0.32rem', color:'var(--text-secondary)', fontSize:'0.72rem', lineHeight:1.45 }}>{traffic.reason || item.mapping_note}</div>
             </div>;
           })}
@@ -923,12 +930,12 @@ export default function CafeSignalsView() {
           <button onClick={() => setRunType('weekly')} className={`nav-item ${runType === 'weekly' ? 'active' : ''}`} style={{ padding: '0.5rem 0.75rem' }}>주간</button>
           <button onClick={() => setRunType('monthly')} className={`nav-item ${runType === 'monthly' ? 'active' : ''}`} style={{ padding: '0.5rem 0.75rem' }}>월간</button>
           <button onClick={load} className="nav-item" style={{ padding: '0.5rem 0.75rem' }}><RefreshCw size={15} /> 새로고침</button>
-          <button onClick={triggerCollect} className="nav-item" style={{ padding: '0.5rem 0.75rem', color: '#34d399' }}>수동 수집</button>
+          <button onClick={triggerCollect} className="nav-item" style={{ padding: '0.5rem 0.75rem', color: '#047857' }}>수동 수집</button>
         </div>
       </div>
 
-      {message && <div className="glass-panel" style={{ padding: '0.75rem', color: '#fbbf24' }}>{message}</div>}
-      {error && <div className="glass-panel" style={{ padding: '0.75rem', color: '#f87171' }}>{error}</div>}
+      {message && <div className="glass-panel" style={{ padding: '0.75rem', color: '#b45309' }}>{message}</div>}
+      {error && <div className="glass-panel" style={{ padding: '0.75rem', color: '#dc2626' }}>{error}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
         {[
@@ -956,13 +963,13 @@ export default function CafeSignalsView() {
 
       <div className="glass-panel" style={{ padding: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-          <FileText size={18} color="#fbbf24" />
+          <FileText size={18} color="#b45309" />
           <h3 style={{ fontSize: '1rem', fontWeight: 900 }}>
             월별 주도 섹터/HS 브리핑 {leadership?.period ? `(${leadership.period})` : ''}
           </h3>
         </div>
         {leadershipReport?.summary_text ? (
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: '0.86rem', color: 'rgba(255,255,255,0.82)' }}>
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: '0.86rem', color: 'rgba(15,23,42,0.88)' }}>
             {leadershipReport.summary_text}
           </div>
         ) : (
@@ -983,9 +990,9 @@ export default function CafeSignalsView() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
-        <RankingTable title="종목 랭킹" icon={<Newspaper size={18} color="#38bdf8" />} rows={stocks} kind="stock" />
-        <RankingTable title="섹터 랭킹" icon={<Layers size={18} color="#34d399" />} rows={sectors} kind="sector" />
-        <RankingTable title="지표 랭킹" icon={<BarChart3 size={18} color="#fbbf24" />} rows={indicators} kind="indicator" />
+        <RankingTable title="종목 랭킹" icon={<Newspaper size={18} color="#0284c7" />} rows={stocks} kind="stock" />
+        <RankingTable title="섹터 랭킹" icon={<Layers size={18} color="#047857" />} rows={sectors} kind="sector" />
+        <RankingTable title="지표 랭킹" icon={<BarChart3 size={18} color="#b45309" />} rows={indicators} kind="indicator" />
       </div>
 
       <div className="glass-panel" style={{ padding: '1rem' }}>
@@ -1000,7 +1007,7 @@ export default function CafeSignalsView() {
               <a key={p.id} href={p.url} target="_blank" rel="noreferrer"
                 style={{ display: 'grid', gap: '0.25rem', textDecoration: 'none',
                   padding: '0.7rem', border: '1px solid var(--glass-border)', borderRadius: '8px',
-                  background: 'rgba(255,255,255,0.025)' }}>
+                  background: 'rgba(15,23,42,0.025)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.8rem' }}>
                   <strong style={{ color: 'var(--text-primary)' }}>{p.title}</strong>
                   <ExternalLink size={14} color="var(--text-secondary)" />
@@ -1008,7 +1015,7 @@ export default function CafeSignalsView() {
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.76rem' }}>
                   {p.board_name || '-'} · {p.collected_at || '-'} · {p.mentions || '추출 신호 없음'}
                 </div>
-                {p.excerpt && <div style={{ color: 'rgba(255,255,255,0.62)', fontSize: '0.78rem' }}>{p.excerpt.slice(0, 160)}</div>}
+                {p.excerpt && <div style={{ color: 'rgba(15,23,42,0.88)', fontSize: '0.78rem' }}>{p.excerpt.slice(0, 160)}</div>}
               </a>
             ))}
           </div>

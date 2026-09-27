@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 // TaskApprovalTab.jsx — 리스크게이트 화면의 "작업 승인 대기" 탭 (2026-09-24 신규)
 //   백엔드: routes/task_approvals.py (prefix /api/task-approvals)
 //   - GET  /pending  미승인 작업 + 참고 테이블 현황 + 기록된 승인
@@ -11,11 +18,11 @@ const API = (path) => path;
 const MIN_NOTE = 10;
 
 const STATUS_META = {
-  QUEUED_FOR_FRONTIER: { label: '프론티어 대기', color: '#f59e0b' },
-  QUEUED_FOR_APPROVAL: { label: '승인 대기',     color: '#f59e0b' },
-  QUEUED:              { label: '큐 대기',       color: '#f59e0b' },
-  PENDING:             { label: '대기',          color: '#f59e0b' },
-  WAITING_APPROVAL:    { label: '승인 대기',     color: '#f59e0b' },
+  QUEUED_FOR_FRONTIER: { label: '프론티어 대기', color: '#b45309' },
+  QUEUED_FOR_APPROVAL: { label: '승인 대기',     color: '#b45309' },
+  QUEUED:              { label: '큐 대기',       color: '#b45309' },
+  PENDING:             { label: '대기',          color: '#b45309' },
+  WAITING_APPROVAL:    { label: '승인 대기',     color: '#b45309' },
 };
 
 function StatusBadge({ status }) {
@@ -35,9 +42,9 @@ function ActorKind({ actor }) {
   return (
     <span style={{
       fontSize: '0.68rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '10px',
-      color: automated ? '#ef4444' : '#22c55e',
-      background: automated ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.12)',
-      border: `1px solid ${automated ? 'rgba(239,68,68,0.35)' : 'rgba(34,197,94,0.35)'}`,
+      color: automated ? '#dc2626' : '#15803d',
+      background: automated ? 'rgba(220,38,38,0.12)' : 'rgba(22,163,74,0.12)',
+      border: `1px solid ${automated ? 'rgba(220,38,38,0.35)' : 'rgba(22,163,74,0.35)'}`,
     }}>{automated ? '자동/에이전트(승인 불가)' : '사람'}</span>
   );
 }
@@ -87,19 +94,19 @@ function ApprovalForm({ task, onDone }) {
   };
 
   const inputStyle = {
-    padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(255,255,255,0.05)',
+    padding: '0.4rem 0.6rem', borderRadius: '6px', background: 'rgba(15,23,42,0.05)',
     border: '1px solid var(--glass-border)', color: 'inherit', width: '100%',
   };
 
   return (
-    <div style={{ marginTop: '0.7rem', padding: '0.8rem', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)' }}>
+    <div style={{ marginTop: '0.7rem', padding: '0.8rem', borderRadius: '8px', background: 'rgba(15,23,42,0.02)', border: '1px solid var(--glass-border)' }}>
       <div style={{ fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>사람 승인 기록</div>
       <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '0.5rem', alignItems: 'start' }}>
         <div>
           <label style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.2rem' }}>승인자(사람 이름)</label>
           <input value={actor} onChange={e => setActor(e.target.value)} placeholder="예: brainlee" style={inputStyle} />
           {actorBlocked && actor && (
-            <div style={{ fontSize: '0.66rem', color: '#ef4444', marginTop: '0.2rem' }}>에이전트/자동화 신원은 승인할 수 없습니다.</div>
+            <div style={{ fontSize: '0.66rem', color: '#dc2626', marginTop: '0.2rem' }}>에이전트/자동화 신원은 승인할 수 없습니다.</div>
           )}
         </div>
         <div>
@@ -119,13 +126,13 @@ function ApprovalForm({ task, onDone }) {
         <button onClick={() => submit('approve')} disabled={!ready} style={{
           padding: '0.4rem 0.9rem', borderRadius: '6px', fontWeight: 700, fontSize: '0.78rem',
           cursor: ready ? 'pointer' : 'not-allowed', opacity: ready ? 1 : 0.45,
-          background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.45)', color: '#22c55e',
+          background: 'rgba(22,163,74,0.15)', border: '1px solid rgba(22,163,74,0.45)', color: '#15803d',
         }}>승인 기록</button>
         {task.approval && (
           <button onClick={() => submit('revoke')} disabled={!ready} style={{
             padding: '0.4rem 0.9rem', borderRadius: '6px', fontWeight: 700, fontSize: '0.78rem',
             cursor: ready ? 'pointer' : 'not-allowed', opacity: ready ? 1 : 0.45,
-            background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444',
+            background: 'rgba(220,38,38,0.12)', border: '1px solid rgba(220,38,38,0.4)', color: '#dc2626',
           }}>철회 기록</button>
         )}
         <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', alignSelf: 'center' }}>
@@ -133,7 +140,7 @@ function ApprovalForm({ task, onDone }) {
         </span>
       </div>
       {msg && (
-        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: msg.ok ? '#22c55e' : '#ef4444' }}>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: msg.ok ? '#15803d' : '#dc2626' }}>
           {msg.ok ? '✅ ' : '⛔ '}{msg.text}
         </div>
       )}
@@ -158,7 +165,7 @@ function LedgerPanel() {
         <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>감사 원장 (task_approval_events)</div>
         <button onClick={load} style={{
           padding: '0.3rem 0.7rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer',
-          background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
+          background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
         }}>read-back</button>
       </div>
       {events.length === 0 ? (
@@ -171,10 +178,10 @@ function LedgerPanel() {
               <tr key={e.id}>
                 <td style={{ fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{e.created_at}</td>
                 <td style={{ fontSize: '0.75rem' }}>{e.task_key}</td>
-                <td style={{ fontWeight: 700, color: e.action === 'approve' ? '#22c55e' : '#ef4444' }}>{e.action}</td>
+                <td style={{ fontWeight: 700, color: e.action === 'approve' ? '#15803d' : '#dc2626' }}>{e.action}</td>
                 <td><ActorKind actor={e.approved_by} /> <span style={{ fontSize: '0.72rem' }}>{e.approved_by}</span></td>
                 <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{e.audit_note}</td>
-                <td style={{ fontSize: '0.72rem', color: e.live_order_linked ? '#ef4444' : 'var(--text-secondary)' }}>
+                <td style={{ fontSize: '0.72rem', color: e.live_order_linked ? '#dc2626' : 'var(--text-secondary)' }}>
                   {e.live_order_linked ? '연결됨(비정상)' : '미연결'}
                 </td>
               </tr>
@@ -210,7 +217,7 @@ export default function TaskApprovalTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div style={{ padding: '0.6rem 0.9rem', borderRadius: '8px', fontSize: '0.74rem', lineHeight: 1.6,
-        background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', color: 'rgba(255,255,255,0.75)' }}>
+        background: 'rgba(217,119,6,0.07)', border: '1px solid rgba(217,119,6,0.25)', color: 'rgba(15,23,42,0.88)' }}>
         ⏳ <strong>승인 대기 작업</strong>입니다. 승인은 <strong>작업 착수 결재 기록</strong>일 뿐이고
         <strong> LIVE 주문·실계좌와는 어떤 경우에도 연결되지 않습니다</strong>
         (이 기능이 쓰는 테이블: <code>task_approvals</code>, <code>task_approval_events</code> 2개뿐).
@@ -219,9 +226,9 @@ export default function TaskApprovalTab() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.75rem' }}>
         {[
-          { label: '미승인 작업', val: data?.queue?.pending_total ?? 0, color: '#f59e0b' },
-          { label: '기록된 승인', val: approvals.filter(a => a.status === 'approved').length, color: '#22c55e' },
-          { label: '철회', val: approvals.filter(a => a.status === 'revoked').length, color: '#ef4444' },
+          { label: '미승인 작업', val: data?.queue?.pending_total ?? 0, color: '#b45309' },
+          { label: '기록된 승인', val: approvals.filter(a => a.status === 'approved').length, color: '#15803d' },
+          { label: '철회', val: approvals.filter(a => a.status === 'revoked').length, color: '#dc2626' },
           { label: '읽은 시각', val: (data?.read_at || '-').slice(11), color: 'inherit' },
         ].map(({ label, val, color }) => (
           <div key={label} className="glass-panel" style={{ padding: '0.8rem 1rem' }}>
@@ -238,11 +245,11 @@ export default function TaskApprovalTab() {
         </span>
         <button onClick={load} style={{
           padding: '0.3rem 0.7rem', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer',
-          background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
+          background: 'rgba(15,23,42,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)',
         }}>새로고침</button>
       </div>
 
-      {error && <div className="glass-panel" style={{ padding: '0.8rem 1rem', color: '#ef4444', fontSize: '0.8rem' }}>⚠️ {error}</div>}
+      {error && <div className="glass-panel" style={{ padding: '0.8rem 1rem', color: '#dc2626', fontSize: '0.8rem' }}>⚠️ {error}</div>}
       {loading && <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>로딩 중...</div>}
 
       {!loading && tasks.length === 0 && (
@@ -258,10 +265,10 @@ export default function TaskApprovalTab() {
             <code style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{task.task_key}</code>
             <StatusBadge status={task.status} />
             {!task.approvable && (
-              <span style={{ fontSize: '0.7rem', color: '#ef4444' }}>{task.not_approvable_reason}</span>
+              <span style={{ fontSize: '0.7rem', color: '#dc2626' }}>{task.not_approvable_reason}</span>
             )}
             {task.approval && (
-              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: task.approval.status === 'approved' ? '#22c55e' : '#ef4444' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: task.approval.status === 'approved' ? '#15803d' : '#dc2626' }}>
                 {task.approval.status === 'approved' ? '✅ 승인됨' : '⛔ 철회'} · {task.approval.approved_by} · {task.approval.approved_at}
               </span>
             )}
@@ -279,7 +286,7 @@ export default function TaskApprovalTab() {
           </div>
 
           {task.cross_store_note && (
-            <div style={{ marginTop: '0.4rem', fontSize: '0.72rem', color: '#f59e0b' }}>⚠️ {task.cross_store_note}</div>
+            <div style={{ marginTop: '0.4rem', fontSize: '0.72rem', color: '#b45309' }}>⚠️ {task.cross_store_note}</div>
           )}
 
           {task.approval?.audit_note && (
@@ -311,7 +318,7 @@ export default function TaskApprovalTab() {
                 <tr key={key}>
                   <td><code style={{ fontSize: '0.72rem' }}>{ref.table || key}</code></td>
                   <td style={{ fontWeight: 700 }}>{ref.count == null ? '-' : ref.count}</td>
-                  <td style={{ color: '#22c55e', fontWeight: 700 }}>불가(읽기전용)</td>
+                  <td style={{ color: '#15803d', fontWeight: 700 }}>불가(읽기전용)</td>
                   <td style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>{ref.note}{ref.error ? ` (${ref.error})` : ''}</td>
                 </tr>
               ))}

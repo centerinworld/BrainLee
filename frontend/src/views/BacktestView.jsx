@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 /**
  * BacktestView.jsx
  * 백테스트 결과 뷰 — App.jsx에서 분리 (2026-09-03, 토큰 최적화)
@@ -125,24 +132,24 @@ import { API } from '../utils';
     };
 
     const fmtAmt = (v) => v == null ? '-' : (v >= 0 ? '+' : '') + Math.round(v).toLocaleString('ko-KR') + '원';
-    const clr = (v) => v > 0 ? '#ef4444' : v < 0 ? '#3b82f6' : 'rgba(255,255,255,0.4)';
+    const clr = (v) => v > 0 ? '#dc2626' : v < 0 ? '#2563eb' : 'rgba(15,23,42,0.4)';
     const inputS = {
       padding:'0.35rem 0.7rem', borderRadius:'6px', fontSize:'0.82rem',
-      background:'rgba(255,255,255,0.06)', border:'1px solid var(--glass-border)',
-      color:'#fff',
+      background:'rgba(15,23,42,0.06)', border:'1px solid var(--glass-border)',
+      color:'var(--text-primary)',
     };
 
     // 매트릭스 셀 색상
     const cellBg = (cagr) => {
-      if (cagr == null) return 'rgba(255,255,255,0.02)';
-      if (cagr <= 0) return 'rgba(59,130,246,0.1)';
-      if (cagr >= 10) return 'rgba(239,68,68,0.2)';
-      if (cagr >= 5) return 'rgba(239,68,68,0.12)';
-      return 'rgba(239,68,68,0.06)';
+      if (cagr == null) return 'rgba(15,23,42,0.02)';
+      if (cagr <= 0) return 'rgba(37,99,235,0.1)';
+      if (cagr >= 10) return 'rgba(220,38,38,0.2)';
+      if (cagr >= 5) return 'rgba(220,38,38,0.12)';
+      return 'rgba(220,38,38,0.06)';
     };
     const cellClr = (cagr) => {
-      if (cagr == null) return 'rgba(255,255,255,0.2)';
-      return cagr > 0 ? '#f87171' : '#60a5fa';
+      if (cagr == null) return 'rgba(15,23,42,0.2)';
+      return cagr > 0 ? '#dc2626' : '#2563eb';
     };
 
     const runAllMatrix = async () => {
@@ -168,7 +175,7 @@ import { API } from '../utils';
         {!embedded && (
         <div className="glass-panel" style={{padding:'0.8rem 1.2rem'}}>
           <div style={{display:'flex',alignItems:'center',gap:'0.6rem',marginBottom:'0.5rem',flexWrap:'wrap'}}>
-            <Activity size={18} color="#f59e0b" />
+            <Activity size={18} color="#b45309" />
             <h2 style={{fontSize:'1rem',fontWeight:700}}>📊 백테스트 & 전략 비교 (V1~V12, 13전략)</h2>
             <div style={{marginLeft:'auto',display:'flex',gap:'0.4rem',flexWrap:'wrap'}}>
               {[
@@ -179,25 +186,25 @@ import { API } from '../utils';
                 <button key={key} onClick={() => setViewMode(key)} style={{
                   padding:'0.25rem 0.7rem', borderRadius:'6px', fontSize:'0.75rem',
                   cursor:'pointer', fontWeight: viewMode===key ? 700 : 400,
-                  background: viewMode===key ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.05)',
-                  border: `1px solid ${viewMode===key ? 'rgba(245,158,11,0.5)' : 'var(--glass-border)'}`,
-                  color: viewMode===key ? '#f59e0b' : 'var(--text-secondary)',
+                  background: viewMode===key ? 'rgba(217,119,6,0.2)' : 'rgba(15,23,42,0.05)',
+                  border: `1px solid ${viewMode===key ? 'rgba(217,119,6,0.5)' : 'var(--glass-border)'}`,
+                  color: viewMode===key ? '#b45309' : 'var(--text-secondary)',
                 }}>{label}</button>
               ))}
               <button onClick={runAllMatrix} disabled={runAllBusy} style={{
                 padding:'0.25rem 0.9rem', borderRadius:'6px', fontSize:'0.75rem',
                 cursor: runAllBusy ? 'not-allowed' : 'pointer', fontWeight:700,
-                background: runAllBusy ? 'rgba(100,116,139,0.15)' : 'rgba(16,185,129,0.2)',
-                border:`1px solid ${runAllBusy ? 'rgba(100,116,139,0.3)' : 'rgba(16,185,129,0.5)'}`,
-                color: runAllBusy ? 'var(--text-secondary)' : '#34d399',
+                background: runAllBusy ? 'rgba(100,116,139,0.15)' : 'rgba(5,150,105,0.2)',
+                border:`1px solid ${runAllBusy ? 'rgba(100,116,139,0.3)' : 'rgba(5,150,105,0.5)'}`,
+                color: runAllBusy ? 'var(--text-secondary)' : '#047857',
               }}>
                 {runAllBusy ? '⏳ 실행 중...' : '▶▶ 전체 백테스트'}
               </button>
             </div>
           </div>
-          <div style={{padding:'0.5rem 0.8rem',background:'rgba(251,191,36,0.07)',
-            border:'1px solid rgba(251,191,36,0.2)',borderRadius:'6px',
-            fontSize:'0.7rem',color:'rgba(251,191,36,0.85)',lineHeight:1.6}}>
+          <div style={{padding:'0.5rem 0.8rem',background:'rgba(217,119,6,0.07)',
+            border:'1px solid rgba(217,119,6,0.2)',borderRadius:'6px',
+            fontSize:'0.7rem',color:'rgba(217,119,6,0.9)',lineHeight:1.6}}>
             ⚠️ 과거 데이터 기준 시뮬레이션 — <strong>미래 수익 보장 불가</strong>.
             V1~V12 13전략: 2020~2026 실제 데이터 백테스트 (전략당 예산 1억원, 종목당 1천만원)
           </div>
@@ -245,9 +252,9 @@ import { API } from '../utils';
                   color:'var(--text-secondary)'}}>↻ 새로고침</button>
               </div>
               {(legacyResultCount > 0 || specifiedResultCount > 0) && (
-                <div style={{padding:'0.55rem 1rem',background:'rgba(249,115,22,0.08)',
-                  borderBottom:'1px solid rgba(249,115,22,0.22)',fontSize:'0.7rem',
-                  color:'#fdba74',lineHeight:1.55}}>
+                <div style={{padding:'0.55rem 1rem',background:'rgba(234,88,12,0.08)',
+                  borderBottom:'1px solid rgba(234,88,12,0.22)',fontSize:'0.7rem',
+                  color:'#c2410c',lineHeight:1.55}}>
                   검증 완료 {verifiedResultCount}건 · 명세만 등록 {specifiedResultCount}건 · 명세 없는 레거시 {legacyResultCount}건.
                   point-in-time 유니버스와 다음날 시가 체결까지 확인되기 전에는 전략 채택과 순위 산정에 사용하지 않습니다.
                 </div>
@@ -257,15 +264,15 @@ import { API } from '../utils';
                   <thead>
                     <tr>
                       <th style={{padding:'0.5rem 0.8rem',background:'rgba(30,58,138,0.4)',
-                        borderBottom:'2px solid rgba(59,130,246,0.4)',textAlign:'left',
+                        borderBottom:'2px solid rgba(37,99,235,0.4)',textAlign:'left',
                         position:'sticky',top:0,zIndex:5,whiteSpace:'nowrap',minWidth:'120px'}}>전략</th>
                       <th style={{padding:'0.5rem 0.8rem',background:'rgba(30,58,138,0.4)',
-                        borderBottom:'2px solid rgba(59,130,246,0.4)',
+                        borderBottom:'2px solid rgba(37,99,235,0.4)',
                         position:'sticky',top:0,zIndex:5,fontSize:'0.7rem',
-                        color:'rgba(255,255,255,0.5)',textAlign:'left',minWidth:'180px'}}>설명</th>
+                        color:'rgba(15,23,42,0.88)',textAlign:'left',minWidth:'180px'}}>설명</th>
                       {periods.map(p => (
                         <th key={p} style={{padding:'0.5rem 0.6rem',background:'rgba(30,58,138,0.4)',
-                          borderBottom:'2px solid rgba(59,130,246,0.4)',textAlign:'center',
+                          borderBottom:'2px solid rgba(37,99,235,0.4)',textAlign:'center',
                           position:'sticky',top:0,zIndex:5,whiteSpace:'nowrap',minWidth:'90px'}}>
                           {p}
                         </th>
@@ -279,18 +286,18 @@ import { API } from '../utils';
                       const maxCagr = Math.max(...cagrVals.filter(v => v != null));
                       return (
                         <tr key={s.strategy}
-                          style={{background: si%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)'}}
-                          onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.04)'}
-                          onMouseOut={e => e.currentTarget.style.background= si%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)'}>
+                          style={{background: si%2===0 ? 'transparent' : 'rgba(15,23,42,0.015)'}}
+                          onMouseOver={e => e.currentTarget.style.background='rgba(15,23,42,0.04)'}
+                          onMouseOut={e => e.currentTarget.style.background= si%2===0 ? 'transparent' : 'rgba(15,23,42,0.015)'}>
                           <td style={{padding:'0.5rem 0.8rem',fontWeight:700,
-                            borderBottom:'1px solid rgba(255,255,255,0.04)',
-                            color: ['v2','v_trend'].includes(s.strategy) ? '#fbbf24' : '#e2e8f0',
+                            borderBottom:'1px solid rgba(15,23,42,0.2)',
+                            color: ['v2','v_trend'].includes(s.strategy) ? '#b45309' : '#1e293b',
                             whiteSpace:'nowrap'}}>
                             {s.label}
                           </td>
                           <td style={{padding:'0.4rem 0.8rem',fontSize:'0.7rem',
-                            color:'rgba(255,255,255,0.45)',
-                            borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                            color:'rgba(15,23,42,0.88)',
+                            borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
                             {s.desc || stratDescFallback[s.strategy] || ''}
                           </td>
                           {periods.map(p => {
@@ -305,12 +312,12 @@ import { API } from '../utils';
                               <td key={p} style={{
                                 padding:'0.4rem 0.6rem',
                                 textAlign:'center',
-                                background: isZero ? 'rgba(255,255,255,0.01)' : cellBg(cagr),
-                                borderBottom:'1px solid rgba(255,255,255,0.04)',
-                                borderLeft:'1px solid rgba(255,255,255,0.04)',
+                                background: isZero ? 'rgba(15,23,42,0.01)' : cellBg(cagr),
+                                borderBottom:'1px solid rgba(15,23,42,0.2)',
+                                borderLeft:'1px solid rgba(15,23,42,0.2)',
                               }}>
                                 {isZero ? (
-                                  <span style={{color:'rgba(255,255,255,0.2)',fontSize:'0.68rem'}}>
+                                  <span style={{color:'rgba(15,23,42,0.88)',fontSize:'0.68rem'}}>
                                     {!pd ? '-' : '0건'}
                                   </span>
                                 ) : (
@@ -324,18 +331,18 @@ import { API } from '../utils';
                                       {cagr != null ? (cagr>0?'+':'')+cagr.toFixed(1)+'%' : '-'}
                                     </div>
                                     {mdd != null && (
-                                      <div style={{fontSize:'0.65rem',color:'rgba(248,113,113,0.7)',marginTop:'0.1rem'}}>
+                                      <div style={{fontSize:'0.65rem',color:'rgba(220,38,38,0.9)',marginTop:'0.1rem'}}>
                                         MDD {mdd.toFixed(1)}%
                                       </div>
                                     )}
                                     {tc != null && (
-                                      <div style={{fontSize:'0.62rem',color:'rgba(255,255,255,0.25)'}}>
+                                      <div style={{fontSize:'0.62rem',color:'rgba(15,23,42,0.88)'}}>
                                         {tc}건
                                       </div>
                                     )}
                                     {!isVerified && (
                                       <div title={pd?.methodology_warning || ''}
-                                        style={{fontSize:'0.6rem',color:'#fb923c',marginTop:'0.12rem'}}>
+                                        style={{fontSize:'0.6rem',color:'#c2410c',marginTop:'0.12rem'}}>
                                         명세 없음
                                       </div>
                                     )}
@@ -358,10 +365,10 @@ import { API } from '../utils';
         {viewMode === 'desc' && (() => {
           const items = catalog.length > 0 ? catalog : STRAT_DEFS.map(s => ({ key: s.key, label: s.label }));
           const colHdr = { padding:'0.5rem 0.7rem', background:'rgba(30,58,138,0.4)',
-            borderBottom:'2px solid rgba(59,130,246,0.4)', fontSize:'0.75rem',
-            fontWeight:700, color:'rgba(255,255,255,0.7)', textAlign:'left', whiteSpace:'nowrap' };
+            borderBottom:'2px solid rgba(37,99,235,0.4)', fontSize:'0.75rem',
+            fontWeight:700, color:'rgba(15,23,42,0.88)', textAlign:'left', whiteSpace:'nowrap' };
           const cellS = (extra={}) => ({
-            padding:'0.5rem 0.7rem', borderBottom:'1px solid rgba(255,255,255,0.04)',
+            padding:'0.5rem 0.7rem', borderBottom:'1px solid rgba(15,23,42,0.2)',
             fontSize:'0.75rem', verticalAlign:'top', lineHeight:1.6, ...extra
           });
           return (
@@ -381,24 +388,24 @@ import { API } from '../utils';
                   <tbody>
                     {items.map((s, si) => (
                       <tr key={s.key}
-                        style={{background: si%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)'}}
-                        onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.04)'}
-                        onMouseOut={e => e.currentTarget.style.background= si%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)'}>
-                        <td style={cellS({fontWeight:700,color:'#fbbf24',whiteSpace:'nowrap',minWidth:'90px'})}>{s.label}</td>
-                        <td style={cellS({color:'rgba(255,255,255,0.75)',maxWidth:'220px'})}>{s.desc||'-'}</td>
-                        <td style={cellS({color:'rgba(255,255,255,0.6)',maxWidth:'200px'})}>{s.entry||'-'}</td>
-                        <td style={cellS({color:'rgba(255,255,255,0.6)',maxWidth:'160px'})}>{s.exit||'-'}</td>
-                        <td style={cellS({color:'#f87171',textAlign:'center',fontWeight:700})}>{s.stop_loss||'-'}</td>
-                        <td style={cellS({color:'rgba(255,255,255,0.5)',maxWidth:'150px'})}>{s.filter||'-'}</td>
-                        <td style={cellS({color:'#34d399',maxWidth:'140px'})}>{s.market_fit||'-'}</td>
-                        <td style={cellS({color:'rgba(251,191,36,0.7)',maxWidth:'160px'})}>{s.warning||'-'}</td>
+                        style={{background: si%2===0 ? 'transparent' : 'rgba(15,23,42,0.015)'}}
+                        onMouseOver={e => e.currentTarget.style.background='rgba(15,23,42,0.04)'}
+                        onMouseOut={e => e.currentTarget.style.background= si%2===0 ? 'transparent' : 'rgba(15,23,42,0.015)'}>
+                        <td style={cellS({fontWeight:700,color:'#b45309',whiteSpace:'nowrap',minWidth:'90px'})}>{s.label}</td>
+                        <td style={cellS({color:'rgba(15,23,42,0.88)',maxWidth:'220px'})}>{s.desc||'-'}</td>
+                        <td style={cellS({color:'rgba(15,23,42,0.88)',maxWidth:'200px'})}>{s.entry||'-'}</td>
+                        <td style={cellS({color:'rgba(15,23,42,0.88)',maxWidth:'160px'})}>{s.exit||'-'}</td>
+                        <td style={cellS({color:'#dc2626',textAlign:'center',fontWeight:700})}>{s.stop_loss||'-'}</td>
+                        <td style={cellS({color:'rgba(15,23,42,0.88)',maxWidth:'150px'})}>{s.filter||'-'}</td>
+                        <td style={cellS({color:'#047857',maxWidth:'140px'})}>{s.market_fit||'-'}</td>
+                        <td style={cellS({color:'rgba(217,119,6,0.9)',maxWidth:'160px'})}>{s.warning||'-'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               <div style={{padding:'0.6rem 1rem',borderTop:'1px solid var(--glass-border)',
-                fontSize:'0.7rem',color:'rgba(255,255,255,0.4)'}}>
+                fontSize:'0.7rem',color:'rgba(15,23,42,0.88)'}}>
                 * 모든 전략 예산: 1억원/전략, 종목당 1천만원 (최대 10종목 동시 보유)
                 — 실제 데이터 확인 가능 시점 기준 백테스트
               </div>
@@ -442,14 +449,14 @@ import { API } from '../utils';
           </div>
           <button onClick={startBacktest} disabled={running} style={{
             padding:'0.5rem 1.4rem', borderRadius:'8px', fontWeight:700, cursor: running ? 'not-allowed' : 'pointer',
-            background: running ? 'rgba(100,116,139,0.2)' : 'rgba(245,158,11,0.2)',
-            border: `1px solid ${running ? 'rgba(100,116,139,0.3)' : 'rgba(245,158,11,0.5)'}`,
-            color: running ? 'var(--text-secondary)' : '#f59e0b', fontSize:'0.88rem',
+            background: running ? 'rgba(100,116,139,0.2)' : 'rgba(217,119,6,0.2)',
+            border: `1px solid ${running ? 'rgba(100,116,139,0.3)' : 'rgba(217,119,6,0.5)'}`,
+            color: running ? 'var(--text-secondary)' : '#b45309', fontSize:'0.88rem',
           }}>
             {running ? '⏳ 백테스트 실행 중...' : '▶ 백테스트 실행'}
           </button>
           {running && (
-            <div style={{marginTop:'0.5rem',fontSize:'0.72rem',color:'rgba(255,255,255,0.45)'}}>
+            <div style={{marginTop:'0.5rem',fontSize:'0.72rem',color:'rgba(15,23,42,0.88)'}}>
               전 종목 스캔 중입니다. 수십 초 ~ 수 분 소요될 수 있습니다.
             </div>
           )}
@@ -498,24 +505,24 @@ import { API } from '../utils';
                     <td style={{textAlign:'right',color:'var(--accent-purple)'}}>
                       {rd?.pl_ratio != null ? rd.pl_ratio+'배' : '-'}
                     </td>
-                    <td style={{textAlign:'right',color:rd?.sharpe>=1?'#22c55e':rd?.sharpe>=0?'#f59e0b':'#f87171'}}>
+                    <td style={{textAlign:'right',color:rd?.sharpe>=1?'#15803d':rd?.sharpe>=0?'#b45309':'#dc2626'}}>
                       {rd?.sharpe != null ? rd.sharpe : '-'}
                     </td>
                     <td style={{textAlign:'right'}}>{r.total_trades ?? '-'}건</td>
-                    <td style={{textAlign:'right',color:'#f87171'}}>
+                    <td style={{textAlign:'right',color:'#dc2626'}}>
                       {r.max_drawdown_pct != null ? r.max_drawdown_pct+'%' : '-'}
                     </td>
                     <td>
                       <span style={{padding:'0.1rem 0.4rem',borderRadius:'4px',fontSize:'0.68rem',
-                        background: r.status==='done' ? 'rgba(34,197,94,0.15)' :
-                                    r.status==='running' ? 'rgba(251,191,36,0.15)' : 'rgba(239,68,68,0.15)',
-                        color:      r.status==='done' ? '#22c55e' :
-                                    r.status==='running' ? '#fbbf24' : '#ef4444'}}>
+                        background: r.status==='done' ? 'rgba(22,163,74,0.15)' :
+                                    r.status==='running' ? 'rgba(217,119,6,0.15)' : 'rgba(220,38,38,0.15)',
+                        color:      r.status==='done' ? '#15803d' :
+                                    r.status==='running' ? '#b45309' : '#dc2626'}}>
                         {r.status==='done' ? '완료' : r.status==='running' ? '실행중' : '오류'}
                       </span>
                     </td>
                     <td onClick={e => { e.stopPropagation(); deleteRun(r.run_id); }}
-                      style={{cursor:'pointer',color:'#ef4444',fontSize:'0.8rem',padding:'0.3rem 0.6rem'}}>
+                      style={{cursor:'pointer',color:'#dc2626',fontSize:'0.8rem',padding:'0.3rem 0.6rem'}}>
                       ✕
                     </td>
                   </tr>
@@ -536,8 +543,8 @@ import { API } from '../utils';
                 { label:'CAGR(연복리)', val:detail.cagr!=null ? (detail.cagr>=0?'+':'')+detail.cagr+'%' : (detail.ann_return_pct>=0?'+':'')+detail.ann_return_pct+'%', color:clr(detail.cagr??detail.ann_return_pct) },
                 { label:'승률',         val:detail.win_rate+'%',          color:'var(--accent-mint)' },
                 { label:'손익비',       val:detail.pl_ratio!=null ? detail.pl_ratio+'배' : '-', color:'var(--accent-purple)' },
-                { label:'샤프지수',     val:detail.sharpe!=null ? detail.sharpe : '-', color:detail.sharpe>=1?'#22c55e':detail.sharpe>=0?'#f59e0b':'#f87171' },
-                { label:'최대낙폭(MDD)',val:detail.max_drawdown_pct+'%',  color:'#f87171' },
+                { label:'샤프지수',     val:detail.sharpe!=null ? detail.sharpe : '-', color:detail.sharpe>=1?'#15803d':detail.sharpe>=0?'#b45309':'#dc2626' },
+                { label:'최대낙폭(MDD)',val:detail.max_drawdown_pct+'%',  color:'#dc2626' },
                 { label:'총 거래수',    val:detail.total_trades+'건',     color:'var(--text-primary)' },
                 { label:'총손익',       val:fmtAmt(detail.total_profit_amt), color:clr(detail.total_profit_amt||0) },
               ].map(({ label, val, color }) => (
@@ -557,12 +564,12 @@ import { API } from '../utils';
                 <div style={{display:'flex',flexWrap:'wrap',gap:'0.4rem'}}>
                   {detail.monthly.map(m => (
                     <div key={m.month} style={{padding:'0.3rem 0.6rem',borderRadius:'5px',
-                      background: m.profit>=0 ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)',
-                      border:`1px solid ${m.profit>=0 ? 'rgba(239,68,68,0.25)' : 'rgba(59,130,246,0.25)'}`,
+                      background: m.profit>=0 ? 'rgba(220,38,38,0.12)' : 'rgba(37,99,235,0.12)',
+                      border:`1px solid ${m.profit>=0 ? 'rgba(220,38,38,0.25)' : 'rgba(37,99,235,0.25)'}`,
                       textAlign:'center',minWidth:'80px'}}>
                       <div style={{fontSize:'0.65rem',color:'var(--text-secondary)'}}>{m.month}</div>
                       <div style={{fontSize:'0.78rem',fontWeight:700,
-                        color: m.profit>=0 ? '#ef4444' : '#3b82f6'}}>
+                        color: m.profit>=0 ? '#dc2626' : '#2563eb'}}>
                         {m.profit>=0?'+':''}{Math.round(m.profit/10000).toLocaleString()}만
                       </div>
                     </div>
@@ -574,15 +581,15 @@ import { API } from '../utils';
             {/* 상위/하위 종목 */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem'}}>
               {[
-                { label:'🏆 수익 상위 종목', data: detail.top_winners || [], color:'#ef4444' },
-                { label:'💀 손실 종목', data: detail.top_losers || [], color:'#3b82f6' },
+                { label:'🏆 수익 상위 종목', data: detail.top_winners || [], color:'#dc2626' },
+                { label:'💀 손실 종목', data: detail.top_losers || [], color:'#2563eb' },
               ].map(({ label, data, color }) => (
                 <div key={label} className="glass-panel" style={{padding:'0.8rem 1rem'}}>
                   <div style={{fontWeight:700,fontSize:'0.8rem',marginBottom:'0.5rem',color}}>{label}</div>
                   {data.length === 0 ? <div style={{fontSize:'0.75rem',color:'var(--text-secondary)'}}>없음</div> :
                     data.map(d => (
                       <div key={d.name} style={{display:'flex',justifyContent:'space-between',
-                        padding:'0.2rem 0',borderBottom:'1px solid rgba(255,255,255,0.04)',
+                        padding:'0.2rem 0',borderBottom:'1px solid rgba(15,23,42,0.2)',
                         fontSize:'0.78rem'}}>
                         <span>{d.name}</span>
                         <span style={{fontWeight:700,color}}>{fmtAmt(d.profit)}</span>
@@ -613,7 +620,7 @@ import { API } from '../utils';
                     a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
                     a.download='backtest_trades.csv'; a.click();
                   }} style={{marginLeft:'auto',padding:'0.2rem 0.6rem',borderRadius:'5px',fontSize:'0.7rem',
-                    cursor:'pointer',border:'1px solid rgba(45,212,191,0.3)',background:'rgba(45,212,191,0.08)',
+                    cursor:'pointer',border:'1px solid rgba(37,99,235,0.3)',background:'rgba(37,99,235,0.08)',
                     color:'var(--accent-mint)'}}>⬇ CSV</button>
                 </div>
                 <table className="premium-table">
@@ -640,7 +647,7 @@ import { API } from '../utils';
                         <td style={{textAlign:'right',color:clr(t.profit_amt)}}>
                           {fmtAmt(t.profit_amt)}
                         </td>
-                        <td style={{fontSize:'0.72rem',color:'rgba(255,255,255,0.45)'}}>{t.exit_reason}</td>
+                        <td style={{fontSize:'0.72rem',color:'rgba(15,23,42,0.88)'}}>{t.exit_reason}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -651,7 +658,7 @@ import { API } from '../utils';
         )}
 
         {detail && detail.status === 'error' && (
-          <div className="glass-panel" style={{padding:'1.5rem',color:'#f87171'}}>
+          <div className="glass-panel" style={{padding:'1.5rem',color:'#dc2626'}}>
             ⚠️ 백테스트 오류: {detail.summary_text}
           </div>
         )}
@@ -661,14 +668,14 @@ import { API } from '../utils';
 	            borderBottom:'1px solid var(--glass-border)',paddingBottom:'0.5rem'}}>
 	            📘 전략별 상세 설명 (매수·매도 조건)
 	          </div>
-	          <div style={{padding:'0.65rem 0.75rem',borderRadius:6,background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.24)',color:'rgba(255,255,255,0.68)',fontSize:'0.72rem',lineHeight:1.55,marginBottom:'0.85rem'}}>
+	          <div style={{padding:'0.65rem 0.75rem',borderRadius:6,background:'rgba(217,119,6,0.08)',border:'1px solid rgba(217,119,6,0.24)',color:'rgba(15,23,42,0.88)',fontSize:'0.72rem',lineHeight:1.55,marginBottom:'0.85rem'}}>
 		            성과와 검증 등급은 선택된 run hash의 API 결과만 표시합니다. 아래 매수·매도 조건은 로직 설명용입니다.
 	          </div>
 	          {[
             {
               key:'V1 MA추세',
               badge:'V1',
-              color:'#f59e0b',
+              color:'#b45309',
               summary:'Minervini 추세추종 — MA 정배열 + 52주 신고가 근접 + KOSPI 시장필터',
               buy:[
                 'MA20 > MA60 > MA120 정배열 (세 이평선 모두 순서대로)',
@@ -689,7 +696,7 @@ import { API } from '../utils';
             {
               key:'V2 가치매수',
               badge:'V2',
-              color:'#34d399',
+              color:'#047857',
               summary:'Graham 내재가치 + 기관·외국인 동반 수급 — 저평가 가치주 발굴',
               buy:[
                 'Graham 내재가치(√22.5×EPS×BPS) 대비 25% 이상 할인 OR (PBR<0.7 AND PER<10)',
@@ -709,7 +716,7 @@ import { API } from '../utils';
             {
               key:'V3 재무우량',
               badge:'V3',
-              color:'#60a5fa',
+              color:'#2563eb',
               summary:'52주 위치 + 수익성 스코어 + 추세·수급 — 재무 우량 성장주',
               buy:[
                 '52주 고점 대비 현재가 비율 ≥ 55%',
@@ -729,7 +736,7 @@ import { API } from '../utils';
             {
               key:'V4 수급모멘텀',
               badge:'V4',
-              color:'#a78bfa',
+              color:'#7c3aed',
               summary:'기관·외국인 5일 동반 순매수 AND 조건 + MA 정배열 — 수급 주도 모멘텀',
               buy:[
                 '기관 5일 순매수 > 0 AND 외국인 5일 순매수 > 0 (반드시 동반)',
@@ -770,7 +777,7 @@ import { API } from '../utils';
             {
               key:'V6 이익폭발',
               badge:'V6',
-              color:'#fbbf24',
+              color:'#b45309',
               summary:'영업이익 YoY 50%+ + 매출 YoY 10%+ 2분기 연속 고성장주',
               buy:[
                 '영업이익 YoY ≥ 50% (직전 분기 대비 전년동기)',
@@ -791,7 +798,7 @@ import { API } from '../utils';
             {
               key:'V7 이익가속',
               badge:'V7',
-              color:'#10b981',
+              color:'#047857',
               summary:'Earnings Acceleration — 3분기 연속 OP 증가 + 마진 레버리지 + 추세 전환',
               buy:[
                 '3분기 연속 영업이익 증가 (Ball & Brown 이익모멘텀)',
@@ -812,7 +819,7 @@ import { API } from '../utils';
             {
               key:'V8 52W돌파',
               badge:'V8',
-              color:'#fb923c',
+              color:'#c2410c',
               summary:'52주 고점 근접 모멘텀 — 실증 분석 기반 역발상 포기, 모멘텀 팩터 채택',
               buy:[
                 '52주 고점 대비 현재가 ≥ 65% (상위 35% 구간)',
@@ -832,7 +839,7 @@ import { API } from '../utils';
             {
               key:'V9 수출선행',
               badge:'V9',
-              color:'#94a3b8',
+              color:'#334155',
               summary:'HS무역통계 월별수출 변곡점 + MA60 — 실제 펀더멘탈 선행지표',
               buy:[
                 '수출 YoY ≥ 8% (최근 3개월 평균)',
@@ -852,7 +859,7 @@ import { API } from '../utils';
             {
               key:'V10 섹터대세',
               badge:'V10',
-              color:'#64748b',
+              color:'#1e293b',
               summary:'섹터 알파 + 강세 종목 진입 — 후행성 주의 ⚠️ 비권장',
               buy:[
                 'KOSPI 3개월 대비 섹터 alpha ≥ 15%',
@@ -865,7 +872,7 @@ import { API } from '../utils';
             {
               key:'V11 복합스코어링',
               badge:'V11',
-              color:'#22d3ee',
+              color:'#0891b2',
               summary:'100점 다중팩터 종합 스코어링',
               buy:[
                 '종합 스코어 ≥ 65점 (100점 만점)',
@@ -886,7 +893,7 @@ import { API } from '../utils';
             {
               key:'V12 골든크로스',
               badge:'GC',
-              color:'#f97316',
+              color:'#c2410c',
               summary:'MA20이 MA60을 상향 돌파(15일 내) — 추세 전환 초기 포착',
               buy:[
                 'MA20이 MA60을 상향 돌파 (최근 15일 이내)',
@@ -905,7 +912,7 @@ import { API } from '../utils';
             {
               key:'Meta-V 레짐 적응형',
               badge:'META',
-              color:'#818cf8',
+              color:'#4f46e5',
               summary:'BULL/BEAR/NEUTRAL 장세 감지 → 자동 전략 전환 — 하락장 손실 과다 ⚠️ 비권장',
               buy:[
                 'KOSPI MA60 대비 위치로 장세 판별: +5%↑=BULL, -5%↓=BEAR, 그 외=NEUTRAL',
@@ -924,7 +931,7 @@ import { API } from '../utils';
             {
               key:'V-SECTOR 주도섹터',
               badge:'VS',
-              color:'#c084fc',
+              color:'#9333ea',
               summary:'섹터 로테이션과 수급 선도 종목을 추종',
               buy:[
                 '7개 커스텀 섹터 그룹(반도체/전력기기/2차전지/화장품/방산/조선/바이오)에서 RS+수급+수출 복합 스코어 55점+',
@@ -943,7 +950,7 @@ import { API } from '../utils';
             {
               key:'V13 고수익집중',
               badge:'V13',
-              color:'#22c55e',
+              color:'#15803d',
               summary:'임원매수 공시 + 성장섹터 + 거래량 급증 + MA20 반등 확인 — 실제 3배 종목 데이터 기반 최적화',
               buy:[
                 '최근 180일 임원매수 공시 존재 (dart_insider_holdings)',
@@ -967,7 +974,7 @@ import { API } from '../utils';
             {
               key:'V-RECOVERY 낙폭반등',
               badge:'VR',
-              color:'#fb7185',
+              color:'#e11d48',
               summary:'MA60 대비 낙폭과대와 거래량 급증 반등을 포착',
               buy:[
                 '현재가 ≤ MA60 × 0.80 이하 (MA60 대비 -20%+ 낙폭)',
@@ -988,7 +995,7 @@ import { API } from '../utils';
             {
               key:'공통 규칙',
               badge:'공통',
-              color:'rgba(255,255,255,0.5)',
+              color:'rgba(15,23,42,0.88)',
               summary:'모든 전략 공통 적용 사항',
               buy:[
                 '시총 500억원 이상 (소형주 제외)',
@@ -1005,35 +1012,35 @@ import { API } from '../utils';
             },
           ].map(s => (
             <div key={s.key} style={{marginBottom:'1rem',paddingBottom:'1rem',
-              borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+              borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
               <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.4rem'}}>
                 <span style={{padding:'0.1rem 0.5rem',borderRadius:'4px',fontSize:'0.7rem',fontWeight:700,
                   background:`${s.color}22`,border:`1px solid ${s.color}55`,color:s.color}}>
                   {s.badge.toUpperCase()}
                 </span>
                 <span style={{fontWeight:700,fontSize:'0.85rem'}}>{s.key}</span>
-                <span style={{fontSize:'0.72rem',color:'rgba(255,255,255,0.45)',marginLeft:'0.3rem'}}>
+                <span style={{fontSize:'0.72rem',color:'rgba(15,23,42,0.88)',marginLeft:'0.3rem'}}>
                   — {s.summary}
                 </span>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem',marginBottom:'0.35rem'}}>
                 <div>
-                  <div style={{fontSize:'0.68rem',color:'rgba(34,197,94,0.7)',fontWeight:600,marginBottom:'0.2rem'}}>
+                  <div style={{fontSize:'0.68rem',color:'rgba(22,163,74,0.9)',fontWeight:600,marginBottom:'0.2rem'}}>
                     📈 매수 조건
                   </div>
                   {s.buy.map((b,i) => (
-                    <div key={i} style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.6)',
+                    <div key={i} style={{fontSize:'0.7rem',color:'rgba(15,23,42,0.88)',
                       paddingLeft:'0.5rem',marginBottom:'0.12rem'}}>
                       • {b}
                     </div>
                   ))}
                 </div>
                 <div>
-                  <div style={{fontSize:'0.68rem',color:'rgba(248,113,113,0.7)',fontWeight:600,marginBottom:'0.2rem'}}>
+                  <div style={{fontSize:'0.68rem',color:'rgba(220,38,38,0.9)',fontWeight:600,marginBottom:'0.2rem'}}>
                     📉 매도 조건
                   </div>
                   {s.sell.map((sl,i) => (
-                    <div key={i} style={{fontSize:'0.7rem',color:'rgba(255,255,255,0.6)',
+                    <div key={i} style={{fontSize:'0.7rem',color:'rgba(15,23,42,0.88)',
                       paddingLeft:'0.5rem',marginBottom:'0.12rem'}}>
                       • {sl}
                     </div>
@@ -1041,9 +1048,9 @@ import { API } from '../utils';
                 </div>
               </div>
               {s.note && (
-                <div style={{fontSize:'0.68rem',color:'rgba(251,191,36,0.75)',
-                  padding:'0.2rem 0.5rem',background:'rgba(251,191,36,0.06)',
-                  borderRadius:'4px',borderLeft:'2px solid rgba(251,191,36,0.3)'}}>
+                <div style={{fontSize:'0.68rem',color:'rgba(217,119,6,0.9)',
+                  padding:'0.2rem 0.5rem',background:'rgba(217,119,6,0.06)',
+                  borderRadius:'4px',borderLeft:'2px solid rgba(217,119,6,0.3)'}}>
                   💡 {s.note}
                 </div>
               )}

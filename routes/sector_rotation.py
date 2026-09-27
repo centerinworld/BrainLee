@@ -908,7 +908,7 @@ def _leader_picks_for_sector(conn, sector_key, as_of, top_n=3):
         op_yoy = None
         if latest_year:
             op_cur = conn.execute(
-                """SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1
+                """SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1 AND operating_profit IS NOT NULL
                    ORDER BY (CASE WHEN report_type='CFS' THEN 0 ELSE 1 END),
                             (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
                             (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),
@@ -917,7 +917,7 @@ def _leader_picks_for_sector(conn, sector_key, as_of, top_n=3):
                 (code, latest_year)
             ).fetchone()
             op_prv = conn.execute(
-                """SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1
+                """SELECT operating_profit FROM financial_data WHERE stock_code=? AND year=? AND is_annual=1 AND operating_profit IS NOT NULL
                    ORDER BY (CASE WHEN report_type='CFS' THEN 0 ELSE 1 END),
                             (CASE WHEN quarter=4 THEN 0 WHEN quarter=0 THEN 1 ELSE 2 END),
                             (CASE WHEN data_source='dart' THEN 0 ELSE 1 END),

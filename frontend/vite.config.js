@@ -32,6 +32,8 @@ export default defineConfig({
       '/api': { target: 'http://localhost:8000', changeOrigin: true },
       '/hs':  { target: 'http://localhost:8000', changeOrigin: true },
       '/semiconductor-lab': { target: 'http://localhost:8000', changeOrigin: true },
+      // 2026-09-27: Stock LLM(Brian_RAG :8888)은 백엔드(:8000)의 /llm 프록시가 관리자 로그인을 검사한 뒤 중계한다(routes/llm_proxy.py)
+      '/llm': { target: 'http://localhost:8000', changeOrigin: true },
     }
   },
   server: {
@@ -48,6 +50,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/semiconductor-lab': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/llm': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       }

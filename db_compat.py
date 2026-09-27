@@ -337,6 +337,10 @@ def translate_sqlite_sql(sql: str) -> str:
     insert_or_ignore = bool(
         re.search(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", sql, flags=re.IGNORECASE)
     )
+    # 2026-09-27: SQLite 시절 코드의 `ALTER TABLE x ADD COLUMN y`(없으면 추가, 있으면 예외를 try/except 로 무시)는 PostgreSQL 에서 이미 있는 컬럼이면 오류가 나고,
+    # 이 계층은 실패한 문장마다 트랜잭션 전체를 롤백하므로 **앞서 넣은 데이터가 조용히 사라진다**(대차종목순위 9/4~9/22 미적재의 원인, 수집기 7곳에 같은 패턴).
+    # 멱등(IF NOT EXISTS)으로 바꿔 오류 자체를 없앤다.
+    sql = re.sub(r"(\bALTER\s+TABLE\s+\S+\s+ADD\s+COLUMN\s+)(?!IF\s+NOT\s+EXISTS\b)", r"\1IF NOT EXISTS ", sql, flags=re.IGNORECASE)
     translated = _YMD_DATE_COMPARISON_RE.sub(
         lambda m: (
             "REPLACE(SUBSTR("
@@ -919,6 +923,7 @@ class PostgresCompatConnection:
             dbapi_connection.set_session(readonly=readonly)
         with self._connection.cursor() as cursor:
             cursor.execute("SELECT set_config('statement_timeout', %s, false)", (str(max(1, round(timeout * 1000))),))
+        self._readonly = bool(readonly)
         self._row_factory = row_factory
         self._id_column_cache: dict[str, bool] = {}
         # sqlite3 연결의 total_changes(커넥션 수명 누적 변경행 수)를 흉내내는 공유 카운터.
@@ -990,6 +995,18 @@ class PostgresCompatConnection:
         self._connection.rollback()
 
     def close(self) -> None:
+        # 2026-09-27: readonly=True 로 연 연결은 read_only 상태 그대로 SQLAlchemy 풀로 돌아가, 나중에 그 연결을 받은 쓰기 세션이
+        # "cannot execute INSERT in a read-only transaction" 으로 실패했다(RT-Macro 등 간헐 장애의 원인). 반납 전에 되돌린다.
+        if self._readonly:
+            try:
+                self._connection.rollback()
+                dbapi = getattr(self._connection, "dbapi_connection", self._connection)
+                if hasattr(dbapi, "set_read_only"):
+                    dbapi.set_read_only(False)
+                else:
+                    dbapi.set_session(readonly=False)
+            except Exception:  # noqa: BLE001 - 복구 실패 시 풀에서 버려지도록 그대로 닫는다
+                pass
         self._connection.close()
 
     def __enter__(self):

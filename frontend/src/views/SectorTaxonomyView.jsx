@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 const API = (path) => path;
@@ -24,9 +31,9 @@ const fmtCap = (value) => {
 const badgeStyle = (status) => ({
   display: 'inline-flex', alignItems: 'center', padding: '2px 7px', borderRadius: 999,
   fontSize: '0.66rem', fontWeight: 700,
-  color: status === 'verified' ? '#86efac' : status === 'observed' ? '#93c5fd' : '#fcd34d',
-  background: status === 'verified' ? 'rgba(34,197,94,.13)' : status === 'observed' ? 'rgba(59,130,246,.13)' : 'rgba(245,158,11,.13)',
-  border: `1px solid ${status === 'verified' ? 'rgba(34,197,94,.3)' : status === 'observed' ? 'rgba(59,130,246,.3)' : 'rgba(245,158,11,.3)'}`,
+  color: status === 'verified' ? '#15803d' : status === 'observed' ? '#2563eb' : '#b45309',
+  background: status === 'verified' ? 'rgba(22,163,74,.13)' : status === 'observed' ? 'rgba(37,99,235,.13)' : 'rgba(217,119,6,.13)',
+  border: `1px solid ${status === 'verified' ? 'rgba(22,163,74,.3)' : status === 'observed' ? 'rgba(37,99,235,.3)' : 'rgba(217,119,6,.3)'}`,
 });
 
 export default function SectorTaxonomyView() {
@@ -98,7 +105,7 @@ export default function SectorTaxonomyView() {
     return [...new Set(overview.dimensions.map(x => x.taxonomy))];
   }, [overview]);
 
-  const inputStyle = { background:'rgba(15,23,42,.65)', color:'var(--text-primary)', border:'1px solid rgba(148,163,184,.22)', borderRadius:8, padding:'8px 10px' };
+  const inputStyle = { background:'rgba(255,255,255,.65)', color:'var(--text-primary)', border:'1px solid rgba(100,116,139,.22)', borderRadius:8, padding:'8px 10px' };
 
   return <div className="fade-in" style={{display:'flex', flexDirection:'column', gap:'0.85rem'}}>
     <div className="glass-panel" style={{padding:'1rem 1.2rem'}}>
@@ -114,17 +121,17 @@ export default function SectorTaxonomyView() {
         </div>}
       </div>
       {overview && <div style={{display:'flex', gap:6, flexWrap:'wrap', marginTop:10}}>
-        {overview.sources.map(source => <span key={source.source_system} title={source.source_url || ''} style={{fontSize:'0.67rem', padding:'4px 8px', borderRadius:8, background:'rgba(148,163,184,.1)', color: source.days_old > 30 ? '#fbbf24' : 'var(--text-secondary)'}}>
+        {overview.sources.map(source => <span key={source.source_system} title={source.source_url || ''} style={{fontSize:'0.67rem', padding:'4px 8px', borderRadius:8, background:'rgba(100,116,139,.1)', color: source.days_old > 30 ? '#b45309' : 'var(--text-secondary)'}}>
           {SOURCE_LABELS[source.source_system] || source.source_system} · {source.snapshot_date} · {source.membership_count.toLocaleString()}건{source.days_old > 30 ? ` · ${source.days_old}일 경과` : ''}
         </span>)}
       </div>}
     </div>
 
-    {error && <div style={{padding:'0.7rem 1rem', color:'#fca5a5', background:'rgba(239,68,68,.1)', borderRadius:8}}>{error}</div>}
+    {error && <div style={{padding:'0.7rem 1rem', color:'#b91c1c', background:'rgba(220,38,38,.1)', borderRadius:8}}>{error}</div>}
 
     <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
-      <button onClick={() => setMode('taxonomy')} style={{...inputStyle, cursor:'pointer', color:mode==='taxonomy'?'#67e8f9':'var(--text-secondary)'}}>분류 탐색</button>
-      <button onClick={() => setMode('peers')} style={{...inputStyle, cursor:'pointer', color:mode==='peers'?'#67e8f9':'var(--text-secondary)'}}>실질 경쟁군</button>
+      <button onClick={() => setMode('taxonomy')} style={{...inputStyle, cursor:'pointer', color:mode==='taxonomy'?'#0891b2':'var(--text-secondary)'}}>분류 탐색</button>
+      <button onClick={() => setMode('peers')} style={{...inputStyle, cursor:'pointer', color:mode==='peers'?'#0891b2':'var(--text-secondary)'}}>실질 경쟁군</button>
       <form onSubmit={searchStocks} style={{display:'flex', gap:6, marginLeft:'auto'}}>
         <input value={query} onChange={e => setQuery(e.target.value)} placeholder="종목명·코드 검색" style={{...inputStyle, width:180}} />
         <button style={{...inputStyle, cursor:'pointer'}}>검색</button>
@@ -133,9 +140,9 @@ export default function SectorTaxonomyView() {
 
     {mode === 'peers' ? <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))', gap:'0.8rem'}}>
       {peerGroups.map(group => <div className="glass-panel" key={group.node_key} style={{padding:'1rem'}}>
-        <div style={{fontWeight:800, color:'#c4b5fd'}}>{group.name}</div>
+        <div style={{fontWeight:800, color:'#6d28d9'}}>{group.name}</div>
         <div style={{fontSize:'0.7rem', color:'var(--text-secondary)', margin:'4px 0 10px'}}>{group.description}</div>
-        {group.members.map(member => <button key={member.stock_code} onClick={() => { setMode('taxonomy'); loadDetail(member.stock_code); }} style={{display:'flex', width:'100%', justifyContent:'space-between', alignItems:'center', background:'transparent', border:0, borderTop:'1px solid rgba(148,163,184,.1)', padding:'8px 2px', color:'var(--text-primary)', cursor:'pointer'}}>
+        {group.members.map(member => <button key={member.stock_code} onClick={() => { setMode('taxonomy'); loadDetail(member.stock_code); }} style={{display:'flex', width:'100%', justifyContent:'space-between', alignItems:'center', background:'transparent', border:0, borderTop:'1px solid rgba(100,116,139,.1)', padding:'8px 2px', color:'var(--text-primary)', cursor:'pointer'}}>
           <span>{member.stock_name} <small style={{color:'var(--text-secondary)'}}>{member.stock_code}</small></span>
           <span style={badgeStyle(member.status)}>{member.status === 'verified' ? '검증' : member.status}</span>
         </button>)}
@@ -155,18 +162,18 @@ export default function SectorTaxonomyView() {
       <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,320px),1fr))', gap:'0.8rem', alignItems:'start'}}>
         <div className="glass-panel" style={{padding:'0.65rem', maxHeight:'68vh', overflowY:'auto'}}>
           <div style={{fontSize:'0.72rem', color:'var(--text-secondary)', padding:'4px 6px 8px'}}>분류 {nodes.length.toLocaleString()}개</div>
-          {nodes.map(node => <button key={node.node_key} onClick={() => loadStocks(node)} style={{display:'flex', width:'100%', justifyContent:'space-between', gap:8, padding:'8px', borderRadius:7, border:0, background:selectedNode?.node_key===node.node_key?'rgba(59,130,246,.18)':'transparent', color:'var(--text-primary)', cursor:'pointer', textAlign:'left'}}>
-            <span><small style={{display:'block', color:'#94a3b8'}}>{DIMENSION_LABELS[node.dimension] || node.dimension}</small>{node.name}</span>
-            <b style={{color:'#67e8f9'}}>{Number(node.stock_count).toLocaleString()}</b>
+          {nodes.map(node => <button key={node.node_key} onClick={() => loadStocks(node)} style={{display:'flex', width:'100%', justifyContent:'space-between', gap:8, padding:'8px', borderRadius:7, border:0, background:selectedNode?.node_key===node.node_key?'rgba(37,99,235,.18)':'transparent', color:'var(--text-primary)', cursor:'pointer', textAlign:'left'}}>
+            <span><small style={{display:'block', color:'#334155'}}>{DIMENSION_LABELS[node.dimension] || node.dimension}</small>{node.name}</span>
+            <b style={{color:'#0891b2'}}>{Number(node.stock_count).toLocaleString()}</b>
           </button>)}
         </div>
 
         <div className="glass-panel" style={{padding:'0.65rem', maxHeight:'68vh', overflowY:'auto'}}>
           <div style={{fontSize:'0.72rem', color:'var(--text-secondary)', padding:'4px 6px 8px'}}>{selectedNode?.name || (query ? `'${query}' 검색` : '분류 또는 종목을 선택하세요')} · {stocks.length.toLocaleString()}종목</div>
           {loading && <div style={{padding:'1rem', color:'var(--text-secondary)'}}>불러오는 중…</div>}
-          {stocks.map(stock => <button key={stock.stock_code} onClick={() => loadDetail(stock.stock_code)} style={{display:'grid', gridTemplateColumns:'1fr auto', width:'100%', gap:8, padding:'9px 7px', border:0, borderTop:'1px solid rgba(148,163,184,.1)', background:detail?.stock?.stock_code===stock.stock_code?'rgba(34,211,238,.08)':'transparent', color:'var(--text-primary)', cursor:'pointer', textAlign:'left'}}>
-            <span><b>{stock.stock_name}</b> <small style={{color:'#94a3b8'}}>{stock.stock_code} · {stock.market}</small><small style={{display:'block', color:'var(--text-secondary)', marginTop:3}}>{stock.sector_large || '-'} › {stock.sector_mid || '-'}</small></span>
-            <span style={{textAlign:'right'}}><small style={{display:'block'}}>{fmtCap(stock.market_cap)}</small><small style={{color:'#67e8f9'}}>{stock.tag_count} 태그</small></span>
+          {stocks.map(stock => <button key={stock.stock_code} onClick={() => loadDetail(stock.stock_code)} style={{display:'grid', gridTemplateColumns:'1fr auto', width:'100%', gap:8, padding:'9px 7px', border:0, borderTop:'1px solid rgba(100,116,139,.1)', background:detail?.stock?.stock_code===stock.stock_code?'rgba(34,211,238,.08)':'transparent', color:'var(--text-primary)', cursor:'pointer', textAlign:'left'}}>
+            <span><b>{stock.stock_name}</b> <small style={{color:'#334155'}}>{stock.stock_code} · {stock.market}</small><small style={{display:'block', color:'var(--text-secondary)', marginTop:3}}>{stock.sector_large || '-'} › {stock.sector_mid || '-'}</small></span>
+            <span style={{textAlign:'right'}}><small style={{display:'block'}}>{fmtCap(stock.market_cap)}</small><small style={{color:'#0891b2'}}>{stock.tag_count} 태그</small></span>
           </button>)}
         </div>
 
@@ -177,27 +184,27 @@ export default function SectorTaxonomyView() {
 }
 
 function Stat({label, value}) {
-  return <div style={{padding:'6px 9px', borderRadius:8, background:'rgba(15,23,42,.45)', minWidth:85}}><small style={{display:'block', color:'var(--text-secondary)'}}>{label}</small><b>{value}</b></div>;
+  return <div style={{padding:'6px 9px', borderRadius:8, background:'rgba(255,255,255,.45)', minWidth:85}}><small style={{display:'block', color:'var(--text-secondary)'}}>{label}</small><b>{value}</b></div>;
 }
 
 function DetailPanel({detail}) {
   if (!detail) return <div className="glass-panel" style={{padding:'1rem', minHeight:220, color:'var(--text-secondary)'}}>종목을 선택하면 복수 분류, 출처, 신뢰도, 근거와 최신 제품 매출구성을 함께 표시합니다.</div>;
   const groups = Object.entries(detail.tags.reduce((acc, tag) => { const key = DIMENSION_LABELS[tag.dimension] || tag.dimension; (acc[key] ||= []).push(tag); return acc; }, {}));
   return <div className="glass-panel" style={{padding:'1rem', maxHeight:'68vh', overflowY:'auto'}}>
-    <h3 style={{margin:'0 0 3px'}}>{detail.stock.stock_name} <small style={{color:'#94a3b8'}}>{detail.stock.stock_code}</small></h3>
+    <h3 style={{margin:'0 0 3px'}}>{detail.stock.stock_name} <small style={{color:'#334155'}}>{detail.stock.stock_code}</small></h3>
     <div style={{fontSize:'0.7rem', color:'var(--text-secondary)', marginBottom:10}}>{detail.stock.market} · 시총 {fmtCap(detail.stock.market_cap)}</div>
-    {detail.source_disagreements.map(item => <div key={item.dimension} style={{fontSize:'0.7rem', color:'#fcd34d', background:'rgba(245,158,11,.1)', padding:'7px', borderRadius:7, marginBottom:7}}>출처 불일치: {item.values.join(' ↔ ')}<br/><span style={{color:'var(--text-secondary)'}}>{item.notice}</span></div>)}
+    {detail.source_disagreements.map(item => <div key={item.dimension} style={{fontSize:'0.7rem', color:'#b45309', background:'rgba(217,119,6,.1)', padding:'7px', borderRadius:7, marginBottom:7}}>출처 불일치: {item.values.join(' ↔ ')}<br/><span style={{color:'var(--text-secondary)'}}>{item.notice}</span></div>)}
     {groups.map(([label, tags]) => <div key={label} style={{marginBottom:11}}>
-      <div style={{fontSize:'0.68rem', fontWeight:800, color:'#94a3b8', marginBottom:4}}>{label}</div>
-      {tags.map(tag => <div key={`${tag.source_system}-${tag.node_key}`} style={{padding:'7px 8px', background:'rgba(15,23,42,.38)', borderRadius:7, marginBottom:4}}>
+      <div style={{fontSize:'0.68rem', fontWeight:800, color:'#334155', marginBottom:4}}>{label}</div>
+      {tags.map(tag => <div key={`${tag.source_system}-${tag.node_key}`} style={{padding:'7px 8px', background:'rgba(255,255,255,.38)', borderRadius:7, marginBottom:4}}>
         <div style={{display:'flex', justifyContent:'space-between', gap:7}}><b style={{fontSize:'0.82rem'}}>{tag.name}</b><span style={badgeStyle(tag.status)}>{tag.status === 'verified' ? '검증' : tag.status === 'observed' ? '원천관측' : tag.status === 'inferred' ? '규칙추론' : tag.status}</span></div>
         <div style={{fontSize:'0.65rem', color:'var(--text-secondary)', marginTop:3}}>{SOURCE_LABELS[tag.source_system] || tag.source_system} · 신뢰도 {tag.confidence} · {tag.source_snapshot_date}</div>
-        {(tag.evidence?.rationale || tag.evidence?.matched) && <div style={{fontSize:'0.67rem', marginTop:4, color:'#cbd5e1'}}>{tag.evidence.rationale || `일치 근거: ${tag.evidence.matched}`}</div>}
+        {(tag.evidence?.rationale || tag.evidence?.matched) && <div style={{fontSize:'0.67rem', marginTop:4, color:'#1e293b'}}>{tag.evidence.rationale || `일치 근거: ${tag.evidence.matched}`}</div>}
       </div>)}
     </div>)}
     {!!detail.product_mix.length && <div>
-      <div style={{fontSize:'0.68rem', fontWeight:800, color:'#94a3b8', margin:'12px 0 4px'}}>DART 제품 매출 구성 ({detail.product_mix[0].year})</div>
-      {detail.product_mix.slice(0, 8).map((item, index) => <div key={`${item.product_name}-${index}`} style={{display:'flex', justifyContent:'space-between', gap:8, fontSize:'0.7rem', padding:'4px 0', borderTop:'1px solid rgba(148,163,184,.08)'}}><span>{item.product_name}</span><b>{item.revenue_pct == null ? '-' : `${Number(item.revenue_pct).toFixed(1)}%`}</b></div>)}
+      <div style={{fontSize:'0.68rem', fontWeight:800, color:'#334155', margin:'12px 0 4px'}}>DART 제품 매출 구성 ({detail.product_mix[0].year})</div>
+      {detail.product_mix.slice(0, 8).map((item, index) => <div key={`${item.product_name}-${index}`} style={{display:'flex', justifyContent:'space-between', gap:8, fontSize:'0.7rem', padding:'4px 0', borderTop:'1px solid rgba(100,116,139,.08)'}}><span>{item.product_name}</span><b>{item.revenue_pct == null ? '-' : `${Number(item.revenue_pct).toFixed(1)}%`}</b></div>)}
     </div>}
   </div>;
 }

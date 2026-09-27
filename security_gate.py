@@ -5,12 +5,13 @@
 
 접근 단계 (터널 = Cloudflare가 붙이는 `Cf-Connecting-Ip`/`X-Forwarded-For`/`Cf-Ray` 헤더가 있는 요청만 검사, 서버 내부·스케줄러·스크립트의 로컬 호출은 무영향)
   · public : 일반 조회(시세·랭킹·차트·전략 화면 등) — 인증 없음. 대량 수집 방지용으로 IP당 분당 요청 수만 제한(API_RATE_LIMIT_PER_MIN, 기본 300, 0=끔).
-  · viewer : 계좌현황 GET(VIEWER_GET_PREFIXES: 보유·거래내역·보유종목 시세·실계좌 요약·현금원장) — **서버가 확인한 계좌현황 비밀번호**로 발급한 열람 쿠키(`pf_view`, 12시간) 또는 관리자 자격이 필요.
+  · viewer : 「내 투자」 GET(VIEWER_GET_PREFIXES: 보유·거래내역·매수후보·보유종목 시세·실계좌 요약·현금원장) — 2026-09-27부터 **관리자 로그인만** 통과(별도 열람 비밀번호·pf_view 쿠키 폐지).
              (로그인은 POST /api/portfolio-access/login. 친구는 지금처럼 비밀번호만 입력하면 되고 토큰은 묻지 않는다.)
   · public write: 일반 사용자 기능인 안전한 쓰기(종목 검색·분석 요청, 텍스트 파싱)는 PUBLIC_WRITE_PATTERNS 허용 목록에만 열고 IP당 분당 30회로 제한한다
              (환경변수 API_PUBLIC_WRITE_PATTERNS=쉼표 구분 정규식으로 조정). 나머지 쓰기는 전부 owner.
   · owner  : 수정(POST/PUT/PATCH/DELETE) 전부(위 허용 목록 제외), 내보내기·다운로드·백업·관리·설정 성격의 GET, API 문서 — 관리자만.
-             관리자 자격 = API 토큰(`X-API-Token`/`Authorization: Bearer` ↔ API_WRITE_TOKEN) 또는 Cloudflare Access JWT(서명·만료·aud·iss 검증,
+             관리자 자격 = 관리자 로그인 세션 쿠키(`sd_admin`, POST /api/admin-auth/login 이 서버에서 비밀번호를 확인한 뒤 발급 — 2026-09-27) 또는
+             API 토큰(`X-API-Token`/`Authorization: Bearer` ↔ API_WRITE_TOKEN) 또는 Cloudflare Access JWT(서명·만료·aud·iss 검증,
              email 클레임이 있고 CF_ACCESS_ALLOWED_EMAILS(관리자 이메일 목록, 필수)에 든 경우 — Access에 친구를 허용해도 관리자로 취급되지 않는다).
   · API_GATE_MODE=strict 이면 모든 /api GET을 owner로 취급(엄격 모드, 기본은 sensitive).
 인증 수단이 설정돼 있지 않으면 해당 단계의 터널 요청은 거부한다(fail-closed, 503). OPTIONS·프런트 정적 파일·/api/portfolio-access/*는 검사하지 않는다.
@@ -34,15 +35,20 @@ from starlette.concurrency import run_in_threadpool
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 API_PREFIXES = ("/api", "/hs", "/semiconductor-lab")
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
-PUBLIC_PREFIXES = ("/api/portfolio-access/",)          # 열람 로그인·상태 — 자체 검증
+PUBLIC_PREFIXES = ("/api/portfolio-access/", "/api/admin-auth/")   # 열람·관리자 로그인/상태 — 자체 검증
 # 계좌현황(소유자의 실제 보유·거래·실계좌) — 서버 검증 비밀번호 쿠키 필요. 그 밖의 화면(관심종목·수집 상태·가상매매(paper)·리스크게이트 등)은 모두 공개.
-VIEWER_GET_PREFIXES = ("/api/portfolio", "/api/realtime/prices", "/api/kis-trading/account", "/api/kis-trading/cash-ledger", "/api/live-orders")
+VIEWER_GET_PREFIXES = ("/api/portfolio", "/api/buy-candidates", "/api/realtime/prices", "/api/kis-trading/account", "/api/kis-trading/cash-ledger", "/api/live-orders")
 # 반출·관리성 세그먼트가 있는 GET — 관리자만
+OWNER_GET_PREFIXES = ("/api/sysmap",)                     # 시스템 지도(내부 구조 노출) — 관리자 전용
 OWNER_GET_PATTERN = re.compile(r"/(download|export|backup|admin|settings?|secrets?|tokens?|credentials?)(/|$)", re.IGNORECASE)
 # 일반 사용자가 쓰는 안전한 쓰기(저장·삭제·외부 호출 비용이 거의 없는 요청) — 그 외 쓰기는 모두 관리자 전용
 DEFAULT_PUBLIC_WRITE_PATTERNS = (r"^/api/commands/analyze/[^/]+$", r"^/api/sector-define/parse$")
 VIEW_COOKIE = "pf_view"
 VIEW_TTL_SECONDS = 12 * 3600
+ADMIN_COOKIE = "sd_admin"
+ADMIN_TTL_SECONDS = 8 * 3600
+INVEST_COOKIE = "sd_invest"            # 「내 투자」 잠금 해제 — 관리자 로그인과 별개로 비밀번호를 다시 입력해야 발급(2026-09-27)
+INVEST_TTL_SECONDS = 30 * 60
 
 
 def public_write_patterns() -> list:
@@ -78,7 +84,7 @@ def access_level(method: str, path: str) -> str:
         return "owner"
     if not in_api:
         return "public"
-    if gate_mode() == "strict" or OWNER_GET_PATTERN.search(path):
+    if gate_mode() == "strict" or OWNER_GET_PATTERN.search(path) or path.startswith(OWNER_GET_PREFIXES):
         return "owner"
     if path.startswith(VIEWER_GET_PREFIXES):
         return "viewer"
@@ -123,6 +129,80 @@ def valid_view_cookie(value: str, now: float | None = None) -> bool:
         if not secret or int(exp_s) < (now if now is not None else time.time()):
             return False
         return hmac.compare_digest(sig, hmac.new(secret, exp_s.encode(), hashlib.sha256).hexdigest())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+# ── 관리자 로그인(비밀번호 → 서명 세션 쿠키) ─────────────────────────────────────────
+def admin_configured() -> bool:
+    return bool(os.environ.get("ADMIN_PASSWORD_HASH") or os.environ.get("ADMIN_PASSWORD"))
+
+
+def hash_admin_password(password: str, *, iterations: int = 600_000, salt: bytes | None = None) -> str:
+    """`pbkdf2_sha256$반복$salt(hex)$hash(hex)` — .env의 ADMIN_PASSWORD_HASH에 넣는 형식(scripts/ops/set_admin_password.py)."""
+    salt = salt if salt is not None else os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${dk.hex()}"
+
+
+def verify_admin_password(given: str) -> bool:
+    """ADMIN_PASSWORD_HASH(권장) 또는 ADMIN_PASSWORD(평문 — 임시용)와 상수시간 비교. 둘 다 없으면 항상 False(fail-closed)."""
+    stored = os.environ.get("ADMIN_PASSWORD_HASH", "")
+    if stored:
+        try:
+            algo, iters, salt_hex, hash_hex = stored.split("$")
+            if algo != "pbkdf2_sha256":
+                return False
+            dk = hashlib.pbkdf2_hmac("sha256", given.encode(), bytes.fromhex(salt_hex), int(iters))
+            return hmac.compare_digest(dk.hex(), hash_hex)
+        except Exception:  # noqa: BLE001 - 깨진 해시 = 인증 실패
+            return False
+    plain = os.environ.get("ADMIN_PASSWORD", "")
+    return bool(plain) and hmac.compare_digest(given.encode(), plain.encode())
+
+
+def _admin_secret() -> bytes:
+    """세션 서명 키. 비밀번호(해시)를 바꾸면 기존 세션이 모두 무효가 되도록 비밀번호 자료에서 파생한다."""
+    explicit = os.environ.get("ADMIN_COOKIE_SECRET", "")
+    base = explicit or os.environ.get("ADMIN_PASSWORD_HASH") or os.environ.get("ADMIN_PASSWORD") or ""
+    return hashlib.sha256(("sd_admin:" + base + os.environ.get("API_WRITE_TOKEN", "")).encode()).digest() if base else b""
+
+
+def make_admin_cookie(now: float | None = None) -> str:
+    secret = _admin_secret()
+    if not secret:
+        raise RuntimeError("admin_not_configured")
+    exp = int((now if now is not None else time.time()) + ADMIN_TTL_SECONDS)
+    return f"{exp}.{hmac.new(secret, f'admin:{exp}'.encode(), hashlib.sha256).hexdigest()}"
+
+
+def valid_admin_cookie(value: str, now: float | None = None) -> bool:
+    secret = _admin_secret()
+    try:
+        exp_s, sig = (value or "").split(".", 1)
+        if not secret or int(exp_s) < (now if now is not None else time.time()):
+            return False
+        return hmac.compare_digest(sig, hmac.new(secret, f"admin:{exp_s}".encode(), hashlib.sha256).hexdigest())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+
+def make_invest_cookie(now: float | None = None) -> str:
+    secret = _admin_secret()
+    if not secret:
+        raise RuntimeError("admin_not_configured")
+    exp = int((now if now is not None else time.time()) + INVEST_TTL_SECONDS)
+    return f"{exp}.{hmac.new(secret, f'invest:{exp}'.encode(), hashlib.sha256).hexdigest()}"
+
+
+def valid_invest_cookie(value: str, now: float | None = None) -> bool:
+    secret = _admin_secret()
+    try:
+        exp_s, sig = (value or "").split(".", 1)
+        if not secret or int(exp_s) < (now if now is not None else time.time()):
+            return False
+        return hmac.compare_digest(sig, hmac.new(secret, f"invest:{exp_s}".encode(), hashlib.sha256).hexdigest())
     except Exception:  # noqa: BLE001
         return False
 
@@ -221,7 +301,9 @@ async def _access_owner_ok(request: Request) -> bool:
     return bool(payload) and str(payload.get("email", "")).lower() in owners
 
 
-async def _owner_ok(request: Request) -> bool:
+async def _owner_ok(request: Request, *, allow_admin_cookie: bool = True) -> bool:
+    if allow_admin_cookie and valid_admin_cookie(request.cookies.get(ADMIN_COOKIE, "")):
+        return True
     expected = os.environ.get("API_WRITE_TOKEN", "")
     if expected and hmac.compare_digest(_presented_token(request).encode(), expected.encode()):
         return True
@@ -229,7 +311,7 @@ async def _owner_ok(request: Request) -> bool:
 
 
 def _owner_configured() -> bool:
-    return bool(os.environ.get("API_WRITE_TOKEN") or (os.environ.get("CF_ACCESS_ALLOWED_EMAILS") and os.environ.get("CF_ACCESS_TEAM_DOMAIN")
+    return bool(os.environ.get("API_WRITE_TOKEN") or admin_configured() or (os.environ.get("CF_ACCESS_ALLOWED_EMAILS") and os.environ.get("CF_ACCESS_TEAM_DOMAIN")
                                                      and os.environ.get("CF_ACCESS_AUD")))
 
 
@@ -246,14 +328,16 @@ async def api_token_gate(request: Request, call_next):
         if is_public_write(method, path) and rate_limited("w:" + client_ip(request), int(os.environ.get("API_PUBLIC_WRITE_LIMIT_PER_MIN", "30") or 0)):
             return JSONResponse({"detail": "rate_limited"}, status_code=429, headers={"Retry-After": "30"})
         return await call_next(request)
-    if await _owner_ok(request):                       # 관리자는 모든 단계 통과
-        return await call_next(request)
     if level == "viewer":
-        if not _view_secret():
-            return JSONResponse({"detail": "view_secret_not_configured"}, status_code=503)
-        if valid_view_cookie(request.cookies.get(VIEW_COOKIE, "")):
+        # 2026-09-27: 「내 투자」(계좌현황·매수후보)는 관리자 로그인 상태여도 **비밀번호를 다시 입력해 발급한 잠금 해제 쿠키(sd_invest, 30분)** 가 있어야 한다.
+        # 스크립트용 API 토큰·Cloudflare Access 관리자는 기존처럼 통과.
+        if not admin_configured():
+            return JSONResponse({"detail": "admin_not_configured"}, status_code=503)
+        if valid_invest_cookie(request.cookies.get(INVEST_COOKIE, "")) or await _owner_ok(request, allow_admin_cookie=False):
             return await call_next(request)
-        return JSONResponse({"detail": "portfolio_password_required"}, status_code=401)
+        return JSONResponse({"detail": "invest_unlock_required"}, status_code=401)
+    if await _owner_ok(request):                       # 관리자는 나머지 단계 통과
+        return await call_next(request)
     if not _owner_configured():
         return JSONResponse({"detail": "api_token_not_configured"}, status_code=503)
     return JSONResponse({"detail": "api_token_required"}, status_code=401, headers={"WWW-Authenticate": "Bearer"})

@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 /**
  * DartV22Builder 재현 — DART 재무데이터 기반 v22 형식 엑셀 자동 생성 페이지
  */
@@ -99,10 +106,10 @@ export default function DartExcelView() {
   };
 
   const statusColor = (s) => {
-    if (s === 'done')    return '#34d399';
-    if (s === 'error')   return '#f87171';
-    if (s === 'running') return '#fbbf24';
-    return '#94a3b8';
+    if (s === 'done')    return '#047857';
+    if (s === 'error')   return '#dc2626';
+    if (s === 'running') return '#b45309';
+    return '#334155';
   };
   const statusLabel = (s) => {
     if (s === 'done')    return '✅ 완료';
@@ -117,35 +124,35 @@ export default function DartExcelView() {
 
       {/* ── 헤더 ─────────────────────────────────────────────── */}
       <div style={{ marginBottom: '1.5rem' }}>
-        <h2 style={{ color: '#e2e8f0', fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.4rem' }}>
+        <h2 style={{ color: '#1e293b', fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.4rem' }}>
           📊 DART v22 엑셀 빌더
         </h2>
-        <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: 1.6 }}>
-          DART OpenAPI에서 재무데이터를 직접 수집해 <strong style={{color:'#60a5fa'}}>v22 형식</strong> 엑셀을 자동 생성합니다.
+        <p style={{ color: '#334155', fontSize: '0.85rem', lineHeight: 1.6 }}>
+          DART OpenAPI에서 재무데이터를 직접 수집해 <strong style={{color:'#2563eb'}}>v22 형식</strong> 엑셀을 자동 생성합니다.
           <br/>단독분기 자동계산 · 연간/분기 8시트 구성 · 파생수식 포함
         </p>
       </div>
 
       {/* ── 시트 구성 안내 ────────────────────────────────────── */}
-      <div style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(71,85,105,0.5)',
+      <div style={{ background: 'rgba(248,250,252,0.6)', border: '1px solid rgba(71,85,105,0.5)',
           borderRadius: '12px', padding: '1rem 1.2rem', marginBottom: '1.5rem' }}>
-        <div style={{ fontWeight: 700, color: '#cbd5e1', marginBottom: '0.7rem', fontSize: '0.9rem' }}>
+        <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: '0.7rem', fontSize: '0.9rem' }}>
           📋 생성 시트 구성 (8개)
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '0.4rem' }}>
           {SHEET_GUIDE.map(s => (
-            <div key={s.num} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem', color: '#94a3b8' }}>
-              <span style={{ color: '#60a5fa', fontWeight: 700, minWidth: '14px' }}>{s.num}.</span>
-              <span><span style={{ color: '#e2e8f0' }}>{s.name}</span> — {s.desc}</span>
+            <div key={s.num} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.8rem', color: '#334155' }}>
+              <span style={{ color: '#2563eb', fontWeight: 700, minWidth: '14px' }}>{s.num}.</span>
+              <span><span style={{ color: '#1e293b' }}>{s.name}</span> — {s.desc}</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* ── 입력 폼 ───────────────────────────────────────────── */}
-      <div style={{ background: 'rgba(30,41,59,0.8)', border: '1px solid rgba(71,85,105,0.5)',
+      <div style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid rgba(71,85,105,0.5)',
           borderRadius: '14px', padding: '1.4rem', marginBottom: '1.5rem' }}>
-        <div style={{ fontWeight: 700, color: '#cbd5e1', marginBottom: '1rem' }}>종목 선택</div>
+        <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: '1rem' }}>종목 선택</div>
 
         <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
           {/* 종목명 검색 */}
@@ -156,22 +163,22 @@ export default function DartExcelView() {
               value={inputName}
               onChange={e => handleSearch(e.target.value)}
               style={{ width: '100%', padding: '0.6rem 0.9rem', borderRadius: '8px',
-                background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(71,85,105,0.6)',
-                color: '#e2e8f0', fontSize: '0.88rem', outline: 'none' }}
+                background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(71,85,105,0.6)',
+                color: '#1e293b', fontSize: '0.88rem', outline: 'none' }}
             />
             {searchResults.length > 0 && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 99,
-                  background: '#1e293b', border: '1px solid #334155', borderRadius: '8px',
+                  background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px',
                   boxShadow: '0 8px 24px rgba(0,0,0,0.5)', marginTop: '4px' }}>
                 {searchResults.map(s => (
                   <div key={s.stock_code || s.code}
                     onClick={() => selectStock(s.stock_code || s.code, s.stock_name || s.name)}
-                    style={{ padding: '0.6rem 1rem', cursor: 'pointer', borderBottom: '1px solid #334155',
-                      fontSize: '0.85rem', color: '#e2e8f0', transition: 'background 0.15s' }}
-                    onMouseEnter={e => e.target.style.background='rgba(99,102,241,0.2)'}
+                    style={{ padding: '0.6rem 1rem', cursor: 'pointer', borderBottom: '1px solid #e2e8f0',
+                      fontSize: '0.85rem', color: '#1e293b', transition: 'background 0.15s' }}
+                    onMouseEnter={e => e.target.style.background='rgba(79,70,229,0.2)'}
                     onMouseLeave={e => e.target.style.background='transparent'}>
                     <strong>{s.stock_name || s.name}</strong>
-                    <span style={{ color: '#64748b', marginLeft: '0.5rem' }}>{s.stock_code || s.code}</span>
+                    <span style={{ color: '#1e293b', marginLeft: '0.5rem' }}>{s.stock_code || s.code}</span>
                   </div>
                 ))}
               </div>
@@ -186,14 +193,14 @@ export default function DartExcelView() {
             onChange={e => setInputCode(e.target.value.trim())}
             maxLength={6}
             style={{ width: '150px', padding: '0.6rem 0.9rem', borderRadius: '8px',
-              background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(71,85,105,0.6)',
-              color: '#e2e8f0', fontSize: '0.88rem', outline: 'none' }}
+              background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(71,85,105,0.6)',
+              color: '#1e293b', fontSize: '0.88rem', outline: 'none' }}
           />
 
           {/* 수집기간 */}
           <select value={yearsBack} onChange={e => setYearsBack(Number(e.target.value))}
             style={{ padding: '0.6rem 0.9rem', borderRadius: '8px', border: '1px solid rgba(71,85,105,0.6)',
-              background: 'rgba(15,23,42,0.8)', color: '#e2e8f0', fontSize: '0.85rem' }}>
+              background: 'rgba(255,255,255,0.8)', color: '#1e293b', fontSize: '0.85rem' }}>
             {[3,4,5,7,10].map(n => <option key={n} value={n}>{n}년치</option>)}
           </select>
 
@@ -201,8 +208,8 @@ export default function DartExcelView() {
             onClick={() => startBuild(inputCode, inputName)}
             disabled={!inputCode || inputCode.length !== 6}
             style={{ padding: '0.6rem 1.6rem', borderRadius: '8px', border: 'none',
-              background: inputCode.length === 6 ? '#4f46e5' : '#334155',
-              color: '#fff', fontWeight: 700, cursor: inputCode.length === 6 ? 'pointer' : 'not-allowed',
+              background: inputCode.length === 6 ? '#4f46e5' : '#f1f5f9',
+              color: 'var(--text-primary)', fontWeight: 700, cursor: inputCode.length === 6 ? 'pointer' : 'not-allowed',
               fontSize: '0.9rem', transition: 'background 0.2s' }}>
             📥 엑셀 생성
           </button>
@@ -210,12 +217,12 @@ export default function DartExcelView() {
 
         {/* 빠른 선택 프리셋 */}
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          <span style={{ color: '#64748b', fontSize: '0.78rem', alignSelf: 'center' }}>빠른 선택:</span>
+          <span style={{ color: '#1e293b', fontSize: '0.78rem', alignSelf: 'center' }}>빠른 선택:</span>
           {PRESET_STOCKS.map(s => (
             <button key={s.code} onClick={() => { selectStock(s.code, s.name); }}
               style={{ padding: '0.25rem 0.6rem', borderRadius: '6px', border: '1px solid rgba(71,85,105,0.5)',
                 background: inputCode === s.code ? 'rgba(79,70,229,0.3)' : 'transparent',
-                color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem', transition: 'all 0.15s' }}>
+                color: '#334155', cursor: 'pointer', fontSize: '0.75rem', transition: 'all 0.15s' }}>
               {s.name}
             </button>
           ))}
@@ -225,20 +232,20 @@ export default function DartExcelView() {
       {/* ── 작업 목록 ──────────────────────────────────────────── */}
       {jobs.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-          <div style={{ fontWeight: 700, color: '#cbd5e1', fontSize: '0.9rem' }}>생성 이력</div>
+          <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '0.9rem' }}>생성 이력</div>
           {jobs.map(job => (
             <div key={job.job_id} style={{
-                background: 'rgba(30,41,59,0.8)', border: `1px solid ${
-                  job.status === 'done' ? 'rgba(52,211,153,0.3)'
-                  : job.status === 'error' ? 'rgba(248,113,113,0.3)'
+                background: 'rgba(248,250,252,0.8)', border: `1px solid ${
+                  job.status === 'done' ? 'rgba(5,150,105,0.3)'
+                  : job.status === 'error' ? 'rgba(220,38,38,0.3)'
                   : 'rgba(71,85,105,0.4)'}`,
                 borderRadius: '12px', padding: '1rem 1.2rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, color: '#e2e8f0' }}>{job.stock_name}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{job.stock_code}</span>
+                  <span style={{ fontWeight: 700, color: '#1e293b' }}>{job.stock_name}</span>
+                  <span style={{ color: '#1e293b', fontSize: '0.8rem' }}>{job.stock_code}</span>
                   {job.years && (
-                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                    <span style={{ color: '#1e293b', fontSize: '0.75rem' }}>
                       {job.years[0]}~{job.years[job.years.length-1]}
                     </span>
                   )}
@@ -250,7 +257,7 @@ export default function DartExcelView() {
                   <button
                     onClick={() => downloadExcel(job.job_id, job.filename)}
                     style={{ padding: '0.4rem 1.1rem', borderRadius: '8px', border: 'none',
-                      background: '#059669', color: '#fff', fontWeight: 700, cursor: 'pointer',
+                      background: '#047857', color: '#fff', fontWeight: 700, cursor: 'pointer',
                       fontSize: '0.85rem' }}>
                     ⬇ xlsx 다운로드
                   </button>
@@ -260,10 +267,10 @@ export default function DartExcelView() {
               {/* 진행 단계 */}
               {(job.status === 'running' || job.status === 'queued') && (
                 <div style={{ marginTop: '0.5rem' }}>
-                  <div style={{ color: '#fbbf24', fontSize: '0.82rem', marginBottom: '0.3rem' }}>
+                  <div style={{ color: '#b45309', fontSize: '0.82rem', marginBottom: '0.3rem' }}>
                     {job.step || '처리 중...'}
                   </div>
-                  <div style={{ height: '4px', background: '#1e293b', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ height: '4px', background: '#f8fafc', borderRadius: '2px', overflow: 'hidden' }}>
                     <div style={{ height: '100%', background: 'linear-gradient(90deg,#4f46e5,#7c3aed)',
                         width: '100%', animation: 'pulse 1.5s ease-in-out infinite' }} />
                   </div>
@@ -272,7 +279,7 @@ export default function DartExcelView() {
 
               {/* 완료 요약 */}
               {job.status === 'done' && (
-                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '1rem', fontSize: '0.8rem', color: '#94a3b8' }}>
+                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '1rem', fontSize: '0.8rem', color: '#334155' }}>
                   <span>📅 수집연도: {(job.annual_years || []).join(', ')}</span>
                   <span>📊 분기수: {job.quarterly_count}개</span>
                   <span>📄 파일: {job.filename}</span>
@@ -281,7 +288,7 @@ export default function DartExcelView() {
 
               {/* 오류 */}
               {job.status === 'error' && (
-                <div style={{ marginTop: '0.4rem', color: '#f87171', fontSize: '0.82rem' }}>
+                <div style={{ marginTop: '0.4rem', color: '#dc2626', fontSize: '0.82rem' }}>
                   {job.msg}
                 </div>
               )}
@@ -291,9 +298,9 @@ export default function DartExcelView() {
       )}
 
       {/* ── 데이터 규칙 안내 ─────────────────────────────────── */}
-      <div style={{ marginTop: '2rem', background: 'rgba(30,41,59,0.5)', border: '1px solid rgba(71,85,105,0.3)',
-          borderRadius: '12px', padding: '1rem 1.2rem', fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.8 }}>
-        <div style={{ fontWeight: 700, color: '#cbd5e1', marginBottom: '0.5rem' }}>📌 데이터 처리 규칙 (DartV22Builder 원칙)</div>
+      <div style={{ marginTop: '2rem', background: 'rgba(248,250,252,0.5)', border: '1px solid rgba(71,85,105,0.3)',
+          borderRadius: '12px', padding: '1rem 1.2rem', fontSize: '0.8rem', color: '#334155', lineHeight: 1.8 }}>
+        <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: '0.5rem' }}>📌 데이터 처리 규칙 (DartV22Builder 원칙)</div>
         <ul style={{ margin: 0, paddingLeft: '1.2rem' }}>
           <li>분기 단독값 = 누적 차감 (2Q=반기-1Q, 4Q=연간-3Q누적)</li>
           <li>DART fnlttSinglAcntAll API — CFS(연결) 우선, OFS(별도) fallback</li>

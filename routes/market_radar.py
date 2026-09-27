@@ -729,8 +729,19 @@ def _build_sector_detail(sector_key: str) -> Dict:
             dates = []
             if foreign_t:
                 ph = ",".join("?" for _ in foreign_t)
-                r = conn.execute(f"SELECT MAX(trade_date) FROM radar_price_cache WHERE ticker IN ({ph})", foreign_t).fetchone()
-                if r and r[0]: dates.append(r[0])
+                # 2026-09-27: 해외 가격의 실제 원천은 us_market.db 의 us_price_history 다(_fetch_price_map 과 동일).
+                # 예전 radar_price_cache 는 2026-06-19 에서 멈춘 폐기 캐시라 해외 종목만 있는 섹터의 기준일이 몇 달 전으로 표시됐다.
+                us_c = None
+                try:
+                    us_c = sqlite3.connect(US_DB_PATH, timeout=30)
+                    r = us_c.execute(f"SELECT MAX(date) FROM us_price_history WHERE ticker IN ({ph}) AND close > 0", foreign_t).fetchone()
+                    if r and r[0]: dates.append(r[0])
+                except Exception:
+                    pass
+                finally:
+                    if us_c is not None:
+                        try: us_c.close()
+                        except Exception: pass
             if korean_t:
                 ph = ",".join("?" for _ in korean_t)
                 r = conn.execute(f"SELECT MAX(date) FROM price_history WHERE stock_code IN ({ph})", korean_t).fetchone()

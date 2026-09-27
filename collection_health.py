@@ -101,11 +101,13 @@ DATASET_CONTRACTS: tuple[DatasetContract, ...] = (
     DatasetContract("us_factor", "미국 팩터", STOCK_DB, "us_factor_snapshot", "as_of_date", cadence="us_daily",
                     ready_hour=7, allowed_lag=3, min_latest_coverage=3000,
                     coverage_expr="COUNT(DISTINCT ticker)", source="yfinance+US 재무", schedule="미국장 마감 후 06:30 KST"),
-    DatasetContract("tenbagger", "텐버거 결과", STOCK_DB, "tenbagger_results", "run_time", cadence="calendar", allowed_lag=2,
-                    min_latest_coverage=1, coverage_expr="COUNT(DISTINCT stock_code)", source="텐버거 엔진", schedule="매일"),
+    # 2026-09-27: 텐버거 잡은 거래일 09/12/15시에만 돈다 — 달력일 기준(allowed_lag=2)이면 추석 연휴(9/24~26)+주말마다 stale 오탐 → 거래일 기준으로 전환.
+    DatasetContract("tenbagger", "텐버거 결과", STOCK_DB, "tenbagger_results", "run_time", cadence="kr_daily", ready_hour=16, allowed_lag=0,
+                    min_latest_coverage=1, coverage_expr="COUNT(DISTINCT stock_code)", source="텐버거 엔진", schedule="영업일 09·12·15시"),
     DatasetContract("consensus", "컨센서스", STOCK_DB, "consensus_targets", "report_date", cadence="calendar", allowed_lag=7,
                     min_latest_coverage=1, coverage_expr="COUNT(*)", source="한경 컨센서스", schedule="매일 04:00"),
-    DatasetContract("dart_contracts", "수주 공시", STOCK_DB, "dart_contracts", "disclosed_at", cadence="calendar", allowed_lag=3,
+    # 2026-09-27: 공시는 영업일에만 나온다 — 연휴·주말 달력일 lag 오탐 방지를 위해 거래일 기준(이벤트성이라 1거래일 여유).
+    DatasetContract("dart_contracts", "수주 공시", STOCK_DB, "dart_contracts", "disclosed_at", cadence="kr_daily", ready_hour=18, allowed_lag=1,
                     min_latest_coverage=1, coverage_expr="COUNT(*)", collected_at_col="created_at", source="DART", schedule="매일 3회"),
     DatasetContract("telegram", "텔레그램 채널", STOCK_DB, "telegram_channels", "last_sync", cadence="calendar", allowed_lag=1,
                     min_latest_coverage=1, coverage_expr="COUNT(*)", collected_at_col="last_sync", source="Telegram API", schedule="매일"),

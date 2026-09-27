@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React from 'react';
 import {
   ResponsiveContainer,
@@ -36,18 +43,18 @@ const fmtPct = (v, digits = 1) => {
 };
 
 const pctColor = (v) => {
-  if (v == null || Number.isNaN(Number(v))) return '#94a3b8';
-  if (Number(v) > 0) return '#ef4444';
-  if (Number(v) < 0) return '#60a5fa';
-  return '#94a3b8';
+  if (v == null || Number.isNaN(Number(v))) return '#334155';
+  if (Number(v) > 0) return '#dc2626';
+  if (Number(v) < 0) return '#2563eb';
+  return '#334155';
 };
 
 const pctBg = (v) => {
   if (v == null || Number.isNaN(Number(v))) return 'transparent';
   const n = Math.min(Math.abs(Number(v)), 80) / 80;
-  if (Number(v) > 0) return `rgba(239,68,68,${0.08 + n * 0.2})`;
+  if (Number(v) > 0) return `rgba(220,38,38,${0.08 + n * 0.2})`;
   if (Number(v) < 0) return `rgba(37,99,235,${0.08 + n * 0.2})`;
-  return 'rgba(148,163,184,0.06)';
+  return 'rgba(100,116,139,0.06)';
 };
 
 const Indicator = ({ value, inverse = false }) => {
@@ -60,14 +67,14 @@ const Indicator = ({ value, inverse = false }) => {
 
 const cellBase = {
   padding: '0.22rem 0.34rem',
-  border: '1px solid rgba(34,197,94,0.5)',
+  border: '1px solid rgba(22,163,74,0.5)',
   whiteSpace: 'nowrap',
 };
 
 const thBase = {
   ...cellBase,
   background: '#2563eb',
-  color: '#fff',
+  color: 'var(--text-primary)',
   fontWeight: 800,
   textAlign: 'center',
 };
@@ -79,7 +86,7 @@ const darkTh = {
 
 const orangeTh = {
   ...thBase,
-  background: '#f59e0b',
+  background: '#b45309',
 };
 
 const blueCorner = {
@@ -250,7 +257,7 @@ const SemiconductorSectorView = () => {
       <style>{`
         .semi-page { display:flex; flex-direction:column; gap:0.75rem; color:var(--text-primary); }
         .semi-tabs { display:flex; gap:0.35rem; flex-wrap:wrap; }
-        .semi-tab { border:0; border-radius:8px; padding:0.42rem 0.85rem; cursor:pointer; font-weight:800; color:var(--text-primary); background:rgba(255,255,255,0.05); }
+        .semi-tab { border:0; border-radius:8px; padding:0.42rem 0.85rem; cursor:pointer; font-weight:800; color:var(--text-primary); background:rgba(15,23,42,0.2); }
         .semi-tab.active { background:var(--accent-mint); color:#00110f; }
         .semi-card { background:var(--bg-card); border:1px solid var(--glass-border); border-radius:8px; padding:0.8rem; }
         .semi-title { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; }
@@ -260,10 +267,10 @@ const SemiconductorSectorView = () => {
         .semi-excel-table tbody tr:hover td { filter:brightness(0.95); }
         .semi-name { color:#064e3b; font-weight:800; cursor:help; }
         .semi-ind { font-size:0.72rem; font-weight:900; margin-left:0.25rem; }
-        .semi-ind.up { color:#ef4444; }
+        .semi-ind.up { color:#dc2626; }
         .semi-ind.down { color:#2563eb; }
-        .semi-ind.flat,.semi-ind.muted { color:#94a3b8; }
-        .semi-input { background:rgba(255,255,255,0.06); color:#fff; border:1px solid var(--glass-border); border-radius:6px; padding:0.38rem 0.5rem; width:126px; font-size:0.8rem; }
+        .semi-ind.flat,.semi-ind.muted { color:#334155; }
+        .semi-input { background:rgba(15,23,42,0.06); color:#fff; border:1px solid var(--glass-border); border-radius:6px; padding:0.38rem 0.5rem; width:126px; font-size:0.8rem; }
         .semi-button { background:var(--accent-mint); color:#00110f; border:0; border-radius:6px; padding:0.4rem 0.75rem; font-weight:800; cursor:pointer; }
       `}</style>
 
@@ -292,7 +299,7 @@ const SemiconductorSectorView = () => {
         <div style={{fontSize:'0.78rem',color:'var(--text-secondary)'}}>현재가 기준일: {mergedStocks[0]?.latest_date || '-'}</div>
       </div>
 
-      {error && <div className="semi-card" style={{color:'#f87171'}}>{error}</div>}
+      {error && <div className="semi-card" style={{color:'#dc2626'}}>{error}</div>}
       {loading && <div className="semi-card" style={{textAlign:'center',color:'var(--text-secondary)'}}>반도체 데이터 로딩 중...</div>}
       {!loading && activeTab === 'overview' && <OverviewTable stats={sectorStats} total={totalSummary} dates={dates} benchmarks={benchmarks} />}
       {!loading && activeTab === 'all' && <AllStocksTables groupedStocks={groupedStocks} dates={dates} />}
@@ -373,9 +380,9 @@ const StockPerformancePanel = ({
               onClick={() => setPickedCategory(c)}
               style={{
                 padding:'0.25rem 0.55rem', borderRadius:'999px', cursor:'pointer',
-                border: pickedCategory === c ? '1px solid #22d3ee' : '1px solid rgba(148,163,184,0.35)',
-                background: pickedCategory === c ? 'rgba(34,211,238,0.15)' : 'rgba(255,255,255,0.04)',
-                color: pickedCategory === c ? '#67e8f9' : '#cbd5e1', fontWeight:700, fontSize:'0.74rem',
+                border: pickedCategory === c ? '1px solid #0891b2' : '1px solid rgba(100,116,139,0.35)',
+                background: pickedCategory === c ? 'rgba(34,211,238,0.15)' : 'rgba(15,23,42,0.04)',
+                color: pickedCategory === c ? '#0891b2' : '#1e293b', fontWeight:700, fontSize:'0.74rem',
               }}>
               {c}
             </button>
@@ -385,44 +392,44 @@ const StockPerformancePanel = ({
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
           <b style={{fontSize:'0.86rem'}}>기업</b>
           <select value={pickedCode} onChange={e => setPickedCode(e.target.value)}
-            style={{padding:'0.34rem 0.5rem', borderRadius:'8px', background:'rgba(15,23,42,0.9)', color:'#e2e8f0', border:'1px solid rgba(148,163,184,0.4)'}}>
+            style={{padding:'0.34rem 0.5rem', borderRadius:'8px', background:'rgba(255,255,255,0.9)', color:'#1e293b', border:'1px solid rgba(100,116,139,0.4)'}}>
             {categoryStocks.map(s => <option key={s.code} value={s.code}>{s.name} ({s.code})</option>)}
           </select>
         </div>
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(360px,1fr))',gap:'0.8rem'}}>
-        <div style={{background:'rgba(15,23,42,0.85)',border:'1px solid rgba(148,163,184,0.25)',borderRadius:'10px',padding:'0.7rem'}}>
+        <div style={{background:'rgba(255,255,255,0.85)',border:'1px solid rgba(100,116,139,0.25)',borderRadius:'10px',padding:'0.7rem'}}>
           <h4 style={{margin:'0 0 0.45rem',fontSize:'0.85rem'}}>연간 실적 (매출: 막대 / 이익: 선)</h4>
           <div style={{height:'260px'}}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={annualSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                <XAxis dataKey="period" tick={{fill:'#cbd5e1', fontSize:11}} />
-                <YAxis yAxisId="l" tick={{fill:'#94a3b8', fontSize:11}} />
-                <YAxis yAxisId="r" orientation="right" tick={{fill:'#94a3b8', fontSize:11}} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.2)" />
+                <XAxis dataKey="period" tick={{fill:'#1e293b', fontSize:11}} />
+                <YAxis yAxisId="l" tick={{fill:'#334155', fontSize:11}} />
+                <YAxis yAxisId="r" orientation="right" tick={{fill:'#334155', fontSize:11}} />
                 <Tooltip />
                 <Legend />
-                <Bar yAxisId="l" dataKey="revenue" name="매출(억)" fill="#22d3ee" radius={[4,4,0,0]} />
-                <Line yAxisId="r" type="monotone" dataKey="profit" name="이익(억)" stroke="#f97316" strokeWidth={2} dot={false} />
+                <Bar yAxisId="l" dataKey="revenue" name="매출(억)" fill="#0891b2" radius={[4,4,0,0]} />
+                <Line yAxisId="r" type="monotone" dataKey="profit" name="이익(억)" stroke="#c2410c" strokeWidth={2} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div style={{background:'rgba(15,23,42,0.85)',border:'1px solid rgba(148,163,184,0.25)',borderRadius:'10px',padding:'0.7rem'}}>
+        <div style={{background:'rgba(255,255,255,0.85)',border:'1px solid rgba(100,116,139,0.25)',borderRadius:'10px',padding:'0.7rem'}}>
           <h4 style={{margin:'0 0 0.45rem',fontSize:'0.85rem'}}>분기 실적 (매출: 막대 / 이익: 선)</h4>
           <div style={{height:'260px'}}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={quarterSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                <XAxis dataKey="period" tick={{fill:'#cbd5e1', fontSize:11}} />
-                <YAxis yAxisId="l" tick={{fill:'#94a3b8', fontSize:11}} />
-                <YAxis yAxisId="r" orientation="right" tick={{fill:'#94a3b8', fontSize:11}} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.2)" />
+                <XAxis dataKey="period" tick={{fill:'#1e293b', fontSize:11}} />
+                <YAxis yAxisId="l" tick={{fill:'#334155', fontSize:11}} />
+                <YAxis yAxisId="r" orientation="right" tick={{fill:'#334155', fontSize:11}} />
                 <Tooltip />
                 <Legend />
-                <Bar yAxisId="l" dataKey="revenue" name="매출(억)" fill="#38bdf8" radius={[4,4,0,0]} />
-                <Line yAxisId="r" type="monotone" dataKey="profit" name="이익(억)" stroke="#fb7185" strokeWidth={2} dot={false} />
+                <Bar yAxisId="l" dataKey="revenue" name="매출(억)" fill="#0284c7" radius={[4,4,0,0]} />
+                <Line yAxisId="r" type="monotone" dataKey="profit" name="이익(억)" stroke="#e11d48" strokeWidth={2} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -483,7 +490,7 @@ const perfLabel = (sectorPct, benchmarkPct) => {
 const perfStyle = (label) => ({
   ...cellBase,
   textAlign: 'center',
-  background: label === '아웃퍼폼' ? 'rgba(239,68,68,0.16)' : label === '언더퍼폼' ? 'rgba(37,99,235,0.16)' : '#fff',
+  background: label === '아웃퍼폼' ? 'rgba(220,38,38,0.16)' : label === '언더퍼폼' ? 'rgba(37,99,235,0.16)' : '#fff',
   color: label === '아웃퍼폼' ? '#b91c1c' : label === '언더퍼폼' ? '#1d4ed8' : '#0f172a',
   fontWeight: 900,
 });

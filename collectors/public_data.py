@@ -552,7 +552,7 @@ class PublicDataCollector(BaseCollector):
 
     def _bulk_upsert_short_sync(self, bas_dt: str, rank_rows, svc_rows, month_rows, sector_rows, fbal_rows, ftrad_rows) -> dict[str, int]:
         """대차 관련 4개 테이블 동기 upsert."""
-        conn = connect_primary_db()
+        conn = connect_primary_db(timeout=600)   # 2026-09-27: 잔고 보강 UPDATE 가 30초 제한에 걸려 그날 저장분이 통째로 롤백됐다
         conn.execute("PRAGMA journal_mode=WAL")
         saved: dict[str, int] = {}
         try:
@@ -599,11 +599,15 @@ class PublicDataCollector(BaseCollector):
                         UNIQUE(bas_dt, stock_code)
                     )
                 """)
-                # short_rdpt_qty 컬럼이 없는 구버전 테이블 대비
-                try:
-                    conn.execute("ALTER TABLE short_sell_daily ADD COLUMN short_rdpt_qty REAL DEFAULT 0")
-                except Exception:
-                    pass
+                # short_rdpt_qty 컬럼이 없는 구버전(SQLite) 테이블 대비. **PostgreSQL 에서는 실행 금지**: 이미 있는 컬럼을 추가하면 오류가 나고,
+                # db_compat 는 실패한 문장마다 트랜잭션을 롤백하므로 try/except 로 삼켜도 앞서 넣은 대차종목순위(short_rank_daily)가 통째로 사라졌다
+                # (2026-09-04~09-22 대차종목순위·내외국인 잔고가 저장되지 않은 원인, 로그엔 "N건 저장"으로만 남음).
+                from config import IS_POSTGRES as _PG
+                if not _PG:
+                    try:
+                        conn.execute("ALTER TABLE short_sell_daily ADD COLUMN short_rdpt_qty REAL DEFAULT 0")
+                    except Exception:
+                        pass
                 conn.executemany("""
                     INSERT INTO short_sell_daily
                       (bas_dt, stock_code, stock_name, short_qty, short_rdpt_qty,
@@ -618,6 +622,8 @@ class PublicDataCollector(BaseCollector):
                        r.get("short_rdpt_qty", 0), r["borrow_bal_qty"],
                        r["short_amt"], r["borrow_bal_amt"], r["borrow_bal_pct"])
                       for r in svc_rows])
+                # 보강 UPDATE 는 무겁다(주식수 스냅샷 700만 행 상관 서브쿼리). 실패·시간초과해도 지금까지 넣은 순위·현황이 롤백되지 않도록 먼저 확정한다.
+                conn.commit()
                 # V2 종목별대차현황은 잔고수량만 제공하고 금액/비율은 비어 있다.
                 # 같은 기준일의 short_rank_daily.lnb_bal(대차잔고금액)과 최신 상장주식수로 보강한다.
                 conn.execute("""

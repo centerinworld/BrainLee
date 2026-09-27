@@ -988,10 +988,21 @@ def get_attention_confirmation(limit: int = Query(default=50, ge=5, le=200)):
         events = [dict(row) for row in rows]
         codes = sorted({str(row["stock_code"]) for row in events if row.get("stock_code")})
         if not events:
+            # 2026-09-27: 빈 화면의 진짜 이유를 알린다. 원천(tg_daily_mentions ← telegram_monitor.py)은 비용 절감을 위해 비활성화돼 마지막 적재일에서 멈춰 있다.
+            try:
+                last_mention = conn.execute("SELECT MAX(mention_date) FROM tg_daily_mentions").fetchone()[0]
+            except Exception:
+                last_mention = None
             return {
                 "items": [],
                 "decision_mode": "research_paper_only",
                 "notice": "키움·KIS·KRX 구조화 시장 데이터가 우선입니다. 뉴스·토론·채널 관심도는 명시적으로 적재한 출처·링크 기반 집계만 후순위 보조 문맥으로 표시합니다.",
+                "source_status": {
+                    "source": "텔레그램 채널 언급 집계(tg_daily_mentions)",
+                    "last_data_date": str(last_mention) if last_mention else None,
+                    "reason": "telegram_monitor_disabled",
+                    "message": "이 탭의 원천인 텔레그램 모니터링(telegram_monitor.py)이 비용 절감을 위해 비활성화되어 새 집계가 쌓이지 않습니다.",
+                },
             }
 
         flow_by_code: dict[str, float] = {}

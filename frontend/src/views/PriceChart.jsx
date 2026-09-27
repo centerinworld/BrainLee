@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 /**
  * PriceChart — Lightweight Charts 기반 가격 차트 (HANDOFF §7-6, 2026-09-25)
  *
@@ -5,7 +12,7 @@
  * App.jsx(24K줄)에 직접 넣지 않고 React.lazy로 불러 쓴다. 다른 차트(막대·파이·추이)는 recharts 유지.
  *
  * 표시 가격은 호출자가 넘긴 data 그대로다(execution_raw vs 조정 기준은 호출자가 정한다). 분할일에 갭이 보이면 데이터/기준 문제이지
- * 차트 문제가 아니다. 색: 한국식 양봉 빨강(#ef4444)·음봉 파랑(#3b82f6). TradingView 출처 표기(attribution 로고)는 기본값을 유지한다.
+ * 차트 문제가 아니다. 색: 한국식 양봉 빨강(#dc2626)·음봉 파랑(#2563eb). TradingView 출처 표기(attribution 로고)는 기본값을 유지한다.
  *
  * props
  *   data:        [{date:'YYYY-MM-DD', open, high, low, close, volume}]  (필수, 오름차순)
@@ -19,8 +26,8 @@ import {
   createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers, CrosshairMode,
 } from 'lightweight-charts';
 
-const UP = '#ef4444';
-const DOWN = '#3b82f6';
+const UP = '#dc2626';
+const DOWN = '#2563eb';
 
 const sma = (rows, n) => {
   const out = [];
@@ -41,11 +48,11 @@ export default function PriceChart({ data = [], actions = [], trades = [], price
     const chart = createChart(ref.current, {
       autoSize: true,                                   // 컨테이너 폭 추종(모바일 포함)
       height,
-      layout: { background: { color: 'transparent' }, textColor: 'rgba(148,163,184,0.9)', fontSize: 11 },
-      grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
+      layout: { background: { color: 'transparent' }, textColor: 'rgba(100,116,139,0.9)', fontSize: 11 },
+      grid: { vertLines: { color: 'rgba(15,23,42,0.88)' }, horzLines: { color: 'rgba(15,23,42,0.88)' } },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.08)', scaleMargins: { top: 0.06, bottom: 0.26 } },
-      timeScale: { borderColor: 'rgba(255,255,255,0.08)', timeVisible: false },
+      rightPriceScale: { borderColor: 'rgba(15,23,42,0.2)', scaleMargins: { top: 0.06, bottom: 0.26 } },
+      timeScale: { borderColor: 'rgba(15,23,42,0.2)', timeVisible: false },
       localization: { priceFormatter: (p) => Math.round(p).toLocaleString('ko-KR') },
       handleScroll: { pressedMouseMove: true, horzTouchDrag: true },   // 터치 스크롤
       handleScale: { mouseWheel: true, pinch: true },
@@ -59,21 +66,21 @@ export default function PriceChart({ data = [], actions = [], trades = [], price
       time: d.date, open: d.open || d.close, high: d.high || d.close, low: d.low || d.close, close: d.close,
     })));
 
-    [[5, '#facc15'], [20, '#f97316'], [60, '#a78bfa']].forEach(([n, color]) => {
+    [[5, '#a16207'], [20, '#c2410c'], [60, '#7c3aed']].forEach(([n, color]) => {
       const s = chart.addSeries(LineSeries, { color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
       s.setData(sma(rows, n));
     });
 
     const vol = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'vol', priceLineVisible: false, lastValueVisible: false });
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
-    vol.setData(rows.map((d) => ({ time: d.date, value: d.volume || 0, color: (d.close || 0) >= (d.open || d.close || 0) ? 'rgba(239,68,68,0.45)' : 'rgba(59,130,246,0.45)' })));
+    vol.setData(rows.map((d) => ({ time: d.date, value: d.volume || 0, color: (d.close || 0) >= (d.open || d.close || 0) ? 'rgba(220,38,38,0.9)' : 'rgba(37,99,235,0.45)' })));
 
     const inRange = (date) => date >= rows[0].date && date <= rows[rows.length - 1].date;
     const snapDate = (date) => (rows.find((r) => r.date >= date) || {}).date;   // 휴장일이면 다음 거래일에 붙인다
     const markers = [];
     actions.forEach((a) => {
       const t = a.date && inRange(a.date) ? snapDate(a.date) : null;
-      if (t) markers.push({ time: t, position: 'aboveBar', color: '#facc15', shape: 'circle', text: a.label || a.event_type || a.type || '자본행위' });
+      if (t) markers.push({ time: t, position: 'aboveBar', color: '#a16207', shape: 'circle', text: a.label || a.event_type || a.type || '자본행위' });
     });
     trades.forEach((tr) => {
       const t = tr.date && inRange(tr.date) ? snapDate(tr.date) : null;
@@ -86,7 +93,7 @@ export default function PriceChart({ data = [], actions = [], trades = [], price
     if (markers.length) createSeriesMarkers(candles, markers);
 
     priceLines.forEach((pl) => {
-      if (pl && pl.price > 0) candles.createPriceLine({ price: pl.price, color: pl.color || '#facc15', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: pl.title || '' });
+      if (pl && pl.price > 0) candles.createPriceLine({ price: pl.price, color: pl.color || '#a16207', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: pl.title || '' });
     });
 
     chart.timeScale().fitContent();

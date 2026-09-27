@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React from 'react';
 import {
   ResponsiveContainer,
@@ -53,60 +60,60 @@ const STATUS_META = {
   ready_existing: {
     label: '연결완료',
     shortLabel: '완료',
-    color: '#34d399',
-    bg: 'rgba(16,185,129,0.14)',
-    border: 'rgba(52,211,153,0.28)',
+    color: '#047857',
+    bg: 'rgba(5,150,105,0.14)',
+    border: 'rgba(5,150,105,0.28)',
   },
   ready_existing_partial: {
     label: '부분연결',
     shortLabel: '부분',
-    color: '#fbbf24',
-    bg: 'rgba(251,191,36,0.14)',
-    border: 'rgba(251,191,36,0.28)',
+    color: '#b45309',
+    bg: 'rgba(217,119,6,0.14)',
+    border: 'rgba(217,119,6,0.28)',
   },
   partial_existing: {
     label: '부분연결',
     shortLabel: '부분',
-    color: '#fbbf24',
-    bg: 'rgba(251,191,36,0.14)',
-    border: 'rgba(251,191,36,0.28)',
+    color: '#b45309',
+    bg: 'rgba(217,119,6,0.14)',
+    border: 'rgba(217,119,6,0.28)',
   },
   derivable_after_new_collector: {
     label: '계산대기',
     shortLabel: '계산',
-    color: '#60a5fa',
-    bg: 'rgba(96,165,250,0.14)',
-    border: 'rgba(96,165,250,0.28)',
+    color: '#2563eb',
+    bg: 'rgba(37,99,235,0.14)',
+    border: 'rgba(37,99,235,0.28)',
   },
   new_collector_needed: {
     label: '수집대기중',
     shortLabel: '대기',
-    color: '#f87171',
-    bg: 'rgba(248,113,113,0.14)',
-    border: 'rgba(248,113,113,0.28)',
+    color: '#dc2626',
+    bg: 'rgba(220,38,38,0.14)',
+    border: 'rgba(220,38,38,0.28)',
   },
   source_discontinued: {
     label: '원천중단',
     shortLabel: '중단',
-    color: '#94a3b8',
-    bg: 'rgba(148,163,184,0.14)',
-    border: 'rgba(148,163,184,0.28)',
+    color: '#334155',
+    bg: 'rgba(100,116,139,0.14)',
+    border: 'rgba(100,116,139,0.28)',
   },
 };
 
 const PRIORITY_META = {
-  p1: { label: '1순위', color: '#2dd4bf' },
-  p2: { label: '2순위', color: '#93c5fd' },
-  p3: { label: '3순위', color: '#c084fc' },
+  p1: { label: '1순위', color: '#2563eb' },
+  p2: { label: '2순위', color: '#2563eb' },
+  p3: { label: '3순위', color: '#9333ea' },
 };
 
 const STATUS_ORDER = ['ready_existing', 'ready_existing_partial', 'partial_existing', 'derivable_after_new_collector', 'new_collector_needed', 'source_discontinued'];
-const SERIES_COLORS = ['#2dd4bf', '#60a5fa', '#f59e0b', '#f472b6', '#a78bfa', '#34d399'];
+const SERIES_COLORS = ['#2563eb', '#2563eb', '#b45309', '#db2777', '#7c3aed', '#047857'];
 
 const QUANT_EXTENSION_PLAN = [
   {
     group: '1. 스타일 팩터 스코어',
-    tone: '#2dd4bf',
+    tone: '#2563eb',
     why: '퀀트 전문가들이 가장 기본으로 보는 value, quality, momentum, size, low volatility 축입니다. 종목 발굴 점수의 뼈대가 됩니다.',
     items: [
       { name: 'Value composite', formula: 'PER/PBR/EV-EBITDA/FCF yield/배당수익률 z-score', source: 'DB 재무제표 + price_history + valuation_history', readiness: '대부분 보유', priority: 'P1' },
@@ -118,7 +125,7 @@ const QUANT_EXTENSION_PLAN = [
   },
   {
     group: '2. 실적 가속·턴어라운드',
-    tone: '#60a5fa',
+    tone: '#2563eb',
     why: '텐버거 후보는 단순 저평가보다 실적 변화율이 중요합니다. 분기 실적의 방향 전환을 조기에 잡는 탭입니다.',
     items: [
       { name: 'Earnings acceleration', formula: '매출/영업이익/순이익 YoY, QoQ, 2분기 연속 개선', source: 'canonical financial_data', readiness: '보유/검증 필요', priority: 'P1' },
@@ -130,7 +137,7 @@ const QUANT_EXTENSION_PLAN = [
   },
   {
     group: '3. 수급·시장 미세구조',
-    tone: '#f59e0b',
+    tone: '#b45309',
     why: '실제 매매에서는 좋은 기업도 수급이 붙어야 움직입니다. 장중 자동매매와 연결될 후보군입니다.',
     items: [
       { name: 'Volume breakout quality', formula: '20일 평균 대비 거래량/거래대금, 장대양봉, 고가권 돌파', source: 'price_history, intraday/tick', readiness: '일봉 보유, 틱 확인 필요', priority: 'P1' },
@@ -142,7 +149,7 @@ const QUANT_EXTENSION_PLAN = [
   },
   {
     group: '4. 이벤트·공시 팩터',
-    tone: '#c084fc',
+    tone: '#9333ea',
     why: '리포트나 단순 재무제표보다 빠르게 주가를 움직이는 재료성 이벤트를 점수화합니다.',
     items: [
       { name: 'Order backlog surprise', formula: '수주잔고 YoY/QoQ, 매출 대비 수주잔고, 신규수주 공시', source: 'DART business report + contracts', readiness: '수집 확장 중', priority: 'P1' },
@@ -154,7 +161,7 @@ const QUANT_EXTENSION_PLAN = [
   },
   {
     group: '5. 섹터/매크로 로테이션',
-    tone: '#34d399',
+    tone: '#047857',
     why: '개별 종목 점수가 좋아도 해당 섹터 사이클이 꺾이면 실패 확률이 높습니다. 섹터 총량 지표와 종목 점수를 연결합니다.',
     items: [
       { name: 'HS export momentum', formula: '기업 매핑 HS의 수출액/단가/중량 YoY, MoM', source: 'hs_trade_lab + company_hs_map', readiness: '보유/확장', priority: 'P1' },
@@ -166,7 +173,7 @@ const QUANT_EXTENSION_PLAN = [
   },
   {
     group: '6. 카페 주요글 반영 확장',
-    tone: '#f472b6',
+    tone: '#db2777',
     why: '지표상회 카페 주요글과 지표 제안 게시판에서 반복 등장한 업종을 수출입·매크로 지표와 연결합니다.',
     items: [
       { name: 'Construction cycle', formula: '주택착공/건설기성/건설수주 + 건설기계·철강재 수출입', source: 'ECOS/KOSIS 후보 + public:23:38/39', readiness: '부분 보유', priority: 'P1' },
@@ -180,16 +187,16 @@ const QUANT_EXTENSION_PLAN = [
 ];
 
 const PLAN_STATUS_META = {
-  '대부분 보유': { color: '#34d399', bg: 'rgba(52,211,153,0.14)' },
-  보유: { color: '#34d399', bg: 'rgba(52,211,153,0.14)' },
-  '계산 가능': { color: '#60a5fa', bg: 'rgba(96,165,250,0.14)' },
-  '보유/확장': { color: '#60a5fa', bg: 'rgba(96,165,250,0.14)' },
-  '부분 보유': { color: '#fbbf24', bg: 'rgba(251,191,36,0.14)' },
-  '보유/검증 필요': { color: '#fbbf24', bg: 'rgba(251,191,36,0.14)' },
-  '수집 확장 중': { color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  '정비 필요': { color: '#f87171', bg: 'rgba(248,113,113,0.14)' },
-  '신규 설계': { color: '#c084fc', bg: 'rgba(192,132,252,0.14)' },
-  '수집 점검 필요': { color: '#f87171', bg: 'rgba(248,113,113,0.14)' },
+  '대부분 보유': { color: '#047857', bg: 'rgba(5,150,105,0.14)' },
+  보유: { color: '#047857', bg: 'rgba(5,150,105,0.14)' },
+  '계산 가능': { color: '#2563eb', bg: 'rgba(37,99,235,0.14)' },
+  '보유/확장': { color: '#2563eb', bg: 'rgba(37,99,235,0.14)' },
+  '부분 보유': { color: '#b45309', bg: 'rgba(217,119,6,0.14)' },
+  '보유/검증 필요': { color: '#b45309', bg: 'rgba(217,119,6,0.14)' },
+  '수집 확장 중': { color: '#b45309', bg: 'rgba(217,119,6,0.14)' },
+  '정비 필요': { color: '#dc2626', bg: 'rgba(220,38,38,0.14)' },
+  '신규 설계': { color: '#9333ea', bg: 'rgba(192,132,252,0.14)' },
+  '수집 점검 필요': { color: '#dc2626', bg: 'rgba(220,38,38,0.14)' },
 };
 
 const normalizePriority = (priority) => String(priority || '').toLowerCase();
@@ -236,14 +243,14 @@ const isConnectedStatus = (status) => ['ready_existing', 'ready_existing_partial
 const MiniStatusBar = ({ counts }) => {
   const total = Math.max(counts.total || 0, 1);
   const segments = [
-    { key: 'ready', value: counts.ready, color: '#34d399' },
-    { key: 'partial', value: counts.partial, color: '#fbbf24' },
-    { key: 'derivable', value: counts.derivable, color: '#60a5fa' },
-    { key: 'waiting', value: counts.waiting, color: '#f87171' },
+    { key: 'ready', value: counts.ready, color: '#047857' },
+    { key: 'partial', value: counts.partial, color: '#b45309' },
+    { key: 'derivable', value: counts.derivable, color: '#2563eb' },
+    { key: 'waiting', value: counts.waiting, color: '#dc2626' },
   ].filter((segment) => segment.value > 0);
 
   return (
-    <div style={{ display: 'flex', height: 4, overflow: 'hidden', borderRadius: 999, background: 'rgba(255,255,255,0.06)' }}>
+    <div style={{ display: 'flex', height: 4, overflow: 'hidden', borderRadius: 999, background: 'rgba(15,23,42,0.06)' }}>
       {segments.map((segment) => (
         <div
           key={segment.key}
@@ -269,11 +276,11 @@ const QuantExpansionPlan = () => {
 
   return (
     <div style={{ display: 'grid', gap: '1rem' }}>
-      <div className="glass-panel" style={{ padding: '1rem 1.1rem', border: '1px solid rgba(45,212,191,0.16)' }}>
+      <div className="glass-panel" style={{ padding: '1rem 1.1rem', border: '1px solid rgba(37,99,235,0.16)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) minmax(360px, 0.9fr)', gap: '1rem', alignItems: 'start' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.45rem' }}>
-              <Target size={18} style={{ color: '#2dd4bf' }} />
+              <Target size={18} style={{ color: '#2563eb' }} />
               <h3 style={{ fontSize: '1.05rem' }}>퀀트 지표 확장계획</h3>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', lineHeight: 1.65 }}>
@@ -283,14 +290,14 @@ const QuantExpansionPlan = () => {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.55rem' }}>
             {[
-              { label: '미완료', value: summary.total, color: '#fbbf24' },
-              { label: '정비', value: summary.needsWork, color: '#fbbf24' },
+              { label: '미완료', value: summary.total, color: '#b45309' },
+              { label: '정비', value: summary.needsWork, color: '#b45309' },
             ].map((card) => (
               <div key={card.label} style={{
                 padding: '0.68rem 0.72rem',
                 borderRadius: 12,
-                background: 'rgba(255,255,255,0.035)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(15,23,42,0.035)',
+                border: '1px solid rgba(15,23,42,0.2)',
               }}>
                 <div style={{ color: card.color, fontSize: '0.72rem', fontWeight: 800, marginBottom: '0.24rem' }}>{card.label}</div>
                 <div style={{ fontSize: '1.08rem', fontWeight: 850 }}>{card.value.toLocaleString('ko-KR')}</div>
@@ -319,8 +326,8 @@ const QuantExpansionPlan = () => {
               desc: '재무/공시는 일·월·분기, 수급/분봉은 장중, 매크로/관세청은 월간으로 분리해 비용과 안정성을 맞춥니다.',
             },
           ].map((item) => (
-            <div key={item.title} style={{ padding: '0.9rem', borderRadius: 13, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#2dd4bf', fontWeight: 850, marginBottom: '0.45rem', fontSize: '0.83rem' }}>
+            <div key={item.title} style={{ padding: '0.9rem', borderRadius: 13, background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#2563eb', fontWeight: 850, marginBottom: '0.45rem', fontSize: '0.83rem' }}>
                 {item.icon}{item.title}
               </div>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.76rem', lineHeight: 1.55 }}>{item.desc}</div>
@@ -343,7 +350,7 @@ const QuantExpansionPlan = () => {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', minWidth: 960 }}>
               <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.045)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                <tr style={{ background: 'rgba(15,23,42,0.045)', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                   {['지표', '계산/정의', '원천 후보', '준비상태'].map((head) => (
                     <th key={head} style={{ padding: '0.55rem 0.6rem', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 800 }}>{head}</th>
                   ))}
@@ -351,12 +358,12 @@ const QuantExpansionPlan = () => {
               </thead>
               <tbody>
                 {group.items.map((item) => {
-                  const meta = PLAN_STATUS_META[item.readiness] || { color: '#94a3b8', bg: 'rgba(148,163,184,0.14)' };
+                  const meta = PLAN_STATUS_META[item.readiness] || { color: '#334155', bg: 'rgba(100,116,139,0.14)' };
                   return (
-                    <tr key={item.name} style={{ borderBottom: '1px solid rgba(255,255,255,0.055)' }}>
+                    <tr key={item.name} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                       <td style={{ padding: '0.58rem 0.6rem', fontWeight: 850, color: 'var(--text-primary)' }}>{item.name}</td>
                       <td style={{ padding: '0.58rem 0.6rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>{item.formula}</td>
-                      <td style={{ padding: '0.58rem 0.6rem', color: '#93c5fd', lineHeight: 1.45 }}>{item.source}</td>
+                      <td style={{ padding: '0.58rem 0.6rem', color: '#2563eb', lineHeight: 1.45 }}>{item.source}</td>
                       <td style={{ padding: '0.58rem 0.6rem' }}>
                         <span style={{ display: 'inline-flex', padding: '0.16rem 0.48rem', borderRadius: 999, color: meta.color, background: meta.bg, border: `1px solid ${meta.color}44`, fontWeight: 850, whiteSpace: 'nowrap' }}>
                           {item.readiness}
@@ -541,16 +548,16 @@ const QuantMajorIndicatorsView = React.memo(() => {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '0.55rem' }}>
             {[
-              { label: '전체', value: totalCounts.total, icon: <Database size={14} />, color: '#93c5fd' },
-              { label: `연결 ${connectedPct}%`, value: connectedCount, icon: <ShieldCheck size={14} />, color: '#34d399' },
-              { label: '부분', value: totalCounts.partial, icon: <Layers3 size={14} />, color: '#fbbf24' },
-              { label: '미연결', value: unresolvedCounts.waiting, icon: <AlertTriangle size={14} />, color: '#f87171' },
+              { label: '전체', value: totalCounts.total, icon: <Database size={14} />, color: '#2563eb' },
+              { label: `연결 ${connectedPct}%`, value: connectedCount, icon: <ShieldCheck size={14} />, color: '#047857' },
+              { label: '부분', value: totalCounts.partial, icon: <Layers3 size={14} />, color: '#b45309' },
+              { label: '미연결', value: unresolvedCounts.waiting, icon: <AlertTriangle size={14} />, color: '#dc2626' },
             ].filter((card) => card.value > 0).map((card) => (
               <div key={card.label} style={{
                 padding: '0.68rem 0.72rem',
                 borderRadius: 12,
-                background: 'rgba(255,255,255,0.035)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(15,23,42,0.035)',
+                border: '1px solid rgba(15,23,42,0.2)',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: card.color, fontSize: '0.72rem', marginBottom: '0.28rem' }}>
                   {card.icon}<span>{card.label}</span>
@@ -564,7 +571,7 @@ const QuantMajorIndicatorsView = React.memo(() => {
         <div style={{ marginTop: '0.95rem', display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) minmax(150px, 220px)', gap: '0.7rem', alignItems: 'center' }}>
           <label style={{
             display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.58rem 0.75rem',
-            borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 12, background: 'rgba(15,23,42,0.04)', border: '1px solid rgba(15,23,42,0.2)',
           }}>
             <Search size={15} style={{ color: 'var(--text-secondary)' }} />
             <input
@@ -579,8 +586,8 @@ const QuantMajorIndicatorsView = React.memo(() => {
             onChange={(event) => setStatusFilter(event.target.value)}
             style={{
               padding: '0.5rem 0.75rem', borderRadius: 10, minWidth: 132,
-              background: 'rgba(255,255,255,0.04)', color: 'var(--text-primary)',
-              border: '1px solid rgba(255,255,255,0.12)', outline: 0,
+              background: 'rgba(15,23,42,0.04)', color: 'var(--text-primary)',
+              border: '1px solid rgba(15,23,42,0.2)', outline: 0,
             }}
           >
             <option value="all">전체 상태</option>
@@ -608,9 +615,9 @@ const QuantMajorIndicatorsView = React.memo(() => {
                 padding: '0.46rem 0.78rem',
                 borderRadius: 999,
                 cursor: 'pointer',
-                border: active ? '1px solid rgba(45,212,191,0.58)' : '1px solid rgba(255,255,255,0.12)',
-                background: active ? 'rgba(45,212,191,0.14)' : 'rgba(255,255,255,0.035)',
-                color: active ? '#2dd4bf' : 'var(--text-secondary)',
+                border: active ? '1px solid rgba(37,99,235,0.58)' : '1px solid rgba(15,23,42,0.12)',
+                background: active ? 'rgba(37,99,235,0.14)' : 'rgba(15,23,42,0.035)',
+                color: active ? '#2563eb' : 'var(--text-secondary)',
                 fontSize: '0.78rem',
                 fontWeight: 850,
               }}
@@ -638,17 +645,17 @@ const QuantMajorIndicatorsView = React.memo(() => {
           </div>
         </div>
         <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.78rem', minWidth:620 }}>
-          <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(255,255,255,0.1)' }}>
+          <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(15,23,42,0.2)' }}>
             {['분류','전체','연결완료','부분연결','계산대기','수집·원천대기'].map((head) => <th key={head} style={{ padding:'0.5rem', textAlign:head === '분류' ? 'left' : 'right' }}>{head}</th>)}
           </tr></thead>
           <tbody>{categoryTabs.filter((category) => category.code !== 'all').map((category) => (
-            <tr key={category.code} onClick={() => setSelectedCategory(category.code)} style={{ borderBottom:'1px solid rgba(255,255,255,0.05)', cursor:'pointer', background:selectedCategory === category.code ? 'rgba(45,212,191,0.08)' : 'transparent' }}>
-              <td style={{ padding:'0.52rem', fontWeight:800, color:selectedCategory === category.code ? '#2dd4bf' : 'inherit' }}>{category.label}</td>
+            <tr key={category.code} onClick={() => setSelectedCategory(category.code)} style={{ borderBottom:'1px solid rgba(15,23,42,0.2)', cursor:'pointer', background:selectedCategory === category.code ? 'rgba(37,99,235,0.08)' : 'transparent' }}>
+              <td style={{ padding:'0.52rem', fontWeight:800, color:selectedCategory === category.code ? '#2563eb' : 'inherit' }}>{category.label}</td>
               <td style={{ padding:'0.52rem', textAlign:'right' }}>{category.total}</td>
-              <td style={{ padding:'0.52rem', textAlign:'right', color:'#34d399' }}>{category.ready}</td>
-              <td style={{ padding:'0.52rem', textAlign:'right', color:'#fbbf24' }}>{category.partial}</td>
-              <td style={{ padding:'0.52rem', textAlign:'right', color:'#60a5fa' }}>{category.derivable}</td>
-              <td style={{ padding:'0.52rem', textAlign:'right', color:'#f87171' }}>{category.waiting}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right', color:'#047857' }}>{category.ready}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right', color:'#b45309' }}>{category.partial}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right', color:'#2563eb' }}>{category.derivable}</td>
+              <td style={{ padding:'0.52rem', textAlign:'right', color:'#dc2626' }}>{category.waiting}</td>
             </tr>
           ))}</tbody>
         </table>
@@ -662,13 +669,13 @@ const QuantMajorIndicatorsView = React.memo(() => {
           <div style={{ display:'grid', gridTemplateColumns:'minmax(180px, 0.45fr) minmax(280px, 1fr)', gap:'0.75rem' }}>
             <label style={{ display:'grid', gap:'0.35rem' }}>
               <span style={{ color:'var(--text-secondary)', fontSize:'0.74rem' }}>분류</span>
-              <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ padding:'0.62rem 0.72rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}>
+              <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ padding:'0.62rem 0.72rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }}>
                 {categoryTabs.map((category) => <option key={category.code} value={category.code}>{category.label} ({category.total})</option>)}
               </select>
             </label>
             <label style={{ display:'grid', gap:'0.35rem' }}>
               <span style={{ color:'var(--text-secondary)', fontSize:'0.74rem' }}>세부 지표</span>
-              <select value={selectedIndicator || ''} onChange={(e) => setSelectedIndicator(e.target.value)} style={{ padding:'0.62rem 0.72rem', borderRadius:8, background:'#111827', color:'#fff', border:'1px solid rgba(255,255,255,0.14)' }}>
+              <select value={selectedIndicator || ''} onChange={(e) => setSelectedIndicator(e.target.value)} style={{ padding:'0.62rem 0.72rem', borderRadius:8, background:'#ffffff', color:'var(--text-primary)', border:'1px solid rgba(15,23,42,0.2)' }}>
                 {categoryIndicators.map((item) => <option key={item.indicator_key} value={item.indicator_key}>{item.epic_indicator_name} · {(STATUS_META[item.status] || STATUS_META.new_collector_needed).label}</option>)}
               </select>
             </label>
@@ -693,29 +700,29 @@ const QuantMajorIndicatorsView = React.memo(() => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.8rem', marginBottom: '1rem' }}>
-              <div style={{ padding: '0.8rem', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ padding: '0.8rem', borderRadius: 10, background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)' }}>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '0.2rem' }}>정확도 정책</div>
                 <div style={{ fontWeight: 750 }}>{selectedMeta.exactness || '-'}</div>
               </div>
-              <div style={{ padding: '0.8rem', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ padding: '0.8rem', borderRadius: 10, background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)' }}>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '0.2rem' }}>기본 단위</div>
                 <div style={{ fontWeight: 750 }}>{selectedMeta.base_unit || '-'}</div>
               </div>
-              <div style={{ padding: '0.8rem', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ padding: '0.8rem', borderRadius: 10, background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)' }}>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginBottom: '0.2rem' }}>업데이트</div>
                 <div style={{ fontWeight: 750 }}>{selectedMeta.updated_at || '-'}</div>
               </div>
             </div>
 
             {crossContext && (
-              <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', borderBottom:'1px solid rgba(255,255,255,0.08)', padding:'0.8rem 0', marginBottom:'1rem' }}>
+              <div style={{ borderTop:'1px solid rgba(15,23,42,0.2)', borderBottom:'1px solid rgba(15,23,42,0.2)', padding:'0.8rem 0', marginBottom:'1rem' }}>
                 <div style={{ display:'flex', alignItems:'center', gap:'0.55rem', flexWrap:'wrap', marginBottom:'0.65rem' }}>
-                  <ShieldCheck size={16} color="#2dd4bf" />
+                  <ShieldCheck size={16} color="#2563eb" />
                   <strong style={{ fontSize:'0.84rem' }}>HS Trade 교차검증</strong>
-                  <span style={{ fontSize:'0.7rem', color:'#2dd4bf' }}>양쪽 확인 {crossContext.summary?.cross_confirmed || 0}종목</span>
-                  {!!crossContext.summary?.quant_only && <span style={{ fontSize:'0.7rem', color:'#fbbf24' }}>퀀트만 {crossContext.summary.quant_only}종목</span>}
+                  <span style={{ fontSize:'0.7rem', color:'#2563eb' }}>양쪽 확인 {crossContext.summary?.cross_confirmed || 0}종목</span>
+                  {!!crossContext.summary?.quant_only && <span style={{ fontSize:'0.7rem', color:'#b45309' }}>퀀트만 {crossContext.summary.quant_only}종목</span>}
                   {crossContext.latest_signal && (
-                    <span style={{ marginLeft:'auto', fontSize:'0.7rem', color:['positive','green','buy','spike_up'].includes(crossContext.latest_signal.signal_type) ? '#34d399' : ['negative','red','sell','spike_down'].includes(crossContext.latest_signal.signal_type) ? '#f87171' : '#fbbf24' }}>
+                    <span style={{ marginLeft:'auto', fontSize:'0.7rem', color:['positive','green','buy','spike_up'].includes(crossContext.latest_signal.signal_type) ? '#047857' : ['negative','red','sell','spike_down'].includes(crossContext.latest_signal.signal_type) ? '#dc2626' : '#b45309' }}>
                       최근 신호 {crossContext.latest_signal.signal_type} · {crossContext.latest_signal.period}
                     </span>
                   )}
@@ -723,14 +730,14 @@ const QuantMajorIndicatorsView = React.memo(() => {
                 {crossContext.items?.length ? (
                   <div style={{ overflowX:'auto', maxHeight:230, overflowY:'auto' }}>
                     <table style={{ width:'100%', minWidth:760, borderCollapse:'collapse', fontSize:'0.75rem' }}>
-                      <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
+                      <thead><tr style={{ color:'var(--text-secondary)', borderBottom:'1px solid rgba(15,23,42,0.2)' }}>
                         {['종목','퀀트 섹터','검증','관련 HS 품목','매출/이익 비중'].map((h) => <th key={h} style={{ padding:'0.42rem', textAlign:'left' }}>{h}</th>)}
                       </tr></thead>
                       <tbody>{crossContext.items.map((item) => (
-                        <tr key={item.stock_code} style={{ borderBottom:'1px solid rgba(255,255,255,0.045)' }}>
+                        <tr key={item.stock_code} style={{ borderBottom:'1px solid rgba(15,23,42,0.2)' }}>
                           <td style={{ padding:'0.45rem', fontWeight:800 }}>{item.stock_name} <span style={{ color:'var(--text-secondary)' }}>({item.stock_code})</span></td>
                           <td style={{ padding:'0.45rem' }}>{item.sector_name || '-'}</td>
-                          <td style={{ padding:'0.45rem', color:item.cross_validation === 'cross_confirmed' ? '#34d399' : '#fbbf24' }}>{item.cross_validation === 'cross_confirmed' ? '교차확인' : 'HS 미확인'}</td>
+                          <td style={{ padding:'0.45rem', color:item.cross_validation === 'cross_confirmed' ? '#047857' : '#b45309' }}>{item.cross_validation === 'cross_confirmed' ? '교차확인' : 'HS 미확인'}</td>
                           <td style={{ padding:'0.45rem', maxWidth:320 }}>{(item.hs_mappings || []).slice(0,3).map((h) => `${h.hs_code} ${h.display_name || h.hs_name}`).join(' · ') || '-'}</td>
                           <td style={{ padding:'0.45rem' }}>{item.revenue_exposure_pct != null ? `매출 ${item.revenue_exposure_pct}%` : item.profit_exposure_pct != null ? `이익 ${item.profit_exposure_pct}%` : '미확정'}</td>
                         </tr>
@@ -744,8 +751,8 @@ const QuantMajorIndicatorsView = React.memo(() => {
             {loadingSeries && <div style={{ color: 'var(--text-secondary)', padding: '1rem 0.2rem' }}>시계열 불러오는 중...</div>}
 
             {!loadingSeries && !hasSeries && (
-              <div style={{ padding: '1rem 1.05rem', borderRadius: 12, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.22)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f87171', fontWeight: 800, marginBottom: '0.6rem' }}>
+              <div style={{ padding: '1rem 1.05rem', borderRadius: 12, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.22)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#dc2626', fontWeight: 800, marginBottom: '0.6rem' }}>
                   <AlertTriangle size={16} /> 수집대기중
                 </div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', lineHeight: 1.65 }}>
@@ -760,18 +767,18 @@ const QuantMajorIndicatorsView = React.memo(() => {
 
             {!loadingSeries && hasSeries && (
               <div style={{ display: 'grid', gap: '1rem' }}>
-                <div style={{ height: 320, borderRadius: 12, padding: '0.8rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ height: 320, borderRadius: 12, padding: '0.8rem', background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)' }}>
                   {extraSeriesCount > 0 && (
-                    <div style={{ fontSize: '0.72rem', color: '#fbbf24', marginBottom: '0.4rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#b45309', marginBottom: '0.4rem' }}>
                       차트: 상위 {MAX_CHART_SERIES}개 시리즈 표시 (전체 {latestRows.length}개 중)
                     </div>
                   )}
                   <ResponsiveContainer width="100%" height={extraSeriesCount > 0 ? '90%' : '100%'}>
                     <LineChart data={chartRows} margin={{ top: 8, right: 18, left: 4, bottom: 8 }}>
-                      <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
-                      <XAxis dataKey="period" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                      <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                      <Tooltip contentStyle={{ background: 'rgba(15,23,42,0.94)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10 }} />
+                      <CartesianGrid stroke="rgba(15,23,42,0.08)" strokeDasharray="3 3" />
+                      <XAxis dataKey="period" tick={{ fill: '#334155', fontSize: 11 }} />
+                      <YAxis tick={{ fill: '#334155', fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: 'rgba(255,255,255,0.94)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: 10 }} />
                       <Legend />
                       {chartSeriesRows.map((row, idx) => (
                         <Line key={row.series_name} type="monotone" dataKey={row.series_name} stroke={SERIES_COLORS[idx % SERIES_COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
@@ -782,7 +789,7 @@ const QuantMajorIndicatorsView = React.memo(() => {
 
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(4, Math.min(latestRows.length, MAX_CHART_SERIES) || 1)}, minmax(0, 1fr))`, gap: '0.8rem' }}>
                   {chartSeriesRows.map((row, idx) => (
-                    <div key={`${row.period}-${row.series_name}`} style={{ padding: '0.85rem 0.9rem', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div key={`${row.period}-${row.series_name}`} style={{ padding: '0.85rem 0.9rem', borderRadius: 12, background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)' }}>
                       <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginBottom: '0.28rem' }}>{row.series_name}</div>
                       <div style={{ fontSize: '1.2rem', fontWeight: 850, color: SERIES_COLORS[idx % SERIES_COLORS.length] }}>{fmtValue(row.value, row.unit)}</div>
                       <div style={{ marginTop: '0.28rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{row.period} · {row.source_name}</div>
@@ -790,14 +797,14 @@ const QuantMajorIndicatorsView = React.memo(() => {
                   ))}
                 </div>
 
-                <div style={{ padding: '0.9rem', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ padding: '0.9rem', borderRadius: 12, background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.7rem', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
                     <Activity size={15} /> 최근 시계열
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                       <thead>
-                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <tr style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                           {['기간', '시리즈', '값', '단위', '소스', '품질'].map((head) => (
                             <th key={head} style={{ padding: '0.42rem 0.5rem', textAlign: head === '값' ? 'right' : 'left', color: 'var(--text-secondary)', fontWeight: 650 }}>{head}</th>
                           ))}
@@ -805,12 +812,12 @@ const QuantMajorIndicatorsView = React.memo(() => {
                       </thead>
                       <tbody>
                         {seriesDetail.items.slice(0, 18).map((row) => (
-                          <tr key={`${row.period}-${row.series_name}-${row.source_name}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <tr key={`${row.period}-${row.series_name}-${row.source_name}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                             <td style={{ padding: '0.42rem 0.5rem' }}>{row.period}</td>
                             <td style={{ padding: '0.42rem 0.5rem' }}>{row.series_name}</td>
                             <td style={{ padding: '0.42rem 0.5rem', textAlign: 'right', fontWeight: 750 }}>{fmtValue(row.value, row.unit)}</td>
                             <td style={{ padding: '0.42rem 0.5rem' }}>{row.unit || '-'}</td>
-                            <td style={{ padding: '0.42rem 0.5rem', color: '#93c5fd' }}>{row.source_name}</td>
+                            <td style={{ padding: '0.42rem 0.5rem', color: '#2563eb' }}>{row.source_name}</td>
                             <td style={{ padding: '0.42rem 0.5rem', color: 'var(--text-secondary)' }}>{row.quality || '-'}</td>
                           </tr>
                         ))}

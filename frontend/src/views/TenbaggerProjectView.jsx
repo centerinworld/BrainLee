@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 /**
  * TenbaggerProjectView.jsx
  * 텐버거 발굴 프로젝트 — 구현 계획 + 데이터 현황 + 패턴 분석
@@ -456,30 +463,30 @@ const GROWTH_FINDINGS = {
   // [G] 복합 패턴 분류 ← 핵심
   patterns: [
     { name: '재무데이터 없는 소형/테마주', key: 'no_fin_data', cnt: 666, ratio: 6.1,
-      color: '#f87171', desc: '순수 테마 모멘텀. 재무 검증 불가. 극고위험 극고수익' },
+      color: '#dc2626', desc: '순수 테마 모멘텀. 재무 검증 불가. 극고위험 극고수익' },
     { name: '기타 (혼합 패턴)', key: 'other', cnt: 517, ratio: 4.58,
-      color: '#94a3b8', desc: '위 패턴에 해당 안 되는 다양한 케이스' },
+      color: '#334155', desc: '위 패턴에 해당 안 되는 다양한 케이스' },
     { name: '영업이익 흑자전환 + 매출 성장', key: 'growth_inflect', cnt: 30, ratio: 4.08,
-      color: '#34d399', desc: '매출 +30% + 이전 분기 적자 → 흑자. 검증 가능 최적 패턴' },
+      color: '#047857', desc: '매출 +30% + 이전 분기 적자 → 흑자. 검증 가능 최적 패턴' },
     { name: '매출 감소 + 수익성 유지', key: 'rev_decline_profit', cnt: 53, ratio: 4.04,
-      color: '#fbbf24', desc: '매출 줄어도 이익률 유지. 구조조정 또는 고마진 전환' },
+      color: '#b45309', desc: '매출 줄어도 이익률 유지. 구조조정 또는 고마진 전환' },
     { name: '우량 성장주 (이미 알려짐)', key: 'steady_growth', cnt: 58, ratio: 3.48,
-      color: '#60a5fa', desc: '매출 성장 + 지속 흑자. 시장이 이미 알고 있어 배율 낮음' },
+      color: '#2563eb', desc: '매출 성장 + 지속 흑자. 시장이 이미 알고 있어 배율 낮음' },
   ],
   patterns_insight: '우량 성장주(steady growth)가 오히려 배율 최하. 시장에 이미 반영됨.',
 };
 
 // 색상 유틸
 const STATUS_STYLE = {
-  ok:      { bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)', color: '#34d399', label: '✅ 수집됨' },
-  partial: { bg: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.3)', color: '#fbbf24', label: '⚠️ 부분' },
-  missing: { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.25)', color: '#f87171', label: '❌ 미수집' },
+  ok:      { bg: 'rgba(5,150,105,0.12)', border: 'rgba(5,150,105,0.3)', color: '#047857', label: '✅ 수집됨' },
+  partial: { bg: 'rgba(217,119,6,0.10)', border: 'rgba(217,119,6,0.3)', color: '#b45309', label: '⚠️ 부분' },
+  missing: { bg: 'rgba(220,38,38,0.10)',  border: 'rgba(220,38,38,0.25)', color: '#dc2626', label: '❌ 미수집' },
 };
 const DAY_STATUS = {
-  done:       { bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.4)',  badge: '완료',   badgeColor: '#34d399' },
-  in_progress:{ bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)', badge: '진행중', badgeColor: '#fbbf24' },
-  planned:    { bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.25)', badge: '예정',  badgeColor: '#a5b4fc' },
-  skipped: { bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.2)', badge: '보류', badgeColor: '#94a3b8' },
+  done:       { bg: 'rgba(5,150,105,0.15)', border: 'rgba(5,150,105,0.4)',  badge: '완료',   badgeColor: '#047857' },
+  in_progress:{ bg: 'rgba(217,119,6,0.12)', border: 'rgba(217,119,6,0.4)', badge: '진행중', badgeColor: '#b45309' },
+  planned:    { bg: 'rgba(79,70,229,0.08)', border: 'rgba(79,70,229,0.25)', badge: '예정',  badgeColor: '#4f46e5' },
+  skipped: { bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.2)', badge: '보류', badgeColor: '#334155' },
 };
 
 // ────────────────────────────────────────────────────────────────────
@@ -846,38 +853,38 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
       {/* 헤더 */}
-      <div style={{ background: 'linear-gradient(135deg,rgba(99,102,241,0.15),rgba(45,212,191,0.10))',
+      <div style={{ background: 'linear-gradient(135deg,rgba(79,70,229,0.15),rgba(37,99,235,0.10))',
           borderRadius: '14px', padding: '1.2rem 1.5rem',
-          border: '1px solid rgba(99,102,241,0.25)' }}>
+          border: '1px solid rgba(79,70,229,0.25)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', marginBottom: '0.5rem' }}>
           <span style={{ fontSize: '1.6rem' }}>💎</span>
-          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#f1f5f9' }}>
+          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>
             텐버거 발굴 프로젝트
           </h2>
           <span style={{ marginLeft: 'auto', fontSize: '0.72rem', padding: '0.2rem 0.6rem',
-              borderRadius: '20px', background: 'rgba(99,102,241,0.2)',
-              border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc' }}>
+              borderRadius: '20px', background: 'rgba(79,70,229,0.2)',
+              border: '1px solid rgba(79,70,229,0.4)', color: '#4f46e5' }}>
             2026.06.01 – 2026.06.30
           </span>
         </div>
-        <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.7 }}>
-          2019년 이후 <b style={{color:'#fbbf24'}}>1,991종목</b>의 3배+ 상승 패턴을 BigQuery 역산 분석.
-          기존 가정 4개가 모두 데이터와 <b style={{color:'#f87171'}}>역방향</b>으로 판명됨.
-          <b style={{color:'#34d399'}}> 데이터 기반 재설계</b> 완료 (2026-06-18).
+        <p style={{ margin: 0, fontSize: '0.8rem', color: '#334155', lineHeight: 1.7 }}>
+          2019년 이후 <b style={{color:'#b45309'}}>1,991종목</b>의 3배+ 상승 패턴을 BigQuery 역산 분석.
+          기존 가정 4개가 모두 데이터와 <b style={{color:'#dc2626'}}>역방향</b>으로 판명됨.
+          <b style={{color:'#047857'}}> 데이터 기반 재설계</b> 완료 (2026-06-18).
         </p>
         {/* 핵심 KPI */}
         <div style={{ display: 'flex', gap: '0.8rem', marginTop: '0.8rem', flexWrap: 'wrap' }}>
           {[
-            { label: '역산 분석 대상', value: '1,991종목', color: '#fbbf24' },
-            { label: '낙폭과대 출발', value: '70.5%', color: '#f87171' },
-            { label: '적자 상태 출발', value: '40.5%', color: '#fb923c' },
-            { label: '기관 순매수 비율', value: '20.8%', color: '#60a5fa' },
+            { label: '역산 분석 대상', value: '1,991종목', color: '#b45309' },
+            { label: '낙폭과대 출발', value: '70.5%', color: '#dc2626' },
+            { label: '적자 상태 출발', value: '40.5%', color: '#c2410c' },
+            { label: '기관 순매수 비율', value: '20.8%', color: '#2563eb' },
           ].map(k => (
-            <div key={k.label} style={{ background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px',
+            <div key={k.label} style={{ background: 'rgba(15,23,42,0.05)',
+                border: '1px solid rgba(15,23,42,0.2)', borderRadius: '8px',
                 padding: '0.4rem 0.8rem', textAlign: 'center', minWidth: '90px' }}>
               <div style={{ fontSize: '1rem', fontWeight: 800, color: k.color }}>{k.value}</div>
-              <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>{k.label}</div>
+              <div style={{ fontSize: '0.65rem', color: '#334155' }}>{k.label}</div>
             </div>
           ))}
         </div>
@@ -889,9 +896,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid',
               cursor: 'pointer', fontSize: '0.82rem', fontWeight: activeTab === t.key ? 700 : 400,
-              background: activeTab === t.key ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.04)',
-              borderColor: activeTab === t.key ? '#6366f1' : 'rgba(255,255,255,0.1)',
-              color: activeTab === t.key ? '#a5b4fc' : '#94a3b8' }}>
+              background: activeTab === t.key ? 'rgba(79,70,229,0.25)' : 'rgba(15,23,42,0.04)',
+              borderColor: activeTab === t.key ? '#4f46e5' : 'rgba(15,23,42,0.2)',
+              color: activeTab === t.key ? '#4f46e5' : '#334155' }}>
             {t.label}
           </button>
         ))}
@@ -901,8 +908,8 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {activeTab === 'megatrend' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
           {megatrendView || (
-            <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8',
-                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+            <div style={{ padding: '2rem', textAlign: 'center', color: '#334155',
+                background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)',
                 borderRadius: '10px' }}>
               대세종목 발굴 화면을 불러오지 못했습니다.
             </div>
@@ -914,24 +921,24 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {activeTab === 'action' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {/* 백테스트 성능 배너 */}
-          <div style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '0.75rem', padding: '1rem 1.2rem' }}>
-            <div style={{ fontSize: '0.85rem', color: '#a5b4fc', fontWeight: 600, marginBottom: '0.4rem' }}>
+          <div style={{ background: 'rgba(79,70,229,0.12)', border: '1px solid rgba(79,70,229,0.3)', borderRadius: '0.75rem', padding: '1rem 1.2rem' }}>
+            <div style={{ fontSize: '0.85rem', color: '#4f46e5', fontWeight: 600, marginBottom: '0.4rem' }}>
               📊 백테스트 기반 전략 (2019-2024, 6년) — 데이터 역산 v3 (주간리밸런싱 + 거래량60일2배)
             </div>
-            <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: '0.5rem', lineHeight: 1.6 }}>
+            <div style={{ fontSize: '0.72rem', color: '#1e293b', marginBottom: '0.5rem', lineHeight: 1.6 }}>
               ※ 실제 3배+종목 n=37 역산 결과: 기관/외국인 매도 상태 84% → 수급조건 제거 · 저점후 거래량 평균 9.1배(57%가 2배+) → 60일평균 2배+ 적용 · 월별 손절집행 → 실제 -36~58% 손실 → 주간체크 전환
             </div>
             <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
               {[
-                { label: '누적 수익률', val: '+110.4%', color: '#4ade80' },
-                { label: 'KOSPI 대비', val: '5.70배', color: '#4ade80' },
-                { label: 'MDD', val: '-38.8%', color: '#f87171' },
-                { label: '양수연도', val: '4/6년', color: '#fbbf24' },
-                { label: '매수조건', val: '낙폭-30~85% / 거래량60일2배+ / 점수≥50 / 시총≤3천억', color: '#94a3b8' },
-                { label: '매도조건', val: '손절-25%(주간) / 영업적자2Q / 60일고점-35% / 최대730일', color: '#94a3b8' },
+                { label: '누적 수익률', val: '+110.4%', color: '#15803d' },
+                { label: 'KOSPI 대비', val: '5.70배', color: '#15803d' },
+                { label: 'MDD', val: '-38.8%', color: '#dc2626' },
+                { label: '양수연도', val: '4/6년', color: '#b45309' },
+                { label: '매수조건', val: '낙폭-30~85% / 거래량60일2배+ / 점수≥50 / 시총≤3천억', color: '#334155' },
+                { label: '매도조건', val: '손절-25%(주간) / 영업적자2Q / 60일고점-35% / 최대730일', color: '#334155' },
               ].map(({ label, val, color }) => (
                 <div key={label}>
-                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{label}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#1e293b' }}>{label}</div>
                   <div style={{ fontSize: '0.95rem', fontWeight: 700, color }}>{val}</div>
                 </div>
               ))}
@@ -940,13 +947,13 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
           {actionData?.strategy_note && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.8rem' }}>
-              <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.28)', borderRadius: '0.75rem', padding: '0.9rem 1rem' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#86efac', marginBottom: '0.35rem' }}>💎 장기 텐버거 후보</div>
-                <div style={{ fontSize: '0.76rem', color: '#cbd5e1', lineHeight: 1.6 }}>{actionData.strategy_note.tenbagger}</div>
+              <div style={{ background: 'rgba(22,163,74,0.1)', border: '1px solid rgba(22,163,74,0.28)', borderRadius: '0.75rem', padding: '0.9rem 1rem' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#15803d', marginBottom: '0.35rem' }}>💎 장기 텐버거 후보</div>
+                <div style={{ fontSize: '0.76rem', color: '#1e293b', lineHeight: 1.6 }}>{actionData.strategy_note.tenbagger}</div>
               </div>
-              <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.28)', borderRadius: '0.75rem', padding: '0.9rem 1rem' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24', marginBottom: '0.35rem' }}>⚡ 단기 반등 후보</div>
-                <div style={{ fontSize: '0.76rem', color: '#cbd5e1', lineHeight: 1.6 }}>{actionData.strategy_note.rebound}</div>
+              <div style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.28)', borderRadius: '0.75rem', padding: '0.9rem 1rem' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#b45309', marginBottom: '0.35rem' }}>⚡ 단기 반등 후보</div>
+                <div style={{ fontSize: '0.76rem', color: '#1e293b', lineHeight: 1.6 }}>{actionData.strategy_note.rebound}</div>
               </div>
             </div>
           )}
@@ -954,27 +961,27 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           {/* 새로고침 버튼 */}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={loadActionSignals} disabled={actionLoading}
-              style={{ background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.4)', borderRadius: '0.5rem', padding: '0.4rem 1rem', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.85rem' }}>
+              style={{ background: 'rgba(79,70,229,0.2)', border: '1px solid rgba(79,70,229,0.4)', borderRadius: '0.5rem', padding: '0.4rem 1rem', color: '#4f46e5', cursor: 'pointer', fontSize: '0.85rem' }}>
               {actionLoading ? '계산 중…' : '🔄 신호 새로고침'}
             </button>
           </div>
 
           {actionLoading ? (
-            <div style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>신호 계산 중…</div>
+            <div style={{ textAlign: 'center', color: '#1e293b', padding: '2rem' }}>신호 계산 중…</div>
           ) : actionData ? (
             <>
               {/* 매수 신호 */}
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0.75rem', padding: '1rem' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#4ade80', marginBottom: '0.75rem' }}>
+              <div style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '0.75rem', padding: '1rem' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#15803d', marginBottom: '0.75rem' }}>
                   🟢 매수 신호 ({(actionData.buy_signals || []).length}건)
                 </div>
                 {(actionData.buy_signals || []).length === 0 ? (
-                  <div style={{ color: '#64748b', fontSize: '0.85rem' }}>현재 매수 신호 없음 (조건 미충족)</div>
+                  <div style={{ color: '#1e293b', fontSize: '0.85rem' }}>현재 매수 신호 없음 (조건 미충족)</div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                       <thead>
-                        <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <tr style={{ color: '#1e293b', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                           {['종목명', '점수', '낙폭%', '거래량배수', '시총(억)', '강도', '사유'].map(h => (
                             <th key={h} style={{ padding: '0.4rem 0.6rem', textAlign: 'left', fontWeight: 500 }}>{h}</th>
                           ))}
@@ -982,18 +989,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                       </thead>
                       <tbody>
                         {(actionData.buy_signals || []).map((r, i) => (
-                          <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#e2e8f0', fontWeight: 600 }}>{r.stock_name || r.stock_code}</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#4ade80', fontWeight: 700 }}>{r.total_score}</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#f87171' }}>{r.from_high_pct != null ? r.from_high_pct.toFixed(1) : '-'}%</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8' }}>{r.vol_ratio != null ? r.vol_ratio.toFixed(2) : '-'}x</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8' }}>{r.market_cap != null ? r.market_cap.toLocaleString() : '-'}</td>
+                          <tr key={i} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', background: i % 2 === 0 ? 'rgba(15,23,42,0.02)' : 'transparent' }}>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#1e293b', fontWeight: 600 }}>{r.stock_name || r.stock_code}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#15803d', fontWeight: 700 }}>{r.total_score}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#dc2626' }}>{r.from_high_pct != null ? r.from_high_pct.toFixed(1) : '-'}%</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#334155' }}>{r.vol_ratio != null ? r.vol_ratio.toFixed(2) : '-'}x</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#334155' }}>{r.market_cap != null ? r.market_cap.toLocaleString() : '-'}</td>
                             <td style={{ padding: '0.45rem 0.6rem' }}>
-                              <span style={{ background: r.buy_strength === '강' ? 'rgba(74,222,128,0.2)' : r.buy_strength === '중' ? 'rgba(251,191,36,0.2)' : 'rgba(148,163,184,0.15)', color: r.buy_strength === '강' ? '#4ade80' : r.buy_strength === '중' ? '#fbbf24' : '#94a3b8', borderRadius: '0.3rem', padding: '0.1rem 0.4rem', fontSize: '0.78rem' }}>
+                              <span style={{ background: r.buy_strength === '강' ? 'rgba(22,163,74,0.2)' : r.buy_strength === '중' ? 'rgba(217,119,6,0.2)' : 'rgba(100,116,139,0.15)', color: r.buy_strength === '강' ? '#15803d' : r.buy_strength === '중' ? '#b45309' : '#334155', borderRadius: '0.3rem', padding: '0.1rem 0.4rem', fontSize: '0.78rem' }}>
                                 {r.buy_strength || '-'}
                               </span>
                             </td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#64748b', fontSize: '0.78rem', maxWidth: '200px' }}>{(r.buy_reasons || []).filter(x => x.startsWith('✅')).join(' · ')}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#1e293b', fontSize: '0.78rem', maxWidth: '200px' }}>{(r.buy_reasons || []).filter(x => x.startsWith('✅')).join(' · ')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1004,17 +1011,17 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
               {/* 단기 반등 후보 */}
               {(actionData.rebound_candidates || []).length > 0 && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0.75rem', padding: '1rem' }}>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fbbf24', marginBottom: '0.35rem' }}>
+                <div style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '0.75rem', padding: '1rem' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#b45309', marginBottom: '0.35rem' }}>
                     ⚡ 단기 반등 후보 ({(actionData.rebound_candidates || []).length}건)
                   </div>
-                  <div style={{ color: '#94a3b8', fontSize: '0.75rem', marginBottom: '0.8rem', lineHeight: 1.6 }}>
+                  <div style={{ color: '#334155', fontSize: '0.75rem', marginBottom: '0.8rem', lineHeight: 1.6 }}>
                     텐버거 장기 후보와 분리한 별도 바구니입니다. 급락 후 5~20거래일 반등 스윙 관점으로만 해석해야 합니다.
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                       <thead>
-                        <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <tr style={{ color: '#1e293b', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                           {['종목명', '반등점수', '최근하락%', '시총(억)', '보유힌트', '핵심사유'].map(h => (
                             <th key={h} style={{ padding: '0.4rem 0.6rem', textAlign: 'left', fontWeight: 500 }}>{h}</th>
                           ))}
@@ -1022,18 +1029,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                       </thead>
                       <tbody>
                         {(actionData.rebound_candidates || []).map((r, i) => (
-                          <tr key={`${r.stock_code}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#e2e8f0', fontWeight: 600 }}>
+                          <tr key={`${r.stock_code}-${i}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', background: i % 2 === 0 ? 'rgba(15,23,42,0.02)' : 'transparent' }}>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#1e293b', fontWeight: 600 }}>
                               {r.stock_name || r.stock_code}
-                              <div style={{ color: '#94a3b8', fontSize: '0.68rem', marginTop: '0.1rem' }}>{r.strategy_label}</div>
+                              <div style={{ color: '#334155', fontSize: '0.68rem', marginTop: '0.1rem' }}>{r.strategy_label}</div>
                             </td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#fbbf24', fontWeight: 700 }}>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#b45309', fontWeight: 700 }}>
                               {r.risk_adjusted_score ?? r.score}
                             </td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#f87171' }}>{r.pct_change != null ? r.pct_change.toFixed(1) : '-'}%</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8' }}>{r.market_cap != null ? r.market_cap.toLocaleString() : '-'}</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#fde68a', fontSize: '0.76rem' }}>{r.holding_hint}</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#64748b', fontSize: '0.78rem', maxWidth: '220px' }}>{(r.reasons || []).join(' · ')}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#dc2626' }}>{r.pct_change != null ? r.pct_change.toFixed(1) : '-'}%</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#334155' }}>{r.market_cap != null ? r.market_cap.toLocaleString() : '-'}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#a16207', fontSize: '0.76rem' }}>{r.holding_hint}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#1e293b', fontSize: '0.78rem', maxWidth: '220px' }}>{(r.reasons || []).join(' · ')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1044,14 +1051,14 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
               {/* 관망 종목 */}
               {(actionData.watch_signals || []).length > 0 && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0.75rem', padding: '1rem' }}>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fbbf24', marginBottom: '0.75rem' }}>
+                <div style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '0.75rem', padding: '1rem' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#b45309', marginBottom: '0.75rem' }}>
                     🟡 관망 후보 ({(actionData.watch_signals || []).length}건 — 점수 충족, 나머지 조건 미완)
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                       <thead>
-                        <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <tr style={{ color: '#1e293b', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                           {['종목명', '점수', '낙폭%', '거래량배수', '시총(억)', '미충족 조건'].map(h => (
                             <th key={h} style={{ padding: '0.4rem 0.6rem', textAlign: 'left', fontWeight: 500 }}>{h}</th>
                           ))}
@@ -1059,13 +1066,13 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                       </thead>
                       <tbody>
                         {(actionData.watch_signals || []).slice(0, 20).map((r, i) => (
-                          <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#e2e8f0' }}>{r.stock_name || r.stock_code}</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#fbbf24', fontWeight: 700 }}>{r.total_score}</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8' }}>{r.from_high_pct != null ? r.from_high_pct.toFixed(1) : '-'}%</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8' }}>{r.vol_ratio != null ? r.vol_ratio.toFixed(2) : '-'}x</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8' }}>{r.market_cap != null ? r.market_cap.toLocaleString() : '-'}</td>
-                            <td style={{ padding: '0.45rem 0.6rem', color: '#f87171', fontSize: '0.78rem' }}>{(r.buy_failed || []).join(', ')}</td>
+                          <tr key={i} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', background: i % 2 === 0 ? 'rgba(15,23,42,0.02)' : 'transparent' }}>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#1e293b' }}>{r.stock_name || r.stock_code}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#b45309', fontWeight: 700 }}>{r.total_score}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#334155' }}>{r.from_high_pct != null ? r.from_high_pct.toFixed(1) : '-'}%</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#334155' }}>{r.vol_ratio != null ? r.vol_ratio.toFixed(2) : '-'}x</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#334155' }}>{r.market_cap != null ? r.market_cap.toLocaleString() : '-'}</td>
+                            <td style={{ padding: '0.45rem 0.6rem', color: '#dc2626', fontSize: '0.78rem' }}>{(r.buy_failed || []).join(', ')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1075,18 +1082,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               )}
 
               {/* 파라미터 요약 */}
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '0.75rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: '#64748b' }}>
-                <strong style={{ color: '#94a3b8' }}>적용 파라미터</strong>{' '}
+              <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '0.75rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: '#1e293b' }}>
+                <strong style={{ color: '#334155' }}>적용 파라미터</strong>{' '}
                 {JSON.stringify(actionData.params || {})}
                 {actionData.backtest && (
-                  <span style={{ marginLeft: '1rem', color: '#6366f1' }}>
+                  <span style={{ marginLeft: '1rem', color: '#4f46e5' }}>
                     백테스트 ({actionData.backtest.period}): {actionData.backtest.total_ret} / KOSPI {actionData.backtest.kospi_ratio} / MDD {actionData.backtest.mdd}
                   </span>
                 )}
               </div>
             </>
           ) : (
-            <div style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>신호를 로드하려면 새로고침을 클릭하세요.</div>
+            <div style={{ textAlign: 'center', color: '#1e293b', padding: '2rem' }}>신호를 로드하려면 새로고침을 클릭하세요.</div>
           )}
         </div>
       )}
@@ -1095,18 +1102,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {activeTab === 'daily' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
           {/* 날짜 선택 + 요약 */}
-          <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '10px', padding: '0.8rem 1.2rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fbbf24' }}>📅 텐버거 아침 알림 이력</span>
+          <div style={{ background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.2)', borderRadius: '10px', padding: '0.8rem 1.2rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#b45309' }}>📅 텐버거 아침 알림 이력</span>
             {dailyAlerts?.available_dates?.length > 0 && (
               <select value={dailyDate} onChange={e => { setDailyDate(e.target.value); loadDailyAlerts(e.target.value); }}
-                style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '6px', color: '#fbbf24', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}>
+                style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(217,119,6,0.3)', borderRadius: '6px', color: '#b45309', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}>
                 {dailyAlerts.available_dates.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             )}
             {dailyAlerts && (
               <div style={{ display: 'flex', gap: '1rem', marginLeft: 'auto' }}>
-                <span style={{ fontSize: '0.8rem', color: '#fbbf24' }}>전체 <b>{dailyAlerts.total}</b>종목</span>
-                <span style={{ fontSize: '0.8rem', color: '#34d399' }}>신규 <b>{dailyAlerts.new_count}</b>종목</span>
+                <span style={{ fontSize: '0.8rem', color: '#b45309' }}>전체 <b>{dailyAlerts.total}</b>종목</span>
+                <span style={{ fontSize: '0.8rem', color: '#047857' }}>신규 <b>{dailyAlerts.new_count}</b>종목</span>
               </div>
             )}
           </div>
@@ -1120,25 +1127,25 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           {!dailyLoading && dailyAlerts?.alerts?.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {dailyAlerts.alerts.map((a, i) => (
-                <div key={a.stock_code} style={{ background: a.is_new ? 'rgba(52,211,153,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${a.is_new ? 'rgba(52,211,153,0.3)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '10px', padding: '0.8rem 1rem' }}>
+                <div key={a.stock_code} style={{ background: a.is_new ? 'rgba(5,150,105,0.08)' : 'rgba(15,23,42,0.03)', border: `1px solid ${a.is_new ? 'rgba(5,150,105,0.3)' : 'rgba(15,23,42,0.08)'}`, borderRadius: '10px', padding: '0.8rem 1rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.3rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', minWidth: '24px' }}>{i+1}</span>
-                    {a.is_new && <span style={{ fontSize: '0.65rem', background: 'rgba(52,211,153,0.2)', border: '1px solid rgba(52,211,153,0.4)', borderRadius: '4px', padding: '0.1rem 0.35rem', color: '#34d399', fontWeight: 700 }}>신규</span>}
-                    <span style={{ fontWeight: 700, color: '#f1f5f9' }}>{a.stock_name}</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#334155', minWidth: '24px' }}>{i+1}</span>
+                    {a.is_new && <span style={{ fontSize: '0.65rem', background: 'rgba(5,150,105,0.2)', border: '1px solid rgba(5,150,105,0.4)', borderRadius: '4px', padding: '0.1rem 0.35rem', color: '#047857', fontWeight: 700 }}>신규</span>}
+                    <span style={{ fontWeight: 700, color: '#0f172a' }}>{a.stock_name}</span>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>({a.stock_code})</span>
-                    <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{a.sector_large || '-'}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '0.85rem', fontWeight: 800, color: (a.total_score||0) >= 70 ? '#fbbf24' : '#a5b4fc' }}>{a.total_score||0}점</span>
+                    <span style={{ fontSize: '0.72rem', color: '#334155' }}>{a.sector_large || '-'}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '0.85rem', fontWeight: 800, color: (a.total_score||0) >= 70 ? '#b45309' : '#4f46e5' }}>{a.total_score||0}점</span>
                     {a.per && <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>PER {a.per}</span>}
                     {a.pbr && <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>PBR {a.pbr}</span>}
                   </div>
                   {a.best_reason && (
-                    <div style={{ fontSize: '0.75rem', color: '#cbd5e1', lineHeight: 1.5, paddingLeft: '30px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#1e293b', lineHeight: 1.5, paddingLeft: '30px' }}>
                       📌 {a.best_reason}
                     </div>
                   )}
                   {a.reasons?.length > 0 && (
                     <div style={{ marginTop: '0.25rem', paddingLeft: '30px', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      {a.reasons.slice(0,4).map((r,j) => <span key={j} style={{ fontSize: '0.65rem', background: 'rgba(165,180,252,0.1)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '4px', padding: '0.1rem 0.35rem', color: '#a5b4fc' }}>{r}</span>)}
+                      {a.reasons.slice(0,4).map((r,j) => <span key={j} style={{ fontSize: '0.65rem', background: 'rgba(165,180,252,0.1)', border: '1px solid rgba(165,180,252,0.2)', borderRadius: '4px', padding: '0.1rem 0.35rem', color: '#4f46e5' }}>{r}</span>)}
                     </div>
                   )}
                 </div>
@@ -1155,22 +1162,22 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           {/* 상단 KPI 카드 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: '0.6rem' }}>
             {[
-              { key: 'TTM_BOTH',        label: '흑자전환+고성장', color: '#f472b6', ratio: '6.5x' },
-              { key: 'TTM_OP_INFLECT',  label: 'TTM 흑자전환',    color: '#34d399', ratio: '6.14x' },
-              { key: 'TTM_REV_30',      label: 'TTM 매출 +30%',   color: '#60a5fa', ratio: '6.03x' },
-              { key: 'TTM_OP_ACCEL',    label: 'TTM 이익 가속',   color: '#fbbf24', ratio: '5.5x' },
-              { key: 'QOQ_REV_20_2CON', label: 'QoQ +20% 2연속',  color: '#a78bfa', ratio: '5.0x' },
+              { key: 'TTM_BOTH',        label: '흑자전환+고성장', color: '#db2777', ratio: '6.5x' },
+              { key: 'TTM_OP_INFLECT',  label: 'TTM 흑자전환',    color: '#047857', ratio: '6.14x' },
+              { key: 'TTM_REV_30',      label: 'TTM 매출 +30%',   color: '#2563eb', ratio: '6.03x' },
+              { key: 'TTM_OP_ACCEL',    label: 'TTM 이익 가속',   color: '#b45309', ratio: '5.5x' },
+              { key: 'QOQ_REV_20_2CON', label: 'QoQ +20% 2연속',  color: '#7c3aed', ratio: '5.0x' },
             ].map(s => {
               const cnt = sigStats?.by_type?.[s.key]?.cnt || 0;
               return (
                 <div key={s.key}
                   onClick={() => setSigFilter(sigFilter === s.key ? 'ALL' : s.key)}
-                  style={{ background: sigFilter === s.key ? `${s.color}22` : 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${sigFilter === s.key ? s.color : 'rgba(255,255,255,0.08)'}`,
+                  style={{ background: sigFilter === s.key ? `${s.color}22` : 'rgba(15,23,42,0.04)',
+                      border: `1px solid ${sigFilter === s.key ? s.color : 'rgba(15,23,42,0.88)'}`,
                       borderRadius: '10px', padding: '0.6rem 0.8rem', cursor: 'pointer',
                       transition: 'all .15s' }}>
                   <div style={{ fontSize: '1.4rem', fontWeight: 800, color: s.color }}>{cnt}</div>
-                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '0.15rem' }}>{s.label}</div>
+                  <div style={{ fontSize: '0.65rem', color: '#334155', marginTop: '0.15rem' }}>{s.label}</div>
                   <div style={{ fontSize: '0.7rem', color: s.color, fontWeight: 700 }}>평균 {s.ratio}</div>
                 </div>
               );
@@ -1180,12 +1187,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           {/* 컨트롤 바 */}
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
             <select value={sigDays} onChange={e => setSigDays(Number(e.target.value))}
-              style={{ background: 'var(--bg-dark)', border: '1px solid rgba(255,255,255,0.15)',
+              style={{ background: 'var(--bg-dark)', border: '1px solid rgba(15,23,42,0.2)',
                 borderRadius: '6px', color: 'var(--text-primary)', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
               {[7,30,60,90,180].map(d => <option key={d} value={d}>최근 {d}일</option>)}
             </select>
             <select value={sigFilter} onChange={e => setSigFilter(e.target.value)}
-              style={{ background: 'var(--bg-dark)', border: '1px solid rgba(255,255,255,0.15)',
+              style={{ background: 'var(--bg-dark)', border: '1px solid rgba(15,23,42,0.2)',
                 borderRadius: '6px', color: 'var(--text-primary)', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
               <option value="ALL">전체 신호</option>
               <option value="TTM_BOTH">💎 흑자전환+고성장</option>
@@ -1196,34 +1203,34 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             </select>
             <button onClick={() => loadSignals(sigDays, sigFilter)} disabled={sigLoading}
               style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem',
-                background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc' }}>
+                background: 'rgba(79,70,229,0.15)', border: '1px solid rgba(79,70,229,0.3)', color: '#4f46e5' }}>
               {sigLoading ? '⏳' : '🔄'} 새로고침
             </button>
             <button onClick={triggerScan} disabled={scanRunning}
               style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem',
-                background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#34d399' }}>
+                background: 'rgba(5,150,105,0.15)', border: '1px solid rgba(5,150,105,0.3)', color: '#047857' }}>
               {scanRunning ? '⏳ 스캔 중...' : '▶ 즉시 스캔'}
             </button>
-            <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#64748b' }}>
+            <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#1e293b' }}>
               {signals.length}건 | 매일 06:00 + 분기시즌 2h마다 자동
             </span>
           </div>
 
           {/* 시스템 설명 */}
-          <div style={{ background: 'rgba(16,185,129,0.07)', borderRadius: '8px',
-              border: '1px solid rgba(16,185,129,0.2)', padding: '0.6rem 0.9rem',
-              fontSize: '0.72rem', color: '#94a3b8', lineHeight: 1.7 }}>
-            <b style={{color:'#34d399'}}>자동 감지 로직</b>: DART 분기보고서 수집 → financial_data 업데이트 →
+          <div style={{ background: 'rgba(5,150,105,0.07)', borderRadius: '8px',
+              border: '1px solid rgba(5,150,105,0.2)', padding: '0.6rem 0.9rem',
+              fontSize: '0.72rem', color: '#334155', lineHeight: 1.7 }}>
+            <b style={{color:'#047857'}}>자동 감지 로직</b>: DART 분기보고서 수집 → financial_data 업데이트 →
             TTM(최근 4분기 합산) 재계산 → 신호 조건 충족 시 저장 + 텔레그램 발송<br/>
-            <b style={{color:'#fbbf24'}}>분기보고서 시즌</b>: 3월(사업보고서), 5월(1분기), 8월(반기), 11월(3분기) →
+            <b style={{color:'#b45309'}}>분기보고서 시즌</b>: 3월(사업보고서), 5월(1분기), 8월(반기), 11월(3분기) →
             해당 월엔 낮 시간 2시간마다 증분 스캔
           </div>
 
           {/* 신호 목록 */}
           {sigLoading ? (
-            <div style={{textAlign:'center',padding:'2rem',color:'#94a3b8'}}>⏳ 신호 로딩 중...</div>
+            <div style={{textAlign:'center',padding:'2rem',color:'#334155'}}>⏳ 신호 로딩 중...</div>
           ) : signals.length === 0 ? (
-            <div style={{textAlign:'center',padding:'2rem',color:'#94a3b8'}}>
+            <div style={{textAlign:'center',padding:'2rem',color:'#334155'}}>
               신호 없음 — "즉시 스캔" 버튼으로 스캔하거나 기간을 늘려보세요
             </div>
           ) : (
@@ -1232,8 +1239,8 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 const isPrime = s.signal_type === 'TTM_BOTH';
                 return (
                   <div key={i} style={{
-                      background: isPrime ? 'rgba(244,114,182,0.08)' : 'rgba(255,255,255,0.03)',
-                      border: `1px solid ${isPrime ? 'rgba(244,114,182,0.3)' : 'rgba(255,255,255,0.07)'}`,
+                      background: isPrime ? 'rgba(244,114,182,0.08)' : 'rgba(15,23,42,0.03)',
+                      border: `1px solid ${isPrime ? 'rgba(244,114,182,0.3)' : 'rgba(15,23,42,0.07)'}`,
                       borderRadius: '8px', padding: '0.6rem 0.8rem',
                       display: 'flex', gap: '0.7rem', alignItems: 'flex-start' }}>
                     {/* 신호 배지 */}
@@ -1245,10 +1252,10 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem',
                           marginBottom: '0.2rem', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f1f5f9' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0f172a' }}>
                           {s.stock_name}
                         </span>
-                        <span style={{ fontSize: '0.68rem', color: '#64748b', fontFamily: 'monospace' }}>
+                        <span style={{ fontSize: '0.68rem', color: '#1e293b', fontFamily: 'monospace' }}>
                           {s.stock_code}
                         </span>
                         <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem',
@@ -1260,24 +1267,24 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         {isPrime && (
                           <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem',
                               borderRadius: '4px', background: 'rgba(244,114,182,0.2)',
-                              color: '#f472b6', fontWeight: 700 }}>
+                              color: '#db2777', fontWeight: 700 }}>
                             🏆 최강신호
                           </span>
                         )}
-                        <span style={{ fontSize: '0.65rem', color: '#94a3b8', marginLeft: 'auto' }}>
+                        <span style={{ fontSize: '0.65rem', color: '#334155', marginLeft: 'auto' }}>
                           {s.year}년 {s.quarter}Q
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '0.2rem' }}>
+                      <div style={{ fontSize: '0.72rem', color: '#334155', marginBottom: '0.2rem' }}>
                         {s.detail}
                       </div>
                       <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap',
-                          fontSize: '0.68rem', color: '#64748b' }}>
+                          fontSize: '0.68rem', color: '#1e293b' }}>
                         <span>섹터: {s.sector_large || '-'}</span>
                         <span>시총: {s.mktcap_억 ? (s.mktcap_억 >= 10000 ? (s.mktcap_억/10000).toFixed(1)+'조' : s.mktcap_억+'억') : '-'}</span>
                         {s.current_price && <span>현재가: {s.current_price.toLocaleString()}원</span>}
                         {s.return_since_signal != null && (
-                          <span style={{ color: s.return_since_signal >= 0 ? '#ef4444' : '#3b82f6',
+                          <span style={{ color: s.return_since_signal >= 0 ? '#dc2626' : '#2563eb',
                               fontWeight: 700 }}>
                             신호 후: {s.return_since_signal >= 0 ? '+' : ''}{s.return_since_signal}%
                           </span>
@@ -1299,20 +1306,20 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {activeTab === 'plan' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {IMPL_PLAN.map(week => (
-            <div key={week.week} style={{ background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', overflow: 'hidden' }}>
+            <div key={week.week} style={{ background: 'rgba(15,23,42,0.03)',
+                border: '1px solid rgba(15,23,42,0.2)', borderRadius: '12px', overflow: 'hidden' }}>
               <div style={{ padding: '0.7rem 1rem',
-                  background: `linear-gradient(90deg,rgba(99,102,241,0.15),transparent)`,
-                  borderBottom: '1px solid rgba(255,255,255,0.07)',
+                  background: `linear-gradient(90deg,rgba(79,70,229,0.15),transparent)`,
+                  borderBottom: '1px solid rgba(15,23,42,0.2)',
                   display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <span style={{ background: '#6366f1', color: '#fff', borderRadius: '6px',
+                <span style={{ background: '#4f46e5', color: '#fff', borderRadius: '6px',
                     padding: '0.15rem 0.5rem', fontSize: '0.72rem', fontWeight: 700 }}>
                   Week {week.week}
                 </span>
-                <span style={{ fontSize: '0.82rem', color: '#e2e8f0', fontWeight: 600 }}>
+                <span style={{ fontSize: '0.82rem', color: '#1e293b', fontWeight: 600 }}>
                   {week.title}
                 </span>
-                <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#94a3b8' }}>
+                <span style={{ marginLeft: 'auto', fontSize: '0.72rem', color: '#334155' }}>
                   {week.period}
                 </span>
               </div>
@@ -1325,7 +1332,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         background: ds.bg }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem',
                           marginBottom: '0.4rem' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e2e8f0' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b' }}>
                           {day.date}
                         </span>
                         <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem',
@@ -1337,10 +1344,10 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                       <ul style={{ margin: 0, paddingLeft: '1.1rem',
                           listStyleType: day.status === 'done' ? 'none' : 'disc' }}>
                         {day.items.map((item, ii) => (
-                          <li key={ii} style={{ fontSize: '0.75rem', color: '#cbd5e1',
+                          <li key={ii} style={{ fontSize: '0.75rem', color: '#1e293b',
                               lineHeight: 1.7, paddingLeft: day.status === 'done' ? '0' : '0' }}>
-                            {day.status === 'done' && <span style={{color:'#34d399',marginRight:'0.3rem'}}>✓</span>}
-                            {day.status === 'in_progress' && <span style={{color:'#fbbf24',marginRight:'0.3rem'}}>⟳</span>}
+                            {day.status === 'done' && <span style={{color:'#047857',marginRight:'0.3rem'}}>✓</span>}
+                            {day.status === 'in_progress' && <span style={{color:'#b45309',marginRight:'0.3rem'}}>⟳</span>}
                             {item}
                           </li>
                         ))}
@@ -1358,18 +1365,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {activeTab === 'insights' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
           {/* 섹션 헤더 */}
-          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+          <div style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)',
               borderRadius: '10px', padding: '0.8rem 1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
               <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem',
-                  borderRadius: '4px', background: 'rgba(239,68,68,0.2)', color: '#f87171' }}>
+                  borderRadius: '4px', background: 'rgba(220,38,38,0.2)', color: '#dc2626' }}>
                 ⚠ 데이터 기반 역분석 결과
               </span>
             </div>
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '0.2rem' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.2rem' }}>
               기존 엔진의 4가지 가정이 모두 데이터와 역방향으로 판명됨
             </div>
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+            <div style={{ fontSize: '0.72rem', color: '#334155' }}>
               BigQuery price_history 기반 실제 3배 달성 1,991개 종목 역산 분석 (2026-06-18)
             </div>
           </div>
@@ -1377,29 +1384,29 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           {/* 핵심 수치 5개 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.6rem' }}>
             {[
-              { n: '발견 1', val: '70.5%', color: '#f87171', label: '52주 고가 대비 -30~70%\n낙폭과대 구간에서 출발' },
-              { n: '발견 2', val: '40.5%', color: '#fb923c', label: '출발 시점에\n영업이익이 적자 상태' },
-              { n: '발견 3', val: '20.8%', color: '#fbbf24', label: '저점에서 기관 순매수\n(79.2%는 기관 매도/중립)' },
-              { n: '발견 4', val: '2.8%',  color: '#60a5fa', label: '저점 직전 매출 성장률\n중앙값 (폭발 성장 아님)' },
-              { n: '발견 5', val: '1,580억', color: '#34d399', label: '시가총액 중앙값\n(소형주 편향 뚜렷)' },
+              { n: '발견 1', val: '70.5%', color: '#dc2626', label: '52주 고가 대비 -30~70%\n낙폭과대 구간에서 출발' },
+              { n: '발견 2', val: '40.5%', color: '#c2410c', label: '출발 시점에\n영업이익이 적자 상태' },
+              { n: '발견 3', val: '20.8%', color: '#b45309', label: '저점에서 기관 순매수\n(79.2%는 기관 매도/중립)' },
+              { n: '발견 4', val: '2.8%',  color: '#2563eb', label: '저점 직전 매출 성장률\n중앙값 (폭발 성장 아님)' },
+              { n: '발견 5', val: '1,580억', color: '#047857', label: '시가총액 중앙값\n(소형주 편향 뚜렷)' },
             ].map(f => (
-              <div key={f.n} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+              <div key={f.n} style={{ background: 'rgba(15,23,42,0.04)', border: '1px solid rgba(15,23,42,0.2)',
                   borderRadius: '8px', padding: '0.75rem 0.8rem' }}>
-                <div style={{ fontSize: '0.62rem', color: '#64748b', marginBottom: '3px' }}>{f.n}</div>
+                <div style={{ fontSize: '0.62rem', color: '#1e293b', marginBottom: '3px' }}>{f.n}</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 800, color: f.color, lineHeight: 1.1, marginBottom: '4px' }}>{f.val}</div>
-                <div style={{ fontSize: '0.65rem', color: '#94a3b8', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{f.label}</div>
+                <div style={{ fontSize: '0.65rem', color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{f.label}</div>
               </div>
             ))}
           </div>
 
           {/* 낙폭 분포 바차트 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+            <div style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)',
                 borderRadius: '10px', padding: '1rem' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e2e8f0', marginBottom: '0.2rem' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.2rem' }}>
                 낙폭 분포 — 3배 달성 종목의 출발점
               </div>
-              <div style={{ fontSize: '0.65rem', color: '#64748b', marginBottom: '0.8rem' }}>
+              <div style={{ fontSize: '0.65rem', color: '#1e293b', marginBottom: '0.8rem' }}>
                 52주 고가 대비 하락률 기준 · 빨간 구간 = 황금지대
               </div>
               {[
@@ -1412,35 +1419,35 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               ].map(b => (
                 <div key={b.label} style={{ marginBottom: '5px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between',
-                      fontSize: '0.67rem', color: b.hot ? '#f1f5f9' : '#64748b', marginBottom: '2px' }}>
+                      fontSize: '0.67rem', color: b.hot ? '#0f172a' : '#1e293b', marginBottom: '2px' }}>
                     <span>{b.hot ? '★ ' : ''}{b.label}</span>
                     <span style={{ fontWeight: b.hot ? 700 : 400 }}>{b.pct}%</span>
                   </div>
-                  <div style={{ height: '10px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ height: '10px', background: 'rgba(15,23,42,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
                     <div style={{ width: `${b.pct / 45 * 100}%`, height: '100%', borderRadius: '3px',
-                        background: b.hot ? '#ef4444' : 'rgba(148,163,184,0.3)' }} />
+                        background: b.hot ? '#dc2626' : 'rgba(100,116,139,0.3)' }} />
                   </div>
                 </div>
               ))}
             </div>
 
             {/* 기관 순매수 분포 */}
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+            <div style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)',
                 borderRadius: '10px', padding: '1rem' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e2e8f0', marginBottom: '0.2rem' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.2rem' }}>
                 기관 순매수 상태 분포
               </div>
-              <div style={{ fontSize: '0.65rem', color: '#64748b', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.65rem', color: '#1e293b', marginBottom: '1rem' }}>
                 저점 직전 20일 기관 평균 순매수 기준
               </div>
               {[
-                { label: '순매도', pct: 36.5, color: '#ef4444', desc: '기관이 팔고 있었다' },
-                { label: '중립 (±0)',  pct: 42.7, color: '#94a3b8', desc: '거의 무관심 상태' },
-                { label: '순매수', pct: 20.8, color: '#10b981', desc: '기관도 사고 있었다' },
+                { label: '순매도', pct: 36.5, color: '#dc2626', desc: '기관이 팔고 있었다' },
+                { label: '중립 (±0)',  pct: 42.7, color: '#334155', desc: '거의 무관심 상태' },
+                { label: '순매수', pct: 20.8, color: '#047857', desc: '기관도 사고 있었다' },
               ].map(d => (
                 <div key={d.label} style={{ marginBottom: '0.8rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between',
-                      fontSize: '0.7rem', color: '#e2e8f0', marginBottom: '3px' }}>
+                      fontSize: '0.7rem', color: '#1e293b', marginBottom: '3px' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ width: '8px', height: '8px', borderRadius: '2px',
                           background: d.color, display: 'inline-block' }} />
@@ -1448,14 +1455,14 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                     </span>
                     <span style={{ fontWeight: 700, color: d.color }}>{d.pct}%</span>
                   </div>
-                  <div style={{ height: '18px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ height: '18px', background: 'rgba(15,23,42,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
                     <div style={{ width: `${d.pct}%`, height: '100%', borderRadius: '4px', background: d.color, opacity: 0.8 }} />
                   </div>
-                  <div style={{ fontSize: '0.62rem', color: '#64748b', marginTop: '2px' }}>{d.desc}</div>
+                  <div style={{ fontSize: '0.62rem', color: '#1e293b', marginTop: '2px' }}>{d.desc}</div>
                 </div>
               ))}
-              <div style={{ marginTop: '0.5rem', padding: '0.4rem 0.6rem', background: 'rgba(239,68,68,0.08)',
-                  borderRadius: '6px', fontSize: '0.68rem', color: '#fca5a5', lineHeight: 1.5 }}>
+              <div style={{ marginTop: '0.5rem', padding: '0.4rem 0.6rem', background: 'rgba(220,38,38,0.08)',
+                  borderRadius: '6px', fontSize: '0.68rem', color: '#b91c1c', lineHeight: 1.5 }}>
                 💡 결론: 기관 순매수는 텐버거 확인 신호가 아니다.<br/>
                 기관이 팔 때 개인/테마 주도로 출발하는 게 실제 패턴.
               </div>
@@ -1463,18 +1470,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           </div>
 
           {/* 가정 vs 실제 비교 테이블 */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+          <div style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)',
               borderRadius: '10px', overflow: 'hidden' }}>
-            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.07)',
-                fontSize: '0.82rem', fontWeight: 700, color: '#e2e8f0' }}>
+            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(15,23,42,0.2)',
+                fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>
               기존 엔진의 가정 vs 실제 데이터 — 왜 백테스트가 실패했나
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
               <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <tr style={{ background: 'rgba(15,23,42,0.04)' }}>
                   {['점수 항목', '기존 엔진 가정', '실제 데이터', '오류 방향', '점수 변화'].map(h => (
                     <th key={h} style={{ padding: '0.5rem 0.7rem', textAlign: 'left',
-                        color: '#64748b', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>{h}</th>
+                        color: '#1e293b', fontWeight: 600, borderBottom: '1px solid rgba(15,23,42,0.2)' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -1484,44 +1491,44 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                     item: '기술적 추세 (MA정배열)',
                     old: 'MA정배열 = 매수 신호 (15점)',
                     real: '평균 출발점 52주 고가 -46%\n정배열 = 이미 상승 완료 = 늦은 진입',
-                    dir: '❌ 완전 역방향', dirColor: '#f87171',
+                    dir: '❌ 완전 역방향', dirColor: '#dc2626',
                     change: '15pt → 낙폭과대 25pt로 교체'
                   },
                   {
                     item: '영업이익 성장',
                     old: '적자 패널티 적용 (20점)',
                     real: '40.5%가 적자 상태에서 출발\n흑자전환이 오히려 최고 신호',
-                    dir: '❌ 역방향 패널티', dirColor: '#fb923c',
+                    dir: '❌ 역방향 패널티', dirColor: '#c2410c',
                     change: '적자 패널티 → 흑자전환 +15pt'
                   },
                   {
                     item: '수급 (기관 순매수)',
                     old: '기관 순매수 = 핵심 확인 신호 (15점)',
                     real: '79.2%가 기관 비매수/매도 상태\n기관 저점 매도 = 실제 바닥 신호',
-                    dir: '❌ 심각한 과대평가', dirColor: '#f87171',
+                    dir: '❌ 심각한 과대평가', dirColor: '#dc2626',
                     change: '15pt → 수급반전 10pt (저점 감지)'
                   },
                   {
                     item: '매출 성장',
                     old: '15%+ 성장 = 강한 신호 (20점)',
                     real: '3배 종목 매출 성장 중앙값 2.8%\n33.7%만 15%+ 성장',
-                    dir: '⚠ 과대평가', dirColor: '#fbbf24',
+                    dir: '⚠ 과대평가', dirColor: '#b45309',
                     change: '20pt → 펀더멘털변화 25pt 내 통합'
                   },
                   {
                     item: '밸류에이션',
                     old: 'PER/PBR 기준 (15점)',
                     real: '소형주 편향 (중앙 시총 1,580억)\n저PBR+소형주 조합이 핵심',
-                    dir: '✓ 방향 맞음', dirColor: '#34d399',
+                    dir: '✓ 방향 맞음', dirColor: '#047857',
                     change: '15pt → 저평가+소형주 20pt 강화'
                   },
                 ].map((r, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    <td style={{ padding: '0.55rem 0.7rem', color: '#cbd5e1', fontWeight: 600 }}>{r.item}</td>
-                    <td style={{ padding: '0.55rem 0.7rem', color: '#f87171' }}>{r.old}</td>
-                    <td style={{ padding: '0.55rem 0.7rem', color: '#94a3b8', whiteSpace: 'pre-line', lineHeight: 1.5 }}>{r.real}</td>
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
+                    <td style={{ padding: '0.55rem 0.7rem', color: '#1e293b', fontWeight: 600 }}>{r.item}</td>
+                    <td style={{ padding: '0.55rem 0.7rem', color: '#dc2626' }}>{r.old}</td>
+                    <td style={{ padding: '0.55rem 0.7rem', color: '#334155', whiteSpace: 'pre-line', lineHeight: 1.5 }}>{r.real}</td>
                     <td style={{ padding: '0.55rem 0.7rem', color: r.dirColor, fontWeight: 700 }}>{r.dir}</td>
-                    <td style={{ padding: '0.55rem 0.7rem', color: '#34d399', fontSize: '0.68rem' }}>{r.change}</td>
+                    <td style={{ padding: '0.55rem 0.7rem', color: '#047857', fontSize: '0.68rem' }}>{r.change}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1529,51 +1536,51 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           </div>
 
           {/* 새 점수 구조 */}
-          <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)',
+          <div style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.2)',
               borderRadius: '10px', padding: '1rem' }}>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#34d399', marginBottom: '0.8rem' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#047857', marginBottom: '0.8rem' }}>
               데이터 기반 재설계 — 새 점수 구조 (합계 100점)
             </div>
             {[
-              { label: '낙폭과대/바닥권', pts: 25, pct: 25, color: '#ef4444', desc: '52주 고가 -30~70% 구간 최우선' },
-              { label: '펀더멘털 변화',   pts: 25, pct: 25, color: '#3b82f6', desc: '흑자전환 +15점, 매출급증, 수주' },
-              { label: '저평가+소형주',   pts: 20, pct: 20, color: '#22c55e', desc: '저PBR + 시총 500억 미만 보너스' },
-              { label: '촉매',           pts: 15, pct: 15, color: '#f59e0b', desc: '수주/기술이전/자사주취득' },
+              { label: '낙폭과대/바닥권', pts: 25, pct: 25, color: '#dc2626', desc: '52주 고가 -30~70% 구간 최우선' },
+              { label: '펀더멘털 변화',   pts: 25, pct: 25, color: '#2563eb', desc: '흑자전환 +15점, 매출급증, 수주' },
+              { label: '저평가+소형주',   pts: 20, pct: 20, color: '#15803d', desc: '저PBR + 시총 500억 미만 보너스' },
+              { label: '촉매',           pts: 15, pct: 15, color: '#b45309', desc: '수주/기술이전/자사주취득' },
               { label: '수급 반전',       pts: 10, pct: 10, color: '#8b5cf6', desc: '저점 유입 감지 (기관 단순 확인 X)' },
-              { label: '섹터 모멘텀',     pts: 5,  pct: 5,  color: '#6b7280', desc: '업황 지표 연동' },
+              { label: '섹터 모멘텀',     pts: 5,  pct: 5,  color: '#374151', desc: '업황 지표 연동' },
             ].map(s => (
               <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '6px' }}>
-                <span style={{ fontSize: '0.68rem', color: '#94a3b8', width: '100px', flexShrink: 0 }}>{s.label}</span>
-                <div style={{ flex: 1, height: '14px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                <span style={{ fontSize: '0.68rem', color: '#334155', width: '100px', flexShrink: 0 }}>{s.label}</span>
+                <div style={{ flex: 1, height: '14px', background: 'rgba(15,23,42,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
                   <div style={{ width: `${s.pct}%`, height: '100%', borderRadius: '4px',
                       background: s.color, display: 'flex', alignItems: 'center', paddingLeft: '6px' }}>
-                    <span style={{ fontSize: '0.6rem', color: 'white', opacity: 0.9 }}>{s.pts}pt</span>
+                    <span style={{ fontSize: '0.6rem', color: 'var(--text-primary)', opacity: 0.9 }}>{s.pts}pt</span>
                   </div>
                 </div>
-                <span style={{ fontSize: '0.65rem', color: '#64748b', width: '160px', flexShrink: 0 }}>{s.desc}</span>
+                <span style={{ fontSize: '0.65rem', color: '#1e293b', width: '160px', flexShrink: 0 }}>{s.desc}</span>
               </div>
             ))}
           </div>
 
           {/* 백테스트 결과 */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+          <div style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)',
               borderRadius: '10px', overflow: 'hidden' }}>
-            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.07)',
+            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(15,23,42,0.2)',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#e2e8f0' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>
                 사후검증 백테스트 결과 (6개월 보유, 2022-2025)
               </span>
-              <span style={{ fontSize: '0.68rem', color: '#f87171', padding: '0.15rem 0.5rem',
-                  borderRadius: '4px', background: 'rgba(239,68,68,0.12)' }}>
+              <span style={{ fontSize: '0.68rem', color: '#dc2626', padding: '0.15rem 0.5rem',
+                  borderRadius: '4px', background: 'rgba(220,38,38,0.12)' }}>
                 현재 로직 미완성 — 추가 개선 필요
               </span>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
               <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <tr style={{ background: 'rgba(15,23,42,0.04)' }}>
                   {['기간', '후보수', '6개월 평균수익', '승률', '코스피', '알파'].map(h => (
                     <th key={h} style={{ padding: '0.45rem 0.7rem', textAlign: h === '후보수' ? 'right' : 'left',
-                        color: '#64748b', fontWeight: 600 }}>{h}</th>
+                        color: '#1e293b', fontWeight: 600 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -1586,70 +1593,70 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   { p: '2024-01→07', n: 22, ret: -10.5, wr: 27, kos: 5.0, alpha: -15.5 },
                   { p: '2024-07→2025-01', n: 23, ret: -16.3, wr: 9,  kos: -14.5, alpha: -1.8 },
                 ].map((r, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)',
-                      background: i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
-                    <td style={{ padding: '0.45rem 0.7rem', color: '#94a3b8' }}>{r.p}</td>
-                    <td style={{ padding: '0.45rem 0.7rem', color: '#e2e8f0', textAlign: 'right' }}>{r.n}</td>
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)',
+                      background: i % 2 === 0 ? 'rgba(15,23,42,0.01)' : 'transparent' }}>
+                    <td style={{ padding: '0.45rem 0.7rem', color: '#334155' }}>{r.p}</td>
+                    <td style={{ padding: '0.45rem 0.7rem', color: '#1e293b', textAlign: 'right' }}>{r.n}</td>
                     <td style={{ padding: '0.45rem 0.7rem', fontWeight: 700,
-                        color: r.ret > 0 ? '#34d399' : '#f87171' }}>{r.ret > 0 ? '+' : ''}{r.ret.toFixed(1)}%</td>
-                    <td style={{ padding: '0.45rem 0.7rem', color: r.wr >= 50 ? '#34d399' : r.wr >= 35 ? '#fbbf24' : '#f87171' }}>{r.wr}%</td>
-                    <td style={{ padding: '0.45rem 0.7rem', color: r.kos >= 0 ? '#94a3b8' : '#94a3b8' }}>{r.kos > 0 ? '+' : ''}{r.kos.toFixed(1)}%</td>
+                        color: r.ret > 0 ? '#047857' : '#dc2626' }}>{r.ret > 0 ? '+' : ''}{r.ret.toFixed(1)}%</td>
+                    <td style={{ padding: '0.45rem 0.7rem', color: r.wr >= 50 ? '#047857' : r.wr >= 35 ? '#b45309' : '#dc2626' }}>{r.wr}%</td>
+                    <td style={{ padding: '0.45rem 0.7rem', color: r.kos >= 0 ? '#334155' : '#334155' }}>{r.kos > 0 ? '+' : ''}{r.kos.toFixed(1)}%</td>
                     <td style={{ padding: '0.45rem 0.7rem', fontWeight: 600,
-                        color: r.alpha > 0 ? '#34d399' : '#f87171' }}>{r.alpha > 0 ? '+' : ''}{r.alpha.toFixed(1)}%p</td>
+                        color: r.alpha > 0 ? '#047857' : '#dc2626' }}>{r.alpha > 0 ? '+' : ''}{r.alpha.toFixed(1)}%p</td>
                   </tr>
                 ))}
-                <tr style={{ background: 'rgba(255,255,255,0.06)', fontWeight: 700 }}>
-                  <td style={{ padding: '0.5rem 0.7rem', color: '#e2e8f0' }}>전체 합산</td>
-                  <td style={{ padding: '0.5rem 0.7rem', color: '#e2e8f0', textAlign: 'right' }}>126</td>
-                  <td style={{ padding: '0.5rem 0.7rem', color: '#f87171' }}>-7.5%</td>
-                  <td style={{ padding: '0.5rem 0.7rem', color: '#f87171' }}>32.5%</td>
-                  <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8' }}>—</td>
-                  <td style={{ padding: '0.5rem 0.7rem', color: '#f87171' }}>음수</td>
+                <tr style={{ background: 'rgba(15,23,42,0.06)', fontWeight: 700 }}>
+                  <td style={{ padding: '0.5rem 0.7rem', color: '#1e293b' }}>전체 합산</td>
+                  <td style={{ padding: '0.5rem 0.7rem', color: '#1e293b', textAlign: 'right' }}>126</td>
+                  <td style={{ padding: '0.5rem 0.7rem', color: '#dc2626' }}>-7.5%</td>
+                  <td style={{ padding: '0.5rem 0.7rem', color: '#dc2626' }}>32.5%</td>
+                  <td style={{ padding: '0.5rem 0.7rem', color: '#334155' }}>—</td>
+                  <td style={{ padding: '0.5rem 0.7rem', color: '#dc2626' }}>음수</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           {/* 전후 비교 — 종목 예시 */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+          <div style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.2)',
               borderRadius: '10px', padding: '1rem' }}>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e2e8f0', marginBottom: '0.8rem' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.8rem' }}>
               재설계 전후 — 같은 종목의 점수 변화 (극명한 역전)
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.7rem' }}>
               {[
                 { code: 'SK하이닉스 (000660)', desc: '52주 신고가권, 기관 대규모 순매수',
-                  old: 62, new_: 4, oldColor: '#fbbf24', newColor: '#64748b',
+                  old: 62, new_: 4, oldColor: '#b45309', newColor: '#1e293b',
                   tags: ['신고가권 낙폭점수 0', '이미 상승 완료', '진입 타이밍 지남'],
-                  tagColors: ['#f87171', '#94a3b8', '#94a3b8'] },
+                  tagColors: ['#dc2626', '#334155', '#334155'] },
                 { code: '광무 (029480)', desc: '-47% 낙폭, 흑자전환, PBR 0.40',
-                  old: 28, new_: 78, oldColor: '#f87171', newColor: '#34d399',
+                  old: 28, new_: 78, oldColor: '#dc2626', newColor: '#047857',
                   tags: ['낙폭과대 20pt', '흑자전환 +15pt', 'PBR 0.40 저평가'],
-                  tagColors: ['#34d399', '#34d399', '#34d399'] },
+                  tagColors: ['#047857', '#047857', '#047857'] },
                 { code: '엔투텍 (227950)', desc: '-35% 낙폭, 매출 111% 성장, PBR 0.34',
-                  old: 45, new_: 78, oldColor: '#fbbf24', newColor: '#34d399',
+                  old: 45, new_: 78, oldColor: '#b45309', newColor: '#047857',
                   tags: ['낙폭과대 18pt', '매출 111%', 'PBR 0.34'],
-                  tagColors: ['#34d399', '#34d399', '#34d399'] },
+                  tagColors: ['#047857', '#047857', '#047857'] },
                 { code: 'SGA솔루션즈 (184230)', desc: '-38% 낙폭, 흑자전환, 44% 매출 성장',
-                  old: 32, new_: 75, oldColor: '#f87171', newColor: '#34d399',
+                  old: 32, new_: 75, oldColor: '#dc2626', newColor: '#047857',
                   tags: ['낙폭과대 18pt', '흑자전환 +15pt', '44% 매출 성장'],
-                  tagColors: ['#34d399', '#34d399', '#34d399'] },
+                  tagColors: ['#047857', '#047857', '#047857'] },
               ].map(ex => (
-                <div key={ex.code} style={{ border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px',
-                    padding: '0.7rem 0.8rem', background: 'rgba(255,255,255,0.02)' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '2px' }}>{ex.code}</div>
-                  <div style={{ fontSize: '0.65rem', color: '#64748b', marginBottom: '0.5rem' }}>{ex.desc}</div>
+                <div key={ex.code} style={{ border: '1px solid rgba(15,23,42,0.2)', borderRadius: '8px',
+                    padding: '0.7rem 0.8rem', background: 'rgba(15,23,42,0.02)' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0f172a', marginBottom: '2px' }}>{ex.code}</div>
+                  <div style={{ fontSize: '0.65rem', color: '#1e293b', marginBottom: '0.5rem' }}>{ex.desc}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                    <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.04)',
+                    <div style={{ textAlign: 'center', background: 'rgba(15,23,42,0.04)',
                         borderRadius: '6px', padding: '0.3rem 0.6rem' }}>
-                      <div style={{ fontSize: '0.58rem', color: '#64748b' }}>기존</div>
+                      <div style={{ fontSize: '0.58rem', color: '#1e293b' }}>기존</div>
                       <div style={{ fontSize: '1.1rem', fontWeight: 800, color: ex.oldColor }}>{ex.old}pt</div>
                     </div>
-                    <span style={{ color: '#64748b', fontSize: '0.8rem' }}>→</span>
-                    <div style={{ textAlign: 'center', background: ex.new_ >= 55 ? 'rgba(16,185,129,0.1)' : 'rgba(100,116,139,0.1)',
+                    <span style={{ color: '#1e293b', fontSize: '0.8rem' }}>→</span>
+                    <div style={{ textAlign: 'center', background: ex.new_ >= 55 ? 'rgba(5,150,105,0.1)' : 'rgba(100,116,139,0.1)',
                         borderRadius: '6px', padding: '0.3rem 0.6rem',
-                        border: `1px solid ${ex.new_ >= 55 ? 'rgba(16,185,129,0.3)' : 'rgba(100,116,139,0.2)'}` }}>
-                      <div style={{ fontSize: '0.58rem', color: '#64748b' }}>재설계</div>
+                        border: `1px solid ${ex.new_ >= 55 ? 'rgba(5,150,105,0.3)' : 'rgba(100,116,139,0.2)'}` }}>
+                      <div style={{ fontSize: '0.58rem', color: '#1e293b' }}>재설계</div>
                       <div style={{ fontSize: '1.1rem', fontWeight: 800, color: ex.newColor }}>{ex.new_}pt</div>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
@@ -1665,21 +1672,21 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           </div>
 
           {/* 다음 개선 방향 */}
-          <div style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)',
+          <div style={{ background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.2)',
               borderRadius: '10px', padding: '0.8rem 1rem' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a5b4fc', marginBottom: '0.5rem' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#4f46e5', marginBottom: '0.5rem' }}>
               백테스트 실패 원인 및 개선 방향
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.68rem', color: '#94a3b8', lineHeight: 1.6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.68rem', color: '#334155', lineHeight: 1.6 }}>
               <div>
-                <div style={{ color: '#f87171', fontWeight: 600, marginBottom: '3px' }}>현재 문제점</div>
+                <div style={{ color: '#dc2626', fontWeight: 600, marginBottom: '3px' }}>현재 문제점</div>
                 • 낙폭과대 = 더 내려갈 수 있음 (구분 불가)<br/>
                 • 매수/매도 로직 미정의 (스코어만 있음)<br/>
                 • 6개월 고정 보유 = 타이밍 무시<br/>
                 • 손절/청산 기준 없음
               </div>
               <div>
-                <div style={{ color: '#34d399', fontWeight: 600, marginBottom: '3px' }}>필요한 개선</div>
+                <div style={{ color: '#047857', fontWeight: 600, marginBottom: '3px' }}>필요한 개선</div>
                 • 거래량 급증 반등 확인 신호 추가<br/>
                 • 명확한 매수/매도/손절 로직 정의<br/>
                 • 보유 기간 최적화 (6개월 → 조건부)<br/>
@@ -1693,9 +1700,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {/* ── 탭 2: 패턴 분석 ────────────────────────────────────────── */}
       {activeTab === 'pattern' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ fontSize: '0.75rem', color: '#94a3b8',
-              background: 'rgba(251,191,36,0.06)', borderRadius: '8px',
-              padding: '0.6rem 0.8rem', border: '1px solid rgba(251,191,36,0.2)' }}>
+          <div style={{ fontSize: '0.75rem', color: '#334155',
+              background: 'rgba(217,119,6,0.06)', borderRadius: '8px',
+              padding: '0.6rem 0.8rem', border: '1px solid rgba(217,119,6,0.2)' }}>
             📊 BigQuery 실증 분석 기준일: 2026-06-01 | 분석 대상: 최근 5년(2021-2026) 3배+ 달성 종목 1,324개
           </div>
 
@@ -1706,28 +1713,28 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 icon: '📍', title: '출발점: 52주 저점 근처',
                 stat: `${PATTERN_FINDINGS.chart.pct_30to70_drawdown}%가 -30~-70% 낙폭 구간에서 출발`,
                 detail: `52주 고가 대비 평균 ${PATTERN_FINDINGS.chart.avg_pct_from_high}% 낙폭 상태에서 출발\n→ "낙폭과대 반등" 패턴이 핵심`,
-                color: '#34d399', bg: 'rgba(16,185,129,0.08)',
+                color: '#047857', bg: 'rgba(5,150,105,0.08)',
                 signal: '저점 신호',
               },
               {
                 icon: '🚫', title: '기관 선매수: 없었다',
                 stat: `${PATTERN_FINDINGS.supply.inst_sell_pct + PATTERN_FINDINGS.supply.inst_neutral_pct}%가 기관 비매수 상태`,
                 detail: `기관 순매도 ${PATTERN_FINDINGS.supply.inst_sell_pct}% + 중립 ${PATTERN_FINDINGS.supply.inst_neutral_pct}%\n→ 개인/테마 주도형, 기관은 나중에 진입`,
-                color: '#f87171', bg: 'rgba(239,68,68,0.08)',
+                color: '#dc2626', bg: 'rgba(220,38,38,0.08)',
                 signal: '역발상 신호',
               },
               {
                 icon: '📉', title: '재무: 우량주 아님',
                 stat: `${PATTERN_FINDINGS.financial.opm_loss_pct}%가 적자 상태`,
                 detail: `영업이익률 중앙값 1.3%\n매출 중앙값 809억 (소형~중형)\n→ 재무 개선 기대감이 핵심 트리거`,
-                color: '#fbbf24', bg: 'rgba(251,191,36,0.08)',
+                color: '#b45309', bg: 'rgba(217,119,6,0.08)',
                 signal: '역발상 신호',
               },
               {
                 icon: '📋', title: '수주공시 = 너무 늦다',
                 stat: `공시 있으면 ${PATTERN_FINDINGS.disclosure.avg_ratio_with}x, 없으면 ${PATTERN_FINDINGS.disclosure.avg_ratio_without}x`,
                 detail: '수주공시가 있을 때 오히려 배율 낮음\n→ 공시 발표 시점엔 이미 선반영\n→ 공시 전 수주잔고 증가 감지가 핵심',
-                color: '#60a5fa', bg: 'rgba(96,165,250,0.08)',
+                color: '#2563eb', bg: 'rgba(37,99,235,0.08)',
                 signal: '선행 지표 필요',
               },
             ].map(f => (
@@ -1735,7 +1742,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   border: `1px solid ${f.color}33`, padding: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
                   <span style={{ fontSize: '1.2rem' }}>{f.icon}</span>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f1f5f9' }}>{f.title}</span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>{f.title}</span>
                   <span style={{ marginLeft: 'auto', fontSize: '0.62rem', padding: '0.1rem 0.35rem',
                       borderRadius: '4px', background: `${f.color}22`, color: f.color }}>
                     {f.signal}
@@ -1743,25 +1750,25 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 </div>
                 <div style={{ fontSize: '1rem', fontWeight: 800, color: f.color,
                     marginBottom: '0.5rem' }}>{f.stat}</div>
-                <div style={{ fontSize: '0.72rem', color: '#94a3b8', lineHeight: 1.7,
+                <div style={{ fontSize: '0.72rem', color: '#334155', lineHeight: 1.7,
                     whiteSpace: 'pre-line' }}>{f.detail}</div>
               </div>
             ))}
           </div>
 
           {/* 섹터별 3배 달성 분포 */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.07)',
-                fontSize: '0.82rem', fontWeight: 700, color: '#e2e8f0' }}>
+          <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '10px',
+              border: '1px solid rgba(15,23,42,0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(15,23,42,0.2)',
+                fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>
               섹터별 3배 달성 분포 (상위)
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
               <thead>
-                <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <tr style={{ background: 'rgba(15,23,42,0.04)' }}>
                   {['섹터', '시장', '종목수', '평균배율', '평균소요(월)', '특징'].map(h => (
                     <th key={h} style={{ padding: '0.5rem 0.7rem', textAlign: h === '종목수' || h === '평균배율' ? 'right' : 'left',
-                        color: '#94a3b8', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                        color: '#334155', fontWeight: 600, borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                       {h}
                     </th>
                   ))}
@@ -1778,18 +1785,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   { sector: '소재', market: 'KOSPI', cnt: 38, ratio: 5.46, months: 10.2, note: '2차전지/화학' },
                   { sector: '경기소비재', market: 'KOSPI', cnt: 40, ratio: 4.89, months: 10.1, note: '자동차 부품' },
                 ].map((r, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)',
-                      background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)',
+                      background: i % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.015)' }}>
                     <td style={{ padding: '0.5rem 0.7rem', fontWeight: 600 }}>{r.sector}</td>
-                    <td style={{ padding: '0.5rem 0.7rem', color: r.market === 'KOSDAQ' ? '#a78bfa' : '#38bdf8' }}>
+                    <td style={{ padding: '0.5rem 0.7rem', color: r.market === 'KOSDAQ' ? '#7c3aed' : '#0284c7' }}>
                       {r.market}
                     </td>
                     <td style={{ padding: '0.5rem 0.7rem', textAlign: 'right' }}>{r.cnt}</td>
                     <td style={{ padding: '0.5rem 0.7rem', textAlign: 'right',
-                        color: r.ratio >= 6 ? '#f87171' : r.ratio >= 5 ? '#fbbf24' : '#34d399',
+                        color: r.ratio >= 6 ? '#dc2626' : r.ratio >= 5 ? '#b45309' : '#047857',
                         fontWeight: 700 }}>{r.ratio}x</td>
-                    <td style={{ padding: '0.5rem 0.7rem', textAlign: 'right', color: '#94a3b8' }}>{r.months}개월</td>
-                    <td style={{ padding: '0.5rem 0.7rem', color: '#64748b', fontSize: '0.7rem' }}>{r.note}</td>
+                    <td style={{ padding: '0.5rem 0.7rem', textAlign: 'right', color: '#334155' }}>{r.months}개월</td>
+                    <td style={{ padding: '0.5rem 0.7rem', color: '#1e293b', fontSize: '0.7rem' }}>{r.note}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1797,72 +1804,72 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           </div>
 
           {/* ── QoQ/TTM 매출 성장 분석 ── */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.07)',
+          <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '10px',
+              border: '1px solid rgba(15,23,42,0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(15,23,42,0.2)',
                 display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ fontSize: '1rem' }}>📈</span>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#e2e8f0' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>
                 QoQ / TTM 매출·이익 성장 패턴
               </span>
-              <span style={{ fontSize: '0.68rem', color: '#94a3b8', marginLeft: 'auto' }}>
+              <span style={{ fontSize: '0.68rem', color: '#334155', marginLeft: 'auto' }}>
                 분석일: 2026-06-01
               </span>
             </div>
             <div style={{ padding: '0.8rem 1rem' }}>
               {/* TTM 최강 신호 박스 */}
-              <div style={{ background: 'rgba(16,185,129,0.1)', borderRadius: '8px',
-                  border: '1px solid rgba(16,185,129,0.3)', padding: '0.7rem 0.9rem',
+              <div style={{ background: 'rgba(5,150,105,0.1)', borderRadius: '8px',
+                  border: '1px solid rgba(5,150,105,0.3)', padding: '0.7rem 0.9rem',
                   marginBottom: '0.8rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#34d399', marginBottom: '0.4rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#047857', marginBottom: '0.4rem' }}>
                   🏆 최강 단일 신호 (BigQuery 검증)
                 </div>
                 <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#34d399' }}>6.14x</div>
-                    <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>TTM 영업이익<br/>흑자전환 (87건)</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#047857' }}>6.14x</div>
+                    <div style={{ fontSize: '0.65rem', color: '#334155' }}>TTM 영업이익<br/>흑자전환 (87건)</div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#60a5fa' }}>6.03x</div>
-                    <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>TTM 매출<br/>+30% 이상 (163건)</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#2563eb' }}>6.03x</div>
+                    <div style={{ fontSize: '0.65rem', color: '#334155' }}>TTM 매출<br/>+30% 이상 (163건)</div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#f87171' }}>6.10x</div>
-                    <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>재무없는<br/>소형 테마주 (666건)</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#dc2626' }}>6.10x</div>
+                    <div style={{ fontSize: '0.65rem', color: '#334155' }}>재무없는<br/>소형 테마주 (666건)</div>
                   </div>
                   <div style={{ textAlign: 'center', opacity: 0.5 }}>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#94a3b8', textDecoration: 'line-through' }}>3.48x</div>
-                    <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>우량 성장주<br/>(이미 반영됨)</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#334155', textDecoration: 'line-through' }}>3.48x</div>
+                    <div style={{ fontSize: '0.65rem', color: '#334155' }}>우량 성장주<br/>(이미 반영됨)</div>
                   </div>
                 </div>
-                <div style={{ fontSize: '0.7rem', color: '#fbbf24', marginTop: '0.5rem', fontWeight: 600 }}>
+                <div style={{ fontSize: '0.7rem', color: '#b45309', marginTop: '0.5rem', fontWeight: 600 }}>
                   ⚡ 핵심: 시장이 이미 아는 우량주보다 "이제 막 흑자전환하는 기업"이 훨씬 큰 폭등 가능성
                 </div>
               </div>
 
               {/* QoQ 분기별 추세 */}
               <div style={{ marginBottom: '0.8rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '0.4rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.4rem' }}>
                   서지 전 분기별 QoQ 매출 성장률
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                   {GROWTH_FINDINGS.qoq.map(q => (
-                    <div key={q.q} style={{ flex: 1, background: 'rgba(255,255,255,0.04)',
+                    <div key={q.q} style={{ flex: 1, background: 'rgba(15,23,42,0.04)',
                         borderRadius: '6px', padding: '0.5rem', textAlign: 'center',
-                        border: '1px solid rgba(255,255,255,0.07)' }}>
-                      <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginBottom: '0.2rem' }}>{q.q}</div>
+                        border: '1px solid rgba(15,23,42,0.2)' }}>
+                      <div style={{ fontSize: '0.65rem', color: '#334155', marginBottom: '0.2rem' }}>{q.q}</div>
                       <div style={{ fontSize: '0.9rem', fontWeight: 700,
-                          color: q.med > 5 ? '#34d399' : '#fbbf24' }}>
+                          color: q.med > 5 ? '#047857' : '#b45309' }}>
                         {q.med > 0 ? '+' : ''}{q.med}%
                       </div>
-                      <div style={{ fontSize: '0.6rem', color: '#64748b' }}>중앙값</div>
-                      <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                      <div style={{ fontSize: '0.6rem', color: '#1e293b' }}>중앙값</div>
+                      <div style={{ fontSize: '0.68rem', color: '#334155', marginTop: '0.2rem' }}>
                         양수 {q.pos_pct}%
                       </div>
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.3rem' }}>
+                <div style={{ fontSize: '0.68rem', color: '#334155', marginTop: '0.3rem' }}>
                   💡 {GROWTH_FINDINGS.qoq_insight}
                 </div>
               </div>
@@ -1870,84 +1877,84 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               {/* YoY / 흑자전환 / 거래량 3열 */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '0.5rem' }}>
                 {/* YoY */}
-                <div style={{ background: 'rgba(251,191,36,0.07)', borderRadius: '8px',
-                    border: '1px solid rgba(251,191,36,0.2)', padding: '0.6rem 0.8rem' }}>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#fbbf24', marginBottom: '0.4rem' }}>
+                <div style={{ background: 'rgba(217,119,6,0.07)', borderRadius: '8px',
+                    border: '1px solid rgba(217,119,6,0.2)', padding: '0.6rem 0.8rem' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#b45309', marginBottom: '0.4rem' }}>
                     📊 전년 매출 YoY 분포
                   </div>
                   {[
-                    { label: '+50% 이상', val: '15%', pct: 15, ratio: '5.84x', color: '#34d399' },
-                    { label: '+20~50%', val: '15%', pct: 15, ratio: '—', color: '#60a5fa' },
-                    { label: '0~20%', val: '30%', pct: 30, ratio: '—', color: '#94a3b8' },
-                    { label: '역성장', val: '41%', pct: 41, ratio: '4.45x', color: '#f87171' },
+                    { label: '+50% 이상', val: '15%', pct: 15, ratio: '5.84x', color: '#047857' },
+                    { label: '+20~50%', val: '15%', pct: 15, ratio: '—', color: '#2563eb' },
+                    { label: '0~20%', val: '30%', pct: 30, ratio: '—', color: '#334155' },
+                    { label: '역성장', val: '41%', pct: 41, ratio: '4.45x', color: '#dc2626' },
                   ].map(r => (
                     <div key={r.label} style={{ display: 'flex', alignItems: 'center',
                         gap: '0.4rem', marginBottom: '0.25rem' }}>
-                      <div style={{ width: '70px', fontSize: '0.65rem', color: '#94a3b8' }}>{r.label}</div>
+                      <div style={{ width: '70px', fontSize: '0.65rem', color: '#334155' }}>{r.label}</div>
                       <div style={{ flex: 1, height: '6px', borderRadius: '3px',
-                          background: 'rgba(255,255,255,0.07)', position: 'relative' }}>
+                          background: 'rgba(15,23,42,0.07)', position: 'relative' }}>
                         <div style={{ width: `${r.pct}%`, height: '100%',
                             background: r.color, borderRadius: '3px', opacity: 0.7 }} />
                       </div>
-                      <div style={{ width: '35px', fontSize: '0.65rem', color: '#64748b', textAlign: 'right' }}>{r.val}</div>
+                      <div style={{ width: '35px', fontSize: '0.65rem', color: '#1e293b', textAlign: 'right' }}>{r.val}</div>
                       <div style={{ width: '35px', fontSize: '0.65rem', color: r.color, fontWeight: 600 }}>{r.ratio}</div>
                     </div>
                   ))}
-                  <div style={{ fontSize: '0.65rem', color: '#fbbf24', marginTop: '0.3rem' }}>
+                  <div style={{ fontSize: '0.65rem', color: '#b45309', marginTop: '0.3rem' }}>
                     ⚠️ 41%가 역성장 중에도 3배 달성 → 매출 성장 필수 아님
                   </div>
                 </div>
 
                 {/* 흑자전환 */}
-                <div style={{ background: 'rgba(16,185,129,0.07)', borderRadius: '8px',
-                    border: '1px solid rgba(16,185,129,0.2)', padding: '0.6rem 0.8rem' }}>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#34d399', marginBottom: '0.4rem' }}>
+                <div style={{ background: 'rgba(5,150,105,0.07)', borderRadius: '8px',
+                    border: '1px solid rgba(5,150,105,0.2)', padding: '0.6rem 0.8rem' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#047857', marginBottom: '0.4rem' }}>
                     🔄 영업이익 흑자전환 효과
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                    <div style={{ flex: 1, background: 'rgba(255,255,255,0.04)',
+                    <div style={{ flex: 1, background: 'rgba(15,23,42,0.04)',
                         borderRadius: '6px', padding: '0.4rem', textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>서지 시작 시 흑자</div>
-                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fbbf24' }}>33%</div>
+                      <div style={{ fontSize: '0.7rem', color: '#334155' }}>서지 시작 시 흑자</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#b45309' }}>33%</div>
                     </div>
-                    <div style={{ flex: 1, background: 'rgba(255,255,255,0.04)',
+                    <div style={{ flex: 1, background: 'rgba(15,23,42,0.04)',
                         borderRadius: '6px', padding: '0.4rem', textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>흑자전환 배율</div>
-                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#34d399' }}>4.21x</div>
+                      <div style={{ fontSize: '0.7rem', color: '#334155' }}>흑자전환 배율</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#047857' }}>4.21x</div>
                     </div>
-                    <div style={{ flex: 1, background: 'rgba(255,255,255,0.04)',
+                    <div style={{ flex: 1, background: 'rgba(15,23,42,0.04)',
                         borderRadius: '6px', padding: '0.4rem', textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>계속 흑자</div>
-                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#60a5fa' }}>3.83x</div>
+                      <div style={{ fontSize: '0.7rem', color: '#334155' }}>계속 흑자</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#2563eb' }}>3.83x</div>
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#34d399',
-                      background: 'rgba(16,185,129,0.1)', borderRadius: '4px',
+                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#047857',
+                      background: 'rgba(5,150,105,0.1)', borderRadius: '4px',
                       padding: '0.3rem 0.5rem', textAlign: 'center' }}>
                     TTM 영업이익 흑자전환 → 6.14x (최강)
                   </div>
-                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '0.3rem' }}>
+                  <div style={{ fontSize: '0.65rem', color: '#334155', marginTop: '0.3rem' }}>
                     ✓ 영업이익 흑자전환 87건에서 공통으로 나타남
                   </div>
                 </div>
 
                 {/* 거래량 */}
-                <div style={{ background: 'rgba(99,102,241,0.07)', borderRadius: '8px',
-                    border: '1px solid rgba(99,102,241,0.2)', padding: '0.6rem 0.8rem' }}>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a5b4fc', marginBottom: '0.4rem' }}>
+                <div style={{ background: 'rgba(79,70,229,0.07)', borderRadius: '8px',
+                    border: '1px solid rgba(79,70,229,0.2)', padding: '0.6rem 0.8rem' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#4f46e5', marginBottom: '0.4rem' }}>
                     📊 거래량 패턴
                   </div>
                   {[
-                    { label: '거래량 3배+', pct: 5, ratio: '5.32x', color: '#f87171' },
-                    { label: '거래량 2배+', pct: 8, ratio: '5.32x', color: '#fbbf24' },
-                    { label: '1.5배+', pct: 12, ratio: '—', color: '#60a5fa' },
-                    { label: '정체(80%)', pct: 80, ratio: '3.97x', color: '#475569' },
+                    { label: '거래량 3배+', pct: 5, ratio: '5.32x', color: '#dc2626' },
+                    { label: '거래량 2배+', pct: 8, ratio: '5.32x', color: '#b45309' },
+                    { label: '1.5배+', pct: 12, ratio: '—', color: '#2563eb' },
+                    { label: '정체(80%)', pct: 80, ratio: '3.97x', color: '#1e293b' },
                   ].map(r => (
                     <div key={r.label} style={{ display: 'flex', alignItems: 'center',
                         gap: '0.4rem', marginBottom: '0.2rem' }}>
-                      <div style={{ width: '75px', fontSize: '0.65rem', color: '#94a3b8' }}>{r.label}</div>
+                      <div style={{ width: '75px', fontSize: '0.65rem', color: '#334155' }}>{r.label}</div>
                       <div style={{ flex: 1, height: '6px', borderRadius: '3px',
-                          background: 'rgba(255,255,255,0.07)' }}>
+                          background: 'rgba(15,23,42,0.07)' }}>
                         <div style={{ width: `${r.pct}%`, height: '100%',
                             background: r.color, borderRadius: '3px', opacity: 0.8 }} />
                       </div>
@@ -1955,7 +1962,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                           color: r.color, fontWeight: 600 }}>{r.ratio}</div>
                     </div>
                   ))}
-                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '0.3rem' }}>
+                  <div style={{ fontSize: '0.65rem', color: '#334155', marginTop: '0.3rem' }}>
                     💡 80%는 거래량 정체에서 출발 → 선행 조건 아님<br/>
                     단, 거래량 폭발 시 추가 상승폭 증가 (5.32x)
                   </div>
@@ -1965,12 +1972,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           </div>
 
           {/* ── 복합 패턴 분류 ── */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.07)',
+          <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '10px',
+              border: '1px solid rgba(15,23,42,0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid rgba(15,23,42,0.2)',
                 display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ fontSize: '1rem' }}>🎯</span>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#e2e8f0' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>
                 3배 달성 종목 유형 분류 — 재무 패턴별
               </span>
             </div>
@@ -1979,25 +1986,25 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 {GROWTH_FINDINGS.patterns.map((p, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem',
                       padding: '0.5rem 0.7rem', borderRadius: '7px',
-                      background: 'rgba(255,255,255,0.03)',
+                      background: 'rgba(15,23,42,0.03)',
                       border: `1px solid ${p.color}22` }}>
                     <div style={{ minWidth: '45px', textAlign: 'center',
                         fontSize: '1.1rem', fontWeight: 800, color: p.color }}>
                       {p.ratio}x
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#e2e8f0' }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1e293b' }}>
                         {p.name}
                         <span style={{ marginLeft: '0.4rem', fontSize: '0.65rem',
-                            color: '#64748b' }}>({p.cnt}개)</span>
+                            color: '#1e293b' }}>({p.cnt}개)</span>
                       </div>
-                      <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.15rem' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#334155', marginTop: '0.15rem' }}>
                         {p.desc}
                       </div>
                     </div>
                     {/* 배율 바 */}
                     <div style={{ width: '80px', height: '6px', borderRadius: '3px',
-                        background: 'rgba(255,255,255,0.07)', flexShrink: 0 }}>
+                        background: 'rgba(15,23,42,0.07)', flexShrink: 0 }}>
                       <div style={{ width: `${Math.min(p.ratio / 7 * 100, 100)}%`,
                           height: '100%', background: p.color,
                           borderRadius: '3px', opacity: 0.8 }} />
@@ -2005,9 +2012,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: '0.6rem', fontSize: '0.72rem', color: '#fbbf24',
-                  background: 'rgba(251,191,36,0.07)', borderRadius: '6px',
-                  padding: '0.5rem 0.7rem', border: '1px solid rgba(251,191,36,0.2)' }}>
+              <div style={{ marginTop: '0.6rem', fontSize: '0.72rem', color: '#b45309',
+                  background: 'rgba(217,119,6,0.07)', borderRadius: '6px',
+                  padding: '0.5rem 0.7rem', border: '1px solid rgba(217,119,6,0.2)' }}>
                 💡 <b>핵심 역설</b>: {GROWTH_FINDINGS.patterns_insight}<br/>
                 → 스크리너를 "우량 성장주" 기준으로 짜면 실제 고배율 종목을 놓친다.
               </div>
@@ -2015,25 +2022,25 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           </div>
 
           {/* ── 스크리너 설계 방향 ── */}
-          <div style={{ background: 'rgba(99,102,241,0.08)', borderRadius: '10px',
-              border: '1px solid rgba(99,102,241,0.25)', padding: '0.8rem 1rem' }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#a5b4fc', marginBottom: '0.6rem' }}>
+          <div style={{ background: 'rgba(79,70,229,0.08)', borderRadius: '10px',
+              border: '1px solid rgba(79,70,229,0.25)', padding: '0.8rem 1rem' }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#4f46e5', marginBottom: '0.6rem' }}>
               ⚡ 실증 기반 스크리너 v2 설계 방향 (Week 2 구현 예정)
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '0.5rem' }}>
               {[
-                { label: '① 차트 조건', items: ['52주 저점 대비 +5~35%', '최근 1달 거래량 증가 시작'], color: '#34d399' },
-                { label: '② 재무 조건 (둘 중 하나)', items: ['TTM 영업이익 흑자전환', 'TTM 매출 YoY +30% 이상'], color: '#fbbf24' },
-                { label: '③ 규모 필터', items: ['시총 200억 ~ 5,000억', 'KOSPI·KOSDAQ 보통주'], color: '#60a5fa' },
-                { label: '④ 악재 필터 (제외)', items: ['최근 1년 CB/BW 발행', '공매도 잔고율 5% 초과'], color: '#f87171' },
+                { label: '① 차트 조건', items: ['52주 저점 대비 +5~35%', '최근 1달 거래량 증가 시작'], color: '#047857' },
+                { label: '② 재무 조건 (둘 중 하나)', items: ['TTM 영업이익 흑자전환', 'TTM 매출 YoY +30% 이상'], color: '#b45309' },
+                { label: '③ 규모 필터', items: ['시총 200억 ~ 5,000억', 'KOSPI·KOSDAQ 보통주'], color: '#2563eb' },
+                { label: '④ 악재 필터 (제외)', items: ['최근 1년 CB/BW 발행', '공매도 잔고율 5% 초과'], color: '#dc2626' },
               ].map(s => (
-                <div key={s.label} style={{ background: 'rgba(255,255,255,0.04)',
+                <div key={s.label} style={{ background: 'rgba(15,23,42,0.04)',
                     borderRadius: '7px', padding: '0.5rem 0.7rem',
                     border: `1px solid ${s.color}33` }}>
                   <div style={{ fontSize: '0.72rem', fontWeight: 700,
                       color: s.color, marginBottom: '0.3rem' }}>{s.label}</div>
                   {s.items.map(item => (
-                    <div key={item} style={{ fontSize: '0.68rem', color: '#94a3b8',
+                    <div key={item} style={{ fontSize: '0.68rem', color: '#334155',
                         display: 'flex', gap: '0.3rem', marginBottom: '0.15rem' }}>
                       <span style={{ color: s.color }}>›</span> {item}
                     </div>
@@ -2044,9 +2051,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           </div>
 
           {/* 다음 분석 필요 항목 */}
-          <div style={{ background: 'rgba(99,102,241,0.06)', borderRadius: '10px',
-              border: '1px solid rgba(99,102,241,0.2)', padding: '0.8rem 1rem' }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#a5b4fc', marginBottom: '0.5rem' }}>
+          <div style={{ background: 'rgba(79,70,229,0.06)', borderRadius: '10px',
+              border: '1px solid rgba(79,70,229,0.2)', padding: '0.8rem 1rem' }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#4f46e5', marginBottom: '0.5rem' }}>
               🔬 다음 분석 예정 (Week 1–2)
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -2059,8 +2066,8 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 'TTM 흑자전환 + 저점 동시 조건 정밀 분석',
               ].map(t => (
                 <span key={t} style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem',
-                    borderRadius: '6px', background: 'rgba(99,102,241,0.12)',
-                    border: '1px solid rgba(99,102,241,0.25)', color: '#a5b4fc' }}>
+                    borderRadius: '6px', background: 'rgba(79,70,229,0.12)',
+                    border: '1px solid rgba(79,70,229,0.25)', color: '#4f46e5' }}>
                   {t}
                 </span>
               ))}
@@ -2099,9 +2106,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 const d = dataStatus[key];
                 return d ? (
                   <span key={key} style={{ fontSize: '0.68rem', padding: '0.2rem 0.55rem', borderRadius: '20px',
-                      background: d.rows > 0 ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.1)',
-                      border: `1px solid ${d.rows > 0 ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'}`,
-                      color: d.rows > 0 ? '#34d399' : '#f87171' }}>
+                      background: d.rows > 0 ? 'rgba(5,150,105,0.12)' : 'rgba(220,38,38,0.1)',
+                      border: `1px solid ${d.rows > 0 ? 'rgba(5,150,105,0.3)' : 'rgba(220,38,38,0.25)'}`,
+                      color: d.rows > 0 ? '#047857' : '#dc2626' }}>
                     {label}: {d.rows > 0 ? `${d.rows.toLocaleString()}행 / ${d.stocks}종목` : '미수집'}
                   </span>
                 ) : null;
@@ -2110,13 +2117,13 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           )}
 
           {DATA_MATRIX_STATIC.map(cat => (
-            <div key={cat.category} style={{ background: 'rgba(255,255,255,0.03)',
-                borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-              <div style={{ padding: '0.6rem 1rem', background: 'rgba(255,255,255,0.04)',
-                  borderBottom: '1px solid rgba(255,255,255,0.07)',
-                  fontSize: '0.8rem', fontWeight: 700, color: '#e2e8f0' }}>
+            <div key={cat.category} style={{ background: 'rgba(15,23,42,0.03)',
+                borderRadius: '10px', border: '1px solid rgba(15,23,42,0.2)', overflow: 'hidden' }}>
+              <div style={{ padding: '0.6rem 1rem', background: 'rgba(15,23,42,0.04)',
+                  borderBottom: '1px solid rgba(15,23,42,0.2)',
+                  fontSize: '0.8rem', fontWeight: 700, color: '#1e293b' }}>
                 {cat.category}
-                <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>
+                <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', color: '#334155' }}>
                   ({cat.items.filter(i=>i.status==='ok').length}/{cat.items.length} 수집됨)
                 </span>
               </div>
@@ -2136,9 +2143,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                       <span style={{ fontSize: '0.72rem', color: st.color, fontWeight: 600, minWidth: '60px' }}>
                         {st.label}
                       </span>
-                      <span style={{ fontSize: '0.78rem', color: '#e2e8f0', flex: 1 }}>{item.name}</span>
-                      <span style={{ fontSize: '0.65rem', color: '#64748b', minWidth: '80px' }}>{item.source}</span>
-                      <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>{liveNote}</span>
+                      <span style={{ fontSize: '0.78rem', color: '#1e293b', flex: 1 }}>{item.name}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#1e293b', minWidth: '80px' }}>{item.source}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#334155' }}>{liveNote}</span>
                     </div>
                   );
                 })}
@@ -2147,9 +2154,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           ))}
 
           {/* 추가 수집 우선순위 */}
-          <div style={{ background: 'rgba(239,68,68,0.07)', borderRadius: '10px',
-              border: '1px solid rgba(239,68,68,0.2)', padding: '0.8rem 1rem' }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f87171', marginBottom: '0.6rem' }}>
+          <div style={{ background: 'rgba(220,38,38,0.07)', borderRadius: '10px',
+              border: '1px solid rgba(220,38,38,0.2)', padding: '0.8rem 1rem' }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#dc2626', marginBottom: '0.6rem' }}>
               🚨 추가 수집 우선순위 (투자 판단 핵심 누락 데이터)
             </div>
             {[
@@ -2162,25 +2169,25 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             ].map(item => (
               <div key={item.name} style={{ marginBottom: '0.6rem', padding: '0.5rem 0.7rem',
                   borderRadius: '6px',
-                  background: item.done ? 'rgba(16,185,129,0.06)' : 'rgba(255,255,255,0.03)',
-                  border: item.done ? '1px solid rgba(52,211,153,0.2)' : '1px solid rgba(255,255,255,0.07)' }}>
+                  background: item.done ? 'rgba(5,150,105,0.06)' : 'rgba(15,23,42,0.03)',
+                  border: item.done ? '1px solid rgba(5,150,105,0.2)' : '1px solid rgba(15,23,42,0.07)' }}>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.25rem' }}>
                   {item.done && <span style={{ fontSize: '0.7rem' }}>✅</span>}
                   <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem', borderRadius: '4px',
-                      background: item.priority === 'P1' ? 'rgba(239,68,68,0.2)' : item.priority === 'P2' ? 'rgba(251,191,36,0.2)' : 'rgba(99,102,241,0.2)',
-                      color: item.priority === 'P1' ? '#f87171' : item.priority === 'P2' ? '#fbbf24' : '#a5b4fc',
+                      background: item.priority === 'P1' ? 'rgba(220,38,38,0.2)' : item.priority === 'P2' ? 'rgba(217,119,6,0.2)' : 'rgba(79,70,229,0.2)',
+                      color: item.priority === 'P1' ? '#dc2626' : item.priority === 'P2' ? '#b45309' : '#4f46e5',
                       fontWeight: 700 }}>
                     {item.priority}
                   </span>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: item.done ? '#34d399' : '#f1f5f9' }}>{item.name}</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: item.done ? '#047857' : '#0f172a' }}>{item.name}</span>
                 </div>
                 {item.why && !item.done && (
-                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '0.2rem' }}>
-                    <b style={{color:'#fbbf24'}}>왜:</b> {item.why}
+                  <div style={{ fontSize: '0.72rem', color: '#334155', marginBottom: '0.2rem' }}>
+                    <b style={{color:'#b45309'}}>왜:</b> {item.why}
                   </div>
                 )}
-                <div style={{ fontSize: '0.72rem', color: item.done ? '#6ee7b7' : '#64748b' }}>
-                  <b style={{color: item.done ? '#34d399' : '#34d399'}}>방법:</b> {item.how}
+                <div style={{ fontSize: '0.72rem', color: item.done ? '#047857' : '#1e293b' }}>
+                  <b style={{color: item.done ? '#047857' : '#047857'}}>방법:</b> {item.how}
                 </div>
               </div>
             ))}
@@ -2193,52 +2200,52 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
           {/* 메타 / 컨트롤 */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.8rem', flexWrap: 'wrap' }}>
-            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+            <div style={{ fontSize: '0.75rem', color: '#1e293b' }}>
               {candidateMeta?.run_time
-                ? <>🕐 최신 발굴: <b style={{color:'#94a3b8'}}>{candidateMeta.run_time.slice(0,16)}</b> · {candidateMeta.count}종목</>
+                ? <>🕐 최신 발굴: <b style={{color:'#334155'}}>{candidateMeta.run_time.slice(0,16)}</b> · {candidateMeta.count}종목</>
                 : '아직 발굴 결과 없음'}
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button onClick={loadCandidates} disabled={loading}
                   style={{ padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.72rem', cursor: 'pointer',
-                      background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc' }}>
+                      background: 'rgba(79,70,229,0.12)', border: '1px solid rgba(79,70,229,0.3)', color: '#4f46e5' }}>
                 🔄 새로고침
               </button>
               <button onClick={triggerRun} disabled={runTriggered}
                   style={{ padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.72rem', cursor: 'pointer',
-                      background: runTriggered ? 'rgba(251,191,36,0.1)' : 'rgba(16,185,129,0.12)',
-                      border: runTriggered ? '1px solid rgba(251,191,36,0.3)' : '1px solid rgba(16,185,129,0.3)',
-                      color: runTriggered ? '#fbbf24' : '#34d399' }}>
+                      background: runTriggered ? 'rgba(217,119,6,0.1)' : 'rgba(5,150,105,0.12)',
+                      border: runTriggered ? '1px solid rgba(217,119,6,0.3)' : '1px solid rgba(5,150,105,0.3)',
+                      color: runTriggered ? '#b45309' : '#047857' }}>
                 {runTriggered ? '⏳ 발굴 중…' : '🚀 지금 발굴'}
               </button>
             </div>
           </div>
 
           {/* 6축 스코어 설명 */}
-          <div style={{ background: 'rgba(99,102,241,0.06)', borderRadius: '8px',
-              border: '1px solid rgba(99,102,241,0.2)', padding: '0.65rem 1rem',
-              fontSize: '0.72rem', color: '#94a3b8', display: 'flex', gap: '0.4rem 1.2rem', flexWrap: 'wrap' }}>
+          <div style={{ background: 'rgba(79,70,229,0.06)', borderRadius: '8px',
+              border: '1px solid rgba(79,70,229,0.2)', padding: '0.65rem 1rem',
+              fontSize: '0.72rem', color: '#334155', display: 'flex', gap: '0.4rem 1.2rem', flexWrap: 'wrap' }}>
             <span>📉 낙폭과대(25)</span><span>🔄 펀더멘털변화(25)</span><span>💎 저평가(20)</span>
             <span>⚡ 촉매(15)</span><span>🏦 수급반전(10)</span><span>🏭 섹터(5)</span>
-            <span style={{marginLeft:'auto', color:'#64748b', fontSize:'0.65rem'}}>데이터기반재설계 | 임계값: 55점 이상</span>
+            <span style={{marginLeft:'auto', color:'#1e293b', fontSize:'0.65rem'}}>데이터기반재설계 | 임계값: 55점 이상</span>
           </div>
 
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>⏳ 로딩 중...</div>
+            <div style={{ textAlign: 'center', padding: '2rem', color: '#334155' }}>⏳ 로딩 중...</div>
           ) : candidates.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>
+            <div style={{ textAlign: 'center', padding: '2.5rem', color: '#334155' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🔍</div>
               <div>발굴 결과 없음 — "지금 발굴" 버튼을 눌러 실행하세요</div>
             </div>
           ) : (
-            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px',
-                border: '1px solid rgba(255,255,255,0.07)', overflow: 'auto' }}>
+            <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '10px',
+                border: '1px solid rgba(15,23,42,0.2)', overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.05)' }}>
+                  <tr style={{ background: 'rgba(15,23,42,0.05)' }}>
                     {['#', '종목', '시총', '점수', '매출↑', 'OP↑', 'OP%', 'PBR', 'PER', '선정 이유', 'AI'].map(h => (
                       <th key={h} style={{ padding: '0.5rem 0.55rem', textAlign: 'left', whiteSpace: 'nowrap',
-                          color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.08)', fontWeight: 600 }}>
+                          color: '#334155', borderBottom: '1px solid rgba(15,23,42,0.2)', fontWeight: 600 }}>
                         {h}
                       </th>
                     ))}
@@ -2249,27 +2256,27 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                     const mc = s.market_cap;
                     const mcLabel = mc == null ? '-' : mc >= 10000 ? (mc/10000).toFixed(1)+'조' : mc+'억';
                     const displayScore = s.risk_adjusted_score ?? s.total_score;
-                    const scoreColor = displayScore >= 75 ? '#34d399' : displayScore >= 65 ? '#fbbf24' : '#a5b4fc';
+                    const scoreColor = displayScore >= 75 ? '#047857' : displayScore >= 65 ? '#b45309' : '#4f46e5';
                     const revG = s.revenue_growth != null ? `${s.revenue_growth > 0 ? '+' : ''}${s.revenue_growth.toFixed(0)}%` : '-';
                     const opG  = s.op_growth    != null ? `${s.op_growth > 0 ? '+' : ''}${s.op_growth.toFixed(0)}%` : '-';
                     const opM  = s.op_margin    != null ? `${s.op_margin.toFixed(1)}%` : '-';
                     const reasons = (s.reasons || []).slice(0, 3).join(' · ');
                     return (
-                      <tr key={s.id || s.stock_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)',
-                          background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                        <td style={{ padding: '0.4rem 0.55rem', color: '#64748b', width: '2rem' }}>{i + 1}</td>
+                      <tr key={s.id || s.stock_code} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)',
+                          background: i % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.015)' }}>
+                        <td style={{ padding: '0.4rem 0.55rem', color: '#1e293b', width: '2rem' }}>{i + 1}</td>
                         <td style={{ padding: '0.4rem 0.55rem', minWidth: '120px' }}>
-                          <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{s.stock_name}</div>
-                          <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{s.stock_code}</div>
+                          <div style={{ fontWeight: 600, color: '#0f172a' }}>{s.stock_name}</div>
+                          <div style={{ fontSize: '0.65rem', color: '#1e293b' }}>{s.stock_code}</div>
                         </td>
-                        <td style={{ padding: '0.4rem 0.55rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>{mcLabel}</td>
+                        <td style={{ padding: '0.4rem 0.55rem', color: '#334155', whiteSpace: 'nowrap' }}>{mcLabel}</td>
                         <td style={{ padding: '0.4rem 0.55rem' }}>
                           <span style={{ background: `${scoreColor}22`, borderRadius: '4px',
                               padding: '0.15rem 0.45rem', color: scoreColor, fontWeight: 700, fontSize: '0.72rem' }}>
                             {displayScore}
                           </span>
                           {s.risk_adjusted_score != null && s.risk_adjusted_score !== s.total_score && (
-                            <div style={{ marginTop: '0.15rem', color: '#94a3b8', fontSize: '0.64rem' }}>
+                            <div style={{ marginTop: '0.15rem', color: '#334155', fontSize: '0.64rem' }}>
                               원 {s.total_score}
                             </div>
                           )}
@@ -2277,31 +2284,31 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                             <div style={{
                               marginTop: '0.18rem', display: 'inline-block', borderRadius: '999px',
                               padding: '0.1rem 0.35rem', fontSize: '0.62rem', fontWeight: 700,
-                              color: s.price_risk === 'AVOID' ? '#fecaca' : '#fde68a',
-                              background: s.price_risk === 'AVOID' ? 'rgba(239,68,68,0.16)' : 'rgba(245,158,11,0.16)',
-                              border: `1px solid ${s.price_risk === 'AVOID' ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.35)'}`
+                              color: s.price_risk === 'AVOID' ? '#b91c1c' : '#a16207',
+                              background: s.price_risk === 'AVOID' ? 'rgba(220,38,38,0.16)' : 'rgba(217,119,6,0.16)',
+                              border: `1px solid ${s.price_risk === 'AVOID' ? 'rgba(220,38,38,0.35)' : 'rgba(217,119,6,0.35)'}`
                             }}>
                               {s.price_risk_label}{s.price_return_3m != null ? ` ${s.price_return_3m}%` : ''}
                             </div>
                           )}
                         </td>
                         <td style={{ padding: '0.4rem 0.55rem',
-                            color: s.revenue_growth > 0 ? '#34d399' : s.revenue_growth < 0 ? '#f87171' : '#94a3b8' }}>
+                            color: s.revenue_growth > 0 ? '#047857' : s.revenue_growth < 0 ? '#dc2626' : '#334155' }}>
                           {revG}
                         </td>
                         <td style={{ padding: '0.4rem 0.55rem',
-                            color: s.op_growth > 0 ? '#34d399' : s.op_growth < 0 ? '#f87171' : '#94a3b8' }}>
+                            color: s.op_growth > 0 ? '#047857' : s.op_growth < 0 ? '#dc2626' : '#334155' }}>
                           {opG}
                         </td>
-                        <td style={{ padding: '0.4rem 0.55rem', color: '#94a3b8' }}>{opM}</td>
+                        <td style={{ padding: '0.4rem 0.55rem', color: '#334155' }}>{opM}</td>
                         <td style={{ padding: '0.4rem 0.55rem',
-                            color: (s.pbr||99) <= 1 ? '#34d399' : '#94a3b8' }}>
+                            color: (s.pbr||99) <= 1 ? '#047857' : '#334155' }}>
                           {s.pbr?.toFixed(2) ?? '-'}
                         </td>
-                        <td style={{ padding: '0.4rem 0.55rem', color: '#94a3b8' }}>
+                        <td style={{ padding: '0.4rem 0.55rem', color: '#334155' }}>
                           {s.per?.toFixed(1) ?? '-'}
                         </td>
-                        <td style={{ padding: '0.4rem 0.55rem', color: '#64748b', fontSize: '0.68rem',
+                        <td style={{ padding: '0.4rem 0.55rem', color: '#1e293b', fontSize: '0.68rem',
                             maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {reasons || '-'}
                         </td>
@@ -2309,12 +2316,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                           <div style={{ display: 'flex', gap: '0.3rem' }}>
                             <button onClick={() => loadAiAnalysis(s.stock_code, s.stock_name)}
                               style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                                background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', fontSize: '0.7rem' }}>
+                                background: 'rgba(79,70,229,0.2)', color: '#4f46e5', fontSize: '0.7rem' }}>
                               🔮 분석
                             </button>
                             <button onClick={() => loadQuantContext(s.stock_code)}
                               style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                                background: 'rgba(45,212,191,0.15)', color: '#2dd4bf', fontSize: '0.7rem' }}>
+                                background: 'rgba(37,99,235,0.15)', color: '#2563eb', fontSize: '0.7rem' }}>
                               📊 업황
                             </button>
                           </div>
@@ -2329,39 +2336,39 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
           {/* 퀀트 업황 맥락 패널 */}
           {quantCtxCode && (
-            <div style={{ background: 'rgba(45,212,191,0.06)', border: '1px solid rgba(45,212,191,0.3)',
+            <div style={{ background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.3)',
                 borderRadius: '14px', padding: '1.2rem 1.4rem', marginTop: '0.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-                <div style={{ fontWeight: 700, color: '#2dd4bf', fontSize: '0.95rem' }}>
-                  📊 업황 맥락 — {quantCtx?.stock_name || quantCtxCode} <span style={{ fontSize: '0.78rem', color: '#64748b' }}>({quantCtx?.sector || ''})</span>
+                <div style={{ fontWeight: 700, color: '#2563eb', fontSize: '0.95rem' }}>
+                  📊 업황 맥락 — {quantCtx?.stock_name || quantCtxCode} <span style={{ fontSize: '0.78rem', color: '#1e293b' }}>({quantCtx?.sector || ''})</span>
                 </div>
                 <button onClick={() => { setQuantCtxCode(null); setQuantCtx(null); }}
-                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+                  style={{ background: 'none', border: 'none', color: '#1e293b', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
               </div>
               {quantCtxLoading ? (
-                <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>업황 데이터 로딩 중...</div>
+                <div style={{ color: '#334155', fontSize: '0.85rem' }}>업황 데이터 로딩 중...</div>
               ) : quantCtx ? (
                 <>
                   {/* 요약 배너 */}
                   <div style={{ display: 'flex', gap: '0.7rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                     {quantCtx.summary?.rising_indicators?.length > 0 && (
-                      <div style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)',
+                      <div style={{ background: 'rgba(5,150,105,0.12)', border: '1px solid rgba(5,150,105,0.3)',
                           borderRadius: '8px', padding: '0.5rem 0.8rem', fontSize: '0.8rem' }}>
-                        <span style={{ color: '#34d399', fontWeight: 700 }}>↑ 상승 지표: </span>
-                        <span style={{ color: '#e2e8f0' }}>{quantCtx.summary.rising_indicators.join(', ')}</span>
+                        <span style={{ color: '#047857', fontWeight: 700 }}>↑ 상승 지표: </span>
+                        <span style={{ color: '#1e293b' }}>{quantCtx.summary.rising_indicators.join(', ')}</span>
                       </div>
                     )}
                     {quantCtx.summary?.falling_indicators?.length > 0 && (
-                      <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
+                      <div style={{ background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.25)',
                           borderRadius: '8px', padding: '0.5rem 0.8rem', fontSize: '0.8rem' }}>
-                        <span style={{ color: '#f87171', fontWeight: 700 }}>↓ 하락 지표: </span>
-                        <span style={{ color: '#e2e8f0' }}>{quantCtx.summary.falling_indicators.join(', ')}</span>
+                        <span style={{ color: '#dc2626', fontWeight: 700 }}>↓ 하락 지표: </span>
+                        <span style={{ color: '#1e293b' }}>{quantCtx.summary.falling_indicators.join(', ')}</span>
                       </div>
                     )}
-                    <div style={{ background: quantCtx.summary?.sector_tailwind ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.1)',
-                        border: `1px solid ${quantCtx.summary?.sector_tailwind ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.3)'}`,
+                    <div style={{ background: quantCtx.summary?.sector_tailwind ? 'rgba(5,150,105,0.15)' : 'rgba(220,38,38,0.1)',
+                        border: `1px solid ${quantCtx.summary?.sector_tailwind ? 'rgba(5,150,105,0.4)' : 'rgba(220,38,38,0.3)'}`,
                         borderRadius: '8px', padding: '0.5rem 0.8rem', fontSize: '0.8rem', fontWeight: 700,
-                        color: quantCtx.summary?.sector_tailwind ? '#34d399' : '#f87171' }}>
+                        color: quantCtx.summary?.sector_tailwind ? '#047857' : '#dc2626' }}>
                       {quantCtx.summary?.sector_tailwind ? '🟢 업황 순풍' : '🔴 업황 역풍'}
                     </div>
                   </div>
@@ -2369,24 +2376,24 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   {/* 지표 그리드 */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.6rem' }}>
                     {quantCtx.indicators?.map(ind => {
-                      const trendColor = ind.trend === '급상승' ? '#34d399' : ind.trend === '상승' ? '#6ee7b7'
-                        : ind.trend === '급하락' ? '#f87171' : ind.trend === '하락' ? '#fca5a5' : '#94a3b8';
+                      const trendColor = ind.trend === '급상승' ? '#047857' : ind.trend === '상승' ? '#047857'
+                        : ind.trend === '급하락' ? '#dc2626' : ind.trend === '하락' ? '#b91c1c' : '#334155';
                       const trendIcon = ind.trend === '급상승' ? '⬆⬆' : ind.trend === '상승' ? '↑'
                         : ind.trend === '급하락' ? '⬇⬇' : ind.trend === '하락' ? '↓' : '→';
                       return (
                         <div key={ind.key} style={{ background: 'var(--surface)', border: '1px solid var(--border)',
                             borderRadius: '10px', padding: '0.7rem 0.9rem' }}>
-                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '0.2rem' }}>{ind.label}</div>
+                          <div style={{ fontSize: '0.72rem', color: '#334155', marginBottom: '0.2rem' }}>{ind.label}</div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                            <span style={{ fontWeight: 700, color: '#e2e8f0', fontSize: '0.88rem' }}>
+                            <span style={{ fontWeight: 700, color: '#1e293b', fontSize: '0.88rem' }}>
                               {ind.recent_value != null ? ind.recent_value.toLocaleString(undefined, {maximumFractionDigits: 2}) : '-'}
-                              <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: '0.2rem' }}>{ind.unit}</span>
+                              <span style={{ fontSize: '0.65rem', color: '#1e293b', marginLeft: '0.2rem' }}>{ind.unit}</span>
                             </span>
                             <span style={{ color: trendColor, fontWeight: 700, fontSize: '0.78rem' }}>
                               {trendIcon} {ind.yoy_pct != null ? `${ind.yoy_pct > 0 ? '+' : ''}${ind.yoy_pct}%` : ind.trend}
                             </span>
                           </div>
-                          <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '0.15rem' }}>
+                          <div style={{ fontSize: '0.65rem', color: '#1e293b', marginTop: '0.15rem' }}>
                             {ind.recent_period} {ind.qoq_pct != null ? `• 3개월전比 ${ind.qoq_pct > 0 ? '+' : ''}${ind.qoq_pct}%` : ''}
                           </div>
                         </div>
@@ -2395,7 +2402,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   </div>
                 </>
               ) : (
-                <div style={{ color: '#64748b', fontSize: '0.85rem' }}>데이터 없음</div>
+                <div style={{ color: '#1e293b', fontSize: '0.85rem' }}>데이터 없음</div>
               )}
             </div>
           )}
@@ -2405,12 +2412,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {/* ── BQ 복합신호 탭 ──────────────────────────────────────────── */}
       {activeTab === 'bq_week2' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ background: 'linear-gradient(135deg,rgba(99,102,241,0.12),rgba(45,212,191,0.08))',
-            borderRadius: '12px', padding: '1rem 1.2rem', border: '1px solid rgba(99,102,241,0.2)' }}>
-            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#a5b4fc', marginBottom: '0.3rem' }}>
+          <div style={{ background: 'linear-gradient(135deg,rgba(79,70,229,0.12),rgba(37,99,235,0.08))',
+            borderRadius: '12px', padding: '1rem 1.2rem', border: '1px solid rgba(79,70,229,0.2)' }}>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#4f46e5', marginBottom: '0.3rem' }}>
               🔮 BigQuery 복합신호 (Week2)
             </div>
-            <div style={{ fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.6 }}>
+            <div style={{ fontSize: '0.8rem', color: '#334155', lineHeight: 1.6 }}>
               텐버거 스코어 + 3배주 패턴(triple) + 수급 추세(supply)를 결합한 복합 점수 순위입니다.
               BigQuery 실시간 뷰 기반으로 조회됩니다.
             </div>
@@ -2421,33 +2428,33 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             {[['stocks', '종목 순위'], ['sectors', '섹터 집계']].map(([k, lbl]) => (
               <button key={k} onClick={() => setBqView(k)}
                 style={{ padding: '0.4rem 1rem', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.82rem',
-                  background: bqView === k ? 'rgba(99,102,241,0.7)' : 'rgba(255,255,255,0.06)',
-                  color: bqView === k ? '#fff' : '#94a3b8' }}>
+                  background: bqView === k ? 'rgba(79,70,229,0.7)' : 'rgba(15,23,42,0.06)',
+                  color: bqView === k ? '#fff' : '#334155' }}>
                 {lbl}
               </button>
             ))}
             <button onClick={loadBqComposite} disabled={bqLoading}
               style={{ marginLeft: 'auto', padding: '0.4rem 1rem', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                background: 'rgba(45,212,191,0.15)', color: '#5eead4', fontSize: '0.82rem' }}>
+                background: 'rgba(37,99,235,0.15)', color: '#0d9488', fontSize: '0.82rem' }}>
               {bqLoading ? '로딩중…' : '새로고침'}
             </button>
           </div>
 
           {bqLoading && (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>BigQuery 조회 중…</div>
+            <div style={{ textAlign: 'center', padding: '2rem', color: '#1e293b' }}>BigQuery 조회 중…</div>
           )}
 
           {/* 종목 순위 */}
           {!bqLoading && bqView === 'stocks' && (
             <div style={{ overflowX: 'auto' }}>
               {bqComposite.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#1e293b' }}>
                   데이터 없음 — BQ 연결을 확인하거나 새로고침하세요.
                 </div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#64748b' }}>
+                    <tr style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', color: '#1e293b' }}>
                       {['#', '종목코드', '종목명', '섹터', '시장', '시총(억)', '텐버거', '3배주', '수급', '복합점수', '신호'].map(h => (
                         <th key={h} style={{ padding: '0.5rem 0.6rem', textAlign: h === '복합점수' || h === '#' ? 'center' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
@@ -2456,22 +2463,22 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   <tbody>
                     {bqComposite.map((row, i) => {
                       const cs = row.composite_score ?? 0;
-                      const color = cs >= 70 ? '#34d399' : cs >= 50 ? '#fbbf24' : '#94a3b8';
+                      const color = cs >= 70 ? '#047857' : cs >= 50 ? '#b45309' : '#334155';
                       return (
-                        <tr key={row.stock_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)',
-                          background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
-                          <td style={{ padding: '0.45rem 0.6rem', textAlign: 'center', color: '#64748b' }}>{i + 1}</td>
-                          <td style={{ padding: '0.45rem 0.6rem', color: '#93c5fd', fontFamily: 'monospace' }}>{row.stock_code}</td>
-                          <td style={{ padding: '0.45rem 0.6rem', color: '#e2e8f0', fontWeight: 600 }}>{row.stock_name}</td>
-                          <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8', fontSize: '0.78rem' }}>{row.sector_large}</td>
-                          <td style={{ padding: '0.45rem 0.6rem', color: '#94a3b8' }}>{row.market}</td>
-                          <td style={{ padding: '0.45rem 0.6rem', color: '#cbd5e1', textAlign: 'right' }}>
+                        <tr key={row.stock_code} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)',
+                          background: i % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.02)' }}>
+                          <td style={{ padding: '0.45rem 0.6rem', textAlign: 'center', color: '#1e293b' }}>{i + 1}</td>
+                          <td style={{ padding: '0.45rem 0.6rem', color: '#2563eb', fontFamily: 'monospace' }}>{row.stock_code}</td>
+                          <td style={{ padding: '0.45rem 0.6rem', color: '#1e293b', fontWeight: 600 }}>{row.stock_name}</td>
+                          <td style={{ padding: '0.45rem 0.6rem', color: '#334155', fontSize: '0.78rem' }}>{row.sector_large}</td>
+                          <td style={{ padding: '0.45rem 0.6rem', color: '#334155' }}>{row.market}</td>
+                          <td style={{ padding: '0.45rem 0.6rem', color: '#1e293b', textAlign: 'right' }}>
                             {row.market_cap ? Number(row.market_cap).toLocaleString() : '-'}
                           </td>
-                          <td style={{ padding: '0.45rem 0.6rem', textAlign: 'right', color: '#a5b4fc' }}>{row.tenbagger_score ?? '-'}</td>
-                          <td style={{ padding: '0.45rem 0.6rem', textAlign: 'right', color: '#86efac' }}>{row.triple_score ?? '-'}</td>
+                          <td style={{ padding: '0.45rem 0.6rem', textAlign: 'right', color: '#4f46e5' }}>{row.tenbagger_score ?? '-'}</td>
+                          <td style={{ padding: '0.45rem 0.6rem', textAlign: 'right', color: '#15803d' }}>{row.triple_score ?? '-'}</td>
                           <td style={{ padding: '0.45rem 0.6rem', textAlign: 'right' }}>
-                            <span style={{ color: (row.supply_net_10d ?? 0) > 0 ? '#34d399' : '#f87171', fontSize: '0.78rem' }}>
+                            <span style={{ color: (row.supply_net_10d ?? 0) > 0 ? '#047857' : '#dc2626', fontSize: '0.78rem' }}>
                               {row.supply_label ?? '-'}
                             </span>
                           </td>
@@ -2481,7 +2488,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                               {cs}
                             </span>
                           </td>
-                          <td style={{ padding: '0.45rem 0.6rem', fontSize: '0.75rem', color: '#94a3b8', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '0.45rem 0.6rem', fontSize: '0.75rem', color: '#334155', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {row.reasons ?? ''}
                           </td>
                         </tr>
@@ -2497,21 +2504,21 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           {!bqLoading && bqView === 'sectors' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: '0.75rem' }}>
               {bqSectors.length === 0 ? (
-                <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '2rem', color: '#1e293b' }}>
                   섹터 데이터 없음
                 </div>
               ) : bqSectors.map(s => {
                 const avg = s.avg_composite ?? 0;
-                const color = avg >= 60 ? '#34d399' : avg >= 45 ? '#fbbf24' : '#94a3b8';
+                const color = avg >= 60 ? '#047857' : avg >= 45 ? '#b45309' : '#334155';
                 return (
-                  <div key={s.sector_large} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px',
+                  <div key={s.sector_large} style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '10px',
                     padding: '0.9rem 1rem', border: `1px solid rgba(${avg >= 60 ? '52,211,153' : '255,255,255'},0.1)` }}>
-                    <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: '0.4rem', fontSize: '0.88rem' }}>{s.sector_large}</div>
+                    <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '0.4rem', fontSize: '0.88rem' }}>{s.sector_large}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.78rem', color: '#64748b' }}>{s.stock_count}종목</span>
+                      <span style={{ fontSize: '0.78rem', color: '#1e293b' }}>{s.stock_count}종목</span>
                       <span style={{ fontWeight: 700, color, fontSize: '1rem' }}>{avg.toFixed(1)}점</span>
                     </div>
-                    <div style={{ marginTop: '0.4rem', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.08)' }}>
+                    <div style={{ marginTop: '0.4rem', height: '4px', borderRadius: '2px', background: 'rgba(15,23,42,0.08)' }}>
                       <div style={{ height: '100%', borderRadius: '2px', background: color, width: `${Math.min(100, avg)}%` }} />
                     </div>
                   </div>
@@ -2520,7 +2527,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             </div>
           )}
 
-          <div style={{ fontSize: '0.75rem', color: '#475569', textAlign: 'right' }}>
+          <div style={{ fontSize: '0.75rem', color: '#1e293b', textAlign: 'right' }}>
             복합점수 = 텐버거(60%) + 3배주패턴(25%) + 수급신호(15%)
           </div>
         </div>
@@ -2533,45 +2540,45 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           {/* 설명 카드 */}
           <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)',
             borderRadius: '12px', padding: '1rem 1.2rem' }}>
-            <div style={{ fontWeight: 700, color: '#fbbf24', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+            <div style={{ fontWeight: 700, color: '#b45309', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
               📉 낙폭과대 회복탄력주 발굴 — 시장 급락기 역발상 전략
             </div>
-            <div style={{ color: '#94a3b8', fontSize: '0.78rem', lineHeight: 1.6 }}>
+            <div style={{ color: '#334155', fontSize: '0.78rem', lineHeight: 1.6 }}>
               실적은 우량한데 시장 전반 하락으로 과도하게 빠진 종목을 5축으로 평가합니다.<br/>
-              <span style={{ color: '#fbbf24' }}>하락 강도(10)</span> +{' '}
-              <span style={{ color: '#34d399' }}>실적 우량(30)</span> +{' '}
-              <span style={{ color: '#60a5fa' }}>저평가(20)</span> +{' '}
-              <span style={{ color: '#f472b6' }}>수급 반전(20)</span> +{' '}
-              <span style={{ color: '#a78bfa' }}>기술적 지지(20)</span>
+              <span style={{ color: '#b45309' }}>하락 강도(10)</span> +{' '}
+              <span style={{ color: '#047857' }}>실적 우량(30)</span> +{' '}
+              <span style={{ color: '#2563eb' }}>저평가(20)</span> +{' '}
+              <span style={{ color: '#db2777' }}>수급 반전(20)</span> +{' '}
+              <span style={{ color: '#7c3aed' }}>기술적 지지(20)</span>
               {' '}— 총 100점 만점, 30점 이상 종목 표시
             </div>
           </div>
 
           {/* 필터 컨트롤 */}
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap',
-            background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '0.8rem 1rem',
-            border: '1px solid rgba(255,255,255,0.07)' }}>
+            background: 'rgba(15,23,42,0.03)', borderRadius: '10px', padding: '0.8rem 1rem',
+            border: '1px solid rgba(15,23,42,0.2)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>기준 거래일</span>
+              <span style={{ color: '#334155', fontSize: '0.8rem' }}>기준 거래일</span>
               {[5, 10, 15, 20].map(d => (
                 <button key={d} onClick={() => { setRecovDays(d); loadRecov(d, recovDrop); }}
                   style={{ padding: '3px 10px', borderRadius: '6px', border: '1px solid',
-                    borderColor: recovDays === d ? '#6366f1' : 'rgba(255,255,255,0.1)',
-                    background: recovDays === d ? 'rgba(99,102,241,0.2)' : 'transparent',
-                    color: recovDays === d ? '#a5b4fc' : '#94a3b8',
+                    borderColor: recovDays === d ? '#4f46e5' : 'rgba(15,23,42,0.2)',
+                    background: recovDays === d ? 'rgba(79,70,229,0.2)' : 'transparent',
+                    color: recovDays === d ? '#4f46e5' : '#334155',
                     cursor: 'pointer', fontSize: '0.78rem' }}>
                   {d}일
                 </button>
               ))}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>최소 하락률</span>
+              <span style={{ color: '#334155', fontSize: '0.8rem' }}>최소 하락률</span>
               {[5, 8, 12, 18].map(d => (
                 <button key={d} onClick={() => { setRecovDrop(d); loadRecov(recovDays, d); }}
                   style={{ padding: '3px 10px', borderRadius: '6px', border: '1px solid',
-                    borderColor: recovDrop === d ? '#f59e0b' : 'rgba(255,255,255,0.1)',
-                    background: recovDrop === d ? 'rgba(245,158,11,0.2)' : 'transparent',
-                    color: recovDrop === d ? '#fbbf24' : '#94a3b8',
+                    borderColor: recovDrop === d ? '#b45309' : 'rgba(15,23,42,0.2)',
+                    background: recovDrop === d ? 'rgba(217,119,6,0.2)' : 'transparent',
+                    color: recovDrop === d ? '#b45309' : '#334155',
                     cursor: 'pointer', fontSize: '0.78rem' }}>
                   {d}%
                 </button>
@@ -2580,61 +2587,61 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             <button onClick={() => loadRecov(recovDays, recovDrop)}
               disabled={recovLoading}
               style={{ marginLeft: 'auto', padding: '5px 14px', borderRadius: '8px', cursor: 'pointer',
-                background: recovLoading ? 'rgba(100,116,139,0.2)' : 'rgba(99,102,241,0.2)',
-                border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc', fontSize: '0.8rem' }}>
+                background: recovLoading ? 'rgba(100,116,139,0.2)' : 'rgba(79,70,229,0.2)',
+                border: '1px solid rgba(79,70,229,0.4)', color: '#4f46e5', fontSize: '0.8rem' }}>
               {recovLoading ? '분석 중...' : '🔄 재조회'}
             </button>
           </div>
 
           {/* 메타 정보 */}
           {recovMeta && (
-            <div style={{ display: 'flex', gap: '1.5rem', color: '#94a3b8', fontSize: '0.78rem',
+            <div style={{ display: 'flex', gap: '1.5rem', color: '#334155', fontSize: '0.78rem',
               padding: '0.4rem 0.2rem' }}>
-              <span>기준: <strong style={{ color: '#e2e8f0' }}>{recovMeta.start_date}</strong> → <strong style={{ color: '#e2e8f0' }}>{recovMeta.end_date}</strong></span>
-              <span>발굴: <strong style={{ color: '#fbbf24' }}>{recovMeta.total}종목</strong></span>
-              <span>평균 점수: <strong style={{ color: '#a5b4fc' }}>{recovMeta.avg_score}점</strong></span>
+              <span>기준: <strong style={{ color: '#1e293b' }}>{recovMeta.start_date}</strong> → <strong style={{ color: '#1e293b' }}>{recovMeta.end_date}</strong></span>
+              <span>발굴: <strong style={{ color: '#b45309' }}>{recovMeta.total}종목</strong></span>
+              <span>평균 점수: <strong style={{ color: '#4f46e5' }}>{recovMeta.avg_score}점</strong></span>
             </div>
           )}
 
           {/* 결과 테이블 */}
           {recovLoading ? (
-            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem' }}>분석 중...</div>
+            <div style={{ textAlign: 'center', color: '#334155', padding: '3rem' }}>분석 중...</div>
           ) : recov.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem' }}>
+            <div style={{ textAlign: 'center', color: '#334155', padding: '3rem' }}>
               조건에 맞는 종목이 없습니다. 하락률 기준을 낮춰보세요.
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
                 <thead>
-                  <tr style={{ color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  <tr style={{ color: '#334155', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                     <th style={{ textAlign: 'left', padding: '6px 8px', whiteSpace: 'nowrap' }}>#</th>
                     <th style={{ textAlign: 'left', padding: '6px 8px', whiteSpace: 'nowrap' }}>종목</th>
                     <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap' }}>점수</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#fca5a5' }}>하락률</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#b91c1c' }}>하락률</th>
                     <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap' }}>시총(억)</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#34d399' }}>매출↑</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#34d399' }}>OP↑</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#047857' }}>매출↑</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#047857' }}>OP↑</th>
                     <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap' }}>OPM%</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#60a5fa' }}>PBR</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#60a5fa' }}>PER</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#f472b6' }}>기관↑억</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#f472b6' }}>외국인↑억</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#a78bfa' }}>저점위%</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#2563eb' }}>PBR</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#2563eb' }}>PER</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#db2777' }}>기관↑억</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#db2777' }}>외국인↑억</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', whiteSpace: 'nowrap', color: '#7c3aed' }}>저점위%</th>
                     <th style={{ textAlign: 'left', padding: '6px 8px', minWidth: '180px' }}>선정 사유</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recov.map((r, i) => {
-                    const scoreColor = r.score >= 70 ? '#4ade80' : r.score >= 50 ? '#facc15' : '#94a3b8';
-                    const dropColor  = r.pct_change <= -20 ? '#f87171' : r.pct_change <= -12 ? '#fca5a5' : '#fcd34d';
+                    const scoreColor = r.score >= 70 ? '#15803d' : r.score >= 50 ? '#a16207' : '#334155';
+                    const dropColor  = r.pct_change <= -20 ? '#dc2626' : r.pct_change <= -12 ? '#b91c1c' : '#b45309';
                     return (
-                      <tr key={r.stock_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)',
-                        background: i % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
-                        <td style={{ padding: '5px 8px', color: '#64748b' }}>{i + 1}</td>
+                      <tr key={r.stock_code} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)',
+                        background: i % 2 === 0 ? 'rgba(15,23,42,0.01)' : 'transparent' }}>
+                        <td style={{ padding: '5px 8px', color: '#1e293b' }}>{i + 1}</td>
                         <td style={{ padding: '5px 8px' }}>
-                          <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{r.stock_name}</div>
-                          <div style={{ color: '#64748b', fontSize: '0.68rem' }}>{r.stock_code} · {r.market}</div>
+                          <div style={{ fontWeight: 600, color: '#1e293b' }}>{r.stock_name}</div>
+                          <div style={{ color: '#1e293b', fontSize: '0.68rem' }}>{r.stock_code} · {r.market}</div>
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, color: scoreColor }}>
                           {r.score}
@@ -2642,42 +2649,42 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         <td style={{ padding: '5px 8px', textAlign: 'right', color: dropColor, fontWeight: 600 }}>
                           {r.pct_change?.toFixed(1)}%
                         </td>
-                        <td style={{ padding: '5px 8px', textAlign: 'right', color: '#94a3b8' }}>
+                        <td style={{ padding: '5px 8px', textAlign: 'right', color: '#334155' }}>
                           {r.market_cap ? r.market_cap.toLocaleString() : '-'}
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right',
-                          color: r.rev_growth > 0 ? '#34d399' : '#94a3b8' }}>
+                          color: r.rev_growth > 0 ? '#047857' : '#334155' }}>
                           {r.rev_growth != null ? `+${r.rev_growth}%` : '-'}
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right',
-                          color: r.op_growth > 0 ? '#34d399' : '#f87171' }}>
+                          color: r.op_growth > 0 ? '#047857' : '#dc2626' }}>
                           {r.op_growth != null ? `${r.op_growth > 0 ? '+' : ''}${r.op_growth}%` : '-'}
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right',
-                          color: (r.opm || 0) >= 10 ? '#4ade80' : (r.opm || 0) >= 5 ? '#94a3b8' : '#f87171' }}>
+                          color: (r.opm || 0) >= 10 ? '#15803d' : (r.opm || 0) >= 5 ? '#334155' : '#dc2626' }}>
                           {r.opm != null ? `${r.opm}%` : '-'}
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right',
-                          color: (r.pbr || 99) <= 1 ? '#60a5fa' : '#94a3b8' }}>
+                          color: (r.pbr || 99) <= 1 ? '#2563eb' : '#334155' }}>
                           {r.pbr ?? '-'}
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right',
-                          color: (r.per || 99) <= 12 ? '#60a5fa' : '#94a3b8' }}>
+                          color: (r.per || 99) <= 12 ? '#2563eb' : '#334155' }}>
                           {r.per ?? '-'}
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right',
-                          color: (r['inst_億'] || 0) > 0 ? '#f472b6' : '#64748b' }}>
+                          color: (r['inst_億'] || 0) > 0 ? '#db2777' : '#1e293b' }}>
                           {r['inst_億'] != null ? r['inst_億'].toFixed(1) : '-'}
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right',
-                          color: (r['frn_億'] || 0) > 0 ? '#f472b6' : '#64748b' }}>
+                          color: (r['frn_億'] || 0) > 0 ? '#db2777' : '#1e293b' }}>
                           {r['frn_億'] != null ? r['frn_億'].toFixed(1) : '-'}
                         </td>
                         <td style={{ padding: '5px 8px', textAlign: 'right',
-                          color: (r.pct_above_low || 999) <= 10 ? '#a78bfa' : '#94a3b8' }}>
+                          color: (r.pct_above_low || 999) <= 10 ? '#7c3aed' : '#334155' }}>
                           {r.pct_above_low != null ? `+${r.pct_above_low}%` : '-'}
                         </td>
-                        <td style={{ padding: '5px 8px', color: '#94a3b8', fontSize: '0.7rem' }}>
+                        <td style={{ padding: '5px 8px', color: '#334155', fontSize: '0.7rem' }}>
                           {(r.reasons || []).join(' · ')}
                         </td>
                       </tr>
@@ -2689,8 +2696,8 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           )}
 
           {/* 투자 주의 문구 */}
-          <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)',
-            borderRadius: '8px', padding: '0.7rem 1rem', color: '#fca5a5', fontSize: '0.73rem', lineHeight: 1.6 }}>
+          <div style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.2)',
+            borderRadius: '8px', padding: '0.7rem 1rem', color: '#b91c1c', fontSize: '0.73rem', lineHeight: 1.6 }}>
             ⚠️ 본 화면은 투자 참고 자료이며 투자 권유가 아닙니다. 낙폭과대 종목은 추가 하락 위험이 있으므로
             반드시 직접 분석 후 투자 판단하십시오.
           </div>
@@ -2700,18 +2707,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {/* ── AI 심층 분석 패널 (슬라이드 오버레이) ─────────────────── */}
       {aiPanel && (
         <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(640px,100vw)',
-          background: 'rgba(15,23,42,0.97)', borderLeft: '1px solid rgba(99,102,241,0.3)',
+          background: 'rgba(255,255,255,0.97)', borderLeft: '1px solid rgba(79,70,229,0.3)',
           zIndex: 1000, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,0.5)' }}>
 
           {/* 패널 헤더 */}
-          <div style={{ padding: '1rem 1.2rem', borderBottom: '1px solid rgba(255,255,255,0.08)',
+          <div style={{ padding: '1rem 1.2rem', borderBottom: '1px solid rgba(15,23,42,0.2)',
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            background: 'linear-gradient(135deg,rgba(99,102,241,0.15),rgba(45,212,191,0.08))' }}>
+            background: 'linear-gradient(135deg,rgba(79,70,229,0.15),rgba(37,99,235,0.08))' }}>
             <div>
-              <div style={{ fontWeight: 700, color: '#a5b4fc', fontSize: '1rem' }}>
+              <div style={{ fontWeight: 700, color: '#4f46e5', fontSize: '1rem' }}>
                 🔮 텐버거 심층 분석
               </div>
-              <div style={{ color: '#94a3b8', fontSize: '0.82rem' }}>
+              <div style={{ color: '#334155', fontSize: '0.82rem' }}>
                 {aiPanel.stock_name} ({aiPanel.stock_code})
               </div>
             </div>
@@ -2719,12 +2726,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               <button onClick={() => loadAiAnalysis(aiPanel.stock_code, aiPanel.stock_name, true)}
                 disabled={aiLoading}
                 style={{ padding: '0.3rem 0.7rem', borderRadius: '5px', border: 'none', cursor: 'pointer',
-                  background: 'rgba(45,212,191,0.15)', color: '#5eead4', fontSize: '0.78rem' }}>
+                  background: 'rgba(37,99,235,0.15)', color: '#0d9488', fontSize: '0.78rem' }}>
                 🔄 재분석
               </button>
               <button onClick={() => { setAiPanel(null); setAiResult(null); }}
                 style={{ padding: '0.3rem 0.7rem', borderRadius: '5px', border: 'none', cursor: 'pointer',
-                  background: 'rgba(239,68,68,0.15)', color: '#fca5a5', fontSize: '0.78rem' }}>
+                  background: 'rgba(220,38,38,0.15)', color: '#b91c1c', fontSize: '0.78rem' }}>
                 ✕ 닫기
               </button>
             </div>
@@ -2733,21 +2740,21 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
           {/* 패널 본문 */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '1.2rem' }}>
             {aiLoading ? (
-              <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+              <div style={{ textAlign: 'center', padding: '3rem', color: '#1e293b' }}>
                 <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>🤖</div>
                 <div>OpenAI mini 분석 중…</div>
-                <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '0.5rem' }}>
+                <div style={{ fontSize: '0.78rem', color: '#1e293b', marginTop: '0.5rem' }}>
                   재무/수급/공시 데이터를 종합 분석하는 중입니다 (최대 90초)
                 </div>
               </div>
             ) : aiResult?.error ? (
-              <div style={{ color: '#f87171', padding: '1rem' }}>오류: {aiResult.error}</div>
+              <div style={{ color: '#dc2626', padding: '1rem' }}>오류: {aiResult.error}</div>
             ) : aiResult?.analysis ? (
               <div>
                 {aiResult.cached && (
-                  <div style={{ background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.2)',
+                  <div style={{ background: 'rgba(202,138,4,0.08)', border: '1px solid rgba(202,138,4,0.2)',
                     borderRadius: '6px', padding: '0.4rem 0.8rem', marginBottom: '0.8rem',
-                    color: '#fde68a', fontSize: '0.75rem' }}>
+                    color: '#a16207', fontSize: '0.75rem' }}>
                     📦 캐시된 분석 ({aiResult.generated_at?.slice(0,16)})
                     {aiResult.score && ` · 발굴 점수 ${aiResult.score}점`}
                   </div>
@@ -2758,12 +2765,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   const isH2 = line.startsWith('## ');
                   const isBullet = line.startsWith('- ') || line.startsWith('* ');
                   const isHr = line.trim() === '---';
-                  if (isHr) return <hr key={idx} style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.06)', margin: '0.8rem 0' }} />;
-                  if (isH2) return <div key={idx} style={{ fontWeight: 700, color: '#c4b5fd', fontSize: '0.95rem', margin: '1rem 0 0.4rem' }}>{line.slice(3)}</div>;
-                  if (isH3) return <div key={idx} style={{ fontWeight: 700, color: '#93c5fd', fontSize: '0.88rem', margin: '0.8rem 0 0.3rem', borderLeft: '3px solid rgba(99,102,241,0.5)', paddingLeft: '0.6rem' }}>{line.slice(4)}</div>;
-                  if (isBullet) return <div key={idx} style={{ color: '#cbd5e1', fontSize: '0.82rem', lineHeight: 1.7, paddingLeft: '1rem' }}>• {line.slice(2)}</div>;
+                  if (isHr) return <hr key={idx} style={{ border: 'none', borderTop: '1px solid rgba(15,23,42,0.2)', margin: '0.8rem 0' }} />;
+                  if (isH2) return <div key={idx} style={{ fontWeight: 700, color: '#6d28d9', fontSize: '0.95rem', margin: '1rem 0 0.4rem' }}>{line.slice(3)}</div>;
+                  if (isH3) return <div key={idx} style={{ fontWeight: 700, color: '#2563eb', fontSize: '0.88rem', margin: '0.8rem 0 0.3rem', borderLeft: '3px solid rgba(79,70,229,0.5)', paddingLeft: '0.6rem' }}>{line.slice(4)}</div>;
+                  if (isBullet) return <div key={idx} style={{ color: '#1e293b', fontSize: '0.82rem', lineHeight: 1.7, paddingLeft: '1rem' }}>• {line.slice(2)}</div>;
                   if (!line.trim()) return <div key={idx} style={{ height: '0.4rem' }} />;
-                  return <div key={idx} style={{ color: '#94a3b8', fontSize: '0.82rem', lineHeight: 1.7 }}>{line}</div>;
+                  return <div key={idx} style={{ color: '#334155', fontSize: '0.82rem', lineHeight: 1.7 }}>{line}</div>;
                 })}
               </div>
             ) : null}
@@ -2776,62 +2783,62 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {/* 필터 바 */}
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center',
-              background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '0.8rem 1rem',
-              border: '1px solid rgba(255,255,255,0.08)' }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>필터:</span>
+              background: 'rgba(15,23,42,0.03)', borderRadius: '10px', padding: '0.8rem 1rem',
+              border: '1px solid rgba(15,23,42,0.2)' }}>
+            <span style={{ color: '#334155', fontSize: '0.8rem', fontWeight: 600 }}>필터:</span>
             <input value={sv2Filters.q}
               onChange={e => setSv2Filters(f => ({...f, q: e.target.value}))}
               placeholder="종목명/코드" style={{ padding: '0.3rem 0.6rem', borderRadius: '6px',
-                background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)',
-                color: '#f1f5f9', fontSize: '0.82rem', width: '100px' }} />
+                background: 'rgba(15,23,42,0.07)', border: '1px solid rgba(15,23,42,0.2)',
+                color: '#0f172a', fontSize: '0.82rem', width: '100px' }} />
             <select value={sv2Filters.market}
               onChange={e => setSv2Filters(f => ({...f, market: e.target.value}))}
-              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#1e293b',
-                border: '1px solid rgba(255,255,255,0.15)', color: '#f1f5f9', fontSize: '0.82rem' }}>
+              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#f8fafc',
+                border: '1px solid rgba(15,23,42,0.2)', color: '#0f172a', fontSize: '0.82rem' }}>
               <option value="ALL">전체</option>
               <option value="유가증권">코스피</option>
               <option value="코스닥">코스닥</option>
             </select>
             <select value={sv2Filters.sector}
               onChange={e => setSv2Filters(f => ({...f, sector: e.target.value}))}
-              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#1e293b',
-                border: '1px solid rgba(255,255,255,0.15)', color: '#f1f5f9', fontSize: '0.82rem' }}>
+              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#f8fafc',
+                border: '1px solid rgba(15,23,42,0.2)', color: '#0f172a', fontSize: '0.82rem' }}>
               <option value="ALL">전체 섹터</option>
               {(sv2Meta?.sectors || []).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <label style={{ color: '#94a3b8', fontSize: '0.78rem' }}>
+            <label style={{ color: '#334155', fontSize: '0.78rem' }}>
               최소점수:
               <input type="number" value={sv2Filters.min_score} min={0} max={100}
                 onChange={e => setSv2Filters(f => ({...f, min_score: +e.target.value}))}
                 style={{ width: '45px', marginLeft: '0.3rem', padding: '0.2rem 0.4rem',
-                  borderRadius: '5px', background: 'rgba(255,255,255,0.07)',
-                  border: '1px solid rgba(255,255,255,0.15)', color: '#f1f5f9', fontSize: '0.82rem' }} />
+                  borderRadius: '5px', background: 'rgba(15,23,42,0.07)',
+                  border: '1px solid rgba(15,23,42,0.2)', color: '#0f172a', fontSize: '0.82rem' }} />
             </label>
             <select value={sv2Filters.sort}
               onChange={e => setSv2Filters(f => ({...f, sort: e.target.value}))}
-              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#1e293b',
-                border: '1px solid rgba(255,255,255,0.15)', color: '#f1f5f9', fontSize: '0.82rem' }}>
+              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#f8fafc',
+                border: '1px solid rgba(15,23,42,0.2)', color: '#0f172a', fontSize: '0.82rem' }}>
               <option value="total_score">점수순</option>
               <option value="market_cap">시총순</option>
               <option value="revenue_growth">매출성장순</option>
               <option value="pbr">PBR순</option>
             </select>
             <button onClick={() => { setSv2Page(1); loadScreenerV2(sv2Filters, 1); }}
-              style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', background: 'rgba(99,102,241,0.25)',
-                border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.82rem' }}>
+              style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', background: 'rgba(79,70,229,0.25)',
+                border: '1px solid rgba(79,70,229,0.4)', color: '#4f46e5', cursor: 'pointer', fontSize: '0.82rem' }}>
               🔍 검색
             </button>
-            {sv2Meta && <span style={{ color: '#64748b', fontSize: '0.75rem' }}>총 {sv2Meta.total}종목 | 실행: {sv2Meta.run_time?.slice(0,16)}</span>}
+            {sv2Meta && <span style={{ color: '#1e293b', fontSize: '0.75rem' }}>총 {sv2Meta.total}종목 | 실행: {sv2Meta.run_time?.slice(0,16)}</span>}
           </div>
 
           {sv2Loading ? (
-            <div style={{ color: '#94a3b8', textAlign: 'center', padding: '2rem' }}>검색 중…</div>
+            <div style={{ color: '#334155', textAlign: 'center', padding: '2rem' }}>검색 중…</div>
           ) : (
-            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.08)', overflow: 'auto' }}>
+            <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '12px',
+                border: '1px solid rgba(15,23,42,0.2)', overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8' }}>
+                  <tr style={{ background: 'rgba(15,23,42,0.04)', color: '#334155' }}>
                     {['#','종목','점수','시장','섹터','시총(억)','PER','PBR','매출성장','영업성장','OP마진','기관10일','외국인10일'].map(h => (
                       <th key={h} style={{ padding: '0.6rem 0.7rem', textAlign: 'left',
                           fontWeight: 600, fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{h}</th>
@@ -2841,36 +2848,36 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 <tbody>
                   {sv2Results.map((r, i) => {
                     const score = r.risk_adjusted_score ?? r.total_score;
-                    const sc = score >= 70 ? '#4ade80' : score >= 55 ? '#fbbf24' : '#f87171';
+                    const sc = score >= 70 ? '#15803d' : score >= 55 ? '#b45309' : '#dc2626';
                     const offset = (sv2Page - 1) * 30;
                     return (
-                      <tr key={r.stock_code} style={{ borderTop: '1px solid rgba(255,255,255,0.05)',
-                          background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#64748b', fontSize: '0.75rem' }}>{offset+i+1}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#f1f5f9', fontWeight: 600 }}>
-                          {r.stock_name}<div style={{ color: '#64748b', fontSize: '0.7rem' }}>{r.stock_code}</div>
+                      <tr key={r.stock_code} style={{ borderTop: '1px solid rgba(15,23,42,0.2)',
+                          background: i % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.015)' }}>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#1e293b', fontSize: '0.75rem' }}>{offset+i+1}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#0f172a', fontWeight: 600 }}>
+                          {r.stock_name}<div style={{ color: '#1e293b', fontSize: '0.7rem' }}>{r.stock_code}</div>
                         </td>
                         <td style={{ padding: '0.5rem 0.7rem', color: sc, fontWeight: 700 }}>
                           {score}
                           {r.risk_adjusted_score != null && r.risk_adjusted_score !== r.total_score && (
-                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 500 }}>원 {r.total_score}</div>
+                            <div style={{ color: '#334155', fontSize: '0.65rem', fontWeight: 500 }}>원 {r.total_score}</div>
                           )}
                           {r.price_risk && r.price_risk !== 'OK' && (
-                            <div style={{ color: r.price_risk === 'AVOID' ? '#fca5a5' : '#fbbf24', fontSize: '0.65rem', fontWeight: 700 }}>
+                            <div style={{ color: r.price_risk === 'AVOID' ? '#b91c1c' : '#b45309', fontSize: '0.65rem', fontWeight: 700 }}>
                               {r.price_risk_label}
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8', fontSize: '0.75rem' }}>{r.market}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8', fontSize: '0.75rem', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sector_large || '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#cbd5e1' }}>{r.market_cap ? r.market_cap.toLocaleString() : '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8' }}>{r.per ? r.per.toFixed(1) : '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8' }}>{r.pbr ? r.pbr.toFixed(2) : '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: (r.revenue_growth||0)>0?'#4ade80':'#f87171' }}>{r.revenue_growth ? `${r.revenue_growth>0?'+':''}${r.revenue_growth.toFixed(0)}%` : '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: (r.op_growth||0)>0?'#4ade80':'#f87171' }}>{r.op_growth ? `${r.op_growth>0?'+':''}${r.op_growth.toFixed(0)}%` : '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8' }}>{r.op_margin ? `${r.op_margin.toFixed(1)}%` : '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: (r.inst_net_10d||0)>0?'#60a5fa':'#f87171', fontSize: '0.75rem' }}>{r.inst_net_10d ? `${r.inst_net_10d>0?'+':''}${(r.inst_net_10d/1e8).toFixed(0)}억` : '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: (r.frn_net_10d||0)>0?'#34d399':'#f87171', fontSize: '0.75rem' }}>{r.frn_net_10d ? `${r.frn_net_10d>0?'+':''}${(r.frn_net_10d/1e8).toFixed(0)}억` : '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#334155', fontSize: '0.75rem' }}>{r.market}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#334155', fontSize: '0.75rem', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sector_large || '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#1e293b' }}>{r.market_cap ? r.market_cap.toLocaleString() : '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#334155' }}>{r.per ? r.per.toFixed(1) : '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#334155' }}>{r.pbr ? r.pbr.toFixed(2) : '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: (r.revenue_growth||0)>0?'#15803d':'#dc2626' }}>{r.revenue_growth ? `${r.revenue_growth>0?'+':''}${r.revenue_growth.toFixed(0)}%` : '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: (r.op_growth||0)>0?'#15803d':'#dc2626' }}>{r.op_growth ? `${r.op_growth>0?'+':''}${r.op_growth.toFixed(0)}%` : '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#334155' }}>{r.op_margin ? `${r.op_margin.toFixed(1)}%` : '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: (r.inst_net_10d||0)>0?'#2563eb':'#dc2626', fontSize: '0.75rem' }}>{r.inst_net_10d ? `${r.inst_net_10d>0?'+':''}${(r.inst_net_10d/1e8).toFixed(0)}억` : '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: (r.frn_net_10d||0)>0?'#047857':'#dc2626', fontSize: '0.75rem' }}>{r.frn_net_10d ? `${r.frn_net_10d>0?'+':''}${(r.frn_net_10d/1e8).toFixed(0)}억` : '-'}</td>
                       </tr>
                     );
                   })}
@@ -2885,9 +2892,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               {Array.from({length: Math.min(sv2Meta.total_pages, 10)}, (_,i) => i+1).map(p => (
                 <button key={p} onClick={() => { setSv2Page(p); loadScreenerV2(sv2Filters, p); }}
                   style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', cursor: 'pointer',
-                    background: sv2Page === p ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.05)',
-                    border: `1px solid ${sv2Page === p ? 'rgba(99,102,241,0.6)' : 'rgba(255,255,255,0.1)'}`,
-                    color: sv2Page === p ? '#a5b4fc' : '#64748b', fontSize: '0.8rem' }}>{p}</button>
+                    background: sv2Page === p ? 'rgba(79,70,229,0.35)' : 'rgba(15,23,42,0.05)',
+                    border: `1px solid ${sv2Page === p ? 'rgba(79,70,229,0.6)' : 'rgba(15,23,42,0.1)'}`,
+                    color: sv2Page === p ? '#4f46e5' : '#1e293b', fontSize: '0.8rem' }}>{p}</button>
               ))}
             </div>
           )}
@@ -2900,28 +2907,28 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
           {/* 업황지표 연동 배너 */}
           {sv3Meta?.indicator_map && Object.keys(sv3Meta.indicator_map).length > 0 && (
-            <div style={{ background: 'rgba(45,212,191,0.07)', border: '1px solid rgba(45,212,191,0.2)',
+            <div style={{ background: 'rgba(37,99,235,0.07)', border: '1px solid rgba(37,99,235,0.2)',
                 borderRadius: '12px', padding: '0.8rem 1.2rem' }}>
-              <div style={{ color: '#2dd4bf', fontWeight: 700, fontSize: '0.82rem', marginBottom: '0.5rem' }}>
+              <div style={{ color: '#2563eb', fontWeight: 700, fontSize: '0.82rem', marginBottom: '0.5rem' }}>
                 🏭 업황지표 연동 현황
               </div>
               <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
                 {Object.entries(sv3Meta.indicator_map).map(([sec, info]) => {
                   const adj = info.adj_score;
-                  const color = adj > 0 ? '#4ade80' : adj < 0 ? '#f87171' : '#94a3b8';
+                  const color = adj > 0 ? '#15803d' : adj < 0 ? '#dc2626' : '#334155';
                   return (
-                    <div key={sec} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '8px',
-                        padding: '0.35rem 0.7rem', fontSize: '0.75rem', border: '1px solid rgba(255,255,255,0.08)' }}>
-                      <span style={{ color: '#cbd5e1' }}>{sec}</span>
-                      <span style={{ color: '#64748b', margin: '0 0.3rem' }}>·</span>
-                      <span style={{ color: '#94a3b8' }}>{info.label}</span>
+                    <div key={sec} style={{ background: 'rgba(15,23,42,0.04)', borderRadius: '8px',
+                        padding: '0.35rem 0.7rem', fontSize: '0.75rem', border: '1px solid rgba(15,23,42,0.2)' }}>
+                      <span style={{ color: '#1e293b' }}>{sec}</span>
+                      <span style={{ color: '#1e293b', margin: '0 0.3rem' }}>·</span>
+                      <span style={{ color: '#334155' }}>{info.label}</span>
                       {info.yoy_pct !== null && (
                         <span style={{ color, marginLeft: '0.4rem', fontWeight: 700 }}>
                           {info.yoy_pct > 0 ? '+' : ''}{info.yoy_pct}%
-                          <span style={{ color: '#64748b', fontWeight: 400 }}> ({adj > 0 ? '+' : ''}{adj}점)</span>
+                          <span style={{ color: '#1e293b', fontWeight: 400 }}> ({adj > 0 ? '+' : ''}{adj}점)</span>
                         </span>
                       )}
-                      {info.yoy_pct === null && <span style={{ color: '#64748b', marginLeft: '0.4rem' }}>데이터없음</span>}
+                      {info.yoy_pct === null && <span style={{ color: '#1e293b', marginLeft: '0.4rem' }}>데이터없음</span>}
                     </div>
                   );
                 })}
@@ -2931,53 +2938,53 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
           {/* 필터 바 */}
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center',
-              background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '0.8rem 1rem',
-              border: '1px solid rgba(255,255,255,0.08)' }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>필터:</span>
+              background: 'rgba(15,23,42,0.03)', borderRadius: '10px', padding: '0.8rem 1rem',
+              border: '1px solid rgba(15,23,42,0.2)' }}>
+            <span style={{ color: '#334155', fontSize: '0.8rem', fontWeight: 600 }}>필터:</span>
             <input value={sv3Filters.q}
               onChange={e => setSv3Filters(f => ({...f, q: e.target.value}))}
               placeholder="종목명/코드" style={{ padding: '0.3rem 0.6rem', borderRadius: '6px',
-                background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)',
-                color: '#f1f5f9', fontSize: '0.82rem', width: '100px' }} />
+                background: 'rgba(15,23,42,0.07)', border: '1px solid rgba(15,23,42,0.2)',
+                color: '#0f172a', fontSize: '0.82rem', width: '100px' }} />
             <select value={sv3Filters.market}
               onChange={e => setSv3Filters(f => ({...f, market: e.target.value}))}
-              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#1e293b',
-                border: '1px solid rgba(255,255,255,0.15)', color: '#f1f5f9', fontSize: '0.82rem' }}>
+              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#f8fafc',
+                border: '1px solid rgba(15,23,42,0.2)', color: '#0f172a', fontSize: '0.82rem' }}>
               <option value="ALL">전체</option>
               <option value="유가증권">코스피</option>
               <option value="코스닥">코스닥</option>
             </select>
             <select value={sv3Filters.sector}
               onChange={e => setSv3Filters(f => ({...f, sector: e.target.value}))}
-              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#1e293b',
-                border: '1px solid rgba(255,255,255,0.15)', color: '#f1f5f9', fontSize: '0.82rem' }}>
+              style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', background: '#f8fafc',
+                border: '1px solid rgba(15,23,42,0.2)', color: '#0f172a', fontSize: '0.82rem' }}>
               <option value="ALL">전체 섹터</option>
               {(sv3Meta?.sectors || []).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <label style={{ color: '#94a3b8', fontSize: '0.78rem' }}>
+            <label style={{ color: '#334155', fontSize: '0.78rem' }}>
               v3최소점수:
               <input type="number" value={sv3Filters.min_v3_score} min={0} max={120}
                 onChange={e => setSv3Filters(f => ({...f, min_v3_score: +e.target.value}))}
                 style={{ width: '45px', marginLeft: '0.3rem', padding: '0.2rem 0.4rem',
-                  borderRadius: '5px', background: 'rgba(255,255,255,0.07)',
-                  border: '1px solid rgba(255,255,255,0.15)', color: '#f1f5f9', fontSize: '0.82rem' }} />
+                  borderRadius: '5px', background: 'rgba(15,23,42,0.07)',
+                  border: '1px solid rgba(15,23,42,0.2)', color: '#0f172a', fontSize: '0.82rem' }} />
             </label>
             <button onClick={() => { setSv3Page(1); loadScreenerV3(sv3Filters, 1); }}
-              style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', background: 'rgba(45,212,191,0.2)',
-                border: '1px solid rgba(45,212,191,0.4)', color: '#2dd4bf', cursor: 'pointer', fontSize: '0.82rem' }}>
+              style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', background: 'rgba(37,99,235,0.2)',
+                border: '1px solid rgba(37,99,235,0.4)', color: '#2563eb', cursor: 'pointer', fontSize: '0.82rem' }}>
               🔍 검색
             </button>
-            {sv3Meta && <span style={{ color: '#64748b', fontSize: '0.75rem' }}>총 {sv3Meta.total}종목</span>}
+            {sv3Meta && <span style={{ color: '#1e293b', fontSize: '0.75rem' }}>총 {sv3Meta.total}종목</span>}
           </div>
 
           {sv3Loading ? (
-            <div style={{ color: '#94a3b8', textAlign: 'center', padding: '2rem' }}>계산 중…</div>
+            <div style={{ color: '#334155', textAlign: 'center', padding: '2rem' }}>계산 중…</div>
           ) : (
-            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.08)', overflow: 'auto' }}>
+            <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '12px',
+                border: '1px solid rgba(15,23,42,0.2)', overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8' }}>
+                  <tr style={{ background: 'rgba(15,23,42,0.04)', color: '#334155' }}>
                     {['#','종목','v3점수','기본점수','업황조정','FP패널티','수주보너스','섹터','업황지표','YoY%'].map(h => (
                       <th key={h} style={{ padding: '0.6rem 0.7rem', textAlign: 'left',
                           fontWeight: 600, fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{h}</th>
@@ -2987,36 +2994,36 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 <tbody>
                   {sv3Results.map((r, i) => {
                     const v3 = r.v3_score || 0;
-                    const sc = v3 >= 70 ? '#4ade80' : v3 >= 55 ? '#fbbf24' : '#f87171';
+                    const sc = v3 >= 70 ? '#15803d' : v3 >= 55 ? '#b45309' : '#dc2626';
                     const offset = (sv3Page - 1) * 50;
-                    const adjColor = (r.industry_adj || 0) > 0 ? '#4ade80' : (r.industry_adj || 0) < 0 ? '#f87171' : '#64748b';
+                    const adjColor = (r.industry_adj || 0) > 0 ? '#15803d' : (r.industry_adj || 0) < 0 ? '#dc2626' : '#1e293b';
                     return (
                       <tr key={r.stock_code}
                         onClick={() => { window.__setStockCode?.(r.stock_code); }}
-                        style={{ borderTop: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer',
-                            background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#64748b', fontSize: '0.75rem' }}>{offset+i+1}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#f1f5f9', fontWeight: 600 }}>
-                          {r.stock_name}<div style={{ color: '#64748b', fontSize: '0.7rem' }}>{r.stock_code}</div>
+                        style={{ borderTop: '1px solid rgba(15,23,42,0.2)', cursor: 'pointer',
+                            background: i % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.015)' }}>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#1e293b', fontSize: '0.75rem' }}>{offset+i+1}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#0f172a', fontWeight: 600 }}>
+                          {r.stock_name}<div style={{ color: '#1e293b', fontSize: '0.7rem' }}>{r.stock_code}</div>
                         </td>
                         <td style={{ padding: '0.5rem 0.7rem', color: sc, fontWeight: 700, fontSize: '0.9rem' }}>{v3}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#cbd5e1' }}>{r.total_score || '-'}</td>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#1e293b' }}>{r.total_score || '-'}</td>
                         <td style={{ padding: '0.5rem 0.7rem', color: adjColor, fontWeight: 600 }}>
                           {(r.industry_adj || 0) !== 0 ? `${r.industry_adj > 0 ? '+' : ''}${r.industry_adj}` : '0'}
                         </td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: (r.fp_penalty||0) < 0 ? '#f87171' : '#64748b' }}>
+                        <td style={{ padding: '0.5rem 0.7rem', color: (r.fp_penalty||0) < 0 ? '#dc2626' : '#1e293b' }}>
                           {r.fp_penalty || 0}
                         </td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: (r.backlog_bonus||0) > 0 ? '#4ade80' : '#64748b' }}>
+                        <td style={{ padding: '0.5rem 0.7rem', color: (r.backlog_bonus||0) > 0 ? '#15803d' : '#1e293b' }}>
                           {(r.backlog_bonus||0) > 0 ? `+${r.backlog_bonus}` : '0'}
                         </td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8', fontSize: '0.75rem', maxWidth: '80px',
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#334155', fontSize: '0.75rem', maxWidth: '80px',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sector_large || '-'}</td>
-                        <td style={{ padding: '0.5rem 0.7rem', color: '#94a3b8', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '0.5rem 0.7rem', color: '#334155', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                           {r.industry_label !== '업황데이터없음' ? r.industry_label : '-'}
                         </td>
                         <td style={{ padding: '0.5rem 0.7rem', fontWeight: 600,
-                            color: r.industry_yoy_pct === null ? '#64748b' : r.industry_yoy_pct >= 5 ? '#4ade80' : r.industry_yoy_pct <= -10 ? '#f87171' : '#fbbf24' }}>
+                            color: r.industry_yoy_pct === null ? '#1e293b' : r.industry_yoy_pct >= 5 ? '#15803d' : r.industry_yoy_pct <= -10 ? '#dc2626' : '#b45309' }}>
                           {r.industry_yoy_pct !== null ? `${r.industry_yoy_pct > 0 ? '+' : ''}${r.industry_yoy_pct}%` : '-'}
                         </td>
                       </tr>
@@ -3025,7 +3032,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 </tbody>
               </table>
               {sv3Results.length === 0 && !sv3Loading && (
-                <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>
+                <div style={{ color: '#1e293b', textAlign: 'center', padding: '2rem' }}>
                   조건에 맞는 종목이 없습니다. min_v3_score를 낮춰보세요.
                 </div>
               )}
@@ -3038,9 +3045,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               {Array.from({length: Math.min(sv3Meta.total_pages, 10)}, (_,i) => i+1).map(p => (
                 <button key={p} onClick={() => { setSv3Page(p); loadScreenerV3(sv3Filters, p); }}
                   style={{ padding: '0.3rem 0.7rem', borderRadius: '6px', cursor: 'pointer',
-                    background: sv3Page === p ? 'rgba(45,212,191,0.25)' : 'rgba(255,255,255,0.05)',
-                    border: `1px solid ${sv3Page === p ? 'rgba(45,212,191,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                    color: sv3Page === p ? '#2dd4bf' : '#64748b', fontSize: '0.8rem' }}>{p}</button>
+                    background: sv3Page === p ? 'rgba(37,99,235,0.25)' : 'rgba(15,23,42,0.05)',
+                    border: `1px solid ${sv3Page === p ? 'rgba(37,99,235,0.5)' : 'rgba(15,23,42,0.1)'}`,
+                    color: sv3Page === p ? '#2563eb' : '#1e293b', fontSize: '0.8rem' }}>{p}</button>
               ))}
             </div>
           )}
@@ -3050,13 +3057,13 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {/* ── FP/FN 오판 역분석 탭 ──────────────────────────────────────── */}
       {activeTab === 'fpfn' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+          <div style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)',
               borderRadius: '12px', padding: '1rem 1.2rem' }}>
-            <div style={{ fontWeight: 700, color: '#f87171', marginBottom: '0.4rem' }}>
+            <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: '0.4rem' }}>
               🔬 FP/FN 오판 역분석 — 텐버거 선정 후 실제 수익률 추적
             </div>
-            <div style={{ color: '#94a3b8', fontSize: '0.78rem', lineHeight: 1.6 }}>
-              <b style={{color:'#4ade80'}}>TP</b>(선정↑성공) · <b style={{color:'#f87171'}}>FP</b>(선정↑실패) · <b style={{color:'#fbbf24'}}>NEUTRAL</b>(횡보) · <b style={{color:'#64748b'}}>PENDING</b>(아직 N일 미경과)
+            <div style={{ color: '#334155', fontSize: '0.78rem', lineHeight: 1.6 }}>
+              <b style={{color:'#15803d'}}>TP</b>(선정↑성공) · <b style={{color:'#dc2626'}}>FP</b>(선정↑실패) · <b style={{color:'#b45309'}}>NEUTRAL</b>(횡보) · <b style={{color:'#1e293b'}}>PENDING</b>(아직 N일 미경과)
             </div>
           </div>
 
@@ -3064,60 +3071,60 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             {[3, 5, 7, 14, 30].map(d => (
               <button key={d} onClick={() => { setFpfnDays(d); loadFpFn(d); }}
                 style={{ padding: '0.35rem 0.8rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.82rem',
-                  background: fpfnDays === d ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.05)',
-                  border: `1px solid ${fpfnDays === d ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                  color: fpfnDays === d ? '#fca5a5' : '#64748b' }}>{d}일</button>
+                  background: fpfnDays === d ? 'rgba(220,38,38,0.25)' : 'rgba(15,23,42,0.05)',
+                  border: `1px solid ${fpfnDays === d ? 'rgba(220,38,38,0.5)' : 'rgba(15,23,42,0.1)'}`,
+                  color: fpfnDays === d ? '#b91c1c' : '#1e293b' }}>{d}일</button>
             ))}
-            <span style={{ color: '#64748b', fontSize: '0.75rem' }}>선정 후 수익률 기준</span>
+            <span style={{ color: '#1e293b', fontSize: '0.75rem' }}>선정 후 수익률 기준</span>
           </div>
 
           {fpfnLoading ? (
-            <div style={{ color: '#94a3b8', textAlign: 'center', padding: '2rem' }}>분석 중…</div>
+            <div style={{ color: '#334155', textAlign: 'center', padding: '2rem' }}>분석 중…</div>
           ) : fpfn ? (
             <>
               {/* 요약 KPI */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: '0.6rem' }}>
                 {[
-                  { label: '전체 후보', val: fpfn.summary.total_candidates, color: '#94a3b8' },
-                  { label: '✅ TP (성공)', val: fpfn.summary.tp, color: '#4ade80' },
-                  { label: '❌ FP (실패)', val: fpfn.summary.fp, color: '#f87171' },
-                  { label: '➡ NEUTRAL', val: fpfn.summary.neutral, color: '#fbbf24' },
-                  { label: '⏳ PENDING', val: fpfn.summary.pending, color: '#64748b' },
-                  { label: '정밀도', val: fpfn.summary.precision != null ? `${fpfn.summary.precision}%` : '-', color: '#60a5fa' },
+                  { label: '전체 후보', val: fpfn.summary.total_candidates, color: '#334155' },
+                  { label: '✅ TP (성공)', val: fpfn.summary.tp, color: '#15803d' },
+                  { label: '❌ FP (실패)', val: fpfn.summary.fp, color: '#dc2626' },
+                  { label: '➡ NEUTRAL', val: fpfn.summary.neutral, color: '#b45309' },
+                  { label: '⏳ PENDING', val: fpfn.summary.pending, color: '#1e293b' },
+                  { label: '정밀도', val: fpfn.summary.precision != null ? `${fpfn.summary.precision}%` : '-', color: '#2563eb' },
                 ].map(k => (
-                  <div key={k.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
-                      padding: '0.8rem 1rem', border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center' }}>
+                  <div key={k.label} style={{ background: 'rgba(15,23,42,0.04)', borderRadius: '10px',
+                      padding: '0.8rem 1rem', border: '1px solid rgba(15,23,42,0.2)', textAlign: 'center' }}>
                     <div style={{ color: k.color, fontSize: '1.4rem', fontWeight: 800 }}>{k.val}</div>
-                    <div style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '0.2rem' }}>{k.label}</div>
+                    <div style={{ color: '#1e293b', fontSize: '0.72rem', marginTop: '0.2rem' }}>{k.label}</div>
                   </div>
                 ))}
               </div>
               {/* 평균 수익률 배너 */}
               {fpfn.summary.avg_return_pct != null && fpfn.summary.tp > 0 && (
-                <div style={{ background: fpfn.summary.avg_return_pct > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                    border: `1px solid ${fpfn.summary.avg_return_pct > 0 ? 'rgba(52,211,153,0.3)' : 'rgba(248,113,113,0.3)'}`,
+                <div style={{ background: fpfn.summary.avg_return_pct > 0 ? 'rgba(5,150,105,0.1)' : 'rgba(220,38,38,0.1)',
+                    border: `1px solid ${fpfn.summary.avg_return_pct > 0 ? 'rgba(5,150,105,0.3)' : 'rgba(220,38,38,0.3)'}`,
                     borderRadius: '10px', padding: '0.7rem 1rem', display: 'flex', gap: '2rem', alignItems: 'center' }}>
-                  <span style={{ color: '#94a3b8', fontSize: '0.82rem' }}>평가 가능 후보 평균 수익률</span>
-                  <span style={{ color: fpfn.summary.avg_return_pct > 0 ? '#4ade80' : '#f87171',
+                  <span style={{ color: '#334155', fontSize: '0.82rem' }}>평가 가능 후보 평균 수익률</span>
+                  <span style={{ color: fpfn.summary.avg_return_pct > 0 ? '#15803d' : '#dc2626',
                       fontSize: '1.3rem', fontWeight: 800 }}>
                     {fpfn.summary.avg_return_pct > 0 ? '+' : ''}{fpfn.summary.avg_return_pct?.toFixed(2)}%
                   </span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>({fpfnDays}일 기준, TP+FP+NEUTRAL 합산)</span>
+                  <span style={{ color: '#1e293b', fontSize: '0.75rem' }}>({fpfnDays}일 기준, TP+FP+NEUTRAL 합산)</span>
                 </div>
               )}
 
               {/* FP 요인 분석 */}
               {fpfn.fp_factors && fpfn.fp_factors.length > 0 && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px',
-                    padding: '1rem', border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <div style={{ fontWeight: 700, color: '#f87171', marginBottom: '0.6rem', fontSize: '0.85rem' }}>
+                <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '10px',
+                    padding: '1rem', border: '1px solid rgba(15,23,42,0.2)' }}>
+                  <div style={{ fontWeight: 700, color: '#dc2626', marginBottom: '0.6rem', fontSize: '0.85rem' }}>
                     ❌ FP 오판 종목 주요 신호 (틀린 이유 랭킹)
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                     {fpfn.fp_factors.map((f, i) => (
                       <span key={i} style={{ padding: '0.25rem 0.7rem', borderRadius: '20px',
-                          background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)',
-                          color: '#fca5a5', fontSize: '0.75rem' }}>
+                          background: 'rgba(220,38,38,0.12)', border: '1px solid rgba(220,38,38,0.25)',
+                          color: '#b91c1c', fontSize: '0.75rem' }}>
                         {f.reason} ({f.count})
                       </span>
                     ))}
@@ -3126,11 +3133,11 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               )}
 
               {/* 상세 결과 테이블 */}
-              <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
-                  border: '1px solid rgba(255,255,255,0.08)', overflow: 'auto' }}>
+              <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '12px',
+                  border: '1px solid rgba(15,23,42,0.2)', overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                   <thead>
-                    <tr style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8' }}>
+                    <tr style={{ background: 'rgba(15,23,42,0.04)', color: '#334155' }}>
                       {['종목', '선정점수', '선정가', `${fpfnDays}일후가`, '수익률', '판정', '주요신호'].map(h => (
                         <th key={h} style={{ padding: '0.6rem 0.8rem', textAlign: 'left',
                             fontWeight: 600, fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{h}</th>
@@ -3139,24 +3146,24 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   </thead>
                   <tbody>
                     {fpfn.results.slice(0, 60).map((r, i) => {
-                      const labelColor = r.label==='TP'?'#4ade80':r.label==='FP'?'#f87171':r.label==='NEUTRAL'?'#fbbf24':'#64748b';
-                      const retColor = (r.return_pct||0) > 0 ? '#4ade80' : (r.return_pct||0) < 0 ? '#f87171' : '#94a3b8';
+                      const labelColor = r.label==='TP'?'#15803d':r.label==='FP'?'#dc2626':r.label==='NEUTRAL'?'#b45309':'#1e293b';
+                      const retColor = (r.return_pct||0) > 0 ? '#15803d' : (r.return_pct||0) < 0 ? '#dc2626' : '#334155';
                       return (
-                        <tr key={`${r.stock_code}-${i}`} style={{ borderTop: '1px solid rgba(255,255,255,0.05)',
-                            background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                          <td style={{ padding: '0.5rem 0.8rem', color: '#f1f5f9', fontWeight: 600 }}>
-                            {r.stock_name}<div style={{ color: '#64748b', fontSize: '0.7rem' }}>{r.stock_code}</div>
+                        <tr key={`${r.stock_code}-${i}`} style={{ borderTop: '1px solid rgba(15,23,42,0.2)',
+                            background: i % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.015)' }}>
+                          <td style={{ padding: '0.5rem 0.8rem', color: '#0f172a', fontWeight: 600 }}>
+                            {r.stock_name}<div style={{ color: '#1e293b', fontSize: '0.7rem' }}>{r.stock_code}</div>
                           </td>
-                          <td style={{ padding: '0.5rem 0.8rem', color: '#fbbf24' }}>{r.total_score}점</td>
-                          <td style={{ padding: '0.5rem 0.8rem', color: '#94a3b8' }}>{r.price_at_select?.toLocaleString() || '-'}</td>
-                          <td style={{ padding: '0.5rem 0.8rem', color: '#94a3b8' }}>{r.price_after?.toLocaleString() || '-'}</td>
+                          <td style={{ padding: '0.5rem 0.8rem', color: '#b45309' }}>{r.total_score}점</td>
+                          <td style={{ padding: '0.5rem 0.8rem', color: '#334155' }}>{r.price_at_select?.toLocaleString() || '-'}</td>
+                          <td style={{ padding: '0.5rem 0.8rem', color: '#334155' }}>{r.price_after?.toLocaleString() || '-'}</td>
                           <td style={{ padding: '0.5rem 0.8rem', color: retColor, fontWeight: 600 }}>
                             {r.return_pct != null ? `${r.return_pct > 0 ? '+' : ''}${r.return_pct.toFixed(1)}%` : '-'}
                           </td>
                           <td style={{ padding: '0.5rem 0.8rem', color: labelColor, fontWeight: 700 }}>{r.label}</td>
                           <td style={{ padding: '0.5rem 0.8rem', maxWidth: '200px' }}>
                             {(r.reasons || []).slice(0, 2).map((rs, ri) => (
-                              <div key={ri} style={{ color: '#94a3b8', fontSize: '0.72rem', lineHeight: 1.4 }}>{rs}</div>
+                              <div key={ri} style={{ color: '#334155', fontSize: '0.72rem', lineHeight: 1.4 }}>{rs}</div>
                             ))}
                           </td>
                         </tr>
@@ -3167,7 +3174,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               </div>
             </>
           ) : (
-            <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>데이터 없음 — 탭 진입 시 자동 로드</div>
+            <div style={{ color: '#1e293b', textAlign: 'center', padding: '2rem' }}>데이터 없음 — 탭 진입 시 자동 로드</div>
           )}
         </div>
       )}
@@ -3175,12 +3182,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {/* ── 점수 성능 분석 탭 ─────────────────────────────────────── */}
       {activeTab === 'scoreperf' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)',
+          <div style={{ background: 'rgba(79,70,229,0.08)', border: '1px solid rgba(79,70,229,0.25)',
               borderRadius: '12px', padding: '1rem 1.2rem' }}>
-            <div style={{ fontWeight: 700, color: '#a5b4fc', marginBottom: '0.3rem' }}>
+            <div style={{ fontWeight: 700, color: '#4f46e5', marginBottom: '0.3rem' }}>
               📈 점수 구간별 실제 수익률 분석
             </div>
-            <div style={{ color: '#94a3b8', fontSize: '0.78rem', lineHeight: 1.6 }}>
+            <div style={{ color: '#334155', fontSize: '0.78rem', lineHeight: 1.6 }}>
               발굴된 종목을 점수 구간(55~65/65~70/70~75/75~80/80+)과 신호 유형별로 나누어
               실제 N일 후 수익률을 추적합니다. 가중치 최적화의 기초 데이터입니다.
             </div>
@@ -3191,50 +3198,50 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             {[3, 5, 7, 14, 30].map(d => (
               <button key={d} onClick={() => { setScorePerfDays(d); loadScorePerf(d); }}
                 style={{ padding: '0.35rem 0.8rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.82rem',
-                  background: scorePerfDays === d ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.05)',
-                  border: `1px solid ${scorePerfDays === d ? '#6366f1' : 'rgba(255,255,255,0.1)'}`,
-                  color: scorePerfDays === d ? '#a5b4fc' : '#64748b' }}>{d}일</button>
+                  background: scorePerfDays === d ? 'rgba(79,70,229,0.25)' : 'rgba(15,23,42,0.05)',
+                  border: `1px solid ${scorePerfDays === d ? '#4f46e5' : 'rgba(15,23,42,0.1)'}`,
+                  color: scorePerfDays === d ? '#4f46e5' : '#1e293b' }}>{d}일</button>
             ))}
-            <span style={{ color: '#64748b', fontSize: '0.75rem' }}>선정 후 수익률 기준</span>
+            <span style={{ color: '#1e293b', fontSize: '0.75rem' }}>선정 후 수익률 기준</span>
             <button onClick={() => loadScorePerf(scorePerfDays)}
               style={{ marginLeft: 'auto', padding: '0.35rem 0.9rem', borderRadius: '8px', cursor: 'pointer',
-                fontSize: '0.8rem', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
-                color: '#a5b4fc' }}>새로고침</button>
+                fontSize: '0.8rem', background: 'rgba(79,70,229,0.15)', border: '1px solid rgba(79,70,229,0.3)',
+                color: '#4f46e5' }}>새로고침</button>
           </div>
 
           {scorePerfLoading ? (
-            <div style={{ color: '#94a3b8', textAlign: 'center', padding: '2rem' }}>분석 중…</div>
+            <div style={{ color: '#334155', textAlign: 'center', padding: '2rem' }}>분석 중…</div>
           ) : scorePerf ? (
             <>
               {empiricalBoard?.stable_finalists?.length > 0 && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.08)', padding: '1rem' }}>
-                  <div style={{ fontWeight: 700, color: '#f1f5f9', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '12px',
+                    border: '1px solid rgba(15,23,42,0.2)', padding: '1rem' }}>
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
                     지속형 텐버거 검증 스코어보드
                   </div>
-                  <div style={{ color: '#94a3b8', fontSize: '0.76rem', lineHeight: 1.6, marginBottom: '0.8rem' }}>
+                  <div style={{ color: '#334155', fontSize: '0.76rem', lineHeight: 1.6, marginBottom: '0.8rem' }}>
                     2020~2022년 자료에서만 규칙을 선택하고 2023~2024년 완결 표본으로 검증했습니다.
                     10배 도달 후 연매출 15% 이상 성장과 영업이익 개선, 3배 가격 3개월 이상 유지가 확인된 사례만 지속형 승자로 계산합니다.
                   </div>
 
                   {empiricalBoard?.decision?.current_score === 'rejected' && (
-                    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.28)', borderRadius: '10px', padding: '0.75rem 0.9rem', marginBottom: '0.8rem', color: '#fecaca', fontSize: '0.75rem', lineHeight: 1.55 }}>
+                    <div style={{ background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.28)', borderRadius: '10px', padding: '0.75rem 0.9rem', marginBottom: '0.8rem', color: '#b91c1c', fontSize: '0.75rem', lineHeight: 1.55 }}>
                       기존 텐버거 점수는 기각되었습니다. 학습·검증 구간 모두 기준 대비 lift 1 미만이며, 아래 규칙도 연구 검증용일 뿐 현재 추천이나 자동매매에 사용할 수 없습니다.
                     </div>
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(135px,1fr))', gap: '0.6rem', marginBottom: '0.9rem' }}>
                     {[
-                      { label: '전체 평가행', val: empiricalBoard.data_quality?.rows?.toLocaleString(), color: '#94a3b8' },
-                      { label: '원시 10배 사례', val: empiricalBoard.data_quality?.raw_10x_rows?.toLocaleString(), color: '#fbbf24' },
-                      { label: '지속형 10배 사례', val: empiricalBoard.data_quality?.validated_10x_rows?.toLocaleString(), color: '#4ade80' },
-                      { label: '이슈형 분리 사례', val: empiricalBoard.data_quality?.issue_only_proxy_rows?.toLocaleString(), color: '#f87171' },
-                      { label: '가격오류 10배 제외', val: empiricalBoard.data_quality?.price_artifact_10x_rows?.toLocaleString(), color: '#fb7185' },
+                      { label: '전체 평가행', val: empiricalBoard.data_quality?.rows?.toLocaleString(), color: '#334155' },
+                      { label: '원시 10배 사례', val: empiricalBoard.data_quality?.raw_10x_rows?.toLocaleString(), color: '#b45309' },
+                      { label: '지속형 10배 사례', val: empiricalBoard.data_quality?.validated_10x_rows?.toLocaleString(), color: '#15803d' },
+                      { label: '이슈형 분리 사례', val: empiricalBoard.data_quality?.issue_only_proxy_rows?.toLocaleString(), color: '#dc2626' },
+                      { label: '가격오류 10배 제외', val: empiricalBoard.data_quality?.price_artifact_10x_rows?.toLocaleString(), color: '#e11d48' },
                     ].map(k => (
-                      <div key={k.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
-                          padding: '0.75rem 0.9rem', border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center' }}>
+                      <div key={k.label} style={{ background: 'rgba(15,23,42,0.04)', borderRadius: '10px',
+                          padding: '0.75rem 0.9rem', border: '1px solid rgba(15,23,42,0.2)', textAlign: 'center' }}>
                         <div style={{ color: k.color, fontSize: '1.15rem', fontWeight: 800 }}>{k.val}</div>
-                        <div style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.15rem' }}>{k.label}</div>
+                        <div style={{ color: '#1e293b', fontSize: '0.7rem', marginTop: '0.15rem' }}>{k.label}</div>
                       </div>
                     ))}
                   </div>
@@ -3242,14 +3249,14 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   {historicalCauses?.summary && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(145px,1fr))', gap: '0.6rem', marginBottom: '0.9rem' }}>
                       {[
-                        { label: '원인 분석 종목', val: historicalCauses.summary.stocks, color: '#cbd5e1' },
-                        { label: '사업 원인 확정', val: historicalCauses.summary.business_training_eligible_stocks, color: '#4ade80' },
-                        { label: '비영업 원인 제외', val: historicalCauses.summary.non_operating_excluded_stocks, color: '#f87171' },
-                        { label: '수동 검토 필요', val: historicalCauses.summary.manual_review_required_stocks, color: '#fbbf24' },
+                        { label: '원인 분석 종목', val: historicalCauses.summary.stocks, color: '#1e293b' },
+                        { label: '사업 원인 확정', val: historicalCauses.summary.business_training_eligible_stocks, color: '#15803d' },
+                        { label: '비영업 원인 제외', val: historicalCauses.summary.non_operating_excluded_stocks, color: '#dc2626' },
+                        { label: '수동 검토 필요', val: historicalCauses.summary.manual_review_required_stocks, color: '#b45309' },
                       ].map(k => (
-                        <div key={k.label} style={{ background: 'rgba(15,23,42,0.55)', borderRadius: '10px', padding: '0.7rem 0.8rem', border: '1px solid rgba(255,255,255,0.07)', textAlign: 'center' }}>
+                        <div key={k.label} style={{ background: 'rgba(255,255,255,0.55)', borderRadius: '10px', padding: '0.7rem 0.8rem', border: '1px solid rgba(15,23,42,0.2)', textAlign: 'center' }}>
                           <div style={{ color: k.color, fontSize: '1.05rem', fontWeight: 800 }}>{k.val}</div>
-                          <div style={{ color: '#64748b', fontSize: '0.68rem', marginTop: '0.15rem' }}>{k.label}</div>
+                          <div style={{ color: '#1e293b', fontSize: '0.68rem', marginTop: '0.15rem' }}>{k.label}</div>
                         </div>
                       ))}
                     </div>
@@ -3263,16 +3270,16 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                       <div style={{
                         marginBottom: '0.9rem', padding: '0.85rem 0.95rem', borderRadius: '12px',
                         background: 'linear-gradient(135deg, rgba(127,29,29,0.28), rgba(120,53,15,0.2))',
-                        border: '1px solid rgba(251,146,60,0.28)',
+                        border: '1px solid rgba(234,88,12,0.28)',
                       }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
                           <div>
-                            <div style={{ color: '#fdba74', fontSize: '0.8rem', fontWeight: 800 }}>고정밀 연구 티어 · 아직 실전 기준 미달</div>
-                            <div style={{ color: '#cbd5e1', fontSize: '0.7rem', marginTop: '0.2rem' }}>
+                            <div style={{ color: '#c2410c', fontSize: '0.8rem', fontWeight: 800 }}>고정밀 연구 티어 · 아직 실전 기준 미달</div>
+                            <div style={{ color: '#1e293b', fontSize: '0.7rem', marginTop: '0.2rem' }}>
                               수주 2건 이상 + 거래대금 10억원 이상 + 영업이익 50% 이상 증가
                             </div>
                           </div>
-                          <div style={{ color: '#fb923c', fontSize: '1.15rem', fontWeight: 900 }}>
+                          <div style={{ color: '#c2410c', fontSize: '1.15rem', fontWeight: 900 }}>
                             최초 알림 적중 {alert.precision_pct || 0}%
                           </div>
                         </div>
@@ -3284,13 +3291,13 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                             ['5배 도달', `${alert.hit_5x_pct || 0}%`],
                             ['행 기준 lift', `${row.lift || 0}x`],
                           ].map(([label, value]) => (
-                            <div key={label} style={{ background: 'rgba(15,23,42,0.48)', borderRadius: '8px', padding: '0.55rem 0.65rem' }}>
-                              <div style={{ color: '#f8fafc', fontSize: '0.78rem', fontWeight: 800 }}>{value}</div>
-                              <div style={{ color: '#94a3b8', fontSize: '0.64rem', marginTop: '0.12rem' }}>{label}</div>
+                            <div key={label} style={{ background: 'rgba(255,255,255,0.48)', borderRadius: '8px', padding: '0.55rem 0.65rem' }}>
+                              <div style={{ color: '#0f172a', fontSize: '0.78rem', fontWeight: 800 }}>{value}</div>
+                              <div style={{ color: '#334155', fontSize: '0.64rem', marginTop: '0.12rem' }}>{label}</div>
                             </div>
                           ))}
                         </div>
-                        <div style={{ color: '#fca5a5', fontSize: '0.67rem', marginTop: '0.55rem', lineHeight: 1.45 }}>
+                        <div style={{ color: '#b91c1c', fontSize: '0.67rem', marginTop: '0.55rem', lineHeight: 1.45 }}>
                           목표 적중률 15%를 통과하지 못해 추천·자동매매에 사용하지 않습니다. 복잡한 로지스틱 모델도 홀드아웃에서 개선되지 않아 채택하지 않았습니다.
                         </div>
                       </div>
@@ -3299,7 +3306,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
                   {historicalSignals?.recommended_signal_families && (
                     <div style={{ marginBottom: '0.9rem' }}>
-                      <div style={{ color: '#e2e8f0', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.55rem' }}>
+                      <div style={{ color: '#1e293b', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.55rem' }}>
                         2024 홀드아웃 통과 선행 시그널
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: '0.6rem' }}>
@@ -3313,10 +3320,10 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                             turnaround_attention: '흑자전환 + 거래량',
                           };
                           return (
-                            <div key={key} style={{ background: 'rgba(20,83,45,0.18)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: '10px', padding: '0.75rem 0.85rem' }}>
-                              <div style={{ color: '#86efac', fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.35rem' }}>{labels[key] || key}</div>
-                              <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', color: '#cbd5e1', fontSize: '0.7rem' }}>
-                                <span>lift <strong style={{ color: '#4ade80' }}>{metric.lift}x</strong></span>
+                            <div key={key} style={{ background: 'rgba(20,83,45,0.18)', border: '1px solid rgba(22,163,74,0.2)', borderRadius: '10px', padding: '0.75rem 0.85rem' }}>
+                              <div style={{ color: '#15803d', fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.35rem' }}>{labels[key] || key}</div>
+                              <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', color: '#1e293b', fontSize: '0.7rem' }}>
+                                <span>lift <strong style={{ color: '#15803d' }}>{metric.lift}x</strong></span>
                                 <span>3배 <strong>{metric.hit_3x_pct}%</strong></span>
                                 <span>승자재현 <strong>{metric.winner_stock_recall_pct}%</strong></span>
                                 <span>중앙최대 <strong>{metric.median_peak_return_pct}%</strong></span>
@@ -3325,7 +3332,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                           );
                         })}
                       </div>
-                      <div style={{ color: '#64748b', fontSize: '0.68rem', marginTop: '0.5rem' }}>
+                      <div style={{ color: '#1e293b', fontSize: '0.68rem', marginTop: '0.5rem' }}>
                         과거 연구 결과이며 현재 추천·자동매매에는 연결되지 않습니다.
                       </div>
                     </div>
@@ -3334,7 +3341,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                       <thead>
-                        <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <tr style={{ color: '#1e293b', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                           {['학습 선택 규칙', '검증 표본', '지속형 적중', '검증 밀도', '기준 대비', '승자 재현율', '원시 10배율', '3배율'].map(h => (
                             <th key={h} style={{ padding: '0.45rem 0.6rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
                           ))}
@@ -3344,73 +3351,73 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         {empiricalBoard.stable_finalists.map((row, i) => {
                           const v = row.validation || {};
                           return (
-                            <tr key={row.name} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#e2e8f0', fontWeight: 600 }}>
-                                <span style={{ color: row.tier === 'precision_core' ? '#4ade80' : '#38bdf8', marginRight: '0.35rem' }}>
+                            <tr key={row.name} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', background: i % 2 === 0 ? 'rgba(15,23,42,0.02)' : 'transparent' }}>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#1e293b', fontWeight: 600 }}>
+                                <span style={{ color: row.tier === 'precision_core' ? '#15803d' : '#0284c7', marginRight: '0.35rem' }}>
                                   {row.tier === 'precision_core' ? '정밀 코어' : '커버리지'}
                                 </span>
                                 점수 {row.rule?.score}+ · 거래 {row.rule?.turnover}억+ · 시총 {row.rule?.mcap}억 이하
-                                <div style={{ color: '#94a3b8', fontSize: '0.68rem', marginTop: '0.12rem', maxWidth: '260px' }}>
+                                <div style={{ color: '#334155', fontSize: '0.68rem', marginTop: '0.12rem', maxWidth: '260px' }}>
                                   고점대비 {Math.round((row.rule?.drawdown || 0) * 100)}% 이하 · 실적 {row.rule?.earnings ? '필수' : '선택'} · 희석 {row.rule?.dilution == null ? '제한없음' : `${row.rule.dilution}회 이하`}
                                 </div>
                               </td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#94a3b8' }}>{v.rows || 0}</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#4ade80', fontWeight: 800 }}>{v.validated_tenbagger_rows || 0}</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#4ade80', fontWeight: 700 }}>{v.validated_precision_pct || 0}%</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#fbbf24', fontWeight: 800 }}>{v.validated_lift || 0}x</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{v.winner_stock_recall_pct || 0}%</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{v.raw_10x_precision_pct || 0}%</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{v.hit_3x_pct || 0}%</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#334155' }}>{v.rows || 0}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#15803d', fontWeight: 800 }}>{v.validated_tenbagger_rows || 0}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#15803d', fontWeight: 700 }}>{v.validated_precision_pct || 0}%</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#b45309', fontWeight: 800 }}>{v.validated_lift || 0}x</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#1e293b' }}>{v.winner_stock_recall_pct || 0}%</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#1e293b' }}>{v.raw_10x_precision_pct || 0}%</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#1e293b' }}>{v.hit_3x_pct || 0}%</td>
                             </tr>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ color: '#64748b', fontSize: '0.7rem', lineHeight: 1.55, marginTop: '0.7rem' }}>
+                  <div style={{ color: '#1e293b', fontSize: '0.7rem', lineHeight: 1.55, marginTop: '0.7rem' }}>
                     현재 상장 종목 기반이라 상장폐지 종목 생존편향 가능성이 있습니다. 이 표는 과거 로직 검증용이며 현재 종목 추천이나 자동매매 신호가 아닙니다.
                   </div>
                 </div>
               )}
 
               {empiricalAudit?.summary && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.08)', padding: '1rem' }}>
-                  <div style={{ fontWeight: 700, color: '#f1f5f9', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '12px',
+                    border: '1px solid rgba(15,23,42,0.2)', padding: '1rem' }}>
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
                     🧪 과거 10배주 미포착 감사
                   </div>
-                  <div style={{ color: '#94a3b8', fontSize: '0.76rem', lineHeight: 1.6, marginBottom: '0.8rem' }}>
+                  <div style={{ color: '#334155', fontSize: '0.76rem', lineHeight: 1.6, marginBottom: '0.8rem' }}>
                     2020년 1월 1일부터 2024년 8월 8일까지의 실제 24개월 10배주를 기준으로,
                     현재 컷이 어떤 승자를 잘라냈는지 바로 보여줍니다.
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.6rem', marginBottom: '0.9rem' }}>
                     {[
-                      { label: '실제 승자', val: empiricalAudit.summary.winners_total, color: '#94a3b8' },
-                      { label: '포착', val: empiricalAudit.summary.captured, color: '#4ade80' },
-                      { label: '미포착', val: empiricalAudit.summary.missed, color: '#f87171' },
-                      { label: '캡처율', val: `${empiricalAudit.summary.capture_rate_pct}%`, color: '#fbbf24' },
+                      { label: '실제 승자', val: empiricalAudit.summary.winners_total, color: '#334155' },
+                      { label: '포착', val: empiricalAudit.summary.captured, color: '#15803d' },
+                      { label: '미포착', val: empiricalAudit.summary.missed, color: '#dc2626' },
+                      { label: '캡처율', val: `${empiricalAudit.summary.capture_rate_pct}%`, color: '#b45309' },
                     ].map(k => (
-                      <div key={k.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
-                          padding: '0.75rem 0.9rem', border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center' }}>
+                      <div key={k.label} style={{ background: 'rgba(15,23,42,0.04)', borderRadius: '10px',
+                          padding: '0.75rem 0.9rem', border: '1px solid rgba(15,23,42,0.2)', textAlign: 'center' }}>
                         <div style={{ color: k.color, fontSize: '1.15rem', fontWeight: 800 }}>{k.val}</div>
-                        <div style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.15rem' }}>{k.label}</div>
+                        <div style={{ color: '#1e293b', fontSize: '0.7rem', marginTop: '0.15rem' }}>{k.label}</div>
                       </div>
                     ))}
                   </div>
 
                   {(empiricalAudit.miss_reason_rank || []).length > 0 && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '0.9rem', marginBottom: '0.9rem' }}>
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
-                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>승자 손실 컷 랭킹</div>
+                      <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>승자 손실 컷 랭킹</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                           {empiricalAudit.miss_reason_rank.map((row) => (
                             <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
-                              <div style={{ width: '84px', color: '#cbd5e1', fontSize: '0.76rem', flexShrink: 0 }}>{row.name}</div>
-                              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
-                                <div style={{ width: `${Math.min(row.pct_of_missed, 100)}%`, height: '100%', background: row.name === '점수컷' ? '#f87171' : row.name === '거래대금컷' ? '#fbbf24' : '#60a5fa' }} />
+                              <div style={{ width: '84px', color: '#1e293b', fontSize: '0.76rem', flexShrink: 0 }}>{row.name}</div>
+                              <div style={{ flex: 1, background: 'rgba(15,23,42,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(row.pct_of_missed, 100)}%`, height: '100%', background: row.name === '점수컷' ? '#dc2626' : row.name === '거래대금컷' ? '#b45309' : '#2563eb' }} />
                               </div>
-                              <div style={{ width: '74px', textAlign: 'right', color: '#94a3b8', fontSize: '0.74rem', flexShrink: 0 }}>
+                              <div style={{ width: '74px', textAlign: 'right', color: '#334155', fontSize: '0.74rem', flexShrink: 0 }}>
                                 {row.count}건 · {row.pct_of_missed}%
                               </div>
                             </div>
@@ -3418,8 +3425,8 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         </div>
                       </div>
 
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
-                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>컷 중첩 구조</div>
+                      <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>컷 중첩 구조</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.75rem' }}>
                           {[
                             ['score_only', '점수만'],
@@ -3432,9 +3439,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                           ].map(([key, label]) => {
                             const item = empiricalAudit.constraint_overlap?.[key];
                             return (
-                              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
+                              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', color: '#1e293b' }}>
                                 <span>{label}</span>
-                                <span style={{ color: '#94a3b8' }}>{item?.count || 0}건 · {item?.pct_of_missed || 0}%</span>
+                                <span style={{ color: '#334155' }}>{item?.count || 0}건 · {item?.pct_of_missed || 0}%</span>
                               </div>
                             );
                           })}
@@ -3444,15 +3451,15 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                   )}
 
                   {(empiricalAudit.capture_sensitivity || []).length > 0 && (
-                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem', marginBottom: '0.9rem' }}>
-                      <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>컷 완화 민감도</div>
-                      <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
+                    <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem', marginBottom: '0.9rem' }}>
+                      <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>컷 완화 민감도</div>
+                      <div style={{ color: '#334155', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
                         어떤 컷을 풀었을 때 실적형 과거 승자 포착률이 가장 많이 회복되는지 바로 비교합니다.
                       </div>
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
                           <thead>
-                            <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            <tr style={{ color: '#1e293b', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                               {['시나리오', '점수', '거래대금', '시총', '포착', '캡처율', '기준대비', '실적형 비중'].map(h => (
                                 <th key={h} style={{ padding: '0.45rem 0.55rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
                               ))}
@@ -3460,17 +3467,17 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                           </thead>
                           <tbody>
                             {(empiricalAudit.capture_sensitivity || []).map((row, i) => (
-                              <tr key={`${row.name}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i === 0 ? 'rgba(74,222,128,0.06)' : i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                                <td style={{ padding: '0.5rem 0.55rem', color: '#e2e8f0', fontWeight: 600 }}>{row.name}</td>
-                                <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{row.min_score}</td>
-                                <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{row.min_turnover_억}억</td>
-                                <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{row.max_mktcap_억}억</td>
-                                <td style={{ padding: '0.5rem 0.55rem', color: '#f8fafc', fontWeight: 700 }}>{row.captured}</td>
-                                <td style={{ padding: '0.5rem 0.55rem', color: '#fbbf24' }}>{row.capture_rate_pct}%</td>
-                                <td style={{ padding: '0.5rem 0.55rem', color: row.incremental_vs_base > 0 ? '#4ade80' : '#94a3b8', fontWeight: 600 }}>
+                              <tr key={`${row.name}-${i}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', background: i === 0 ? 'rgba(22,163,74,0.06)' : i % 2 === 0 ? 'rgba(15,23,42,0.02)' : 'transparent' }}>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b', fontWeight: 600 }}>{row.name}</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b' }}>{row.min_score}</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b' }}>{row.min_turnover_억}억</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b' }}>{row.max_mktcap_억}억</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#0f172a', fontWeight: 700 }}>{row.captured}</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#b45309' }}>{row.capture_rate_pct}%</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: row.incremental_vs_base > 0 ? '#15803d' : '#334155', fontWeight: 600 }}>
                                   {row.incremental_vs_base > 0 ? `+${row.incremental_vs_base}` : row.incremental_vs_base}
                                 </td>
-                                <td style={{ padding: '0.5rem 0.55rem', color: '#60a5fa' }}>{row.earnings_backed_share}%</td>
+                                <td style={{ padding: '0.5rem 0.55rem', color: '#2563eb' }}>{row.earnings_backed_share}%</td>
                               </tr>
                             ))}
                           </tbody>
@@ -3481,16 +3488,16 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
                   {empiricalAudit.score_cut_archetypes?.length > 0 && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem', marginBottom: '0.9rem' }}>
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
-                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수컷 승자 유형</div>
+                      <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수컷 승자 유형</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                           {empiricalAudit.score_cut_archetypes.map((row) => (
                             <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
-                              <div style={{ width: '190px', color: '#cbd5e1', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
-                              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
-                                <div style={{ width: `${Math.min(row.pct_of_score_cut, 100)}%`, height: '100%', background: '#f87171' }} />
+                              <div style={{ width: '190px', color: '#1e293b', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
+                              <div style={{ flex: 1, background: 'rgba(15,23,42,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(row.pct_of_score_cut, 100)}%`, height: '100%', background: '#dc2626' }} />
                               </div>
-                              <div style={{ width: '72px', textAlign: 'right', color: '#94a3b8', fontSize: '0.74rem', flexShrink: 0 }}>
+                              <div style={{ width: '72px', textAlign: 'right', color: '#334155', fontSize: '0.74rem', flexShrink: 0 }}>
                                 {row.count}건 · {row.pct_of_score_cut}%
                               </div>
                             </div>
@@ -3498,17 +3505,17 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         </div>
                       </div>
 
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
-                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수 부족 폭</div>
+                      <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수 부족 폭</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginBottom: '0.7rem', fontSize: '0.75rem' }}>
                           {Object.entries(empiricalAudit.score_gap_bands || {}).map(([label, item]) => (
-                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', color: '#1e293b' }}>
                               <span>{label}</span>
-                              <span style={{ color: '#94a3b8' }}>{item?.count || 0}건 · {item?.pct_of_score_cut || 0}%</span>
+                              <span style={{ color: '#334155' }}>{item?.count || 0}건 · {item?.pct_of_score_cut || 0}%</span>
                             </div>
                           ))}
                         </div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6 }}>
+                        <div style={{ color: '#334155', fontSize: '0.74rem', lineHeight: 1.6 }}>
                           점수컷으로 놓친 승자의 절반 가까이가 `20점 이상` 부족합니다.
                           단순 임계값 미세조정보다 점수 구조 자체가 특정 승자군을 과소평가하고 있을 가능성이 큽니다.
                         </div>
@@ -3518,15 +3525,15 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
                   {(empiricalAudit.score_cut_feature_gap || []).length > 0 && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem', marginBottom: '0.9rem' }}>
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
-                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>캡처군 vs 점수컷 특성 격차</div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
+                      <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>캡처군 vs 점수컷 특성 격차</div>
+                        <div style={{ color: '#334155', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
                           점수컷 전체에는 시총컷 중첩 종목도 섞여 있어, 현재 점수 구조가 어떤 승자군을 낮게 평가하는지 넓게 보여줍니다.
                         </div>
                         <div style={{ overflowX: 'auto' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
                             <thead>
-                              <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                              <tr style={{ color: '#1e293b', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                                 {['지표', '캡처군', '점수컷', '격차'].map(h => (
                                   <th key={h} style={{ padding: '0.45rem 0.55rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
                                 ))}
@@ -3535,12 +3542,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                             <tbody>
                               {(empiricalAudit.score_cut_feature_gap || []).map((row, i) => {
                                 const fmt = (v) => v == null ? '-' : `${v}${row.unit || ''}`;
-                                const gapColor = (row.gap || 0) > 0 ? '#4ade80' : (row.gap || 0) < 0 ? '#f87171' : '#94a3b8';
+                                const gapColor = (row.gap || 0) > 0 ? '#15803d' : (row.gap || 0) < 0 ? '#dc2626' : '#334155';
                                 return (
-                                  <tr key={`${row.metric}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                                    <td style={{ padding: '0.5rem 0.55rem', color: '#e2e8f0', fontWeight: 600 }}>{row.label}</td>
-                                    <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{fmt(row.captured_avg)}</td>
-                                    <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{fmt(row.score_cut_avg)}</td>
+                                  <tr key={`${row.metric}-${i}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', background: i % 2 === 0 ? 'rgba(15,23,42,0.02)' : 'transparent' }}>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b', fontWeight: 600 }}>{row.label}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b' }}>{fmt(row.captured_avg)}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b' }}>{fmt(row.score_cut_avg)}</td>
                                     <td style={{ padding: '0.5rem 0.55rem', color: gapColor, fontWeight: 600 }}>
                                       {row.gap == null ? '-' : `${row.gap > 0 ? '+' : ''}${row.gap}${row.unit || ''}`}
                                     </td>
@@ -3552,15 +3559,15 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         </div>
                       </div>
 
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
-                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>순수 점수 탈락군 격차</div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
+                      <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.35rem' }}>순수 점수 탈락군 격차</div>
+                        <div style={{ color: '#334155', fontSize: '0.74rem', lineHeight: 1.6, marginBottom: '0.7rem' }}>
                           유동성과 시총은 통과했는데 점수만 부족했던 승자군만 따로 뽑아, 휴리스틱이 놓친 핵심 패턴을 더 정확히 보여줍니다.
                         </div>
                         <div style={{ overflowX: 'auto' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
                             <thead>
-                              <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                              <tr style={{ color: '#1e293b', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                                 {['지표', '캡처군', '점수만 탈락', '격차'].map(h => (
                                   <th key={h} style={{ padding: '0.45rem 0.55rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
                                 ))}
@@ -3569,12 +3576,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                             <tbody>
                               {(empiricalAudit.score_only_feature_gap || []).map((row, i) => {
                                 const fmt = (v) => v == null ? '-' : `${v}${row.unit || ''}`;
-                                const gapColor = (row.gap || 0) > 0 ? '#4ade80' : (row.gap || 0) < 0 ? '#f87171' : '#94a3b8';
+                                const gapColor = (row.gap || 0) > 0 ? '#15803d' : (row.gap || 0) < 0 ? '#dc2626' : '#334155';
                                 return (
-                                  <tr key={`${row.metric}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                                    <td style={{ padding: '0.5rem 0.55rem', color: '#e2e8f0', fontWeight: 600 }}>{row.label}</td>
-                                    <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{fmt(row.captured_avg)}</td>
-                                    <td style={{ padding: '0.5rem 0.55rem', color: '#cbd5e1' }}>{fmt(row.score_only_avg)}</td>
+                                  <tr key={`${row.metric}-${i}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', background: i % 2 === 0 ? 'rgba(15,23,42,0.02)' : 'transparent' }}>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b', fontWeight: 600 }}>{row.label}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b' }}>{fmt(row.captured_avg)}</td>
+                                    <td style={{ padding: '0.5rem 0.55rem', color: '#1e293b' }}>{fmt(row.score_only_avg)}</td>
                                     <td style={{ padding: '0.5rem 0.55rem', color: gapColor, fontWeight: 600 }}>
                                       {row.gap == null ? '-' : `${row.gap > 0 ? '+' : ''}${row.gap}${row.unit || ''}`}
                                     </td>
@@ -3590,42 +3597,42 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
                   {(empiricalAudit.score_cut_earnings_patterns?.length > 0 || empiricalAudit.mktcap_cut_breakdown?.length > 0) && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem', marginBottom: '0.9rem' }}>
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
-                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수컷 내부 실적 패턴</div>
+                      <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>점수컷 내부 실적 패턴</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                           {(empiricalAudit.score_cut_earnings_patterns || []).map((row) => (
                             <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
-                              <div style={{ width: '220px', color: '#cbd5e1', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
-                              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
-                                <div style={{ width: `${Math.min(row.pct_of_score_cut, 100)}%`, height: '100%', background: '#fb7185' }} />
+                              <div style={{ width: '220px', color: '#1e293b', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
+                              <div style={{ flex: 1, background: 'rgba(15,23,42,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(row.pct_of_score_cut, 100)}%`, height: '100%', background: '#e11d48' }} />
                               </div>
-                              <div style={{ width: '72px', textAlign: 'right', color: '#94a3b8', fontSize: '0.74rem', flexShrink: 0 }}>
+                              <div style={{ width: '72px', textAlign: 'right', color: '#334155', fontSize: '0.74rem', flexShrink: 0 }}>
                                 {row.count}건 · {row.pct_of_score_cut}%
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginTop: '0.7rem' }}>
+                        <div style={{ color: '#334155', fontSize: '0.74rem', lineHeight: 1.6, marginTop: '0.7rem' }}>
                           `매출 YoY 상승 + 영업흑자` 실적형 승자도 현재 휴리스틱 점수에서 충분히 점수를 못 받는 사례가 많습니다.
                         </div>
                       </div>
 
-                      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem' }}>
-                        <div style={{ color: '#f1f5f9', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>시총컷 내부 승자 구조</div>
+                      <div style={{ background: 'rgba(15,23,42,0.02)', border: '1px solid rgba(15,23,42,0.2)', borderRadius: '10px', padding: '0.85rem' }}>
+                        <div style={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.6rem' }}>시총컷 내부 승자 구조</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                           {(empiricalAudit.mktcap_cut_breakdown || []).map((row) => (
                             <div key={row.name} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
-                              <div style={{ width: '190px', color: '#cbd5e1', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
-                              <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
-                                <div style={{ width: `${Math.min(row.pct_of_mktcap_cut, 100)}%`, height: '100%', background: '#60a5fa' }} />
+                              <div style={{ width: '190px', color: '#1e293b', fontSize: '0.74rem', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</div>
+                              <div style={{ flex: 1, background: 'rgba(15,23,42,0.05)', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.min(row.pct_of_mktcap_cut, 100)}%`, height: '100%', background: '#2563eb' }} />
                               </div>
-                              <div style={{ width: '72px', textAlign: 'right', color: '#94a3b8', fontSize: '0.74rem', flexShrink: 0 }}>
+                              <div style={{ width: '72px', textAlign: 'right', color: '#334155', fontSize: '0.74rem', flexShrink: 0 }}>
                                 {row.count}건 · {row.pct_of_mktcap_cut}%
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div style={{ color: '#94a3b8', fontSize: '0.74rem', lineHeight: 1.6, marginTop: '0.7rem' }}>
+                        <div style={{ color: '#334155', fontSize: '0.74rem', lineHeight: 1.6, marginTop: '0.7rem' }}>
                           실적형 10배주 중에서도 `3000억~1조` 이상으로 시작한 승자군이 적지 않아, 현재 시총 상한이 본질적으로 큰 승자를 잘라내고 있습니다.
                         </div>
                       </div>
@@ -3636,7 +3643,7 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                         <thead>
-                          <tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                          <tr style={{ color: '#1e293b', borderBottom: '1px solid rgba(15,23,42,0.2)' }}>
                             {['놓친 종목', '당시점수', '거래대금(억)', '시총(억)', '24M 최고수익', '미포착 사유'].map(h => (
                               <th key={h} style={{ padding: '0.45rem 0.6rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
                             ))}
@@ -3644,16 +3651,16 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         </thead>
                         <tbody>
                           {(empiricalAudit.top_missed_examples || []).map((row, i) => (
-                            <tr key={`${row.stock_code}-${i}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#e2e8f0', fontWeight: 600 }}>
+                            <tr key={`${row.stock_code}-${i}`} style={{ borderBottom: '1px solid rgba(15,23,42,0.2)', background: i % 2 === 0 ? 'rgba(15,23,42,0.02)' : 'transparent' }}>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#1e293b', fontWeight: 600 }}>
                                 {row.stock_name}
-                                <div style={{ color: '#94a3b8', fontSize: '0.68rem', marginTop: '0.1rem' }}>{row.stock_code} · {row.snapshot_date}</div>
+                                <div style={{ color: '#334155', fontSize: '0.68rem', marginTop: '0.1rem' }}>{row.stock_code} · {row.snapshot_date}</div>
                               </td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{row.heuristic_score?.toFixed?.(1) ?? row.heuristic_score}</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{row.avg_turnover_20d_억?.toFixed?.(1) ?? row.avg_turnover_20d_억}</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#cbd5e1' }}>{row.market_cap_억?.toFixed?.(0) ?? row.market_cap_억}</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#fbbf24', fontWeight: 700 }}>{row.forward_peak_pct != null ? `+${row.forward_peak_pct.toFixed(1)}%` : '-'}</td>
-                              <td style={{ padding: '0.5rem 0.6rem', color: '#94a3b8', fontSize: '0.75rem' }}>{(row.miss_reasons || []).join(' · ')}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#1e293b' }}>{row.heuristic_score?.toFixed?.(1) ?? row.heuristic_score}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#1e293b' }}>{row.avg_turnover_20d_억?.toFixed?.(1) ?? row.avg_turnover_20d_억}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#1e293b' }}>{row.market_cap_억?.toFixed?.(0) ?? row.market_cap_억}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#b45309', fontWeight: 700 }}>{row.forward_peak_pct != null ? `+${row.forward_peak_pct.toFixed(1)}%` : '-'}</td>
+                              <td style={{ padding: '0.5rem 0.6rem', color: '#334155', fontSize: '0.75rem' }}>{(row.miss_reasons || []).join(' · ')}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -3666,40 +3673,40 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               {/* 전체 요약 */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.6rem' }}>
                 {[
-                  { label: '평가 가능 후보', val: scorePerf.evaluated, color: '#94a3b8' },
-                  { label: '전체 후보', val: scorePerf.total, color: '#64748b' },
-                  { label: '평균 수익률', val: scorePerf.overall_avg != null ? `${scorePerf.overall_avg > 0 ? '+' : ''}${scorePerf.overall_avg.toFixed(2)}%` : '-', color: (scorePerf.overall_avg||0) > 0 ? '#4ade80' : '#f87171' },
-                  { label: '기준 일수', val: `${scorePerfDays}일`, color: '#a5b4fc' },
+                  { label: '평가 가능 후보', val: scorePerf.evaluated, color: '#334155' },
+                  { label: '전체 후보', val: scorePerf.total, color: '#1e293b' },
+                  { label: '평균 수익률', val: scorePerf.overall_avg != null ? `${scorePerf.overall_avg > 0 ? '+' : ''}${scorePerf.overall_avg.toFixed(2)}%` : '-', color: (scorePerf.overall_avg||0) > 0 ? '#15803d' : '#dc2626' },
+                  { label: '기준 일수', val: `${scorePerfDays}일`, color: '#4f46e5' },
                 ].map(k => (
-                  <div key={k.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
-                      padding: '0.8rem 1rem', border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center' }}>
+                  <div key={k.label} style={{ background: 'rgba(15,23,42,0.04)', borderRadius: '10px',
+                      padding: '0.8rem 1rem', border: '1px solid rgba(15,23,42,0.2)', textAlign: 'center' }}>
                     <div style={{ color: k.color, fontSize: '1.4rem', fontWeight: 800 }}>{k.val}</div>
-                    <div style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '0.2rem' }}>{k.label}</div>
+                    <div style={{ color: '#1e293b', fontSize: '0.72rem', marginTop: '0.2rem' }}>{k.label}</div>
                   </div>
                 ))}
               </div>
 
               {/* 구간별 수익률 */}
-              <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
-                  border: '1px solid rgba(255,255,255,0.08)', padding: '1rem' }}>
-                <div style={{ fontWeight: 700, color: '#f1f5f9', marginBottom: '0.8rem', fontSize: '0.85rem' }}>
+              <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '12px',
+                  border: '1px solid rgba(15,23,42,0.2)', padding: '1rem' }}>
+                <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '0.8rem', fontSize: '0.85rem' }}>
                   📊 점수 구간별 수익률
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {Object.entries(scorePerf.bucket_stats || {}).map(([bucket, b]) => {
                     const avg = b.avg_return ?? 0;
-                    const barColor = avg > 3 ? '#4ade80' : avg > 0 ? '#86efac' : avg > -3 ? '#fbbf24' : '#f87171';
+                    const barColor = avg > 3 ? '#15803d' : avg > 0 ? '#15803d' : avg > -3 ? '#b45309' : '#dc2626';
                     const barWidth = Math.min(Math.abs(avg) * 10, 100);
                     return (
                       <div key={bucket} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                        <span style={{ width: '70px', fontSize: '0.78rem', color: '#94a3b8', flexShrink: 0 }}>{bucket}점</span>
-                        <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: '4px', height: '20px', position: 'relative', overflow: 'hidden' }}>
+                        <span style={{ width: '70px', fontSize: '0.78rem', color: '#334155', flexShrink: 0 }}>{bucket}점</span>
+                        <div style={{ flex: 1, background: 'rgba(15,23,42,0.05)', borderRadius: '4px', height: '20px', position: 'relative', overflow: 'hidden' }}>
                           <div style={{ width: `${barWidth}%`, height: '100%', background: barColor, opacity: 0.7, borderRadius: '4px' }} />
                         </div>
                         <span style={{ width: '60px', textAlign: 'right', color: barColor, fontWeight: 700, fontSize: '0.82rem', flexShrink: 0 }}>
                           {avg > 0 ? '+' : ''}{avg.toFixed(2)}%
                         </span>
-                        <span style={{ width: '50px', color: '#64748b', fontSize: '0.72rem', flexShrink: 0 }}>{b.count || 0}종목</span>
+                        <span style={{ width: '50px', color: '#1e293b', fontSize: '0.72rem', flexShrink: 0 }}>{b.count || 0}종목</span>
                       </div>
                     );
                   })}
@@ -3708,15 +3715,15 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
               {/* 신호별 수익률 */}
               {scorePerf.signal_stats && Object.keys(scorePerf.signal_stats).length > 0 && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.08)', padding: '1rem' }}>
-                  <div style={{ fontWeight: 700, color: '#f1f5f9', marginBottom: '0.8rem', fontSize: '0.85rem' }}>
+                <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '12px',
+                    border: '1px solid rgba(15,23,42,0.2)', padding: '1rem' }}>
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '0.8rem', fontSize: '0.85rem' }}>
                     🎯 신호 유형별 수익률 (해당 신호 보유 종목 평균)
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                       <thead>
-                        <tr style={{ color: '#64748b' }}>
+                        <tr style={{ color: '#1e293b' }}>
                           {['신호', '종목수', '평균 수익률', '최대', '최소'].map(h => (
                             <th key={h} style={{ padding: '0.4rem 0.8rem', textAlign: 'left', fontWeight: 600, fontSize: '0.75rem' }}>{h}</th>
                           ))}
@@ -3727,18 +3734,18 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                           .sort((a, b) => (b[1].avg_return || 0) - (a[1].avg_return || 0))
                           .map(([sig, st]) => {
                             const avg = st.avg_return ?? 0;
-                            const retColor = avg > 0 ? '#4ade80' : '#f87171';
+                            const retColor = avg > 0 ? '#15803d' : '#dc2626';
                             return (
-                              <tr key={sig} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                                <td style={{ padding: '0.45rem 0.8rem', color: '#f1f5f9', fontWeight: 600 }}>{sig}</td>
-                                <td style={{ padding: '0.45rem 0.8rem', color: '#94a3b8' }}>{st.count}</td>
+                              <tr key={sig} style={{ borderTop: '1px solid rgba(15,23,42,0.2)' }}>
+                                <td style={{ padding: '0.45rem 0.8rem', color: '#0f172a', fontWeight: 600 }}>{sig}</td>
+                                <td style={{ padding: '0.45rem 0.8rem', color: '#334155' }}>{st.count}</td>
                                 <td style={{ padding: '0.45rem 0.8rem', color: retColor, fontWeight: 700 }}>
                                   {avg > 0 ? '+' : ''}{avg.toFixed(2)}%
                                 </td>
-                                <td style={{ padding: '0.45rem 0.8rem', color: '#4ade80' }}>
+                                <td style={{ padding: '0.45rem 0.8rem', color: '#15803d' }}>
                                   {st.max_return != null ? `+${st.max_return.toFixed(1)}%` : '-'}
                                 </td>
-                                <td style={{ padding: '0.45rem 0.8rem', color: '#f87171' }}>
+                                <td style={{ padding: '0.45rem 0.8rem', color: '#dc2626' }}>
                                   {st.min_return != null ? `${st.min_return.toFixed(1)}%` : '-'}
                                 </td>
                               </tr>
@@ -3751,16 +3758,16 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
               )}
 
               {/* 인사이트 박스 */}
-              <div style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)',
-                  borderRadius: '10px', padding: '0.8rem 1rem', fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.7 }}>
-                <b style={{ color: '#a5b4fc' }}>📌 가중치 최적화 가이드:</b><br/>
+              <div style={{ background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.2)',
+                  borderRadius: '10px', padding: '0.8rem 1rem', fontSize: '0.78rem', color: '#334155', lineHeight: 1.7 }}>
+                <b style={{ color: '#4f46e5' }}>📌 가중치 최적화 가이드:</b><br/>
                 • 평가 가능 종목이 50개 이상일 때 통계적으로 신뢰 가능합니다.<br/>
                 • 고점수 구간(75+)에서 수익률이 높다면 min_score 임계값을 높여 정밀도를 높이세요.<br/>
                 • 특정 신호(예: 자사주 취득, PBR 저점)가 일관되게 높은 수익률을 보이면 해당 신호 가중치를 증가시키세요.
               </div>
             </>
           ) : (
-            <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>
+            <div style={{ color: '#1e293b', textAlign: 'center', padding: '2rem' }}>
               데이터 없음 — 탭 진입 시 자동 로드됩니다
             </div>
           )}
@@ -3770,9 +3777,9 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {/* ── AI 배치 분석 탭 ─────────────────────────────────────── */}
       {activeTab === 'ai_batch' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
+            <div style={{ background: 'rgba(79,70,229,0.1)', border: '1px solid rgba(79,70,229,0.3)',
                 borderRadius: '12px', padding: '1rem 1.2rem' }}>
-              <div style={{ fontWeight: 700, color: '#a78bfa', marginBottom: '0.6rem' }}>
+              <div style={{ fontWeight: 700, color: '#7c3aed', marginBottom: '0.6rem' }}>
                 🧠 OpenAI mini 배치 심층 분석
               </div>
               <div style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
@@ -3802,13 +3809,13 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 <button onClick={() => runBatch(batchTopN, batchMinScore, batchForce)}
                   disabled={batchRunning}
                   style={{ padding: '0.5rem 1.2rem', borderRadius: '8px', border: 'none', cursor: batchRunning ? 'not-allowed' : 'pointer',
-                    background: batchRunning ? '#4b5563' : '#7c3aed', color: '#fff', fontWeight: 600 }}>
+                    background: batchRunning ? '#4b5563' : '#7c3aed', color: 'var(--text-primary)', fontWeight: 600 }}>
                   {batchRunning ? '⏳ 분석 중...' : '🚀 배치 분석 시작'}
                 </button>
               </div>
               {batchStatus && (
-                <div style={{ background: batchStatus.status === 'started' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                    border: `1px solid ${batchStatus.status === 'started' ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
+                <div style={{ background: batchStatus.status === 'started' ? 'rgba(5,150,105,0.1)' : 'rgba(220,38,38,0.1)',
+                    border: `1px solid ${batchStatus.status === 'started' ? 'rgba(5,150,105,0.4)' : 'rgba(220,38,38,0.4)'}`,
                     borderRadius: '8px', padding: '0.7rem 1rem', fontSize: '0.85rem', color: 'var(--text)' }}>
                   {batchStatus.status === 'started'
                     ? `✅ 배치 시작됨 — ${batchStatus.to_analyze || 0}개 종목 분석 대기 (이미 캐시 ${batchStatus.already_cached || 0}개)`
@@ -3841,8 +3848,8 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{item.stock_name || item.stock_code}</span>
                         <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{item.stock_code}</span>
                         {item.score != null && (
-                          <span style={{ background: item.score >= 70 ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-                              color: item.score >= 70 ? '#34d399' : '#fbbf24',
+                          <span style={{ background: item.score >= 70 ? 'rgba(5,150,105,0.2)' : 'rgba(217,119,6,0.2)',
+                              color: item.score >= 70 ? '#047857' : '#b45309',
                               borderRadius: '12px', padding: '0.15rem 0.6rem', fontSize: '0.78rem', fontWeight: 700 }}>
                             {item.score}점
                           </span>
@@ -3871,12 +3878,12 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
       {activeTab === 'portfolio' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-          <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)',
+          <div style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.3)',
               borderRadius: '12px', padding: '1rem 1.2rem' }}>
-            <div style={{ fontWeight: 700, color: '#34d399', marginBottom: '0.4rem' }}>
+            <div style={{ fontWeight: 700, color: '#047857', marginBottom: '0.4rem' }}>
               💼 포트폴리오 × 텐버거 연동 추적
             </div>
-            <div style={{ color: '#94a3b8', fontSize: '0.78rem', lineHeight: 1.6 }}>
+            <div style={{ color: '#334155', fontSize: '0.78rem', lineHeight: 1.6 }}>
               현재 보유 종목과 텐버거 후보 교집합을 분석합니다.
               텐버거 점수가 높은 종목은 장기 보유 우선 순위, 낮은 종목은 비중 축소 검토.
             </div>
@@ -3884,24 +3891,24 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
 
           <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
             <button onClick={loadPortfolioTracking}
-              style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.4)',
-                background: 'rgba(16,185,129,0.15)', color: '#34d399', cursor: 'pointer', fontSize: '0.82rem' }}>
+              style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid rgba(5,150,105,0.4)',
+                background: 'rgba(5,150,105,0.15)', color: '#047857', cursor: 'pointer', fontSize: '0.82rem' }}>
               🔄 새로고침
             </button>
           </div>
 
           {pfLoading ? (
-            <div style={{ color: '#94a3b8', textAlign: 'center', padding: '2rem' }}>로딩 중…</div>
+            <div style={{ color: '#334155', textAlign: 'center', padding: '2rem' }}>로딩 중…</div>
           ) : portfolioTracking.length === 0 ? (
-            <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>
+            <div style={{ color: '#1e293b', textAlign: 'center', padding: '2rem' }}>
               포트폴리오 데이터 없음 (포트폴리오 탭에서 종목 추가 후 확인)
             </div>
           ) : (
-            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+            <div style={{ background: 'rgba(15,23,42,0.03)', borderRadius: '12px',
+                border: '1px solid rgba(15,23,42,0.2)', overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8' }}>
+                  <tr style={{ background: 'rgba(15,23,42,0.04)', color: '#334155' }}>
                     {['종목', '수량', '평균가', '현재가', '수익률', '텐버거점수', '주요신호'].map(h => (
                       <th key={h} style={{ padding: '0.7rem 0.8rem', textAlign: 'left',
                           fontWeight: 600, fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{h}</th>
@@ -3911,26 +3918,26 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                 <tbody>
                   {portfolioTracking.map((pf, i) => {
                     const score = pf.tenbagger_score;
-                    const scoreColor = score >= 70 ? '#4ade80' : score >= 55 ? '#fbbf24' : score ? '#f87171' : '#475569';
+                    const scoreColor = score >= 70 ? '#15803d' : score >= 55 ? '#b45309' : score ? '#dc2626' : '#1e293b';
                     const scoreLabel = score >= 70 ? '🚀 텐버거 유력' : score >= 55 ? '⭐ 후보' : score ? '보통' : '미분석';
                     const profitPct = pf.profit_pct ?? pf.profitPct ?? null;
-                    const profitColor = profitPct > 0 ? '#4ade80' : profitPct < 0 ? '#f87171' : '#94a3b8';
+                    const profitColor = profitPct > 0 ? '#15803d' : profitPct < 0 ? '#dc2626' : '#334155';
                     const reasons = (pf.tenbagger_reasons || []).slice(0, 2);
                     return (
                       <tr key={pf.stock_code}
-                        style={{ borderTop: '1px solid rgba(255,255,255,0.05)',
-                          background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
-                        <td style={{ padding: '0.6rem 0.8rem', color: '#f1f5f9', fontWeight: 600 }}>
+                        style={{ borderTop: '1px solid rgba(15,23,42,0.2)',
+                          background: i % 2 === 0 ? 'transparent' : 'rgba(15,23,42,0.015)' }}>
+                        <td style={{ padding: '0.6rem 0.8rem', color: '#0f172a', fontWeight: 600 }}>
                           {pf.stock_name || pf.stock_code}
-                          <div style={{ color: '#64748b', fontSize: '0.72rem' }}>{pf.stock_code}</div>
+                          <div style={{ color: '#1e293b', fontSize: '0.72rem' }}>{pf.stock_code}</div>
                         </td>
-                        <td style={{ padding: '0.6rem 0.8rem', color: '#cbd5e1' }}>
+                        <td style={{ padding: '0.6rem 0.8rem', color: '#1e293b' }}>
                           {(pf.quantity || 0).toLocaleString()}주
                         </td>
-                        <td style={{ padding: '0.6rem 0.8rem', color: '#94a3b8' }}>
+                        <td style={{ padding: '0.6rem 0.8rem', color: '#334155' }}>
                           {(pf.avg_price || 0).toLocaleString()}원
                         </td>
-                        <td style={{ padding: '0.6rem 0.8rem', color: '#94a3b8' }}>
+                        <td style={{ padding: '0.6rem 0.8rem', color: '#334155' }}>
                           {(pf.current_price || 0).toLocaleString()}원
                         </td>
                         <td style={{ padding: '0.6rem 0.8rem', color: profitColor, fontWeight: 600 }}>
@@ -3939,16 +3946,16 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
                         <td style={{ padding: '0.6rem 0.8rem' }}>
                           {score != null ? (
                             <span style={{ color: scoreColor, fontWeight: 700 }}>{score}점 <span style={{ fontSize: '0.72rem' }}>{scoreLabel}</span></span>
-                          ) : <span style={{ color: '#475569' }}>-</span>}
+                          ) : <span style={{ color: '#1e293b' }}>-</span>}
                         </td>
                         <td style={{ padding: '0.6rem 0.8rem', maxWidth: '200px' }}>
                           {reasons.length > 0 ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
                               {reasons.map((r, ri) => (
-                                <div key={ri} style={{ color: '#94a3b8', fontSize: '0.72rem', lineHeight: 1.4 }}>{r}</div>
+                                <div key={ri} style={{ color: '#334155', fontSize: '0.72rem', lineHeight: 1.4 }}>{r}</div>
                               ))}
                             </div>
-                          ) : <span style={{ color: '#475569', fontSize: '0.72rem' }}>-</span>}
+                          ) : <span style={{ color: '#1e293b', fontSize: '0.72rem' }}>-</span>}
                         </td>
                       </tr>
                     );
@@ -3964,15 +3971,15 @@ export default function TenbaggerProjectView({ megatrendView = null }) {
             const missed = portfolioTracking.filter(p => !pfCodes.has(p.stock_code) && p.tenbagger_score >= 65);
             if (missed.length === 0) return null;
             return (
-              <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)',
+              <div style={{ background: 'rgba(79,70,229,0.08)', border: '1px solid rgba(79,70,229,0.25)',
                   borderRadius: '12px', padding: '1rem 1.2rem' }}>
-                <div style={{ fontWeight: 700, color: '#a5b4fc', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                <div style={{ fontWeight: 700, color: '#4f46e5', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
                   💡 미보유 고점수 텐버거 후보 ({missed.length}종목)
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                   {missed.slice(0, 10).map(c => (
                     <span key={c.stock_code} style={{ padding: '0.2rem 0.7rem', borderRadius: '20px',
-                        background: 'rgba(99,102,241,0.2)', color: '#c4b5fd', fontSize: '0.78rem' }}>
+                        background: 'rgba(79,70,229,0.2)', color: '#6d28d9', fontSize: '0.78rem' }}>
                       {c.stock_name || c.stock_code} {c.tenbagger_score}점
                     </span>
                   ))}

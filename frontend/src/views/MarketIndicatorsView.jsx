@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React from 'react';
 import { ComposedChart, Bar, Cell, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
 import { API } from '../utils.js';
@@ -168,7 +175,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   }, [trendData, cumDays]);
   const fmtChg = (v) => {
     if (!v && v !== 0) return { txt: '-', color: 'var(--text-secondary)' };
-    return { txt: fmtAmt(v), color: v >= 0 ? '#f87171' : '#60a5fa' };
+    return { txt: fmtAmt(v), color: v >= 0 ? '#dc2626' : '#2563eb' };
   };
   const fmtPct = (v) => {
     if (!v && v !== 0) return '-';
@@ -185,14 +192,14 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   );
 
   const INV_TYPES = [
-    { key: 'both_buy',  label: '외인+기관 합계', color: '#f87171' },
-    { key: 'both_sell', label: '외인+기관 매도', color: '#34d399' },
-    { key: 'frn_buy',   label: '외국인 순매수', color: '#f87171' },
-    { key: 'inst_buy',  label: '기관 순매수',   color: '#f87171' },
-    { key: 'ind_buy',   label: '개인 순매수',   color: '#f87171' },
-    { key: 'frn_sell',  label: '외국인 순매도', color: '#34d399' },
-    { key: 'inst_sell', label: '기관 순매도',   color: '#34d399' },
-    { key: 'ind_sell',  label: '개인 순매도',   color: '#34d399' },
+    { key: 'both_buy',  label: '외인+기관 합계', color: '#dc2626' },
+    { key: 'both_sell', label: '외인+기관 매도', color: '#047857' },
+    { key: 'frn_buy',   label: '외국인 순매수', color: '#dc2626' },
+    { key: 'inst_buy',  label: '기관 순매수',   color: '#dc2626' },
+    { key: 'ind_buy',   label: '개인 순매수',   color: '#dc2626' },
+    { key: 'frn_sell',  label: '외국인 순매도', color: '#047857' },
+    { key: 'inst_sell', label: '기관 순매도',   color: '#047857' },
+    { key: 'ind_sell',  label: '개인 순매도',   color: '#047857' },
   ];
 
   const renderInvestorTable = (rows, amtKey, selDate) => {
@@ -207,12 +214,12 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
               <th style={{padding:'0.4rem 0.5rem',textAlign:'left',color:'var(--text-secondary)'}}>종목</th>
               <th style={{padding:'0.4rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>
                 수급기준일 종가
-                {selDate && <span style={{fontSize:'0.65rem',color:'rgba(255,255,255,0.3)',display:'block'}}>{selDate}</span>}
+                {selDate && <span style={{fontSize:'0.65rem',color:'rgba(15,23,42,0.88)',display:'block'}}>{selDate}</span>}
               </th>
               {hasTodayPrice && (
                 <th style={{padding:'0.4rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>
                   당일 주가
-                  <span style={{fontSize:'0.65rem',color:'rgba(45,212,191,0.6)',display:'block'}}>
+                  <span style={{fontSize:'0.65rem',color:'rgba(37,99,235,0.9)',display:'block'}}>
                     {rows.find(r=>r.today_date)?.today_date || '최신'}
                   </span>
                 </th>
@@ -226,12 +233,12 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
               const amt    = r[amtKey] || 0;
               const qtyKey = amtKey.replace('_amt', '_qty');
               const qty    = r[qtyKey] || 0;
-              const c      = amt >= 0 ? '#f87171' : '#34d399';
+              const c      = amt >= 0 ? '#dc2626' : '#047857';
               const chg    = r.today_chg_pct;
-              const chgC   = chg == null ? 'var(--text-secondary)' : chg >= 0 ? '#f87171' : '#60a5fa';
+              const chgC   = chg == null ? 'var(--text-secondary)' : chg >= 0 ? '#dc2626' : '#2563eb';
               return (
-                <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}
-                  onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.04)'}
+                <tr key={i} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(15,23,42,0.04)'}
                   onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                   <td style={{padding:'0.35rem 0.5rem', whiteSpace:'nowrap', maxWidth:'110px', overflow:'hidden'}}>
                     <button onClick={()=>{onChangeStock(r.stock_code);onChangeTab('analysis');}}
@@ -241,7 +248,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                     </button>
                     <span style={{fontSize:'0.68rem',color:'var(--text-secondary)'}}>{r.stock_code}</span>
                   </td>
-                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'rgba(255,255,255,0.55)',fontSize:'0.75rem',whiteSpace:'nowrap'}}>
+                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'rgba(15,23,42,0.88)',fontSize:'0.75rem',whiteSpace:'nowrap'}}>
                     {r.close?.toLocaleString()}원
                   </td>
                   {hasTodayPrice && (
@@ -255,7 +262,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                             </span>
                           )}
                         </div>
-                      ) : <span style={{color:'rgba(255,255,255,0.2)',fontSize:'0.72rem'}}>-</span>}
+                      ) : <span style={{color:'rgba(15,23,42,0.88)',fontSize:'0.72rem'}}>-</span>}
                     </td>
                   )}
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:c,fontWeight:700}}>{fmtAmt(amt)}</td>
@@ -290,12 +297,12 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
             {rows.map((r, i) => {
               const mktShort = r.market?.includes('유가') || r.market?.toLowerCase().includes('kospi') ? 'KOSPI' :
                                r.market?.includes('코스닥') ? 'KOSDAQ' : r.market || '-';
-              const instC = !r.inst_net_buy_amt ? 'var(--text-secondary)' : r.inst_net_buy_amt >= 0 ? '#f87171' : '#34d399';
-              const frnC  = !r.frn_net_buy_amt  ? 'var(--text-secondary)' : r.frn_net_buy_amt  >= 0 ? '#f87171' : '#34d399';
-              const chgC  = r.chg_pct == null ? 'var(--text-secondary)' : r.chg_pct >= 0 ? '#f87171' : '#60a5fa';
+              const instC = !r.inst_net_buy_amt ? 'var(--text-secondary)' : r.inst_net_buy_amt >= 0 ? '#dc2626' : '#047857';
+              const frnC  = !r.frn_net_buy_amt  ? 'var(--text-secondary)' : r.frn_net_buy_amt  >= 0 ? '#dc2626' : '#047857';
+              const chgC  = r.chg_pct == null ? 'var(--text-secondary)' : r.chg_pct >= 0 ? '#dc2626' : '#2563eb';
               return (
-                <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}
-                  onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.04)'}
+                <tr key={i} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(15,23,42,0.04)'}
                   onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                   <td style={{padding:'0.35rem 0.5rem', whiteSpace:'nowrap', maxWidth:'110px', overflow:'hidden'}}>
                     <button onClick={()=>{onChangeStock(r.stock_code);onChangeTab('analysis');}}
@@ -307,8 +314,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   </td>
                   <td style={{padding:'0.35rem 0.5rem', whiteSpace:'nowrap'}}>
                     <span style={{fontSize:'0.7rem',padding:'0.1rem 0.4rem',borderRadius:'4px',
-                      background: mktShort==='KOSPI'?'rgba(248,113,113,0.15)':'rgba(96,165,250,0.15)',
-                      color: mktShort==='KOSPI'?'#f87171':'#60a5fa'}}>
+                      background: mktShort==='KOSPI'?'rgba(220,38,38,0.15)':'rgba(37,99,235,0.15)',
+                      color: mktShort==='KOSPI'?'#dc2626':'#2563eb'}}>
                       {mktShort}
                     </span>
                   </td>
@@ -316,7 +323,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:chgC,whiteSpace:'nowrap'}}>
                     {r.chg_pct != null ? `${r.chg_pct >= 0 ? '▲' : '▼'}${Math.abs(r.chg_pct).toFixed(1)}%` : '-'}
                   </td>
-                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:'#fbbf24'}}>{r.turnover_pct?.toFixed(1)}%</td>
+                  <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:'#b45309'}}>{r.turnover_pct?.toFixed(1)}%</td>
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>{r.volume?.toLocaleString()}</td>
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:instC,fontWeight:600}}>{fmtAmt(r.inst_net_buy_amt)}</td>
                   <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:frnC,fontWeight:600}}>{fmtAmt(r.frn_net_buy_amt)}</td>
@@ -339,7 +346,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
             <div key={mkt} className="glass-panel" style={{padding:'0.4rem 0.8rem',display:'flex',gap:'0.6rem',alignItems:'center'}}>
               <span style={{fontWeight:700,fontSize:'0.85rem'}}>{mkt}</span>
               <span style={{fontWeight:800,fontSize:'0.95rem'}}>{d.close?.toLocaleString()}</span>
-              <span style={{fontSize:'0.8rem',color:d.change_rate>=0?'#f87171':'#60a5fa',fontWeight:600}}>
+              <span style={{fontSize:'0.8rem',color:d.change_rate>=0?'#dc2626':'#2563eb',fontWeight:600}}>
                 {d.change_rate>=0?'▲':'▼'}{Number(Math.abs(d.change_rate)).toFixed(1)}%
               </span>
               <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>{d.date}</span>
@@ -381,8 +388,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   const metric = event.metric == null ? '-' : event.event_type === 'borrow'
                     ? `${Math.round(Number(event.metric) / 1e8).toLocaleString()}억`
                     : Number(event.metric).toLocaleString('ko-KR', {maximumFractionDigits:2});
-                  const color = event.event_type === 'supply' ? '#f87171' : event.event_type === 'borrow' ? '#fbbf24' : '#60a5fa';
-                  return <tr key={`${event.event_type}-${event.stock_code}-${index}`} style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                  const color = event.event_type === 'supply' ? '#dc2626' : event.event_type === 'borrow' ? '#b45309' : '#2563eb';
+                  return <tr key={`${event.event_type}-${event.stock_code}-${index}`} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
                     <td style={{padding:'0.38rem 0.5rem',color,fontWeight:700}}>{event.label}</td><td style={{padding:'0.38rem 0.5rem',textAlign:'right'}}>#{event.rank}</td>
                     <td style={{padding:'0.38rem 0.5rem'}}><button onClick={()=>{onChangeStock(event.stock_code);onChangeTab('analysis');}} style={{padding:0,border:0,background:'none',cursor:'pointer',color:'var(--text-primary)',fontWeight:700,fontSize:'0.78rem'}}>{event.stock_name || event.stock_code}</button></td>
                     <td style={{padding:'0.38rem 0.5rem',color:'var(--text-secondary)'}}>{event.market || '-'}</td><td style={{padding:'0.38rem 0.5rem',color:'var(--text-secondary)'}}>{event.sector || '-'}</td>
@@ -403,10 +410,10 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
               <h3 style={{margin:0,fontSize:'0.92rem',fontWeight:700}}>🧭 관심도·수급 교차검증</h3>
               <div style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginTop:'0.28rem',maxWidth:860}}>{attentionConfirmation?.notice || '출처가 있는 뉴스·토론 관심도 집계를 불러오는 중입니다.'}</div>
             </div>
-            <span style={{fontSize:'0.7rem',fontWeight:700,color:'#fbbf24',padding:'0.24rem 0.5rem',borderRadius:6,background:'rgba(251,191,36,0.12)'}}>연구·가상매매 전용</span>
+            <span style={{fontSize:'0.7rem',fontWeight:700,color:'#b45309',padding:'0.24rem 0.5rem',borderRadius:6,background:'rgba(217,119,6,0.12)'}}>연구·가상매매 전용</span>
           </div>
           {!attentionConfirmation ? <div style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)'}}>로딩 중...</div> : (attentionConfirmation.items || []).length === 0 ? (
-            <div style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)',fontSize:'0.82rem'}}>연결된 관심도 집계가 없습니다. 토론 원문이 아닌 출처·링크가 있는 순위/건수 집계만 저장합니다.</div>
+            <div style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)',fontSize:'0.82rem'}}>연결된 관심도 집계가 없습니다. 토론 원문이 아닌 출처·링크가 있는 순위/건수 집계만 저장합니다.{attentionConfirmation.source_status && (<div style={{marginTop:'0.9rem',padding:'0.7rem 0.9rem',border:'1px solid #b45309',borderRadius:'8px',background:'#fffbeb',color:'#92400e',fontWeight:600,textAlign:'left',maxWidth:720,marginInline:'auto'}}>⚠ {attentionConfirmation.source_status.message}<br/>{attentionConfirmation.source_status.source} 마지막 적재일: {attentionConfirmation.source_status.last_data_date || '없음'}</div>)}</div>
           ) : (
             <div style={{overflowX:'auto',overflowY:'clip'}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.78rem',minWidth:900}}>
@@ -414,14 +421,14 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                 <tbody>{attentionConfirmation.items.map((item, index) => {
                   const confirmed = item.status === 'confirmed_for_paper_review';
                   const rankText = item.rank ? `#${item.rank}${item.previous_rank ? ` (전 #${item.previous_rank})` : ''}` : (item.mention_count != null ? `${Number(item.mention_count).toLocaleString()}건` : '-');
-                  return <tr key={`${item.source}-${item.source_event_id}-${index}`} style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
-                    <td style={{padding:'0.42rem 0.5rem'}}><span style={{fontSize:'0.68rem',fontWeight:800,padding:'0.16rem 0.4rem',borderRadius:5,color:confirmed?'#4ade80':'#94a3b8',background:confirmed?'rgba(74,222,128,0.12)':'rgba(148,163,184,0.12)'}}>{confirmed?'가상검토':'문맥·경보'}</span></td>
-                    <td style={{padding:'0.42rem 0.5rem'}}><a href={item.source_url} target="_blank" rel="noreferrer" style={{color:'#60a5fa',textDecoration:'none',fontWeight:700}}>{item.source}</a><div style={{fontSize:'0.66rem',color:'var(--text-secondary)'}}>{item.event_type}</div></td>
+                  return <tr key={`${item.source}-${item.source_event_id}-${index}`} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
+                    <td style={{padding:'0.42rem 0.5rem'}}><span style={{fontSize:'0.68rem',fontWeight:800,padding:'0.16rem 0.4rem',borderRadius:5,color:confirmed?'#15803d':'#334155',background:confirmed?'rgba(22,163,74,0.12)':'rgba(100,116,139,0.12)'}}>{confirmed?'가상검토':'문맥·경보'}</span></td>
+                    <td style={{padding:'0.42rem 0.5rem'}}><a href={item.source_url} target="_blank" rel="noreferrer" style={{color:'#2563eb',textDecoration:'none',fontWeight:700}}>{item.source}</a><div style={{fontSize:'0.66rem',color:'var(--text-secondary)'}}>{item.event_type}</div></td>
                     <td style={{padding:'0.42rem 0.5rem'}}>{item.stock_code ? <button onClick={()=>{onChangeStock(item.stock_code);onChangeTab('analysis');}} style={{padding:0,border:0,background:'none',cursor:'pointer',color:'var(--text-primary)',fontWeight:700,fontSize:'0.78rem'}}>{item.stock_name || item.stock_code}</button> : <span style={{color:'var(--text-secondary)'}}>{item.sector_name || '-'}</span>}<div style={{fontSize:'0.66rem',color:'var(--text-secondary)'}}>{item.stock_code || item.sector_name || '-'}</div></td>
                     <td style={{padding:'0.42rem 0.5rem',textAlign:'right'}}>{rankText}</td>
-                    <td style={{padding:'0.42rem 0.5rem',textAlign:'right',color:item.flow_confirmed?'#f87171':'var(--text-secondary)',fontWeight:item.flow_confirmed?800:400}}>{item.flow_5d_억 == null ? '-' : fmtAmt(item.flow_5d_억)}</td>
+                    <td style={{padding:'0.42rem 0.5rem',textAlign:'right',color:item.flow_confirmed?'#dc2626':'var(--text-secondary)',fontWeight:item.flow_confirmed?800:400}}>{item.flow_5d_억 == null ? '-' : fmtAmt(item.flow_5d_억)}</td>
                     <td style={{padding:'0.42rem 0.5rem',maxWidth:250,color:'var(--text-secondary)'}}>{(item.reasons || []).join(' · ') || '독립 확인 대기'}</td>
-                    <td style={{padding:'0.42rem 0.5rem',maxWidth:230,color:'#fbbf24',fontSize:'0.7rem'}}>{(item.warnings || []).join(' ') || '-'}</td>
+                    <td style={{padding:'0.42rem 0.5rem',maxWidth:230,color:'#b45309',fontSize:'0.7rem'}}>{(item.warnings || []).join(' ') || '-'}</td>
                   </tr>;
                 })}</tbody>
               </table>
@@ -458,23 +465,23 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                 </div>
                 <ResponsiveContainer width="100%" height={280}>
                   <ComposedChart data={marketCash.rows} margin={{top:5,right:10,bottom:5,left:10}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
-                    <YAxis yAxisId="left" tick={{fontSize:10,fill:'#2dd4bf'}} tickFormatter={(v)=>`${(Number(v||0)/10000).toFixed(1)}조`} />
-                    <YAxis yAxisId="right" orientation="right" tick={{fontSize:10,fill:'#f59e0b'}} tickFormatter={(v)=>`${Math.round(Number(v||0)).toLocaleString()}`} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.06)" />
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#334155'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
+                    <YAxis yAxisId="left" tick={{fontSize:10,fill:'#2563eb'}} tickFormatter={(v)=>`${(Number(v||0)/10000).toFixed(1)}조`} />
+                    <YAxis yAxisId="right" orientation="right" tick={{fontSize:10,fill:'#b45309'}} tickFormatter={(v)=>`${Math.round(Number(v||0)).toLocaleString()}`} />
                     <Tooltip
                       contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
                       formatter={(v,n)=>[n==='customer_deposit_100m' ? `${(Number(v||0)/10000).toFixed(2)}조` : `${Number(v||0).toLocaleString()}억`, n==='customer_deposit_100m' ? '고객예탁금' : n==='credit_balance_100m' ? '신용잔고' : n==='kospi_trade_value_100m' ? '코스피 거래대금' : '코스닥 거래대금']}
                       labelFormatter={l=>`날짜: ${l}`}
                     />
                     <Legend formatter={(v)=> v==='customer_deposit_100m' ? '고객예탁금' : v==='credit_balance_100m' ? '신용잔고' : v==='kospi_trade_value_100m' ? '코스피 거래대금' : '코스닥 거래대금'} />
-                    <Area yAxisId="left" type="monotone" dataKey="customer_deposit_100m" name="customer_deposit_100m" stroke="#2dd4bf" fill="rgba(45,212,191,0.16)" strokeWidth={2} />
-                    <Line yAxisId="right" type="monotone" dataKey="credit_balance_100m" name="credit_balance_100m" stroke="#f59e0b" dot={false} strokeWidth={2} />
+                    <Area yAxisId="left" type="monotone" dataKey="customer_deposit_100m" name="customer_deposit_100m" stroke="#2563eb" fill="rgba(37,99,235,0.16)" strokeWidth={2} />
+                    <Line yAxisId="right" type="monotone" dataKey="credit_balance_100m" name="credit_balance_100m" stroke="#b45309" dot={false} strokeWidth={2} />
                     {marketCash?.rows?.some(r => Number(r.kospi_trade_value_100m || 0) > 0) && (
-                      <Line type="monotone" dataKey="kospi_trade_value_100m" name="kospi_trade_value_100m" stroke="#60a5fa" dot={false} strokeWidth={1.8} />
+                      <Line type="monotone" dataKey="kospi_trade_value_100m" name="kospi_trade_value_100m" stroke="#2563eb" dot={false} strokeWidth={1.8} />
                     )}
                     {marketCash?.rows?.some(r => Number(r.kosdaq_trade_value_100m || 0) > 0) && (
-                      <Line type="monotone" dataKey="kosdaq_trade_value_100m" name="kosdaq_trade_value_100m" stroke="#a78bfa" dot={false} strokeWidth={1.8} />
+                      <Line type="monotone" dataKey="kosdaq_trade_value_100m" name="kosdaq_trade_value_100m" stroke="#7c3aed" dot={false} strokeWidth={1.8} />
                     )}
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -509,8 +516,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
               {/* ── 요약 섹션 (상단 배치) ── */}
               {['kospi','kosdaq'].map(mktKey => (
                 <div key={mktKey} style={{marginBottom:'2.5rem'}}>
-                  <div style={{display:'flex', alignItems:'baseline', gap:'0.7rem', marginBottom:'0.8rem', borderBottom:'2px solid rgba(255,255,255,0.1)', paddingBottom:'0.4rem'}}>
-                    <h3 style={{fontSize:'1.3rem', fontWeight:800, margin:0, color:'#fff'}}>{mktKey.toUpperCase()}</h3>
+                  <div style={{display:'flex', alignItems:'baseline', gap:'0.7rem', marginBottom:'0.8rem', borderBottom:'2px solid rgba(15,23,42,0.2)', paddingBottom:'0.4rem'}}>
+                    <h3 style={{fontSize:'1.3rem', fontWeight:800, margin:0, color:'var(--text-primary)'}}>{mktKey.toUpperCase()}</h3>
                     <span style={{fontSize:'0.85rem', color:'var(--text-secondary)'}}>전체 요약 (Top 5)</span>
                   </div>
                   
@@ -519,7 +526,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                       const typeKey = `${inv}_buy`;
                       const amtKey  = `${inv}_amt`;
                       const label   = inv==='both'?'외인+기관':inv==='inst'?'기관':inv==='frn'?'외국인':'개인';
-                      const color   = inv==='both'?'#a78bfa':inv==='inst'?'#f87171':inv==='frn'?'#fbbf24':'#60a5fa';
+                      const color   = inv==='both'?'#7c3aed':inv==='inst'?'#dc2626':inv==='frn'?'#b45309':'#2563eb';
                       const rows    = investorData?.[mktKey]?.[typeKey]?.slice(0,5) || [];
                       return (
                         <div key={`${mktKey}-${inv}`} className="glass-panel" style={{padding:'1rem', borderTop:`3px solid ${color}`}}>
@@ -537,14 +544,14 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                                 return (
                                   <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                                     <div style={{display:'flex', alignItems:'center', gap:'0.4rem', overflow:'hidden', flex:1}}>
-                                      <span style={{fontSize:'0.75rem', color:'rgba(255,255,255,0.3)', width:'12px'}}>{i+1}</span>
+                                      <span style={{fontSize:'0.75rem', color:'rgba(15,23,42,0.88)', width:'12px'}}>{i+1}</span>
                                       <button onClick={()=>{onChangeStock(r.stock_code);onChangeTab('analysis');}}
                                         style={{background:'none',border:'none',color:'var(--text-primary)',cursor:'pointer',
                                           fontSize:'0.8rem',padding:0,textAlign:'left',fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                                         {r.stock_name}
                                       </button>
                                     </div>
-                                    <span style={{fontSize:'0.82rem',color:amt>=0?'#f87171':'#60a5fa',fontWeight:800, marginLeft:'0.5rem'}}>{fmtAmt(amt)}</span>
+                                    <span style={{fontSize:'0.82rem',color:amt>=0?'#dc2626':'#2563eb',fontWeight:800, marginLeft:'0.5rem'}}>{fmtAmt(amt)}</span>
                                   </div>
                                 );
                               })}
@@ -561,7 +568,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
 
               {/* ── 상세 테이블 섹션 ── */}
               <div className="glass-panel" style={{padding:'1.2rem'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.2rem',flexWrap:'wrap',gap:'0.8rem',borderBottom:'1px solid rgba(255,255,255,0.06)',paddingBottom:'0.8rem'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.2rem',flexWrap:'wrap',gap:'0.8rem',borderBottom:'1px solid rgba(15,23,42,0.2)',paddingBottom:'0.8rem'}}>
                   <div style={{display:'flex', alignItems:'center', gap:'1rem'}}>
                     <h3 style={{margin:0,fontSize:'1.1rem',fontWeight:800, color:'var(--accent-mint)'}}>
                       {invMktTab.toUpperCase()} 상세 분석
@@ -583,8 +590,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                     {INV_TYPES.map(t => (
                       <button key={t.key} onClick={()=>setInvSubTab(t.key)} style={{
                         padding:'0.3rem 0.7rem',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'0.75rem',
-                        background:invSubTab===t.key?t.color:'rgba(255,255,255,0.05)',
-                        color:invSubTab===t.key?'#000':'var(--text-secondary)',
+                        background:invSubTab===t.key?t.color:'#eef2f8',
+                        color:invSubTab===t.key?'#fff':'var(--text-secondary)',
                         fontWeight:invSubTab===t.key?700:400,
                         whiteSpace:'nowrap'
                       }}>{t.label}</button>
@@ -674,12 +681,12 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                 </h3>
                 <ResponsiveContainer width="100%" height={200}>
                   <ComposedChart data={trendData.data} margin={{top:5,right:10,bottom:5,left:10}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
-                    <YAxis tick={{fontSize:10,fill:'#94a3b8'}} domain={['auto','auto']} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.06)" />
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#334155'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
+                    <YAxis tick={{fontSize:10,fill:'#334155'}} domain={['auto','auto']} />
                     <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
                       formatter={(v,n) => [v?.toLocaleString(), n]} labelFormatter={l=>`날짜: ${l}`} />
-                    <Line type="monotone" dataKey="close" stroke="#2dd4bf" dot={false} strokeWidth={2} name="지수" />
+                    <Line type="monotone" dataKey="close" stroke="#2563eb" dot={false} strokeWidth={2} name="지수" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -700,21 +707,21 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   ) : (
                   <ResponsiveContainer width="100%" height={260}>
                     <ComposedChart data={barData} margin={{top:5,right:10,bottom:5,left:10}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                      <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
-                      <YAxis tick={{fontSize:10,fill:'#94a3b8'}} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.06)" />
+                      <XAxis dataKey="date" tick={{fontSize:10,fill:'#334155'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
+                      <YAxis tick={{fontSize:10,fill:'#334155'}} />
                       <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
                         formatter={(v,n) => [`${v != null ? v.toLocaleString() : 0}억`, n]}
                         labelFormatter={l=>`날짜: ${l}`} />
-                      <ReferenceLine y={0} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />
+                      <ReferenceLine y={0} stroke="rgba(15,23,42,0.35)" strokeWidth={1.5} />
                       <Bar dataKey="inst_amt" name="기관" maxBarSize={16}>
                         {barData.map((entry, i) => (
-                          <Cell key={i} fill={(entry.inst_amt||0) >= 0 ? '#f87171' : '#34d399'} opacity={0.85} />
+                          <Cell key={i} fill={(entry.inst_amt||0) >= 0 ? '#dc2626' : '#047857'} opacity={0.85} />
                         ))}
                       </Bar>
                       <Bar dataKey="frn_amt" name="외국인" maxBarSize={16}>
                         {barData.map((entry, i) => (
-                          <Cell key={i} fill={(entry.frn_amt||0) >= 0 ? '#f87171' : '#34d399'} opacity={0.7} />
+                          <Cell key={i} fill={(entry.frn_amt||0) >= 0 ? '#dc2626' : '#047857'} opacity={0.7} />
                         ))}
                       </Bar>
                       <Legend wrapperStyle={{fontSize:'0.78rem',color:'var(--text-secondary)'}}
@@ -734,7 +741,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                     {[[20,'1개월'],[60,'3개월'],[90,'6개월'],[250,'1년']].map(([d,l])=>(
                       <button key={d} onClick={()=>setCumDays(d)} style={{
                         padding:'0.2rem 0.55rem',borderRadius:'5px',border:'none',cursor:'pointer',fontSize:'0.72rem',
-                        background:cumDays===d?'var(--accent-mint)':'rgba(255,255,255,0.07)',
+                        background:cumDays===d?'var(--accent-mint)':'rgba(15,23,42,0.07)',
                         color:cumDays===d?'#000':'var(--text-secondary)',fontWeight:cumDays===d?700:400,
                       }}>{l}</button>
                     ))}
@@ -742,15 +749,15 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                 </div>
                 <ResponsiveContainer width="100%" height={220}>
                   <ComposedChart data={cumData} margin={{top:5,right:10,bottom:5,left:10}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#94a3b8'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
-                    <YAxis tick={{fontSize:10,fill:'#94a3b8'}} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.06)" />
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:'#334155'}} tickFormatter={d=>d?.slice(5)} interval="preserveStartEnd" />
+                    <YAxis tick={{fontSize:10,fill:'#334155'}} />
                     <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.78rem'}}
                       formatter={(v,n) => [`${v?.toLocaleString()}억`, n]}
                       labelFormatter={l=>`날짜: ${l}`} />
-                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />
-                    <Line type="monotone" dataKey="cum_inst" stroke="#f87171" dot={false} strokeWidth={2} name="기관 누적" />
-                    <Line type="monotone" dataKey="cum_frn"  stroke="#fbbf24" dot={false} strokeWidth={2} name="외국인 누적" />
+                    <ReferenceLine y={0} stroke="rgba(15,23,42,0.35)" strokeWidth={1.5} />
+                    <Line type="monotone" dataKey="cum_inst" stroke="#dc2626" dot={false} strokeWidth={2} name="기관 누적" />
+                    <Line type="monotone" dataKey="cum_frn"  stroke="#b45309" dot={false} strokeWidth={2} name="외국인 누적" />
                     <Legend wrapperStyle={{fontSize:'0.78rem',color:'var(--text-secondary)'}} />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -771,19 +778,19 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                     </thead>
                     <tbody>
                       {[...trendData.data].reverse().slice(0,15).map((r,i)=>(
-                        <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                        <tr key={i} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
                           <td style={{padding:'0.35rem 0.6rem'}}>{r.date}</td>
                           <td style={{padding:'0.35rem 0.6rem',textAlign:'right'}}>{r.close?.toLocaleString()}</td>
                           <td style={{padding:'0.35rem 0.6rem',textAlign:'right',
-                            color:(r.inst_amt||0)>=0?'#f87171':'#34d399',fontWeight:600}}>
+                            color:(r.inst_amt||0)>=0?'#dc2626':'#047857',fontWeight:600}}>
                             {fmtAmt(r.inst_amt)}
                           </td>
                           <td style={{padding:'0.35rem 0.6rem',textAlign:'right',
-                            color:(r.frn_amt||0)>=0?'#f87171':'#34d399',fontWeight:600}}>
+                            color:(r.frn_amt||0)>=0?'#dc2626':'#047857',fontWeight:600}}>
                             {fmtAmt(r.frn_amt)}
                           </td>
                           <td style={{padding:'0.35rem 0.6rem',textAlign:'right',
-                            color:(r.ind_amt||0)>=0?'#f87171':'#34d399',fontWeight:600}}>
+                            color:(r.ind_amt||0)>=0?'#dc2626':'#047857',fontWeight:600}}>
                             {fmtAmt(r.ind_amt)}
                           </td>
                         </tr>
@@ -810,7 +817,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
           <div style={{display:'flex',gap:'0.8rem',marginBottom:'1rem',alignItems:'center',flexWrap:'wrap'}}>
             <label style={{fontSize:'0.82rem',color:'var(--text-secondary)'}}>기준일:</label>
             {shortDates.length === 0 ? (
-              <span style={{fontSize:'0.82rem',color:'#fbbf24'}}>데이터 수집 중... 잠시 후 새로고침</span>
+              <span style={{fontSize:'0.82rem',color:'#b45309'}}>데이터 수집 중... 잠시 후 새로고침</span>
             ) : (
               <select value={shortDate} onChange={e=>setShortDate(e.target.value)}
                 style={{background:'var(--glass-bg)',border:'1px solid var(--glass-border)',color:'var(--text-primary)',
@@ -850,8 +857,8 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   </thead>
                   <tbody>
                     {(shortRank.rows||[]).map((r,i)=>(
-                      <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)',
-                        background:i%2===0?'transparent':'rgba(255,255,255,0.01)'}}>
+                      <tr key={i} style={{borderBottom:'1px solid rgba(15,23,42,0.2)',
+                        background:i%2===0?'transparent':'rgba(15,23,42,0.01)'}}>
                         <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>{i+1}</td>
                         <td style={{padding:'0.35rem 0.5rem'}}>
                           {r.stock_code ? (
@@ -867,10 +874,10 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                         <td style={{padding:'0.35rem 0.5rem',fontSize:'0.72rem',color:'var(--text-secondary)',
                           maxWidth:'100px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
                           title={r.sector}>{r.sector||'-'}</td>
-                        <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:'#fbbf24'}}>
+                        <td style={{padding:'0.35rem 0.5rem',textAlign:'right',fontWeight:700,color:'#b45309'}}>
                           {r.lnb_rman_stck_cnt!=null?(r.lnb_rman_stck_cnt/1e4).toLocaleString('ko-KR',{maximumFractionDigits:1})+'만':'-'}
                         </td>
-                        <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'#f87171'}}>
+                        <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'#dc2626'}}>
                           {r.lnb_bal!=null?Math.round(r.lnb_bal/1e8).toLocaleString('ko-KR')+'억':'-'}
                         </td>
                         <td style={{padding:'0.35rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>
@@ -927,16 +934,16 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   <>
                     <ResponsiveContainer width="100%" height={200}>
                       <ComposedChart data={shortHistory.history} margin={{top:5,right:10,bottom:5,left:10}}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                        <XAxis dataKey="date" tick={{fontSize:9,fill:'#94a3b8'}}
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.06)" />
+                        <XAxis dataKey="date" tick={{fontSize:9,fill:'#334155'}}
                           tickFormatter={d=>d?.slice(4)} interval="preserveStartEnd"/>
-                        <YAxis tick={{fontSize:9,fill:'#94a3b8'}}
+                        <YAxis tick={{fontSize:9,fill:'#334155'}}
                           tickFormatter={v=>`${(v/1e4).toFixed(0)}만`}/>
                         <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.75rem'}}
                           formatter={(v,n)=>[`${(v/1e4).toFixed(1)}만주`,n]}/>
                         <Area type="monotone" dataKey="borrow_bal_qty" name="대차잔고"
-                          fill="rgba(251,191,36,0.15)" stroke="#fbbf24" strokeWidth={2} dot={false}/>
-                        <Bar dataKey="short_qty" name="체결주식수" fill="rgba(248,113,113,0.6)" maxBarSize={8}/>
+                          fill="rgba(217,119,6,0.15)" stroke="#b45309" strokeWidth={2} dot={false}/>
+                        <Bar dataKey="short_qty" name="체결주식수" fill="rgba(220,38,38,0.6)" maxBarSize={8}/>
                       </ComposedChart>
                     </ResponsiveContainer>
                     <div style={{overflowX:'auto',overflowY:'clip',marginTop:'0.5rem'}}>
@@ -951,12 +958,12 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                         </thead>
                         <tbody>
                           {[...shortHistory.history].reverse().slice(0,20).map((r,i)=>(
-                            <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                            <tr key={i} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
                               <td style={{padding:'0.3rem 0.5rem'}}>{r.date}</td>
-                              <td style={{padding:'0.3rem 0.5rem',textAlign:'right',color:'#fbbf24',fontWeight:600}}>
+                              <td style={{padding:'0.3rem 0.5rem',textAlign:'right',color:'#b45309',fontWeight:600}}>
                                 {r.borrow_bal_qty!=null?(r.borrow_bal_qty/1e4).toLocaleString('ko-KR',{maximumFractionDigits:1})+'만':'-'}
                               </td>
-                              <td style={{padding:'0.3rem 0.5rem',textAlign:'right',color:'#f87171'}}>
+                              <td style={{padding:'0.3rem 0.5rem',textAlign:'right',color:'#dc2626'}}>
                                 {r.short_qty!=null?(r.short_qty/1e4).toLocaleString('ko-KR',{maximumFractionDigits:1})+'만':'-'}
                               </td>
                             </tr>
@@ -1001,23 +1008,23 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
             {shortForeign?.balance?.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={shortForeign.balance} margin={{top:5,right:10,bottom:5,left:10}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="bas_dt" tick={{fontSize:9,fill:'#94a3b8'}}
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.06)" />
+                  <XAxis dataKey="bas_dt" tick={{fontSize:9,fill:'#334155'}}
                     tickFormatter={d=>d?.slice(4)} interval="preserveStartEnd"/>
-                  <YAxis yAxisId="amt" tick={{fontSize:9,fill:'#94a3b8'}}
+                  <YAxis yAxisId="amt" tick={{fontSize:9,fill:'#334155'}}
                     tickFormatter={v=>`${(v/1e6).toFixed(0)}조`}/>
-                  <YAxis yAxisId="pct" orientation="right" tick={{fontSize:9,fill:'#94a3b8'}}
+                  <YAxis yAxisId="pct" orientation="right" tick={{fontSize:9,fill:'#334155'}}
                     tickFormatter={v=>`${v?.toFixed(0)}%`}/>
                   <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.75rem'}}
                     formatter={(v,n)=>n.includes('%')?[`${v?.toFixed(1)}%`,n]:[`${(v/1e6).toFixed(1)}조`,n]}
                     labelFormatter={l=>`날짜: ${l}`}/>
                   <Legend wrapperStyle={{fontSize:'0.75rem'}}/>
                   <Area yAxisId="amt" type="monotone" dataKey="ntiv_brw_bal" name="내국인차입"
-                    fill="rgba(96,165,250,0.15)" stroke="#60a5fa" strokeWidth={2} dot={false}/>
+                    fill="rgba(37,99,235,0.15)" stroke="#2563eb" strokeWidth={2} dot={false}/>
                   <Area yAxisId="amt" type="monotone" dataKey="forg_brw_bal" name="외국인차입"
-                    fill="rgba(248,113,113,0.15)" stroke="#f87171" strokeWidth={2} dot={false}/>
+                    fill="rgba(220,38,38,0.15)" stroke="#dc2626" strokeWidth={2} dot={false}/>
                   <Line yAxisId="pct" type="monotone" dataKey="brw_bal_forg_rto" name="외국인비율%"
-                    stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="4 2"/>
+                    stroke="#b45309" strokeWidth={1.5} dot={false} strokeDasharray="4 2"/>
                 </ComposedChart>
               </ResponsiveContainer>
             ) : (
@@ -1032,17 +1039,17 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
             {shortForeign?.trade?.length > 0 ? (
               <ResponsiveContainer width="100%" height={180}>
                 <ComposedChart data={shortForeign.trade} margin={{top:5,right:10,bottom:5,left:10}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="bas_dt" tick={{fontSize:9,fill:'#94a3b8'}}
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.06)" />
+                  <XAxis dataKey="bas_dt" tick={{fontSize:9,fill:'#334155'}}
                     tickFormatter={d=>d?.slice(4)} interval="preserveStartEnd"/>
-                  <YAxis tick={{fontSize:9,fill:'#94a3b8'}}
+                  <YAxis tick={{fontSize:9,fill:'#334155'}}
                     tickFormatter={v=>`${(v/1e4).toFixed(0)}만`}/>
                   <Tooltip contentStyle={{background:'var(--bg-dark)',border:'1px solid var(--glass-border)',fontSize:'0.75rem'}}
                     formatter={(v,n)=>[`${(v/1e4).toFixed(1)}만주`,n]}
                     labelFormatter={l=>`날짜: ${l}`}/>
                   <Legend wrapperStyle={{fontSize:'0.75rem'}}/>
-                  <Bar dataKey="forg_lnb_ccl_stck_cnt" name="외국인체결" fill="rgba(248,113,113,0.7)" maxBarSize={12}/>
-                  <Bar dataKey="ntiv_lnb_ccl_stck_cnt" name="내국인체결" fill="rgba(96,165,250,0.7)" maxBarSize={12}/>
+                  <Bar dataKey="forg_lnb_ccl_stck_cnt" name="외국인체결" fill="rgba(220,38,38,0.7)" maxBarSize={12}/>
+                  <Bar dataKey="ntiv_lnb_ccl_stck_cnt" name="내국인체결" fill="rgba(37,99,235,0.7)" maxBarSize={12}/>
                 </ComposedChart>
               </ResponsiveContainer>
             ) : (
@@ -1067,12 +1074,12 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
                   </thead>
                   <tbody>
                     {[...shortMonthly.rows].reverse().slice(0,18).map((r,i)=>(
-                      <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                      <tr key={i} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
                         <td style={{padding:'0.35rem 0.6rem'}}>{r.bas_dt}</td>
-                        <td style={{padding:'0.35rem 0.6rem',textAlign:'right',color:'#fbbf24',fontWeight:600}}>
+                        <td style={{padding:'0.35rem 0.6rem',textAlign:'right',color:'#b45309',fontWeight:600}}>
                           {r.lnb_rman_stck_cnt!=null?(r.lnb_rman_stck_cnt/1e4).toLocaleString('ko-KR',{maximumFractionDigits:1})+'만':'-'}
                         </td>
-                        <td style={{padding:'0.35rem 0.6rem',textAlign:'right',color:'#f87171'}}>
+                        <td style={{padding:'0.35rem 0.6rem',textAlign:'right',color:'#dc2626'}}>
                           {r.lnb_bal!=null?Math.round(r.lnb_bal/100).toLocaleString('ko-KR')+'억':'-'}
                         </td>
                         <td style={{padding:'0.35rem 0.6rem',textAlign:'right',color:'var(--text-secondary)'}}>

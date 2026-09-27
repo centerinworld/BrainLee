@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React, { useState, useEffect } from 'react';
 
 const STALE_WARNING_DAYS = 3;
@@ -71,48 +78,48 @@ const EtfCheckView = () => {
 
   const containerStyle = {
     padding: isMobile ? '0.8rem' : '1rem',
-    background: 'rgba(255,255,255,0.02)',
+    background: 'rgba(15,23,42,0.02)',
     borderRadius: isMobile ? '12px' : '16px',
-    border: '1px solid rgba(255,255,255,0.08)',
-    color: '#fff',
+    border: '1px solid rgba(15,23,42,0.2)',
+    color: 'var(--text-primary)',
     fontFamily: 'inherit',
     minHeight: '400px'
   };
   const mainTabContainerStyle = {
     display: 'flex', gap: '0.8rem', overflowX: 'auto',
     paddingBottom: '0.8rem', marginBottom: '1rem',
-    borderBottom: '1px solid rgba(255,255,255,0.1)', scrollbarWidth: 'thin'
+    borderBottom: '1px solid rgba(15,23,42,0.2)', scrollbarWidth: 'thin'
   };
   const subTabContainerStyle = { display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' };
   const tabStyle = (isActive) => ({
     padding: isMobile ? '0.55rem 0.9rem' : '0.6rem 1.2rem', borderRadius: '8px', fontSize: isMobile ? '0.82rem' : '0.9rem',
     fontWeight: isActive ? 600 : 400, whiteSpace: 'nowrap', cursor: 'pointer',
     transition: 'all 0.2s',
-    background: isActive ? 'rgba(45,212,191,0.15)' : 'rgba(255,255,255,0.04)',
-    border: isActive ? '1px solid rgba(45,212,191,0.5)' : '1px solid rgba(255,255,255,0.08)',
-    color: isActive ? '#2dd4bf' : 'rgba(255,255,255,0.6)',
+    background: isActive ? 'rgba(37,99,235,0.15)' : 'rgba(15,23,42,0.04)',
+    border: isActive ? '1px solid rgba(37,99,235,0.5)' : '1px solid rgba(15,23,42,0.08)',
+    color: isActive ? '#2563eb' : 'rgba(15,23,42,0.88)',
   });
   const subTabStyle = (isActive) => ({
     padding: isMobile ? '0.4rem 0.7rem' : '0.4rem 0.9rem', borderRadius: '6px', fontSize: isMobile ? '0.76rem' : '0.82rem',
     cursor: 'pointer', fontWeight: isActive ? 600 : 400,
-    background: isActive ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
-    border: isActive ? '1px solid rgba(99,102,241,0.5)' : '1px solid rgba(255,255,255,0.1)',
-    color: isActive ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
+    background: isActive ? 'rgba(79,70,229,0.2)' : 'rgba(15,23,42,0.04)',
+    border: isActive ? '1px solid rgba(79,70,229,0.5)' : '1px solid rgba(15,23,42,0.1)',
+    color: isActive ? '#4f46e5' : 'rgba(15,23,42,0.88)',
   });
   const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' };
   const thStyle = {
-    padding: '0.6rem 0.5rem', textAlign: 'right', color: '#e2e8f0',
-    borderBottom: '2px solid rgba(59,130,246,0.5)', fontWeight: 600,
+    padding: '0.6rem 0.5rem', textAlign: 'right', color: '#1e293b',
+    borderBottom: '2px solid rgba(37,99,235,0.5)', fontWeight: 600,
     background: 'rgba(10,18,50,0.98)', whiteSpace: 'nowrap',
     position: 'sticky', top: 0, zIndex: 10,
   };
   const tdStyle = {
     padding: '0.6rem 0.5rem', textAlign: 'right',
-    color: 'rgba(255,255,255,0.85)', borderBottom: '1px solid rgba(255,255,255,0.05)'
+    color: 'rgba(15,23,42,0.88)', borderBottom: '1px solid rgba(15,23,42,0.2)'
   };
   // 구분선 th/td (현재가~시가총액 사이)
-  const separatorTh = { ...thStyle, width: '4px', padding: '0', borderLeft: '2px solid rgba(99,102,241,0.4)', borderRight: '2px solid rgba(99,102,241,0.4)' };
-  const separatorTd = { ...tdStyle, width: '4px', padding: '0', borderLeft: '2px solid rgba(99,102,241,0.15)', borderRight: '2px solid rgba(99,102,241,0.15)' };
+  const separatorTh = { ...thStyle, width: '4px', padding: '0', borderLeft: '2px solid rgba(79,70,229,0.4)', borderRight: '2px solid rgba(79,70,229,0.4)' };
+  const separatorTd = { ...tdStyle, width: '4px', padding: '0', borderLeft: '2px solid rgba(79,70,229,0.15)', borderRight: '2px solid rgba(79,70,229,0.15)' };
 
   const formatNumber = (num) => num ? num.toLocaleString() : '-';
   const formatRatio = (num) => num ? num.toFixed(2) + '%' : '-';
@@ -122,7 +129,7 @@ const EtfCheckView = () => {
   };
   const formatPct = (pct) => {
     if (pct === null || pct === undefined) return '-';
-    const color = pct > 0 ? '#ff4d4f' : pct < 0 ? '#60a5fa' : 'rgba(255,255,255,0.5)';
+    const color = pct > 0 ? '#dc2626' : pct < 0 ? '#2563eb' : 'rgba(15,23,42,0.5)';
     return <span style={{ color, fontWeight: 600 }}>{pct > 0 ? '+' : ''}{pct.toFixed(2)}%</span>;
   };
   const formatPriceCell = (price, pct) => {
@@ -134,16 +141,16 @@ const EtfCheckView = () => {
     margin: '0 0 0.8rem 0',
     padding: '0.55rem 0.75rem',
     borderRadius: '6px',
-    background: 'rgba(251,191,36,0.08)',
-    border: '1px solid rgba(251,191,36,0.25)',
-    color: 'rgba(255,255,255,0.72)',
+    background: 'rgba(217,119,6,0.08)',
+    border: '1px solid rgba(217,119,6,0.25)',
+    color: 'rgba(15,23,42,0.88)',
     fontSize: '0.78rem',
   };
   const mobileCardStyle = {
     padding: '0.85rem 0.9rem',
     borderRadius: '12px',
-    background: 'rgba(255,255,255,0.045)',
-    border: '1px solid rgba(255,255,255,0.08)',
+    background: 'rgba(15,23,42,0.045)',
+    border: '1px solid rgba(15,23,42,0.2)',
   };
   const mobileMetaGridStyle = {
     display: 'grid',
@@ -177,9 +184,9 @@ const EtfCheckView = () => {
         style={{
           padding: '0.35rem 0.7rem', borderRadius: '6px', fontSize: '0.8rem',
           cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem',
-          background: dir === 'inc' ? 'rgba(255,77,79,0.15)' : 'rgba(45,212,191,0.15)',
-          border: dir === 'inc' ? '1px solid rgba(255,77,79,0.45)' : '1px solid rgba(45,212,191,0.45)',
-          color: dir === 'inc' ? '#ff4d4f' : '#2dd4bf',
+          background: dir === 'inc' ? 'rgba(255,77,79,0.15)' : 'rgba(37,99,235,0.15)',
+          border: dir === 'inc' ? '1px solid rgba(255,77,79,0.45)' : '1px solid rgba(37,99,235,0.45)',
+          color: dir === 'inc' ? '#dc2626' : '#2563eb',
         }}
       >
         {dir === 'inc' ? '▲ 증가 순' : '▼ 감소 순'}
@@ -223,8 +230,8 @@ const EtfCheckView = () => {
   // tab2 데이터 키 선택
   const tab2Key = subTab2 + (tab2Dir === 'dec' ? '_dec' : '');
   const tab3Key = subTab3 + (tab3Dir === 'dec' ? '_dec' : '');
-  const mobileLabelStyle = { fontSize:'0.7rem', color:'rgba(255,255,255,0.42)' };
-  const mobileValueStyle = { fontSize:'0.84rem', color:'#fff', fontWeight:600, wordBreak:'keep-all' };
+  const mobileLabelStyle = { fontSize:'0.7rem', color:'rgba(15,23,42,0.88)' };
+  const mobileValueStyle = { fontSize:'0.84rem', color:'var(--text-primary)', fontWeight:600, wordBreak:'keep-all' };
 
   const renderMetric = (label, value, valueStyle = mobileValueStyle) => (
     <div style={mobileMetricStyle}>
@@ -239,7 +246,7 @@ const EtfCheckView = () => {
         {(rows || []).map(renderRow)}
       </div>
     ) : (
-      <div style={{ padding:'1.3rem 0.5rem', textAlign:'center', color:'rgba(255,255,255,0.4)', fontSize:'0.85rem' }}>
+      <div style={{ padding:'1.3rem 0.5rem', textAlign:'center', color:'rgba(15,23,42,0.88)', fontSize:'0.85rem' }}>
         {emptyMessage}
       </div>
     )
@@ -248,8 +255,8 @@ const EtfCheckView = () => {
   return (
     <div style={containerStyle}>
       <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: '0.45rem', marginBottom: '1rem' }}>
-        <h2 style={{ margin: 0, fontSize: isMobile ? '1.05rem' : '1.2rem', fontWeight: 700, color: '#fff' }}>📊 ETF Check 대시보드</h2>
-        <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)' }}>
+        <h2 style={{ margin: 0, fontSize: isMobile ? '1.05rem' : '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>📊 ETF Check 대시보드</h2>
+        <span style={{ fontSize: '0.8rem', color: 'rgba(15,23,42,0.88)' }}>
           최근 수집일: {data.tab1?.date || '-'}
         </span>
       </div>
@@ -259,9 +266,9 @@ const EtfCheckView = () => {
           margin: '0 0 1rem 0',
           padding: '0.85rem 0.95rem',
           borderRadius: '10px',
-          background: 'rgba(239,68,68,0.10)',
-          border: '1px solid rgba(239,68,68,0.28)',
-          color: '#fecaca',
+          background: 'rgba(220,38,38,0.10)',
+          border: '1px solid rgba(220,38,38,0.28)',
+          color: '#b91c1c',
           fontSize: '0.83rem',
           lineHeight: 1.55,
         }}>
@@ -273,7 +280,7 @@ const EtfCheckView = () => {
               ? ` 마지막 세션 저장 시각은 ${String(statusInfo.session_state.updated_at).slice(0, 16).replace('T', ' ')}입니다.`
               : ''}
           </div>
-          <div style={{ marginTop: '0.35rem', color: 'rgba(255,255,255,0.72)' }}>
+          <div style={{ marginTop: '0.35rem', color: 'rgba(15,23,42,0.88)' }}>
             조치: 터미널에서 `python ETF_check/test_single.py --login`으로 재로그인 후 다음 영업일 수집을 다시 돌려야 합니다.
           </div>
         </div>
@@ -286,7 +293,7 @@ const EtfCheckView = () => {
           borderRadius: '10px',
           background: 'rgba(255,107,107,0.08)',
           border: '1px solid rgba(255,107,107,0.28)',
-          color: '#fecaca',
+          color: '#b91c1c',
           fontSize: '0.83rem',
           lineHeight: 1.5,
         }}>
@@ -311,7 +318,7 @@ const EtfCheckView = () => {
         <div style={tabStyle(activeTab === 5)} onClick={() => setActiveTab(5)}>종목 검색</div>
       </div>
 
-      {tabLoading && <div style={{ padding:'1.2rem', color:'rgba(255,255,255,0.55)' }}>선택한 데이터를 불러오는 중입니다...</div>}
+      {tabLoading && <div style={{ padding:'1.2rem', color:'rgba(15,23,42,0.88)' }}>선택한 데이터를 불러오는 중입니다...</div>}
 
       {/* 탭 1 — ETF 편입액 기준 */}
       {activeTab === 1 && (
@@ -326,12 +333,12 @@ const EtfCheckView = () => {
               <div key={row.stock_code} style={mobileCardStyle}>
                 <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
                   <div>
-                    <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
-                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                    <div style={{ color:'var(--text-primary)', fontWeight:700 }}>{row.stock_name}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(15,23,42,0.88)' }}>{row.stock_code}</div>
                   </div>
                   <div style={{ textAlign:'right' }}>
-                    <div style={{ color:'#2dd4bf', fontWeight:700 }}>{formatNumber(row.etf_amount)}억</div>
-                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.5)' }}>{formatRatio(row.mktcap_ratio)}</div>
+                    <div style={{ color:'#2563eb', fontWeight:700 }}>{formatNumber(row.etf_amount)}억</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(15,23,42,0.88)' }}>{formatRatio(row.mktcap_ratio)}</div>
                   </div>
                 </div>
                 <div style={mobileMetaGridStyle}>
@@ -348,7 +355,7 @@ const EtfCheckView = () => {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(59,130,246,0.3)'}}>종목명</th>
+                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(37,99,235,0.3)'}}>종목명</th>
                   <th style={thStyle}>현재가</th>
                   <th style={thStyle}>등락률</th>
                   <th style={separatorTh}></th>
@@ -360,7 +367,7 @@ const EtfCheckView = () => {
               <tbody>
                 {(data.tab1?.[subTab1] || []).map((row) => (
                   <tr key={row.stock_code}>
-                    <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(59,130,246,0.2)'}}>
+                    <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(37,99,235,0.2)'}}>
                       {row.stock_name}
                     </td>
                     <td style={tdStyle}>{formatNumber(row.current_price)}</td>
@@ -369,7 +376,7 @@ const EtfCheckView = () => {
                     </td>
                     <td style={separatorTd}></td>
                     <td style={tdStyle}>{formatNumber(row.market_cap)}</td>
-                    <td style={{...tdStyle, color:'#2dd4bf', fontWeight:600}}>{formatNumber(row.etf_amount)}</td>
+                    <td style={{...tdStyle, color:'#2563eb', fontWeight:600}}>{formatNumber(row.etf_amount)}</td>
                     <td style={tdStyle}>{formatRatio(row.mktcap_ratio)}</td>
                   </tr>
                 ))}
@@ -396,7 +403,7 @@ const EtfCheckView = () => {
             </div>
             <DirToggle dir={tab2Dir} onToggle={() => setTab2Dir(d => d === 'inc' ? 'dec' : 'inc')} />
             {data.tab2?.dates && (
-              <span style={{ fontSize:'0.78rem', color:'rgba(255,255,255,0.45)' }}>
+              <span style={{ fontSize:'0.78rem', color:'rgba(15,23,42,0.88)' }}>
                 비교기준: {data.tab2.dates[subTab2] || '-'} → {data.tab2.dates.latest || '-'}
               </span>
             )}
@@ -414,13 +421,13 @@ const EtfCheckView = () => {
             (row) => {
               const chgPct = row.prev_amount > 0 ? (row.amount_diff / row.prev_amount * 100) : null;
               const mktPct = row.market_cap > 0 ? (row.amount_diff / row.market_cap * 100) : null;
-              const diffColor = row.amount_diff > 0 ? '#ff4d4f' : row.amount_diff < 0 ? '#60a5fa' : 'rgba(255,255,255,0.72)';
+              const diffColor = row.amount_diff > 0 ? '#dc2626' : row.amount_diff < 0 ? '#2563eb' : 'rgba(15,23,42,0.72)';
               return (
                 <div key={row.stock_code} style={mobileCardStyle}>
                   <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
                     <div>
-                      <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
-                      <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                      <div style={{ color:'var(--text-primary)', fontWeight:700 }}>{row.stock_name}</div>
+                      <div style={{ fontSize:'0.76rem', color:'rgba(15,23,42,0.88)' }}>{row.stock_code}</div>
                     </div>
                     <div style={{ color:diffColor, fontWeight:700 }}>{formatSignedNumber(row.amount_diff)}억</div>
                   </div>
@@ -439,9 +446,9 @@ const EtfCheckView = () => {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(59,130,246,0.3)'}}>종목명</th>
-                  <th style={thStyle}>과거 편입금액(억)<br/><span style={{fontSize:'0.7rem',fontWeight:400,color:'rgba(255,255,255,0.45)'}}>{data.tab2?.dates?.[subTab2] || '-'}</span></th>
-                  <th style={thStyle}>현재 편입금액(억)<br/><span style={{fontSize:'0.7rem',fontWeight:400,color:'rgba(255,255,255,0.45)'}}>{data.tab2?.dates?.latest || '-'}</span></th>
+                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(37,99,235,0.3)'}}>종목명</th>
+                  <th style={thStyle}>과거 편입금액(억)<br/><span style={{fontSize:'0.7rem',fontWeight:400,color:'rgba(15,23,42,0.88)'}}>{data.tab2?.dates?.[subTab2] || '-'}</span></th>
+                  <th style={thStyle}>현재 편입금액(억)<br/><span style={{fontSize:'0.7rem',fontWeight:400,color:'rgba(15,23,42,0.88)'}}>{data.tab2?.dates?.latest || '-'}</span></th>
                   <th style={thStyle}>증감액(억)</th>
                   <th style={thStyle}>증감률</th>
                   <th style={thStyle}>시총대비 비중</th>
@@ -452,10 +459,10 @@ const EtfCheckView = () => {
                   (data.tab2?.[tab2Key] || []).map((row) => {
                     const chgPct = row.prev_amount > 0 ? (row.amount_diff / row.prev_amount * 100) : null;
                     const mktPct = row.market_cap > 0 ? (row.amount_diff / row.market_cap * 100) : null;
-                    const diffColor = row.amount_diff > 0 ? '#ff4d4f' : row.amount_diff < 0 ? '#60a5fa' : 'rgba(255,255,255,0.5)';
+                    const diffColor = row.amount_diff > 0 ? '#dc2626' : row.amount_diff < 0 ? '#2563eb' : 'rgba(15,23,42,0.5)';
                     return (
                       <tr key={row.stock_code}>
-                        <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(59,130,246,0.2)'}}>
+                        <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(37,99,235,0.2)'}}>
                           {row.stock_name}
                         </td>
                         <td style={tdStyle}>{formatNumber(row.prev_amount)}</td>
@@ -474,7 +481,7 @@ const EtfCheckView = () => {
                   })
                 ) : (
                   <tr>
-                    <td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)' }}>
+                    <td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'rgba(15,23,42,0.88)' }}>
                       과거 데이터가 부족하여 증감분을 계산할 수 없습니다. (최소 2일치 수집 필요)
                     </td>
                   </tr>
@@ -505,7 +512,7 @@ const EtfCheckView = () => {
             </div>
             <DirToggle dir={tab3Dir} onToggle={() => setTab3Dir(d => d === 'inc' ? 'dec' : 'inc')} />
             {data.tab3?.dates && (
-              <span style={{ fontSize:'0.78rem', color:'rgba(255,255,255,0.45)' }}>
+              <span style={{ fontSize:'0.78rem', color:'rgba(15,23,42,0.88)' }}>
                 비교기준: {data.tab3.dates[subTab3] || '-'} → {data.tab3.dates.latest || '-'}
               </span>
             )}
@@ -516,8 +523,8 @@ const EtfCheckView = () => {
               <div key={row.stock_code} style={mobileCardStyle}>
                 <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
                   <div>
-                    <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
-                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                    <div style={{ color:'var(--text-primary)', fontWeight:700 }}>{row.stock_name}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(15,23,42,0.88)' }}>{row.stock_code}</div>
                   </div>
                   <div style={{ fontWeight:700 }}>{formatPct(row.ratio_increase)}</div>
                 </div>
@@ -533,7 +540,7 @@ const EtfCheckView = () => {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(59,130,246,0.3)'}}>종목명</th>
+                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(37,99,235,0.3)'}}>종목명</th>
                   <th style={thStyle}>시가총액(억)</th>
                   <th style={thStyle}>편입금액 증감액(억)</th>
                   <th style={thStyle}>편입 증감액 / 시총</th>
@@ -543,11 +550,11 @@ const EtfCheckView = () => {
                 {(data.tab3?.[tab3Key] || []).length > 0 ? (
                   (data.tab3?.[tab3Key] || []).map((row) => (
                     <tr key={row.stock_code}>
-                      <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(59,130,246,0.2)'}}>
+                      <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(37,99,235,0.2)'}}>
                         {row.stock_name}
                       </td>
                       <td style={tdStyle}>{formatNumber(row.market_cap)}</td>
-                      <td style={{...tdStyle, color: row.amount_diff > 0 ? '#ff4d4f' : row.amount_diff < 0 ? '#60a5fa' : undefined, fontWeight:600}}>
+                      <td style={{...tdStyle, color: row.amount_diff > 0 ? '#dc2626' : row.amount_diff < 0 ? '#2563eb' : undefined, fontWeight:600}}>
                         {row.amount_diff > 0 ? '+' : ''}{formatNumber(row.amount_diff)}
                       </td>
                       <td style={{...tdStyle, fontWeight:600}}>
@@ -557,7 +564,7 @@ const EtfCheckView = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="4" style={{ padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)' }}>
+                    <td colSpan="4" style={{ padding:'2rem', textAlign:'center', color:'rgba(15,23,42,0.88)' }}>
                       과거 데이터가 부족하여 증감분을 계산할 수 없습니다. (최소 2일치 수집 필요)
                     </td>
                   </tr>
@@ -578,12 +585,12 @@ const EtfCheckView = () => {
               <div key={row.stock_code} style={mobileCardStyle}>
                 <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
                   <div>
-                    <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
-                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                    <div style={{ color:'var(--text-primary)', fontWeight:700 }}>{row.stock_name}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(15,23,42,0.88)' }}>{row.stock_code}</div>
                   </div>
                   <div style={{ textAlign:'right' }}>
-                    <div style={{ color:'#2dd4bf', fontWeight:700 }}>{formatRatio(row.calc_ratio)}</div>
-                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.5)' }}>{formatNumber(row.etf_amount)}억</div>
+                    <div style={{ color:'#2563eb', fontWeight:700 }}>{formatRatio(row.calc_ratio)}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(15,23,42,0.88)' }}>{formatNumber(row.etf_amount)}억</div>
                   </div>
                 </div>
                 <div style={mobileMetaGridStyle}>
@@ -600,19 +607,19 @@ const EtfCheckView = () => {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(59,130,246,0.3)'}}>종목명</th>
+                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(37,99,235,0.3)'}}>종목명</th>
                   <th style={thStyle}>현재가</th>
                   <th style={thStyle}>등락률</th>
                   <th style={separatorTh}></th>
                   <th style={thStyle}>시가총액(억)</th>
                   <th style={thStyle}>ETF 편입금액(억)</th>
-                  <th style={{...thStyle, color:'#2dd4bf'}}>시총대비 비중</th>
+                  <th style={{...thStyle, color:'#2563eb'}}>시총대비 비중</th>
                 </tr>
               </thead>
               <tbody>
                 {(data.tab4?.top || []).map((row) => (
                   <tr key={row.stock_code}>
-                    <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(59,130,246,0.2)'}}>
+                    <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(37,99,235,0.2)'}}>
                       {row.stock_name}
                     </td>
                     <td style={tdStyle}>{formatNumber(row.current_price)}</td>
@@ -622,7 +629,7 @@ const EtfCheckView = () => {
                     <td style={separatorTd}></td>
                     <td style={tdStyle}>{formatNumber(row.market_cap)}</td>
                     <td style={tdStyle}>{formatNumber(row.etf_amount)}</td>
-                    <td style={{...tdStyle, color:'#2dd4bf', fontWeight:600}}>{formatRatio(row.calc_ratio)}</td>
+                    <td style={{...tdStyle, color:'#2563eb', fontWeight:600}}>{formatRatio(row.calc_ratio)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -642,8 +649,8 @@ const EtfCheckView = () => {
               placeholder="종목명/코드 검색"
               style={{
                 width:isMobile?'100%':'220px', padding:'0.55rem 0.7rem', borderRadius:'8px',
-                border:'1px solid rgba(255,255,255,0.16)', background:'rgba(15,23,42,0.9)',
-                color:'#fff', outline:'none'
+                border:'1px solid rgba(15,23,42,0.2)', background:'rgba(255,255,255,0.9)',
+                color:'var(--text-primary)', outline:'none'
               }}
             />
             <button
@@ -651,34 +658,34 @@ const EtfCheckView = () => {
               disabled={searchLoading || !searchQuery.trim()}
               style={{
                 padding:'0.55rem 1rem', borderRadius:'8px',
-                border:'1px solid rgba(45,212,191,0.55)',
-                background: searchLoading ? 'rgba(45,212,191,0.12)' : 'rgba(45,212,191,0.85)',
-                color: searchLoading ? '#94a3b8' : '#071014',
+                border:'1px solid rgba(37,99,235,0.55)',
+                background: searchLoading ? 'rgba(37,99,235,0.12)' : 'rgba(37,99,235,0.85)',
+                color: searchLoading ? '#334155' : '#071014',
                 fontWeight:700, cursor: searchLoading ? 'default' : 'pointer',
                 width:isMobile?'100%':'auto'
               }}
             >조회</button>
-            <span style={{ fontSize:'0.8rem', color:'rgba(255,255,255,0.45)' }}>
+            <span style={{ fontSize:'0.8rem', color:'rgba(15,23,42,0.88)' }}>
               기준일: {searchData.date || data.tab1?.date || '-'}
             </span>
           </form>
-          {searchError && <div style={{ marginBottom:'0.8rem', color:'#ff6b6b', fontSize:'0.85rem' }}>{searchError}</div>}
+          {searchError && <div style={{ marginBottom:'0.8rem', color:'#dc2626', fontSize:'0.85rem' }}>{searchError}</div>}
           {isMobile ? renderMobileList(
             searchData.rows || [],
             (row) => (
-              <div key={row.stock_code} style={{ ...mobileCardStyle, background: etfListCode === row.stock_code ? 'rgba(45,212,191,0.08)' : mobileCardStyle.background }}>
+              <div key={row.stock_code} style={{ ...mobileCardStyle, background: etfListCode === row.stock_code ? 'rgba(37,99,235,0.08)' : mobileCardStyle.background }}>
                 <div style={{ display:'flex', justifyContent:'space-between', gap:'0.8rem', alignItems:'flex-start' }}>
                   <div>
-                    <div style={{ color:'#fff', fontWeight:700 }}>{row.stock_name}</div>
-                    <div style={{ fontSize:'0.76rem', color:'rgba(255,255,255,0.38)' }}>{row.stock_code}</div>
+                    <div style={{ color:'var(--text-primary)', fontWeight:700 }}>{row.stock_name}</div>
+                    <div style={{ fontSize:'0.76rem', color:'rgba(15,23,42,0.88)' }}>{row.stock_code}</div>
                   </div>
                   <button
                     onClick={() => handleFetchEtfList(row.stock_code)}
                     disabled={etfListLoading && etfListCode === row.stock_code}
                     style={{
                       padding:'0.3rem 0.65rem', borderRadius:'999px', border:'none',
-                      background: etfListCode === row.stock_code ? '#2dd4bf' : 'rgba(45,212,191,0.18)',
-                      color: etfListCode === row.stock_code ? '#071014' : '#2dd4bf',
+                      background: etfListCode === row.stock_code ? '#2563eb' : 'rgba(37,99,235,0.18)',
+                      color: etfListCode === row.stock_code ? '#071014' : '#2563eb',
                       fontSize:'0.76rem', cursor:'pointer', fontWeight:700, whiteSpace:'nowrap'
                     }}
                   >
@@ -688,7 +695,7 @@ const EtfCheckView = () => {
                 <div style={mobileMetaGridStyle}>
                   {renderMetric('주가', formatPriceCell(row.current_price, row.price_change_pct))}
                   {renderMetric('시가총액', formatNumber(row.market_cap))}
-                  {renderMetric('편입액', `${formatNumber(row.etf_amount)}억`, { ...mobileValueStyle, color:'#2dd4bf' })}
+                  {renderMetric('편입액', `${formatNumber(row.etf_amount)}억`, { ...mobileValueStyle, color:'#2563eb' })}
                   {renderMetric('5일 차이', formatSignedNumber(row.amount_diff))}
                 </div>
               </div>
@@ -699,7 +706,7 @@ const EtfCheckView = () => {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(59,130,246,0.3)'}}>종목명</th>
+                  <th style={{...thStyle, textAlign:'left', borderRight:'1px solid rgba(37,99,235,0.3)'}}>종목명</th>
                   <th style={thStyle}>주가(%)</th>
                   <th style={thStyle}>시가총액</th>
                   <th style={thStyle}>편입액</th>
@@ -709,20 +716,20 @@ const EtfCheckView = () => {
               </thead>
               <tbody>
                 {searchLoading ? (
-                  <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)' }}>검색 중입니다...</td></tr>
+                  <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'rgba(15,23,42,0.88)' }}>검색 중입니다...</td></tr>
                 ) : (searchData.rows || []).length > 0 ? (
                   (searchData.rows || []).map((row) => (
                     <tr key={row.stock_code}
-                      style={{ background: etfListCode === row.stock_code ? 'rgba(45,212,191,0.05)' : 'transparent' }}>
-                      <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(59,130,246,0.2)'}}>
-                        {row.stock_name} <span style={{ color:'rgba(255,255,255,0.35)', fontWeight:500 }}>{row.stock_code}</span>
+                      style={{ background: etfListCode === row.stock_code ? 'rgba(37,99,235,0.05)' : 'transparent' }}>
+                      <td style={{...tdStyle, textAlign:'left', fontWeight:600, borderRight:'1px solid rgba(37,99,235,0.2)'}}>
+                        {row.stock_name} <span style={{ color:'rgba(15,23,42,0.88)', fontWeight:500 }}>{row.stock_code}</span>
                       </td>
                       <td style={{ ...tdStyle, padding:'0.6rem 0.7rem' }}>
                         {formatPriceCell(row.current_price, row.price_change_pct)}
                       </td>
                       <td style={tdStyle}>{formatNumber(row.market_cap)}</td>
-                      <td style={{...tdStyle, color:'#2dd4bf', fontWeight:600}}>{formatNumber(row.etf_amount)}</td>
-                      <td style={{...tdStyle, color: row.amount_diff > 0 ? '#ff4d4f' : row.amount_diff < 0 ? '#60a5fa' : 'rgba(255,255,255,0.85)', fontWeight:600}}>
+                      <td style={{...tdStyle, color:'#2563eb', fontWeight:600}}>{formatNumber(row.etf_amount)}</td>
+                      <td style={{...tdStyle, color: row.amount_diff > 0 ? '#dc2626' : row.amount_diff < 0 ? '#2563eb' : 'rgba(15,23,42,0.88)', fontWeight:600}}>
                         {formatSignedNumber(row.amount_diff)}
                       </td>
                       <td style={{...tdStyle, textAlign:'center'}}>
@@ -731,8 +738,8 @@ const EtfCheckView = () => {
                           disabled={etfListLoading && etfListCode === row.stock_code}
                           style={{
                             padding:'0.25rem 0.65rem', borderRadius:'12px', border:'none',
-                            background: etfListCode === row.stock_code ? '#2dd4bf' : 'rgba(45,212,191,0.18)',
-                            color: etfListCode === row.stock_code ? '#071014' : '#2dd4bf',
+                            background: etfListCode === row.stock_code ? '#2563eb' : 'rgba(37,99,235,0.18)',
+                            color: etfListCode === row.stock_code ? '#071014' : '#2563eb',
                             fontSize:'0.78rem', cursor:'pointer', fontWeight:600, whiteSpace:'nowrap'
                           }}
                         >
@@ -742,7 +749,7 @@ const EtfCheckView = () => {
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'rgba(255,255,255,0.4)' }}>검색 결과가 없습니다.</td></tr>
+                  <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'rgba(15,23,42,0.88)' }}>검색 결과가 없습니다.</td></tr>
                 )}
               </tbody>
             </table>
@@ -752,46 +759,46 @@ const EtfCheckView = () => {
           {/* ETF TOP 패널 */}
           {etfListData && (
             <div style={{
-              marginTop:'1rem', background:'rgba(45,212,191,0.06)', borderRadius:'10px',
-              border:'1px solid rgba(45,212,191,0.2)', padding:'1rem'
+              marginTop:'1rem', background:'rgba(37,99,235,0.06)', borderRadius:'10px',
+              border:'1px solid rgba(37,99,235,0.2)', padding:'1rem'
             }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.8rem' }}>
                 <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap' }}>
-                  <span style={{ fontWeight:700, color:'#2dd4bf', fontSize:'1rem' }}>
+                  <span style={{ fontWeight:700, color:'#2563eb', fontSize:'1rem' }}>
                     {etfListData.stock_name || etfListCode}
                   </span>
-                  <span style={{ fontSize:'0.78rem', color:'rgba(255,255,255,0.35)' }}>{etfListCode}</span>
+                  <span style={{ fontSize:'0.78rem', color:'rgba(15,23,42,0.88)' }}>{etfListCode}</span>
                   {etfListData.etf_count != null && (
                     <span style={{
                       padding:'0.15rem 0.5rem', borderRadius:'10px',
-                      background:'rgba(45,212,191,0.2)', color:'#2dd4bf', fontSize:'0.78rem', fontWeight:600
+                      background:'rgba(37,99,235,0.2)', color:'#2563eb', fontSize:'0.78rem', fontWeight:600
                     }}>
                       총 {etfListData.etf_count}개 ETF 편입
                     </span>
                   )}
                   {etfListData.etf_amount_total != null && (
-                    <span style={{ fontSize:'0.78rem', color:'rgba(255,255,255,0.45)' }}>
+                    <span style={{ fontSize:'0.78rem', color:'rgba(15,23,42,0.88)' }}>
                       합계 {formatNumber(etfListData.etf_amount_total)}억원
                     </span>
                   )}
                 </div>
                 <button onClick={() => { setEtfListData(null); setEtfListCode(null); }}
-                  style={{ background:'none', border:'none', color:'rgba(255,255,255,0.35)', cursor:'pointer', fontSize:'1.1rem' }}>✕</button>
+                  style={{ background:'none', border:'none', color:'rgba(15,23,42,0.88)', cursor:'pointer', fontSize:'1.1rem' }}>✕</button>
               </div>
 
               {etfListData.error ? (
-                <div style={{ color:'#ff6b6b', fontSize:'0.85rem' }}>{etfListData.error}</div>
+                <div style={{ color:'#dc2626', fontSize:'0.85rem' }}>{etfListData.error}</div>
               ) : etfListData.etf_list?.length > 0 ? (
                 <div style={{ display:'flex', flexWrap:'wrap', gap:'0.6rem' }}>
                   {etfListData.etf_list.map((etf, i) => (
                     <div key={i} style={{
                       padding:'0.5rem 0.9rem', borderRadius:'10px',
-                      background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)'
+                      background:'rgba(15,23,42,0.07)', border:'1px solid rgba(15,23,42,0.2)'
                     }}>
-                      <div style={{ fontSize:'0.7rem', color:'rgba(255,255,255,0.4)', marginBottom:'0.15rem' }}>{etf.label}</div>
-                      <div style={{ color:'#fff', fontWeight:600, fontSize:'0.88rem' }}>{etf.name}</div>
+                      <div style={{ fontSize:'0.7rem', color:'rgba(15,23,42,0.88)', marginBottom:'0.15rem' }}>{etf.label}</div>
+                      <div style={{ color:'var(--text-primary)', fontWeight:600, fontSize:'0.88rem' }}>{etf.name}</div>
                       {etf.value && (
-                        <div style={{ color:'#2dd4bf', fontSize:'0.78rem', marginTop:'0.1rem' }}>
+                        <div style={{ color:'#2563eb', fontSize:'0.78rem', marginTop:'0.1rem' }}>
                           {etf.type === 'ratio' ? '비중 ' : '편입금액 '}{etf.value}
                         </div>
                       )}
@@ -799,12 +806,12 @@ const EtfCheckView = () => {
                   ))}
                 </div>
               ) : (
-                <div style={{ color:'rgba(255,255,255,0.4)', fontSize:'0.85rem' }}>
+                <div style={{ color:'rgba(15,23,42,0.88)', fontSize:'0.85rem' }}>
                   TOP ETF 정보를 가져오지 못했습니다.
                   {etfListData.etf_count && ` (DB 기준 ${etfListData.etf_count}개 편입 중)`}
                 </div>
               )}
-              <div style={{ marginTop:'0.6rem', fontSize:'0.72rem', color:'rgba(255,255,255,0.22)' }}>
+              <div style={{ marginTop:'0.6rem', fontSize:'0.72rem', color:'rgba(15,23,42,0.88)' }}>
                 {etfListData.note}
               </div>
             </div>

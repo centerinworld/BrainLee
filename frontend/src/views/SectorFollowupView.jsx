@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 import React from 'react';
 
 const SectorFollowupView = React.memo(() => {
@@ -84,7 +91,7 @@ const SectorFollowupView = React.memo(() => {
   const fmtPct = (v) => {
     if (v == null) return <span style={{color:'var(--text-secondary)'}}>-</span>;
     const sign = v > 0 ? '+' : '';
-    const color = v > 0 ? '#ef4444' : v < 0 ? '#3b82f6' : 'var(--text-secondary)';
+    const color = v > 0 ? '#dc2626' : v < 0 ? '#2563eb' : 'var(--text-secondary)';
     return <span style={{color, fontWeight:600}}>{sign}{v.toFixed(1)}%</span>;
   };
   const fmtPrice = (v) => v == null ? '-' : Number(v).toLocaleString('ko-KR');
@@ -97,8 +104,8 @@ const SectorFollowupView = React.memo(() => {
   };
 
   const thSt = { padding:'0.45rem 0.6rem', fontSize:'0.72rem', color:'var(--text-secondary)', fontWeight:600, whiteSpace:'nowrap', background:'rgba(0,0,0,0.25)', borderBottom:'1px solid var(--glass-border)' };
-  const tdSt = { padding:'0.4rem 0.6rem', fontSize:'0.8rem', borderBottom:'1px solid rgba(255,255,255,0.04)' };
-  const inputSt = { background:'rgba(255,255,255,0.05)', border:'1px solid var(--glass-border)', color:'var(--text-primary)', borderRadius:'6px', padding:'0.4rem 0.6rem', fontSize:'0.82rem', width:'100%' };
+  const tdSt = { padding:'0.4rem 0.6rem', fontSize:'0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)' };
+  const inputSt = { background:'rgba(15,23,42,0.05)', border:'1px solid var(--glass-border)', color:'var(--text-primary)', borderRadius:'6px', padding:'0.4rem 0.6rem', fontSize:'0.82rem', width:'100%' };
 
   const stocks = data?.stocks || [];
   const catSpans = {};
@@ -119,12 +126,12 @@ const SectorFollowupView = React.memo(() => {
         <div style={{marginLeft:'auto', display:'flex', gap:'0.4rem'}}>
           <button onClick={() => setShowForm(v => !v)}
             style={{padding:'0.25rem 0.7rem', fontSize:'0.75rem', borderRadius:'5px', cursor:'pointer',
-              background: showForm ? 'rgba(45,212,191,0.2)' : 'rgba(255,255,255,0.05)',
+              background: showForm ? 'rgba(37,99,235,0.2)' : 'rgba(15,23,42,0.05)',
               border:'1px solid var(--accent-mint)', color:'var(--accent-mint)'}}>
             {showForm ? '✕ 닫기' : '+ 직접 입력'}
           </button>
           <button onClick={() => fetch('/api/sector-define/parse', {method:'POST'}).then(()=>loadPosts())}
-            style={{padding:'0.25rem 0.7rem', fontSize:'0.75rem', borderRadius:'5px', cursor:'pointer', background:'rgba(255,255,255,0.05)', border:'1px solid var(--glass-border)', color:'var(--text-secondary)'}}>
+            style={{padding:'0.25rem 0.7rem', fontSize:'0.75rem', borderRadius:'5px', cursor:'pointer', background:'rgba(15,23,42,0.05)', border:'1px solid var(--glass-border)', color:'var(--text-secondary)'}}>
             블로그 자동파싱
           </button>
         </div>
@@ -154,7 +161,7 @@ const SectorFollowupView = React.memo(() => {
           </div>
           <div style={{marginBottom:'0.8rem'}}>
             <label style={{fontSize:'0.72rem', color:'var(--text-secondary)'}}>종목 입력 (줄바꿈으로 섹터 구분)</label>
-            <div style={{fontSize:'0.68rem', color:'rgba(255,255,255,0.35)', marginBottom:'0.3rem'}}>형식: <code style={{color:'#34d399'}}>섹터명:종목코드1,종목코드2</code> — 예: <code style={{color:'#34d399'}}>메모리:005930,000660</code></div>
+            <div style={{fontSize:'0.68rem', color:'rgba(15,23,42,0.88)', marginBottom:'0.3rem'}}>형식: <code style={{color:'#047857'}}>섹터명:종목코드1,종목코드2</code> — 예: <code style={{color:'#047857'}}>메모리:005930,000660</code></div>
             <textarea style={{...inputSt, minHeight:'100px', resize:'vertical', fontFamily:'monospace', fontSize:'0.78rem'}}
               value={form.stocksRaw}
               onChange={e=>setForm(f=>({...f, stocksRaw:e.target.value}))}
@@ -165,7 +172,7 @@ const SectorFollowupView = React.memo(() => {
               style={{padding:'0.4rem 1.2rem', borderRadius:'6px', cursor:'pointer', fontWeight:700, fontSize:'0.82rem', background:'var(--accent-mint)', border:'none', color:'#000'}}>
               저장
             </button>
-            {formMsg && <span style={{fontSize:'0.78rem', color: formMsg.includes('완료') ? '#34d399' : '#f87171'}}>{formMsg}</span>}
+            {formMsg && <span style={{fontSize:'0.78rem', color: formMsg.includes('완료') ? '#047857' : '#dc2626'}}>{formMsg}</span>}
           </div>
         </div>
       )}
@@ -175,7 +182,7 @@ const SectorFollowupView = React.memo(() => {
           <p style={{fontWeight:700, color:'var(--text-primary)', marginBottom:'0.5rem'}}>📭 등록된 섹터 분석이 없습니다</p>
           <p style={{fontSize:'0.82rem', marginBottom:'1rem'}}>"+ 직접 입력"으로 섹터와 종목을 등록하세요.</p>
           <button onClick={() => setShowForm(true)}
-            style={{padding:'0.4rem 1rem', borderRadius:'6px', cursor:'pointer', fontWeight:600, fontSize:'0.82rem', background:'rgba(45,212,191,0.15)', border:'1px solid var(--accent-mint)', color:'var(--accent-mint)'}}>
+            style={{padding:'0.4rem 1rem', borderRadius:'6px', cursor:'pointer', fontWeight:600, fontSize:'0.82rem', background:'rgba(37,99,235,0.15)', border:'1px solid var(--accent-mint)', color:'var(--accent-mint)'}}>
             + 직접 입력 시작
           </button>
         </div>
@@ -201,14 +208,14 @@ const SectorFollowupView = React.memo(() => {
                 padding:'0.35rem 0.8rem', borderRadius:'20px', fontSize:'0.78rem', fontWeight:600,
                 cursor:'pointer', whiteSpace:'nowrap',
                 border: activePostId === p.id ? '1px solid var(--accent-mint)' : '1px solid var(--glass-border)',
-                background: activePostId === p.id ? 'rgba(45,212,191,0.15)' : 'transparent',
+                background: activePostId === p.id ? 'rgba(37,99,235,0.15)' : 'transparent',
                 color: activePostId === p.id ? 'var(--accent-mint)' : 'var(--text-secondary)',
               }}>{shortTitle}</button>
             );
           })}
         </div>
       )}
-      {error && <div style={{color:'#f87171', padding:'1rem'}}>{error}</div>}
+      {error && <div style={{color:'#dc2626', padding:'1rem'}}>{error}</div>}
       {loading && <div style={{color:'var(--text-secondary)', padding:'2rem', textAlign:'center'}}>로딩 중...</div>}
       {!loading && data && (
         <div className="fade-in">
@@ -221,12 +228,12 @@ const SectorFollowupView = React.memo(() => {
           </div>
           {stocks.length === 0 ? (
             <div className="glass-panel" style={{padding:'1.5rem', textAlign:'center', color:'var(--text-secondary)'}}>
-              <p style={{fontWeight:700, color:'rgba(255,255,255,0.6)', marginBottom:'0.5rem'}}>📋 등록된 종목이 없습니다</p>
+              <p style={{fontWeight:700, color:'rgba(15,23,42,0.88)', marginBottom:'0.5rem'}}>📋 등록된 종목이 없습니다</p>
               <p style={{fontSize:'0.8rem', marginBottom:'0.8rem'}}>
                 "블로그 자동파싱" 버튼으로 AI가 종목을 자동 추출하거나,<br/>
                 "+ 직접 입력"으로 수동 등록할 수 있습니다.
               </p>
-              <p style={{fontSize:'0.72rem', color:'rgba(255,200,100,0.7)'}}>
+              <p style={{fontSize:'0.72rem', color:'rgba(180,83,9,0.9)'}}>
                 ⚠️ 자동파싱은 Gemini API Key 설정이 필요합니다 (.env → GEMINI_API_KEY)
               </p>
             </div>
@@ -241,18 +248,18 @@ const SectorFollowupView = React.memo(() => {
                   <th style={{...thSt, textAlign:'right'}}>시가총액</th>
                   <th style={{...thSt, textAlign:'right'}}>PBR</th>
                   <th style={{...thSt, textAlign:'right'}}>PER</th>
-                  <th style={{...thSt, textAlign:'right', background:'rgba(45,212,191,0.05)'}}>기준가</th>
-                  <th style={{...thSt, textAlign:'right', background:'rgba(45,212,191,0.05)'}}>기준대비</th>
+                  <th style={{...thSt, textAlign:'right', background:'rgba(37,99,235,0.05)'}}>기준가</th>
+                  <th style={{...thSt, textAlign:'right', background:'rgba(37,99,235,0.05)'}}>기준대비</th>
                 </tr>
               </thead>
               <tbody>
                 {stocks.map((s, i) => {
                   const rowSpan = catSpans[i];
                   return (
-                    <tr key={i} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.03)'}
+                    <tr key={i} onMouseOver={e=>e.currentTarget.style.background='rgba(15,23,42,0.03)'}
                         onMouseOut={e=>e.currentTarget.style.background='transparent'}>
                       {rowSpan != null && (
-                        <td rowSpan={rowSpan} style={{...tdSt, fontWeight:700, color:'var(--accent-mint)', verticalAlign:'middle', background:'rgba(45,212,191,0.02)', borderRight:'1px solid rgba(255,255,255,0.06)'}}>
+                        <td rowSpan={rowSpan} style={{...tdSt, fontWeight:700, color:'var(--accent-mint)', verticalAlign:'middle', background:'rgba(37,99,235,0.02)', borderRight:'1px solid rgba(15,23,42,0.2)'}}>
                           {s.category}
                         </td>
                       )}
@@ -261,8 +268,8 @@ const SectorFollowupView = React.memo(() => {
                       <td style={{...tdSt, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{fmtMktCap2(s.market_cap)}</td>
                       <td style={{...tdSt, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{s.pbr?.toFixed(2) || '-'}</td>
                       <td style={{...tdSt, textAlign:'right', fontSize:'0.75rem', color:'var(--text-secondary)'}}>{s.per?.toFixed(2) || '-'}</td>
-                      <td style={{...tdSt, textAlign:'right', fontSize:'0.8rem', background:'rgba(255,255,255,0.01)'}}>{fmtPrice(s.ref_price)}</td>
-                      <td style={{...tdSt, textAlign:'right', background:'rgba(255,255,255,0.01)'}}>{fmtPct(s.ref_chg_pct)}</td>
+                      <td style={{...tdSt, textAlign:'right', fontSize:'0.8rem', background:'rgba(15,23,42,0.01)'}}>{fmtPrice(s.ref_price)}</td>
+                      <td style={{...tdSt, textAlign:'right', background:'rgba(15,23,42,0.01)'}}>{fmtPct(s.ref_chg_pct)}</td>
                     </tr>
                   );
                 })}

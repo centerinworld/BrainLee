@@ -487,6 +487,7 @@ class CollectionScheduler:
             ("KRX프로그램매매", self._loop_krx_program_trading),         # ★ 매일 18:20 KRX 프로그램매매(차익/비차익) Playwright
             ("종목프로그램매매", self._loop_broker_program_stock_trading), # ★ 매일 18:50 Kiwoom 종목별 프로그램 매수/매도
             ("RS사전계산",    self._loop_rs_precompute),               # ★ 매일 18:30 RS/52주 캐시 사전계산
+            ("IBDRS일별계산",  self._loop_ibd_rs_daily),               # ★ 매일 19:00 IBD RS 4분기 가중 상대강도 계산 → ibd_rs_daily
             ("CF3중검증",     self._loop_cf_triple_validate),          # ★ 매일 05:30 신규 CF 3중 검증 (DART·FnGuide·Seibro)
             ("주간4중검증",   self._loop_weekly_revalidation),         # ★ 매주 일요일 03:00 전종목 4중 검증 Phase A+B+C+E+F
             ("DB유지보수",    self._loop_db_maintenance),              # ★ 매주 일요일 04:00 VACUUM/ANALYZE/WAL checkpoint
@@ -2646,6 +2647,7 @@ class CollectionScheduler:
             logger.info(f"[섹터로테이션캐시] 갱신 완료: {res}")
         except Exception as e:
             logger.error(f"[섹터로테이션캐시] 갱신 오류: {e}", exc_info=True)
+            raise   # 2026-09-27: 예외를 삼키면 원장에 success 로 남아 9/18 이후 캐시가 낡은 채 방치됐다 — _run_job_safe 가 실패로 기록·알림하게 재발생
 
     def _loop_ai_leading_sector(self) -> None:
         """매일 07:20 — 미국 증시/뉴스 기반 주도 섹터 AI 리포트 캐시 갱신."""
@@ -4931,6 +4933,24 @@ class CollectionScheduler:
                 logger.error(f"[RS사전계산] 오류: {e}")
             self._wait_secs(23 * 3600)
         logger.info("[RS사전계산] 루프 종료")
+
+    # ── IBD RS 4분기 가중 상대강도 일별 계산 (매일 19:00 영업일) ──
+    def _loop_ibd_rs_daily(self) -> None:
+        """KRX 가격 데이터 확정(18:30~) 후 IBD RS 4분기 가중 공식으로 전종목 RS 계산."""
+        logger.info("[IBDRS일별계산] 루프 시작")
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            self._wait_until(19, 0, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            try:
+                import requests as _req
+                resp = _req.post("http://localhost:8000/api/ibd-screener/compute-ibd-rs", timeout=600)
+                logger.info(f"[IBDRS일별계산] 완료: {resp.text[:200]}")
+            except Exception as e:
+                logger.error(f"[IBDRS일별계산] 오류: {e}")
+            self._wait_secs(23 * 3600)
+        logger.info("[IBDRS일별계산] 루프 종료")
 
     # ── CF 3중 검증 (매일 05:30 — DART 03:30 수집 + FnGuide 수집 이후) ──
     def _loop_weekly_revalidation(self) -> None:

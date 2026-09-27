@@ -187,6 +187,11 @@ from routes.portfolio_access import router as _portfolio_access_router
 from routes.insider            import router as _insider_router
 from routes.notices            import router as _notices_router
 from routes.antigravity_status import router as _antigravity_status_router
+from routes.ibd_screener       import router as _ibd_screener_router
+from routes.admin_auth         import router as _admin_auth_router
+from routes.hub                import router as _hub_router
+from routes.llm_proxy          import router as _llm_proxy_router
+from routes.system_map         import router as _system_map_router
 import sys as _sys
 _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime/ETF_check")
 from routes_etf                import router as _etf_check_router
@@ -245,6 +250,13 @@ app.include_router(_portfolio_access_router, prefix="/api/portfolio-access", tag
 app.include_router(_insider_router,  prefix="/api/insider",  tags=["insider"])
 app.include_router(_notices_router,  prefix="/api/notices",  tags=["notices"])
 app.include_router(_antigravity_status_router)
+# 2026-09-26: IBD RS(4분기 가중 상대강도) + Minervini Trend Template + 역헤드앤숄더 스크리너
+app.include_router(_ibd_screener_router, prefix="/api/ibd-screener", tags=["ibd-screener"])
+# 2026-09-27: 사이트 전면 개편 — 관리자 로그인 / 허브 상태 / Stock LLM(:8888) 프록시(/llm, 관리자 전용). security_gate.py의 sd_admin 쿠키와 짝.
+app.include_router(_admin_auth_router, prefix="/api/admin-auth", tags=["admin-auth"])
+app.include_router(_hub_router,        prefix="/api/hub",        tags=["hub"])
+app.include_router(_llm_proxy_router)
+app.include_router(_system_map_router, prefix="/api/sysmap", tags=["sysmap"])   # 관리자 전용 시스템 지도(security_gate OWNER_GET_PREFIXES)
 
 
 def _send_telegram(msg: str, dedup_key: str = ""):
@@ -885,7 +897,9 @@ def _realtime_fetch_macro(db) -> None:
             except Exception:
                 pass
 
-            prices = _download_prices(symbol, "5d")
+            # 2026-09-27: 저장된 마지막 날짜가 5일 창보다 오래되면 새 데이터와 겹치는 날이 없어 무결성 게이트가 영구 격리했다 → 그런 경우 1개월로 넓혀 겹침을 만든다.
+            _gap_days = (today - _latest.date.date()).days if (_latest and hasattr(_latest.date, "date")) else 999
+            prices = _download_prices(symbol, "5d" if _gap_days <= 3 else "1mo")
             if not prices:
                 continue
             prices = _filter_broad_index_prices(symbol, prices)
@@ -898,7 +912,9 @@ def _realtime_fetch_macro(db) -> None:
 
             # 급변값 재검증: 직전 저장값 대비 과도 변동 시 재파싱 1회
             latest = max(prices, key=lambda p: p.date)
-            prev_c = _prev_close(symbol)
+            _ordered = sorted(prices, key=lambda p: p.date)
+            # 급변 기준은 방금 받은 시계열의 직전 거래일을 우선한다(저장분이 스냅샷·오염값이면 정상 값도 급변으로 오판해 영구 스킵됐다: ^VIX 9/8=8.73)
+            prev_c = float(_ordered[-2].close) if len(_ordered) >= 2 and _ordered[-2].close and _ordered[-2].close > 0 else _prev_close(symbol)
             if prev_c and latest.close and latest.close > 0:
                 diff_pct = abs((latest.close - prev_c) / prev_c * 100.0)
                 th = _spike_threshold(symbol)
@@ -921,11 +937,28 @@ def _realtime_fetch_macro(db) -> None:
                         continue
             # 데이터 무결성: 미거래일(today) 합성행 생성 금지
             # (미국 지수/금리의 날짜 오염 및 왜곡 방지)
-            if _save_prices(symbol, prices):
+            try:
+                saved = _save_prices(symbol, prices)
+            except Exception as _gate_exc:
+                from macro_window_repair import REPAIRABLE, replace_macro_window
+                if type(_gate_exc).__name__ != "PriceIntegrityError" or symbol not in REPAIRABLE:
+                    raise
+                db.rollback()
+                res = replace_macro_window(db, symbol, prices)
+                saved = bool(res.get("ok"))
+                if not saved:
+                    logger.error(f"[RT-Macro] {symbol}: 게이트 격리 후 교체도 거부됨 {res}")
+                    continue
+            if saved:
                 logger.info(f"[RT-Macro] {symbol}({name}) {len(prices)}건 저장")
             else:
                 logger.warning(f"[RT-Macro] {symbol}: DB 쓰기 지연으로 다음 갱신 주기 재시도")
         except Exception as e:
+            # 2026-09-27: 예외 뒤 롤백이 없으면 PG 트랜잭션이 aborted 로 남아 뒤 심볼이 전부 InFailedSqlTransaction 으로 연쇄 실패했다
+            try:
+                db.rollback()
+            except Exception:
+                pass
             logger.warning(f"[RT-Macro] {symbol}: {e}")
 
 

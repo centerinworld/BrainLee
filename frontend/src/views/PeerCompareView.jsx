@@ -1,3 +1,10 @@
+/* light-theme-codemod-2026-09-27 */
+/* light-theme-codemod-pass2-2026-09-27 */
+/* light-theme-codemod-pass3-2026-09-27 */
+/* light-theme-codemod-pass4-2026-09-27 */
+/* light-theme-codemod-pass5-2026-09-27 */
+/* light-theme-codemod-pass6-2026-09-27 */
+/* light-theme-codemod-pass7-2026-09-27 */
 /**
  * PeerCompareView — 동종기업(유사기업) 비교
  * 2~6개 종목을 골라 자산/매출/밸류에이션/매출구성비를 나란히 비교하고
@@ -17,10 +24,10 @@ const PRESET_GROUPS = [
   ] },
 ];
 
-const PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a78bfa', '#f472b6', '#84cc16', '#94a3b8'];
+const PALETTE = ['#4f46e5', '#15803d', '#b45309', '#dc2626', '#0891b2', '#7c3aed', '#db2777', '#4d7c0f', '#334155'];
 
 const card = (style = {}) => ({
-  background: 'rgba(30,41,59,0.8)',
+  background: 'rgba(248,250,252,0.8)',
   border: '1px solid rgba(51,65,85,0.6)',
   borderRadius: '0.75rem',
   padding: '1rem',
@@ -32,10 +39,10 @@ const fmtNum = (v, digits = 2) => (v === null || v === undefined) ? '-' : Number
 const fmtPrice = (v) => (v === null || v === undefined) ? '-' : `${Math.round(Number(v)).toLocaleString()}원`;
 
 function verdictColor(verdict) {
-  if (!verdict) return '#64748b';
-  if (verdict.includes('저평가')) return '#4ade80';
-  if (verdict.includes('고평가')) return '#f87171';
-  return '#fbbf24';
+  if (!verdict) return '#1e293b';
+  if (verdict.includes('저평가')) return '#15803d';
+  if (verdict.includes('고평가')) return '#dc2626';
+  return '#b45309';
 }
 
 export default function PeerCompareView() {
@@ -134,8 +141,8 @@ export default function PeerCompareView() {
   return (
     <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 1rem 2rem' }}>
       <div style={{ marginBottom: '1.2rem' }}>
-        <h2 style={{ color: '#e2e8f0', margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>🏢 동종기업 비교</h2>
-        <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0.25rem 0 0' }}>
+        <h2 style={{ color: '#1e293b', margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>🏢 동종기업 비교</h2>
+        <p style={{ color: '#1e293b', fontSize: '0.82rem', margin: '0.25rem 0 0' }}>
           비슷한 사업을 하는 기업들을 나란히 놓고 자산·매출·밸류에이션·매출구성비를 비교합니다.
         </p>
       </div>
@@ -145,7 +152,7 @@ export default function PeerCompareView() {
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
           {PRESET_GROUPS.map((g, i) => (
             <button key={i} onClick={() => loadPreset(g)}
-              style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: '0.5rem', padding: '0.35rem 0.8rem', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.78rem' }}>
+              style={{ background: 'rgba(79,70,229,0.15)', border: '1px solid rgba(79,70,229,0.35)', borderRadius: '0.5rem', padding: '0.35rem 0.8rem', color: '#4f46e5', cursor: 'pointer', fontSize: '0.78rem' }}>
               예시: {g.label}
             </button>
           ))}
@@ -156,40 +163,40 @@ export default function PeerCompareView() {
             value={query}
             onChange={e => handleSearch(e.target.value)}
             placeholder="종목명 또는 코드 검색 (최대 6개)"
-            style={{ width: '100%', background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.6)', borderRadius: '0.5rem', padding: '0.55rem 0.8rem', color: '#e2e8f0', fontSize: '0.85rem', boxSizing: 'border-box' }}
+            style={{ width: '100%', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(51,65,85,0.6)', borderRadius: '0.5rem', padding: '0.55rem 0.8rem', color: '#1e293b', fontSize: '0.85rem', boxSizing: 'border-box' }}
           />
           {searchResults.length > 0 && (
-            <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, background: '#1e293b', border: '1px solid rgba(51,65,85,0.8)', borderRadius: '0.5rem', zIndex: 10, maxHeight: 260, overflowY: 'auto' }}>
+            <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, background: '#f8fafc', border: '1px solid rgba(51,65,85,0.8)', borderRadius: '0.5rem', zIndex: 10, maxHeight: 260, overflowY: 'auto' }}>
               {searchResults.map(r => (
                 <div key={r.code} onClick={() => addStock(r.code, r.name)}
-                  style={{ padding: '0.5rem 0.8rem', cursor: 'pointer', color: '#e2e8f0', fontSize: '0.82rem', borderBottom: '1px solid rgba(51,65,85,0.4)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.15)'}
+                  style={{ padding: '0.5rem 0.8rem', cursor: 'pointer', color: '#1e293b', fontSize: '0.82rem', borderBottom: '1px solid rgba(51,65,85,0.4)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(79,70,229,0.15)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  {r.name} <span style={{ color: '#64748b' }}>({r.code})</span>
+                  {r.name} <span style={{ color: '#1e293b' }}>({r.code})</span>
                 </div>
               ))}
             </div>
           )}
-          {searching && <div style={{ position: 'absolute', right: '0.8rem', top: '0.6rem', color: '#64748b', fontSize: '0.75rem' }}>검색중…</div>}
+          {searching && <div style={{ position: 'absolute', right: '0.8rem', top: '0.6rem', color: '#1e293b', fontSize: '0.75rem' }}>검색중…</div>}
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {selected.map(s => (
-            <div key={s.code} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(51,65,85,0.5)', borderRadius: '999px', padding: '0.3rem 0.4rem 0.3rem 0.8rem', fontSize: '0.8rem', color: '#e2e8f0' }}>
-              {s.name} <span style={{ color: '#64748b' }}>({s.code})</span>
+            <div key={s.code} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(51,65,85,0.5)', borderRadius: '999px', padding: '0.3rem 0.4rem 0.3rem 0.8rem', fontSize: '0.8rem', color: '#1e293b' }}>
+              {s.name} <span style={{ color: '#1e293b' }}>({s.code})</span>
               <button onClick={() => removeStock(s.code)}
-                style={{ background: 'rgba(239,68,68,0.2)', border: 'none', borderRadius: '999px', width: 20, height: 20, color: '#f87171', cursor: 'pointer', fontSize: '0.75rem', lineHeight: '20px' }}>×</button>
+                style={{ background: 'rgba(220,38,38,0.2)', border: 'none', borderRadius: '999px', width: 20, height: 20, color: '#dc2626', cursor: 'pointer', fontSize: '0.75rem', lineHeight: '20px' }}>×</button>
             </div>
           ))}
-          {selected.length === 0 && <span style={{ color: '#475569', fontSize: '0.8rem' }}>비교할 종목을 검색해서 추가하세요</span>}
+          {selected.length === 0 && <span style={{ color: '#1e293b', fontSize: '0.8rem' }}>비교할 종목을 검색해서 추가하세요</span>}
         </div>
 
         <div style={{ marginTop: '0.9rem', display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
           <button onClick={runCompare} disabled={loading || selected.length < 2}
-            style={{ background: selected.length < 2 ? 'rgba(100,116,139,0.2)' : 'rgba(34,197,94,0.2)', border: `1px solid ${selected.length < 2 ? 'rgba(100,116,139,0.4)' : '#22c55e'}`, borderRadius: '0.5rem', padding: '0.5rem 1.2rem', color: selected.length < 2 ? '#64748b' : '#4ade80', cursor: selected.length < 2 ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 700 }}>
+            style={{ background: selected.length < 2 ? 'rgba(100,116,139,0.2)' : 'rgba(22,163,74,0.2)', border: `1px solid ${selected.length < 2 ? 'rgba(100,116,139,0.4)' : '#15803d'}`, borderRadius: '0.5rem', padding: '0.5rem 1.2rem', color: selected.length < 2 ? '#1e293b' : '#15803d', cursor: selected.length < 2 ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 700 }}>
             {loading ? '비교 중…' : '비교하기'}
           </button>
-          {error && <span style={{ color: '#f87171', fontSize: '0.8rem' }}>{error}</span>}
+          {error && <span style={{ color: '#dc2626', fontSize: '0.8rem' }}>{error}</span>}
         </div>
       </div>
 
@@ -200,13 +207,13 @@ export default function PeerCompareView() {
             {companies.map((c, i) => (
               <div key={c.stock_code} style={card()}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <div style={{ color: '#e2e8f0', fontWeight: 800, fontSize: '0.95rem' }}>{c.stock_name}</div>
-                  <div style={{ color: '#64748b', fontSize: '0.72rem' }}>{c.stock_code}</div>
+                  <div style={{ color: '#1e293b', fontWeight: 800, fontSize: '0.95rem' }}>{c.stock_name}</div>
+                  <div style={{ color: '#1e293b', fontSize: '0.72rem' }}>{c.stock_code}</div>
                 </div>
-                <div style={{ color: '#94a3b8', fontSize: '0.72rem', marginBottom: '0.5rem' }}>{c.market} · {c.sector_mid || c.sector_large}</div>
-                <div style={{ color: '#e2e8f0', fontSize: '1.3rem', fontWeight: 900 }}>{fmtEok(c.market_cap_억)}</div>
-                <div style={{ color: '#64748b', fontSize: '0.72rem', marginBottom: '0.5rem' }}>시가총액 · 현재가 {fmtPrice(c.current_price)}</div>
-                <div style={{ display: 'flex', gap: '0.6rem', fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.5rem' }}>
+                <div style={{ color: '#334155', fontSize: '0.72rem', marginBottom: '0.5rem' }}>{c.market} · {c.sector_mid || c.sector_large}</div>
+                <div style={{ color: '#1e293b', fontSize: '1.3rem', fontWeight: 900 }}>{fmtEok(c.market_cap_억)}</div>
+                <div style={{ color: '#1e293b', fontSize: '0.72rem', marginBottom: '0.5rem' }}>시가총액 · 현재가 {fmtPrice(c.current_price)}</div>
+                <div style={{ display: 'flex', gap: '0.6rem', fontSize: '0.78rem', color: '#334155', marginBottom: '0.5rem' }}>
                   <span>PER {fmtNum(c.per)}</span>
                   <span>PBR {fmtNum(c.pbr)}</span>
                   <span>ROE {fmtNum(c.roe, 1)}%</span>
@@ -223,34 +230,34 @@ export default function PeerCompareView() {
           </div>
 
           {/* 저평가 판정 안내 */}
-          <div style={{ ...card(), marginBottom: '1rem', fontSize: '0.78rem', color: '#94a3b8' }}>
+          <div style={{ ...card(), marginBottom: '1rem', fontSize: '0.78rem', color: '#334155' }}>
             ℹ️ 저평가/고평가 판정은 <b>선택한 종목들 사이의 상대 비교</b>(PER·PBR이 낮고 ROE가 상대적으로 높을수록 저평가 쪽)일 뿐,
             절대적인 투자 판단이나 매수 추천이 아닙니다. 참고용으로만 활용하세요.
           </div>
 
           {/* 재무 비교 테이블 */}
           <div style={card({ padding: 0, overflow: 'hidden', marginBottom: '1rem' })}>
-            <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid rgba(51,65,85,0.55)', color: '#e2e8f0', fontWeight: 800 }}>
+            <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid rgba(51,65,85,0.55)', color: '#1e293b', fontWeight: 800 }}>
               재무·밸류에이션 비교
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', minWidth: 480 + companies.length * 140, borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(51,65,85,0.5)', background: 'rgba(15,23,42,0.35)' }}>
-                    <th style={{ padding: '0.55rem 0.8rem', color: '#94a3b8', fontWeight: 700, textAlign: 'left' }}>지표</th>
+                  <tr style={{ borderBottom: '1px solid rgba(51,65,85,0.5)', background: 'rgba(255,255,255,0.35)' }}>
+                    <th style={{ padding: '0.55rem 0.8rem', color: '#334155', fontWeight: 700, textAlign: 'left' }}>지표</th>
                     {companies.map(c => (
-                      <th key={c.stock_code} style={{ padding: '0.55rem 0.8rem', color: '#e2e8f0', fontWeight: 700, textAlign: 'right' }}>{c.stock_name}</th>
+                      <th key={c.stock_code} style={{ padding: '0.55rem 0.8rem', color: '#1e293b', fontWeight: 700, textAlign: 'right' }}>{c.stock_name}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {metricRows.map(row => (
                     <tr key={row.key} style={{ borderBottom: '1px solid rgba(51,65,85,0.3)' }}>
-                      <td style={{ padding: '0.5rem 0.8rem', color: '#94a3b8' }}>{row.label}</td>
+                      <td style={{ padding: '0.5rem 0.8rem', color: '#334155' }}>{row.label}</td>
                       {companies.map(c => {
                         const raw = row.pick ? row.pick(c) : c[row.key];
                         return (
-                          <td key={c.stock_code} style={{ padding: '0.5rem 0.8rem', color: '#e2e8f0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                          <td key={c.stock_code} style={{ padding: '0.5rem 0.8rem', color: '#1e293b', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                             {row.fmt(raw)}
                           </td>
                         );
@@ -264,13 +271,13 @@ export default function PeerCompareView() {
 
           {/* 매출 추이 차트 */}
           <div style={card({ marginBottom: '1rem' })}>
-            <div style={{ color: '#e2e8f0', fontWeight: 800, marginBottom: '0.75rem' }}>연간 매출 추이 (억원)</div>
+            <div style={{ color: '#1e293b', fontWeight: 800, marginBottom: '0.75rem' }}>연간 매출 추이 (억원)</div>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={revenueTrendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(51,65,85,0.3)" />
-                <XAxis dataKey="year" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(51,65,85,0.8)', borderRadius: '0.5rem' }}
+                <XAxis dataKey="year" tick={{ fill: '#334155', fontSize: 12 }} />
+                <YAxis tick={{ fill: '#334155', fontSize: 12 }} />
+                <Tooltip contentStyle={{ background: '#f8fafc', border: '1px solid rgba(51,65,85,0.8)', borderRadius: '0.5rem' }}
                   formatter={(v) => v === null ? '-' : `${Math.round(v).toLocaleString()}억`} />
                 <Legend wrapperStyle={{ fontSize: '0.78rem' }} />
                 {companies.map((c, i) => (
@@ -282,14 +289,14 @@ export default function PeerCompareView() {
 
           {/* 매출 구성비 */}
           <div style={card()}>
-            <div style={{ color: '#e2e8f0', fontWeight: 800, marginBottom: '0.25rem' }}>매출 구성비 (품목별)</div>
-            <div style={{ color: '#64748b', fontSize: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{ color: '#1e293b', fontWeight: 800, marginBottom: '0.25rem' }}>매출 구성비 (품목별)</div>
+            <div style={{ color: '#1e293b', fontSize: '0.75rem', marginBottom: '0.75rem' }}>
               DART 사업보고서 '매출 및 수주상황' 기준 · 종목별 최신 사업연도
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${companies.length}, 1fr)`, gap: '1rem' }}>
               {companies.map((c) => (
                 <div key={c.stock_code}>
-                  <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
+                  <div style={{ textAlign: 'center', color: '#334155', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                     {c.stock_name} {c.product_mix_year ? `(${c.product_mix_year}년)` : ''}
                   </div>
                   {c.product_mix && c.product_mix.length > 0 ? (
@@ -303,11 +310,11 @@ export default function PeerCompareView() {
                               <Cell key={idx} fill={PALETTE[idx % PALETTE.length]} />
                             ))}
                           </Pie>
-                          <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(51,65,85,0.8)', borderRadius: '0.5rem', fontSize: '0.78rem' }}
+                          <Tooltip contentStyle={{ background: '#f8fafc', border: '1px solid rgba(51,65,85,0.8)', borderRadius: '0.5rem', fontSize: '0.78rem' }}
                             formatter={(value, name) => [`${value}%`, name]} />
                         </PieChart>
                       </ResponsiveContainer>
-                      <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                      <div style={{ fontSize: '0.72rem', color: '#334155' }}>
                         {c.product_mix.slice(0, 5).map((p, idx) => (
                           <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.15rem 0' }}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
@@ -320,7 +327,7 @@ export default function PeerCompareView() {
                       </div>
                     </>
                   ) : (
-                    <div style={{ textAlign: 'center', color: '#475569', fontSize: '0.78rem', padding: '2rem 0' }}>
+                    <div style={{ textAlign: 'center', color: '#1e293b', fontSize: '0.78rem', padding: '2rem 0' }}>
                       매출구성 데이터 미수집
                     </div>
                   )}
