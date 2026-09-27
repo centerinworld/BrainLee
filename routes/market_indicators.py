@@ -527,3 +527,115 @@ def get_available_dates(limit: int = Query(default=30, ge=5, le=250)):
         return all_dates
     finally:
         conn.close()
+
+
+@router.get("/volume-surge")
+def get_volume_surge(
+    market: str = Query(default="ALL", description="KR | US | ALL"),
+    limit:  int = Query(default=50, ge=5, le=200),
+):
+    """
+    거래량 급등 랭킹 — 모든 추적 종목을 VR20(오늘 거래량 ÷ 최근 20일 평균)으로 내림차순 정렬.
+    market=KR: 6자리 숫자 코드만, market=US: 그 외, market=ALL: 전체.
+    """
+    conn = _db()
+    try:
+        # 각 종목의 최신 날짜 거래량 + 직전 20일 평균 거래량
+        rows = conn.execute(
+            """
+            WITH latest AS (
+                SELECT stock_code,
+                       MAX(substr(date,1,10)) AS trade_date
+                FROM price_history
+                WHERE stock_code NOT LIKE '%^%'
+                  AND stock_code NOT LIKE 'GC%'
+                  AND stock_code NOT LIKE 'CL%'
+                  AND stock_code NOT LIKE 'ES%'
+                  AND stock_code NOT LIKE 'NQ%'
+                  AND stock_code NOT LIKE '%-F'
+                  AND stock_code NOT LIKE '%=%'
+                  AND close > 0
+                  AND volume > 0
+                GROUP BY stock_code
+            ),
+            today_vol AS (
+                SELECT p.stock_code, l.trade_date,
+                       p.volume AS today_volume,
+                       p.close  AS today_close
+                FROM price_history p
+                JOIN latest l
+                  ON p.stock_code = l.stock_code
+                 AND substr(p.date,1,10) = l.trade_date
+                WHERE p.close > 0 AND p.volume > 0
+            ),
+            ranked_vols AS (
+                SELECT p.stock_code,
+                       p.volume,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY p.stock_code
+                           ORDER BY substr(p.date,1,10) DESC
+                       ) AS rn
+                FROM price_history p
+                JOIN latest l ON p.stock_code = l.stock_code
+                  AND substr(p.date,1,10) <= l.trade_date
+                WHERE p.close > 0 AND p.volume > 0
+            ),
+            avg20 AS (
+                SELECT stock_code,
+                       AVG(volume) AS avg_vol20
+                FROM ranked_vols
+                WHERE rn BETWEEN 2 AND 21
+                GROUP BY stock_code
+                HAVING COUNT(*) >= 10
+            )
+            SELECT t.stock_code, t.trade_date,
+                   t.today_volume, t.today_close,
+                   a.avg_vol20,
+                   CAST(t.today_volume AS REAL) / a.avg_vol20 AS vr20
+            FROM today_vol t
+            JOIN avg20 a ON t.stock_code = a.stock_code
+            ORDER BY vr20 DESC
+            LIMIT ?
+            """,
+            (limit * 3,),  # over-fetch to allow client-side market filter
+        ).fetchall()
+
+        # 종목명 조회
+        all_codes = [r[0] for r in rows]
+        if all_codes:
+            placeholders = ",".join("?" * len(all_codes))
+            name_rows = conn.execute(
+                f"SELECT stock_code, stock_name FROM stock_universe WHERE stock_code IN ({placeholders})",
+                all_codes,
+            ).fetchall()
+            name_map = {r[0]: r[1] for r in name_rows}
+        else:
+            name_map = {}
+
+        result = []
+        for r in rows:
+            code = r[0]
+            is_kr = code.isdigit() and len(code) == 6
+
+            if market == "KR" and not is_kr:
+                continue
+            if market == "US" and is_kr:
+                continue
+
+            vr20_val = round(r[5], 2) if r[5] else None
+            result.append({
+                "stock_code":   code,
+                "stock_name":   name_map.get(code, code),
+                "trade_date":   r[1],
+                "today_volume": r[2],
+                "today_close":  r[3],
+                "avg_vol20":    round(r[4]) if r[4] else None,
+                "vr20":         vr20_val,
+                "market":       "KR" if is_kr else "US",
+            })
+            if len(result) >= limit:
+                break
+
+        return result
+    finally:
+        conn.close()

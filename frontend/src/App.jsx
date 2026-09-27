@@ -76,6 +76,17 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   const [invSubTab, setInvSubTab]     = React.useState('both_buy');
   const [invMktTab, setInvMktTab]     = React.useState('kospi');
   const [cumDays, setCumDays]         = React.useState(60);
+  const [volSurge, setVolSurge]       = React.useState(null);
+  const [vsMkt, setVsMkt]             = React.useState('ALL');
+  const [vsLoading, setVsLoading]     = React.useState(false);
+
+  React.useEffect(() => {
+    if (miTab !== 'volume') return;
+    setVsLoading(true);
+    fetch(API(`/api/market-indicators/volume-surge?market=${vsMkt}&limit=60`))
+      .then(r => r.ok ? r.json() : [])
+      .then(d => { setVolSurge(d); setVsLoading(false); });
+  }, [miTab, vsMkt]);
 
   React.useEffect(() => {
     fetch(API('/api/market-indicators/available-dates?limit=30'))
@@ -315,6 +326,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
         {miTabBtn('investor',  '📊 투자자별 순매수')}
         {miTabBtn('turnover',  '🔄 회전율 상위')}
         {miTabBtn('trend',     '📈 수급 추이')}
+        {miTabBtn('volume',    '🔥 거래량 급등')}
       </div>
 
       {/* ── 투자자별 순매수 탭 ── */}
@@ -619,6 +631,78 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
               <p style={{fontSize:'0.78rem',marginTop:'0.5rem'}}>
                 KIS 데이터 수집 후 price_history 에 기록된 데이터가 표시됩니다.
               </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 거래량 급등 탭 ── */}
+      {miTab === 'volume' && (
+        <div>
+          <div style={{display:'flex',gap:'0.5rem',marginBottom:'1rem',alignItems:'center',flexWrap:'wrap'}}>
+            <label style={{fontSize:'0.82rem',color:'var(--text-secondary)'}}>시장:</label>
+            {['ALL','KR','US'].map(m=>(
+              <button key={m} onClick={()=>setVsMkt(m)} style={{
+                padding:'0.25rem 0.7rem',borderRadius:'6px',border:'none',cursor:'pointer',fontSize:'0.82rem',
+                background:vsMkt===m?'var(--accent-mint)':'rgba(255,255,255,0.08)',
+                color:vsMkt===m?'#000':'var(--text-primary)',fontWeight:vsMkt===m?700:400,
+              }}>{m==='ALL'?'전체':m==='KR'?'국내':'미국'}</button>
+            ))}
+            <span style={{fontSize:'0.74rem',color:'var(--text-secondary)',marginLeft:'0.5rem'}}>
+              ※ 오늘 거래량 ÷ 직전 20일 평균 기준 내림차순
+            </span>
+          </div>
+          {vsLoading ? (
+            <div style={{textAlign:'center',padding:'2rem',color:'var(--text-secondary)'}}>로딩 중...</div>
+          ) : volSurge && volSurge.length > 0 ? (
+            <div className="glass-panel" style={{padding:'1rem'}}>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.8rem'}}>
+                  <thead>
+                    <tr style={{borderBottom:'1px solid var(--glass-border)'}}>
+                      {['순위','종목','코드','시장','오늘 거래량','평균(20일)','VR20','기준일'].map(h=>(
+                        <th key={h} style={{padding:'0.4rem 0.6rem',textAlign:h==='순위'||h==='시장'||h==='코드'||h==='종목'?'left':'right',
+                          color:'var(--text-secondary)',fontWeight:600,whiteSpace:'nowrap'}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {volSurge.map((r,i)=>{
+                      const vr = r.vr20 || 0;
+                      const vrColor = vr >= 3 ? '#f87171' : vr >= 2 ? '#fb923c' : vr >= 1.5 ? '#fbbf24' : 'var(--text-secondary)';
+                      return (
+                        <tr key={r.stock_code} style={{borderBottom:'1px solid rgba(255,255,255,0.04)',
+                          cursor:'pointer'}} onClick={()=>{ onChangeStock&&onChangeStock(r.stock_code); onChangeTab&&onChangeTab('analysis'); }}>
+                          <td style={{padding:'0.35rem 0.6rem',color:'var(--text-secondary)'}}>{i+1}</td>
+                          <td style={{padding:'0.35rem 0.6rem',fontWeight:600,color:'var(--accent-mint)'}}>{r.stock_name}</td>
+                          <td style={{padding:'0.35rem 0.6rem',color:'var(--text-secondary)',fontSize:'0.75rem'}}>{r.stock_code}</td>
+                          <td style={{padding:'0.35rem 0.6rem'}}>
+                            <span style={{padding:'0.1rem 0.4rem',borderRadius:'4px',fontSize:'0.72rem',
+                              background:r.market==='KR'?'rgba(45,212,191,0.15)':'rgba(251,191,36,0.15)',
+                              color:r.market==='KR'?'#2dd4bf':'#fbbf24'}}>
+                              {r.market}
+                            </span>
+                          </td>
+                          <td style={{padding:'0.35rem 0.6rem',textAlign:'right'}}>{(r.today_volume||0).toLocaleString()}</td>
+                          <td style={{padding:'0.35rem 0.6rem',textAlign:'right',color:'var(--text-secondary)'}}>{(r.avg_vol20||0).toLocaleString()}</td>
+                          <td style={{padding:'0.35rem 0.6rem',textAlign:'right',fontWeight:700,color:vrColor}}>
+                            {vr >= 1.5 ? '🔥' : ''}{vr.toFixed(1)}x
+                          </td>
+                          <td style={{padding:'0.35rem 0.6rem',textAlign:'right',color:'var(--text-secondary)',fontSize:'0.75rem'}}>{r.trade_date}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginTop:'0.7rem'}}>
+                🔥 VR20 ≥ 1.5 | 빨강 ≥ 3x | 주황 ≥ 2x | 노랑 ≥ 1.5x — 종목 클릭 시 분석 페이지로 이동
+              </p>
+            </div>
+          ) : (
+            <div className="glass-panel" style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)'}}>
+              <p>거래량 데이터가 없습니다.</p>
+              <p style={{fontSize:'0.78rem',marginTop:'0.5rem'}}>price_history에 volume 데이터가 필요합니다.</p>
             </div>
           )}
         </div>
@@ -2601,6 +2685,86 @@ const App = () => {
             </div>
           ))}
         </div>
+
+        {/* ── 거래량 모멘텀 게이지 ── */}
+        {summStats && (summStats.vr20 != null || summStats.vr5 != null) && (() => {
+          const vr5  = summStats.vr5;
+          const vr20 = summStats.vr20;
+          const vr60 = summStats.vr60;
+          const sig  = summStats.momentum_signal;
+          const lbl  = summStats.momentum_label || '';
+          const near = summStats.near52h;
+
+          const sigColor = sig==='breakout' ? '#f87171' : sig==='surge' ? '#fb923c'
+                         : sig==='pullback' ? '#60a5fa' : 'var(--text-secondary)';
+          const sigBg    = sig==='breakout' ? 'rgba(248,113,113,0.12)' : sig==='surge' ? 'rgba(251,146,60,0.12)'
+                         : sig==='pullback' ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.04)';
+
+          const barPct = (vr) => {
+            if (!vr) return 0;
+            return Math.min(100, (vr / 4) * 100);  // 4배를 100%로
+          };
+          const barColor = (vr) => {
+            if (!vr) return '#4b5563';
+            if (vr >= 3) return '#f87171';
+            if (vr >= 2) return '#fb923c';
+            if (vr >= 1.5) return '#fbbf24';
+            if (vr >= 1) return '#34d399';
+            return '#60a5fa';
+          };
+
+          return (
+            <div className="glass-panel" style={{padding:'1rem 1.2rem',marginBottom:'0.1rem'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.7rem',flexWrap:'wrap',gap:'0.4rem'}}>
+                <h3 style={{margin:0,fontSize:'0.85rem',fontWeight:700}}>🔥 거래량 모멘텀</h3>
+                <span style={{padding:'0.2rem 0.7rem',borderRadius:'6px',fontSize:'0.8rem',fontWeight:700,
+                  background:sigBg,color:sigColor}}>{lbl}</span>
+              </div>
+
+              {/* VR 게이지 바 */}
+              <div style={{display:'flex',flexDirection:'column',gap:'0.55rem'}}>
+                {[['VR5 (5일 평균)', vr5],['VR20 (20일 평균)', vr20],['VR60 (60일 평균)', vr60]].map(([label, vr]) => (
+                  <div key={label}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.2rem',fontSize:'0.75rem'}}>
+                      <span style={{color:'var(--text-secondary)'}}>{label}</span>
+                      <span style={{fontWeight:700,color:barColor(vr)}}>
+                        {vr != null ? `${vr.toFixed(1)}배` : '-'}
+                      </span>
+                    </div>
+                    <div style={{background:'rgba(255,255,255,0.07)',borderRadius:'4px',height:'7px',overflow:'hidden'}}>
+                      <div style={{
+                        width:`${barPct(vr)}%`,height:'100%',
+                        background:barColor(vr),
+                        borderRadius:'4px',
+                        transition:'width 0.4s ease',
+                      }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 보조 정보 */}
+              <div style={{display:'flex',gap:'1.5rem',marginTop:'0.8rem',flexWrap:'wrap'}}>
+                {[
+                  {label:'오늘 거래량', val: summStats.today_vol != null ? (summStats.today_vol/10000).toFixed(0)+'만주' : '-'},
+                  {label:'52주 고점 거리', val: near != null ? `${near > 0 ? '+' : ''}${near}%` : '-',
+                    color: near != null ? (near >= -5 ? '#f87171' : near >= -15 ? '#fbbf24' : 'var(--text-secondary)') : 'var(--text-secondary)'},
+                  {label:'MA50 위', val: summStats.above_ma50 != null ? (summStats.above_ma50 ? '✅ 위' : '❌ 아래') : '-'},
+                  {label:'MA200 위', val: summStats.above_ma200 != null ? (summStats.above_ma200 ? '✅ 위' : '❌ 아래') : '-'},
+                ].map(({label,val,color}) => (
+                  <div key={label} style={{fontSize:'0.75rem'}}>
+                    <span style={{color:'var(--text-secondary)'}}>{label}: </span>
+                    <span style={{fontWeight:600,color:color||'var(--text-primary)'}}>{val}</span>
+                  </div>
+                ))}
+              </div>
+
+              <p style={{fontSize:'0.67rem',color:'var(--text-secondary)',marginTop:'0.5rem'}}>
+                VR = 오늘 거래량 ÷ 직전 N일 평균거래량 | 1배=평소, 2배=2배 많음, 3배+= 급등
+              </p>
+            </div>
+          );
+        })()}
 
         {/* 차트 영역 */}
         <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>

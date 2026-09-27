@@ -145,7 +145,7 @@ GET  /api/dashboard/screening/logic        # 로직 스크리닝
 GET  /api/dashboard/financial-table/{code} # 재무제표 테이블
 GET  /api/dashboard/cashflow/{code}        # 현금흐름
 GET  /api/dashboard/disclosures/{code}     # 공시 목록
-GET  /api/dashboard/fundamentals/{code}    # PER/PBR (Naver 스크래핑 포함, 비동기 캐시)
+GET  /api/dashboard/fundamentals/{code}    # PER/PBR + 거래량모멘텀(VR5/VR20/VR60/signal) (Naver 스크래핑 포함, 비동기 캐시)
 GET  /api/dashboard/macro                  # 거시지표 캐시
 GET  /api/dashboard/stats                  # 시스템 통계
 GET  /api/search                           # 종목 검색
@@ -226,6 +226,7 @@ GET  /investor-trend     # 수급 추이 차트 (params: market=kospi, days=60)
 GET  /market-summary     # KOSPI/KOSDAQ 요약 + 오늘 수급
 GET  /index-investor     # 지수 투자자 일별 (params: days=20)
 GET  /available-dates    # 수급 데이터 있는 영업일 목록
+GET  /volume-surge       # 거래량 급등 랭킹 (params: market=ALL|KR|US, limit=50) ★2026-09
 ```
 
 ### routes/reports.py → /api/reports
@@ -320,7 +321,7 @@ def _cache():
 | `SettingsView` | settings | 6413 |
 | `TelegramMentions` | telegram | 6708 |
 | `SystemStatus` | system | 6951 |
-| `MarketIndicatorsView` | market_indicators | 6978 |
+| `MarketIndicatorsView` | market_indicators | 6978 (거래량 급등 탭 포함) |
 
 ### 네비게이션 구조
 ```
@@ -351,6 +352,7 @@ const API = (path) => path               // vite proxy → :8000
 KIS_APP_KEY / KIS_APP_SECRET          # KIS API (주가, 수급, 체결)
 KIS_ACCOUNT_NO=63109821 / KIS_ACCOUNT_PROD=01
 KRX_API_KEY=115C0F...                 # KRX (현재 data.krx.co.kr 접근 불가)
+KRX_DATA_ID / KRX_DATA_PW            # data.krx.co.kr 로그인 (krx_investor_collector용)
 PUBLIC_DATA_API_KEY=93b5be...         # 공공데이터포털 (주가 OK, 투자자API 404)
 DART_API_KEY=70dccf...                # DART 공시
 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
@@ -459,4 +461,5 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-16 | 포트폴리오 수급·대차잔고·시그널 전면 개선: ①`_to_억` 버그 수정(amt=0 시 qty*close/1e8, amt≠0 시 amt/100) ②short_data를 buy_candidates/short-sell과 동일 형식(today/avg5/avg5_prev/신호)으로 통일 ③4분면 매매신호 신설(추세점수±4/가치점수 PBR·PER·ROE·ROA): add_buy·hold·hold_value·take_profit·real_sell·cut_loss ④포트폴리오 테이블 하단 AI 판단기준 설명 섹션 추가 |
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
+| 2026-09-27 | 거래량 모멘텀 기능 추가: `_calc_vol_momentum()` helper(main.py) 신규 → VR5/VR20/VR60 + breakout/pullback/surge 신호 계산, `/api/dashboard/fundamentals` 응답에 포함. `routes/market_indicators.py` `/volume-surge` 엔드포인트 추가(market=ALL/KR/US 필터). App.jsx `MarketIndicatorsView` 거래량 급등 탭 추가, `StockAnalysis` 모멘텀 게이지 패널 추가. `config.py` KRX_DATA_ID/PW 추가. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

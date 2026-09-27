@@ -1487,6 +1487,116 @@ def get_disclosures(stock_code: str):
         logger.warning(f"[공시] {stock_code} 조회 실패: {e}")
         return []
 
+
+def _calc_vol_momentum(stock_code: str) -> dict:
+    """
+    거래량 비율(VR5/VR20/VR60) + 모멘텀 신호(breakout/pullback/surge/normal).
+    price_history에서 최근 65일치 OHLCV를 읽어 계산.
+    반환 키: vr5, vr20, vr60, avg_vol20, today_vol,
+             above_ma20, above_ma50, above_ma200,
+             near52h (52주 고점 대비 % 거리),
+             momentum_signal ('breakout'|'pullback'|'surge'|'normal'),
+             momentum_label (한국어 설명)
+    """
+    try:
+        import sqlite3 as _sl
+        db_path = "stock.db"
+        conn = _sl.connect(db_path)
+        rows = conn.execute(
+            """SELECT date, close, volume FROM price_history
+               WHERE stock_code=? AND close>0 AND volume>0
+               ORDER BY date DESC LIMIT 65""",
+            (stock_code,)
+        ).fetchall()
+        conn.close()
+
+        if len(rows) < 6:
+            return {"vr5": None, "vr20": None, "vr60": None,
+                    "avg_vol20": None, "today_vol": None,
+                    "above_ma20": None, "above_ma50": None, "above_ma200": None,
+                    "near52h": None,
+                    "momentum_signal": "normal", "momentum_label": "데이터 부족"}
+
+        # rows: newest first
+        today_vol   = rows[0][2]
+        today_close = rows[0][1]
+
+        def _avg_vol(n):
+            prev = [r[2] for r in rows[1:n+1]]
+            return sum(prev) / len(prev) if prev else None
+
+        avg5  = _avg_vol(5)
+        avg20 = _avg_vol(20)
+        avg60 = _avg_vol(60)
+
+        vr5  = round(today_vol / avg5,  2) if avg5  else None
+        vr20 = round(today_vol / avg20, 2) if avg20 else None
+        vr60 = round(today_vol / avg60, 2) if avg60 else None
+
+        # 이동평균
+        def _ma(n):
+            pts = [r[1] for r in rows[:n]]
+            return sum(pts) / len(pts) if len(pts) == n else None
+
+        ma20  = _ma(20)
+        ma50  = _ma(50)
+        ma200 = _ma(200) if len(rows) >= 200 else None
+
+        above_ma20  = (today_close > ma20)  if ma20  else None
+        above_ma50  = (today_close > ma50)  if ma50  else None
+        above_ma200 = (today_close > ma200) if ma200 else None
+
+        # 52주 최고가 대비 거리 (rows는 최대 65일치라 52주=252일은 별도 쿼리)
+        conn2 = _sl.connect(db_path)
+        h52_row = conn2.execute(
+            """SELECT MAX(high) FROM price_history
+               WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 252""",
+            (stock_code,)
+        ).fetchone()
+        conn2.close()
+        high52 = h52_row[0] if h52_row and h52_row[0] else None
+        near52h = round((today_close / high52 - 1) * 100, 1) if high52 else None  # 음수=하락
+
+        # 모멘텀 신호 결정
+        signal = "normal"
+        label  = "평범한 거래량"
+
+        if vr20 and vr20 >= 1.5:
+            if near52h is not None and near52h >= -10 and above_ma50 is not False:
+                signal = "breakout"
+                label  = f"🚀 돌파 신호! 거래량이 평소의 {vr20:.1f}배, 52주 고점 근접"
+            else:
+                signal = "surge"
+                label  = f"⚡ 거래량 급등 ({vr20:.1f}배) — 방향 확인 필요"
+        elif vr20 and vr20 < 0.7 and above_ma50 is True:
+            if near52h is not None and near52h >= -20:
+                signal = "pullback"
+                label  = f"📉 눌림목 구간 (거래량 감소, MA50 위) — 매수 기회 검토"
+        elif vr20:
+            label = f"거래량 평소 수준 ({vr20:.1f}배)"
+
+        return {
+            "vr5":    vr5,
+            "vr20":   vr20,
+            "vr60":   vr60,
+            "avg_vol20":   round(avg20) if avg20 else None,
+            "today_vol":   today_vol,
+            "above_ma20":  above_ma20,
+            "above_ma50":  above_ma50,
+            "above_ma200": above_ma200,
+            "near52h":     near52h,
+            "momentum_signal": signal,
+            "momentum_label":  label,
+        }
+    except Exception as e:
+        logger.warning(f"[VR] {stock_code} 계산 오류: {e}")
+        return {"vr5": None, "vr20": None, "vr60": None,
+                "avg_vol20": None, "today_vol": None,
+                "above_ma20": None, "above_ma50": None, "above_ma200": None,
+                "near52h": None,
+                "momentum_signal": "normal", "momentum_label": "계산 오류"}
+
+
 @app.get("/api/dashboard/fundamentals/{stock_code}")
 def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
     """
@@ -1572,6 +1682,9 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
         else:
             pass  # 캐시 미스 → 월간 배치에서 수집됨
 
+    # ── 거래량 비율 (VR5/VR20/VR60) + 모멘텀 신호 ──────────────────
+    vol_momentum = _calc_vol_momentum(stock_code)
+
     if not data:
         return {
             "revenue": None, "operating_profit": None, "net_income": None,
@@ -1581,6 +1694,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
             "source": val.get("source"), "collecting": is_col,
             "high52": high52, "low52": low52,
             "float_shares": float_shares, "shares_outstanding": shares_outstanding,
+            **vol_momentum,
         }
 
     opm = (
@@ -1605,6 +1719,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
         "low52":             low52,
         "float_shares":      float_shares,
         "shares_outstanding": shares_outstanding,
+        **vol_momentum,
     }
 
 @app.get("/api/reports/ready")

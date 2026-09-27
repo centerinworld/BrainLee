@@ -68,6 +68,8 @@ KIS_INDEX_KOSDAQ = os.getenv("KIS_INDEX_KOSDAQ", "1001")
 KRX_API_KEY  = os.getenv("KRX_API_KEY", "")
 KRX_DATA_URL = os.getenv("KRX_DATA_URL",  "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd")
 KMYDATA_BASE = os.getenv("KMYDATA_BASE",  "https://oap.k-mydata.org")
+KRX_DATA_ID  = os.getenv("KRX_DATA_ID",  "")   # data.krx.co.kr 로그인 ID
+KRX_DATA_PW  = os.getenv("KRX_DATA_PW",  "")   # data.krx.co.kr 로그인 PW
 
 # ── 공공데이터포털 ─────────────────────────────────────────────
 PUBLIC_DATA_API_KEY = os.getenv("PUBLIC_DATA_API_KEY", "")
