@@ -14,6 +14,8 @@ venv
 *.pem
 *.key
 codex/ceo-briefing-platform/backend/data/google_token.json
+codex/ceo-briefing-platform/backend/data/google_oauth_state.json
+codex/ceo-briefing-platform/backend/config/google_oauth_client.json
 
 # data / db / logs
 *.db
