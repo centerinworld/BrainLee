@@ -1,0 +1,29 @@
+{
+  "goal_status": "OPEN",
+  "unit": "001 stored price_history baseline audit",
+  "database_mutated": false,
+  "stages": [
+    {
+      "stage": 1,
+      "status": "PARTIAL_SCOPE_CONTRACT"
+    },
+    {
+      "stage": 2,
+      "status": "GEMINI_429_EXTERNAL_DOCS_COLLECTED_BY_CODEX"
+    },
+    {
+      "stage": 3,
+      "status": "QWEN_TRUNCATED_RETRY_429_DEEPSEEK_402"
+    },
+    {
+      "stage": 4,
+      "status": "CLAUDE_RESPONSE_RECEIVED_NO_DB_RERUN"
+    },
+    {
+      "stage": 5,
+      "status": "EVIDENCE_ACCUMULATED_NOT_ACCEPTED"
+    }
+  ],
+  "next_unit": "Classify missing OHLCV and intersect zero-price/OHLC violations by asset and verify original source.",
+  "all_data_certified": false
+}

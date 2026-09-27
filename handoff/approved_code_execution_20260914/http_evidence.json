@@ -1,0 +1,20 @@
+{
+  "/agentic-code": {
+    "status": 200,
+    "ui_title_present": true
+  },
+  "/api/agi/code-jobs": {
+    "status": 401
+  },
+  "/openapi.json": {
+    "status": 200,
+    "code_routes": [
+      "/api/agi/code-jobs",
+      "/api/agi/code-jobs/{job_id}",
+      "/api/agi/code-jobs/{job_id}/approve",
+      "/api/agi/code-jobs/{job_id}/reject",
+      "/api/agi/code-jobs/{job_id}/apply",
+      "/api/agi/code-jobs/{job_id}/rollback"
+    ]
+  }
+}

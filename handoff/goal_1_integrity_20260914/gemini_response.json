@@ -1,0 +1,13 @@
+{
+  "role": "gemini",
+  "started_utc": "2026-09-13T19:42:35.987767+00:00",
+  "input_sha256": "ced2baf9d8a170145530ed2f9d4de7d53a69d91edb6f94d9340af707348632fd",
+  "response": {
+    "content": "",
+    "provider": "none",
+    "model": null,
+    "usage": null,
+    "is_fallback": true
+  },
+  "ended_utc": "2026-09-13T19:42:36.474651+00:00"
+}

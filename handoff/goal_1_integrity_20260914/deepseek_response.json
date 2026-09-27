@@ -1,0 +1,13 @@
+{
+  "role": "deepseek",
+  "started_utc": "2026-09-13T19:43:09.874708+00:00",
+  "input_sha256": "81bb8d419cdd1514ec499e16ef78ddf49a4821b659f6542edcc474a365603134",
+  "response": {
+    "content": "",
+    "provider": "none",
+    "model": null,
+    "usage": null,
+    "is_fallback": true
+  },
+  "ended_utc": "2026-09-13T19:43:10.391993+00:00"
+}

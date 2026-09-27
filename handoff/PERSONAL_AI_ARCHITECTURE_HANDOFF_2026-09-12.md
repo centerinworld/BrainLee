@@ -1,6 +1,15 @@
 # 개인 AI 운영체계 아키텍처 및 구현 핸드오프
 
+**2026-09-14 정책 변경: 시스템의 GPT는 `gpt-5.6-sol`만 사용한다. 아래 과거 Astra 권고는 적용하지 않는다. 최신 장애 진단과 수정 순서는 [Sol 전용 실행 진단](</Volumes/Realtek_NVME/AI System/handoff/AGENTIC_RUNTIME_DIAGNOSIS_SOL_ONLY_2026-09-14.md>)을 우선한다. 운영 설정 적용 완료를 의미하지 않는다.**
+
+
+최신 통합 정본: [로컬 실행 + SDK 통합 구현 핸드오프](</Volumes/Realtek_NVME/AI System/handoff/AGENTIC_AI_LOCAL_SDK_INTEGRATED_HANDOFF_2026-09-12.md>). 실행 채널·SDK 도입·구현 순서는 통합 문서를 우선한다.
+
 작성일: 2026-09-12 / 작성: Codex / 대상: 소유자, Gemini·Claude 등 후속 구현 담당자
+
+후속 검토: 이후 추가된 7개 목표·실행기·AI 검토·모델 구성의 최신 관찰은 [7대 목표 및 모델 검토 문서](</Volumes/Realtek_NVME/AI System/handoff/AGENTIC_AI_7_GOALS_MODEL_REVIEW_2026-09-12.md>)를 참조한다. 아래 문제 중 일부는 후속 수정되었으므로 현재 미수정 여부는 후속 문서와 실제 코드를 기준으로 판단한다.
+
+실행 방식 정정: **기존 Codex·Claude 로컬 앱/구독 CLI를 기본 실행기로 사용한다. 별도 LLM API 추가는 선택 사항이다.** 초기 문서의 API 중심 제안과 충돌하면 [로컬 우선 구현 계획](</Volumes/Realtek_NVME/AI System/handoff/LOCAL_FIRST_AGENTIC_IMPLEMENTATION_PLAN_2026-09-12.md>)을 우선 적용한다.
 
 **문서 상태: 설계 제안. 시스템 변경·실행을 승인하거나 구현을 완료한 문서가 아니다.** 이번 작업에서는 소스와 기존 산출물을 읽고 외부 공개 자료를 참고했다. 서비스 실행·재시작, DB 질의·보정, 백테스트, 모델 호출을 통한 시스템 가동, 자동화 등록, 외부 리포트 전송은 하지 않았다. 새로 작성한 것은 이 핸드오프 문서다.
 

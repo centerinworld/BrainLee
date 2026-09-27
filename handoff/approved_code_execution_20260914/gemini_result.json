@@ -1,0 +1,46 @@
+{
+  "id": "code-f9032f82cfba4b24ad4155f0e7ffebd3",
+  "status": "FAILED",
+  "spec": {
+    "instruction": "Fix calc.py add(a,b) so it returns the sum of a and b. Only change calc.py. Output complete file content in the required JSON.",
+    "provider": "gemini",
+    "paths": [
+      "calc.py"
+    ],
+    "test_module": "test_calc",
+    "base_sha": "e45b385fd517ed0461fc1c250a6e4018712619fe",
+    "files": {
+      "calc.py": "def add(a, b):\n    return a - b\n"
+    },
+    "scope": "model-generated contents -> isolated files -> approved unittest; no production merge",
+    "max_files": 20,
+    "max_diff_bytes": 256000
+  },
+  "approval_hash": "b70917c42236ad76253b65b3f821650c14dbc002f3a5890d7f31762f076e5580",
+  "requested_by": "explicit-user-request-validation",
+  "created_at": 1789388694.860437,
+  "approval_expires_at": 1789392294.860438,
+  "events": [
+    {
+      "status": "AWAITING_APPROVAL",
+      "at": 1789388694.860438
+    },
+    {
+      "status": "APPROVED",
+      "at": 1789388694.873963
+    },
+    {
+      "status": "RUNNING",
+      "at": 1789388694.874756
+    },
+    {
+      "status": "FAILED",
+      "at": 1789388695.8489091
+    }
+  ],
+  "approved_by": "explicit-user-request-validation",
+  "approved_at": 1789388694.873663,
+  "updated_at": 1789388695.848906,
+  "error": "gemini execution failed (1): [LLM 라우팅] ⚠️ Google Gemini 무료 할당량(429 Quota) 초과\nLLM 호출 실패 (provider=gemini) - 폴백 반환 (실제 분석 아님)\nTraceback (most recent call last):\n  File \"<string>\", line 11, in <module>\nRuntimeError: Provider unavailable; authentication, quota or budget check failed\n",
+  "production_modified": false
+}

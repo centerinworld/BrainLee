@@ -1,0 +1,11 @@
+{
+  "started_utc": "2026-09-13T19:45:00.317739+00:00",
+  "input_sha256": "417892bbfabc47fa279d87eb4aef53d256de300a4a8b27760b194560488ba785",
+  "response": {
+    "content": "",
+    "provider": "none",
+    "model": null,
+    "usage": null,
+    "is_fallback": true
+  }
+}

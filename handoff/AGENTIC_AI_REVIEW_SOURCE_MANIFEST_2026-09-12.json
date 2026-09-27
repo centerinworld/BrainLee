@@ -1,0 +1,120 @@
+{
+  "observed_at_utc": "2026-09-12T13:08:02.692280+00:00",
+  "scope": "Read-only source inspection; no application imports, model API calls, or operational tests. File metadata at end of review, not deployment evidence. No env or database content included.",
+  "files": [
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/memory/goals_registry.py",
+      "sha256": "ebdc09e9bd3e54623f09d32ddbbcb8b0db564af3a448150bfb727962ea827016",
+      "bytes": 10432,
+      "mtime_utc": "2026-09-12T12:49:50.039687+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/goal_verification.py",
+      "sha256": "8b2c3750eb39a0b73a0eb9b633195f306726b81a0c930d733ff03a822090f41e",
+      "bytes": 5349,
+      "mtime_utc": "2026-09-12T12:50:11.456955+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/llm_client.py",
+      "sha256": "50e0a7c77996c32738c770cb9fdf0e7d0041ffa59fe785c310699ac290f34e0b",
+      "bytes": 10480,
+      "mtime_utc": "2026-09-12T12:46:55.550579+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/memory/llm_usage_ledger.py",
+      "sha256": "da807016f7a026429eb61211fc9b4d1493ccce73e08cc1ce53f4ba452da7839b",
+      "bytes": 4707,
+      "mtime_utc": "2026-09-12T12:16:02.992454+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/agents/l2_workers/codex_builder.py",
+      "sha256": "c10d1b4c13f91ae0011ea0b4d2887161cb03c915b97478a51b76f1be4abe3c1f",
+      "bytes": 6984,
+      "mtime_utc": "2026-09-12T12:25:20.435858+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/agents/l2_workers/claude_reviewer.py",
+      "sha256": "d906452b84833ccf44f72ceb6ece822b8c3b68b3c5c3d5100274ff581976307a",
+      "bytes": 3902,
+      "mtime_utc": "2026-09-12T04:04:21+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/agents/l1_a_dev_orchestrator.py",
+      "sha256": "cd97fc79acdb1211ac8307adf39b3fd4993c0e9025c4821f809556b3ab944c31",
+      "bytes": 6564,
+      "mtime_utc": "2026-09-12T12:25:41.074765+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/agents/l1_pm_owner.py",
+      "sha256": "89eae09cc6874434b58571c347da20c1b4ad58fb6bd42cdfc343de0185c512e6",
+      "bytes": 9401,
+      "mtime_utc": "2026-09-12T13:01:03.318305+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/goal_intake_daemon.py",
+      "sha256": "d726b1a576f90e4c9ff958f3412ea388566958589019b36d560403be36f131b6",
+      "bytes": 5968,
+      "mtime_utc": "2026-09-12T12:27:27.467970+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/memory/state_ledger.py",
+      "sha256": "c1706dd5020352052361b8ea3c265b9a4947c70aa5e8774f73127b04f455e64a",
+      "bytes": 3689,
+      "mtime_utc": "2026-09-12T06:28:59.767904+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/tests/test_h01_fixes.py",
+      "sha256": "534a51bc5f6c75a195b15638531b5ce772a875eeb88de503e10e5970d77b6e14",
+      "bytes": 29661,
+      "mtime_utc": "2026-09-12T12:48:48.491344+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/bridge_api.py",
+      "sha256": "f0e9184d0060d26ec057b2bcd749e65fd0186714d0a52e714b4f82e9fbef699b",
+      "bytes": 4910,
+      "mtime_utc": "2026-09-12T06:18:35.431089+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/antigravity_workspace/process_watchdog.py",
+      "sha256": "80a9cf733f4255a89be94e25030e50357dd3b5668cbcfc3b9addc460c2f8254f",
+      "bytes": 7202,
+      "mtime_utc": "2026-09-12T06:06:00.575329+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/main.py",
+      "sha256": "2116ea50877f0e7acd9acfd91131ad294ce454c9f2124983662af2b4cf5e1b9a",
+      "bytes": 214347,
+      "mtime_utc": "2026-09-12T12:36:12.872329+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/knowledge_rag_engine.py",
+      "sha256": "5ad304e9ad33e67e3710c7de349c8545bc7b9d49c60230bc69bac970f43b84fe",
+      "bytes": 22415,
+      "mtime_utc": "2026-09-12T10:12:32.933206+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/stock_dashboard/agi_goal_engine.py",
+      "sha256": "ae96b468b81085c74bfaba61eeaf5153f11fc4f9e329cc1774e4630840510f22",
+      "bytes": 11501,
+      "mtime_utc": "2026-09-12T12:21:54.042035+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/stock_dashboard/agi_task_commander.py",
+      "sha256": "b7900a4d5bff4cef39c4ffad6ba7d963d298beaa93fb4f58df6385f7dceff5e8",
+      "bytes": 19466,
+      "mtime_utc": "2026-09-12T11:49:09.789661+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/stock_dashboard/agi_autonomous_daemon.py",
+      "sha256": "ea918301aa5ee8ed7958f2e416a04881fbf273c55ff134e6f8532c7b4e48037f",
+      "bytes": 8278,
+      "mtime_utc": "2026-09-12T06:46:44.172842+00:00"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/stock_dashboard/qwen_to_claude_codex_bridge.py",
+      "sha256": "e15134821e4501aec8b92da68f911f1c790c2be00da01744879579cae0573e90",
+      "bytes": 7085,
+      "mtime_utc": "2026-09-12T11:48:58.766341+00:00"
+    }
+  ]
+}

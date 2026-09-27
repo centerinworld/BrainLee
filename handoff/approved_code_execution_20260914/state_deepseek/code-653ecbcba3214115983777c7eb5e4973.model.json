@@ -1,0 +1,17 @@
+{
+  "content": "{\"files\":[{\"path\":\"calc.py\",\"content\":\"def add(a, b):\\n    return a + b\\n\"}]}",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "usage": {
+    "prompt_tokens": 221,
+    "completion_tokens": 28,
+    "total_tokens": 249,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 221
+  },
+  "is_fallback": false,
+  "_usage_recorded": true
+}

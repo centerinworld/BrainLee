@@ -1,0 +1,1745 @@
+{
+  "scope": "All stored price_history rows; missing expected trading rows, units and PIT NOT certified",
+  "started_utc": "2026-09-13T19:41:48.593799+00:00",
+  "queries": {
+    "schema": "SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='price_history' ORDER BY ordinal_position",
+    "inventory": "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name",
+    "profile": "SELECT count(*) n,count(DISTINCT stock_code) stocks,min(date) min_date,max(date) max_date,\ncount(*) FILTER(WHERE stock_code IS NULL OR btrim(stock_code)='' OR date IS NULL OR btrim(date)='') missing_key,\ncount(*) FILTER(WHERE open IS NULL OR high IS NULL OR low IS NULL OR close IS NULL OR volume IS NULL) missing_ohlcv,\ncount(*) FILTER(WHERE open::text IN ('NaN','Infinity','-Infinity') OR high::text IN ('NaN','Infinity','-Infinity') OR low::text IN ('NaN','Infinity','-Infinity') OR close::text IN ('NaN','Infinity','-Infinity') OR volume::text IN ('NaN','Infinity','-Infinity')) nonfinite,\ncount(*) FILTER(WHERE open<0 OR high<0 OR low<0 OR close<0 OR volume<0) negative,\ncount(*) FILTER(WHERE high<low OR high<open OR high<close OR low>open OR low>close) ohlc_order,\ncount(*) FILTER(WHERE open=0 OR high=0 OR low=0 OR close=0) zero_price_review,\ncount(*) FILTER(WHERE date !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$') noncanonical_date,\ncount(*) FILTER(WHERE substr(date,1,10)>to_char(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD')) future_date_candidate,\ncount(*) FILTER(WHERE created_at IS NULL OR btrim(created_at)='') missing_created_at\nFROM price_history",
+    "duplicates": "SELECT count(*) groups,coalesce(sum(n-1),0) excess_rows FROM (SELECT stock_code,substr(date,1,10),count(*) n FROM price_history GROUP BY 1,2 HAVING count(*)>1) x",
+    "anomaly_samples": "SELECT id,stock_code,date,open,high,low,close,volume FROM price_history WHERE open IS NULL OR high IS NULL OR low IS NULL OR close IS NULL OR volume IS NULL OR high<low OR high<open OR high<close OR low>open OR low>close OR open<0 OR close<0 OR volume<0 ORDER BY stock_code,date,id LIMIT 30",
+    "zero_samples": "SELECT id,stock_code,date,open,high,low,close,volume FROM price_history WHERE open=0 OR high=0 OR low=0 OR close=0 ORDER BY stock_code,date,id LIMIT 10",
+    "indexes": "SELECT indexname,indexdef FROM pg_indexes WHERE schemaname='public' AND tablename='price_history' ORDER BY indexname"
+  },
+  "results": {
+    "schema": [
+      {
+        "column_name": "id",
+        "data_type": "bigint"
+      },
+      {
+        "column_name": "stock_code",
+        "data_type": "text"
+      },
+      {
+        "column_name": "date",
+        "data_type": "text"
+      },
+      {
+        "column_name": "open",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "high",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "low",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "close",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "volume",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "inst_net_buy",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "frn_net_buy",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "created_at",
+        "data_type": "text"
+      },
+      {
+        "column_name": "ind_net_buy",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "inst_net_buy_amt",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "frn_net_buy_amt",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "ind_net_buy_amt",
+        "data_type": "double precision"
+      },
+      {
+        "column_name": "trade_amount",
+        "data_type": "double precision"
+      }
+    ],
+    "inventory": [
+      {
+        "table_name": "ai_analysis_reports"
+      },
+      {
+        "table_name": "analyst_pdf_extracts"
+      },
+      {
+        "table_name": "autotrade_guard_state"
+      },
+      {
+        "table_name": "backlog_recover_progress"
+      },
+      {
+        "table_name": "backtest_run_set_members"
+      },
+      {
+        "table_name": "backtest_run_sets"
+      },
+      {
+        "table_name": "backtest_run_specs"
+      },
+      {
+        "table_name": "backtest_runs"
+      },
+      {
+        "table_name": "broker_order_reconciliation"
+      },
+      {
+        "table_name": "broker_program_market_daily"
+      },
+      {
+        "table_name": "broker_program_stock_daily"
+      },
+      {
+        "table_name": "bs_items_verify_progress"
+      },
+      {
+        "table_name": "buy_candidates"
+      },
+      {
+        "table_name": "cafe_monthly_generated_reports"
+      },
+      {
+        "table_name": "cafe_monthly_hs_leadership"
+      },
+      {
+        "table_name": "cafe_monthly_sector_leadership"
+      },
+      {
+        "table_name": "cafe_quant_indicator_mappings"
+      },
+      {
+        "table_name": "cafe_signal_mentions"
+      },
+      {
+        "table_name": "cafe_signal_post_bodies"
+      },
+      {
+        "table_name": "cafe_signal_posts"
+      },
+      {
+        "table_name": "cafe_signal_runs"
+      },
+      {
+        "table_name": "cafe_stock_indicator_mappings"
+      },
+      {
+        "table_name": "canonical_cashflow_data"
+      },
+      {
+        "table_name": "canonical_financial_data"
+      },
+      {
+        "table_name": "canonical_financial_data_backup_20260906_empty_rows"
+      },
+      {
+        "table_name": "canonical_price_history_v"
+      },
+      {
+        "table_name": "canonical_price_returns_v"
+      },
+      {
+        "table_name": "cash_conversion_signal_runs"
+      },
+      {
+        "table_name": "cash_conversion_signals"
+      },
+      {
+        "table_name": "cash_flow_data"
+      },
+      {
+        "table_name": "cash_flow_data_backup_20260905_dedup"
+      },
+      {
+        "table_name": "cash_flow_data_backup_annual_gap_fix_20260830"
+      },
+      {
+        "table_name": "cash_flow_data_backup_dedup_20260828"
+      },
+      {
+        "table_name": "cash_flow_data_backup_mismatch_verify_20260828"
+      },
+      {
+        "table_name": "cash_flow_data_full_backup_20260822"
+      },
+      {
+        "table_name": "cashflow_fix_log"
+      },
+      {
+        "table_name": "cf_full_verify_progress"
+      },
+      {
+        "table_name": "cf_survivor_verify_progress"
+      },
+      {
+        "table_name": "cf_validation_flags"
+      },
+      {
+        "table_name": "cherry_family_learning_runs"
+      },
+      {
+        "table_name": "company_analysis_profiles"
+      },
+      {
+        "table_name": "company_mapping_profile"
+      },
+      {
+        "table_name": "company_peer_relations"
+      },
+      {
+        "table_name": "consensus_targets"
+      },
+      {
+        "table_name": "contract_advance_signal_runs"
+      },
+      {
+        "table_name": "contract_advance_signals"
+      },
+      {
+        "table_name": "contracts_verify_progress"
+      },
+      {
+        "table_name": "corporate_action_events"
+      },
+      {
+        "table_name": "corporate_action_events_backup2_20260823"
+      },
+      {
+        "table_name": "corporate_action_events_backup_20260823"
+      },
+      {
+        "table_name": "cost_breakdown"
+      },
+      {
+        "table_name": "cost_breakdown_backup_20260822"
+      },
+      {
+        "table_name": "cost_structure"
+      },
+      {
+        "table_name": "dart_backlog_quarterly"
+      },
+      {
+        "table_name": "dart_bs_items"
+      },
+      {
+        "table_name": "dart_bs_items_fix_log"
+      },
+      {
+        "table_name": "dart_contracts"
+      },
+      {
+        "table_name": "dart_contracts_fix_log"
+      },
+      {
+        "table_name": "dart_cost_quarterly"
+      },
+      {
+        "table_name": "dart_dilution_events"
+      },
+      {
+        "table_name": "dart_dilution_fix_log"
+      },
+      {
+        "table_name": "dart_disclosure_cache"
+      },
+      {
+        "table_name": "dart_disclosures"
+      },
+      {
+        "table_name": "dart_employee_count"
+      },
+      {
+        "table_name": "dart_employee_count_backup_20260906_dedup"
+      },
+      {
+        "table_name": "dart_employee_count_backup_dedup_20260829"
+      },
+      {
+        "table_name": "dart_equity_issue_events"
+      },
+      {
+        "table_name": "dart_equity_issue_fix_log"
+      },
+      {
+        "table_name": "dart_insider_holdings"
+      },
+      {
+        "table_name": "dart_insider_holdings_backup_20260822"
+      },
+      {
+        "table_name": "dart_insider_holdings_backup_20260904_dup"
+      },
+      {
+        "table_name": "dart_insider_holdings_backup_dedup_20260829"
+      },
+      {
+        "table_name": "dart_insider_holdings_fix_log"
+      },
+      {
+        "table_name": "dart_item_mapping_catalog"
+      },
+      {
+        "table_name": "dart_major_holders"
+      },
+      {
+        "table_name": "dart_major_holders_backup_20260906_dedup"
+      },
+      {
+        "table_name": "dart_major_holders_backup_dedup_20260829"
+      },
+      {
+        "table_name": "dart_major_holders_fix_log"
+      },
+      {
+        "table_name": "dart_material_purchase"
+      },
+      {
+        "table_name": "dart_material_purchase_backup_20260822"
+      },
+      {
+        "table_name": "dart_material_purchase_backup_mismatch_verify_20260828"
+      },
+      {
+        "table_name": "dart_material_purchase_fix_log"
+      },
+      {
+        "table_name": "dart_raw_accounts"
+      },
+      {
+        "table_name": "dart_rd_patent_signals"
+      },
+      {
+        "table_name": "dart_report_item_collection_log"
+      },
+      {
+        "table_name": "dart_report_item_mapping_qa"
+      },
+      {
+        "table_name": "dart_report_items_quarterly"
+      },
+      {
+        "table_name": "dart_report_items_quarterly_backup_20260906_dedup"
+      },
+      {
+        "table_name": "dart_sga_annual"
+      },
+      {
+        "table_name": "dart_sga_fix_log"
+      },
+      {
+        "table_name": "dart_tenbagger_triggers_quarterly"
+      },
+      {
+        "table_name": "data_availability_ledger"
+      },
+      {
+        "table_name": "data_fix_log"
+      },
+      {
+        "table_name": "data_lineage_catalog"
+      },
+      {
+        "table_name": "data_lock"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260830_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260831_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260901_062001"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260902_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260903_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260904_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260905_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260906_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260907_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260908_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260909_062002"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260910_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260911_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260912_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i10_equity_spike_20260913_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260830_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260831_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260901_062001"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260902_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260903_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260904_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260905_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260906_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260907_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260908_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260909_062002"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260910_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260911_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260912_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i4_quarter_revenue_20260913_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260830_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260831_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260901_062001"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260902_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260903_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260904_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260905_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260906_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260907_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260908_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260909_062002"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260910_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260911_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260912_062000"
+      },
+      {
+        "table_name": "data_quality_backup_i5_i9_cashflow_extreme_20260913_062000"
+      },
+      {
+        "table_name": "data_quality_issues"
+      },
+      {
+        "table_name": "data_quality_repair_log"
+      },
+      {
+        "table_name": "depr_q_rebuild_cause"
+      },
+      {
+        "table_name": "depreciation_q_fix_log"
+      },
+      {
+        "table_name": "detailed_analysis_files"
+      },
+      {
+        "table_name": "detailed_analysis_posts"
+      },
+      {
+        "table_name": "dilution_events"
+      },
+      {
+        "table_name": "dilution_events_anomaly_backup_20260822"
+      },
+      {
+        "table_name": "dilution_events_backup2_20260825"
+      },
+      {
+        "table_name": "dilution_reverify_progress"
+      },
+      {
+        "table_name": "earnings_signals"
+      },
+      {
+        "table_name": "epic_indicator_replacement_plan"
+      },
+      {
+        "table_name": "equity_issue_reverify_progress"
+      },
+      {
+        "table_name": "explainable_stock_signals"
+      },
+      {
+        "table_name": "external_price_verification"
+      },
+      {
+        "table_name": "field_verification_status"
+      },
+      {
+        "table_name": "fin_disclosure_dates"
+      },
+      {
+        "table_name": "fin_full_verify_progress"
+      },
+      {
+        "table_name": "fin_quarterly_validation_flags"
+      },
+      {
+        "table_name": "financial_anomalies"
+      },
+      {
+        "table_name": "financial_data"
+      },
+      {
+        "table_name": "financial_data_backup_20260902_ofs_isannual"
+      },
+      {
+        "table_name": "financial_data_backup_20260902_ofs_q4_dup_delete"
+      },
+      {
+        "table_name": "financial_data_backup_annual_gap_fix_20260830"
+      },
+      {
+        "table_name": "financial_data_backup_dedup_20260828"
+      },
+      {
+        "table_name": "financial_data_backup_fnguide_sync_20260906"
+      },
+      {
+        "table_name": "financial_data_backup_fnguide_sync_20260907"
+      },
+      {
+        "table_name": "financial_data_backup_fnguide_sync_20260908"
+      },
+      {
+        "table_name": "financial_data_backup_fnguide_sync_20260909"
+      },
+      {
+        "table_name": "financial_data_backup_fnguide_sync_20260910"
+      },
+      {
+        "table_name": "financial_data_backup_fnguide_sync_20260911"
+      },
+      {
+        "table_name": "financial_data_backup_fnguide_sync_20260912"
+      },
+      {
+        "table_name": "financial_data_backup_fnguide_sync_20260913"
+      },
+      {
+        "table_name": "financial_data_backup_manual_pref_fix_20260830"
+      },
+      {
+        "table_name": "financial_data_backup_mismatch_verify_20260828"
+      },
+      {
+        "table_name": "financial_data_backup_naver_derive_20260830"
+      },
+      {
+        "table_name": "financial_data_backup_preferred_naver_fix_20260830"
+      },
+      {
+        "table_name": "financial_data_backup_q2anomaly2_20260822"
+      },
+      {
+        "table_name": "financial_data_backup_q2anomaly_20260822"
+      },
+      {
+        "table_name": "financial_data_full_backup_20260822"
+      },
+      {
+        "table_name": "financial_data_verify_progress"
+      },
+      {
+        "table_name": "financial_fix_log"
+      },
+      {
+        "table_name": "financial_source_snapshot"
+      },
+      {
+        "table_name": "fnguide_dart_mismatch_log"
+      },
+      {
+        "table_name": "foreign_flow_quarterly"
+      },
+      {
+        "table_name": "foreign_holding_daily"
+      },
+      {
+        "table_name": "forward_estimate_collection_status"
+      },
+      {
+        "table_name": "forward_estimate_snapshots"
+      },
+      {
+        "table_name": "forward_estimates"
+      },
+      {
+        "table_name": "forward_strategy_indicator_series"
+      },
+      {
+        "table_name": "forward_strategy_indicators"
+      },
+      {
+        "table_name": "forward_strategy_industry_categories"
+      },
+      {
+        "table_name": "forward_strategy_raw_responses"
+      },
+      {
+        "table_name": "forward_strategy_related_companies"
+      },
+      {
+        "table_name": "forward_strategy_sources"
+      },
+      {
+        "table_name": "futures_contract_daily"
+      },
+      {
+        "table_name": "futures_daily"
+      },
+      {
+        "table_name": "global_macro_categories"
+      },
+      {
+        "table_name": "global_macro_collection_log"
+      },
+      {
+        "table_name": "global_macro_data"
+      },
+      {
+        "table_name": "global_macro_event_reactions"
+      },
+      {
+        "table_name": "global_macro_events"
+      },
+      {
+        "table_name": "hypothesis_research_registry"
+      },
+      {
+        "table_name": "hypothesis_research_runs"
+      },
+      {
+        "table_name": "ifrs_field_rules"
+      },
+      {
+        "table_name": "ifrs_mapping_coverage_snapshot"
+      },
+      {
+        "table_name": "indicator_sector_direction_rules"
+      },
+      {
+        "table_name": "insider_holdings_verify_progress"
+      },
+      {
+        "table_name": "inventory_sales_signal_runs"
+      },
+      {
+        "table_name": "inventory_sales_signals"
+      },
+      {
+        "table_name": "investment_decision_rag_cache"
+      },
+      {
+        "table_name": "investment_decision_reviews"
+      },
+      {
+        "table_name": "investment_decision_tasks"
+      },
+      {
+        "table_name": "investor_flow_quarterly"
+      },
+      {
+        "table_name": "investor_trading_daily"
+      },
+      {
+        "table_name": "kis_paper_orders"
+      },
+      {
+        "table_name": "kis_paper_positions"
+      },
+      {
+        "table_name": "kis_paper_realized"
+      },
+      {
+        "table_name": "kiwoom_condition_current"
+      },
+      {
+        "table_name": "kiwoom_condition_definition"
+      },
+      {
+        "table_name": "kiwoom_condition_membership"
+      },
+      {
+        "table_name": "kiwoom_credit_balance"
+      },
+      {
+        "table_name": "kiwoom_foreign_flow"
+      },
+      {
+        "table_name": "kiwoom_investor_daily"
+      },
+      {
+        "table_name": "kiwoom_large_trade_rank"
+      },
+      {
+        "table_name": "kiwoom_margin_daily"
+      },
+      {
+        "table_name": "kiwoom_minute_snapshot"
+      },
+      {
+        "table_name": "kiwoom_realtime_quote"
+      },
+      {
+        "table_name": "kiwoom_sector_investor_net_buy"
+      },
+      {
+        "table_name": "kiwoom_tick_history"
+      },
+      {
+        "table_name": "kiwoom_us_realtime_quote"
+      },
+      {
+        "table_name": "krx_security_reference"
+      },
+      {
+        "table_name": "krx_security_share_snapshot"
+      },
+      {
+        "table_name": "listed_company_info"
+      },
+      {
+        "table_name": "live_cash_ledger"
+      },
+      {
+        "table_name": "live_fills"
+      },
+      {
+        "table_name": "live_order_events"
+      },
+      {
+        "table_name": "live_orders"
+      },
+      {
+        "table_name": "live_signal_outcomes"
+      },
+      {
+        "table_name": "live_signal_registry"
+      },
+      {
+        "table_name": "live_strategy_approvals"
+      },
+      {
+        "table_name": "macro_signal_backtest_results"
+      },
+      {
+        "table_name": "macro_signal_backtest_trades"
+      },
+      {
+        "table_name": "major_holders_verify_progress"
+      },
+      {
+        "table_name": "margin_balance_daily"
+      },
+      {
+        "table_name": "market_attention_event"
+      },
+      {
+        "table_name": "market_regime_daily"
+      },
+      {
+        "table_name": "market_signal_briefing"
+      },
+      {
+        "table_name": "market_signal_qa_log"
+      },
+      {
+        "table_name": "material_purchase_reverify_progress"
+      },
+      {
+        "table_name": "multi_source_financial_mismatch_log"
+      },
+      {
+        "table_name": "namu_execution_strength_snapshots"
+      },
+      {
+        "table_name": "naver_financial"
+      },
+      {
+        "table_name": "naver_price_history_backfill"
+      },
+      {
+        "table_name": "nps_workplace_monthly"
+      },
+      {
+        "table_name": "order_backlog"
+      },
+      {
+        "table_name": "order_backlog_anomaly_backup_20260822"
+      },
+      {
+        "table_name": "order_backlog_backup2_20260825"
+      },
+      {
+        "table_name": "order_contracts"
+      },
+      {
+        "table_name": "orderbook_snapshots"
+      },
+      {
+        "table_name": "peak_holding"
+      },
+      {
+        "table_name": "peak_trade"
+      },
+      {
+        "table_name": "pg_stat_statements"
+      },
+      {
+        "table_name": "pg_stat_statements_info"
+      },
+      {
+        "table_name": "portfolio"
+      },
+      {
+        "table_name": "portfolio_sell_signal_alerts"
+      },
+      {
+        "table_name": "portfolio_snapshot"
+      },
+      {
+        "table_name": "portfolio_tx"
+      },
+      {
+        "table_name": "postgres_data_repair_backup"
+      },
+      {
+        "table_name": "postgres_data_repair_batches"
+      },
+      {
+        "table_name": "price_history"
+      },
+      {
+        "table_name": "price_history_backup_003200_20260823"
+      },
+      {
+        "table_name": "price_history_backup_ohl0_20260822"
+      },
+      {
+        "table_name": "price_history_corruption_backup_20260823"
+      },
+      {
+        "table_name": "price_history_corruption_backup_20260823b"
+      },
+      {
+        "table_name": "price_history_corruption_backup_20260829"
+      },
+      {
+        "table_name": "price_history_fix_backup"
+      },
+      {
+        "table_name": "price_history_h1_2022_burst_backup_20260829"
+      },
+      {
+        "table_name": "price_history_holiday_phantom_backup_20260824"
+      },
+      {
+        "table_name": "price_history_jan03_residual_backup_20260829"
+      },
+      {
+        "table_name": "price_history_quality_v"
+      },
+      {
+        "table_name": "price_ingestion_quarantine"
+      },
+      {
+        "table_name": "price_integrity_quarantine"
+      },
+      {
+        "table_name": "price_jump_audit"
+      },
+      {
+        "table_name": "price_series_registry"
+      },
+      {
+        "table_name": "price_snapshot_provenance"
+      },
+      {
+        "table_name": "price_snapshot_repair_backup"
+      },
+      {
+        "table_name": "price_snapshot_repair_insertions"
+      },
+      {
+        "table_name": "price_snapshot_repair_runs"
+      },
+      {
+        "table_name": "price_trading_calendar"
+      },
+      {
+        "table_name": "price_verification_state"
+      },
+      {
+        "table_name": "program_trading_daily"
+      },
+      {
+        "table_name": "quant_indicator_signal_events"
+      },
+      {
+        "table_name": "quant_major_indicator_catalog"
+      },
+      {
+        "table_name": "quant_major_indicator_series"
+      },
+      {
+        "table_name": "quant_market_regime_signal"
+      },
+      {
+        "table_name": "quant_stock_trade_signal_snapshots"
+      },
+      {
+        "table_name": "radar_market_cache"
+      },
+      {
+        "table_name": "radar_price_cache"
+      },
+      {
+        "table_name": "radar_sector_override"
+      },
+      {
+        "table_name": "radar_semiconductor_override"
+      },
+      {
+        "table_name": "report_files"
+      },
+      {
+        "table_name": "risk_gate_decisions"
+      },
+      {
+        "table_name": "run_verification_artifacts"
+      },
+      {
+        "table_name": "sector_index_daily"
+      },
+      {
+        "table_name": "sector_info"
+      },
+      {
+        "table_name": "sector_insights"
+      },
+      {
+        "table_name": "sector_posts"
+      },
+      {
+        "table_name": "sector_rotation_cache"
+      },
+      {
+        "table_name": "sector_stocks"
+      },
+      {
+        "table_name": "security_master_history"
+      },
+      {
+        "table_name": "security_master_history_backup_codex_20260908"
+      },
+      {
+        "table_name": "security_share_history"
+      },
+      {
+        "table_name": "security_share_history_backup_codex_20260908"
+      },
+      {
+        "table_name": "segment_revenue"
+      },
+      {
+        "table_name": "segment_revenue_backup_20260822"
+      },
+      {
+        "table_name": "seibro_financial_snapshot"
+      },
+      {
+        "table_name": "selected_price_repair_backup"
+      },
+      {
+        "table_name": "selected_price_repair_batches"
+      },
+      {
+        "table_name": "selected_price_repair_inserted"
+      },
+      {
+        "table_name": "selected_price_repair_stage"
+      },
+      {
+        "table_name": "selected_run_registry"
+      },
+      {
+        "table_name": "semiconductor_valuestream"
+      },
+      {
+        "table_name": "short_foreign_balance"
+      },
+      {
+        "table_name": "short_foreign_trade"
+      },
+      {
+        "table_name": "short_monthly_stat"
+      },
+      {
+        "table_name": "short_rank_daily"
+      },
+      {
+        "table_name": "short_sale_daily"
+      },
+      {
+        "table_name": "short_sector_daily"
+      },
+      {
+        "table_name": "short_sell_daily"
+      },
+      {
+        "table_name": "short_sell_pct_anomaly_backup_20260822"
+      },
+      {
+        "table_name": "signal_config"
+      },
+      {
+        "table_name": "signal_experiment_ledger"
+      },
+      {
+        "table_name": "signal_quality_scores"
+      },
+      {
+        "table_name": "signal_result"
+      },
+      {
+        "table_name": "source_field_mapping_rules"
+      },
+      {
+        "table_name": "source_intelligence_mentions"
+      },
+      {
+        "table_name": "source_intelligence_sources"
+      },
+      {
+        "table_name": "stock_base_info_changes"
+      },
+      {
+        "table_name": "stock_base_info_history"
+      },
+      {
+        "table_name": "stock_bizno_map"
+      },
+      {
+        "table_name": "stock_collection_config"
+      },
+      {
+        "table_name": "stock_dart_data_quality"
+      },
+      {
+        "table_name": "stock_meta"
+      },
+      {
+        "table_name": "stock_meta_backup_20260822"
+      },
+      {
+        "table_name": "stock_price_daily"
+      },
+      {
+        "table_name": "stock_sector_tags"
+      },
+      {
+        "table_name": "stock_shareholder_profile"
+      },
+      {
+        "table_name": "stock_universe"
+      },
+      {
+        "table_name": "stockeasy_analysis"
+      },
+      {
+        "table_name": "stockeasy_autotrade_manual_hold"
+      },
+      {
+        "table_name": "stockeasy_sector_membership"
+      },
+      {
+        "table_name": "stockeasy_sector_rs_daily"
+      },
+      {
+        "table_name": "stockeasy_sync_state"
+      },
+      {
+        "table_name": "strategy_feature_snapshot"
+      },
+      {
+        "table_name": "strategy_feature_snapshot_pit_v2"
+      },
+      {
+        "table_name": "strategy_regime_policy"
+      },
+      {
+        "table_name": "strict_backtest_runs"
+      },
+      {
+        "table_name": "system_hardening_plan"
+      },
+      {
+        "table_name": "telegram_channels"
+      },
+      {
+        "table_name": "telegram_messages"
+      },
+      {
+        "table_name": "telegram_stock_alert_state"
+      },
+      {
+        "table_name": "telegram_stock_mentions"
+      },
+      {
+        "table_name": "tenbagger_ai_analysis"
+      },
+      {
+        "table_name": "tenbagger_daily_alerts"
+      },
+      {
+        "table_name": "tenbagger_results"
+      },
+      {
+        "table_name": "tg_daily_mentions"
+      },
+      {
+        "table_name": "theme_membership_snapshot"
+      },
+      {
+        "table_name": "trading_restrictions"
+      },
+      {
+        "table_name": "treasury_buyback"
+      },
+      {
+        "table_name": "trigger_discovery_events"
+      },
+      {
+        "table_name": "trigger_discovery_forward_returns"
+      },
+      {
+        "table_name": "trigger_discovery_stock_links"
+      },
+      {
+        "table_name": "triple_pattern_daily"
+      },
+      {
+        "table_name": "turnover_breakout_live_log"
+      },
+      {
+        "table_name": "us_biotech_clinical_trials"
+      },
+      {
+        "table_name": "us_biotech_consensus_snapshot"
+      },
+      {
+        "table_name": "us_biotech_fda_labels"
+      },
+      {
+        "table_name": "us_biotech_news"
+      },
+      {
+        "table_name": "us_biotech_pipeline_snapshot"
+      },
+      {
+        "table_name": "us_cashflow_data"
+      },
+      {
+        "table_name": "us_cashflow_data_backup_20260906_period_end_drift"
+      },
+      {
+        "table_name": "us_data_integrity_audit"
+      },
+      {
+        "table_name": "us_disclosures"
+      },
+      {
+        "table_name": "us_factor_snapshot"
+      },
+      {
+        "table_name": "us_financial_data"
+      },
+      {
+        "table_name": "us_financial_data_backup_20260904_period_end_drift"
+      },
+      {
+        "table_name": "us_frontend_snapshot"
+      },
+      {
+        "table_name": "us_paper_cash_ledger"
+      },
+      {
+        "table_name": "us_paper_orders"
+      },
+      {
+        "table_name": "us_paper_positions"
+      },
+      {
+        "table_name": "us_paper_realized"
+      },
+      {
+        "table_name": "us_paper_run_log"
+      },
+      {
+        "table_name": "us_price_history"
+      },
+      {
+        "table_name": "us_stock_meta"
+      },
+      {
+        "table_name": "valuation_history"
+      },
+      {
+        "table_name": "virtual_cash_accounts"
+      },
+      {
+        "table_name": "virtual_cash_ledger"
+      },
+      {
+        "table_name": "virtual_position_costs"
+      },
+      {
+        "table_name": "virtual_strategy_runs"
+      },
+      {
+        "table_name": "watchlist"
+      },
+      {
+        "table_name": "write_gate_log"
+      }
+    ],
+    "profile": [
+      {
+        "n": 10237546,
+        "stocks": 4782,
+        "min_date": "2010-01-04",
+        "max_date": "2026-09-14",
+        "missing_key": 0,
+        "missing_ohlcv": 1385,
+        "nonfinite": 0,
+        "negative": 0,
+        "ohlc_order": 204117,
+        "zero_price_review": 203417,
+        "noncanonical_date": 0,
+        "future_date_candidate": 0,
+        "missing_created_at": 2054113
+      }
+    ],
+    "duplicates": [
+      {
+        "groups": 0,
+        "excess_rows": 0
+      }
+    ],
+    "anomaly_samples": [
+      {
+        "id": 10969515,
+        "stock_code": "^GSPC",
+        "date": "2026-07-03",
+        "open": null,
+        "high": null,
+        "low": null,
+        "close": null,
+        "volume": null
+      },
+      {
+        "id": 10972224,
+        "stock_code": "^GSPC",
+        "date": "2026-07-07",
+        "open": null,
+        "high": null,
+        "low": null,
+        "close": null,
+        "volume": null
+      },
+      {
+        "id": 11008223,
+        "stock_code": "^IXIC",
+        "date": "2026-07-27",
+        "open": null,
+        "high": null,
+        "low": null,
+        "close": null,
+        "volume": null
+      },
+      {
+        "id": 14378859,
+        "stock_code": "^KQ150",
+        "date": "2011-09-06",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 933.91,
+        "volume": 0.0
+      },
+      {
+        "id": 14380829,
+        "stock_code": "^KQ150",
+        "date": "2011-09-07",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 963.17,
+        "volume": 0.0
+      },
+      {
+        "id": 14382799,
+        "stock_code": "^KQ150",
+        "date": "2011-09-08",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 955.41,
+        "volume": 0.0
+      },
+      {
+        "id": 14384767,
+        "stock_code": "^KQ150",
+        "date": "2011-09-09",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 939.28,
+        "volume": 0.0
+      },
+      {
+        "id": 14386734,
+        "stock_code": "^KQ150",
+        "date": "2011-09-14",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 899.58,
+        "volume": 0.0
+      },
+      {
+        "id": 14388700,
+        "stock_code": "^KQ150",
+        "date": "2011-09-15",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 908.71,
+        "volume": 0.0
+      },
+      {
+        "id": 14390666,
+        "stock_code": "^KQ150",
+        "date": "2011-09-16",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 940.06,
+        "volume": 0.0
+      },
+      {
+        "id": 14392632,
+        "stock_code": "^KQ150",
+        "date": "2011-09-19",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 924.85,
+        "volume": 0.0
+      },
+      {
+        "id": 14394598,
+        "stock_code": "^KQ150",
+        "date": "2011-09-20",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 943.13,
+        "volume": 0.0
+      },
+      {
+        "id": 14396564,
+        "stock_code": "^KQ150",
+        "date": "2011-09-21",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 961.26,
+        "volume": 0.0
+      },
+      {
+        "id": 14398530,
+        "stock_code": "^KQ150",
+        "date": "2011-09-22",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 946.84,
+        "volume": 0.0
+      },
+      {
+        "id": 14400494,
+        "stock_code": "^KQ150",
+        "date": "2011-09-23",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 897.49,
+        "volume": 0.0
+      },
+      {
+        "id": 14402458,
+        "stock_code": "^KQ150",
+        "date": "2011-09-26",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 822.79,
+        "volume": 0.0
+      },
+      {
+        "id": 14404423,
+        "stock_code": "^KQ150",
+        "date": "2011-09-27",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 878.03,
+        "volume": 0.0
+      },
+      {
+        "id": 14406388,
+        "stock_code": "^KQ150",
+        "date": "2011-09-28",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 883.43,
+        "volume": 0.0
+      },
+      {
+        "id": 14408353,
+        "stock_code": "^KQ150",
+        "date": "2011-09-29",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 903.39,
+        "volume": 0.0
+      },
+      {
+        "id": 14410319,
+        "stock_code": "^KQ150",
+        "date": "2011-09-30",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 916.17,
+        "volume": 0.0
+      },
+      {
+        "id": 14412285,
+        "stock_code": "^KQ150",
+        "date": "2011-10-04",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 891.5,
+        "volume": 0.0
+      },
+      {
+        "id": 14414251,
+        "stock_code": "^KQ150",
+        "date": "2011-10-05",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 854.43,
+        "volume": 0.0
+      },
+      {
+        "id": 14416215,
+        "stock_code": "^KQ150",
+        "date": "2011-10-06",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 876.88,
+        "volume": 0.0
+      },
+      {
+        "id": 14418179,
+        "stock_code": "^KQ150",
+        "date": "2011-10-07",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 901.35,
+        "volume": 0.0
+      },
+      {
+        "id": 14420143,
+        "stock_code": "^KQ150",
+        "date": "2011-10-10",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 924.54,
+        "volume": 0.0
+      },
+      {
+        "id": 14422108,
+        "stock_code": "^KQ150",
+        "date": "2011-10-11",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 934.65,
+        "volume": 0.0
+      },
+      {
+        "id": 14424072,
+        "stock_code": "^KQ150",
+        "date": "2011-10-12",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 955.47,
+        "volume": 0.0
+      },
+      {
+        "id": 14426036,
+        "stock_code": "^KQ150",
+        "date": "2011-10-13",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 965.45,
+        "volume": 0.0
+      },
+      {
+        "id": 14427999,
+        "stock_code": "^KQ150",
+        "date": "2011-10-14",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 963.01,
+        "volume": 0.0
+      },
+      {
+        "id": 14429963,
+        "stock_code": "^KQ150",
+        "date": "2011-10-17",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 988.77,
+        "volume": 0.0
+      }
+    ],
+    "zero_samples": [
+      {
+        "id": 14378859,
+        "stock_code": "^KQ150",
+        "date": "2011-09-06",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 933.91,
+        "volume": 0.0
+      },
+      {
+        "id": 14380829,
+        "stock_code": "^KQ150",
+        "date": "2011-09-07",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 963.17,
+        "volume": 0.0
+      },
+      {
+        "id": 14382799,
+        "stock_code": "^KQ150",
+        "date": "2011-09-08",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 955.41,
+        "volume": 0.0
+      },
+      {
+        "id": 14384767,
+        "stock_code": "^KQ150",
+        "date": "2011-09-09",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 939.28,
+        "volume": 0.0
+      },
+      {
+        "id": 14386734,
+        "stock_code": "^KQ150",
+        "date": "2011-09-14",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 899.58,
+        "volume": 0.0
+      },
+      {
+        "id": 14388700,
+        "stock_code": "^KQ150",
+        "date": "2011-09-15",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 908.71,
+        "volume": 0.0
+      },
+      {
+        "id": 14390666,
+        "stock_code": "^KQ150",
+        "date": "2011-09-16",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 940.06,
+        "volume": 0.0
+      },
+      {
+        "id": 14392632,
+        "stock_code": "^KQ150",
+        "date": "2011-09-19",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 924.85,
+        "volume": 0.0
+      },
+      {
+        "id": 14394598,
+        "stock_code": "^KQ150",
+        "date": "2011-09-20",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 943.13,
+        "volume": 0.0
+      },
+      {
+        "id": 14396564,
+        "stock_code": "^KQ150",
+        "date": "2011-09-21",
+        "open": 0.0,
+        "high": 0.0,
+        "low": 0.0,
+        "close": 961.26,
+        "volume": 0.0
+      }
+    ],
+    "indexes": [
+      {
+        "indexname": "ix_price_history_0b57a1f65a",
+        "indexdef": "CREATE UNIQUE INDEX ix_price_history_0b57a1f65a ON public.price_history USING btree (stock_code, date)"
+      },
+      {
+        "indexname": "ix_price_history_6755ae263c",
+        "indexdef": "CREATE INDEX ix_price_history_6755ae263c ON public.price_history USING btree (date)"
+      },
+      {
+        "indexname": "ix_price_history_code_date_posclose",
+        "indexdef": "CREATE INDEX ix_price_history_code_date_posclose ON public.price_history USING btree (stock_code, date) WHERE (close > (0)::double precision)"
+      },
+      {
+        "indexname": "price_history_pkey",
+        "indexdef": "CREATE UNIQUE INDEX price_history_pkey ON public.price_history USING btree (id)"
+      }
+    ]
+  },
+  "transaction": [
+    {
+      "version": "PostgreSQL 16.15 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+      "read_only": "on",
+      "isolation": "repeatable read",
+      "snapshot": "16318491:16318491:",
+      "audit_time": "2026-09-14 04:41:48.596520+09:00"
+    }
+  ],
+  "ended_utc": "2026-09-13T19:42:21.442643+00:00",
+  "script_sha256": "126fb535f7b0c0f8585742b3f6509629cc16af1ad5cf72a49d0864c81ee7fedb"
+}

@@ -1,0 +1,5 @@
+{
+  "codex/ceo-briefing-platform/backend/services/agentic_apply_worker.py": "17e0d14312cc31204aaf3f93c0bed3caefb3fd38d31c38cc65b3eaaf09df8523",
+  "codex/ceo-briefing-platform/backend/test_agentic_apply_worker.py": "97e12da33c121165aa291355e5c2068ce70d7e834c774228c3656a8b92edc6e9",
+  "handoff/AGENTIC_PATCH_WORKER_REVIEW_2026-09-14.md": "bf73de3fb8dbba93dcf83a996e034c1f0f3c09b412338cee196598ed8769d6d4"
+}

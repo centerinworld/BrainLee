@@ -1,0 +1,125 @@
+{
+  "scope": "Stored artifact equality; independent process/session provenance unverified",
+  "pairs": [
+    {
+      "first_run_id": "9110d42a",
+      "second_run_id": "0da1aa41",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "bc945afb",
+      "second_run_id": "25f2fff8",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "717303c9",
+      "second_run_id": "d61b2cb3",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "7201792a",
+      "second_run_id": "002dede8",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "f4145e8b",
+      "second_run_id": "35969b7f",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "b404c918",
+      "second_run_id": "5b2509f0",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "85036069",
+      "second_run_id": "d2e2e2b7",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "6e53600d",
+      "second_run_id": "8c563575",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "0ca8cdf2",
+      "second_run_id": "3036acbe",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "412a12d7",
+      "second_run_id": "a9185dd3",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "40b06d11",
+      "second_run_id": "8a9e4c43",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "e8fa022c",
+      "second_run_id": "2c8c10f6",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "2dbac1ee",
+      "second_run_id": "98a5f388",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "3e4afb89",
+      "second_run_id": "4f009857",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "66a8ca7a",
+      "second_run_id": "b0a3da69",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "6c33d61b",
+      "second_run_id": "484d65a4",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "dff5baa9",
+      "second_run_id": "ae9bc94c",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "252372fc",
+      "second_run_id": "32e306a1",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "65e012f1",
+      "second_run_id": "3fadfcf5",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "09594e78",
+      "second_run_id": "566a9835",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "5a4d5251",
+      "second_run_id": "bc3acfa8",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "eb331127",
+      "second_run_id": "28640d6b",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "d96e3c79",
+      "second_run_id": "246ad325",
+      "trades_identical": true
+    },
+    {
+      "first_run_id": "e1b5ce23",
+      "second_run_id": "bcacc83e",
+      "trades_identical": true
+    }
+  ]
+}

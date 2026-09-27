@@ -1,0 +1,52 @@
+{
+  "observed_at": "2026-09-17T20:40:27.699636+09:00",
+  "scope": "read-only source inspection; no live provider/Telegram/DB execution in this document task",
+  "files": [
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/approved_code_routes.py",
+      "sha256": "76b3d939295777976e0c0a56d74cab925e8f1fedf0c32070b376d73cf2d01212"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/services/approved_code_jobs.py",
+      "sha256": "3f4d0ebbc81b83049eaac6c738608abf5f6a9cf417b7ce38f056e5b388e70be6"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/services/agentic_apply_worker.py",
+      "sha256": "17e0d14312cc31204aaf3f93c0bed3caefb3fd38d31c38cc65b3eaaf09df8523"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/services/telegram_approval_poller.py",
+      "sha256": "4308b3acd4f5f97ba11c56e75a3cd4bfaf8648ced4f02f2e47c06aff00dd03b4"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/services/data_integrity_scan.py",
+      "sha256": "b6c59cc6415d8daf971c4f15368b7b22618bb39b322dcc27d79793ce50dfaaa1"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/strict_agi_orchestrator.py",
+      "sha256": "c56ef7d85bed6d88a95b1f0bc75b4d502891ee0ddf0b297bbd6deb7698c0d7a4"
+    },
+    {
+      "path": "/Volumes/Realtek_NVME/stock_dashboard/agi_session_monitor_daemon.py",
+      "sha256": "0f902b2b336b3d9be3917bb692be3b7d39c91c05190e5e4d3849f6ed279ebf76"
+    }
+  ],
+  "default_code_jobs_db_exists": false,
+  "strict_state_updated_at": "2026-09-17T20:40:27+09:00",
+  "task_count": 175,
+  "task_status_counts": {
+    "RUNNING_STAGE_1": 1,
+    "EXECUTION_ERROR": 1,
+    "DRAFT_READY": 156,
+    "COMPLETED": 9,
+    "INVALIDATED": 1,
+    "CANCELLED": 7
+  },
+  "goal_count": 7,
+  "telegram_callback_bytes": 108,
+  "limitations": [
+    "No proof of current production data repair",
+    "Historical fixture evidence is not production execution",
+    "Missing default database does not rule out alternate configurations"
+  ]
+}

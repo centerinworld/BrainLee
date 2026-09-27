@@ -1,0 +1,206 @@
+{
+  "id": "code-68196cccd0224cb3949734ffad4f4822",
+  "status": "APPLIED_TO_WORKSPACE",
+  "spec": {
+    "instruction": "Fix calc.py add(a,b) so it returns the sum of a and b. Only change calc.py. Output complete file content in the required JSON.",
+    "provider": "codex",
+    "paths": [
+      "calc.py"
+    ],
+    "test_module": "test_calc",
+    "base_sha": "fd63b06bdedbeb70316514fcd2ab2d0ffa447241",
+    "files": {
+      "calc.py": "def add(a, b):\n    return a - b\n"
+    },
+    "scope": "model-generated contents -> isolated files -> approved unittest; no production merge",
+    "max_files": 20,
+    "max_diff_bytes": 256000
+  },
+  "approval_hash": "07d7bd6d225cac40bbd21d7904cf0c6c018e4f17b8bbf4f5cef1dea7e9516fda",
+  "requested_by": "explicit-user-request-validation",
+  "created_at": 1789388697.892457,
+  "approval_expires_at": 1789392297.892457,
+  "events": [
+    {
+      "status": "AWAITING_APPROVAL",
+      "at": 1789388697.892458
+    },
+    {
+      "status": "APPROVED",
+      "at": 1789388697.904358
+    },
+    {
+      "status": "RUNNING",
+      "at": 1789388697.905162
+    },
+    {
+      "status": "READY_FOR_REVIEW",
+      "at": 1789388707.022897
+    },
+    {
+      "status": "APPLYING",
+      "at": 1789388707.0345979
+    },
+    {
+      "status": "APPLIED_TO_WORKSPACE",
+      "at": 1789388707.069799
+    }
+  ],
+  "approved_by": "explicit-user-request-validation",
+  "approved_at": 1789388697.904084,
+  "updated_at": 1789388707.069796,
+  "model_evidence": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/state_codex/code-68196cccd0224cb3949734ffad4f4822.model.json",
+  "provider_result": {
+    "provider": "codex_cli",
+    "model": "codex-cli-subscription",
+    "usage": {
+      "prompt_tokens": 16024,
+      "completion_tokens": 31,
+      "total_tokens": 16055
+    },
+    "is_fallback": false
+  },
+  "checkout": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/proposals_codex/code-68196cccd0224cb3949734ffad4f4822/checkout",
+  "diff": "diff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n",
+  "diff_hash": "35dc711418e60edc7974186bd853c7ab08db843f16e43066417b07a53d8566ba",
+  "files_changed": [
+    "calc.py"
+  ],
+  "tests": {
+    "argv": [
+      "/Volumes/Realtek_NVME/AI System/antigravity_workspace/venv/bin/python3",
+      "-m",
+      "unittest",
+      "test_calc",
+      "-v"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "test_add (test_calc.Test.test_add) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+    "sandbox": "macos-no-network-clone-writes-only",
+    "tests_run": 1,
+    "passed": true
+  },
+  "production_modified": true,
+  "apply_approved_by": "explicit-user-request-validation",
+  "applied_at": 1789388707.057348,
+  "applied_by": "explicit-user-request-validation",
+  "deployed": false,
+  "rollback_patch": "diff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n",
+  "source_after_apply": "def add(a, b):\n    return a + b\n",
+  "post_apply_tests": {
+    "argv": [
+      "/Volumes/Realtek_NVME/AI System/antigravity_workspace/venv/bin/python3",
+      "-m",
+      "unittest",
+      "test_calc",
+      "-v"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "test_add (test_calc.Test.test_add) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+    "sandbox": "macos-no-network-clone-writes-only",
+    "tests_run": 1,
+    "passed": true
+  },
+  "rollback_result": {
+    "id": "code-68196cccd0224cb3949734ffad4f4822",
+    "status": "ROLLED_BACK",
+    "spec": {
+      "instruction": "Fix calc.py add(a,b) so it returns the sum of a and b. Only change calc.py. Output complete file content in the required JSON.",
+      "provider": "codex",
+      "paths": [
+        "calc.py"
+      ],
+      "test_module": "test_calc",
+      "base_sha": "fd63b06bdedbeb70316514fcd2ab2d0ffa447241",
+      "files": {
+        "calc.py": "def add(a, b):\n    return a - b\n"
+      },
+      "scope": "model-generated contents -> isolated files -> approved unittest; no production merge",
+      "max_files": 20,
+      "max_diff_bytes": 256000
+    },
+    "approval_hash": "07d7bd6d225cac40bbd21d7904cf0c6c018e4f17b8bbf4f5cef1dea7e9516fda",
+    "requested_by": "explicit-user-request-validation",
+    "created_at": 1789388697.892457,
+    "approval_expires_at": 1789392297.892457,
+    "events": [
+      {
+        "status": "AWAITING_APPROVAL",
+        "at": 1789388697.892458
+      },
+      {
+        "status": "APPROVED",
+        "at": 1789388697.904358
+      },
+      {
+        "status": "RUNNING",
+        "at": 1789388697.905162
+      },
+      {
+        "status": "READY_FOR_REVIEW",
+        "at": 1789388707.022897
+      },
+      {
+        "status": "APPLYING",
+        "at": 1789388707.0345979
+      },
+      {
+        "status": "APPLIED_TO_WORKSPACE",
+        "at": 1789388707.069799
+      },
+      {
+        "status": "ROLLING_BACK",
+        "at": 1789388707.120964
+      },
+      {
+        "status": "ROLLED_BACK",
+        "at": 1789388707.132575
+      }
+    ],
+    "approved_by": "explicit-user-request-validation",
+    "approved_at": 1789388697.904084,
+    "updated_at": 1789388707.132573,
+    "model_evidence": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/state_codex/code-68196cccd0224cb3949734ffad4f4822.model.json",
+    "provider_result": {
+      "provider": "codex_cli",
+      "model": "codex-cli-subscription",
+      "usage": {
+        "prompt_tokens": 16024,
+        "completion_tokens": 31,
+        "total_tokens": 16055
+      },
+      "is_fallback": false
+    },
+    "checkout": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/proposals_codex/code-68196cccd0224cb3949734ffad4f4822/checkout",
+    "diff": "diff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n",
+    "diff_hash": "35dc711418e60edc7974186bd853c7ab08db843f16e43066417b07a53d8566ba",
+    "files_changed": [
+      "calc.py"
+    ],
+    "tests": {
+      "argv": [
+        "/Volumes/Realtek_NVME/AI System/antigravity_workspace/venv/bin/python3",
+        "-m",
+        "unittest",
+        "test_calc",
+        "-v"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "test_add (test_calc.Test.test_add) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+      "sandbox": "macos-no-network-clone-writes-only",
+      "tests_run": 1,
+      "passed": true
+    },
+    "production_modified": false,
+    "apply_approved_by": "explicit-user-request-validation",
+    "applied_at": 1789388707.057348,
+    "applied_by": "explicit-user-request-validation",
+    "deployed": false,
+    "rollback_patch": "diff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n",
+    "rollback_approved_by": "explicit-user-request-validation"
+  },
+  "source_after_rollback": "def add(a, b):\n    return a - b\n"
+}

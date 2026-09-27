@@ -1,0 +1,12 @@
+[
+  {
+    "url": "https://www.postgresql.org/docs/18/sql-set-transaction.html",
+    "observed": "REPEATABLE READ uses one snapshot for transaction queries; READ ONLY prohibits ordinary data writes.",
+    "adopted": "Record and verify read_only/isolation/snapshot for consistent audit."
+  },
+  {
+    "url": "https://engopendart.fss.or.kr/guide/detail.do?apiGrpCd=DE003&apiId=AE00036",
+    "observed": "DART documents fs_div CFS/OFS, rcept_no, account_id, currency, three-month versus accumulated amounts.",
+    "adopted": "Preserve filing version, consolidation, account identity, currency and period basis; missing is unknown, not zero."
+  }
+]

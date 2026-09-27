@@ -1,0 +1,16 @@
+{
+  "task_id": "code-653ecbcba3214115983777c7eb5e4973",
+  "base_sha": "1ad8d8c16b36c81e6441d5c6a4720984c655db1c",
+  "source_repo": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/fixture_deepseek",
+  "allowed_paths": [
+    "calc.py"
+  ],
+  "files_changed": [
+    "calc.py"
+  ],
+  "diff_sha256": "35dc711418e60edc7974186bd853c7ab08db843f16e43066417b07a53d8566ba",
+  "created_at": "2026-09-14T12:24:57.504949+00:00",
+  "status": "NEEDS_REVIEW",
+  "validation": "patch applicability only; code tests not run",
+  "source_uncommitted_changes_included": false
+}

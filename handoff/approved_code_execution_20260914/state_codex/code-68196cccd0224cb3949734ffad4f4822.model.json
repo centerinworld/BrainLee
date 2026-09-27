@@ -1,0 +1,11 @@
+{
+  "content": "{\"files\":[{\"path\":\"calc.py\",\"content\":\"def add(a, b):\\n    return a + b\\n\"}]}",
+  "provider": "codex_cli",
+  "model": "codex-cli-subscription",
+  "usage": {
+    "prompt_tokens": 16024,
+    "completion_tokens": 31,
+    "total_tokens": 16055
+  },
+  "is_fallback": false
+}

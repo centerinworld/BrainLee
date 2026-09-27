@@ -1,0 +1,218 @@
+{
+  "id": "code-653ecbcba3214115983777c7eb5e4973",
+  "status": "APPLIED_TO_WORKSPACE",
+  "spec": {
+    "instruction": "Fix calc.py add(a,b) so it returns the sum of a and b. Only change calc.py. Output complete file content in the required JSON.",
+    "provider": "deepseek",
+    "paths": [
+      "calc.py"
+    ],
+    "test_module": "test_calc",
+    "base_sha": "1ad8d8c16b36c81e6441d5c6a4720984c655db1c",
+    "files": {
+      "calc.py": "def add(a, b):\n    return a - b\n"
+    },
+    "scope": "model-generated contents -> isolated files -> approved unittest; no production merge",
+    "max_files": 20,
+    "max_diff_bytes": 256000
+  },
+  "approval_hash": "922293c60b5f016f80e0441e94bfa4296c072221e86a0388ad89c5a701ebdb5c",
+  "requested_by": "explicit-user-request-validation",
+  "created_at": 1789388696.116443,
+  "approval_expires_at": 1789392296.116443,
+  "events": [
+    {
+      "status": "AWAITING_APPROVAL",
+      "at": 1789388696.116443
+    },
+    {
+      "status": "APPROVED",
+      "at": 1789388696.128659
+    },
+    {
+      "status": "RUNNING",
+      "at": 1789388696.129411
+    },
+    {
+      "status": "READY_FOR_REVIEW",
+      "at": 1789388697.563903
+    },
+    {
+      "status": "APPLYING",
+      "at": 1789388697.575456
+    },
+    {
+      "status": "APPLIED_TO_WORKSPACE",
+      "at": 1789388697.610336
+    }
+  ],
+  "approved_by": "explicit-user-request-validation",
+  "approved_at": 1789388696.1283991,
+  "updated_at": 1789388697.610334,
+  "model_evidence": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/state_deepseek/code-653ecbcba3214115983777c7eb5e4973.model.json",
+  "provider_result": {
+    "provider": "deepseek",
+    "model": "deepseek-chat",
+    "usage": {
+      "prompt_tokens": 221,
+      "completion_tokens": 28,
+      "total_tokens": 249,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 221
+    },
+    "is_fallback": false,
+    "_usage_recorded": true
+  },
+  "checkout": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/proposals_deepseek/code-653ecbcba3214115983777c7eb5e4973/checkout",
+  "diff": "diff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n",
+  "diff_hash": "35dc711418e60edc7974186bd853c7ab08db843f16e43066417b07a53d8566ba",
+  "files_changed": [
+    "calc.py"
+  ],
+  "tests": {
+    "argv": [
+      "/Volumes/Realtek_NVME/AI System/antigravity_workspace/venv/bin/python3",
+      "-m",
+      "unittest",
+      "test_calc",
+      "-v"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "test_add (test_calc.Test.test_add) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+    "sandbox": "macos-no-network-clone-writes-only",
+    "tests_run": 1,
+    "passed": true
+  },
+  "production_modified": true,
+  "apply_approved_by": "explicit-user-request-validation",
+  "applied_at": 1789388697.5986931,
+  "applied_by": "explicit-user-request-validation",
+  "deployed": false,
+  "rollback_patch": "diff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n",
+  "source_after_apply": "def add(a, b):\n    return a + b\n",
+  "post_apply_tests": {
+    "argv": [
+      "/Volumes/Realtek_NVME/AI System/antigravity_workspace/venv/bin/python3",
+      "-m",
+      "unittest",
+      "test_calc",
+      "-v"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "test_add (test_calc.Test.test_add) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+    "sandbox": "macos-no-network-clone-writes-only",
+    "tests_run": 1,
+    "passed": true
+  },
+  "rollback_result": {
+    "id": "code-653ecbcba3214115983777c7eb5e4973",
+    "status": "ROLLED_BACK",
+    "spec": {
+      "instruction": "Fix calc.py add(a,b) so it returns the sum of a and b. Only change calc.py. Output complete file content in the required JSON.",
+      "provider": "deepseek",
+      "paths": [
+        "calc.py"
+      ],
+      "test_module": "test_calc",
+      "base_sha": "1ad8d8c16b36c81e6441d5c6a4720984c655db1c",
+      "files": {
+        "calc.py": "def add(a, b):\n    return a - b\n"
+      },
+      "scope": "model-generated contents -> isolated files -> approved unittest; no production merge",
+      "max_files": 20,
+      "max_diff_bytes": 256000
+    },
+    "approval_hash": "922293c60b5f016f80e0441e94bfa4296c072221e86a0388ad89c5a701ebdb5c",
+    "requested_by": "explicit-user-request-validation",
+    "created_at": 1789388696.116443,
+    "approval_expires_at": 1789392296.116443,
+    "events": [
+      {
+        "status": "AWAITING_APPROVAL",
+        "at": 1789388696.116443
+      },
+      {
+        "status": "APPROVED",
+        "at": 1789388696.128659
+      },
+      {
+        "status": "RUNNING",
+        "at": 1789388696.129411
+      },
+      {
+        "status": "READY_FOR_REVIEW",
+        "at": 1789388697.563903
+      },
+      {
+        "status": "APPLYING",
+        "at": 1789388697.575456
+      },
+      {
+        "status": "APPLIED_TO_WORKSPACE",
+        "at": 1789388697.610336
+      },
+      {
+        "status": "ROLLING_BACK",
+        "at": 1789388697.657384
+      },
+      {
+        "status": "ROLLED_BACK",
+        "at": 1789388697.668621
+      }
+    ],
+    "approved_by": "explicit-user-request-validation",
+    "approved_at": 1789388696.1283991,
+    "updated_at": 1789388697.668619,
+    "model_evidence": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/state_deepseek/code-653ecbcba3214115983777c7eb5e4973.model.json",
+    "provider_result": {
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "usage": {
+        "prompt_tokens": 221,
+        "completion_tokens": 28,
+        "total_tokens": 249,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 221
+      },
+      "is_fallback": false,
+      "_usage_recorded": true
+    },
+    "checkout": "/Volumes/Realtek_NVME/AI System/handoff/approved_code_execution_20260914/proposals_deepseek/code-653ecbcba3214115983777c7eb5e4973/checkout",
+    "diff": "diff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n",
+    "diff_hash": "35dc711418e60edc7974186bd853c7ab08db843f16e43066417b07a53d8566ba",
+    "files_changed": [
+      "calc.py"
+    ],
+    "tests": {
+      "argv": [
+        "/Volumes/Realtek_NVME/AI System/antigravity_workspace/venv/bin/python3",
+        "-m",
+        "unittest",
+        "test_calc",
+        "-v"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "test_add (test_calc.Test.test_add) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n",
+      "sandbox": "macos-no-network-clone-writes-only",
+      "tests_run": 1,
+      "passed": true
+    },
+    "production_modified": false,
+    "apply_approved_by": "explicit-user-request-validation",
+    "applied_at": 1789388697.5986931,
+    "applied_by": "explicit-user-request-validation",
+    "deployed": false,
+    "rollback_patch": "diff --git a/calc.py b/calc.py\nindex 12ee743..4693ad3 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a - b\n+    return a + b\n",
+    "rollback_approved_by": "explicit-user-request-validation"
+  },
+  "source_after_rollback": "def add(a, b):\n    return a - b\n"
+}

@@ -1,0 +1,78 @@
+{
+  "PLAN_AND_EVIDENCE.md": {
+    "sha256": "49bb5c32e350d14e3f82db7a37061de811f75ad581e9c38c9d47a08bb580977a",
+    "bytes": 10183
+  },
+  "audit.py": {
+    "sha256": "126fb535f7b0c0f8585742b3f6509629cc16af1ad5cf72a49d0864c81ee7fedb",
+    "bytes": 3742
+  },
+  "claude_input.txt": {
+    "sha256": "4bf6d731559ef972357d8dabaeb12289bc72ad9a1212bfd77226f22f45148189",
+    "bytes": 10868
+  },
+  "claude_response.json": {
+    "sha256": "d47a9e2ec8b3b6730492d83d11ad44f426761d658b322a739857873a43ef63e6",
+    "bytes": 5340
+  },
+  "db_evidence.json": {
+    "sha256": "6725f13daf13cfdc4ccf44f6f28605138e07b6f506b17707cdda4c5a622a79c5",
+    "bytes": 42569
+  },
+  "deepseek_input.txt": {
+    "sha256": "81bb8d419cdd1514ec499e16ef78ddf49a4821b659f6542edcc474a365603134",
+    "bytes": 7240
+  },
+  "deepseek_response.json": {
+    "sha256": "ebaa7fbee94ba2211cadd51310d121a6f9f589772a1d00ad368b88d1e73bb512",
+    "bytes": 340
+  },
+  "external_sources.json": {
+    "sha256": "38eccfcd2483f3ab17d9000369de892fd530ef647ed4ca67c8a4cfae87b67cc0",
+    "bytes": 643
+  },
+  "gemini_input.txt": {
+    "sha256": "ced2baf9d8a170145530ed2f9d4de7d53a69d91edb6f94d9340af707348632fd",
+    "bytes": 871
+  },
+  "gemini_response.json": {
+    "sha256": "776eb4529057e3d6e42d69162a6ba982bd74a6e9a9522f7edabaaf7cc416e20f",
+    "bytes": 338
+  },
+  "model_review.py": {
+    "sha256": "c139b27c43cf4095f9428632d7744b81fbf4714b3bbfa4c774b43bdb7ef3aade",
+    "bytes": 4032
+  },
+  "qwen_input.txt": {
+    "sha256": "12a32478f7902424daaa2c2ed7f518b28f5eb86b87168602b0686eb38238d8c4",
+    "bytes": 1992
+  },
+  "qwen_response.json": {
+    "sha256": "aca83a154d9032db2f92ed3ac5f713050dc6ca8921a3118a84521c038034cd89",
+    "bytes": 5324
+  },
+  "qwen_retry_input.txt": {
+    "sha256": "417892bbfabc47fa279d87eb4aef53d256de300a4a8b27760b194560488ba785",
+    "bytes": 632
+  },
+  "qwen_retry_response.json": {
+    "sha256": "d02d5fe473dd5a0b538630ecb6b8d038230c203fcecbe3a12d5821b6ab6a7a08",
+    "bytes": 267
+  },
+  "qwen_retry_validation.json": {
+    "sha256": "a9558fa3d3456712d3427832b5907e43ea38e95f166b6f555c155a3b2f89ab31",
+    "bytes": 117
+  },
+  "retry_qwen.py": {
+    "sha256": "4f9859a3a7e1bc460b2f675fa441557180bea3927a9300f8f4eb221ae12393ae",
+    "bytes": 1830
+  },
+  "role_instructions.json": {
+    "sha256": "abbd0d578f9e8b4c7077826bca2606cb39179dd0096fb1f17ce7096fb1afbf87",
+    "bytes": 1091
+  },
+  "status.json": {
+    "sha256": "7083acb3aadbb0384e7b36c3624152ae886eb2a3fec0f3b202f9229735cb0268",
+    "bytes": 698
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "content": "```json\n{\"files\":[{\"path\":\"calc.py\",\"content\":\"def add(a, b):\\n    return a + b\\n\"}]}\n```",
+  "provider": "grok",
+  "model": "qwen/qwen3.8-27b",
+  "usage": {
+    "queue_time": 0.210001434,
+    "prompt_tokens": 238,
+    "prompt_time": 0.019567714,
+    "completion_tokens": 31,
+    "completion_time": 0.061173093,
+    "total_tokens": 269,
+    "total_time": 0.080740807
+  },
+  "is_fallback": false
+}

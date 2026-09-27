@@ -1,0 +1,1485 @@
+{
+  "audit_time_utc": "2026-09-13T11:31:21.619267+00:00",
+  "scope": "Stored-run reconciliation only; no fresh backtest or model review",
+  "source_hashes": {
+    "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/walkforward_nonoverlap_without_ecopro.py": "4a02583bcb8aacef1805ae9ada0a27b7d4142aa6dcb091927a5a188fb34e6ff0",
+    "/Volumes/Realtek_NVME/stock_dashboard/runtime/backtest_strategies/sector.py": "97d6013b8e064b742f6841b1e0b5c6e3405269fd78e561e542f6c4ecbcd8508f",
+    "/Volumes/Realtek_NVME/stock_dashboard/docs/claude_approval_orch-1789290863304.md": "5a136263234a6f859b23c321d01f1a6f82d119a4e61ea8d74488798bba35d8d9",
+    "/Volumes/Realtek_NVME/stock_dashboard/docs/qwen_handoff_to_claude_and_codex_20260913_181547_orch-1789290863304.md": "603b6ae84c7c0bba1300887d5b65b426230fc0cf81ee5af321af353a8c48e578"
+  },
+  "snapshot_hash": "daca96f4749740f04954d8dddee57272f67b159b6abcd68fc39987b5b6c297b7",
+  "run_count": 48,
+  "checks": [
+    {
+      "run_id": "bcacc83e",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 197360919.00000003,
+      "return_pct_reconstructed": 119.28991000000005,
+      "stored_return_pct": 119.29,
+      "unique_traded_codes": 29,
+      "trade_count": 80,
+      "trade_hash": "f18fe6290771150a83645333636a46dac703a270b3b3cc8defd262c86512f1a3",
+      "run_hash": "5372af1eaa07",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "32e306a1",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 199148376.00000003,
+      "return_pct_reconstructed": 121.27597333333338,
+      "stored_return_pct": 121.28,
+      "unique_traded_codes": 29,
+      "trade_count": 80,
+      "trade_hash": "b20c336c7f84b8d413eaaaca8637b50be64a44d637a27a6ed3440c3bf57be53f",
+      "run_hash": "5372af1eaa07",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "2c8c10f6",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 193219682.00000003,
+      "return_pct_reconstructed": 114.68853555555557,
+      "stored_return_pct": 114.69,
+      "unique_traded_codes": 38,
+      "trade_count": 116,
+      "trade_hash": "630822c18993334d3f036fecbda1fbdb3069d28f4fcc4b248dbb6110ecaa574e",
+      "run_hash": "6fadae21adaf",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "5b2509f0",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 195990997.00000003,
+      "return_pct_reconstructed": 117.76777444444448,
+      "stored_return_pct": 117.77,
+      "unique_traded_codes": 38,
+      "trade_count": 116,
+      "trade_hash": "b9ddc1c453e3d14958d2eb6aba040a17060f971ed72123a4850eb924667ac26a",
+      "run_hash": "5372af1eaa07",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "246ad325",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 145180858.99999997,
+      "return_pct_reconstructed": 61.31206555555553,
+      "stored_return_pct": 61.31,
+      "unique_traded_codes": 23,
+      "trade_count": 61,
+      "trade_hash": "f78f6edf701cda0c2b8acb2d3ecc0f44a133029b2873692b77f14488651b79e8",
+      "run_hash": "4bf8cf5ecea3",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "ae9bc94c",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 146526920.99999997,
+      "return_pct_reconstructed": 62.80768999999997,
+      "stored_return_pct": 62.81,
+      "unique_traded_codes": 23,
+      "trade_count": 61,
+      "trade_hash": "381e9369198bc97a2066fa1704935c9b1a0aac393ff633534999172ae78d17b4",
+      "run_hash": "45b3a6a7d505",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "8a9e4c43",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 142747565.99999997,
+      "return_pct_reconstructed": 58.608406666666625,
+      "stored_return_pct": 58.61,
+      "unique_traded_codes": 26,
+      "trade_count": 64,
+      "trade_hash": "33c52a6482a5f8c0cfa6d79c23708ad068432c0be750a55c99f51390bc57bfce",
+      "run_hash": "5a151200af10",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "35969b7f",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 144397596.99999997,
+      "return_pct_reconstructed": 60.441774444444405,
+      "stored_return_pct": 60.44,
+      "unique_traded_codes": 26,
+      "trade_count": 64,
+      "trade_hash": "a31c701026a3daf2145d6aefc3041ef41971b2217238f2a972868b333b139a2c",
+      "run_hash": "4bf8cf5ecea3",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "28640d6b",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 148477962.00000003,
+      "return_pct_reconstructed": 64.97551333333335,
+      "stored_return_pct": 64.98,
+      "unique_traded_codes": 25,
+      "trade_count": 62,
+      "trade_hash": "733c99f4de53842b95495f0ce8849dd54720d4fbc775012a90fbe9da05858ab0",
+      "run_hash": "0c596e822347",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "484d65a4",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 150010016.00000003,
+      "return_pct_reconstructed": 66.67779555555559,
+      "stored_return_pct": 66.68,
+      "unique_traded_codes": 25,
+      "trade_count": 62,
+      "trade_hash": "4145c345525d70e5ccf491b2f38678bdb6eeacab7ffcc34fd9f043ce79c9d0c0",
+      "run_hash": "7b87617f6cbf",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "a9185dd3",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 142336843.0,
+      "return_pct_reconstructed": 58.15204777777778,
+      "stored_return_pct": 58.15,
+      "unique_traded_codes": 27,
+      "trade_count": 72,
+      "trade_hash": "8e2637aa8104917ab8116d49727f3deee7844f1c27103e54e62a5ef39a6842d8",
+      "run_hash": "0c596e822347",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "002dede8",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 144370383.00000003,
+      "return_pct_reconstructed": 60.4115366666667,
+      "stored_return_pct": 60.41,
+      "unique_traded_codes": 27,
+      "trade_count": 72,
+      "trade_hash": "3ea311b34baf8e9007e1139752e85fa260a6e733be9253b71998db9b4ae9d063",
+      "run_hash": "0c596e822347",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "bc3acfa8",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 88558212.0,
+      "return_pct_reconstructed": -1.601986666666666,
+      "stored_return_pct": -1.6,
+      "unique_traded_codes": 23,
+      "trade_count": 67,
+      "trade_hash": "3d67630edd9cd0d784f8537cb0969f1cf6a331d930a8d2b59c3d1a24b845e7b6",
+      "run_hash": "970fc33ffd66",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "b0a3da69",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 89787511.00000001,
+      "return_pct_reconstructed": -0.23609888888886932,
+      "stored_return_pct": -0.24,
+      "unique_traded_codes": 23,
+      "trade_count": 67,
+      "trade_hash": "451c6a2e5d873cfa03fdc3283ecd858f65768f23675c3669f86725fb8643ce83",
+      "run_hash": "cb24503522cc",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "3036acbe",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 88300968.0,
+      "return_pct_reconstructed": -1.8878133333333325,
+      "stored_return_pct": -1.89,
+      "unique_traded_codes": 25,
+      "trade_count": 72,
+      "trade_hash": "0b38fbb0f101c3c5e6cc7e1e313df116959b22213069d707d42e5ceb3bc9063c",
+      "run_hash": "970fc33ffd66",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "d61b2cb3",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 89986238.0,
+      "return_pct_reconstructed": -0.015291111111115363,
+      "stored_return_pct": -0.02,
+      "unique_traded_codes": 25,
+      "trade_count": 72,
+      "trade_hash": "c8c7daae003c5637c7f9077f6ee72d9c9c399b777a320a0eebfeedfec7eeadce",
+      "run_hash": "cb24503522cc",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "566a9835",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 90237453.99999999,
+      "return_pct_reconstructed": 0.2638377777777645,
+      "stored_return_pct": 0.26,
+      "unique_traded_codes": 22,
+      "trade_count": 74,
+      "trade_hash": "479bc774596d76b90814d5eb6c6d1efd90ace7fcbf3078af371c793d8ed3656b",
+      "run_hash": "635d7e008039",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "4f009857",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 91614179.99999999,
+      "return_pct_reconstructed": 1.7935333333333192,
+      "stored_return_pct": 1.79,
+      "unique_traded_codes": 22,
+      "trade_count": 74,
+      "trade_hash": "04fdee438d089be6445a90e5f729ff56087dfeda6d4f34312cf15d1914f584ed",
+      "run_hash": "84bbd538d659",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "8c563575",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 90875532.0,
+      "return_pct_reconstructed": 0.9728133333333444,
+      "stored_return_pct": 0.97,
+      "unique_traded_codes": 22,
+      "trade_count": 74,
+      "trade_hash": "c4d327450127d89e8361ef53846fc8ed990443c530f1512ddc7b7d3db67fb482",
+      "run_hash": "84bbd538d659",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "25f2fff8",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 92189456.0,
+      "return_pct_reconstructed": 2.43272888888888,
+      "stored_return_pct": 2.43,
+      "unique_traded_codes": 22,
+      "trade_count": 74,
+      "trade_hash": "e813ddd1f8d219df8bb099d5cadbd196fbf91874dc64613be3eab7f8521887bf",
+      "run_hash": "637463eea99c",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "3fadfcf5",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 111011656.00000001,
+      "return_pct_reconstructed": 23.346284444444464,
+      "stored_return_pct": 23.35,
+      "unique_traded_codes": 16,
+      "trade_count": 50,
+      "trade_hash": "e797a8888ae360e1cec411b27f8b62aae02dbc9bdcf561d8186f0e844f3d98dc",
+      "run_hash": "51cd82682996",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "98a5f388",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 112147806.00000001,
+      "return_pct_reconstructed": 24.608673333333343,
+      "stored_return_pct": 24.61,
+      "unique_traded_codes": 16,
+      "trade_count": 50,
+      "trade_hash": "90e8c31e2a6c4d0515c630798c4f07898932e162591e62d12655b11021025cb5",
+      "run_hash": "1fd8f52fcf97",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "d2e2e2b7",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 117035979.00000003,
+      "return_pct_reconstructed": 30.03997666666669,
+      "stored_return_pct": 30.04,
+      "unique_traded_codes": 16,
+      "trade_count": 62,
+      "trade_hash": "adef5eded541ca11eb9bfff2e4b15df885101ec50b6ff8b36304c54d0d15957c",
+      "run_hash": "0343310d3180",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "0da1aa41",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 118494292.00000003,
+      "return_pct_reconstructed": 31.660324444444488,
+      "stored_return_pct": 31.66,
+      "unique_traded_codes": 16,
+      "trade_count": 62,
+      "trade_hash": "509ff69460790db5b0daad66ea3a1ab323bdde00529085797595eb4e701fd5ca",
+      "run_hash": "51cd82682996",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "e1b5ce23",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 197360919.00000003,
+      "return_pct_reconstructed": 119.28991000000005,
+      "stored_return_pct": 119.29,
+      "unique_traded_codes": 29,
+      "trade_count": 80,
+      "trade_hash": "f18fe6290771150a83645333636a46dac703a270b3b3cc8defd262c86512f1a3",
+      "run_hash": "f765afabb1a4",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "252372fc",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 199148376.00000003,
+      "return_pct_reconstructed": 121.27597333333338,
+      "stored_return_pct": 121.28,
+      "unique_traded_codes": 29,
+      "trade_count": 80,
+      "trade_hash": "b20c336c7f84b8d413eaaaca8637b50be64a44d637a27a6ed3440c3bf57be53f",
+      "run_hash": "5372af1eaa07",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "e8fa022c",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 193219682.00000003,
+      "return_pct_reconstructed": 114.68853555555557,
+      "stored_return_pct": 114.69,
+      "unique_traded_codes": 38,
+      "trade_count": 116,
+      "trade_hash": "630822c18993334d3f036fecbda1fbdb3069d28f4fcc4b248dbb6110ecaa574e",
+      "run_hash": "5372af1eaa07",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "b404c918",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 195990997.00000003,
+      "return_pct_reconstructed": 117.76777444444448,
+      "stored_return_pct": 117.77,
+      "unique_traded_codes": 38,
+      "trade_count": 116,
+      "trade_hash": "b9ddc1c453e3d14958d2eb6aba040a17060f971ed72123a4850eb924667ac26a",
+      "run_hash": "5372af1eaa07",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "d96e3c79",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 145180858.99999997,
+      "return_pct_reconstructed": 61.31206555555553,
+      "stored_return_pct": 61.31,
+      "unique_traded_codes": 23,
+      "trade_count": 61,
+      "trade_hash": "f78f6edf701cda0c2b8acb2d3ecc0f44a133029b2873692b77f14488651b79e8",
+      "run_hash": "5a151200af10",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "dff5baa9",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 146526920.99999997,
+      "return_pct_reconstructed": 62.80768999999997,
+      "stored_return_pct": 62.81,
+      "unique_traded_codes": 23,
+      "trade_count": 61,
+      "trade_hash": "381e9369198bc97a2066fa1704935c9b1a0aac393ff633534999172ae78d17b4",
+      "run_hash": "4bf8cf5ecea3",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "40b06d11",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 142747565.99999997,
+      "return_pct_reconstructed": 58.608406666666625,
+      "stored_return_pct": 58.61,
+      "unique_traded_codes": 26,
+      "trade_count": 64,
+      "trade_hash": "33c52a6482a5f8c0cfa6d79c23708ad068432c0be750a55c99f51390bc57bfce",
+      "run_hash": "4bf8cf5ecea3",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "f4145e8b",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 144397596.99999997,
+      "return_pct_reconstructed": 60.441774444444405,
+      "stored_return_pct": 60.44,
+      "unique_traded_codes": 26,
+      "trade_count": 64,
+      "trade_hash": "a31c701026a3daf2145d6aefc3041ef41971b2217238f2a972868b333b139a2c",
+      "run_hash": "80fcecaaea67",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "eb331127",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 148477962.00000003,
+      "return_pct_reconstructed": 64.97551333333335,
+      "stored_return_pct": 64.98,
+      "unique_traded_codes": 25,
+      "trade_count": 62,
+      "trade_hash": "733c99f4de53842b95495f0ce8849dd54720d4fbc775012a90fbe9da05858ab0",
+      "run_hash": "706dc81e4fa6",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "6c33d61b",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 150010016.00000003,
+      "return_pct_reconstructed": 66.67779555555559,
+      "stored_return_pct": 66.68,
+      "unique_traded_codes": 25,
+      "trade_count": 62,
+      "trade_hash": "4145c345525d70e5ccf491b2f38678bdb6eeacab7ffcc34fd9f043ce79c9d0c0",
+      "run_hash": "706dc81e4fa6",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "412a12d7",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 142336843.0,
+      "return_pct_reconstructed": 58.15204777777778,
+      "stored_return_pct": 58.15,
+      "unique_traded_codes": 27,
+      "trade_count": 72,
+      "trade_hash": "8e2637aa8104917ab8116d49727f3deee7844f1c27103e54e62a5ef39a6842d8",
+      "run_hash": "7b87617f6cbf",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "7201792a",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 144370383.00000003,
+      "return_pct_reconstructed": 60.4115366666667,
+      "stored_return_pct": 60.41,
+      "unique_traded_codes": 27,
+      "trade_count": 72,
+      "trade_hash": "3ea311b34baf8e9007e1139752e85fa260a6e733be9253b71998db9b4ae9d063",
+      "run_hash": "0c596e822347",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "5a4d5251",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 88558212.0,
+      "return_pct_reconstructed": -1.601986666666666,
+      "stored_return_pct": -1.6,
+      "unique_traded_codes": 23,
+      "trade_count": 67,
+      "trade_hash": "3d67630edd9cd0d784f8537cb0969f1cf6a331d930a8d2b59c3d1a24b845e7b6",
+      "run_hash": "38a8f23f7940",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "66a8ca7a",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 89787511.00000001,
+      "return_pct_reconstructed": -0.23609888888886932,
+      "stored_return_pct": -0.24,
+      "unique_traded_codes": 23,
+      "trade_count": 67,
+      "trade_hash": "451c6a2e5d873cfa03fdc3283ecd858f65768f23675c3669f86725fb8643ce83",
+      "run_hash": "cb24503522cc",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "0ca8cdf2",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 88300968.0,
+      "return_pct_reconstructed": -1.8878133333333325,
+      "stored_return_pct": -1.89,
+      "unique_traded_codes": 25,
+      "trade_count": 72,
+      "trade_hash": "0b38fbb0f101c3c5e6cc7e1e313df116959b22213069d707d42e5ceb3bc9063c",
+      "run_hash": "38a8f23f7940",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "717303c9",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 89986238.0,
+      "return_pct_reconstructed": -0.015291111111115363,
+      "stored_return_pct": -0.02,
+      "unique_traded_codes": 25,
+      "trade_count": 72,
+      "trade_hash": "c8c7daae003c5637c7f9077f6ee72d9c9c399b777a320a0eebfeedfec7eeadce",
+      "run_hash": "cb24503522cc",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "09594e78",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 90237453.99999999,
+      "return_pct_reconstructed": 0.2638377777777645,
+      "stored_return_pct": 0.26,
+      "unique_traded_codes": 22,
+      "trade_count": 74,
+      "trade_hash": "479bc774596d76b90814d5eb6c6d1efd90ace7fcbf3078af371c793d8ed3656b",
+      "run_hash": "635d7e008039",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "3e4afb89",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 91614179.99999999,
+      "return_pct_reconstructed": 1.7935333333333192,
+      "stored_return_pct": 1.79,
+      "unique_traded_codes": 22,
+      "trade_count": 74,
+      "trade_hash": "04fdee438d089be6445a90e5f729ff56087dfeda6d4f34312cf15d1914f584ed",
+      "run_hash": "84bbd538d659",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "6e53600d",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 90875532.0,
+      "return_pct_reconstructed": 0.9728133333333444,
+      "stored_return_pct": 0.97,
+      "unique_traded_codes": 22,
+      "trade_count": 74,
+      "trade_hash": "c4d327450127d89e8361ef53846fc8ed990443c530f1512ddc7b7d3db67fb482",
+      "run_hash": "84bbd538d659",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "bc945afb",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 92189456.0,
+      "return_pct_reconstructed": 2.43272888888888,
+      "stored_return_pct": 2.43,
+      "unique_traded_codes": 22,
+      "trade_count": 74,
+      "trade_hash": "e813ddd1f8d219df8bb099d5cadbd196fbf91874dc64613be3eab7f8521887bf",
+      "run_hash": "637463eea99c",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "65e012f1",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 111011656.00000001,
+      "return_pct_reconstructed": 23.346284444444464,
+      "stored_return_pct": 23.35,
+      "unique_traded_codes": 16,
+      "trade_count": 50,
+      "trade_hash": "e797a8888ae360e1cec411b27f8b62aae02dbc9bdcf561d8186f0e844f3d98dc",
+      "run_hash": "1fd8f52fcf97",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "2dbac1ee",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 112147806.00000001,
+      "return_pct_reconstructed": 24.608673333333343,
+      "stored_return_pct": 24.61,
+      "unique_traded_codes": 16,
+      "trade_count": 50,
+      "trade_hash": "90e8c31e2a6c4d0515c630798c4f07898932e162591e62d12655b11021025cb5",
+      "run_hash": "0343310d3180",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "85036069",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 117035979.00000003,
+      "return_pct_reconstructed": 30.03997666666669,
+      "stored_return_pct": 30.04,
+      "unique_traded_codes": 16,
+      "trade_count": 62,
+      "trade_hash": "adef5eded541ca11eb9bfff2e4b15df885101ec50b6ff8b36304c54d0d15957c",
+      "run_hash": "51cd82682996",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    },
+    {
+      "run_id": "9110d42a",
+      "initial_cash": 90000000.0,
+      "ending_cash_reconstructed": 118494292.00000003,
+      "return_pct_reconstructed": 31.660324444444488,
+      "stored_return_pct": 31.66,
+      "unique_traded_codes": 16,
+      "trade_count": 62,
+      "trade_hash": "509ff69460790db5b0daad66ea3a1ab323bdde00529085797595eb4e701fd5ca",
+      "run_hash": "0343310d3180",
+      "created_at": null,
+      "missing_variant_parameters": [
+        "partial_tp_pct",
+        "cost_multiplier",
+        "exclude_codes"
+      ],
+      "daily_equity_missing": true,
+      "mdd_missing": true,
+      "errors": []
+    }
+  ],
+  "run_hash_collisions": [
+    {
+      "run_hash": "5372af1eaa07",
+      "run_ids": [
+        "bcacc83e",
+        "32e306a1",
+        "5b2509f0",
+        "252372fc",
+        "e8fa022c",
+        "b404c918"
+      ],
+      "distinct_trade_hashes": 4,
+      "distinct_returns": [
+        114.69,
+        117.77,
+        119.29,
+        121.28
+      ]
+    },
+    {
+      "run_hash": "4bf8cf5ecea3",
+      "run_ids": [
+        "246ad325",
+        "35969b7f",
+        "dff5baa9",
+        "40b06d11"
+      ],
+      "distinct_trade_hashes": 4,
+      "distinct_returns": [
+        58.61,
+        60.44,
+        61.31,
+        62.81
+      ]
+    },
+    {
+      "run_hash": "5a151200af10",
+      "run_ids": [
+        "8a9e4c43",
+        "d96e3c79"
+      ],
+      "distinct_trade_hashes": 2,
+      "distinct_returns": [
+        58.61,
+        61.31
+      ]
+    },
+    {
+      "run_hash": "0c596e822347",
+      "run_ids": [
+        "28640d6b",
+        "a9185dd3",
+        "002dede8",
+        "7201792a"
+      ],
+      "distinct_trade_hashes": 3,
+      "distinct_returns": [
+        58.15,
+        60.41,
+        64.98
+      ]
+    },
+    {
+      "run_hash": "7b87617f6cbf",
+      "run_ids": [
+        "484d65a4",
+        "412a12d7"
+      ],
+      "distinct_trade_hashes": 2,
+      "distinct_returns": [
+        58.15,
+        66.68
+      ]
+    },
+    {
+      "run_hash": "970fc33ffd66",
+      "run_ids": [
+        "bc3acfa8",
+        "3036acbe"
+      ],
+      "distinct_trade_hashes": 2,
+      "distinct_returns": [
+        -1.89,
+        -1.6
+      ]
+    },
+    {
+      "run_hash": "cb24503522cc",
+      "run_ids": [
+        "b0a3da69",
+        "d61b2cb3",
+        "66a8ca7a",
+        "717303c9"
+      ],
+      "distinct_trade_hashes": 2,
+      "distinct_returns": [
+        -0.24,
+        -0.02
+      ]
+    },
+    {
+      "run_hash": "84bbd538d659",
+      "run_ids": [
+        "4f009857",
+        "8c563575",
+        "3e4afb89",
+        "6e53600d"
+      ],
+      "distinct_trade_hashes": 2,
+      "distinct_returns": [
+        0.97,
+        1.79
+      ]
+    },
+    {
+      "run_hash": "51cd82682996",
+      "run_ids": [
+        "3fadfcf5",
+        "0da1aa41",
+        "85036069"
+      ],
+      "distinct_trade_hashes": 3,
+      "distinct_returns": [
+        23.35,
+        30.04,
+        31.66
+      ]
+    },
+    {
+      "run_hash": "1fd8f52fcf97",
+      "run_ids": [
+        "98a5f388",
+        "65e012f1"
+      ],
+      "distinct_trade_hashes": 2,
+      "distinct_returns": [
+        23.35,
+        24.61
+      ]
+    },
+    {
+      "run_hash": "0343310d3180",
+      "run_ids": [
+        "d2e2e2b7",
+        "2dbac1ee",
+        "9110d42a"
+      ],
+      "distinct_trade_hashes": 3,
+      "distinct_returns": [
+        24.61,
+        30.04,
+        31.66
+      ]
+    },
+    {
+      "run_hash": "706dc81e4fa6",
+      "run_ids": [
+        "eb331127",
+        "6c33d61b"
+      ],
+      "distinct_trade_hashes": 2,
+      "distinct_returns": [
+        64.98,
+        66.68
+      ]
+    },
+    {
+      "run_hash": "38a8f23f7940",
+      "run_ids": [
+        "5a4d5251",
+        "0ca8cdf2"
+      ],
+      "distinct_trade_hashes": 2,
+      "distinct_returns": [
+        -1.89,
+        -1.6
+      ]
+    }
+  ],
+  "unverified_call_order_hypotheses": [
+    {
+      "base_1x": {
+        "run_ids": [
+          "9110d42a",
+          "bc945afb",
+          "717303c9",
+          "7201792a",
+          "f4145e8b",
+          "b404c918"
+        ],
+        "periods": [
+          [
+            "2020-01-01",
+            "2021-01-31"
+          ],
+          [
+            "2021-02-01",
+            "2022-02-28"
+          ],
+          [
+            "2022-03-01",
+            "2023-03-31"
+          ],
+          [
+            "2023-04-01",
+            "2024-04-30"
+          ],
+          [
+            "2024-05-01",
+            "2025-05-31"
+          ],
+          [
+            "2025-06-01",
+            "2026-09-08"
+          ]
+        ],
+        "nonoverlapping": true,
+        "mean_return_pct": 45.44833333333333,
+        "hypothetical_compounded_pct": 655.6771653595558,
+        "fixed_initial_capital_sum_pct": 272.69
+      },
+      "base_2x": {
+        "run_ids": [
+          "85036069",
+          "6e53600d",
+          "0ca8cdf2",
+          "412a12d7",
+          "40b06d11",
+          "e8fa022c"
+        ],
+        "periods": [
+          [
+            "2020-01-01",
+            "2021-01-31"
+          ],
+          [
+            "2021-02-01",
+            "2022-02-28"
+          ],
+          [
+            "2022-03-01",
+            "2023-03-31"
+          ],
+          [
+            "2023-04-01",
+            "2024-04-30"
+          ],
+          [
+            "2024-05-01",
+            "2025-05-31"
+          ],
+          [
+            "2025-06-01",
+            "2026-09-08"
+          ]
+        ],
+        "nonoverlapping": true,
+        "mean_return_pct": 43.428333333333335,
+        "hypothetical_compounded_pct": 593.7359013913558,
+        "fixed_initial_capital_sum_pct": 260.57
+      },
+      "partial_1x": {
+        "run_ids": [
+          "2dbac1ee",
+          "3e4afb89",
+          "66a8ca7a",
+          "6c33d61b",
+          "dff5baa9",
+          "252372fc"
+        ],
+        "periods": [
+          [
+            "2020-01-01",
+            "2021-01-31"
+          ],
+          [
+            "2021-02-01",
+            "2022-02-28"
+          ],
+          [
+            "2022-03-01",
+            "2023-03-31"
+          ],
+          [
+            "2023-04-01",
+            "2024-04-30"
+          ],
+          [
+            "2024-05-01",
+            "2025-05-31"
+          ],
+          [
+            "2025-06-01",
+            "2026-09-08"
+          ]
+        ],
+        "nonoverlapping": true,
+        "mean_return_pct": 46.155,
+        "hypothetical_compounded_pct": 659.8383019598376,
+        "fixed_initial_capital_sum_pct": 276.93
+      },
+      "partial_2x": {
+        "run_ids": [
+          "65e012f1",
+          "09594e78",
+          "5a4d5251",
+          "eb331127",
+          "d96e3c79",
+          "e1b5ce23"
+        ],
+        "periods": [
+          [
+            "2020-01-01",
+            "2021-01-31"
+          ],
+          [
+            "2021-02-01",
+            "2022-02-28"
+          ],
+          [
+            "2022-03-01",
+            "2023-03-31"
+          ],
+          [
+            "2023-04-01",
+            "2024-04-30"
+          ],
+          [
+            "2024-05-01",
+            "2025-05-31"
+          ],
+          [
+            "2025-06-01",
+            "2026-09-08"
+          ]
+        ],
+        "nonoverlapping": true,
+        "mean_return_pct": 44.598333333333336,
+        "hypothetical_compounded_pct": 610.188066674082,
+        "fixed_initial_capital_sum_pct": 267.59000000000003
+      }
+    },
+    {
+      "base_1x": {
+        "run_ids": [
+          "0da1aa41",
+          "25f2fff8",
+          "d61b2cb3",
+          "002dede8",
+          "35969b7f",
+          "5b2509f0"
+        ],
+        "periods": [
+          [
+            "2020-01-01",
+            "2021-01-31"
+          ],
+          [
+            "2021-02-01",
+            "2022-02-28"
+          ],
+          [
+            "2022-03-01",
+            "2023-03-31"
+          ],
+          [
+            "2023-04-01",
+            "2024-04-30"
+          ],
+          [
+            "2024-05-01",
+            "2025-05-31"
+          ],
+          [
+            "2025-06-01",
+            "2026-09-08"
+          ]
+        ],
+        "nonoverlapping": true,
+        "mean_return_pct": 45.44833333333333,
+        "hypothetical_compounded_pct": 655.6771653595558,
+        "fixed_initial_capital_sum_pct": 272.69
+      },
+      "base_2x": {
+        "run_ids": [
+          "d2e2e2b7",
+          "8c563575",
+          "3036acbe",
+          "a9185dd3",
+          "8a9e4c43",
+          "2c8c10f6"
+        ],
+        "periods": [
+          [
+            "2020-01-01",
+            "2021-01-31"
+          ],
+          [
+            "2021-02-01",
+            "2022-02-28"
+          ],
+          [
+            "2022-03-01",
+            "2023-03-31"
+          ],
+          [
+            "2023-04-01",
+            "2024-04-30"
+          ],
+          [
+            "2024-05-01",
+            "2025-05-31"
+          ],
+          [
+            "2025-06-01",
+            "2026-09-08"
+          ]
+        ],
+        "nonoverlapping": true,
+        "mean_return_pct": 43.428333333333335,
+        "hypothetical_compounded_pct": 593.7359013913558,
+        "fixed_initial_capital_sum_pct": 260.57
+      },
+      "partial_1x": {
+        "run_ids": [
+          "98a5f388",
+          "4f009857",
+          "b0a3da69",
+          "484d65a4",
+          "ae9bc94c",
+          "32e306a1"
+        ],
+        "periods": [
+          [
+            "2020-01-01",
+            "2021-01-31"
+          ],
+          [
+            "2021-02-01",
+            "2022-02-28"
+          ],
+          [
+            "2022-03-01",
+            "2023-03-31"
+          ],
+          [
+            "2023-04-01",
+            "2024-04-30"
+          ],
+          [
+            "2024-05-01",
+            "2025-05-31"
+          ],
+          [
+            "2025-06-01",
+            "2026-09-08"
+          ]
+        ],
+        "nonoverlapping": true,
+        "mean_return_pct": 46.155,
+        "hypothetical_compounded_pct": 659.8383019598376,
+        "fixed_initial_capital_sum_pct": 276.93
+      },
+      "partial_2x": {
+        "run_ids": [
+          "3fadfcf5",
+          "566a9835",
+          "bc3acfa8",
+          "28640d6b",
+          "246ad325",
+          "bcacc83e"
+        ],
+        "periods": [
+          [
+            "2020-01-01",
+            "2021-01-31"
+          ],
+          [
+            "2021-02-01",
+            "2022-02-28"
+          ],
+          [
+            "2022-03-01",
+            "2023-03-31"
+          ],
+          [
+            "2023-04-01",
+            "2024-04-30"
+          ],
+          [
+            "2024-05-01",
+            "2025-05-31"
+          ],
+          [
+            "2025-06-01",
+            "2026-09-08"
+          ]
+        ],
+        "nonoverlapping": true,
+        "mean_return_pct": 44.598333333333336,
+        "hypothetical_compounded_pct": 610.188066674082,
+        "fixed_initial_capital_sum_pct": 267.59000000000003
+      }
+    }
+  ],
+  "limitations": [
+    "Fixed tickets and cash reset per fold: product is not a verified wealth path",
+    "Matching repeated artifacts do not prove separate processes/sessions",
+    "Trade pnl is reconciled, not independently repriced from market data",
+    "Historical reuse is not proof of pre-registered OOS training/selection"
+  ]
+}

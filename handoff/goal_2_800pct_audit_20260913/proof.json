@@ -1,0 +1,42 @@
+{
+  "source_sha256": "09978d24eaa934aded3912ba8957d7682e21810e49945b210cdeb5723a0efcc6",
+  "isolation": "Only definitions/constants loaded via AST; SQLite redirected to memory; production DB unchanged",
+  "results": [
+    {
+      "case": "same_hash_missing_all_machine_evidence",
+      "first": {
+        "completed": false,
+        "verifiers_agreeing": [
+          "reviewer_a"
+        ],
+        "needed": 2
+      },
+      "second": {
+        "completed": true,
+        "verifiers": [
+          "reviewer_b",
+          "reviewer_a"
+        ]
+      },
+      "status": "COMPLETED"
+    },
+    {
+      "case": "different_hash_control",
+      "first": {
+        "completed": false,
+        "verifiers_agreeing": [
+          "reviewer_a"
+        ],
+        "needed": 2
+      },
+      "second": {
+        "completed": false,
+        "verifiers_agreeing": [
+          "reviewer_b"
+        ],
+        "needed": 2
+      },
+      "status": "ACTIVE"
+    }
+  ]
+}
