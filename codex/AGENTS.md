@@ -68,3 +68,23 @@ AI 호출은 `ceo-briefing-platform/backend/services/rss_ingest.py`의 `chat_com
 | 2026-07-11 | CEO 브리핑 일정 기능 전체 점검 및 수정: `backend/db_access.py`에 `calendar_events` 런타임 생성 DDL 보강, 일정 수정/삭제 함수 추가, 일정 ID 충돌 방지. `backend/main.py`에 `PUT/DELETE /calendar/{page_id}/events/{event_id}` 추가. `backend/services/google_calendar.py`에 Google Calendar update/delete 추가. `frontend/admin-console-runtime-v2.js` 일정 행 Edit/Delete 버튼, 수정 폼, POST/PUT 분기 저장 추가, `frontend/index.html` JS 캐시버스터 갱신. 검증: DB CRUD 및 8011 HTTP 생성→수정→조회→삭제 OK, Terminal에서 `keepalive_backend.sh` 실행 후 8011/8012 리슨 및 일정 CRUD 재검증 OK, 프론트/백엔드 문법 OK. |
 | 2026-07-16 | 글로벌 인텔리전스 데이터 수집 계속 진행: KOSIS 키 invalid로 막힌 한국 주택매매가격지수를 한국부동산원 R-ONE 공개 통계(`A_2024_00045`) 기반 `collectors/reb_housing_collector.py` 신규 수집기로 보강, `/api/global-macro/collect`의 `all` 및 `reb_housing` source에 연결. Week3 FOMC 일정은 이미 이벤트 테이블에 수집되어 있었으나 진행률이 고정 `False`라 `fomc_ready` 계산으로 수정. World Bank/FRED/ECOS/REB/Yahoo/OECD/IMF/Events/Reactions/FAO/EIA 재수집 완료, Week2~Week6 모두 done 확인. |
 | 2026-07-11 | 글로벌 인텔리전스 인사이트 확장: `/api/global-macro/insights/regime` 및 `/insights/lead-lag` 신규, `/insights`와 `/dashboard.__signals`에 시장 국면·리드-래그 포함. `ceo-briefing-platform/backend/main.py` 프록시 추가, `frontend/kai.js` 자동 인사이트 패널에 국면/리드래그 카드 추가. 검증: stock_dashboard TestClient 4개 API 200, 프론트/백엔드 문법 OK. |
+
+## 2026-09-13 실행기 검수 보완
+
+`ceo-briefing-platform/backend/strict_agi_orchestrator.py`: 최종 LLM 문장만으로 COMPLETED 승격하지 않고 NEEDS_RECONCILIATION으로 보존한다. 해당 상태는 자동 재실행하지 않는다. artifact는 인스턴스 state_file 옆 경로에 저장한다. 운영 singleton 시작 없이 격리한 회귀검사로 검증한다.
+
+## 2026-09-14 비용·상시 큐 정책
+
+strict_agi_orchestrator는 일반 계획/근거를 Gemini, 분석/보강을 DeepSeek로 전달하고 둘 사이만 fallback한다. core_review_reason이 지정된 핵심 작업만 Claude/Sol 검토를 예약한다(공급자별 하루 4회, 동일 증거 중복 방지). 일반 산출물은 DRAFT_READY이며 목표 완료가 아니다. 대기 작업은 독립 목표 큐를 막지 않는다. SDK 실행 계약과 Codex CLI는 gpt-5.6-sol만 지정한다. 핵심 입력 요약은 6,000자 이하, Claude 한 turn·medium이다. 프로세스 재시작/운영 24시간 검증은 별도 확인 필요.
+
+## 2026-09-14 명시적 패치 적용 워커
+
+`ceo-briefing-platform/backend/services/agentic_apply_worker.py`는 자연어 자율 실행 대신 명시적 패치를 독립 clone에 적용하는 `stage_patch`를 제공한다. 전체 diff 해시로 승인 대상을 검증하며 승인 기록도 운영 merge/deploy를 수행하지 않는다. 기존 자율 진입점은 비활성이고, 실제 Git 기반 테스트 11개를 임시 저장소에서 검증했다. 상세 계약·제한: `handoff/AGENTIC_PATCH_WORKER_REVIEW_2026-09-14.md`.
+
+## 2026-09-17 승인형 실행 연결 핸드오프
+
+`handoff/AGENTIC_EXECUTION_REPAIR_HANDOFF_2026-09-17.md`에 감시 데몬·목표 분석·승인형 CodeJobs 간 단절, Telegram 승인 결함, 저장소별 실행·영속 큐·운영 검증 구현 순서를 기록했다. 동반 `AGENTIC_EXECUTION_REPAIR_EVIDENCE_2026-09-17.json`에 확인한 코드 해시와 상태 요약을 보존한다. 이번 변경은 문서화이며 실행기 수리·운영 적용 증거가 아니다. 과거 임시 예제 테스트를 stock_dashboard 개선 실적으로 취급하지 않는다.
+
+## 2026-09-17 goal_1 구조화 진단 경로 (소스 변경 / 미배포)
+
+`services/integrity_findings.py`는 스캐너 집계에서 수정 미허용 후보를 결정적으로 만든다. `strict_agi_orchestrator.py`의 goal_1 신규 자동 실행은 반복 LLM dispatch 대신 cadence에 따른 스캔·artifact 저장을 수행한다. P1-3 자동 code-job 연결은 보류하고 웹 수동 생성 유지. 기존 대기/실행 작업은 변경하지 않았다. 격리 회귀 37개 통과, 운영 재배포 미수행. 상세: `handoff/GOAL1_STRUCTURED_FINDINGS_2026-09-17.md`.
