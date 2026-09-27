@@ -21,7 +21,7 @@ export const MODULES = {
       { label: '종목', tabs: ['analysis', 'us_stocks', 'peer_compare', 'detailed_analysis', 'sector_taxonomy'] },
       // 2026-09-27(사용자 지시): market_radar(구 "섹터 지표")를 "섹터 분류"로 개명해 반도체 섹터 바로 아래로. 안에 있던 주도섹터 진입신호 표는
       // 섹터 로테이션과 중복이라 삭제(MarketRadarView.jsx)하고 섹터 로테이션을 정본으로 둔다.
-      { label: '퀀트지표', tabs: ['semiconductor_sector', 'market_radar', 'hs_trade2', 'export_health', 'employment', 'quant_indicators'] },
+      { label: '퀀트지표', tabs: ['market_radar', 'semiconductor_sector', 'hs_trade2', 'export_health', 'employment', 'quant_indicators'] },
       { label: '공시/리포트', tabs: ['dart_contracts', 'reports', 'telegram', 'hot_sector'] },
       { label: '내 투자', tabs: ['buy_candidates', 'portfolio'], locked: true },   // 메뉴 진입 자체에 관리자 비밀번호 필요(2026-09-27)
     ],

@@ -53,6 +53,12 @@ SECTOR_KEY_MAP: Dict[str, str] = {
     "it_hardware":   "IT/하드웨어",
     "telecom":       "통신/플랫폼",
     "finance":       "금융/지주",
+    # 2026-09-27(사용자 지시): "섹터 로테이션"(routes/sector_rotation.py)에는 이미 있었는데 이 화면엔 없던 3개.
+    # radar_sector_override에 신규 lv0로 데이터 적재(scripts/ops/seed_new_radar_sectors_20260927.py) — 국내 종목은
+    # 섹터 로테이션의 큐레이션을 재사용, 해외 종목은 신규 조사.
+    "pcb_package":   "기판/패키지",
+    "beauty":        "화장품/뷰티",
+    "medbeauty":     "의료기기/미용",
 }
 
 SECTOR_META: Dict[str, Dict] = {
@@ -61,7 +67,8 @@ SECTOR_META: Dict[str, Dict] = {
     "power_infra":   {"name": "전력산업",      "emoji": "⚡"},
     "nuclear":       {"name": "원자력",         "emoji": "☢️"},
     "pharma":        {"name": "바이오/헬스케어","emoji": "💊"},
-    "defense":       {"name": "K방산",          "emoji": "🚀"},
+    # 2026-09-27: "K방산"→"방산" — 「섹터 로테이션」쪽 표시명과 일치(사용자 지시, 두 화면 섹터명 불일치 정리).
+    "defense":       {"name": "방산",           "emoji": "🚀"},
     "construction":  {"name": "산업재/건설",    "emoji": "🏗️"},
     "shipbuilding":  {"name": "조선",           "emoji": "🚢"},
     "shipping":      {"name": "해운",           "emoji": "🛳️"},
@@ -71,6 +78,9 @@ SECTOR_META: Dict[str, Dict] = {
     "it_hardware":   {"name": "IT/하드웨어",    "emoji": "💻"},
     "telecom":       {"name": "통신/플랫폼",    "emoji": "📡"},
     "finance":       {"name": "금융/지주",      "emoji": "🏦"},
+    "pcb_package":   {"name": "기판/패키지",    "emoji": "🔌"},
+    "beauty":        {"name": "화장품/뷰티",    "emoji": "🧴"},
+    "medbeauty":     {"name": "의료기기/미용",  "emoji": "🩺"},
 }
 
 # 반도체 밸류체인 핵심 기업 목록 (lv1 = 섹션 헤더, lv2 = Level2 컬럼 표시값)
@@ -1551,6 +1561,27 @@ _SECTOR_LEADLAG_DEFS = {
 }
 
 
+# 2026-09-27(사용자 지시 "미국 주식이 없다면 가장 대표적인 종목들을 추가"): 위 _SECTOR_LEADLAG_DEFS 6개는
+# 워크포워드 검증(학습/검증 방향일치율)까지 거친 신호다. 나머지 섹터는 그런 검증이 없으므로 같은 방식으로
+# "검증된 신호"라고 표시하면 과장이 된다 — 대신 대표 종목 바스켓의 단순 평균등락만 "참고용"으로 보여준다
+# (get_sector_us_overnight_signals 응답의 validated=False, backtested_hit_rate 없음). 종목은 시총 상위
+# 업종 대표주 위주로 선정, 가격은 us_market.db us_price_history(2026-09-27 yfinance로 3개월치 적재).
+_SECTOR_REP_BASKETS: Dict[str, Dict] = {
+    "battery":     {"label": "2차전지",     "tickers": ["ALB", "QS", "ENVX"]},
+    "power_infra": {"label": "전력산업",     "tickers": ["ETN", "HUBB", "POWL", "VRT", "GEV"]},
+    "nuclear":     {"label": "원자력",       "tickers": ["CCJ", "BWXT", "NNE", "SMR", "LEU", "VST"]},
+    "defense":     {"label": "방산",         "tickers": ["LMT", "RTX", "NOC", "GD", "LHX"]},
+    "shipbuilding":{"label": "조선",         "tickers": ["HII", "VSEC"]},
+    "shipping":    {"label": "해운",         "tickers": ["ZIM", "FRO", "GOGL", "MATX", "KEX"]},
+    "steel":       {"label": "철강/비철금속", "tickers": ["NUE", "STLD", "CLF", "FCX"]},
+    "it_hardware": {"label": "IT/하드웨어",  "tickers": ["AAPL", "DELL", "HPQ", "WDC", "STX"]},
+    "telecom":     {"label": "통신/플랫폼",  "tickers": ["T", "VZ", "TMUS", "CMCSA"]},
+    "pcb_package": {"label": "기판/패키지",  "tickers": ["TTMI", "JBL", "AMKR", "ASX", "CLS"]},
+    "beauty":      {"label": "화장품/뷰티",  "tickers": ["EL", "COTY", "ELF", "IPAR", "ULTA"]},
+    "medbeauty":   {"label": "의료기기/미용", "tickers": ["ISRG", "SYK", "MDT", "EW", "ABT", "INMD"]},
+}
+
+
 def _us_basket_latest_return(conn, us_sector: str | None = None, us_industry_like: str | None = None,
                               tickers: list[str] | None = None, top_n: int = 25):
     """미국 섹터/업종 바스켓의 최신 등락률(동일가중)과 구성종목별 등락률."""
@@ -1603,13 +1634,16 @@ def _us_basket_latest_return(conn, us_sector: str | None = None, us_industry_lik
 
 @router.get("/sector-us-overnight-signals")
 def get_sector_us_overnight_signals():
-    """6개 섹터(반도체/자동차·전기차/헬스케어/금융/소재/산업재) 미국 바스켓 오버나잇 신호 일괄 조회.
+    """섹터별 미국 바스켓 오버나잇 신호 일괄 조회 — validated=True 6개(반도체/자동차·전기차/헬스케어/금융/소재/산업재)
+    + validated=False 12개(대표종목 참고용, 2026-09-27 추가).
 
     2026-07-29(2차): 반도체 단독검증 이후 사용자 지시("할수 있는건 계속 하세요")로 5개 섹터
     추가 확장. 전부 워크포워드(학습<2024/검증>=2024) 방향일치 확인됨 — 반도체만의 특수현상이
     아니라 미국장마감(한국시간 새벽) 정보가 다음 한국거래일에 전방위로 반영되는 일반적 현상.
     단, 전체시장(나스닥 전체→KOSPI 전체지수) 비교로는 IC가 학습+0.368→검증-0.113으로 불안정
     했던 반면 섹터별로 쪼갠 이 신호들은 전부 안정적이었음 — 섹터 세분화가 통짜 지수보다 유효.
+    2026-09-27: 나머지 12개(_SECTOR_REP_BASKETS)는 워크포워드 검증을 거치지 않은 대표종목 바스켓
+    단순평균 — validated=False로 구분해 반환, 화면에서도 "참고용"으로 다르게 표시할 것.
     """
     conn = _db()
     conn.execute("PRAGMA journal_mode=WAL")
@@ -1633,14 +1667,14 @@ def get_sector_us_overnight_signals():
                 """, cfg["kr_sector_large"]).fetchall()
 
             if not basket:
-                out.append({"key": key, "label": cfg["label"], "available": False})
+                out.append({"key": key, "label": cfg["label"], "available": False, "validated": True})
                 continue
 
             basket_ret = basket["basket_ret"]
             direction = "상승" if basket_ret > 0 else ("하락" if basket_ret < 0 else "보합")
             expected = "동반 상승" if basket_ret > 0 else ("동반 하락" if basket_ret < 0 else "방향성 약함")
             out.append({
-                "key": key, "label": cfg["label"], "available": True,
+                "key": key, "label": cfg["label"], "available": True, "validated": True,
                 "us_basket_date": basket["basket_date"],
                 "us_basket_ret_pct": round(basket_ret * 100, 2),
                 "us_basket_tickers": basket["n_tickers"],
@@ -1650,12 +1684,49 @@ def get_sector_us_overnight_signals():
                 "us_basket_top_movers": basket["components"][:5],
                 "kr_top_stocks": [{"stock_code": r[0], "company_name": r[1], "market_cap_억": r[2]} for r in kr_rows],
             })
+
+        # 2026-09-27: 워크포워드 검증이 없는 나머지 섹터 — 대표종목 바스켓 단순평균만 "참고용"으로 추가
+        # (validated=False, backtested_hit_rate 없음. 사용자 지시 "미국 주식이 없다면 대표적인 종목들을 추가").
+        for key, cfg in _SECTOR_REP_BASKETS.items():
+            basket = _us_basket_latest_return(conn, tickers=cfg["tickers"])
+            lv0 = SECTOR_KEY_MAP.get(key, cfg["label"])
+            kr_raw = conn.execute(
+                "SELECT ticker, company_name FROM radar_sector_override WHERE lv0=?", (lv0,)
+            ).fetchall()
+            kr_codes = [r[0].split(".")[0] for r in kr_raw if r[0] and r[0] != "Unlisted" and r[0].split(".")[0].isdigit()]
+            kr_top_stocks = []
+            if kr_codes:
+                ph = ",".join("?" for _ in set(kr_codes))
+                kr_rows = conn.execute(f"""
+                    SELECT stock_code, stock_name, market_cap FROM stock_universe
+                    WHERE stock_code IN ({ph}) AND market_cap IS NOT NULL
+                    ORDER BY market_cap DESC LIMIT 5
+                """, list(set(kr_codes))).fetchall()
+                kr_top_stocks = [{"stock_code": r[0], "company_name": r[1], "market_cap_억": r[2]} for r in kr_rows]
+
+            if not basket:
+                out.append({"key": key, "label": cfg["label"], "available": False, "validated": False})
+                continue
+            basket_ret = basket["basket_ret"]
+            direction = "상승" if basket_ret > 0 else ("하락" if basket_ret < 0 else "보합")
+            out.append({
+                "key": key, "label": cfg["label"], "available": True, "validated": False,
+                "us_basket_date": basket["basket_date"],
+                "us_basket_ret_pct": round(basket_ret * 100, 2),
+                "us_basket_tickers": basket["n_tickers"],
+                "direction": direction,
+                "expected_kr_move": None,
+                "backtested_hit_rate": None,
+                "us_basket_top_movers": basket["components"][:5],
+                "kr_top_stocks": kr_top_stocks,
+            })
+
         return {
             "sectors": out,
             "caveat": (
                 "섹터 바스켓 단위 방향성 참고 신호이며 개별종목 매매지시 아님. 미국 장마감(한국시간 새벽) "
                 "정보가 한국 개장 전 확정되므로 룩어헤드 없음. hit_rate는 학습(~2023)/검증(2024~) "
-                "워크포워드 방향일치율."
+                "워크포워드 방향일치율. validated=false 섹터는 워크포워드 검증 없이 대표종목 평균등락만 참고용으로 제공."
             ),
         }
     finally:

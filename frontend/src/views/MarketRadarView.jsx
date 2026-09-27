@@ -16,7 +16,7 @@ const MarketRadarView = React.memo(({ initialSector = 'semiconductor' } = {}) =>
     { key: 'battery',       name: '2차전지',        emoji: '🔋' },
     { key: 'power_infra',   name: '전력산업',       emoji: '⚡' },
     { key: 'nuclear',       name: '원자력',          emoji: '☢️' },
-    { key: 'defense',       name: 'K방산',           emoji: '🚀' },
+    { key: 'defense',       name: '방산',            emoji: '🚀' },
     { key: 'construction',  name: '산업재/건설',     emoji: '🏗️' },
     { key: 'shipbuilding',  name: '조선',            emoji: '🚢' },
     { key: 'shipping',      name: '해운',            emoji: '🛳️' },
@@ -27,6 +27,10 @@ const MarketRadarView = React.memo(({ initialSector = 'semiconductor' } = {}) =>
     { key: 'it_hardware',   name: 'IT/하드웨어',     emoji: '💻' },
     { key: 'telecom',       name: '통신/플랫폼',     emoji: '📡' },
     { key: 'finance',       name: '금융/지주',       emoji: '🏦' },
+    // 2026-09-27(사용자 지시): "섹터 로테이션"에는 있었는데 이 화면엔 없던 3개 — 신규 추가(재정리).
+    { key: 'pcb_package',   name: '기판/패키지',     emoji: '🔌' },
+    { key: 'beauty',        name: '화장품/뷰티',     emoji: '🧴' },
+    { key: 'medbeauty',     name: '의료기기/미용',   emoji: '🩺' },
   ];
   const [activeSector, setActiveSector] = React.useState(initialSector);
   const [data,      setData]      = React.useState(null);
@@ -61,6 +65,40 @@ const MarketRadarView = React.memo(({ initialSector = 'semiconductor' } = {}) =>
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  // 2026-09-27(사용자 지시): 섹터 탭을 "미국 위/한국 아래" 비교 박스 그리드로 재구성하려면 전 섹터(15개)의 한국 평균등락이 필요 —
+  // 기존엔 활성 섹터 1개의 상세(data)만 있었다. /all 은 15개 섹터 요약(코드에서 이미 쓰는 avg_1d)을 한 번에 준다.
+  const [allSummary, setAllSummary] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    fetch(API('/api/market-radar/all'))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (alive && d) setAllSummary(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  // 미국 오버나잇 신호는 워크포워드 검증된 6개 섹터만 키 체계가 다르다(auto_ev/healthcare/financials/materials/industrials) — 섹터 탭 키로 매핑.
+  // 2026-09-27 추가된 12개 참고용(validated:false) 바스켓은 API 키를 섹터 탭 키와 이미 동일하게 맞췄으므로 매핑 없이 그대로 사용.
+  const US_KEY_TO_RADAR_KEY = { semiconductor: 'semiconductor', auto_ev: 'automotive', healthcare: 'pharma', financials: 'finance', materials: 'energy', industrials: 'construction' };
+  const usBySectorKey = React.useMemo(() => {
+    const m = {};
+    (usSignals?.sectors || []).forEach(s => { const rk = US_KEY_TO_RADAR_KEY[s.key] || s.key; if (s.available) m[rk] = s; });
+    return m;
+  }, [usSignals]);
+  const krBySectorKey = React.useMemo(() => {
+    const m = {};
+    (allSummary?.sectors || []).forEach(s => { m[s.key] = s; });
+    return m;
+  }, [allSummary]);
+  // 핫한 섹터가 한눈에 보이도록 한국 평균등락(없으면 미국) 내림차순 정렬
+  const sortedSectors = React.useMemo(() => {
+    const heat = (s) => krBySectorKey[s.key]?.avg_1d ?? usBySectorKey[s.key]?.us_basket_ret_pct ?? -999;
+    return [...RADAR_SECTORS].sort((a, b) => heat(b) - heat(a));
+  }, [krBySectorKey, usBySectorKey]);
+  const heatBg = (v) => {
+    if (v == null) return 'transparent';
+    const a = Math.min(Math.abs(v) / 2.5, 1); // ±2.5% 이상이면 최대 강도
+    return v > 0 ? `rgba(220,38,38,${0.06 + a * 0.22})` : v < 0 ? `rgba(37,99,235,${0.06 + a * 0.22})` : 'transparent';
+  };
 
   /* ── 포맷터 ──────────────────────────────────────────────────── */
   /* 시총: 국가별 통화기호 포함 (KR=조원/억원, JP=¥T/B, TW=NT$B, 기타=$T/B) */
@@ -371,54 +409,45 @@ const MarketRadarView = React.memo(({ initialSector = 'semiconductor' } = {}) =>
           </div>
         </div>
 
-        {/* 미국 섹터 바스켓 오버나잇 신호 — 워크포워드 검증된 방향성 참고 신호 */}
-        {usSignals && usSignals.sectors && (
-          <div style={{marginBottom:'0.5rem'}}>
-            <div style={{fontSize:'0.7rem', color:'var(--text-secondary)', marginBottom:'0.3rem'}}>
-              🌙 미국 섹터 오버나잇 신호 — 미국장 마감(어제) → 다음 한국거래일 방향성 참고 (워크포워드 검증)
-            </div>
-            <div style={{display:'flex', gap:'0.4rem', overflowX:'auto', scrollbarWidth:'none'}}>
-              {usSignals.sectors.map(s => {
-                if (!s.available) return null;
-                const up = s.us_basket_ret_pct > 0;
-                const color = up ? '#dc2626' : (s.us_basket_ret_pct < 0 ? '#2563eb' : 'rgba(15,23,42,0.5)');
-                return (
-                  <div key={s.key} title={`구성종목 ${s.us_basket_tickers}개 · 학습기 방향일치 ${s.backtested_hit_rate.train_pct}% / 검증기 ${s.backtested_hit_rate.test_pct}%`}
-                    style={{
-                      minWidth:'108px', flex:'0 0 auto', padding:'0.4rem 0.55rem', borderRadius:'8px',
-                      background:'rgba(15,23,42,0.04)', border:`1px solid ${color}55`,
-                    }}>
-                    <div style={{fontSize:'0.68rem', color:'var(--text-secondary)'}}>{s.label}</div>
-                    <div style={{fontSize:'0.92rem', fontWeight:800, color}}>
-                      {s.us_basket_ret_pct >= 0 ? '+' : ''}{s.us_basket_ret_pct}%
-                    </div>
-                    <div style={{fontSize:'0.64rem', color:'rgba(15,23,42,0.88)'}}>
-                      → 동반{s.direction} 예상 (검증{s.backtested_hit_rate.test_pct}%)
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* 섹터 탭 — 한 줄 가로 스크롤 */}
+        {/* 섹터 히트 그리드 — 박스 하나에 위: 미국(전일, 워크포워드 검증 섹터만) / 아래: 한국(당일 평균등락). 클릭하면 그 섹터로 전환.
+            (2026-09-27 사용자 지시: 탭 버튼을 %와 함께 보이게, 미국/한국 한 박스 비교, 핫한 섹터가 한눈에 보이도록 재구성) */}
+        <div style={{fontSize:'0.7rem', color:'var(--text-secondary)', marginBottom:'0.3rem'}}>
+          🔥 섹터 히트맵 — 위:미국(전일 대표주 평균, <b>검증</b>=워크포워드 방향일치 확인 · <span style={{opacity:0.7}}>참고</span>=대표종목 평균만) · 아래:한국(당일 평균등락) · 붉을수록 상승, 푸를수록 하락 · 한국 등락 높은 순
+        </div>
         <div style={{
-          display:'flex', gap:'0.4rem',
-          overflowX:'auto', flexWrap:'nowrap', scrollbarWidth:'none',
+          display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(112px, 1fr))', gap:'0.4rem',
         }}>
-          {RADAR_SECTORS.map(s => (
-            <button key={s.key} onClick={() => setActiveSector(s.key)} style={{
-              flexShrink:0,
-              padding:'0.32rem 0.75rem', borderRadius:'20px', fontSize:'0.76rem', fontWeight:600,
-              cursor:'pointer', transition:'all 0.15s', whiteSpace:'nowrap',
-              border: activeSector === s.key ? '1px solid var(--accent-mint)' : '1px solid var(--glass-border)',
-              background: activeSector === s.key ? 'rgba(37,99,235,0.15)' : 'transparent',
-              color: activeSector === s.key ? 'var(--accent-mint)' : 'var(--text-secondary)',
-            }}>
-              {s.emoji} {s.name}
-            </button>
-          ))}
+          {sortedSectors.map(s => {
+            const us = usBySectorKey[s.key];
+            const kr = krBySectorKey[s.key];
+            const active = activeSector === s.key;
+            const usTitle = us == null ? '미국 데이터 없음'
+              : us.validated ? `워크포워드 검증기 방향일치 ${us.backtested_hit_rate.test_pct}%`
+              : '대표종목 평균등락(참고용, 워크포워드 검증 없음)';
+            return (
+              <button key={s.key} onClick={() => setActiveSector(s.key)} title={usTitle} style={{
+                textAlign:'left', cursor:'pointer', borderRadius:'10px', padding:'0.4rem 0.5rem',
+                border: active ? '2px solid #1a73e8' : '1px solid var(--glass-border)',
+                background: heatBg(kr?.avg_1d), transition:'all 0.15s',
+              }}>
+                <div style={{fontSize:'0.74rem', fontWeight:700, color: active ? '#1a73e8' : 'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+                  {s.emoji} {s.name}
+                </div>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginTop:'0.15rem'}}>
+                  <span style={{fontSize:'0.62rem', color:'var(--text-secondary)'}}>미국{us != null && !us.validated ? '·참고' : ''}</span>
+                  <span style={{fontSize:'0.78rem', fontWeight:700, opacity: us != null && !us.validated ? 0.75 : 1, color: us == null ? 'var(--text-secondary)' : us.us_basket_ret_pct > 0 ? '#dc2626' : us.us_basket_ret_pct < 0 ? '#2563eb' : 'var(--text-secondary)'}}>
+                    {us == null ? '–' : `${us.us_basket_ret_pct >= 0 ? '+' : ''}${us.us_basket_ret_pct}%`}
+                  </span>
+                </div>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline'}}>
+                  <span style={{fontSize:'0.62rem', color:'var(--text-secondary)'}}>한국</span>
+                  <span style={{fontSize:'0.78rem', fontWeight:800, color: kr == null ? 'var(--text-secondary)' : kr.avg_1d > 0 ? '#dc2626' : kr.avg_1d < 0 ? '#2563eb' : 'var(--text-secondary)'}}>
+                    {kr == null ? '–' : `${kr.avg_1d >= 0 ? '+' : ''}${kr.avg_1d}%`}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
