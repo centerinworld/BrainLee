@@ -1,4 +1,4 @@
-import json, subprocess, tempfile, unittest
+import json, subprocess, tempfile, time, unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
 from services import agentic_apply_worker as p
@@ -12,8 +12,11 @@ class JobsTests(unittest.TestCase):
   (self.repo/'calc.py').write_text('def add(a, b):\n    return a - b\n')
   (self.repo/'test_calc.py').write_text('import unittest\nfrom calc import add\nclass Test(unittest.TestCase):\n def test_add(self):\n  self.assertEqual(add(2, 3), 5)\n')
   self.git('add','.');self.git('-c','core.hooksPath=/dev/null','commit','-m','fixture');self.base=self.git('rev-parse','HEAD')
-  for key,value in [('REPO_ROOT',self.repo),('WORKTREE_BASE',root/'proposals')]:
-   m=patch.object(p,key,value);m.start();self.addCleanup(m.stop)
+  # 2026-09-17 handoff P1-1: 전역 REPO_ROOT/WORKTREE_BASE 대신 REPO_REGISTRY의
+  # 'ai-system' 항목을 이 테스트의 임시 저장소로 바꿔치기한다(CodeJobs.create()
+  # 기본 repo_id가 'ai-system'이라 다른 테스트 코드는 그대로 둘 수 있다).
+  self.ctx=p.RepoContext('ai-system',self.repo,root/'proposals')
+  m=patch.dict(p.REPO_REGISTRY,{'ai-system':self.ctx});m.start();self.addCleanup(m.stop)
   self.generator=Mock(return_value={'provider':'fixture','content':json.dumps({'files':[{'path':'calc.py','content':'def add(a, b):\n    return a + b\n'}]})})
   self.tester=Mock(return_value={'passed':True,'exit_code':0,'stdout':'fixture','stderr':''})
   self.jobs=CodeJobs(root/'state',self.generator,self.tester)
@@ -67,6 +70,62 @@ class JobsTests(unittest.TestCase):
  def test_command_and_sensitive_path(self):
   for paths,module in [(['.env'],'test_calc'),(['calc.py'],'test_calc;rm -rf /')]:
    with self.assertRaises(ValueError):self.jobs.create(instruction='fix',provider='claude',paths=paths,test_module=module,requested_by='owner')
+ def test_unregistered_repo_id_rejected(self):
+  """2026-09-17 handoff P1-1: repo_id는 서버 측 등록 목록으로만 해석돼야 한다 -
+  임의 문자열로 다른 경로를 가리킬 수 없다."""
+  with self.assertRaises(ValueError):
+   self.jobs.create(instruction='fix',provider='claude',paths=['calc.py'],test_module='test_calc',requested_by='owner',repo_id='not-a-real-repo')
+  self.generator.assert_not_called()
+ def test_default_repo_id_is_recorded_on_the_job_spec(self):
+  j=self.create();self.assertEqual(j['spec']['repo_id'],'ai-system')
+ def test_claim_next_approved_picks_unleased_job(self):
+  """2026-09-17 handoff P1-2: approve() 직후 BackgroundTasks가 유실돼도(서버
+  재시작 등) 이 메서드로 다른 워커가 나중에 다시 집어갈 수 있어야 한다."""
+  j=self.create();self.jobs.approve(j['id'],j['approval_hash'],approved_by='owner')
+  claimed=self.jobs.claim_next_approved('worker-1',lease_seconds=100)
+  self.assertEqual(claimed['id'],j['id']);self.assertEqual(claimed['status'],'APPROVED')
+  self.assertEqual(claimed['lease_owner'],'worker-1');self.assertEqual(claimed['attempt'],1)
+ def test_claim_next_approved_skips_actively_leased_job(self):
+  j=self.create();self.jobs.approve(j['id'],j['approval_hash'],approved_by='owner')
+  self.jobs.claim_next_approved('worker-1',lease_seconds=100)
+  self.assertIsNone(self.jobs.claim_next_approved('worker-2',lease_seconds=100))
+ def test_claim_next_approved_reclaims_after_lease_expires(self):
+  j=self.create();self.jobs.approve(j['id'],j['approval_hash'],approved_by='owner')
+  self.jobs.claim_next_approved('worker-1',lease_seconds=100)
+  with patch('services.approved_code_jobs.time.time',return_value=time.time()+101):
+   claimed=self.jobs.claim_next_approved('worker-2',lease_seconds=100)
+  self.assertEqual(claimed['lease_owner'],'worker-2');self.assertEqual(claimed['attempt'],2)
+ def test_reconcile_stale_running_marks_needs_reconciliation(self):
+  """워커가 실행 도중 죽으면(리스 만료) 자동 재실행하지 않고 사람이 볼 수 있게
+  표시만 한다 - 모델 호출 중복이나 이미 존재하는 격리 디렉터리 충돌을 피한다."""
+  j=self.create();self.jobs.approve(j['id'],j['approval_hash'],approved_by='owner')
+  self.jobs.claim_next_approved('worker-1',lease_seconds=1)
+  self.jobs._transition(j['id'],'APPROVED','RUNNING')
+  with patch('services.approved_code_jobs.time.time',return_value=time.time()+5):
+   self.jobs.reconcile_stale_running(stale_after_seconds=1)
+  self.assertEqual(self.jobs.get(j['id'])['status'],'NEEDS_RECONCILIATION')
+ def test_reconcile_stale_running_leaves_active_lease_alone(self):
+  j=self.create();self.jobs.approve(j['id'],j['approval_hash'],approved_by='owner')
+  self.jobs.claim_next_approved('worker-1',lease_seconds=300)
+  self.jobs._transition(j['id'],'APPROVED','RUNNING')
+  self.jobs.reconcile_stale_running(stale_after_seconds=300)
+  self.assertEqual(self.jobs.get(j['id'])['status'],'RUNNING')
+ def test_execute_sets_lease_so_concurrent_reconcile_tick_does_not_misfire(self):
+  """2026-09-18 실사용 중 재현: approve() 직후 FastAPI BackgroundTasks가 부르는
+  빠른 경로(execute() 직접 호출)는 claim_next_approved()를 거치지 않아 리스가
+  전혀 없었다. 그 사이 CodeJobWorker의 주기적 reconcile_stale_running()이 돌면
+  '리스 없음'을 '리스 만료됨'으로 오판해, 방금 정상적으로 RUNNING된 작업을 즉시
+  NEEDS_RECONCILIATION으로 잘못 표시했다(실측: 첫 실제 code-job이 8초 만에
+  이렇게 됨 - 아직 모델 호출도 안 끝났는데). execute()가 스스로 리스를 찍어두면
+  이런 오판이 없어야 한다."""
+  j=self.create();self.jobs.approve(j['id'],j['approval_hash'],approved_by='owner')
+  fixture_result=self.generator.return_value
+  def _mid_flight(*a,**k):
+   self.jobs.reconcile_stale_running(stale_after_seconds=1)  # 실행 도중 워커 틱이 끼어든 상황 재현
+   return fixture_result
+  self.generator.side_effect=_mid_flight
+  r=self.jobs.execute(j['id'])
+  self.assertEqual(r['status'],'READY_FOR_REVIEW',r)
  def test_claude_code_route_not_plan(self):
   with patch('services.approved_code_jobs.bounded_process',return_value=(0,json.dumps({'result':'{}','is_error':False}),'')) as call:
    generate_code('claude','implement',self.repo);argv=call.call_args.args[0]
@@ -98,6 +157,12 @@ class JobsTests(unittest.TestCase):
   self.jobs.approve(j['id'],j['approval_hash'],approved_by='owner');r=self.jobs.execute(j['id'])
   self.assertEqual(r['status'],'TEST_FAILED',r)
  def test_authenticated_http_approval_apply_rollback(self):
+  # 2026-09-18 발견(소유자가 실제 텔레그램에서 목격): 이 테스트가 notify_telegram/
+  # send_final_approval_prompt를 mock하지 않아서, 테스트를 돌릴 때마다 code_jobs만
+  # 격리된 임시 저장소를 쓸 뿐 알림은 실제 GOAL_INTAKE_BOT_TOKEN으로 실제 전송되고
+  # 있었다("등록/검토대기/버튼/적용됨/롤백됨" 5통이 매 테스트 실행마다 실제 폰에
+  # 감. FastAPI TestClient는 BackgroundTasks를 응답 직후 실제로 실행한다) - 실제
+  # 파일 변경은 격리돼 있어 안전했지만 실제 알림 스팸은 진짜였다. 반드시 mock한다.
   from fastapi import FastAPI
   from fastapi.testclient import TestClient
   import approved_code_routes as routes
@@ -105,7 +170,9 @@ class JobsTests(unittest.TestCase):
   app=FastAPI();app.include_router(routes.router)
   app.dependency_overrides[require_any_session]=lambda:{'username':'staff','role':'staff'}
   client=TestClient(app)
-  with patch.object(routes,'code_jobs',self.jobs):
+  with patch.object(routes,'code_jobs',self.jobs), \
+       patch.object(routes,'notify_telegram') as mock_notify, \
+       patch.object(routes,'send_final_approval_prompt') as mock_prompt:
    self.assertEqual(client.get('/api/agi/code-jobs').status_code,403)
    app.dependency_overrides[require_any_session]=lambda:{'username':'owner','role':'admin'}
    r=client.post('/api/agi/code-jobs',json={'instruction':'Fix add','provider':'claude','paths':['calc.py'],'test_module':'test_calc'})
@@ -116,6 +183,9 @@ class JobsTests(unittest.TestCase):
    r=client.get(path).json();self.assertEqual(r['status'],'READY_FOR_REVIEW')
    self.assertEqual(client.post(path+'/apply',json={'fingerprint':r['diff_hash']}).json()['status'],'APPLIED_TO_WORKSPACE')
    self.assertEqual(client.post(path+'/rollback',json={'fingerprint':r['diff_hash']}).json()['status'],'ROLLED_BACK')
+  # 실제 텔레그램으로 나가면 안 된다 - mock이 실제로 가로챘는지 확인한다(스파이가
+  # 있다는 사실 자체가 이 회귀의 재발을 막는 잠금장치).
+  self.assertTrue(mock_notify.called or mock_prompt.called)
 
 class RoutesTests(unittest.TestCase):
  def test_requires_admin(self):

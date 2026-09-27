@@ -1,7 +1,7 @@
 import tempfile, time, unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 # Load definitions without constructing the production singleton or starting its monitor.
 # This prevents tests from reading/writing production state or calling real providers.
@@ -138,19 +138,22 @@ class StrictOrchestratorTests(unittest.TestCase):
 
 
 
-    def test_stage1_still_blocks_when_both_codex_and_claude_unavailable(self):
+    def test_stage1_still_blocks_when_both_claude_and_gemini_unavailable(self):
+        """2026-09-17 소유자 지시로 1단계 주 담당이 Claude로 바뀌었다(Gemini는 대체
+        경로) - 둘 다 안 될 땐 여전히 조용히 성공한 척하지 않고 블록돼야 한다."""
         ready = {
-            "codex": {"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
             "claude": {"auth_ready": False, "status": "WAITING_AUTH", "reset_at": None},
+            "gemini": {"auth_ready": False, "status": "WAITING_QUOTA", "reset_at": "2099-01-01T00:00:00+09:00"},
         }
         with patch.object(self.manager, "refresh_providers", return_value=ready), \
-             patch.object(self.manager, "_claude_plan_fallback") as mock_fallback:
+             patch.object(self.manager, "_claude_generic") as mock_claude:
             task = self.manager.dispatch("no fallback available")
             self.wait_idle()
-        mock_fallback.assert_not_called()
+        mock_claude.assert_not_called()
         saved = self.manager.get_task(task["task_id"])
         self.assertEqual(saved["current_stage"], 1)
         self.assertFalse(saved["stage1_output"])
+        self.assertEqual(saved["status"], "WAITING_QUOTA")
 
 
     def test_each_artifact_is_required_before_next_stage(self):
@@ -251,6 +254,115 @@ class StrictOrchestratorTests(unittest.TestCase):
         self.assertIn("FAILED", task["description"])
         self.assertIn("codex 사용 불가", task["description"])
 
+    def test_unverified_draft_does_not_wait_24h_before_next_iteration(self):
+        """2026-09-15 소유자 지시("1번 돌고 100%가 안되면 계속 검토를 해야지 · Agentic AI
+        개념으로 적용해줘"): DRAFT_READY(초안·미검증)로 끝난 사이클은 다음 감시 주기에
+        바로 이어서 재시도해야 한다 - 예전에는 결과와 무관하게 무조건 24시간을 기다렸다."""
+        goal = self.manager.upsert_goal("g", "설명", "기준", cadence_hours=24, auto_continue=False)
+        with patch.object(self.manager, "_launch"):
+            first = self.manager.dispatch("first attempt", goal_id=goal["goal_id"])
+        state = self.manager._load()
+        saved = next(t for t in state["tasks"] if t["task_id"] == first["task_id"])
+        saved.update(status="DRAFT_READY", verdict="NOT_VERIFIED")
+        self.manager._save(state)
+
+        with patch.object(self.manager, "_launch"):
+            result = self.manager.set_goal_auto(goal["goal_id"], True)
+        self.assertEqual(len(result["launched_task_ids"]), 1)
+        refreshed = self.manager.get_goal(goal["goal_id"])
+        self.assertIsNone(refreshed["next_run_at"])
+
+    def test_verified_pass_applies_cadence_cooldown_before_next_iteration(self):
+        """검증된 완료(COMPLETED·verdict=PASS)에 도달했을 때만 cadence_hours만큼 쉬어야
+        한다 - 초안/실패 결과에는 이 쿨다운이 적용되면 안 된다(위 테스트와 대비)."""
+        goal = self.manager.upsert_goal("g", "설명", "기준", cadence_hours=24, auto_continue=False)
+        with patch.object(self.manager, "_launch"):
+            first = self.manager.dispatch("first attempt", goal_id=goal["goal_id"])
+        state = self.manager._load()
+        saved = next(t for t in state["tasks"] if t["task_id"] == first["task_id"])
+        saved.update(status="COMPLETED", verdict="PASS")
+        self.manager._save(state)
+
+        with patch.object(self.manager, "_launch"):
+            result = self.manager.set_goal_auto(goal["goal_id"], True)
+        self.assertEqual(result["launched_task_ids"], [])
+        refreshed = self.manager.get_goal(goal["goal_id"])
+        expected = datetime.fromisoformat(saved["updated_at"]) + timedelta(hours=24)
+        self.assertEqual(datetime.fromisoformat(refreshed["next_run_at"]), expected)
+
+    def test_two_perpetually_unverified_goals_alternate_instead_of_one_starving(self):
+        """2026-09-15 소유자 지시("2개만 우선적으로 실행해줘") 실측 검증 중 발견: 두 목표가
+        모두 항상 due 상태(둘 다 검증된 완료에 못 미침)일 때, 목표 리스트 순서상 앞선
+        목표가 매번 이겨서 뒤 목표는 영원히 차례가 안 왔다(goal_6가 배포 후에도 계속
+        굶는 것을 실측으로 확인). 이제 "가장 오래 전에 시도한" 목표부터 공정하게
+        돌아가야 한다."""
+        a = self.manager.upsert_goal("A", auto_continue=False)
+        b = self.manager.upsert_goal("B", auto_continue=False)
+        clock = iter(["2026-01-01T00:01:00+09:00", "2026-01-01T00:02:00+09:00", "2026-01-01T00:03:00+09:00"])
+
+        def finish_as_draft(task_id):
+            # iso()가 초 단위라 빠른 테스트에선 두 dispatch가 같은 초에 찍혀 동률이 날 수
+            # 있다 - 타임스탬프를 명시적으로 증가시켜 순서를 결정적으로 만든다.
+            state = self.manager._load()
+            saved = next(t for t in state["tasks"] if t["task_id"] == task_id)
+            saved.update(status="DRAFT_READY", verdict="NOT_VERIFIED", updated_at=next(clock))
+            self.manager._save(state)
+
+        with patch.object(self.manager, "_launch"):
+            result = self.manager.set_all_goals_auto(True)
+        first_task_id = result["launched_task_ids"][0]
+        first_goal_id = self.manager.get_task(first_task_id)["goal_id"]
+        finish_as_draft(first_task_id)
+
+        with patch.object(self.manager, "_launch"):
+            launched = self.manager.maintain_goals()
+        second_goal_id = self.manager.get_task(launched[0])["goal_id"]
+        self.assertNotEqual(second_goal_id, first_goal_id, "두 번째 실행은 반드시 다른 목표여야 한다 - 굶는 목표가 없어야 함")
+        self.assertEqual({first_goal_id, second_goal_id}, {a["goal_id"], b["goal_id"]})
+        finish_as_draft(launched[0])
+
+        with patch.object(self.manager, "_launch"):
+            launched2 = self.manager.maintain_goals()
+        third_goal_id = self.manager.get_task(launched2[0])["goal_id"]
+        self.assertEqual(third_goal_id, first_goal_id, "3번째는 다시 처음 목표로 돌아와야 한다(공정한 순환)")
+
+    def test_goal_1_records_candidates_without_dispatch_or_repeated_scan(self):
+        import json
+        goal = self.manager.upsert_goal("무결점", goal_id="goal_1_zero_defect_data", auto_continue=False)
+        scan = {"db_backend":"postgresql", "db_name":"fixture", "db_host":"localhost", "db_port":5432,
+                "scanned_at":"2026-09-17T12:00:00+09:00", "tables":[{"table":"price_history", "row_count":10,
+                "invalid_ohlc_count":3, "high_less_than_low_count":0, "future_dated_count":0}]}
+        scanner = Mock(return_value=scan)
+        with patch.dict("sys.modules", {"services.data_integrity_scan": types.SimpleNamespace(run_scan=scanner)}), patch.object(self.manager, "dispatch") as dispatch:
+            result = self.manager.set_goal_auto(goal["goal_id"], True)
+            self.manager.maintain_goals()
+        self.assertEqual(result["launched_task_ids"], [])
+        scanner.assert_called_once()
+        dispatch.assert_not_called()
+        saved = self.manager.get_goal(goal["goal_id"])
+        record = json.loads(Path(saved["integrity_artifact"]).read_text())
+        self.assertEqual(record["findings"][0]["affected_count"], 3)
+        self.assertFalse(record["code_job_eligible"])
+        self.assertEqual(saved["status"], "ACTIVE")
+
+    def test_goal_1_scan_failure_does_not_generate_prose_or_leak_exception(self):
+        goal = self.manager.upsert_goal("무결점", goal_id="goal_1_zero_defect_data", auto_continue=False)
+        scanner = Mock(side_effect=RuntimeError("secret-connection"))
+        with patch.dict("sys.modules", {"services.data_integrity_scan": types.SimpleNamespace(run_scan=scanner)}), patch.object(self.manager, "dispatch") as dispatch:
+            self.manager.set_goal_auto(goal["goal_id"], True)
+        dispatch.assert_not_called()
+        saved = self.manager.get_goal(goal["goal_id"])
+        self.assertEqual(saved["integrity_status"], "SCAN_FAILED")
+        self.assertNotIn("secret-connection", Path(saved["integrity_artifact"]).read_text())
+
+    def test_other_goals_do_not_get_goal_1_specific_scanner_evidence(self):
+        """스캐너는 지금 goal_1 전용이다 - 다른 목표에 잘못 섞여 들어가면 안 된다."""
+        goal = self.manager.upsert_goal("다른 목표", auto_continue=False)
+        with patch.object(self.manager, "_launch"):
+            result = self.manager.set_goal_auto(goal["goal_id"], True)
+        task = self.manager.get_task(result["launched_task_ids"][0])
+        self.assertNotIn("실측 데이터 스캔", task["description"])
+
     def test_final_verdict_requires_execution_evidence(self):
         for response in ("PASS\nLooks fine", "REVISE\nTests failed", "Notes\nPASS"):
             with self.subTest(response=response), patch.object(self.manager, "_launch"):
@@ -334,15 +446,20 @@ class StrictOrchestratorTests(unittest.TestCase):
             result=self.manager.set_goal_auto(second["goal_id"],True)
         self.assertEqual(len(result["launched_task_ids"]),1)
 
-    def test_premium_unavailable_does_not_block_ordinary_plan(self):
+    def test_claude_unavailable_falls_back_to_gemini_for_ordinary_plan(self):
+        """2026-09-17: 1단계 주 담당이 Claude로 바뀌었으니, Claude가 안 될 때 Gemini로
+        실제로 넘어가서 일반 계획이 계속 진행되는지 확인한다(조용히 막히면 안 됨)."""
         task=self.make_task()
-        ready={"gemini":{"auth_ready":True,"status":"AVAILABLE"}}
+        ready={"claude":{"auth_ready":False,"status":"WAITING_AUTH","reset_at":None},
+               "gemini":{"auth_ready":True,"status":"AVAILABLE","reset_at":None}}
         with patch.object(self.manager,"refresh_providers",return_value=ready), \
-             patch.object(self.manager,"_gemini_call",return_value="plan"), \
-             patch.object(self.manager,"_claude_plan_fallback") as fallback:
+             patch.object(self.manager,"_gemini_call",return_value="plan") as gemini_call, \
+             patch.object(self.manager,"_claude_generic") as claude_call:
             self.manager._run(task["task_id"])
-        fallback.assert_not_called()
+        claude_call.assert_not_called()
+        gemini_call.assert_called_once()
         self.assertEqual(self.manager.get_task(task["task_id"])["current_stage"],2)
+        self.assertEqual(self.manager.get_task(task["task_id"])["stage1_output"],"plan")
 
 
 if __name__ == "__main__":

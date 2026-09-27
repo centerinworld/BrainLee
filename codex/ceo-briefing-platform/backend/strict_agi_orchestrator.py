@@ -9,7 +9,12 @@ from urllib.request import Request, urlopen
 ROOT=Path("/Volumes/Realtek_NVME/AI System"); HERE=Path(__file__).resolve().parent
 STATE=HERE/"data/strict_agi_state.json"; ART=HERE/"data/agi_task_artifacts"; ENV=HERE.parent/".env"
 BINS={"codex":Path("/Applications/ChatGPT.app/Contents/Resources/codex"),"claude":Path("/opt/homebrew/bin/claude"),"gemini":Path("/opt/homebrew/bin/gemini")}
-PIPELINE=[(1,"gemini","Gemini 계획"),(2,"gemini","Gemini 근거 수집"),(3,"deepseek","DeepSeek 분석·초안"),(4,"deepseek","일반 보강 / 핵심만 Claude"),(5,"policy","일반 산출물 보존 / 핵심만 Sol 검토")]
+# 2026-09-17 소유자 지시("AI의 우선순위를 변경하자. 1번 계획을 Claude가 · GPT Astra
+# 모델이 사용 불가능한 상태라면 Claude가 대체"): GPT 토큰 소진 상태이므로 1단계
+# 계획의 주 담당을 Gemini에서 Claude로 올린다(Gemini는 대체 경로로 남김). 2단계는
+# 대용량 컨텍스트 근거 수집이라 Gemini 그대로 유지 - 이건 명시적으로 바뀌라고 하신
+# 부분이 아니다.
+PIPELINE=[(1,"claude","Claude 계획"),(2,"gemini","Gemini 근거 수집"),(3,"deepseek","DeepSeek 분석·초안"),(4,"deepseek","일반 보강 / 핵심만 Claude"),(5,"policy","일반 산출물 보존 / 핵심만 Sol 검토")]
 FINAL={"COMPLETED","FAILED","CANCELLED","INVALIDATED","DRAFT_READY"}; LIMIT=("rate limit","usage limit","quota","too many requests","limit reached","resource exhausted","429","try again")
 
 def now(): return datetime.now().astimezone()
@@ -83,7 +88,10 @@ class StrictAGIOrchestrator:
    with urlopen("http://127.0.0.1:11434/api/tags",timeout=3) as r:names=[x.get("name","") for x in json.loads(r.read()).get("models",[])]
    q=any(x.startswith("qwen") for x in names)
   except Exception:q=False
-  probes={"codex":self._cli_probe("codex"),"gemini":self._cli_probe("gemini"),"claude":self._cli_probe("claude"),"qwen":{"auth_ready":q,"status":"AVAILABLE_LOCAL" if q else "UNAVAILABLE","note":"로컬 모델 확인" if q else "Ollama/Qwen 없음"},"deepseek":{"auth_ready":bool(secret("DEEPSEEK_API_KEY")),"status":"AVAILABLE_BUDGET_GUARDED" if secret("DEEPSEEK_API_KEY") else "WAITING_AUTH","note":"API 키·월 예산 게이트 확인" if secret("DEEPSEEK_API_KEY") else "API 키 필요"}}
+  # 2026-09-22 소유자 지시: 유료 모델(DeepSeek) 자동 사용 금지 - auth_ready를 항상
+  # False로 고정해 3/4단계가 아래 _run()의 기존 alternate 로직(deepseek 미준비 시
+  # gemini로 대체)을 타게 한다. 재활성화하려면 이 한 줄만 원복하면 된다.
+  probes={"codex":self._cli_probe("codex"),"gemini":self._cli_probe("gemini"),"claude":self._cli_probe("claude"),"qwen":{"auth_ready":q,"status":"AVAILABLE_LOCAL" if q else "UNAVAILABLE","note":"로컬 모델 확인" if q else "Ollama/Qwen 없음"},"deepseek":{"auth_ready":False,"status":"DISABLED_PAID_MODEL_BY_OWNER","note":"유료 API 자동 사용 금지(2026-09-22 소유자 지시) - 3/4단계는 Gemini로 대체됨"}}
   with self.lock:
    s=self._load()
    for n,p in probes.items():
@@ -200,22 +208,101 @@ class StrictAGIOrchestrator:
   return (f"\n\n## 직전 시도({prior.get('task_id')}) 상태 - 참고해 원인부터 해결할 것\n"
           f"{prior.get('status')} · {reached}/5 단계에서 정지({prior.get('stage_label','')}). "
           "이 정지 원인을 먼저 해결하는 계획을 세워라.")
+ def _real_evidence_for_goal(self,gid):
+  # 2026-09-15 소유자 지시("실제로 DB를 스캔하는 실행 도구를 연결할까요?" → "실제 실행
+  # 도구 연결"): goal_1(수집 데이터 무결점)이 실제 DB를 한 번도 열어보지 않고
+  # "검증 방법론" 텍스트만 반복 생산하고 있었다(5단계 전부 순수 LLM 텍스트 생성이라
+  # 실행 도구가 없었음). 신뢰된 컨트롤러(이 코드)가 읽기 전용 스캐너를 직접 실행해
+  # 실측값을 프롬프트에 못박아, 모델이 가상의 프로토콜 대신 실제 숫자를 놓고
+  # 판단하게 한다. 지금은 goal_1 전용 - 다른 목표로 일반화하려면 별도 스캐너가 필요.
+  if gid!="goal_1_zero_defect_data":return ""
+  try:
+   from services.data_integrity_scan import run_scan
+   result=run_scan()
+  except Exception as exc:
+   return (f"\n\n## 실측 데이터 스캔 실패 - 이 사실 자체를 다뤄라\n"
+           f"읽기 전용 스캐너(services/data_integrity_scan.py) 실행이 실패했다: {str(exc)[:500]}\n"
+           "이 오류를 원인까지 파악하는 것이 이번 실행의 최우선 과제다. 스캔 실패를 "
+           "무시하고 가상의 데이터를 가정한 계획을 세우지 마라.")
+  lines=["\n\n## 실측 데이터 스캔 결과 (지금 막 읽기 전용으로 직접 조회함 · 아래 숫자만 사실)"]
+  for t in result["tables"]:
+   lines.append(f"- {t['label']}: 총 {t['row_count']:,}행 · 최신 날짜 {t['latest_date']}"
+                f"(오늘 대비 {t['staleness_days']}일 지연) · 비정상 시가/종가 {t['invalid_ohlc_count']:,}건"
+                f" · high<low {t['high_less_than_low_count']:,}건 · 미래 날짜 {t['future_dated_count']:,}건")
+  lines.append(f"- 추적 중인 미해결 품질 이슈: {result['open_quality_issues_tracked']}건"
+              f"(가장 오래된 건 감지일 {result['oldest_open_quality_issue_detected_at']})")
+  lines.append("이 실측값에 근거해 우선순위를 정하고 구체적 원인 가설을 세워라. "
+              "스캐너가 다루지 않는 항목에 대해서만 추가 명세를 작성하고, "
+              "이미 스캔된 항목을 다시 '검증 방법을 설계하겠다'는 식으로 반복하지 마라.")
+  return "\n".join(lines)
+ def _collect_integrity_findings(self,g):
+  # Persist a bounded scan checkpoint instead of another five-model prose task.
+  with self.lock:
+   s=self._load();target=next(x for x in s["goals"] if x["goal_id"]==g["goal_id"])
+   due=target.get("integrity_next_scan_at")
+   if due and datetime.fromisoformat(due)>now():return []
+   target["integrity_next_scan_at"]=iso(now()+timedelta(hours=int(g.get("cadence_hours",24))))
+   target["integrity_status"]="SCANNING";self._save(s)
+  try:
+   from services.data_integrity_scan import run_scan
+   from services.integrity_findings import build_findings
+   record=build_findings(run_scan())
+  except Exception as exc:
+   # Do not turn scanner failure into an LLM prompt or serialize possible credentials.
+   record={"status":"SCAN_FAILED","error_type":type(exc).__name__,"findings":[],"code_job_eligible":False,"goal_verified":False}
+  self.artifact_dir.mkdir(parents=True,exist_ok=True)
+  artifact=self.artifact_dir/f"integrity-{uuid.uuid4().hex}.json"
+  artifact.write_text(json.dumps(record,ensure_ascii=False,indent=2,default=str))
+  with self.lock:
+   s=self._load();target=next(x for x in s["goals"] if x["goal_id"]==g["goal_id"])
+   target.update(integrity_status=record["status"],integrity_artifact=str(artifact),integrity_checked_at=iso(),
+                 integrity_finding_count=len(record["findings"]),updated_at=iso())
+   target["next_run_at"]=target["integrity_next_scan_at"];self._save(s)
+  return []
  def maintain_goals(self):
   # 대기·실행·오류 재시도를 포함해 전역 미완료 과업은 항상 하나만 둔다.
   if self.active or any(t.get("status")=="QUEUED" or str(t.get("status","")).startswith("RUNNING_") for t in self.list_tasks()):return []
   launched=[]
+  # 2026-09-15 소유자 지시("1번 돌고 100%가 안되면 계속 검토를 해야지 · Agentic AI
+  # 개념으로 적용해줘"): 이전엔 디스패치 직후 결과와 무관하게 무조건 next_run_at을
+  # +cadence_hours로 박아뒀다 - 초안 저장(DRAFT_READY)/무효(INVALIDATED)처럼 실제로는
+  # 아무것도 검증되지 않았는데도 다음 날까지 24시간을 그냥 기다리는 구조였다. 이제
+  # "검증된 완료(COMPLETED·verdict=PASS, 핵심 검토를 통과한 경우만 가능)"에 도달했을
+  # 때만 그 시점부터 cadence_hours를 쉬고, 그 외 모든 결과(초안/무효/실패 등 - 아직
+  # 목표가 완수되지 않았다는 뜻)는 대기 없이 다음 감시 주기(60초)에 곧바로 이어서
+  # 계속 시도한다. next_run_at 필드는 더 이상 게이트가 아니라 화면 표시용 힌트다.
+  #
+  # 같은 이유로 "목표 리스트 순서상 앞선 목표가 항상 이긴다"도 더 이상 안전하지
+  # 않다 - 어차피 못 끝나는 목표(진짜 COMPLETED+PASS에 도달 못 함)가 항상 먼저면
+  # 뒤 목표는 영원히 차례가 안 온다(실측: goal_6이 이 수정 배포 후에도 계속 굶음).
+  # 지금 실행 가능한(due) 목표들 중 "가장 오래 전에 마지막으로 시도한" 목표부터
+  # 공정하게 순번을 준다.
+  candidates=[]
   for g in self.list_goals():
    if g.get("status")!="ACTIVE" or not g.get("auto_continue") or g.get("current_task_id"):continue
-   try:due=not g.get("next_run_at") or datetime.fromisoformat(g["next_run_at"])<=now()
-   except ValueError:due=True
-   if due:
-    description=(f"목표: {g['title']}\n설명: {g.get('description','')}\n성공 기준: {g.get('success_criteria','')}\n"
-                 f"이 목표를 향해 현재 검증 가능한 다음 과업 한 단위를 계획하고 수행하라."
-                 f"{self._feedback_brief(g['goal_id'])}")
-    t=self.dispatch(f"[{g['title']}] 자율 실행 #{int(g.get('iterations',0))+1}",description,goal_id=g["goal_id"]);launched.append(t["task_id"])
-    with self.lock:
-     s=self._load();target=next(x for x in s["goals"] if x["goal_id"]==g["goal_id"]);target["iterations"]=int(target.get("iterations",0))+1;target["next_run_at"]=iso(now()+timedelta(hours=target["cadence_hours"]));self._save(s)
-    break
+   if g["goal_id"]=="goal_1_zero_defect_data" and g.get("integrity_next_scan_at"):
+    if datetime.fromisoformat(g["integrity_next_scan_at"])>now():continue
+   prior=self._latest_task_for_goal(g["goal_id"])
+   verified_pass=bool(prior) and prior.get("status")=="COMPLETED" and prior.get("verdict")=="PASS"
+   if verified_pass:
+    try:cooldown_end=datetime.fromisoformat(prior["updated_at"])+timedelta(hours=int(g.get("cadence_hours",24)))
+    except (ValueError,KeyError,TypeError):cooldown_end=now()
+    if cooldown_end>now():
+     with self.lock:
+      s=self._load();target=next((x for x in s["goals"] if x["goal_id"]==g["goal_id"]),None)
+      if target and target.get("next_run_at")!=iso(cooldown_end):target["next_run_at"]=iso(cooldown_end);self._save(s)
+     continue
+   candidates.append((g,str((prior or {}).get("updated_at") or "")))
+  if not candidates:return []
+  g=min(candidates,key=lambda item:item[1])[0]
+  if g["goal_id"]=="goal_1_zero_defect_data":return self._collect_integrity_findings(g)
+  description=(f"목표: {g['title']}\n설명: {g.get('description','')}\n성공 기준: {g.get('success_criteria','')}\n"
+               f"이 목표를 향해 현재 검증 가능한 다음 과업 한 단위를 계획하고 수행하라."
+               f"{self._real_evidence_for_goal(g['goal_id'])}"
+               f"{self._feedback_brief(g['goal_id'])}")
+  t=self.dispatch(f"[{g['title']}] 자율 실행 #{int(g.get('iterations',0))+1}",description,goal_id=g["goal_id"]);launched.append(t["task_id"])
+  with self.lock:
+   s=self._load();target=next(x for x in s["goals"] if x["goal_id"]==g["goal_id"]);target["iterations"]=int(target.get("iterations",0))+1;target["next_run_at"]=None;self._save(s)
   return launched
  def _launch(self,tid):
   with self.lock:
@@ -319,7 +406,14 @@ class StrictAGIOrchestrator:
   # 내용이 비어 있었음). 실측 결과 이 검토 프롬프트 하나에 reasoning_tokens만 6,800개
   # 넘게 쓰는 경우가 있어(내용 3,394자 기준 총 8,680 completion 토큰) 16000으로 올린다.
   # 그래도 비면 명시적으로 실패 처리해 위(3단계 호출부)의 Gemini 대체가 발동하게 한다.
-  body=json.dumps({"model":model,"messages":[{"role":"user","content":"주어진 업무를 분석하고 계획·초안·검증 항목을 작성하라. 사실과 추정을 나누고 실제 실행하지 않은 작업을 완료로 선언하지 마라.\n\n"+q[:24000]}],"temperature":.1,"max_tokens":16000}).encode()
+  # 2026-09-17 소유자 지시("DeepSeek는 추론모델이 아니라 Coding으로"): 계정에 실제
+  # 사용 가능한 모델은 deepseek-flash/deepseek-v4-pro 둘뿐이고 실측 확인 결과 둘 다
+  # 추론 모델이다(트리비얼한 프롬프트에도 reasoning_tokens 65개 vs 실답 12개 - 이게
+  # 9/15~16 예산 급속 소진의 실제 원인이기도 하다). 모델 자체를 코딩 전용으로 바꿀 순
+  # 없지만, `reasoning_effort:"none"`을 실제로 호출해보니 reasoning_content가 완전히
+  # 사라지고 completion_tokens가 77→11로 줄었다(같은 프롬프트 실측) - 이걸로 "추론 없이
+  # 바로 코딩 답변만" 요청을 실질적으로 충족한다.
+  body=json.dumps({"model":model,"messages":[{"role":"user","content":"주어진 업무를 분석하고 계획·초안·검증 항목을 작성하라. 사실과 추정을 나누고 실제 실행하지 않은 작업을 완료로 선언하지 마라.\n\n"+q[:24000]}],"temperature":.1,"max_tokens":16000,"reasoning_effort":"none"}).encode()
   try:
    with urlopen(Request("https://api.deepseek.com/chat/completions",data=body,headers={"Authorization":f"Bearer {key}","Content-Type":"application/json"}),timeout=120) as r:d=json.loads(r.read())
    content=(d["choices"][0]["message"].get("content") or "").strip()
@@ -347,13 +441,28 @@ class StrictAGIOrchestrator:
   provider_summary=ledger.summary().get("by_provider",{}).get("deepseek",{})
   return {"provider":"deepseek","model":secret("DEEPSEEK_MODEL") or "deepseek-flash","month":now().strftime("%Y-%m"),"limit_krw":limit_krw,"spent_krw":spent_krw,"remaining_krw":max(0,round(limit_krw-spent_krw,2)),"spent_usd_estimate":round(spent_usd,8),"call_count":int(provider_summary.get("call_count") or 0),"guard_status":"AVAILABLE" if spent_krw<limit_krw else "BUDGET_EXHAUSTED","fx_assumption_krw_per_usd":1400}
  def _claude(self,t):
-  p=subprocess.run([str(BINS['claude']),"-p","GPT 계획, Gemini 근거, Qwen+DeepSeek 실행물을 확인·보강해 적용 가능한 최종 산출물을 완성하라. 실제 적용·테스트 증거와 미실행을 구분하라.\n\n"+self._review_context(t),"--output-format","json","--max-turns","1","--effort","medium","--permission-mode","plan"],cwd=ROOT,capture_output=True,text=True,timeout=600)
+  p=subprocess.run([str(BINS['claude']),"-p","GPT 계획, Gemini 근거, Qwen+DeepSeek 실행물을 확인·보강해 적용 가능한 최종 산출물을 완성하라. 실제 적용·테스트 증거와 미실행을 구분하라.\n\n"+self._review_context(t),"--output-format","json","--tools","","--strict-mcp-config","--max-turns","1","--effort","medium","--permission-mode","plan"],cwd=ROOT,capture_output=True,text=True,timeout=600)
   if p.returncode:raise RuntimeError((p.stderr or p.stdout)[:3000])
   c=str(json.loads(p.stdout or "{}").get("result","")).strip()
   if not c:raise RuntimeError("Claude 결과 없음")
   return c
- def _claude_plan_fallback(self,t):
-  raise RuntimeError("일반 계획의 Claude 대체 호출은 사용량 정책상 비활성화됨")
+ def _claude_generic(self,prompt):
+  # 2026-09-17 소유자 지시로 1단계 계획의 주 담당이 Claude가 됨에 따라 추가한 범용
+  # 호출부 - _claude(t)는 core 검토(§4단계) 전용 프롬프트(리뷰·보강 역할)라 그대로 못
+  # 쓴다. 이전엔 이 자리가 "일반 계획의 Claude 대체 호출은 사용량 정책상 비활성화됨"
+  # 이라는 고정 예외를 던지는 스텁이었다 - 이제 실제로 호출한다.
+  # 2026-09-17/18 실측 발견: --tools ''만으로는 안 막힌다 - 프로젝트에 등록된 앰비언트
+  # MCP 서버(예: docs 스킬의 guide 툴)를 이 헤드리스 호출이 그대로 물려받아서, 프롬프트
+  # 내용에 따라 그 MCP 툴을 first turn에 호출 시도하고(권한 거부로 실패), max_turns=1
+  # 예산을 통째로 날려 최종 텍스트 응답(result) 자체가 없는 상태로 끝난다(returncode=0
+  # · subtype="error_max_turns" · result 필드 없음 - "Claude 결과 없음"으로 이어짐).
+  # --strict-mcp-config(빈 --mcp-config 암시)로 앰비언트 MCP 서버 자체를 안 물려받게
+  # 해야 실제로 1턴 안에 텍스트 답이 나온다(직접 재현·수정 확인함).
+  p=subprocess.run([str(BINS['claude']),"-p",prompt,"--output-format","json","--tools","","--strict-mcp-config","--max-turns","1","--effort","medium","--permission-mode","plan"],cwd=ROOT,capture_output=True,text=True,timeout=600)
+  if p.returncode:raise RuntimeError((p.stderr or p.stdout)[:3000])
+  c=str(json.loads(p.stdout or "{}").get("result","")).strip()
+  if not c:raise RuntimeError("Claude 결과 없음")
+  return c
  def _ready(self,ps,name):
   return bool(ps.get(name,{}).get("auth_ready")) and ps.get(name,{}).get("status") not in {"WAITING_QUOTA","WAITING_AUTH","UNAVAILABLE"}
  def _finish_stage(self,t,stage,provider,content):
@@ -375,36 +484,45 @@ class StrictAGIOrchestrator:
   t=self.get_task(tid)
   if not t or t["status"] in FINAL or t["status"] in {"NEEDS_RECONCILIATION","WAITING_CORE_BUDGET","WAITING_REPAIR"}:return
   ps=self.refresh_providers();st=int(t["current_stage"]);core=bool(t.get("core_review_reason"))
-  name="gemini" if st in {1,2} else ("claude" if st==4 and core else ("codex" if st==5 and core else ("policy" if st==5 else "deepseek")))
+  # 2026-09-17 소유자 지시: 1단계는 Claude가 주 담당(GPT 토큰 소진 상태라 GPT/Astra는
+  # 이 표에 아예 없다 - "GPT Astra 불가 시 Claude 대체"는 Claude를 1단계 기본값으로
+  # 승격하는 것으로 반영했다). 2단계는 Gemini 그대로(대용량 컨텍스트 근거 수집).
+  name="claude" if st==1 else ("gemini" if st==2 else ("claude" if st==4 and core else ("codex" if st==5 and core else ("policy" if st==5 else "deepseek"))))
   if name in {"gemini","deepseek"} and not self._ready(ps,name):
    alternate="deepseek" if name=="gemini" else "gemini"
    if self._ready(ps,alternate):name=alternate
+  elif name=="claude" and not core and not self._ready(ps,name) and self._ready(ps,"gemini"):
+   # 1단계 일반 계획에서만 - core 검토(4/5단계)는 조용히 다른 공급자로 안 바꾼다(기존 설계 그대로).
+   name="gemini"
   if name!="policy" and not self._ready(ps,name):
    self._update(tid,status="WAITING_QUOTA",stage_label=f"{name} 대기 · 다른 목표 진행 가능",next_retry_at=ps.get(name,{}).get("reset_at") or iso(now()+timedelta(minutes=10)))
    return
-  if name in {"claude","codex"} and not self._reserve_core_review(t,name):
+  if core and name in {"claude","codex"} and not self._reserve_core_review(t,name):
    self._update(tid,status="WAITING_CORE_BUDGET",stage_label="핵심 검토 중복 또는 일일 4회 상한 · 추가 호출 보류",next_retry_at=None)
    return
   self._update(tid,status=f"RUNNING_STAGE_{st}",stage_label=f"{st}/5 {name} 실행",event=f"{name} 단계 시작")
   try:
    if name=="policy":content="일반 분석 산출물 저장. 핵심 모델 호출 생략. 코드 적용·검사·목표 완료는 인증하지 않음."
    elif name=="codex":content=self._codex(t,True)
-   elif name=="claude":content=self._claude(t)
+   elif name=="claude" and core:content=self._claude(t)
    else:
     role={1:"계획과 수락 기준",2:"원문 근거 수집 및 사실/추정 구분",3:"분석·구현 초안과 검증 항목",4:"오류 보강 및 간결한 인계"}[st]
-    prompt=f"담당 업무: {role}. Gemini/DeepSeek가 일반 업무를 수행한다. 실행하지 않은 변경을 완료라고 쓰지 말라.\n"+self._prior(t)[-16000:]
+    prompt=f"담당 업무: {role}. Gemini/DeepSeek/Claude가 일반 업무를 수행한다. 실행하지 않은 변경을 완료라고 쓰지 말라.\n"+self._prior(t)[-16000:]
+    def _call(n):return self._claude_generic(prompt) if n=="claude" else (self._gemini_call(prompt) if n=="gemini" else self._deepseek(prompt))
     try:
-     content=self._gemini_call(prompt) if name=="gemini" else self._deepseek(prompt)
+     content=_call(name)
     except Exception as primary_error:
-     alternate="deepseek" if name=="gemini" else "gemini"
+     alternate={"claude":"gemini","gemini":"deepseek","deepseek":"gemini"}.get(name,"gemini")
      if not self._ready(ps,alternate):raise
      self._failure(name,str(primary_error))
      name=alternate
-     content=self._gemini_call(prompt) if name=="gemini" else self._deepseek(prompt)
+     content=_call(name)
    if not content.strip():raise RuntimeError("빈 결과")
   except Exception as exc:
    failure=self._failure(name,str(exc));fresh=self.get_task(tid);counts=dict(fresh.get("stage_failures",{}));key=str(st);counts[key]=counts.get(key,0)+1
-   parked=counts[key]>=3 or name in {"claude","codex"}
+   # core 검토(4/5단계 claude/codex)만 1회 실패로 즉시 파킹한다 - 1단계 일반 Claude
+   # 계획은 Gemini/DeepSeek처럼 3회까지 재시도한다(2026-09-17 우선순위 변경 반영).
+   parked=counts[key]>=3 or (core and name in {"claude","codex"})
    self._update(tid,event=f"{name} 실패",status="WAITING_REPAIR" if parked else "EXECUTION_ERROR",stage_failures=counts,last_error=str(exc)[:1000],last_failed_provider=name,next_retry_at=None if parked else failure.get("reset_at") or iso(now()+timedelta(minutes=10)))
    return
   self._finish_stage(t,st,name,content)

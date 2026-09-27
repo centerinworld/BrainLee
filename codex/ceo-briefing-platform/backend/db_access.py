@@ -61,11 +61,7 @@ DEFAULT_CALENDAR_SETTINGS = {
     },
 }
 
-DEFAULT_APP_USERS = [
-    {"username": "admin", "pin": "4000", "role": "admin", "display_name": "Admin Console"},
-    {"username": "ceo", "pin": "2000", "role": "ceo", "display_name": "CEO User"},
-    {"username": "staff", "pin": "3000", "role": "staff", "display_name": "Staff User"},
-]
+DEFAULT_APP_USERS: List[Dict[str, str]] = []   # 2026-09-27: 하드코딩 PIN 계정(admin/ceo/staff) 삭제 — 로그인은 admin_password.py(관리자 비밀번호)로만
 
 ROLE_PAGE_ACCESS = {
     "admin": ["page1", "page2", "page3", "page5", "page6", "page7", "page8", "page9"],

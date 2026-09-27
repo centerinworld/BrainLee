@@ -21,7 +21,25 @@ CEO Briefing Platform: 서버측 세션 토큰 발급/검증 (A05 CEO 백엔드 
 import os
 import time
 import secrets
+from pathlib import Path
 from typing import Any, Dict, Optional
+
+
+def _configured_secret() -> Optional[str]:
+    value = os.getenv("CEO_SESSION_SECRET")
+    if value:
+        return value
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    try:
+        for raw in env_file.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, candidate = line.split("=", 1)
+                if key.strip() == "CEO_SESSION_SECRET":
+                    return candidate.strip().strip('"').strip("'") or None
+    except OSError:
+        pass
+    return None
 
 
 def _default_ttl_seconds() -> int:
@@ -38,7 +56,7 @@ class SessionStore:
     같은 영속 저장소로 옮긴다(이번 모듈은 그 결정을 미리 내리지 않는다)."""
 
     def __init__(self, secret: Optional[str] = None, ttl_seconds: Optional[int] = None):
-        self.secret = secret if secret is not None else os.getenv("CEO_SESSION_SECRET")
+        self.secret = secret if secret is not None else _configured_secret()
         self.ttl_seconds = ttl_seconds if ttl_seconds is not None else _default_ttl_seconds()
         self._sessions: Dict[str, Dict[str, Any]] = {}
 

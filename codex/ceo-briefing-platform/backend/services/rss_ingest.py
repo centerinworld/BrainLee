@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import html
 import re
@@ -15,6 +16,8 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -911,11 +914,14 @@ def chat_completion_content(
     timeout: int = 30,
 ) -> str:
     """
-    3단계 지능형 LLM 연쇄 호출:
+    무료 티어 전용 LLM 연쇄 호출:
     1차 (1순위): Google Gemini (gemini-3.6-flash)
     2차 (2순위): Groq / xAI Grok (qwen/qwen3.8-27b 또는 grok-2)
-    3차 (3순위): DeepSeek ($0.14/1M 토큰 백업)
-    4차 (안전망): OpenAI
+
+    2026-09-22 소유자 지시: DeepSeek/OpenAI(둘 다 종량제 유료 API)를 이 캐스케이드에서
+    뺐다. 예전엔 Gemini가 429/타임아웃 등 "아무 예외"만 나도 조용히 OpenAI까지 넘어가며
+    과금됐다(비용 추적도 전혀 없었음 - 실제 월중 OpenAI 요금 급증의 원인). 이제 무료
+    티어가 둘 다 실패하면 과금 없이 그냥 실패(예외)로 끝난다.
     """
     import os
     import sqlite3
@@ -923,26 +929,26 @@ def chat_completion_content(
     # 1. 키 로딩 (환경변수 또는 DB settings)
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_AI_STUDIO_KEY") or ""
     grok_key = os.getenv("GROK_API_KEY") or os.getenv("GROQ_API_KEY") or os.getenv("XAI_API_KEY") or ""
-    deepseek_key = os.getenv("DEEPSEEK_API_KEY") or ""
-    openai_key = os.getenv("OPENAI_API_KEY") or ""
 
     if not gemini_key or not grok_key:
-        try:
-            db_p = "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db"
-            if os.path.exists(db_p):
-                conn = sqlite3.connect(db_p)
-                for r in conn.execute("SELECT key, value FROM app_settings").fetchall():
+        for db_p in [
+            "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db",
+            "/Users/brainlee/Downloads/codex/ceo-briefing-platform/data/ceo_briefing.db",
+        ]:
+            try:
+                if not os.path.exists(db_p):
+                    continue
+                _conn = sqlite3.connect(db_p)
+                for r in _conn.execute("SELECT key, value FROM app_settings").fetchall():
                     if r[0] == "gemini_api_key" and not gemini_key: gemini_key = r[1]
                     if (r[0] == "grok_api_key" or r[0] == "groq_api_key") and not grok_key: grok_key = r[1]
-                    if r[0] == "deepseek_api_key" and not deepseek_key: deepseek_key = r[1]
-                conn.close()
-        except Exception:
-            pass
+                _conn.close()
+                break
+            except Exception:
+                continue
 
     gemini_key = (gemini_key or (api_key if provider == "gemini" else "")).strip()
     grok_key = grok_key.strip()
-    deepseek_key = deepseek_key.strip()
-    openai_key = (openai_key or (api_key if provider == "openai" else "")).strip()
 
     tiers = []
     # 1차: Google Gemini
@@ -955,14 +961,6 @@ def chat_completion_content(
             tiers.append(("groq", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3.8-27b", grok_key))
         else:
             tiers.append(("grok", "https://api.x.ai/v1/chat/completions", "grok-2-latest", grok_key))
-
-    # 3차: DeepSeek
-    if deepseek_key and not deepseek_key.startswith("your_"):
-        tiers.append(("deepseek", "https://api.deepseek.com/chat/completions", "deepseek-chat", deepseek_key))
-
-    # 4차: OpenAI
-    if openai_key and not openai_key.startswith("your_"):
-        tiers.append(("openai", "https://api.openai.com/v1/chat/completions", "gpt-4o-mini", openai_key))
 
     last_error = None
     for p_name, endpoint, default_model, k in tiers:
@@ -981,7 +979,18 @@ def chat_completion_content(
             req = urllib.request.Request(
                 endpoint,
                 data=payload,
-                headers={"Content-Type": "application/json", "Authorization": f"Bearer {k}"},
+                # 2026-09-22 발견: User-Agent를 안 주면 urllib 기본값("Python-urllib/3.x")이
+                # 찍히는데, Groq(api.groq.com)는 Cloudflare WAF 뒤에 있어서 이 UA를 그냥
+                # 봇으로 보고 403(Cloudflare "error code: 1010")으로 막는다 - 키/한도 문제가
+                # 아니라 순전히 UA 문제였다(같은 키로 curl이나 requests 라이브러리 기본 UA로는
+                # 200 성공, urllib 기본 UA로만 403 - 직접 재현 확인). 그 결과 Gemini의 하루
+                # 20건 무료 한도를 넘기는 순간부터 2차(Groq)도 조용히 다 실패해 사실상
+                # 유료 tier까지 떨어지고 있었다. 일반 브라우저 UA를 명시해 이 차단을 피한다.
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {k}",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                },
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=timeout) as response:
@@ -991,9 +1000,32 @@ def chat_completion_content(
             last_error = e
             continue
 
+    # 2026-09-24 소유자 지시: 무료 티어(Gemini 하루 20건 등)가 막혀 분류가 멈추지 않도록
+    # ChatGPT 구독(경량 Codex CLI, 종량제 API 아님)을 마지막 폴백으로 쓴다. 일일 상한/쿨다운은
+    # codex_lean이 관리한다(초과·비활성이면 아래에서 조용히 건너뛰고 기존 예외를 그대로 낸다).
+    subscription_answer = _codex_subscription_completion(messages)
+    if subscription_answer:
+        return subscription_answer
+
     if last_error:
         raise last_error
     return ""
+
+
+def _codex_subscription_completion(messages: List[Dict[str, str]]) -> str:
+    try:
+        import sys
+        lean_dir = str(Path(__file__).resolve().parents[4] / "antigravity_workspace")
+        if lean_dir not in sys.path:
+            sys.path.append(lean_dir)
+        import codex_lean
+        prompt = "\n\n".join(
+            f"[{m.get('role', 'user')}]\n{m.get('content', '')}" for m in messages if m.get("content")
+        )
+        return codex_lean.complete(prompt)["content"].strip()
+    except Exception as exc:
+        logger.info("ChatGPT 구독 폴백 건너뜀: %s", exc)
+        return ""
 
 
 def strip_html(value: str) -> str:
@@ -1157,10 +1189,21 @@ def _extract_event_anchors(title: str, summary: str) -> set:
     fixed_events = [
         "국방산업발전대전", "서울adex", "부산에어쇼", "서울에어쇼",
         "대전컨벤션센터", "코엑스방산전", "킨텍스방산",
+        "aerotec", "에어로텍",  # 창원 국제우주항공기술대전
+        "mspo",  # 폴란드 방산전시
+        "euronaval", "dvbe", "dsei",
     ]
     for ev in fixed_events:
         if ev in text:
             anchors.add(ev)
+
+    # 정상회담·외교 이벤트 앵커 (국가명+정상회담 조합)
+    summit_countries = ["우즈베크", "우즈벡", "카자흐", "사우디", "폴란드", "호주", "캐나다", "인도", "이라크"]
+    if any(c in text for c in summit_countries):
+        if any(kw in text for kw in ["정상회담", "국빈", "국빈방한", "순방"]):
+            for c in summit_countries:
+                if c in text:
+                    anchors.add(f"summit-{c}")
     if ("kai" in text or "한국항공우주" in text) and (
         "2026 지속가능경영" in text
         or "지속가능경영 보고서" in text
@@ -2452,7 +2495,10 @@ def filter_items_by_keywords(
             "에이엔에이치스트럭쳐",
         ]
         combined_lower = combined_text.lower()
-        has_core_keyword = any(kw in combined_lower for kw in CORE_FILTER_KEYWORDS) or has_exact_kai_token(combined_lower)
+        title_lower = title.lower()
+        # 핵심 키워드는 제목에서만 체크 — summary는 AI 요약 시 방산 키워드가 우연히 삽입돼
+        # 무관 기사가 통과되는 문제 방지 (예: "코스피 급락" 기사 summary에 "방산주" 언급)
+        has_core_keyword = any(kw in title_lower for kw in CORE_FILTER_KEYWORDS) or has_exact_kai_token(title_lower)
         if not has_core_keyword:
             continue
 
@@ -2467,12 +2513,12 @@ def filter_items_by_keywords(
 
         if source_include_keywords:
             has_include_rule = True
-            if any(keyword_matches_text(combined_text, keyword) for keyword in source_include_keywords):
+            if any(keyword_matches_text(title, keyword) for keyword in source_include_keywords):
                 matched_include = True
 
         if mode == "keywords" and include_keywords:
             has_include_rule = True
-            if any(keyword_matches_text(combined_text, keyword) for keyword in include_keywords):
+            if any(keyword_matches_text(title, keyword) for keyword in include_keywords):
                 matched_include = True
 
         if has_include_rule and not matched_include:
@@ -2988,9 +3034,10 @@ def send_telegram_briefing(conn: sqlite3.Connection, force: bool = False, dry_ru
         if not force and current_hour not in allowed_hours:
             return
 
-        # 정각 기준 30분 이내에만 발송 (12:00~12:29 / 18:00~18:29)
-        # 서버가 복구되어도 12:30 이후라면 18시까지 기다림
-        if not force and current_minute >= 30:
+        # 정각 기준 55분 이내에만 발송 (12:00~12:54 / 18:00~18:54)
+        # 기존 30분 제한은 import_sources(RSS 수집, 30~40분 소요) 완료 후 호출 시 누락 발생
+        # 브리핑 발송을 import_sources 호출 전으로 이동했으므로 여유를 넓혀 둠
+        if not force and current_minute >= 55:
             return
 
         last_briefing_key = f"telegram_last_briefing_{now_seoul.strftime('%Y%m%d')}_{current_hour}"
@@ -2998,19 +3045,6 @@ def send_telegram_briefing(conn: sqlite3.Connection, force: bool = False, dry_ru
             last_run = get_setting(conn, last_briefing_key)
             if last_run == "sent":
                 return
-
-        conn.execute(
-            """
-            INSERT INTO app_settings(key, value)
-            VALUES (?, 'sent')
-            ON CONFLICT(key) DO UPDATE SET value = 'sent'
-            """,
-            (last_briefing_key,)
-        )
-        try:
-            conn.commit()
-        except Exception:
-            pass
 
         # 현재 요일 (0: 월, 1: 화, 2: 수, 3: 목, 4: 금, 5: 토, 6: 일) 및 시간 확인
         weekday = now_seoul.weekday()
@@ -3066,34 +3100,62 @@ def send_telegram_briefing(conn: sqlite3.Connection, force: bool = False, dry_ru
             return any(kw in text for kw in LOW_VALUE_KEYWORDS)
 
         def _dedup_by_topic(items: List[sqlite3.Row], max_items: int = 50) -> List[sqlite3.Row]:
-            """동일 주제 중복 제거 시 메이저 신문사/방송사 기사 우선 선정"""
+            """동일 주제 중복 제거 시 메이저 신문사/방송사 기사 우선 선정.
+            단일 기관/행사가 브리핑에 과도하게 등장하지 않도록 주체별 최대 2개 제한.
+            """
             # 메이저 언론사 도메인 리스트 (우선 선출)
             MAJOR_PUBLISHERS = [
-                "chosun.com", "donga.com", "joongang.co.kr", "yna.co.kr", 
-                "sbs.co.kr", "kbs.co.kr", "mbn.co.kr", "imbc.com", 
-                "ytn.co.kr", "hankyung.com", "mk.co.kr", "khan.co.kr", 
+                "chosun.com", "donga.com", "joongang.co.kr", "yna.co.kr",
+                "sbs.co.kr", "kbs.co.kr", "mbn.co.kr", "imbc.com",
+                "ytn.co.kr", "hankyung.com", "mk.co.kr", "khan.co.kr",
                 "seoul.co.kr", "hankookilbo.com", "segye.com", "munhwa.com"
+            ]
+            # 단일 주체 과다 중복을 막기 위한 중소기관/행사 키워드 (주체별 최대 2개)
+            _ENTITY_LIMIT_KEYWORDS = [
+                "교통안전공단", "항공안전기술원", "국토교통부", "산업통상부",
+                "과학기술정보통신부", "중소벤처기업부", "해양수산부",
+                "kaia", "방위사업청", "방사청",
+                "uam", "도심항공", "도심 항공", "에어택시",
+                "kf-21", "fa-50", "수리온",  # 동일 기체 관련 기사 과다 중복 방지
             ]
 
             def _publisher_priority(row: sqlite3.Row) -> int:
                 publisher = str(row["article_publisher"] or "").lower()
-                # 메이저 언론사인 경우 우선순위를 높임 (0이 가장 높은 우선순위)
                 if any(major in publisher for major in MAJOR_PUBLISHERS):
                     return 0
                 return 1
 
-            # 메이저사 기사를 최선두로 배치하기 위해 Stable Sort 정렬
             sorted_items = sorted(items, key=_publisher_priority)
 
             result: List[sqlite3.Row] = []
+            entity_count: Dict[str, int] = {}
+
             for row in sorted_items:
+                _row_text = ((row["title"] or "") + " " + (row["summary"] or "")).lower()
+
+                # 동일 주제 중복 체크
                 is_dup = False
                 for seen_row in result:
                     if is_same_topic_rule(dict(row), dict(seen_row)):
                         is_dup = True
                         break
-                if not is_dup:
-                    result.append(row)
+                if is_dup:
+                    continue
+
+                # 단일 기관/행사 과다 중복 체크 (동일 주체 최대 2개)
+                _over_entity_limit = False
+                for kw in _ENTITY_LIMIT_KEYWORDS:
+                    if kw in _row_text:
+                        entity_count[kw] = entity_count.get(kw, 0) + 1
+                        if entity_count[kw] > 2:
+                            _over_entity_limit = True
+                            # 카운트를 원복 (추가하지 않았으므로)
+                            entity_count[kw] -= 1
+                        break
+                if _over_entity_limit:
+                    continue
+
+                result.append(row)
                 if len(result) >= max_items:
                     break
             return result
@@ -3139,27 +3201,106 @@ def send_telegram_briefing(conn: sqlite3.Connection, force: bool = False, dry_ru
             except Exception:
                 return list(items[:n])
 
+        def _ai_quality_gate(
+            api_key: str, model: str, provider: str,
+            items: List[sqlite3.Row], category: str, context: str
+        ) -> List[sqlite3.Row]:
+            """텔레그램 발송 전 AI가 각 기사를 직접 읽고 해당 카테고리 적합성 판단.
+            제목 + 요약을 제공하여 AI가 부적합한 기사를 제거.
+            """
+            if not items or not api_key:
+                return list(items)
+
+            # 각 기사별 제목+요약 구성
+            articles_text = ""
+            for i, row in enumerate(items, 1):
+                title = row["title"] or ""
+                summary = (row["summary"] or "")[:300]
+                articles_text += f"\n[{i}] 제목: {title}\n    요약: {summary}\n"
+
+            prompt = (
+                f"당신은 KAI(한국항공우주산업) CEO를 위한 뉴스 큐레이터입니다.\n"
+                f"아래 기사들이 '{context}' 카테고리에 진짜로 속하는지 각각 판단하세요.\n\n"
+                f"판단 기준:\n"
+                f"- 기사의 주요 주제가 해당 카테고리의 핵심 내용과 직접 관련된 경우만 KEEP\n"
+                f"- 단순히 관련 기관명이 언급만 된 경우, 주가/증시 동향 기사, 비방산 기업 소식, "
+                f"일반 주주/지배구조 이슈, 의료·금융·유통 등 비방산 사업 기사는 REMOVE\n"
+                f"- KAI나 해당 카테고리 기관/기업이 주인공인 기사만 KEEP\n\n"
+                f"응답 형식: 번호와 판단만 나열 (예: 1:KEEP 2:REMOVE 3:KEEP)\n\n"
+                f"기사 목록:{articles_text}"
+            )
+            try:
+                ans = chat_completion_content(
+                    api_key,
+                    model,
+                    [{"role": "user", "content": prompt}],
+                    provider=provider,
+                    temperature=0.0,
+                    max_tokens=200,
+                    timeout=30,
+                )
+                kept = []
+                for match in re.finditer(r"(\d+)\s*:\s*(KEEP|REMOVE|keep|remove)", ans):
+                    idx = int(match.group(1)) - 1
+                    verdict = match.group(2).upper()
+                    if 0 <= idx < len(items) and verdict == "KEEP":
+                        kept.append(items[idx])
+                # AI 응답이 불충분하면 원본 유지
+                if len(kept) == 0 and len(items) > 0:
+                    logger.warning(f"[quality_gate] {category} AI 응답 파싱 실패, 원본 유지: {ans[:100]}")
+                    return list(items)
+                return kept
+            except Exception as e:
+                logger.warning(f"[quality_gate] {category} AI 호출 실패: {e}")
+                return list(items)
+
+        # government 카테고리에서 방산/항공/우주/국방 수주 핵심 기사만 defense 버킷으로 수용
+        # 판단 키워드: 국방위원회, 방위사업청, 방추위, 수주, 방산 예산, 수출 허가 등
+        _DEFENSE_CORE_KEYWORDS = [
+            "방위사업청", "방사청", "방추위", "방위사업추진위", "국방위원회", "국방위",
+            "국방부", "합참", "합동참모",
+            "수주", "수출 허가", "방산 수출", "g2g", "fms",
+            "방산 예산", "국방 예산", "방위력개선비",
+            "kf-21", "fa-50", "수리온", "천무", "천궁", "k2 전차", "k9 자주포",
+            "전투기", "헬기", "발사체", "위성", "무인기", "잠수함",
+            "방산혁신", "방산 클러스터",
+        ]
+
         # 카테고리별 분류
         categorized: Dict[str, List[sqlite3.Row]] = {
-            "kai": [], "government": [], "hanwha": [], "lig": [], "space": [], "partner": []
+            "kai": [], "defense": [], "hanwha": [], "lig": [], "space": [], "partner": []
         }
+
+        _KAI_HANWHA_RIVALRY_KEYWORDS = [
+            "kai 지분", "kai 민영화", "kai 경영권", "kai 인수",
+            "한화 kai", "한화의 kai", "kai와 한화",
+            "위성사업", "우주전쟁", "지배구조논쟁", "지배구조 논쟁",
+        ]
 
         for row in rows:
             # 저가치 기사 제외
             cat = row["article_category"]
-            _gov_briefing_keep = (
-                cat == "government"
-                and is_government_briefing_item(row["title"], row["summary"] or "")
-                and is_aero_defense_space_relevant(f"{row['title']} {row['summary'] or ''}")
-            )
-            if _is_low_value(row["title"], row["summary"] or "") and not _gov_briefing_keep:
+            if _is_low_value(row["title"], row["summary"] or ""):
                 continue
-            if cat == "government" and is_government_briefing_item(row["title"], row["summary"] or "") and not is_aero_defense_space_relevant(f"{row['title']} {row['summary'] or ''}"):
-                continue
+            _item_text = ((row["title"] or "") + " " + (row["summary"] or "")).lower()
             if cat == "kai":
                 categorized["kai"].append(row)
             elif cat == "government":
-                categorized["government"].append(row)
+                _title_lower = (row["title"] or "").lower()
+                # 제목이 증시 시황·주가·ETF인 기사는 어느 버킷에도 진입 금지
+                _is_market_noise = has_any_keyword(_title_lower, [
+                    "코스피", "코스닥", "주가", "etf", "증시", "환율", "유가 상승", "유가 하락",
+                    "급락", "급등", "오늘의 증시", "마감 시황", "장중 시황",
+                ])
+                if _is_market_noise:
+                    pass  # 폐기
+                # KAI-한화 경쟁/지배구조 기사는 kai 버킷으로
+                elif has_any_keyword(_item_text, _KAI_HANWHA_RIVALRY_KEYWORDS):
+                    categorized["kai"].append(row)
+                # government → defense 버킷: 방산/항공/우주/국방위/수주 핵심 기사만
+                elif has_any_keyword(_item_text, _DEFENSE_CORE_KEYWORDS):
+                    categorized["defense"].append(row)
+                # 그 외 government 기사는 브리핑에서 제외
             elif cat == "hanwha":
                 categorized["hanwha"].append(row)
             elif cat == "lig":
@@ -3184,36 +3325,75 @@ def send_telegram_briefing(conn: sqlite3.Connection, force: bool = False, dry_ru
         for key in categorized:
             categorized[key] = _dedup_by_topic(categorized[key])
 
-        # 모든 카테고리: AI가 KAI CEO 관점에서 중요도순 Top-5 선별 (최대 5개 제한)
         provider = get_ai_provider(conn)
         api_key = get_ai_api_key(conn)
         model = get_setting(conn, "classification_model") or ("gemini-3.7-flash" if provider == "gemini" else "gpt-4o-mini")
         LIMIT = 5
 
         contexts = {
-            "kai": "KAI(한국항공우주산업) 관련 주요 뉴스",
-            "government": "국방부, 방사청 등 정부기관의 방산 및 항공 정책/동향 소식",
-            "hanwha": "경쟁사인 한화에어로스페이스/방산 동향 및 전략 소식",
-            "lig": "경쟁사인 LIG넥스원 동향 및 전략 소식",
-            "space": "우주항공, 위성, 누리호 및 국내외 방산/우주 산업 주요 뉴스",
-            "partner": "KAI 주요 협력사 및 부품 공급업체 동향"
+            "kai": (
+                "KAI(한국항공우주산업)가 기사의 실질적 주인공인 뉴스.\n"
+                "KEEP: KAI 수주·계약·실적·사업·경영·KF-21·FA-50·수리온이 핵심, KAI-타기업 경쟁·지배구조\n"
+                "REMOVE: KAI가 단순 참석·언급 (만찬 참석, 행사 참여 등)\n"
+                "REMOVE: UAM 기사 중 KAI가 직접 개발·인증 주체가 아닌 것 (국토부·교통안전공단·의원 주체 UAM 정책·토론·법제화)\n"
+                "REMOVE: 주가·주식·배당·ETF·증권사 투자의견(탑픽·목표주가) 기사\n"
+                "REMOVE: 학교·공모전·총상금·채용 기사, KAI 무관 IT·AI·스타트업 기사"
+            ),
+            "defense": (
+                "방위사업청·국방위원회의 수주·예산·정책, 핵심 무기체계 개발/수출 동향.\n"
+                "KEEP: 방산 예산 결정, 무기 수주 계약, 방사청·국방위 공식 발표, K-방산 수출 허가·계약\n"
+                "REMOVE: 코스피·주가·유가·ETF 시황 (지정학적 긴장 언급이 있어도 방산 예산과 직접 무관하면 REMOVE)\n"
+                "REMOVE: 정상회담·외교·순방 (방산 MOU·계약이 기사 핵심이 아닌 경우)\n"
+                "REMOVE: 사관학교·복무여건·보훈·봉사·지역 예산, 일반 AI캠프·스타트업·공모주"
+            ),
+            "hanwha": (
+                "한화에어로스페이스·한화시스템·한화오션 등 한화 방산 계열사 뉴스.\n"
+                "KEEP: 수주·계약·기술·전략·M&A·공장 건설, KAI 인수 이슈\n"
+                "REMOVE: 증권사 투자의견·목표주가·탑픽 단신 (실제 수주·계약 내용 없는 것)\n"
+                "REMOVE: 주가 등락 단신, 비방산 계열사(한화생명·갤러리아 등), 단순 언급"
+            ),
+            "lig": (
+                "LIG넥스원의 방산 사업·수주·전략 뉴스.\n"
+                "KEEP: LIG넥스원이 기사의 주인공이고 방산 관련 실질 내용\n"
+                "REMOVE: 단순 언급, 주가 기사, 증권사 투자의견 단신"
+            ),
+            "space": (
+                "KAI·한화·LIG가 주인공이 아닌 항공·우주·방산 산업 전반 동향.\n"
+                "KEEP: 항공/우주/방산 기술·정책·실제 사업 동향\n"
+                "REMOVE: ETF·펀드·투자 추천 기사, 코스피·주가·증시 기사, 반도체·배터리·금융, 순수 증시 시황"
+            ),
+            "partner": "KAI 주요 협력사 및 부품 공급업체의 실제 사업·수주·기술 동향. REMOVE: 주가 단신, 단순 언급"
         }
 
+        # ── STEP 1: AI 품질 검토 — 카테고리 부적합 기사 제거 (Top-N 선별 전) ──
+        # 마지막 브리핑 이후 수집된 기사들을 AI가 직접 읽고(제목+요약) 해당 카테고리 적합성 판단
+        # 부적합 기사 제거 후 남은 기사들 중에서 Top-N을 선별하므로 품질이 보장됨
+        if api_key:
+            for key in list(categorized.keys()):
+                if categorized[key]:
+                    categorized[key] = _ai_quality_gate(
+                        api_key, model, provider,
+                        categorized[key], key, contexts.get(key, "")
+                    )
+        # ─────────────────────────────────────────────────────────────────────
+
+        # ── STEP 2: 중요도순 Top-5 선별 (품질 검토 통과한 기사들 대상) ──────
         for key in categorized:
             if len(categorized[key]) > LIMIT:
                 if api_key:
                     categorized[key] = _ai_select_top_n(api_key, model, provider, categorized[key], LIMIT, contexts.get(key, ""))
                 else:
                     categorized[key] = categorized[key][:LIMIT]
+        # ─────────────────────────────────────────────────────────────────────
 
-        # 한글 카테고리 명칭 정의
+        # 한글 카테고리 명칭 정의 (government 제거 → defense로 대체)
         category_labels = {
-            "kai":        "✈️ [KAI기사]",
-            "government": "🏛️ [정부기관]",
-            "hanwha":     "🔥 [경쟁사 - 한화]",
-            "lig":        "🔥 [경쟁사 - LIG]",
-            "space":      "🚀 [항공/방산/우주]",
-            "partner":    "🤝 [협력사]"
+            "kai":     "✈️ [KAI기사]",
+            "defense": "🛡️ [국방/방산정책]",
+            "hanwha":  "🔥 [경쟁사 - 한화]",
+            "lig":     "🔥 [경쟁사 - LIG]",
+            "space":   "🚀 [항공/방산/우주]",
+            "partner": "🤝 [협력사]"
         }
 
         # 중복 제거 및 AI 선별이 완료된 categorized 결과를 그대로 연동
@@ -3356,6 +3536,21 @@ def send_telegram_briefing(conn: sqlite3.Connection, force: bool = False, dry_ru
             conn.executemany(
                 "UPDATE feed_items SET sent_briefing_at = ? WHERE id = ?",
                 [(sent_at_str, aid) for aid in sent_ids],
+            )
+            try:
+                conn.commit()
+            except Exception:
+                pass
+
+        # 발송 성공 후 마커 저장 (발송 전 저장 시 에러로 재시도 불가 문제 방지)
+        if not dry_run:
+            conn.execute(
+                """
+                INSERT INTO app_settings(key, value)
+                VALUES (?, 'sent')
+                ON CONFLICT(key) DO UPDATE SET value = 'sent'
+                """,
+                (last_briefing_key,)
             )
             try:
                 conn.commit()

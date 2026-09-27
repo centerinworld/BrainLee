@@ -1,6 +1,6 @@
 """
-session_auth.py / session_deps.py 회귀 테스트 (A05 CEO 백엔드 인증 재설계 - 1단계).
-main.py에는 아직 연결되지 않았으므로 이 두 모듈만 독립적으로 검증한다.
+session_auth.py / session_deps.py 회귀 테스트.
+AGI 작업 생성 엔드포인트가 이 세션을 관리자 게이트로 사용한다.
 """
 
 import time
@@ -50,7 +50,7 @@ class TestSessionStore(unittest.TestCase):
     def test_fails_closed_without_secret(self):
         """A05: 운영자가 CEO_SESSION_SECRET을 설정하지 않으면 세션 기능 자체를 막는다
         (설정 안 한 상태를 '열려있음'으로 취급하지 않는다)."""
-        store = SessionStore(secret=None)
+        store = SessionStore(secret="")
         with self.assertRaises(RuntimeError):
             store.issue("alice", "admin", "Alice")
 
