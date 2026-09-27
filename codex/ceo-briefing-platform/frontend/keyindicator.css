@@ -1,0 +1,38 @@
+/* Key Indicator 공개 화면 — stock.leanguy.cloud 와 같은 라이트 디자인(진한 글자·분명한 표 선) */
+:root { --page:#f4f6fb; --surface:#fff; --line:#cdd4e1; --line-strong:#aab4c8; --text:#0b1220; --muted:#334155; --primary:#1a73e8; --primary-soft:#e8f0fe; --up:#c62828; --down:#1565c0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif; background: var(--page); color: var(--text); font-size: 14px; -webkit-font-smoothing: antialiased; }
+.ki { max-width: 1240px; margin: 0 auto; padding: 22px 20px 48px; }
+.ki-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.ki-head h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+.ki-head p { margin-top: 4px; color: var(--muted); }
+.ki-admin { padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: #fff; color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none; }
+.ki-admin:hover { color: var(--text); border-color: var(--muted); }
+.ki-tabs { display: flex; gap: 6px; border-bottom: 2px solid var(--line); margin-bottom: 16px; }
+.ki-tabs button { padding: 10px 18px; border: none; background: none; font: inherit; font-size: 15px; font-weight: 700; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.ki-tabs button.on { color: var(--primary); border-bottom-color: var(--primary); }
+.ki-card { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 14px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(15,23,42,.05); }
+.ki-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.ki-row h2 { font-size: 17px; font-weight: 800; }
+.ki-muted { color: var(--muted); font-size: 13px; }
+.ki-foot { margin-top: 10px; }
+.ki-search { padding: 8px 12px; min-width: 260px; border: 1px solid var(--line-strong); border-radius: 9px; font: inherit; outline: none; }
+.ki-search:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,115,232,.18); }
+.ki-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.ki-chips button { padding: 5px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: #fff; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.ki-chips button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.ki-table-wrap { overflow: auto; border: 1px solid var(--line-strong); border-radius: 10px; } .ki-tall { max-height: 560px; }
+.ki-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ki-table th { position: sticky; top: 0; background: #dbe6f7; color: #14315f; font-weight: 700; text-align: left; padding: 9px 10px; border-bottom: 2px solid #8fa6cd; white-space: nowrap; }
+.ki-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); }
+.ki-table tbody tr:nth-child(even) { background: #f1f4fa; } .ki-table tbody tr:hover { background: #e3ecfb; }
+.ki-table td:first-child { font-weight: 600; background: #eaf0fa; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.up { color: var(--up); font-weight: 700; } .down { color: var(--down); font-weight: 700; }
+.ki-news { list-style: none; display: grid; gap: 10px; }
+.ki-news li { border: 1px solid var(--line-strong); border-left: 4px solid var(--primary); border-radius: 10px; padding: 12px 14px; background: #fff; }
+.ki-news .meta { display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+.ki-news .pub { font-weight: 700; color: #14315f; background: var(--primary-soft); padding: 1px 8px; border-radius: 999px; }
+.ki-news a { color: var(--text); font-weight: 700; font-size: 15px; text-decoration: none; } .ki-news a:hover { color: var(--primary); text-decoration: underline; }
+.ki-news p { margin-top: 5px; color: #1e293b; line-height: 1.55; white-space: pre-line; }
+@media (max-width: 640px) { .ki { padding: 14px 12px 40px; } .ki-search { min-width: 0; width: 100%; } .ki-head h1 { font-size: 22px; } }

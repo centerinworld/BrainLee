@@ -3,50 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>CEO 브리핑 플랫폼 - 관리자 콘솔</title>
-  <link rel="stylesheet" href="./styles.css?v=20260629_v3">
+  <title>Key Indicator — 주요 경제지표 · 뉴스정보</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="./keyindicator.css?v=20260927b">
+  <script src="/hubbar.js?v=20260927" defer></script>
 </head>
 <body>
-  <div id="adminConsole">
-    <aside class="sidebar">
+  <main class="ki">
+    <header class="ki-head">
       <div>
-        <p class="eyebrow">연결된 MVP</p>
-        <h1>CEO 브리핑 플랫폼</h1>
-        <p class="copy">캘린더 관리, RSS 소스, AI 요약 설정을 위한 관리자 콘솔입니다.</p>
+        <h1>Key Indicator</h1>
+        <p>주요 경제지표와 뉴스를 한눈에 — 누구나 볼 수 있는 공개 화면입니다.</p>
       </div>
-      <section class="panel">
-        <label for="apiBase">API 주소</label>
-        <input id="apiBase" value="http://127.0.0.1:8011">
-        <label for="roleSelect">콘솔 모드</label>
-        <select id="roleSelect" disabled>
-          <option value="admin" selected>관리자</option>
-        </select>
-      </section>
-      <nav id="pageNav" class="nav"></nav>
-      <!-- AI 관제 센터 & KAI News Center 링크 -->
-      <div style="margin-top: auto; padding: 16px; border-top: 1px solid var(--line);">
-        <a href="/kai/" style="display: flex; align-items: center; justify-content: space-between; text-decoration: none; background: var(--pl, #e8f0fe); color: var(--p, #1a73e8); padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #c8d8fb; transition: all 0.15s ease;">
-          <span style="display: flex; align-items: center; gap: 8px;">
-            <span>🛰️</span> AI 관제 센터 (KAI)
-          </span>
-          <span style="font-size: 11px; background: #fff; color: var(--p); padding: 2px 6px; border-radius: 4px; font-weight: 700;">8501 연동</span>
-        </a>
-      </div>
-    </aside>
-    <main class="content">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">운영 보기</p>
-          <h2 id="pageTitle">UI 로딩 중</h2>
-          <p id="pageDescription" class="copy"></p>
-        </div>
-        <button id="reloadButton" class="button outline">페이지 새로고침</button>
-      </header>
-      <section id="notice"></section>
-      <section id="app"></section>
-    </main>
-  </div>
+      <a class="ki-admin" href="https://stock.leanguy.cloud/admin/admin_ki">관리 콘솔 (관리자)</a>
+    </header>
 
-  <script src="./admin-console-runtime-v2.js?v=20260829_gemini_provider"></script>
+    <div class="ki-tabs" role="tablist">
+      <button role="tab" id="tab-eco" class="on" data-tab="eco">주요 경제지표</button>
+      <button role="tab" id="tab-news" data-tab="news">뉴스정보</button>
+    </div>
+
+    <section id="pane-eco">
+      <div class="ki-card">
+        <div class="ki-row"><h2>국내 주요 지표</h2><span class="ki-muted" id="kr-meta"></span></div>
+        <div class="ki-table-wrap"><table class="ki-table" id="kr-table"><thead><tr><th>지표</th><th>구분</th><th>기준월</th><th class="num">현재값</th><th class="num">이전값</th><th class="num">증감</th><th class="num">증감률</th><th>출처</th></tr></thead><tbody><tr><td colspan="8" class="ki-muted">불러오는 중…</td></tr></tbody></table></div>
+      </div>
+      <div class="ki-card">
+        <div class="ki-row"><h2>글로벌 주요 지표</h2><input id="gl-q" class="ki-search" placeholder="지표·국가 검색 (예: 금리, US, 환율)"></div>
+        <div class="ki-chips" id="gl-cats"></div>
+        <div class="ki-table-wrap ki-tall"><table class="ki-table" id="gl-table"><thead><tr><th>지표</th><th>구분</th><th>단위</th><th>기준일</th><th class="num">값</th><th class="num">직전</th><th class="num">변화</th><th>출처</th></tr></thead><tbody><tr><td colspan="8" class="ki-muted">불러오는 중…</td></tr></tbody></table></div>
+        <p class="ki-muted ki-foot" id="gl-meta"></p>
+      </div>
+    </section>
+
+    <section id="pane-news" hidden>
+      <div class="ki-card">
+        <div class="ki-row"><h2>뉴스정보</h2><input id="news-q" class="ki-search" placeholder="제목·요약·언론사 검색"></div>
+        <p class="ki-muted" id="news-meta"></p>
+        <ul class="ki-news" id="news-list"><li class="ki-muted">불러오는 중…</li></ul>
+      </div>
+    </section>
+  </main>
+  <script src="./keyindicator.js?v=20260927b"></script>
 </body>
 </html>
