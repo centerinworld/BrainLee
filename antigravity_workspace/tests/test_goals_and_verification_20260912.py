@@ -223,11 +223,10 @@ class TestGoalVerifier(unittest.TestCase):
         self.assertEqual(called, [])  # LLM이 아예 호출되지 않아야 한다
         self.assertEqual(self.registry.get_goal("goal_1_zero_defect_data")["status"], "ACTIVE")
 
-    def test_verify_without_provider_pair_defaults_to_codex_and_claude_cli(self):
-        """소유자 지시(2026-09-13): 기본 검증자는 '아무 verified 등급 2개'가 아니라
-        구체적으로 codex_cli + claude_cli여야 한다."""
+    def test_verify_without_provider_pair_defaults_to_codex_sdk_and_cli(self):
+        """Claude 토큰이 없을 때 기본 검증은 Codex SDK와 CLI의 별도 세션을 쓴다."""
         import goal_verification
-        self.assertEqual(goal_verification.DEFAULT_VERIFIER_PROVIDERS, ("codex_cli", "claude_cli"))
+        self.assertEqual(goal_verification.DEFAULT_VERIFIER_PROVIDERS, ("codex_sdk", "codex_cli"))
 
         seen_providers = []
 
@@ -239,8 +238,9 @@ class TestGoalVerifier(unittest.TestCase):
             }
 
         verifier = self._make_verifier(fake_call)
-        verifier.verify("goal_1_zero_defect_data", evidence="증거")  # provider_pair 없음
-        self.assertEqual(set(seen_providers), {"codex_cli", "claude_cli"})
+        result = verifier.verify("goal_1_zero_defect_data", evidence="증거")  # provider_pair 없음
+        self.assertEqual(set(seen_providers), {"codex_sdk", "codex_cli"})
+        self.assertEqual(result["verification_independence"], "same_vendor_distinct_sessions")
 
     def test_verify_blocks_when_fewer_than_two_verified_providers_configured(self):
         """provider_pair를 안 주고 기본값도 없다면(예: 미래에 기본 쌍이 비게 되는
@@ -250,7 +250,7 @@ class TestGoalVerifier(unittest.TestCase):
         called = []
         verifier = self._make_verifier(lambda *a, **k: called.append(1))
         with patch.object(goal_verification, "DEFAULT_VERIFIER_PROVIDERS", None), \
-             patch.dict(AntigravityLLMClient.PROVIDER_TIER, {"codex_cli": "draft", "claude_cli": "draft"}):
+             patch.dict(AntigravityLLMClient.PROVIDER_TIER, {"openai": "verified"}, clear=True):
             result = verifier.verify("goal_1_zero_defect_data", evidence="증거")  # provider_pair 없음
         self.assertEqual(result["blocked_reason"], "INSUFFICIENT_VERIFIED_PROVIDERS")
         self.assertEqual(called, [])

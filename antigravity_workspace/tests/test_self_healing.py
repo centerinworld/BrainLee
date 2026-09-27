@@ -5,6 +5,7 @@ Project Antigravity V2: 자가 고도화(Self-Healing) 및 버그 자동 패치 
 import unittest
 import os
 import sys
+from unittest.mock import Mock
 
 # Add workspace root to sys.path
 workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,19 +60,33 @@ def good_func():
         self.assertTrue(res_clean["approved"])
 
     def test_orchestrator_self_healing_execution(self):
-        """L1-A DevOrchestrator의 실시간 자가 패치 루프 통합 검증"""
-        orch = DevOrchestrator(is_mock=True)
-        
+        """L1-A가 실제 diff를 받아도 검토만으로 자동 머지하지 않는지 검증한다.
+
+        자동 머지는 테스트 실행과 git 반영 절차가 구현된 뒤에만 허용해야 한다.
+        외부 LLM 호출 결과에 따라 통과 여부가 달라지지 않도록 응답을 고정한다.
+        """
+        llm_client = Mock()
+        llm_client.chat_completion_with_meta.return_value = {
+            "content": "--- a/f.py\n+++ b/f.py\n@@ -1,1 +1,2 @@\n+x = 1\n",
+            "provider": "deepseek",
+            "model": "deepseek-flash",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            "is_fallback": False,
+        }
+        builder = CodexBuilder(llm_client=llm_client)
+        orch = DevOrchestrator(is_mock=True, codex_builder=builder)
+
         # 인위적 예외 발생
         try:
             raise KeyError("missing_column_fnguide_revenue")
         except Exception as e:
             record = orch.self_healing_loop(e)
-        
+
         self.assertEqual(record["error_type"], "KeyError")
         self.assertIn("fix/", record["patch_branch"])
-        self.assertEqual(record["review_status"], "APPROVED")
-        self.assertTrue(record["is_auto_merged"])
+        self.assertEqual(record["review_status"], "PARTIAL_REVIEW_DIFF")
+        self.assertFalse(record["is_auto_merged"])
+        self.assertIn("merge_blocked_reason", record)
 
 if __name__ == "__main__":
     unittest.main()

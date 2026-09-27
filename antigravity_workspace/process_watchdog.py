@@ -33,7 +33,7 @@ def is_port_in_use(port: int) -> bool:
 def get_pid_by_port(port: int) -> List[int]:
     """특정 포트를 점유하고 있는 PID 목록 반환"""
     try:
-        out = subprocess.check_output(f"lsof -ti :{port}", shell=True, text=True)
+        out = subprocess.check_output(["lsof", "-ti", f":{port}"], text=True)
         return [int(p.strip()) for p in out.strip().split("\n") if p.strip()]
     except Exception:
         return []

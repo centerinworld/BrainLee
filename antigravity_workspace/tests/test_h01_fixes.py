@@ -515,19 +515,24 @@ class TestLLMWiring(unittest.TestCase):
 
     def test_min_tier_verified_skips_draft_tier_providers_in_cascade(self):
         """2026-09-12 Qwen(저사양) 사고 재발 방지: min_tier='verified'를 주면 draft
-        등급 provider(gemini/grok/deepseek)는 캐스케이드에서도 아예 시도되지 않아야 한다."""
+        등급 provider(gemini/grok/deepseek)는 캐스케이드에서도 아예 시도되지 않아야 한다.
+
+        2026-09-22 소유자 지시로 openai(유료, 유일한 자동 verified provider였음)도
+        기본 캐스케이드(_PROVIDER_TRIERS)에서 빠졌다 - 그 결과 min_tier='verified'를
+        provider 지정 없이 쓰면 자동으로 시도할 verified provider가 하나도 없어야
+        한다(= 아무 것도 안 부르고 정직하게 폴백. 조용히 유료 모델로 안 넘어감)."""
         import llm_client
         client = llm_client.AntigravityLLMClient()
         with patch.object(client, "_try_gemini") as mock_gemini, \
              patch.object(client, "_try_grok") as mock_grok, \
              patch.object(client, "_try_deepseek") as mock_deepseek, \
-             patch.object(client, "_try_openai", return_value=None) as mock_openai:
+             patch.object(client, "_try_openai") as mock_openai:
             result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], min_tier="verified")
         mock_gemini.assert_not_called()
         mock_grok.assert_not_called()
         mock_deepseek.assert_not_called()
-        mock_openai.assert_called_once()
-        self.assertTrue(result["is_fallback"])  # openai도 실패했으니 정직하게 폴백
+        mock_openai.assert_not_called()
+        self.assertTrue(result["is_fallback"])
 
     def test_min_tier_verified_rejects_explicit_draft_provider(self):
         """min_tier와 provider를 함께 줬는데 그 provider가 등급 미달이면, 그 provider가
@@ -542,13 +547,18 @@ class TestLLMWiring(unittest.TestCase):
         mock_gemini.assert_not_called()
         self.assertTrue(result["is_fallback"])
 
-    def test_min_tier_verified_allows_openai(self):
+    def test_min_tier_verified_allows_explicit_openai(self):
+        """openai는 기본 캐스케이드엔 없지만(2026-09-22, 유료 모델 자동 사용 금지),
+        provider='openai'로 명시 호출하면 여전히 verified 등급이라 막히지 않아야 한다
+        - '완전 제거'가 아니라 '자동으로는 안 씀'이 요구사항이다."""
         import llm_client
         client = llm_client.AntigravityLLMClient()
         with patch.object(client, "_try_openai", return_value={
             "content": "ok", "provider": "openai", "model": "gpt-4o-mini", "usage": None, "is_fallback": False
         }) as mock_openai:
-            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], min_tier="verified")
+            result = client.chat_completion_with_meta(
+                [{"role": "user", "content": "x"}], provider="openai", min_tier="verified"
+            )
         mock_openai.assert_called_once()
         self.assertFalse(result["is_fallback"])
 
@@ -690,23 +700,25 @@ class TestReasoningCascadeAndCapabilityRank(unittest.TestCase):
         self.assertGreater(rank["claude_cli"], rank["deepseek"])
         self.assertGreater(rank["deepseek"], rank["gemini"])
 
-    def test_reasoning_cascade_tries_codex_first_then_claude_then_deepseek(self):
+    def test_reasoning_cascade_tries_codex_then_claude_and_stops_without_deepseek(self):
+        """2026-09-22 소유자 지시로 deepseek(유료 API)를 REASONING_CASCADE에서 뺐다 -
+        구독 기반(codex_sdk/codex_cli/claude_cli)이 전부 실패하면 과금 없이 그냥
+        폴백해야 하고, deepseek는 더 이상 자동으로 시도되면 안 된다."""
         import llm_client
         client = llm_client.AntigravityLLMClient()
         with patch.object(client, "_try_codex_sdk", return_value=None) as mock_sdk, \
              patch.object(client, "_try_codex_cli", return_value=None) as mock_codex, \
              patch.object(client, "_try_claude_cli", return_value=None) as mock_claude, \
-             patch.object(client, "_try_deepseek", return_value={
-                 "content": "ok", "provider": "deepseek", "model": "deepseek-flash", "usage": None, "is_fallback": False
-             }) as mock_deepseek, \
+             patch.object(client, "_try_deepseek") as mock_deepseek, \
              patch.object(client, "_try_gemini") as mock_gemini:
             result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], use_reasoning_cascade=True)
         mock_sdk.assert_called_once()
         mock_codex.assert_called_once()
         mock_claude.assert_called_once()
-        mock_deepseek.assert_called_once()
+        mock_deepseek.assert_not_called()
         mock_gemini.assert_not_called()  # 일반 draft 캐스케이드 provider는 이 경로에 안 섞인다
-        self.assertEqual(result["provider"], "deepseek")
+        self.assertEqual(result["provider"], "none")
+        self.assertTrue(result["is_fallback"])
 
     def test_reasoning_cascade_stops_at_codex_if_it_succeeds(self):
         import llm_client
@@ -989,6 +1001,117 @@ class TestGoalIntakeDaemonHardening(unittest.TestCase):
         self.assertEqual(intake_record["source_text"], original_text)
         self.assertEqual(intake_record["source_update_id"], 55)
         self.assertEqual(task_record["source_text"], original_text)
+
+
+class TestCodexLeanSubscriptionFallback(unittest.TestCase):
+    """2026-09-24 소유자 지시: ChatGPT 구독(경량 Codex CLI)을 무료 티어 소진 시 폴백으로 연결.
+    실제 CLI는 호출하지 않고 subprocess를 mock한다(구독 한도 보호)."""
+
+    def setUp(self):
+        import codex_lean
+        self.codex_lean = codex_lean
+        self.tmp_db = tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False)
+        self.tmp_db.close()
+        self._patches = [
+            patch.object(codex_lean, "DB_PATH", self.tmp_db.name),
+            patch.object(codex_lean, "CODEX_CLI_PATH", "/fake/codex"),
+            patch.dict(os.environ, {"CODEX_LEAN_ENABLED": "1"}),
+            patch("codex_lean.os.path.exists", side_effect=lambda p: p == "/fake/codex" or os.path.isfile(p)),
+        ]
+        for p in self._patches:
+            p.start()
+
+    def tearDown(self):
+        for p in reversed(self._patches):
+            p.stop()
+        os.unlink(self.tmp_db.name)
+
+    def _fake_run(self, answer="trash", returncode=0, stderr="", captured=None):
+        def fake_run(cmd, **kwargs):
+            if captured is not None:
+                captured["cmd"] = cmd
+                captured["input"] = kwargs.get("input")
+            if returncode == 0:
+                with open(cmd[cmd.index("-o") + 1], "w", encoding="utf-8") as f:
+                    f.write(answer)
+            stdout = ('{"type":"turn.completed","usage":{"input_tokens":11800,"output_tokens":5}}\n')
+            return unittest.mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
+        return fake_run
+
+    def test_uses_lean_flags_and_reads_prompt_from_stdin(self):
+        captured = {}
+        with patch("codex_lean.subprocess.run", side_effect=self._fake_run("kai", captured=captured)):
+            result = self.codex_lean.complete("분류해줘")
+        cmd = captured["cmd"]
+        for flag in ("--ephemeral", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check", "read-only"):
+            self.assertIn(flag, cmd)
+        self.assertEqual(cmd[-1], "-")
+        self.assertIn("분류해줘", captured["input"])
+        self.assertEqual(result["content"], "kai")
+        self.assertEqual(result["usage"]["prompt_tokens"], 11800)
+        self.assertEqual(result["model"], self.codex_lean.DEFAULT_MODEL)
+
+    def test_daily_cap_blocks_further_calls_without_invoking_cli(self):
+        with patch.object(self.codex_lean, "DAILY_CAP", 2), \
+             patch("codex_lean.subprocess.run", side_effect=self._fake_run()) as run:
+            self.codex_lean.complete("a")
+            self.codex_lean.complete("b")
+            with self.assertRaises(self.codex_lean.CodexLeanUnavailable):
+                self.codex_lean.complete("c")
+        self.assertEqual(run.call_count, 2)
+
+    def test_limit_error_starts_cooldown_and_blocks_next_call(self):
+        with patch("codex_lean.subprocess.run",
+                   side_effect=self._fake_run(returncode=1, stderr="You've hit your usage limit")) as run:
+            with self.assertRaises(RuntimeError):
+                self.codex_lean.complete("a")
+            with self.assertRaises(self.codex_lean.CodexLeanUnavailable):
+                self.codex_lean.complete("b")
+        self.assertEqual(run.call_count, 1)
+        self.assertIsNotNone(self.codex_lean.status()["cooldown_until"])
+
+    def test_disabled_flag_skips_cli(self):
+        with patch.dict(os.environ, {"CODEX_LEAN_ENABLED": "0"}), \
+             patch("codex_lean.subprocess.run") as run:
+            with self.assertRaises(self.codex_lean.CodexLeanUnavailable):
+                self.codex_lean.complete("a")
+        run.assert_not_called()
+
+    def test_codex_lean_is_last_free_tier_and_draft_grade(self):
+        import llm_client
+        C = llm_client.AntigravityLLMClient
+        self.assertEqual(C._PROVIDER_TRIERS, ("gemini", "grok", "codex_lean"))
+        self.assertEqual(C.PROVIDER_TIER["codex_lean"], "draft")
+
+    def test_cascade_falls_through_to_codex_lean_when_free_tiers_fail(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_gemini", return_value=None), \
+             patch.object(client, "_try_grok", return_value=None), \
+             patch.object(client, "_try_deepseek") as mock_deepseek, \
+             patch.object(client, "_try_openai") as mock_openai, \
+             patch.object(client, "_try_codex_lean", return_value={
+                 "content": "ok", "provider": "codex_lean", "model": "gpt-5.6-luna",
+                 "usage": None, "is_fallback": False}) as mock_lean:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}])
+        mock_lean.assert_called_once()
+        mock_deepseek.assert_not_called()
+        mock_openai.assert_not_called()
+        self.assertEqual(result["provider"], "codex_lean")
+
+    def test_try_codex_lean_returns_none_when_unavailable(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.dict(os.environ, {"CODEX_LEAN_ENABLED": "0"}):
+            self.assertIsNone(client._try_codex_lean([{"role": "user", "content": "x"}], None, 0.3, 100))
+
+    def test_min_tier_verified_never_uses_codex_lean(self):
+        import llm_client
+        client = llm_client.AntigravityLLMClient()
+        with patch.object(client, "_try_codex_lean") as mock_lean:
+            result = client.chat_completion_with_meta([{"role": "user", "content": "x"}], min_tier="verified")
+        mock_lean.assert_not_called()
+        self.assertTrue(result["is_fallback"])
 
 
 if __name__ == "__main__":

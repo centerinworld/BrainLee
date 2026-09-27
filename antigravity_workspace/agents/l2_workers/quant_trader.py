@@ -146,41 +146,265 @@ class QuantTraderWorker:
             logger.error(f"stock_universe(SQLite) 조회 오류: {e}")
             return []
 
+    def _pg_conn(self):
+        """운영 기준 DB(PostgreSQL) 연결. 불가하면 None (호출자가 저하 처리)."""
+        if not self.postgres_url:
+            return None
+        try:
+            import psycopg2
+            return psycopg2.connect(self.postgres_url, connect_timeout=3)
+        except Exception as e:
+            logger.warning(f"PostgreSQL 연결 실패: {e}")
+            return None
+
     async def fetch_fnguide_consensus(self, stock_code: str) -> Dict[str, Any]:
-        """에프앤가이드(Fnguide) 컨센서스 및 목표가 조회.
-        실제 Fnguide 연동이 구현되어 있지 않아 고정값을 반환한다 — 실시간 데이터가 아니다."""
-        await asyncio.sleep(0.02)
-        logger.warning(f"[미구현] fetch_fnguide_consensus({stock_code}): 실제 연동 없음, 고정값 반환")
-        return {
-            "stock_code": stock_code,
-            "target_price": 220000 if stock_code == "005930" else 360000,
-            "opinion": "BUY",
-            "forward_per": 14.5,
-            "forward_eps": 12500,
-            "data_source": "fixture_not_live",
-            "fetched_at": datetime.now().isoformat()
-        }
+        """stock_dashboard가 이미 수집해 둔 애널리스트 컨센서스(consensus_targets)와
+        추정실적(forward_estimates)을 조회한다. 두 테이블 모두 Fnguide/증권사 리포트에서
+        수집된 실데이터이며, 이 워커가 직접 스크레이핑하지 않는다."""
+        await asyncio.sleep(0.0)
+        conn = self._pg_conn()
+        if conn is None:
+            logger.error(f"fetch_fnguide_consensus({stock_code}): PostgreSQL 불가, 데이터 반환 불가")
+            return {
+                "stock_code": stock_code, "target_price": None, "opinion": None,
+                "forward_per": None, "forward_eps": None,
+                "data_source": "unavailable_no_postgres",
+                "fetched_at": datetime.now().isoformat()
+            }
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT report_date, securities_firm, opinion, target_price
+                FROM consensus_targets
+                WHERE stock_code = %s
+                ORDER BY report_date DESC
+                LIMIT 1
+                """,
+                (stock_code,)
+            )
+            latest = cur.fetchone()
+
+            cur.execute(
+                """
+                SELECT AVG(target_price), COUNT(DISTINCT securities_firm)
+                FROM consensus_targets
+                WHERE stock_code = %s AND report_date::date >= (
+                    SELECT MAX(report_date::date) FROM consensus_targets WHERE stock_code = %s
+                ) - INTERVAL '90 days'
+                """,
+                (stock_code, stock_code)
+            )
+            avg_row = cur.fetchone()
+
+            cur.execute(
+                """
+                SELECT period, eps_원, per, opinion, estimate_date
+                FROM forward_estimates
+                WHERE stock_code = %s AND is_estimate = 1
+                ORDER BY period ASC
+                LIMIT 1
+                """,
+                (stock_code,)
+            )
+            forward = cur.fetchone()
+            cur.close()
+            conn.close()
+
+            if latest is None and forward is None:
+                logger.warning(f"fetch_fnguide_consensus({stock_code}): consensus_targets/forward_estimates에 데이터 없음")
+                return {
+                    "stock_code": stock_code, "target_price": None, "opinion": None,
+                    "forward_per": None, "forward_eps": None,
+                    "data_source": "no_data_in_db",
+                    "fetched_at": datetime.now().isoformat()
+                }
+
+            return {
+                "stock_code": stock_code,
+                "report_date": latest[0] if latest else None,
+                "securities_firm": latest[1] if latest else None,
+                "target_price": float(latest[3]) if latest else None,
+                "opinion": latest[2] if latest else None,
+                "avg_target_price_90d": float(avg_row[0]) if avg_row and avg_row[0] is not None else None,
+                "num_analysts_90d": int(avg_row[1]) if avg_row and avg_row[1] is not None else 0,
+                "forward_period": forward[0] if forward else None,
+                "forward_eps": float(forward[1]) if forward and forward[1] is not None else None,
+                "forward_per": float(forward[2]) if forward and forward[2] is not None else None,
+                "data_source": "postgres_consensus_targets+forward_estimates",
+                "fetched_at": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"fetch_fnguide_consensus({stock_code}) 조회 오류: {e}")
+            return {
+                "stock_code": stock_code, "target_price": None, "opinion": None,
+                "forward_per": None, "forward_eps": None,
+                "data_source": "error",
+                "fetched_at": datetime.now().isoformat()
+            }
 
     async def fetch_ecos_macro_rate(self) -> Dict[str, Any]:
-        """한국은행 ECOS 기준금리 및 주요 거시지표 조회.
-        실제 ECOS API 연동이 구현되어 있지 않아 고정값을 반환한다 — 실시간 데이터가 아니다."""
-        await asyncio.sleep(0.02)
-        logger.warning("[미구현] fetch_ecos_macro_rate(): 실제 ECOS 연동 없음, 고정값 반환")
-        return {
-            "indicator_code": "ECOS_BASE_RATE",
-            "indicator_name": "한국은행 기준금리",
-            "val": 3.00,
-            "unit": "%",
-            "data_source": "fixture_not_live",
-            "fetched_at": datetime.now().isoformat()
-        }
+        """stock_dashboard가 이미 수집해 둔 global_macro_data(BOK ECOS/KOSIS/Fed 등 원천)에서
+        기준금리 및 주요 거시지표 최신값을 조회한다."""
+        await asyncio.sleep(0.0)
+        conn = self._pg_conn()
+        indicators = ["KR_BASE_RATE", "US_FED_RATE", "KR_USD_KRW", "US_10Y_YIELD", "KR_KOSPI"]
+        if conn is None:
+            logger.error("fetch_ecos_macro_rate(): PostgreSQL 불가, 데이터 반환 불가")
+            return {
+                "indicator_code": "KR_BASE_RATE", "val": None, "unit": None,
+                "related": {}, "data_source": "unavailable_no_postgres",
+                "fetched_at": datetime.now().isoformat()
+            }
+        try:
+            cur = conn.cursor()
+            related: Dict[str, Any] = {}
+            for code in indicators:
+                cur.execute(
+                    """
+                    SELECT date, value, prev_value, change_pct
+                    FROM global_macro_data
+                    WHERE indicator_code = %s
+                    ORDER BY date DESC
+                    LIMIT 1
+                    """,
+                    (code,)
+                )
+                row = cur.fetchone()
+                if row:
+                    related[code] = {
+                        "date": row[0], "value": row[1],
+                        "prev_value": row[2], "change_pct": row[3]
+                    }
+            cur.close()
+            conn.close()
+
+            base = related.get("KR_BASE_RATE")
+            if not related:
+                logger.warning("fetch_ecos_macro_rate(): global_macro_data에 데이터 없음")
+                return {
+                    "indicator_code": "KR_BASE_RATE", "val": None, "unit": None,
+                    "related": {}, "data_source": "no_data_in_db",
+                    "fetched_at": datetime.now().isoformat()
+                }
+
+            return {
+                "indicator_code": "KR_BASE_RATE",
+                "indicator_name": "한국은행 기준금리",
+                "val": base["value"] if base else None,
+                "as_of": base["date"] if base else None,
+                "unit": "%",
+                "related": related,
+                "data_source": "postgres_global_macro_data",
+                "fetched_at": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"fetch_ecos_macro_rate() 조회 오류: {e}")
+            return {
+                "indicator_code": "KR_BASE_RATE", "val": None, "unit": None,
+                "related": {}, "data_source": "error",
+                "fetched_at": datetime.now().isoformat()
+            }
 
     async def calculate_rebalancing_weights(self, universe: List[str]) -> Dict[str, float]:
-        """정량 팩터(모멘텀+실적 성장률) 기반 포트폴리오 비중 산출"""
+        """정량 팩터(모멘텀+실적 성장률) 기반 포트폴리오 비중 산출.
+        stock_dashboard가 이미 계산해 둔 strategy_feature_snapshot(120일 모멘텀)과
+        forward_estimates(EPS 성장률)를 합성해 z-score 기반 비중을 산출한다.
+        두 팩터 모두 없는 종목은 팩터 계산에서 제외하고 균등비중으로 채운다
+        (조용히 가짜 팩터 값을 쓰지 않는다)."""
+        await asyncio.sleep(0.0)
         if not universe:
             return {}
-        weight = round(1.0 / len(universe), 4)
-        return {code: weight for code in universe}
+
+        conn = self._pg_conn()
+        if conn is None:
+            logger.warning("calculate_rebalancing_weights(): PostgreSQL 불가 - 균등비중으로 저하 폴백")
+            weight = round(1.0 / len(universe), 4)
+            return {code: weight for code in universe}
+
+        momentum: Dict[str, float] = {}
+        growth: Dict[str, float] = {}
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT DISTINCT ON (stock_code) stock_code, ret_120d
+                FROM strategy_feature_snapshot
+                WHERE stock_code = ANY(%s) AND ret_120d IS NOT NULL
+                ORDER BY stock_code, snapshot_date DESC
+                """,
+                (universe,)
+            )
+            for code, ret_120d in cur.fetchall():
+                momentum[code] = float(ret_120d)
+
+            cur.execute(
+                """
+                SELECT DISTINCT ON (stock_code) stock_code, eps_growth_pct
+                FROM forward_estimates
+                WHERE stock_code = ANY(%s) AND is_estimate = 1 AND eps_growth_pct IS NOT NULL
+                ORDER BY stock_code, period ASC
+                """,
+                (universe,)
+            )
+            for code, eps_growth_pct in cur.fetchall():
+                growth[code] = float(eps_growth_pct)
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.error(f"calculate_rebalancing_weights() 팩터 조회 오류: {e} - 균등비중으로 저하 폴백")
+            weight = round(1.0 / len(universe), 4)
+            return {code: weight for code in universe}
+
+        def _zscores(values: Dict[str, float]) -> Dict[str, float]:
+            if len(values) < 2:
+                return {k: 0.0 for k in values}
+            vs = list(values.values())
+            mean = sum(vs) / len(vs)
+            variance = sum((v - mean) ** 2 for v in vs) / len(vs)
+            std = variance ** 0.5
+            if std == 0:
+                return {k: 0.0 for k in values}
+            return {k: (v - mean) / std for k, v in values.items()}
+
+        mom_z = _zscores(momentum)
+        growth_z = _zscores(growth)
+
+        scored: Dict[str, float] = {}
+        no_factor: List[str] = []
+        for code in universe:
+            has_mom = code in mom_z
+            has_growth = code in growth_z
+            if not has_mom and not has_growth:
+                no_factor.append(code)
+                continue
+            # 둘 중 하나만 있으면 있는 팩터만 사용
+            parts = [v for v in (mom_z.get(code), growth_z.get(code)) if v is not None]
+            scored[code] = sum(parts) / len(parts)
+
+        if no_factor:
+            logger.warning(
+                f"calculate_rebalancing_weights(): {len(no_factor)}/{len(universe)}개 종목 "
+                f"팩터 데이터 없음(균등비중 처리): {no_factor}"
+            )
+
+        weights: Dict[str, float] = {}
+        if scored:
+            # 음수 스코어도 최소 비중을 갖도록 softmax로 양수화
+            import math
+            max_score = max(scored.values())
+            exp_scores = {k: math.exp(v - max_score) for k, v in scored.items()}
+            total_exp = sum(exp_scores.values())
+            factor_pool_share = len(scored) / len(universe)
+            for code, exp_v in exp_scores.items():
+                weights[code] = round((exp_v / total_exp) * factor_pool_share, 6)
+
+        if no_factor:
+            equal_share = (1.0 - sum(weights.values())) / len(no_factor)
+            for code in no_factor:
+                weights[code] = round(equal_share, 6)
+
+        return weights
 
     async def execute_order(
         self,

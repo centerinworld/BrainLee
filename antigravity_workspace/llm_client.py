@@ -21,6 +21,17 @@ try:
 except ImportError:
     LLMUsageLedger = None
 
+try:
+    import codex_lean
+except ImportError:
+    codex_lean = None
+
+try:
+    from execution import CodexSDKAdapter, ExecutionRequest
+except ImportError:
+    CodexSDKAdapter = None
+    ExecutionRequest = None
+
 logger = logging.getLogger("llm_client")
 
 # 소유자 지시(2026-09-13): 토큰 절약을 위해 DeepSeek도 월 1만원 이내로만 쓴다.
@@ -82,8 +93,18 @@ class AntigravityLLMClient:
             "CODEX_CLI_PATH", "/Applications/ChatGPT.app/Contents/Resources/codex"
         )
         self.claude_cli_path = os.getenv("CLAUDE_CLI_PATH", "/opt/homebrew/bin/claude")
+        self.codex_sdk_adapter = CodexSDKAdapter() if CodexSDKAdapter else None
 
         self.last_provider_used = "NONE"
+
+    @staticmethod
+    def _messages_to_prompt(messages: List[Dict[str, str]]) -> str:
+        """system/user/assistant 문맥을 버리지 않고 로컬 실행용 단일 입력으로 변환한다."""
+        return "\n\n".join(
+            f"[{message.get('role', 'user')}]\n{message.get('content', '')}"
+            for message in messages
+            if message.get("content")
+        )
 
     def chat_completion(
         self,
@@ -157,6 +178,7 @@ class AntigravityLLMClient:
         # 소유자 지시(2026-09-13): DeepSeek은 월 예산(기본 1만원) 안에서만 쓴다. 예산을
         # 넘으면 이 provider를 건너뛰고(다른 provider로 폴백) 명확히 로그를 남긴다 -
         # 예산을 넘겨도 조용히 계속 쓰지 않는다.
+        reservation_id = None
         if self.usage_ledger is not None:
             spent_usd = self.usage_ledger.cost_this_month_usd("deepseek")
             if spent_usd >= DEEPSEEK_MONTHLY_BUDGET_USD:
@@ -165,6 +187,16 @@ class AntigravityLLMClient:
                     f"${DEEPSEEK_MONTHLY_BUDGET_USD:.4f} ≈ ₩{DEEPSEEK_MONTHLY_BUDGET_KRW:,.0f}) - "
                     "이번 호출은 건너뜁니다."
                 )
+                return None
+            # UTF-8 바이트 수를 입력 토큰의 보수적 상한으로 보고 최대 출력 토큰까지 예약한다.
+            # 실제 응답이 오면 finalize_reservation()이 실제 usage로 원자적으로 정산한다.
+            prompt_bytes = len(json.dumps(messages, ensure_ascii=False).encode("utf-8"))
+            reserved_cost = (prompt_bytes * 0.30 + max_tokens * 1.20) / 1_000_000
+            reservation_id = self.usage_ledger.reserve_monthly_budget(
+                "deepseek", reserved_cost, DEEPSEEK_MONTHLY_BUDGET_USD
+            )
+            if reservation_id is None:
+                logger.warning("DeepSeek 월 예산 예약 실패 - 동시 호출 포함 상한 초과")
                 return None
         try:
             target_model = model if model and "deepseek" in model else self.deepseek_model
@@ -175,15 +207,22 @@ class AntigravityLLMClient:
                 data = res.json()
                 self.last_provider_used = f"DeepSeek ({target_model})"
                 logger.info(f"[DeepSeek 성공] API 응답 완료 (모델: {target_model})")
-                return {
+                result = {
                     "content": data["choices"][0]["message"]["content"],
                     "provider": "deepseek", "model": target_model,
                     "usage": data.get("usage"), "is_fallback": False
                 }
+                if reservation_id is not None:
+                    self.usage_ledger.finalize_reservation(reservation_id, "llm_client", result)
+                    reservation_id = None
+                return result
             else:
                 logger.warning(f"DeepSeek API 반환 오류: {res.status_code}")
         except Exception as e:
             logger.error(f"DeepSeek API 호출 실패: {e}")
+        finally:
+            if reservation_id is not None:
+                self.usage_ledger.release_reservation(reservation_id)
         return None
 
     def _try_openai(self, messages, model, temperature, max_tokens) -> Optional[Dict[str, Any]]:
@@ -207,6 +246,28 @@ class AntigravityLLMClient:
             logger.error(f"OpenAI API 호출 실패: {e}")
         return None
 
+    def _try_codex_lean(self, messages, model, temperature, max_tokens) -> Optional[Dict[str, Any]]:
+        """ChatGPT 구독을 경량 Codex CLI 호출로 쓴다(종량제 API 키 아님). 무료 티어
+        (Gemini/Grok)가 한도로 막혔을 때 멈추지 않도록 기본 캐스케이드의 마지막 단계로 둔다.
+        일일 상한/쿨다운은 codex_lean이 관리한다 - 초과하면 None(호출 안 함)."""
+        if codex_lean is None:
+            return None
+        try:
+            target_model = model if model and model.startswith("gpt-") else None
+            result = codex_lean.complete(self._messages_to_prompt(messages), model=target_model)
+        except codex_lean.CodexLeanUnavailable as exc:
+            logger.info(f"[Codex Lean 건너뜀] {exc}")
+            return None
+        except Exception as exc:
+            logger.warning(f"Codex Lean 호출 실패: {exc}")
+            return None
+        self.last_provider_used = f"Codex Lean ({result['model']}, ChatGPT 구독)"
+        logger.info(f"[Codex Lean 성공] 토큰 사용: {result['usage']}")
+        return {
+            "content": result["content"], "provider": "codex_lean", "model": result["model"],
+            "usage": result["usage"], "is_fallback": False
+        }
+
     def _try_codex_cli(self, messages, model, temperature, max_tokens) -> Optional[Dict[str, Any]]:
         """실제 ChatGPT 구독 인증(API 키 아님)으로 로컬 Codex CLI를 비대화형·읽기전용
         샌드박스에서 호출한다. 2026-09-13 이 환경에서 실제로 성공 확인
@@ -216,13 +277,13 @@ class AntigravityLLMClient:
         읽기 전용 판단으로 한정한다."""
         if not os.path.exists(self.codex_cli_path):
             return None
-        prompt = messages[-1]["content"] if messages else ""
+        prompt = self._messages_to_prompt(messages)
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
                 tmp_path = tmp.name
             res = subprocess.run(
-                [self.codex_cli_path, "exec", "-s", "read-only", "--json", "-o", tmp_path, prompt],
+                [self.codex_cli_path, "exec", "-m", "gpt-5.6-sol", "-s", "read-only", "--json", "-o", tmp_path, prompt],
                 capture_output=True, text=True, timeout=120
             )
             if res.returncode != 0:
@@ -265,6 +326,46 @@ class AntigravityLLMClient:
                 except Exception:
                     pass
 
+    def _try_codex_sdk(self, messages, model, temperature, max_tokens) -> Optional[Dict[str, Any]]:
+        """공식 Python SDK로 격리된 읽기 전용 thread를 실행하고 영속 run 증거를 남긴다."""
+        if self.codex_sdk_adapter is None or ExecutionRequest is None:
+            return None
+        prompt = self._messages_to_prompt(messages)
+        if not prompt:
+            return None
+        try:
+            request = ExecutionRequest(
+                prompt=prompt,
+                workspace=os.getenv("ANTIGRAVITY_WORKSPACE", os.path.dirname(os.path.abspath(__file__))),
+                role="llm_completion",
+                model=model,
+                sandbox="read-only",
+            )
+            run = self.codex_sdk_adapter.submit(request)
+            if run.get("status") != "SUCCEEDED":
+                logger.warning(
+                    "codex_sdk 실행 실패(status=%s): %s",
+                    run.get("status"), run.get("error", "")[:300]
+                )
+                return None
+            with open(run["artifact_path"], "r", encoding="utf-8") as artifact:
+                content = artifact.read().strip()
+            self.last_provider_used = "Codex SDK (ChatGPT 구독, read-only)"
+            return {
+                "content": content,
+                "provider": "codex_sdk",
+                "model": model or "codex-sdk-subscription",
+                "usage": run.get("usage"),
+                "is_fallback": False,
+                "run_id": run.get("run_id"),
+                "session_id": run.get("session_id"),
+                "turn_id": run.get("turn_id"),
+                "artifact_hash": run.get("artifact_hash"),
+            }
+        except Exception as exc:
+            logger.warning("codex_sdk 호출 오류: %s", exc)
+            return None
+
     def _try_claude_cli(self, messages, model, temperature, max_tokens) -> Optional[Dict[str, Any]]:
         """로컬 Claude Code CLI 구독 인증 호출.
 
@@ -279,7 +380,7 @@ class AntigravityLLMClient:
         json`)대로 작성했으나 독립 실행 검증이 필요하다."""
         if not os.path.exists(self.claude_cli_path):
             return None
-        prompt = messages[-1]["content"] if messages else ""
+        prompt = self._messages_to_prompt(messages)
         try:
             res = subprocess.run(
                 [
@@ -314,8 +415,16 @@ class AntigravityLLMClient:
     # 호출당 수만 토큰·수십 초가 드는 느린 경로라, 뉴스 요약·패치 초안 같은 흔한 draft
     # 작업마다 자동으로 타면 안 된다. provider="codex_cli"/"claude_cli"로 명시 호출할
     # 때만 쓴다(목표 완료 검증 등 정말 중요한 판단).
-    _PROVIDER_TRIERS = ("gemini", "grok", "deepseek", "openai")
-    _EXPLICIT_ONLY_PROVIDERS = ("codex_cli", "claude_cli")
+    # 소유자 지시(2026-09-22): 기본 캐스케이드에서 유료 API(DeepSeek/OpenAI)를 뺀다 -
+    # 둘 다 무료 티어(Gemini/Grok)가 실패했을 때 요청자도 모르게 조용히 과금되는
+    # 경로였다(실제로 OpenAI 요금이 월중 급증한 원인). 무료 티어가 전부 실패하면
+    # 과금 없이 그냥 폴백(빈 응답)한다. DeepSeek/OpenAI는 provider="deepseek"/"openai"로
+    # 명시 호출할 때만 쓴다.
+    # 2026-09-24 소유자 지시: ChatGPT 구독 토큰도 연결 - 무료 티어(Gemini 하루 20건 등)가
+    # 한도로 막혀 파이프라인이 멈추는 것을 막기 위해 codex_lean(구독, 종량제 아님)을 마지막
+    # 단계로 추가. draft 등급이라 최종 판단(min_tier="verified")에는 안 쓰인다.
+    _PROVIDER_TRIERS = ("gemini", "grok", "codex_lean")
+    _EXPLICIT_ONLY_PROVIDERS = ("deepseek", "openai", "codex_sdk", "codex_cli", "claude_cli")
 
     # 2026-09-12 사고: stock_dashboard의 codex_pipeline_orchestrator.py가 "저가 모델
     # (Qwen, 이 코드베이스에서는 grok tier로 Groq를 통해 서빙됨)"에게 최종 백테스트 수치
@@ -326,9 +435,11 @@ class AntigravityLLMClient:
     # (목표 완료 검증, 코드 리뷰 승인, 실전 판단 등)에 쓸 수 있다.
     PROVIDER_TIER = {
         "gemini": "draft",
+        "codex_lean": "draft",  # 소형 모델·낮은 추론 강도 - 초안/분류용, 최종 판단 금지
         "grok": "draft",       # Groq로 서빙되는 Qwen 등 - 초안/실행 보조용, 최종 판단 금지
         "deepseek": "draft",   # 소유자 지시(2026-09-13): DeepSeek도 100% 신뢰하지 않음 - draft 유지
         "openai": "verified",
+        "codex_sdk": "verified",
         "codex_cli": "verified",   # 실제 ChatGPT 구독, 2026-09-13 이 환경에서 성공 확인
         "claude_cli": "verified",  # 실제 Claude 구독 - 단, Claude Code 세션 내부 호출은 항상 실패(의도됨)
     }
@@ -340,8 +451,10 @@ class AntigravityLLMClient:
     # 등급이 아니므로(위 PROVIDER_TIER) 목표 완료 같은 최종 판단의 검증자로는 못 쓴다.
     # 이 순위는 "중요하지만 이중검증까지는 필요 없는, 더 강한 추론이 필요한" 작업에
     # use_reasoning_cascade=True로 opt-in할 때만 쓰인다 - 일반 draft 캐스케이드와 무관.
-    CAPABILITY_RANK = {"codex_cli": 3, "claude_cli": 2, "deepseek": 1, "openai": 1, "grok": 0, "gemini": 0}
-    REASONING_CASCADE = ("codex_cli", "claude_cli", "deepseek")
+    CAPABILITY_RANK = {"codex_sdk": 3, "codex_cli": 3, "claude_cli": 2, "deepseek": 1, "openai": 1, "grok": 0, "gemini": 0, "codex_lean": 0}
+    # 2026-09-22: deepseek를 꼬리에서 뺐다 - 구독 기반(codex_sdk/codex_cli/claude_cli)이
+    # 전부 실패해도 종량제 API로 조용히 안 넘어가게 한다(소유자 지시: 유료 모델 자동 사용 금지).
+    REASONING_CASCADE = ("codex_sdk", "codex_cli", "claude_cli")
 
     def chat_completion_with_meta(
         self,
@@ -357,9 +470,9 @@ class AntigravityLLMClient:
         provider가 None이고 use_reasoning_cascade=False(기본)이면 4단계 무료우선
         캐스케이드: Gemini -> Groq/xAI Grok -> DeepSeek -> OpenAI -> 결정론적 폴백.
 
-        use_reasoning_cascade=True면 대신 REASONING_CASCADE(Codex CLI -> Claude CLI ->
-        DeepSeek, 능력 순)를 시도한다 - 소유자가 지시한 "codex가 제일 높은 사고력, claude가
-        그 다음, deepseek가 그 아래" 순서. 뉴스 요약처럼 흔한 draft 작업에는 쓰지 않고,
+        use_reasoning_cascade=True면 대신 REASONING_CASCADE(Codex SDK -> Codex CLI ->
+        Claude CLI -> DeepSeek, 능력 순)를 시도한다. Claude 인증이 없을 때는 해당 단계를
+        건너뛴다. 뉴스 요약처럼 흔한 draft 작업에는 쓰지 않고,
         중요하지만 이중검증까지는 필요 없는 작업에서 opt-in으로만 쓴다 - 구독 쿼터(codex_cli/
         claude_cli)와 월 예산(deepseek)을 아낀다.
 
@@ -379,6 +492,7 @@ class AntigravityLLMClient:
         triers = {
             "gemini": self._try_gemini, "grok": self._try_grok,
             "deepseek": self._try_deepseek, "openai": self._try_openai,
+            "codex_lean": self._try_codex_lean, "codex_sdk": self._try_codex_sdk,
             "codex_cli": self._try_codex_cli, "claude_cli": self._try_claude_cli
         }
 
@@ -413,4 +527,3 @@ class AntigravityLLMClient:
             "provider": "none", "model": None,
             "usage": None, "is_fallback": True
         }
-

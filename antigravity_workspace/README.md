@@ -42,3 +42,27 @@ streamlit run dashboard/app.py --server.port 8501
 ```bash
 pytest tests/ -v
 ```
+
+### 5) Codex SDK 로컬 실행
+
+`openai-codex==0.154.0`을 사용한다. 기존 ChatGPT Codex 로그인이 유효해야 하며,
+기본 실행은 읽기 전용이다. 각 실행은 `StateLedger`에 thread/turn ID와 상태를 기록하고
+최종 응답은 SHA-256이 연결된 artifact로 저장한다.
+
+```python
+from execution import CodexSDKAdapter, ExecutionRequest
+
+adapter = CodexSDKAdapter()
+result = adapter.submit(ExecutionRequest(
+    prompt="이 저장소의 변경 사항을 검토해줘",
+    workspace="/Volumes/Realtek_NVME/AI System/antigravity_workspace",
+))
+print(result["status"], result["session_id"], result["artifact_hash"])
+
+# 같은 Codex thread를 명시적으로 재개한다.
+continued = adapter.resume(result["run_id"], "발견한 위험만 정리해줘")
+```
+
+Claude 구독 토큰이 없는 현재 기본 완료 검증은 `codex_sdk`와 `codex_cli`의 별도
+thread를 사용한다. 결과에는 `verification_independence=same_vendor_distinct_sessions`가
+기록되므로 이를 서로 다른 모델 공급자의 독립 검증으로 해석하면 안 된다.

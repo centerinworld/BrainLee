@@ -33,13 +33,13 @@ logger = logging.getLogger("goal_verification")
 
 REQUIRED_VERIFIER_TIER = "verified"
 
-# 소유자 지시(2026-09-13): "Deepseek도 100% 신뢰할 수 없으니 CODEX와 Claude가 무조건
-# 검토하도록 해." - "verified 등급 아무 provider 2개"가 아니라, 구체적으로 로컬 Codex
-# CLI(ChatGPT 구독)와 Claude CLI(Claude 구독)를 기본 검증자 쌍으로 못박는다. 둘 다
-# API 키가 아니라 이미 있는 구독 인증을 쓴다(llm_client._try_codex_cli/_try_claude_cli).
+# 2026-09-13 현재 Claude 구독 토큰을 사용할 수 없다는 소유자 지시에 따라 기본 쌍을
+# 공식 Codex SDK와 기존 Codex CLI의 서로 다른 로컬 thread로 구성한다. 같은 공급자 계열이므로
+# 독립 모델 이중검증으로 과장하지 않고 반환값에 same_vendor_distinct_sessions로 표시한다.
+# draft provider로 낮추지는 않으며, 같은 evidence_hash와 기계 검사 게이트는 유지한다.
 _env_v1 = os.getenv("GOAL_VERIFIER_1")
 _env_v2 = os.getenv("GOAL_VERIFIER_2")
-DEFAULT_VERIFIER_PROVIDERS: Tuple[str, str] = (_env_v1, _env_v2) if (_env_v1 and _env_v2) else ("codex_cli", "claude_cli")
+DEFAULT_VERIFIER_PROVIDERS: Tuple[str, str] = (_env_v1, _env_v2) if (_env_v1 and _env_v2) else ("codex_sdk", "codex_cli")
 
 
 def _verified_tier_providers() -> List[str]:
@@ -102,16 +102,16 @@ class GoalVerifier:
         evidence: str,
         provider_pair: Optional[Tuple[str, str]] = None
     ) -> Dict[str, Any]:
-        """기본적으로 codex_cli(ChatGPT 구독)와 claude_cli(Claude 구독) 두 곳에 같은
-        증거로 완료 여부를 독립적으로 물어보고, 각 판정을 GoalsRegistry에 기록한다.
+        """기본적으로 Codex SDK와 Codex CLI의 별도 로컬 thread에 같은 증거를 물어보고,
+        각 판정을 GoalsRegistry에 기록한다. 같은 공급자 계열의 서로 다른 세션이라는
+        한계는 verification_independence에 명시한다.
         둘 다 COMPLETE_100이면 목표가 COMPLETED로 종결된다
         (GoalsRegistry.record_verification의 게이트, 같은 evidence_hash에 한함).
 
         저사양(draft 등급, gemini/grok/deepseek 전부 포함) provider는 검증자로 아예
         받아들이지 않는다 - 명시적으로 지정돼도 거부한다(2026-09-12 Qwen 사고,
-        2026-09-13 "Deepseek도 100% 신뢰 못함" 지시 반영). claude_cli는 이 프로세스가
-        Claude Code 세션 내부일 경우 항상 실패(is_fallback)한다 - 의도된 안전장치이며,
-        독립 프로세스(스케줄러 등)에서 실행할 때만 성공한다."""
+        2026-09-13 "Deepseek도 100% 신뢰 못함" 지시 반영). Claude 토큰이 다시 사용
+        가능해지면 GOAL_VERIFIER_2=claude_cli로 독립 공급자 검증을 복원할 수 있다."""
         goal = self.registry.get_goal(goal_id)
         if not goal:
             raise ValueError(f"알 수 없는 goal_id: {goal_id}")
@@ -173,4 +173,13 @@ class GoalVerifier:
             outcomes.append({"provider": provider, "verdict": parsed["verdict"], "confidence": parsed.get("confidence")})
 
         updated_goal = self.registry.get_goal(goal_id)
-        return {"goal_id": goal_id, "status": updated_goal["status"], "outcomes": outcomes, "evidence_hash": evidence_hash}
+        same_vendor = set(providers).issubset({"codex_sdk", "codex_cli"})
+        return {
+            "goal_id": goal_id,
+            "status": updated_goal["status"],
+            "outcomes": outcomes,
+            "evidence_hash": evidence_hash,
+            "verification_independence": (
+                "same_vendor_distinct_sessions" if same_vendor else "distinct_providers"
+            ),
+        }
