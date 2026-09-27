@@ -256,10 +256,17 @@ def load_us_membership_intervals(
             (index_name, end_date, start_date),
         ).fetchall()]
         meta = conn.execute(
-            """SELECT source,source_hash,first_effective_date,last_effective_date,collected_at
-                 FROM us_reference_source_runs
-                WHERE source='github_fja05680_sp500' AND status='success'
-                ORDER BY collected_at DESC LIMIT 1""").fetchone()
+            """SELECT r.source,r.source_hash,r.first_effective_date,
+                      r.last_effective_date,r.collected_at,r.reference_as_of
+                 FROM us_reference_source_runs r
+                WHERE r.status='success'
+                  AND EXISTS (
+                    SELECT 1 FROM us_index_membership_intervals i
+                     WHERE i.index_name=? AND i.source=r.source
+                  )
+                ORDER BY r.collected_at DESC LIMIT 1""",
+            (index_name,),
+        ).fetchone()
         if not rows or not meta:
             raise RuntimeError("US point-in-time membership reference is not loaded")
         verified_events: list[tuple[str, str, str]] = []
@@ -293,11 +300,14 @@ def load_us_membership_intervals(
                   AND (i.effective_to IS NULL OR i.effective_to>?)""",
             (index_name, end_date, start_date),
         ).fetchone()[0]
+        coverage_as_of = max(str(meta[3] or ""), str(meta[5] or ""), str(official_as_of or ""))
         return rows, {
             "source": meta[0], "source_hash": meta[1], "first_date": meta[2],
-            "last_date": max(str(meta[3]), str(official_as_of or "")),
+            "last_date": coverage_as_of,
+            "last_effective_date": meta[3],
+            "reference_as_of": meta[5],
             "collected_at": meta[4],
-            "covers_end": max(str(meta[3]), str(official_as_of or "")) >= end_date,
+            "covers_end": coverage_as_of >= end_date,
             "verified_aliases_applied": alias_count,
             "verified_official_events_applied": len(verified_events),
             "official_events_as_of": official_as_of,

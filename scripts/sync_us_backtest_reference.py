@@ -137,7 +137,13 @@ def ensure_schema(conn) -> None:
         run_id TEXT PRIMARY KEY, source TEXT NOT NULL, source_url TEXT NOT NULL,
         source_hash TEXT NOT NULL, collected_at TEXT NOT NULL, status TEXT NOT NULL,
         first_effective_date TEXT, last_effective_date TEXT, snapshot_count INTEGER,
-        interval_count INTEGER, event_count INTEGER, note TEXT)""")
+        interval_count INTEGER, event_count INTEGER, note TEXT,
+        reference_as_of TEXT)""")
+    run_columns = {r[1] for r in conn.execute(
+        "PRAGMA table_info(us_reference_source_runs)"
+    ).fetchall()}
+    if "reference_as_of" not in run_columns:
+        conn.execute("ALTER TABLE us_reference_source_runs ADD COLUMN reference_as_of TEXT")
     conn.execute("""CREATE TABLE IF NOT EXISTS us_ticker_aliases (
         old_ticker TEXT PRIMARY KEY, price_ticker TEXT NOT NULL,
         effective_date TEXT NOT NULL, identity_continuity INTEGER NOT NULL,

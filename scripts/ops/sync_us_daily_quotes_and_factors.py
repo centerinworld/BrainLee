@@ -32,6 +32,7 @@ from db_utils import connect_stock_db
 from us_price_integrity import (
     USPricePoint, basis_whiplashes, overlap_basis_mismatches, valid_ohlc,
 )
+from us_market_data import technical_snapshot
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("sync_us_daily")
@@ -385,16 +386,15 @@ def sync_us_quotes_and_factors(batch_size: int = 100, stale_only: bool = False,
                     latest_price_date = rows_to_insert[-1][1]
 
                     # 이동평균
-                    ma5   = sum(closes_asc[-5:]) / 5.0 if len(closes_asc) >= 5 else None
-                    ma20  = sum(closes_asc[-20:]) / 20.0 if len(closes_asc) >= 20 else None
-                    ma60  = sum(closes_asc[-60:]) / 60.0 if len(closes_asc) >= 60 else None
-                    ma200 = sum(closes_asc[-200:]) / 200.0 if len(closes_asc) >= 200 else None
+                    technical = technical_snapshot([
+                        (r[2], r[3], r[4], r[5]) for r in rows_to_insert
+                    ])
+                    ma5, ma20, ma50 = technical.ma5, technical.ma20, technical.ma50
+                    ma60, ma200 = technical.ma60, technical.ma200
                     above_200ma = 1 if (ma200 and curr_p > ma200) else 0
 
                     # 52주 고저
-                    w52 = closes_asc[-252:] if len(closes_asc) >= 252 else closes_asc
-                    h52 = max(w52) if highs_asc else max(w52)
-                    l52 = min(w52) if lows_asc else min(w52)
+                    h52, l52 = technical.high_52w, technical.low_52w
 
                     # 수익률
                     def _ret(n):
@@ -524,7 +524,7 @@ def sync_us_quotes_and_factors(batch_size: int = 100, stale_only: bool = False,
                         INSERT OR REPLACE INTO us_factor_snapshot
                         (ticker, as_of_date, market_cap, sector, industry,
                          price, high_52w, low_52w,
-                         ma5, ma20, ma60, ma200, above_200ma,
+                         ma5, ma20, ma50, ma60, ma200, above_200ma,
                          return_1m, return_3m, return_6m, return_1y,
                          atr14, atr_stop_loss, atr_risk_pct,
                          rs_score,
@@ -535,11 +535,11 @@ def sync_us_quotes_and_factors(batch_size: int = 100, stale_only: bool = False,
                          fcf_yield, debt_to_equity,
                          total_score, system_action,
                          updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
                     """, (
                         tk, latest_price_date, mcap_val, sector_val, industry_val,
                         curr_p, h52, l52,
-                        ma5, ma20, ma60, ma200, above_200ma,
+                        ma5, ma20, ma50, ma60, ma200, above_200ma,
                         ret_1m, ret_3m, ret_6m, ret_1y,
                         atr14, atr_stop, atr_risk,
                         rs_score,

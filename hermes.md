@@ -1290,3 +1290,11 @@ MDD -42.60%, Sharpe 0.688), PIT SEPA +122.83%, PIT SEPA+VCP +10.25%.
 Yahoo가 반환하지 않는 상장폐지·인수 과거가격은 `TIINGO_API_KEY`가 없어 남았다.
 INFO·SBNY·VMRK처럼 현재 Yahoo 심볼이 다른 증권이거나 재사용된 경우는 자동 접합하지
 않았다. 이 미해결 구간이 있는 PIT 값은 민감도 진단이며 전략센터 채택 근거가 아니다.
+### 미국 Nasdaq-100·Russell·가격 기술지표 점검 (2026-09-27)
+
+- `us_stock_meta.index_name='NASDAQ'`는 Nasdaq-100 지수가 아니라 현재 Nasdaq 거래소 상장 목록이었다. 과거에 그대로 쓰면 생존편향이므로 `NASDAQ100` PIT 이력을 별도 적재했다.
+- `scripts/sync_us_nasdaq100_reference.py`를 추가하고 공개 재구성 CSV를 적용했다. 실행 `usref_6fb7be84d7dd47b9951bc967a011dceb`, SHA-256 `c7de3905bfdd228eefbd3c7df1539a1178bee9006a04688fb319314a646e18e8`, 112 스냅샷·305 구간·407 이벤트, 2007-02-01 시작, 2026-09-27 검증 기준이다. `load_us_membership_intervals()`는 이제 지수별 실제 소스 실행을 선택한다.
+- Russell 2000은 편입·편출이 없는 지수가 아니다. FTSE Russell은 재구성을 수행하며 2026년부터 반기 주기로 전환했다. `kovagent/indexkit`을 직접 검사한 결과 2019-12~2026-06 N-PORT 분기 파일은 티커가 전부 NULL이고 CUSIP만 있었고, 티커가 있는 IWM 일별 자료는 2026-09부터였다. 잘못된 회사 연결을 막기 위해 과거 PIT 적재는 보류하고 fail-closed로 유지했다.
+- 미국 일봉은 운영 DB에 4,189,826행·3,708종목, 최신 2026-09-25까지 있다. 일간 Yahoo 조정 OHLCV를 원본으로 유지하고 주봉은 `us_market_data.aggregate_weekly_ohlcv()`로 실제 주 마지막 거래일 기준 집계하도록 추가했다.
+- 일괄 수집기가 `ma50`을 저장하지 않고 52주 고저를 종가로 계산하던 결함을 수정했다. `scripts/rebuild_us_technical_factors.py --apply` 실행 `usfactor_e1c67e0ef5f74160aa9601dafe99f800`: 기존 3,673행 백업, 독립 사후검증 통과. 최종 3,675행 중 MA50 3,627, MA200 3,471, 실제 High/Low 기반 52주 고저 3,675행이다.
+- 상세 근거: `docs/us_index_price_infrastructure_20260927.md`.
