@@ -3,6 +3,7 @@
 **/.venv/
 venv
 .venv
+.venv*
 **/node_modules/
 **/__pycache__/
 *.pyc
@@ -12,6 +13,7 @@ venv
 .env.*
 *.pem
 *.key
+codex/ceo-briefing-platform/backend/data/google_token.json
 
 # data / db / logs
 *.db
@@ -20,12 +22,23 @@ venv
 *.sqlite
 *.sqlite3
 *.log
+**/artifacts/codex_sdk/
+codex/ceo-briefing-platform/backend/data/agi_quota_resume_state.json
+codex/ceo-briefing-platform/backend/data/agi_task_artifacts/
+codex/ceo-briefing-platform/backend/data/agentic_proposals/
+codex/ceo-briefing-platform/backend/data/agentic_worktrees/
+codex/ceo-briefing-platform/backend/data/approved_code_jobs/
+codex/ceo-briefing-platform/backend/data/ceo_notebooklm/
+codex/ceo-briefing-platform/backend/session_quota_status.json
+logs/
 *.swp
 *.swo
 *.swn
 
 # os
 .DS_Store
+
+codex/ceo-briefing-platform/backend/data/strict_agi_state.json
 
 # legacy copies (retired 2026-09-27)
 _archive/
