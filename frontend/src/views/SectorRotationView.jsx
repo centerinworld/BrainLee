@@ -49,18 +49,20 @@ export default function SectorRotationView() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('leadership'); // leadership | scores | rotation | history
   const [flowValidation, setFlowValidation] = useState(null); // ka10051 신호 검증 현황(2026-09-06)
+  const [usLeadlag, setUsLeadlag] = useState(null); // 2026-09-27: 미국 선행 → 국내 후행 신호(국내 모드 전용)
   const isUS = market !== 'kr';
 
   const load = useCallback(async (mkt) => {
     setLoading(true);
     try {
       if (mkt === 'kr') {
-        const [l, s, r] = await Promise.all([
+        const [l, s, r, ll] = await Promise.all([
           fetch(API('/api/sector-rotation/leadership?months=36&top_n=3')).then(x => x.json()),
           fetch(API('/api/sector-rotation/scores')).then(x => x.json()),
           fetch(API('/api/sector-rotation/rotation-map')).then(x => x.json()),
+          fetch(API('/api/sector-rotation/us-leadlag?universe=sp500')).then(x => x.json()).catch(() => null),
         ]);
-        setLeadership(l); setScores(s); setRotMap(r);
+        setLeadership(l); setScores(s); setRotMap(r); setUsLeadlag(ll);
       } else {
         const l = await fetch(API(`/api/us-sector-rotation/leadership?universe=${mkt}`)).then(x => x.json());
         setLeadership(l);
@@ -138,6 +140,9 @@ export default function SectorRotationView() {
   const fmtPct = (v, digits = 1) => v === null || v === undefined ? '-' : `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(digits)}%`;
   const fmtEok = (v) => v === null || v === undefined ? '-' : `${Number(v) > 0 ? '+' : ''}${Math.round(Number(v)).toLocaleString()}억`;
   const meta = leadership?.meta || scores?.meta || rotMap?.meta || null;
+  const usLeadlagBySector = {};
+  (usLeadlag?.sectors || []).forEach(s => { if (s.mapped) usLeadlagBySector[s.kr_sector] = s; });
+  const TIER_COLOR = { strong: '#15803d', moderate: '#b45309', weak: '#64748b' };
 
   return (
     <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 1rem 2rem' }}>
@@ -148,7 +153,7 @@ export default function SectorRotationView() {
           <p style={{ color: '#1e293b', fontSize: '0.82rem', margin: '0.25rem 0 0' }}>
             {market === 'kr'
               ? '외국인/기관 3개월 순매수 + 영업이익YoY 기반 선행 신호 · 실증: 화장품 BUY신호 2024-01 → 급등 2024-05 (4개월 선행)'
-              : '가격·거래량 기반 RS 로테이션(수급·실적 데이터 없음) · 리더종목은 52주 신고가권 모멘텀 기준(국내와 반대 방향 — 국내는 저평가 반전 후보)'}
+              : '가격·거래량 기반 RS 로테이션(수급·실적 데이터 없음)'}
           </p>
           {meta && (
             <p style={{ color: '#334155', fontSize: '0.75rem', margin: '0.35rem 0 0' }}>
@@ -169,6 +174,18 @@ export default function SectorRotationView() {
             style={{ background: 'rgba(79,70,229,0.2)', border: '1px solid rgba(79,70,229,0.4)', borderRadius: '0.5rem', padding: '0.4rem 1rem', color: '#4f46e5', cursor: 'pointer', fontSize: '0.85rem' }}>
             {loading ? '계산 중…' : '🔄 즉시 재계산'}
           </button>
+        </div>
+      </div>
+
+      {/* ⚠ 리더종목 판정 기준 차이 — 국내/미국 반대 방향. 탭·토글과 무관하게 항상 노출(가장 자주 오해하기 쉬운 지점). */}
+      <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 260px', border: `2px solid ${!isUS ? '#dc2626' : 'rgba(51,65,85,0.25)'}`, background: !isUS ? 'rgba(220,38,38,0.06)' : 'rgba(248,250,252,0.4)', borderRadius: '0.6rem', padding: '0.55rem 0.8rem', opacity: !isUS ? 1 : 0.55 }}>
+          <div style={{ fontWeight: 800, color: '#dc2626', fontSize: '0.8rem' }}>🇰🇷 국내 리더종목 = 저평가 반전 후보</div>
+          <div style={{ color: '#334155', fontSize: '0.72rem', marginTop: 2 }}>52주 <b>저점</b> 근처 + 수급·실적 개선 초입에 가점 — 아직 안 오른 종목 중 곧 오를 후보</div>
+        </div>
+        <div style={{ flex: '1 1 260px', border: `2px solid ${isUS ? '#15803d' : 'rgba(51,65,85,0.25)'}`, background: isUS ? 'rgba(21,128,61,0.06)' : 'rgba(248,250,252,0.4)', borderRadius: '0.6rem', padding: '0.55rem 0.8rem', opacity: isUS ? 1 : 0.55 }}>
+          <div style={{ fontWeight: 800, color: '#15803d', fontSize: '0.8rem' }}>🇺🇸 미국 리더종목 = 신고가 모멘텀 추종</div>
+          <div style={{ color: '#334155', fontSize: '0.72rem', marginTop: 2 }}>52주 <b>고점</b>권 + 벤치마크 대비 초과수익에 가점(IBD/오닐 스타일) — 이미 오르는 종목 중 더 갈 후보</div>
         </div>
       </div>
 
@@ -197,6 +214,31 @@ export default function SectorRotationView() {
           ))}
           <div style={{ color: '#1e293b', marginTop: '0.2rem' }}>
             {Object.values(flowValidation.markets)[0]?.verdict}
+          </div>
+        </div>
+      )}
+
+      {/* 🇺🇸→🇰🇷 미국 선행 신호 요약 — 국내 전용, 2026-09-27 신규(사용자 지시: "미국 결과를 국내에 적용 가능하도록") */}
+      {!isUS && usLeadlag && (
+        <div style={{ background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.3)', borderRadius: '0.6rem', padding: '0.7rem 0.9rem', marginBottom: '1rem', fontSize: '0.78rem' }}>
+          <div style={{ color: '#1e40af', fontWeight: 800, marginBottom: '0.4rem' }}>🇺🇸→🇰🇷 미국 선행 신호 (국내 시장은 미국을 하루~한 주 늦게 따라가는 경향 — 과거 방향일치율로 판정)</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+            {usLeadlag.sectors.filter(s => s.mapped).map(s => {
+              const bull = s.implied_direction === '상승 시사';
+              const bear = s.implied_direction === '하락 시사';
+              const tc = TIER_COLOR[s.tier];
+              return (
+                <span key={s.kr_sector} title={`${s.us_label}(${s.us_etf}) 현재 ${s.us_phase} · 검증 적중률 ${s.test_hit_pct}% · 상관계수 ${s.corr}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bull ? 'rgba(220,38,38,0.1)' : bear ? 'rgba(37,99,235,0.1)' : 'rgba(100,116,139,0.1)',
+                    border: `1px solid ${bull ? '#dc2626' : bear ? '#2563eb' : '#64748b'}`, borderRadius: '0.4rem', padding: '0.2rem 0.5rem', cursor: 'default' }}>
+                  <span style={{ color: bull ? '#dc2626' : bear ? '#2563eb' : '#64748b', fontWeight: 700 }}>{bull ? '▲' : bear ? '▼' : '－'} {s.kr_label}</span>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: tc, display: 'inline-block' }} title={s.tier_label} />
+                </span>
+              );
+            })}
+          </div>
+          <div style={{ color: '#334155', marginTop: '0.4rem', fontSize: '0.7rem' }}>
+            {usLeadlag.methodology} · 점 색상 = 검증 신뢰도(<span style={{ color: TIER_COLOR.strong }}>●강함</span> <span style={{ color: TIER_COLOR.moderate }}>●보통</span> <span style={{ color: TIER_COLOR.weak }}>●약함</span>) · 원자력·2차전지는 미국 GICS 섹터와 깔끔히 대응되지 않아 제외
           </div>
         </div>
       )}
@@ -259,6 +301,17 @@ export default function SectorRotationView() {
                               </button>
                             </div>
                           )}
+                          {!isUS && usLeadlagBySector[s.sector] && (() => {
+                            const ll = usLeadlagBySector[s.sector];
+                            const bull = ll.implied_direction === '상승 시사';
+                            const bear = ll.implied_direction === '하락 시사';
+                            return (
+                              <div title={`${ll.us_label} 현재 ${ll.us_phase} · 검증 적중률 ${ll.test_hit_pct}%`}
+                                style={{ marginTop: 4, fontSize: '0.64rem', fontWeight: 700, color: bull ? '#dc2626' : bear ? '#2563eb' : '#64748b' }}>
+                                🇺🇸{bull ? '▲' : bear ? '▼' : '－'}{ll.us_label.replace(/^[^가-힣]*/, '')}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td style={{ padding: '0.65rem', verticalAlign: 'top' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: 5 }}>

@@ -1,0 +1,146 @@
+[
+  {
+    "etf": "XLK",
+    "kr_sector": "IT/하드웨어",
+    "n": 483,
+    "corr": 0.352,
+    "train_hit_pct": 55.7,
+    "test_hit_pct": 66.0,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLK",
+    "kr_sector": "기판패키지",
+    "n": 483,
+    "corr": 0.337,
+    "train_hit_pct": 57.8,
+    "test_hit_pct": 62.9,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLI",
+    "kr_sector": "조선",
+    "n": 483,
+    "corr": 0.243,
+    "train_hit_pct": 56.7,
+    "test_hit_pct": 62.4,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLI",
+    "kr_sector": "해운",
+    "n": 483,
+    "corr": 0.209,
+    "train_hit_pct": 50.9,
+    "test_hit_pct": 61.9,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLI",
+    "kr_sector": "산업재/건설",
+    "n": 483,
+    "corr": 0.215,
+    "train_hit_pct": 54.3,
+    "test_hit_pct": 61.3,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLK",
+    "kr_sector": "반도체",
+    "n": 483,
+    "corr": 0.361,
+    "train_hit_pct": 60.2,
+    "test_hit_pct": 60.8,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLI",
+    "kr_sector": "방산",
+    "n": 483,
+    "corr": 0.223,
+    "train_hit_pct": 49.5,
+    "test_hit_pct": 59.3,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLC",
+    "kr_sector": "통신/플랫폼",
+    "n": 483,
+    "corr": 0.213,
+    "train_hit_pct": 56.4,
+    "test_hit_pct": 58.8,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLY",
+    "kr_sector": "자동차",
+    "n": 483,
+    "corr": 0.269,
+    "train_hit_pct": 59.2,
+    "test_hit_pct": 58.8,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLB",
+    "kr_sector": "철강/비철금속",
+    "n": 483,
+    "corr": 0.333,
+    "train_hit_pct": 60.2,
+    "test_hit_pct": 58.2,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLF",
+    "kr_sector": "금융/지주",
+    "n": 483,
+    "corr": 0.221,
+    "train_hit_pct": 60.6,
+    "test_hit_pct": 57.2,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLB",
+    "kr_sector": "소재/화학",
+    "n": 483,
+    "corr": 0.259,
+    "train_hit_pct": 56.7,
+    "test_hit_pct": 57.2,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLV",
+    "kr_sector": "바이오",
+    "n": 483,
+    "corr": 0.242,
+    "train_hit_pct": 64.0,
+    "test_hit_pct": 54.6,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLU",
+    "kr_sector": "전력기기",
+    "n": 483,
+    "corr": 0.145,
+    "train_hit_pct": 51.6,
+    "test_hit_pct": 54.1,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLP",
+    "kr_sector": "화장품/뷰티",
+    "n": 483,
+    "corr": 0.077,
+    "train_hit_pct": 50.5,
+    "test_hit_pct": 53.1,
+    "date_range": "2024-09-30~2026-09-23"
+  },
+  {
+    "etf": "XLV",
+    "kr_sector": "의료기기/미용",
+    "n": 483,
+    "corr": 0.027,
+    "train_hit_pct": 50.9,
+    "test_hit_pct": 49.0,
+    "date_range": "2024-09-30~2026-09-23"
+  }
+]

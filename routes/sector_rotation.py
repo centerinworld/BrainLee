@@ -1562,3 +1562,83 @@ def get_kiwoom_flow_signal_validation():
         return _validate()
     except Exception as e:
         return {"error": str(e)}
+
+
+# ── 미국 선행 → 국내 후행 신호 (2026-09-27 신규) ──────────────────────────
+# 사용자 지시("국내 시장은 미국 시장의 후행이니 미국 결과를 국내에 적용 가능하도록")로 신규.
+# US 섹터(routes/us_sector_rotation.py, SPDR 11종) 당일 등락과 "다음 국내 거래일" 해당 KR
+# 섹터 바스켓 등락의 방향일치율을 실측(scripts/ops/analyze_us_kr_sector_leadlag_20260927.py,
+# 2024-09-30~2026-09-23, 483쌍, 학습60%/검증40% 분할) — 이미 있던 6개 검증 섹터
+# (market_radar.py _SECTOR_LEADLAG_DEFS)와 같은 "미국 마감(새벽)→국내 다음 개장" 정렬 방식.
+# 결과 JSON: docs/us_kr_sector_leadlag_backtest_20260927.json (재현 가능, 재실행 시 갱신).
+#
+# tier 기준(검증 hit_rate 기준, 학습기간 짧아 참고용 — 원본 6개 검증 신호보다 보수적으로 취급할 것):
+#   strong   ≥58%   moderate 54~58%   weak <54%(방향성 약함, 신호로 쓰지 말 것)
+US_TO_KR_LEADLAG = {
+    "IT/하드웨어":   {"us_key": "technology",             "us_etf": "XLK", "corr": 0.352, "train_hit_pct": 55.7, "test_hit_pct": 66.0, "tier": "strong"},
+    "기판패키지":    {"us_key": "technology",             "us_etf": "XLK", "corr": 0.337, "train_hit_pct": 57.8, "test_hit_pct": 62.9, "tier": "strong"},
+    "반도체":        {"us_key": "technology",             "us_etf": "XLK", "corr": 0.361, "train_hit_pct": 60.2, "test_hit_pct": 60.8, "tier": "strong"},
+    "조선":          {"us_key": "industrials",            "us_etf": "XLI", "corr": 0.243, "train_hit_pct": 56.7, "test_hit_pct": 62.4, "tier": "strong"},
+    "해운":          {"us_key": "industrials",            "us_etf": "XLI", "corr": 0.209, "train_hit_pct": 50.9, "test_hit_pct": 61.9, "tier": "strong"},
+    "산업재/건설":   {"us_key": "industrials",            "us_etf": "XLI", "corr": 0.215, "train_hit_pct": 54.3, "test_hit_pct": 61.3, "tier": "strong"},
+    "방산":          {"us_key": "industrials",            "us_etf": "XLI", "corr": 0.223, "train_hit_pct": 49.5, "test_hit_pct": 59.3, "tier": "strong"},
+    "통신/플랫폼":   {"us_key": "communication_services", "us_etf": "XLC", "corr": 0.213, "train_hit_pct": 56.4, "test_hit_pct": 58.8, "tier": "strong"},
+    "자동차":        {"us_key": "consumer_cyclical",      "us_etf": "XLY", "corr": 0.269, "train_hit_pct": 59.2, "test_hit_pct": 58.8, "tier": "strong"},
+    "철강/비철금속": {"us_key": "basic_materials",        "us_etf": "XLB", "corr": 0.333, "train_hit_pct": 60.2, "test_hit_pct": 58.2, "tier": "strong"},
+    "금융/지주":     {"us_key": "financial_services",     "us_etf": "XLF", "corr": 0.221, "train_hit_pct": 60.6, "test_hit_pct": 57.2, "tier": "moderate"},
+    "소재/화학":     {"us_key": "basic_materials",        "us_etf": "XLB", "corr": 0.259, "train_hit_pct": 56.7, "test_hit_pct": 57.2, "tier": "moderate"},
+    "바이오":        {"us_key": "healthcare",             "us_etf": "XLV", "corr": 0.242, "train_hit_pct": 64.0, "test_hit_pct": 54.6, "tier": "moderate"},
+    "전력기기":      {"us_key": "utilities",              "us_etf": "XLU", "corr": 0.145, "train_hit_pct": 51.6, "test_hit_pct": 54.1, "tier": "moderate"},
+    "화장품/뷰티":   {"us_key": "consumer_defensive",     "us_etf": "XLP", "corr": 0.077, "train_hit_pct": 50.5, "test_hit_pct": 53.1, "tier": "weak"},
+    "의료기기/미용": {"us_key": "healthcare",             "us_etf": "XLV", "corr": 0.027, "train_hit_pct": 50.9, "test_hit_pct": 49.0, "tier": "weak"},
+    # 원자력·2차전지: GICS 11섹터 어디에도 깔끔히 대응 안 됨(원자력은 유틸리티/산업재에 분산,
+    # 2차전지는 소재/산업재/기술에 분산) — 억지로 매핑하지 않고 "대응 섹터 없음"으로 둔다.
+}
+_TIER_LABEL = {"strong": "선행 신호 뚜렷", "moderate": "선행 신호 약함", "weak": "선행 신호 거의 없음"}
+
+
+def get_us_leadlag_signals(universe: str = "sp500"):
+    """18개 KR 섹터 중 미국 대응이 있는 16개에 대해, 미국 섹터의 '지금' 국면 + 과거 방향일치율을 결합."""
+    from routes.us_sector_rotation import _score_sector_us, SECTOR_ETF, _conn as _us_conn
+
+    us_conn = _us_conn()
+    try:
+        us_scores = {key: _score_sector_us(us_conn, key, universe) for key in SECTOR_ETF}
+    finally:
+        us_conn.close()
+
+    out = []
+    for kr_key, info in SECTOR_GROUPS.items():
+        m = US_TO_KR_LEADLAG.get(kr_key)
+        if not m:
+            out.append({"kr_sector": kr_key, "kr_label": info["label"], "mapped": False})
+            continue
+        us = us_scores.get(m["us_key"])
+        if not us:
+            out.append({"kr_sector": kr_key, "kr_label": info["label"], "mapped": False})
+            continue
+        implied = "상승 시사" if (us["rs4w"] or 0) > 0 else "하락 시사" if (us["rs4w"] or 0) < 0 else "중립"
+        out.append({
+            "kr_sector": kr_key, "kr_label": info["label"], "mapped": True,
+            "us_sector": m["us_key"], "us_label": us["label"], "us_etf": m["us_etf"],
+            "us_score": us["score"], "us_phase": us["phase"], "us_rs4w": us["rs4w"], "us_rs12w": us["rs12w"],
+            "implied_direction": implied,
+            "tier": m["tier"], "tier_label": _TIER_LABEL[m["tier"]],
+            "test_hit_pct": m["test_hit_pct"], "corr": m["corr"],
+        })
+    out.sort(key=lambda x: (not x["mapped"], {"strong": 0, "moderate": 1, "weak": 2}.get(x.get("tier"), 3)))
+    return {
+        "universe": universe,
+        "methodology": (
+            "미국 섹터 ETF 당일 등락 vs 다음 국내 거래일 KR 섹터 바스켓 등락의 방향일치율(2024-09-30~2026-09-23, "
+            "483쌍, 학습60%/검증40% 분할 — 검증 구간 hit_rate만 tier 판정에 사용, 룩어헤드 없음). "
+            "strong≥58% / moderate 54~58% / weak<54%(신호로 쓰지 말 것). 원자력·2차전지는 미국 GICS 섹터에 "
+            "깔끔히 대응되지 않아 매핑 없음(mapped=false)."
+        ),
+        "sectors": out,
+    }
+
+
+@router.get("/us-leadlag")
+def get_sector_us_leadlag(universe: str = "sp500"):
+    return get_us_leadlag_signals(universe)
