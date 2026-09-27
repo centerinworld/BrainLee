@@ -26,3 +26,6 @@ venv
 
 # os
 .DS_Store
+
+# legacy copies (retired 2026-09-27)
+_archive/

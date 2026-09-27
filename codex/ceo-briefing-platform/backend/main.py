@@ -1527,7 +1527,7 @@ def _compute_monitoring_status_payload():
     try:
         c_path = "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db"
         if not os.path.exists(c_path):
-            c_path = "/Users/brainlee/Downloads/codex/ceo-briefing-platform/data/ceo_briefing.db"
+            c_path = "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db"
         if os.path.exists(c_path):
             conn = sqlite3.connect(c_path)
             cur = conn.cursor()
@@ -1740,7 +1740,7 @@ def _compute_monitoring_status_payload():
     try:
         c_path = "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db"
         if not os.path.exists(c_path):
-            c_path = "/Users/brainlee/Downloads/codex/ceo-briefing-platform/data/ceo_briefing.db"
+            c_path = "/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db"
         if os.path.exists(c_path):
             conn = sqlite3.connect(c_path)
             cur = conn.cursor()

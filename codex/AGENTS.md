@@ -9,10 +9,10 @@
 ## 프로젝트 위치
 
 - stock_dashboard 백엔드/DB: `/Applications/stock_dashboard`
-- CEO 브리핑 프론트/프록시: `/Users/brainlee/Downloads/codex/ceo-briefing-platform`
+- CEO 브리핑 프론트/프록시: `/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform`
 - 주요 글로벌 인텔리전스 백엔드: `/Applications/stock_dashboard/routes/global_macro.py`
-- CEO 브리핑 글로벌 인텔리전스 화면: `/Users/brainlee/Downloads/codex/ceo-briefing-platform/frontend/kai.js`
-- CEO 브리핑 글로벌 인텔리전스 프록시: `/Users/brainlee/Downloads/codex/ceo-briefing-platform/backend/main.py`
+- CEO 브리핑 글로벌 인텔리전스 화면: `/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/frontend/kai.js`
+- CEO 브리핑 글로벌 인텔리전스 프록시: `/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/backend/main.py`
 
 ## 글로벌 인텔리전스 API 추가 현황
 
@@ -38,7 +38,7 @@
 - `PUT /calendar/{page_id}/events/{event_id}`: 일정 수정
 - `DELETE /calendar/{page_id}/events/{event_id}`: 일정 삭제
 
-일정 DB는 `/Users/brainlee/Downloads/codex/ceo-briefing-platform/data/ceo_briefing.db`의 `calendar_events` 테이블을 사용한다. 관리자 화면 런타임은 `frontend/admin-console-runtime-v2.js`이며, `frontend/index.html`이 이 파일을 로드한다.
+일정 DB는 `/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db`의 `calendar_events` 테이블을 사용한다. 관리자 화면 런타임은 `frontend/admin-console-runtime-v2.js`이며, `frontend/index.html`이 이 파일을 로드한다.
 
 ## CEO 브리핑 AI 설정 현황
 
