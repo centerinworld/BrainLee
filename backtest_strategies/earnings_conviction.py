@@ -14,6 +14,8 @@ from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
     DB_PATH,
+    SignalEvidenceLedger,
+    evidence_item,
     _final_liquidation_quote_for_code,
     _net_profit,
     _record_run_spec,
@@ -181,7 +183,9 @@ def run_backtest_earnings_conviction(
                          CASE WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                               WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                               WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                              ELSE printf('%d-02-15', f.year+1) END) as avail_date
+                              ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                       f.id, CASE WHEN d.avail_date IS NULL THEN 0 ELSE 1 END AS actual_disclosure,
+                       f.created_at, f.updated_at
                 FROM financial_data f
                 LEFT JOIN fin_disclosure_dates d ON
                     d.stock_code=f.stock_code AND d.year=f.year AND d.quarter=f.quarter AND d.is_annual<1
@@ -190,7 +194,37 @@ def run_backtest_earnings_conviction(
                 ORDER BY f.stock_code, f.year, f.quarter
             """.format(",".join("?" * len(sd))), list(sd.keys())).fetchall():
                 earn_events.setdefault(r[0], []).append(
-                    {"avail": r[5], "rev": r[1], "op": r[2]})
+                    {"avail": r[5], "rev": r[1], "op": r[2], "id": r[6], "year": r[3], "quarter": r[4],
+                     "basis": "actual_disclosure" if r[7] else "statutory_estimate",
+                     "created_at": r[8], "updated_at": r[9]})
+
+        def _earn_pair(code: str, day: str):
+            """신호가 실제로 읽는 두 재무 행(as-of 최신 분기, 그 5분기 전 = 전년 동기)."""
+            evs = earn_events.get(code)
+            if not evs or len(evs) < 5:
+                return None
+            avail = [e for e in evs if e["avail"] <= day]
+            if len(avail) < 5:
+                return None
+            return avail[-1], avail[-5]
+
+        evidence = SignalEvidenceLedger("earnings_conviction", {
+            "entry_score_min": entry_score_min, "revenue_score_min": revenue_score_min,
+            "min_op_profit_억": min_op_profit_억, "min_revenue_억": min_revenue_억,
+            "report_type": "CFS", "lag_quarters": 4,
+        })
+
+        def _note_evidence(code: str, day: str) -> None:
+            pair = _earn_pair(code, day)
+            items = []
+            for role, ev in zip(("current", "year_ago"), pair or ()):
+                items.append(evidence_item(
+                    "financial_data", ev["id"], ev["avail"], basis=ev["basis"],
+                    source_key=f"{ev['year']}Q{ev['quarter']}:CFS:{role}",
+                    value={"revenue": ev["rev"], "operating_profit": ev["op"]},
+                    collected_at=ev["created_at"], modified_at=ev["updated_at"],
+                ))
+            evidence.note(code, day, items or [evidence_item("financial_data", None, None)])
 
         def _earn_score(code: str, day: str):
             """가장 최근 as-of 분기의 진입자격+랭킹기준. ①영업이익 YoY가속(매출도 동반양수, 절대
@@ -199,13 +233,10 @@ def run_backtest_earnings_conviction(
             3차: %기준이었을 때 SK하이닉스급 대형 가속이 초소형 %폭발에 랭킹에서 밀리는 근본결함
             발견 — 절대금액 기준으로 전환). 두 경로 모두 충족 시 절대증가액이 더 큰 쪽 채택.
             반환: None(자격없음) 또는 (rank_abs_억, pct, path)."""
-            evs = earn_events.get(code)
-            if not evs or len(evs) < 5:
+            pair = _earn_pair(code, day)
+            if pair is None:
                 return None
-            avail = [e for e in evs if e["avail"] <= day]
-            if len(avail) < 5:
-                return None
-            cur, prev_y = avail[-1], avail[-5]
+            cur, prev_y = pair
             op_now, op_1y = cur["op"], prev_y["op"]
             rev_now, rev_1y = cur["rev"], prev_y["rev"]
 
@@ -344,6 +375,7 @@ def run_backtest_earnings_conviction(
                 if strict_exec:
                     for score, code in picked:
                         pending_buys.append((code, _weight_mult(score)))
+                        _note_evidence(code, day)
                 else:
                     for score, code in picked:
                         i = didx[code].get(day)
@@ -388,6 +420,7 @@ def run_backtest_earnings_conviction(
         conn.commit()
         conn.close()
         _register_execution_artifacts(run_id, total_capital, cash, asof_mktcap=asof_mktcap)
+        evidence.persist(run_id, trades)
         return run_id
 
     except Exception as e:

@@ -2,6 +2,8 @@
 """Freeze current strategy-center holdings as prospective forward-test signals."""
 from __future__ import annotations
 
+import ast
+import hashlib
 import json
 import sys
 from datetime import datetime
@@ -15,6 +17,33 @@ from db_utils import connect_stock_db  # noqa: E402
 from live_signal_tracker import register_signal  # noqa: E402
 
 ALLOWED_STRATEGIES = {"v_gc", "v_contract_momentum"}
+# 가상운용 엔진(routes/trend.py)에서 전략별 신호·체결 규칙을 담은 함수·상수 접두사.
+# 이 소스가 바뀌면 strategy_version이 바뀌고, forward 표본은 버전별로 따로 집계된다.
+_VERSION_SCOPE = {
+    "v_gc": ("GC_", "_gc_", "_build_gc_", "execute_gc_", "paper_"),
+    "v_contract_momentum": ("CM_", "_cm_", "_build_cm_", "execute_cm_", "paper_"),
+}
+
+
+def strategy_version(strategy: str) -> str:
+    """전략 코드·파라미터 지문(표본 분리용). routes/trend.py + paper_execution.py 해당 구간 해시."""
+    prefixes = _VERSION_SCOPE.get(strategy, ())
+    parts = []
+    for rel in ("routes/trend.py", "paper_execution.py"):
+        path = ROOT / rel
+        if not path.exists():
+            continue
+        source = path.read_text(encoding="utf-8")
+        for node in ast.parse(source).body:
+            names = []
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names = [node.name]
+            elif isinstance(node, ast.Assign):
+                names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if any(n.startswith(prefixes) or n.lstrip("_").startswith(tuple(p.lstrip("_") for p in prefixes))
+                   for n in names):
+                parts.append(ast.get_source_segment(source, node) or "")
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:12]
 
 
 def capture() -> dict:
@@ -30,6 +59,7 @@ def capture() -> dict:
                ORDER BY strategy,stock_code"""
         ).fetchall()
         selected = [row for row in rows if str(row[2] or "") in ALLOWED_STRATEGIES]
+        versions = {name: strategy_version(name) for name in ALLOWED_STRATEGIES}
         signal_ids = []
         skipped_existing_episode = 0
         for row in selected:
@@ -55,6 +85,7 @@ def capture() -> dict:
                 "source_entry_date": row[5],
                 "entry_reason_json": row[6],
                 "source_updated_at": str(row[7]),
+                "strategy_version": versions[str(row[2])],
             }
             signal_ids.append(register_signal(
                 stock_code=row[0], signal_type="strategy_center_buy",
@@ -67,6 +98,7 @@ def capture() -> dict:
             "captured": len(signal_ids),
             "skipped_existing_episode": skipped_existing_episode,
             "strategies": sorted({row[2] for row in selected}),
+            "strategy_versions": versions,
             "signal_ids": signal_ids,
         }
     finally:

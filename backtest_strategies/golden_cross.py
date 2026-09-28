@@ -27,6 +27,9 @@ from backtest_common import (
     _record_run_spec,
     _register_execution_artifacts,
     _sector_score_memo,
+    SignalEvidenceLedger,
+    evidence_aggregate,
+    evidence_item,
     init_backtest_db,
     logger,
     sqlite3,
@@ -220,6 +223,27 @@ def run_backtest_golden_cross(
                 sd[code]['chart'] = _chart_prep(sd[code]['d'], sd[code]['lo'], c_list)
 
         # conn은 _is_sector_buy 에서 계속 사용되므로 루프 후에 닫는다
+        gc_sector_memo: dict = {}
+        evidence = SignalEvidenceLedger("golden_cross", {
+            "sector_buy_threshold": 55.0, "sector_score_cache": "per-run (sector, month), first call day",
+            "cross_days": cross_days, "vol_ratio": vol_ratio, "rs6m_min": rs6m_min,
+        })
+
+        def _note_gc_evidence(code: str, day: str) -> None:
+            sk = _get_stock_sector_key(code)
+            if sk is None:
+                evidence.note(code, day, [
+                    evidence_item("sector_financial_data", None, None, source_key="stock_not_in_sector_groups"),
+                    evidence_item("sector_investor_flow", None, None, source_key="stock_not_in_sector_groups"),
+                ])
+                return
+            cached = gc_sector_memo.get((sk, day[:7]))
+            basis_day = cached[0] if isinstance(cached, tuple) and cached[0] <= day else day
+            items = _sector_score_inputs(conn, sk, basis_day)
+            for item in items:
+                item["source_value"] = {"sector": sk, "score_as_of": basis_day,
+                                        "sector_score": cached[1] if isinstance(cached, tuple) else None}
+            evidence.note(code, day, items)
 
         sim_dates = sorted(set(
             d for s in sd.values() for d in s['d'] if start_date <= d <= end_date
@@ -528,7 +552,8 @@ def run_backtest_golden_cross(
                             continue
                     # 섹터 보너스: BUY 섹터 종목 우선순위 상승
                     sector_bonus = 10.0 if _get_stock_sector_key(code) else 0.0
-                    if sector_bonus > 0 and _is_sector_buy(conn, code, day, threshold=55.0):
+                    if sector_bonus > 0 and _is_sector_buy(conn, code, day, threshold=55.0,
+                                                           memo=gc_sector_memo):
                         sector_bonus = 25.0  # BUY 섹터 종목에게 RS6M +25pt 보너스
                     if hot_sector_boost:
                         hr = hot_map.get(sec_of.get(code, ""))
@@ -558,6 +583,7 @@ def run_backtest_golden_cross(
                     if nm.get(ym, 0) + queued_now >= max_new_per_month: break
                     pending_buys.append(code)
                     queued_now += 1
+                    _note_gc_evidence(code, day)
 
             # 일별 에쿼티 마킹 → MDD
             mark = _gc_equity(day)
@@ -642,6 +668,7 @@ def run_backtest_golden_cross(
         conn2.commit()
         conn2.close()
         _register_execution_artifacts(run_id, total_cap, cash)
+        evidence.persist(run_id, trades)
         return run_id
 
     except Exception as e:
@@ -794,19 +821,89 @@ def _get_stock_sector_key(code: str) -> Optional[str]:
 
 
 def _is_sector_buy(conn: sqlite3.Connection, code: str, date: str,
-                   threshold: float = 50.0) -> bool:
+                   threshold: float = 50.0, memo: Optional[dict] = None) -> bool:
     """V-GC/V11 섹터 필터용 — BUY 섹터 여부 실시간 계산.
     성능 최적화: 월 단위 캐싱.
+
+    2026-09-28: 캐시를 run별(memo)로 분리. 예전 모듈 전역 캐시는 run 사이에 초기화되지
+    않아, 같은 프로세스에서 기간이 겹치는 run(예: 23.11~24.12와 24.6~25.5)을 돌리면
+    다른 run이 같은 달의 더 늦은 날짜로 계산한 점수를 재사용했다(최대 한 달 룩어헤드,
+    실행 순서에 따라 결과가 달라짐). 캐시 값에는 계산일을 함께 두고, 계산일이
+    현재 날짜보다 늦으면 쓰지 않는다.
     """
     sk = _get_stock_sector_key(code)
     if sk is None:
         return True  # 섹터 미등록 종목은 필터 통과 (기존 전략 유지)
 
-    ym = date[:7]
-    cache_key = (sk, ym)
-    if cache_key not in _sector_score_memo:
-        _sector_score_memo[cache_key] = _sector_score_as_of(conn, sk, date)
-    return _sector_score_memo[cache_key] >= threshold
+    cache = _sector_score_memo if memo is None else memo
+    cache_key = (sk, date[:7])
+    cached = cache.get(cache_key)
+    if not (isinstance(cached, tuple) and cached[0] <= date):
+        cached = (date, _sector_score_as_of(conn, sk, date))
+        cache[cache_key] = cached
+    return cached[1] >= threshold
+
+
+def _sector_score_inputs(conn: sqlite3.Connection, sector_key: str, as_of: str) -> list:
+    """_sector_score_as_of()가 as_of에 읽는 재무·수급 원본 행을 증거로 재현한다."""
+    codes = _SECTOR_GROUPS.get(sector_key, {}).get("codes", [])
+    if not codes:
+        return [evidence_item("sector_financial_data", None, None, source_key="empty_sector"),
+                evidence_item("sector_investor_flow", None, None, source_key="empty_sector")]
+    ph_sql = "({})".format(",".join("?" * len(codes)))
+    d_3m = (datetime.strptime(as_of, "%Y-%m-%d") - timedelta(days=92)).strftime("%Y-%m-%d")
+    fin_rows = []
+    for year in (int(as_of[:4]) - 1, int(as_of[:4]) - 2):
+        for r in conn.execute(
+            f"SELECT id, stock_code, year, report_type, operating_profit, avail_date, basis,"
+            f"       created_at, updated_at FROM ("
+            f"  SELECT f.id, f.stock_code, f.year, f.report_type, f.operating_profit,"
+            f"         COALESCE(d.avail_date, printf('%d-03-31', f.year+1)) AS avail_date,"
+            f"         CASE WHEN d.avail_date IS NULL THEN 'statutory_estimate'"
+            f"              ELSE 'actual_disclosure' END AS basis,"
+            f"         f.created_at, f.updated_at,"
+            f"         ROW_NUMBER() OVER (PARTITION BY f.stock_code"
+            f"             ORDER BY CASE f.report_type WHEN 'CFS' THEN 0 ELSE 1 END) AS rt_rn"
+            f"  FROM financial_data f"
+            f"  LEFT JOIN fin_disclosure_dates d ON d.stock_code=f.stock_code AND d.year=f.year"
+            f"    AND d.quarter=4 AND d.is_annual=1"
+            f"  WHERE f.stock_code IN {ph_sql} AND f.is_annual=1 AND f.year=?"
+            f"    AND COALESCE(d.avail_date, printf('%d-03-31', f.year+1)) <= ?"
+            f") dedup WHERE rt_rn=1",
+            codes + [str(year), as_of],
+        ).fetchall():
+            fin_rows.append({
+                "row_id": r[0], "available_at": str(r[5])[:10],
+                "value": {"stock_code": r[1], "year": r[2], "report_type": r[3],
+                          "operating_profit": r[4], "basis": r[6],
+                          "created_at": str(r[7]) if r[7] else None,
+                          "updated_at": str(r[8]) if r[8] else None},
+            })
+    fin_item = evidence_aggregate("sector_financial_data", fin_rows,
+                                  source_key=f"{sector_key}:annual_op:{as_of}")
+    if any(r["value"]["basis"] == "statutory_estimate" for r in fin_rows):
+        fin_item["availability_basis"] = "statutory_estimate"
+    elif fin_rows:
+        fin_item["availability_basis"] = "actual_disclosure"
+    flow_rows, per_code = [], {}
+    for r in conn.execute(
+        f"SELECT stock_code, date, frn_net_buy_amt, inst_net_buy_amt, frn_net_buy, inst_net_buy, close "
+        f"FROM price_history WHERE stock_code IN {ph_sql} AND date>=? AND date<=? "
+        f"AND (frn_net_buy_amt!=0 OR inst_net_buy_amt!=0 OR frn_net_buy!=0 OR inst_net_buy!=0) "
+        f"ORDER BY stock_code, date",
+        codes + [d_3m, as_of],
+    ).fetchall():
+        day = str(r[1])[:10]
+        flow_rows.append({"row_id": f"{r[0]}:{day}", "available_at": day,
+                          "value": [r[2], r[3], r[4], r[5], r[6]]})
+        agg = per_code.setdefault(r[0], {"rows": 0, "first": day, "last": day})
+        agg["rows"] += 1
+        agg["last"] = day
+    flow_item = evidence_aggregate(
+        "sector_investor_flow", flow_rows, source_key=f"{sector_key}:price_history:{d_3m}~{as_of}",
+        rows_summary={"table": "price_history", "window": [d_3m, as_of], "per_code": per_code},
+    )
+    return [fin_item, flow_item]
 
 
 # ─── V-DEEP: 깊은낙폭 반등 집중 전략 ─────────────────────────────────────────

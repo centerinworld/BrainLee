@@ -13,6 +13,9 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    _release_date_with_basis,
+    evidence_aggregate,
     DB_PATH,
     _SECTOR_GROUPS,
     _net_profit,
@@ -72,6 +75,50 @@ def _pit_gated_sector_op_yoy_median(conn, codes: list, calendar_year_cap: int, t
             raw = (op_c - op_p) / abs(op_p) * 100
             yoys.append(min(max(raw, -200), 2000))
     return sorted(yoys)[len(yoys) // 2] if yoys else 0.0
+
+def _sector_op_yoy_inputs(conn, codes: list, calendar_year_cap: int, trade_date: str) -> dict:
+    """_pit_gated_sector_op_yoy_median()이 trade_date에 읽는 연간 재무 행(종목별 cur_y, cur_y-1)."""
+    if not codes:
+        return evidence_aggregate("sector_financial_data", [], source_key="empty_sector")
+    ph = "({})".format(",".join("?" * len(codes)))
+    rows = conn.execute(
+        f"SELECT stock_code, year, operating_profit, id, report_type, created_at, updated_at FROM ("
+        f"  SELECT stock_code, year, operating_profit, id, report_type, created_at, updated_at,"
+        f"         ROW_NUMBER() OVER ("
+        f"             PARTITION BY stock_code, year"
+        f"             ORDER BY CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END"
+        f"         ) AS rt_rn"
+        f"  FROM financial_data"
+        f"  WHERE stock_code IN {ph} AND is_annual=1 AND operating_profit IS NOT NULL"
+        f"    AND year<=?"
+        f") dedup WHERE rt_rn=1",
+        list(codes) + [calendar_year_cap],
+    ).fetchall()
+    by_code_year: dict = {}
+    for code, year, op, row_id, rtype, created, updated in rows:
+        by_code_year.setdefault(code, {})[int(year)] = (op, row_id, rtype, created, updated)
+    used, estimated = [], False
+    for code, year_map in by_code_year.items():
+        avail_years = sorted(
+            (y for y in year_map if _release_date(y, 4, True, code) <= trade_date), reverse=True)
+        if not avail_years:
+            continue
+        for y in (avail_years[0], avail_years[0] - 1):
+            if y not in year_map:
+                continue
+            op, row_id, rtype, created, updated = year_map[y]
+            avail, basis = _release_date_with_basis(y, 4, True, code)
+            estimated = estimated or basis == "statutory_estimate"
+            used.append({"row_id": row_id, "available_at": avail,
+                         "value": {"stock_code": code, "year": y, "report_type": rtype,
+                                   "operating_profit": op, "basis": basis,
+                                   "created_at": str(created) if created else None,
+                                   "updated_at": str(updated) if updated else None}})
+    item = evidence_aggregate("sector_financial_data", used, source_key=f"annual_op_yoy_median:{trade_date}")
+    if used:
+        item["availability_basis"] = "statutory_estimate" if estimated else "actual_disclosure"
+    return item
+
 
 def run_backtest_sector(
     start_date: str, end_date: str,
@@ -279,6 +326,56 @@ def run_backtest_sector(
         sector_momentum_cache: dict = {}  # date → {sector_key: {ret1, ret3}}
         sec_pending_sells: list = []  # strict_exec: (code, reason, fraction) -- fraction=None이면 전량
         sec_pending_buys: list = []   # strict_exec: (code, sector_key, meta)
+        evidence = SignalEvidenceLedger("sector_focus", {
+            "buy_threshold": buy_threshold, "rebalance_days": rebalance_days,
+            "pick_ta_bonus": pick_ta_bonus, "avoid_discontinuity": avoid_discontinuity,
+            "flow_window_days": 92, "momentum_windows": {"ret3": "92~99d back", "ret1": "28~35d back"},
+        })
+        _sector_evidence_cache: dict = {}
+
+        def _sector_evidence(sector_key: str, as_of: str) -> list:
+            key = (sector_key, as_of)
+            if key in _sector_evidence_cache:
+                return _sector_evidence_cache[key]
+            codes_e = _SECTOR_GROUPS[sector_key]["codes"]
+            ph_e = "({})".format(",".join("?" * len(codes_e)))
+            d_3m_e = (datetime.strptime(as_of, "%Y-%m-%d") - timedelta(days=92)).strftime("%Y-%m-%d")
+            fin_item = _sector_op_yoy_inputs(conn, codes_e, int(as_of[:4]), as_of)
+            flow_rows, per_code = [], {}
+            for r in conn.execute(
+                f"SELECT stock_code, date, frn_net_buy_amt, inst_net_buy_amt, frn_net_buy, inst_net_buy, close "
+                f"FROM price_history WHERE stock_code IN {ph_e} AND date>=? AND date<=? "
+                f"AND (frn_net_buy_amt!=0 OR inst_net_buy_amt!=0 OR frn_net_buy!=0 OR inst_net_buy!=0) "
+                f"ORDER BY stock_code, date",
+                codes_e + [d_3m_e, as_of],
+            ).fetchall():
+                day_e = str(r[1])[:10]
+                flow_rows.append({"row_id": f"{r[0]}:{day_e}", "available_at": day_e,
+                                  "value": [r[2], r[3], r[4], r[5], r[6]]})
+                agg = per_code.setdefault(r[0], {"rows": 0, "first": day_e, "last": day_e})
+                agg["rows"] += 1
+                agg["last"] = day_e
+            flow_item = evidence_aggregate(
+                "investor_flow", flow_rows, source_key=f"{sector_key}:price_history:{d_3m_e}~{as_of}",
+                rows_summary={"table": "price_history", "window": [d_3m_e, as_of], "per_code": per_code})
+            mom_rows = []
+            for code_m in codes_e:
+                series = price_data.get(code_m, {})
+                if as_of in series:
+                    mom_rows.append({"row_id": f"{code_m}:{as_of}", "available_at": as_of,
+                                     "value": {"close": series[as_of][0], "role": "now"}})
+                for role, back in (("ret3_base", range(92, 100)), ("ret1_base", range(28, 36))):
+                    for d_back in back:
+                        d_try = (datetime.strptime(as_of, "%Y-%m-%d") - timedelta(days=d_back)).strftime("%Y-%m-%d")
+                        if d_try in series:
+                            mom_rows.append({"row_id": f"{code_m}:{d_try}", "available_at": d_try,
+                                             "value": {"close": series[d_try][0], "role": role}})
+                            break
+            mom_item = evidence_aggregate("price_momentum", mom_rows,
+                                          source_key=f"{sector_key}:price_history:{as_of}")
+            items = [fin_item, flow_item, mom_item]
+            _sector_evidence_cache[key] = items
+            return items
 
         for i, trade_date in enumerate(trade_dates):
             # ── strict_exec: 전일 신호 → 오늘 시가 체결 ──
@@ -729,6 +826,12 @@ def run_backtest_sector(
                             if code not in [c for c, _, _ in sec_pending_buys]:
                                 sec_pending_buys.append((code, sector_key, _meta))
                                 n_slots -= 1
+                                evidence.note(code, trade_date, [
+                                    {**item, "source_value": {"sector": sector_key,
+                                                              "sector_score": _meta["sector_score"],
+                                                              "surge_score": _meta["surge_score"]}}
+                                    for item in _sector_evidence(sector_key, trade_date)
+                                ])
                             continue
                         buy_p = pdata[0]
                         budget = min(per_stock, cash * 0.99)
@@ -828,6 +931,7 @@ def run_backtest_sector(
         conn.commit()
         conn.close()
         _register_execution_artifacts(run_id, initial_cash, cash)
+        evidence.persist(run_id, all_trades)
         return run_id
 
     except Exception as e:

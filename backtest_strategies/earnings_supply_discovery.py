@@ -13,6 +13,9 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    _release_date_with_basis,
+    evidence_item,
     DB_PATH,
     _final_liquidation_quote_for_code,
     _net_profit,
@@ -158,7 +161,7 @@ def run_backtest_earnings_supply_discovery(
             "SELECT stock_code, config_value FROM stock_collection_config "
             "WHERE config_key='preferred_report_type'")}
         raw_rows = conn.execute("""
-            SELECT stock_code, year, quarter, report_type, operating_profit
+            SELECT stock_code, year, quarter, report_type, operating_profit, id, created_at, updated_at
             FROM financial_data
             WHERE is_annual=0 AND quarter BETWEEN 1 AND 4 AND operating_profit IS NOT NULL
               AND stock_code IN ({})
@@ -172,7 +175,7 @@ def run_backtest_earnings_supply_discovery(
         for (code, y, q), variants in by_quarter.items():
             pref = overrides.get(code, "CFS")
             r_op = variants.get(pref) or next(iter(variants.values()))
-            panel.setdefault(code, []).append((y, q, r_op[4]))
+            panel.setdefault(code, []).append((y, q, r_op[4], r_op))
         for code in panel:
             panel[code].sort(key=lambda x: (x[0], x[1]))
 
@@ -186,17 +189,36 @@ def run_backtest_earnings_supply_discovery(
         for code, qs in panel.items():
             n = len(qs)
             for i in range(4, n):
-                y, q, op = qs[i]
-                op_prev = qs[i - 4][2]
+                y, q, op, row_now = qs[i]
+                op_prev, row_prev = qs[i - 4][2], qs[i - 4][3]
                 if op is None or op_prev is None or op_prev <= 0:
                     continue
                 growth = op / op_prev - 1.0
                 if not (-5 <= growth <= 10):  # PIT 연구와 동일 이상치 제외
                     continue
                 avail = _avail_date(y, q, code)
-                growth_events.setdefault(code, []).append((avail, growth))
+                growth_events.setdefault(code, []).append((avail, growth, (row_now, row_prev)))
         for code in growth_events:
-            growth_events[code].sort()
+            growth_events[code].sort(key=lambda e: (e[0], e[1]))
+
+        evidence = SignalEvidenceLedger("earnings_supply_discovery", {
+            "op_growth_min": op_growth_min, "supply_min_억": supply_min_억,
+            "report_type": "preferred(stock_collection_config) else CFS", "lag_quarters": 4,
+        })
+
+        def _note_evidence(code: str, day: str) -> None:
+            evs = [e for e in growth_events.get(code, ()) if e[0] <= day]
+            items = []
+            if evs:
+                for role, row in zip(("current", "year_ago"), evs[-1][2]):
+                    avail, basis = _release_date_with_basis(row[1], row[2], False, code)
+                    items.append(evidence_item(
+                        "financial_data", row[5], avail, basis=basis,
+                        source_key=f"{row[1]}Q{row[2]}:{row[3]}:{role}",
+                        value={"operating_profit": row[4], "growth": evs[-1][1]},
+                        collected_at=row[6], modified_at=row[7],
+                    ))
+            evidence.note(code, day, items or [evidence_item("financial_data", None, None)])
 
         def _current_growth(code: str, day: str):
             evs = growth_events.get(code)
@@ -310,6 +332,7 @@ def run_backtest_earnings_supply_discovery(
                 if strict_exec:
                     for _, code in picked:
                         pending_buys.append(code)
+                        _note_evidence(code, day)
                 else:
                     for _, code in picked:
                         i = didx[code].get(day)
@@ -366,6 +389,7 @@ def run_backtest_earnings_supply_discovery(
         conn.commit()
         conn.close()
         _register_execution_artifacts(run_id, total_capital, cash, asof_mktcap=asof_mktcap)
+        evidence.persist(run_id, trades)
         return run_id
     except Exception as e:
         import traceback as _tb

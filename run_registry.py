@@ -260,13 +260,22 @@ def derive_status(conn: sqlite3.Connection, run_hash: str) -> dict:
     market_cap_not_applicable = spec["market_cap_mode"] == "not_applicable"
     pit_exact_spec = spec["market_cap_mode"] == "pit" and "approx" not in universe and "current" not in universe
     pit_artifact = artifacts.get("point_in_time_coverage", {})
+    # 2026-09-28: 다중 입력 증거 원장이 추정 공시일(법정기한)에 기댄 진입을 보고하면
+    # 가용시점 자체는 통과여도 verified로 올리지 않고 approx에 머문다(DISCLOSURE_DATE_FALLBACK).
+    data_availability = artifacts.get("data_availability", {})
+    availability_estimated = (
+        (data_availability.get("details") or {}).get("pit_grade") == "point_in_time_approx"
+    )
     pit_pass = bool(
-        execution and artifacts.get("data_availability", {}).get("passed") and (
+        execution and data_availability.get("passed") and not availability_estimated and (
             market_cap_not_applicable
             or (pit_exact_spec and pit_artifact.get("passed"))
         )
     )
-    pit_approx = bool(execution and not pit_pass and spec["market_cap_mode"] in {"pit", "asof_approx"})
+    pit_approx = bool(execution and not pit_pass and (
+        spec["market_cap_mode"] in {"pit", "asof_approx"}
+        or (availability_estimated and data_availability.get("passed"))
+    ))
     forward = bool(pit_pass and artifacts.get("forward_validation", {}).get("passed"))
     status = (
         "forward_validated" if forward

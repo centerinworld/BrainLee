@@ -13,6 +13,12 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    _composite_financial_inputs,
+    _event_date_basis,
+    evidence_aggregate,
+    evidence_item,
+    financial_row_evidence,
     DB_PATH,
     WARMUP_DAYS,
     _corp_action_adjusted_entry,
@@ -480,7 +486,8 @@ def run_backtest_composite(
                               WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                               WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                               WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                              ELSE printf('%d-02-15', f.year+1) END) as avail_date
+                              ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                       f.id, f.report_type, f.created_at, f.updated_at
                 FROM financial_data f
                 LEFT JOIN fin_disclosure_dates d ON
                     d.stock_code=? AND d.year=f.year
@@ -494,7 +501,8 @@ def run_backtest_composite(
                 continue
             fin_all = [(r["year"], r["quarter"], r["revenue"], r["operating_profit"],
                         r["eps"], r["bps"], r["total_equity"], r["net_income"],
-                        r["roe"], bool(r["is_annual"]), r["avail_date"]) for r in fin_rows]
+                        r["roe"], bool(r["is_annual"]), r["avail_date"],
+                        r["id"], r["report_type"], r["created_at"], r["updated_at"]) for r in fin_rows]
 
             dts = [r["date"] for r in rows]
             prs = [float(r["close"]) for r in rows]
@@ -576,6 +584,56 @@ def run_backtest_composite(
         daily_pnl: List[Tuple[str, float]] = []
         _pb: Dict[str, dict] = {}   # pending buys  (D+1 집행)
         _ps: Dict[str, dict] = {}   # pending sells (D+1 집행)
+        evidence = SignalEvidenceLedger("composite", {
+            "score_threshold": score_threshold, "use_event_bonus": use_event_bonus,
+            "use_material_backlog_bonus": use_material_backlog_bonus,
+            "use_contract_bonus": use_contract_bonus, "use_segment_bonus": use_segment_bonus,
+            "data_asof_ts": effective_data_asof_ts,
+        })
+        _event_windows = {"patent": 365, "buyback": 180, "dilution": 365, "material": 365,
+                          "backlog": 180, "contract": 180, "segment": 365}
+
+        def _note_evidence(sc: str, day: str) -> None:
+            items = [financial_row_evidence(
+                r[11], sc, r[0], r[1], report_type=r[12], role=role, is_annual=bool(r[9]),
+                value={"revenue": r[2], "operating_profit": r[3], "eps": r[4], "bps": r[5]},
+                available_at=r[10], collected_at=r[13], modified_at=r[14])
+                for role, r in _composite_financial_inputs(stock_data[sc]['fins'], day)]
+            if not items:
+                items = [evidence_item("financial_data", None, None)]
+            active = {
+                "patent": patent_map if use_event_bonus else None,
+                "buyback": buyback_map if use_event_bonus else None,
+                "dilution": dilution_map if use_event_bonus else None,
+                "material": material_map if use_material_backlog_bonus else None,
+                "backlog": backlog_map if use_material_backlog_bonus else None,
+                "contract": contract_map if use_contract_bonus else None,
+                "segment": segment_map if use_segment_bonus else None,
+            }
+            ev_rows = []
+            for name, m in active.items():
+                if m is None:
+                    continue
+                cutoff = (datetime.strptime(day, "%Y-%m-%d")
+                          - timedelta(days=_event_windows[name])).strftime("%Y-%m-%d")
+                for ev in m.get(sc, ()):
+                    ev_date = ev if isinstance(ev, str) else ev[0]
+                    if cutoff <= ev_date <= day:
+                        ev_rows.append({
+                            "row_id": f"{name}:{sc}:{ev_date}:{'' if isinstance(ev, str) else ev[-1]}",
+                            "available_at": ev_date,
+                            "value": {"map": name, "event": ev if isinstance(ev, str) else list(ev),
+                                      "basis": _event_date_basis(sc, ev_date)
+                                      if name in ("material", "backlog", "segment") else "actual_disclosure"},
+                        })
+            ev_item = evidence_aggregate(
+                "event_adjustment", ev_rows,
+                source_key="maps:" + ",".join(k for k, v in active.items() if v is not None) if any(
+                    v is not None for v in active.values()) else "no_event_maps_enabled")
+            if any(r["value"]["basis"] == "statutory_estimate" for r in ev_rows):
+                ev_item["availability_basis"] = "statutory_estimate"
+            items.append(ev_item)
+            evidence.note(sc, day, items)
 
         for day in sim_dates:
 
@@ -737,6 +795,7 @@ def run_backtest_composite(
                     if len(_pb) + len(positions) - len(_ps) >= max_positions:
                         break
                     _pb[sc] = {'score': s, 'event_flagged': ev_flag}
+                    _note_evidence(sc, day)
 
             # ── Phase E: 일별 PnL ──────────────────────────────────
             portfolio_val = cash
@@ -820,6 +879,7 @@ def run_backtest_composite(
         conn2.close()
         conn.close()
         _register_execution_artifacts(run_id, total_invested, cash)
+        evidence.persist(run_id, trades)
         return run_id
 
     except Exception as e:

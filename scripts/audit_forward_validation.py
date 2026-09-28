@@ -53,15 +53,19 @@ def audit() -> dict:
         except (TypeError, ValueError):
             payload = {}
         source_entry = str(payload.get("source_entry_date") or row[1])[:10]
-        episodes.setdefault((str(row[0]), str(row[2]), source_entry), row)
-    grouped: dict[str, list] = {}
-    for row in episodes.values():
-        grouped.setdefault(str(row[0]), []).append(row)
+        # 2026-09-28: 전략 코드·파라미터 지문별로 표본을 분리한다. 버전이 없는 과거 표본은
+        # 'unversioned_pre_20260928'로 따로 집계되고 새 버전 표본과 섞이지 않는다.
+        version = str(payload.get("strategy_version") or "unversioned_pre_20260928")
+        episodes.setdefault((str(row[0]), version, str(row[2]), source_entry), (row, version))
+    grouped: dict[tuple, list] = {}
+    for row, version in episodes.values():
+        grouped.setdefault((str(row[0]), version), []).append(row)
     strategies = []
-    for strategy in sorted(grouped):
-        episode_rows = grouped[strategy]
+    for strategy, version in sorted(grouped):
+        episode_rows = grouped[(strategy, version)]
         values = [row for row in episode_rows if str(row[8]) == "complete"]
         pending_count = sum(str(row[8]) == "pending" for row in episode_rows)
+        excluded_count = sum(str(row[8]) == "price_event_excluded" for row in episode_rows)
         returns = [float(row[5]) for row in values]
         wins = sum(value > 0 for value in returns)
         low, high = wilson_interval(wins, len(returns))
@@ -76,7 +80,9 @@ def audit() -> dict:
             len(returns) >= 15 and high is not None and high < 0.5
         )
         strategies.append({
-            "strategy": strategy, "completed": len(returns), "pending": pending_count,
+            "strategy": strategy, "strategy_version": version,
+            "completed": len(returns), "pending": pending_count,
+            "price_event_excluded": excluded_count,
             "deduplicated_episodes": len(episode_rows),
             "elapsed_calendar_days": elapsed,
             "mean_return_pct": round(statistics.mean(returns), 3) if returns else None,

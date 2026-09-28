@@ -13,6 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backtest_common import (  # noqa: E402
+    SIGNAL_EVIDENCE_REQUIREMENTS,
+    _normalize_entries,
+    evaluate_signal_evidence,
+)
 from db_utils import connect_stock_db  # noqa: E402
 from run_registry import register_artifact  # noqa: E402
 
@@ -60,6 +65,33 @@ def _function_sources() -> dict[str, str]:
     return functions
 
 
+def _multi_input_verdict(conn, strategy: str, run_hash: str) -> dict:
+    """진입(trades_json) x 필수 데이터셋 증거(backtest_signal_input_evidence) 대조."""
+    row = conn.execute(
+        """SELECT r.trades_json FROM backtest_run_specs s JOIN backtest_runs r ON r.run_id=s.run_id
+           WHERE s.run_hash=? AND r.status='done' ORDER BY s.created_at DESC LIMIT 1""",
+        (run_hash,),
+    ).fetchone()
+    payload = json.loads((row[0] if row else None) or "[]")
+    trades = payload.get("trades", []) if isinstance(payload, dict) else payload
+    entries = _normalize_entries(trades)
+    try:
+        evidence = [
+            {"stock_code": r[0], "entry_date": r[1], "decision_date": r[2], "dataset": r[3],
+             "source_row_id": r[4], "available_at": r[5], "availability_basis": r[6]}
+            for r in conn.execute(
+                """SELECT stock_code,entry_date,decision_date,dataset,source_row_id,available_at,
+                          availability_basis
+                   FROM backtest_signal_input_evidence WHERE run_hash=?""", (run_hash,)
+            ).fetchall()
+        ]
+    except Exception:
+        evidence = []
+    verdict = evaluate_signal_evidence(strategy, entries, evidence)
+    verdict.pop("samples", None) if verdict.get("passed") else None
+    return verdict
+
+
 def audit() -> dict:
     function_sources = _function_sources()
     file_sources = {
@@ -94,7 +126,15 @@ def audit() -> dict:
             uses_delayed = bool(dependencies)
             gate_off = uses_delayed and _delayed_data_gate_off(str(strategy), params)
             provenance = None
-            if uses_delayed and not gate_off:
+            multi_input = str(strategy) in SIGNAL_EVIDENCE_REQUIREMENTS
+            if multi_input:
+                # 2026-09-28: 다중 입력 전략은 텍스트 스캔 결과와 무관하게
+                # "모든 진입 x 필수 데이터셋" 증거 원장으로만 판정한다.
+                provenance = _multi_input_verdict(conn, str(strategy), str(run_hash))
+                uses_delayed = True
+                gate_off = False
+                dependencies = sorted(set(dependencies) | set(SIGNAL_EVIDENCE_REQUIREMENTS[str(strategy)]))
+            elif uses_delayed and not gate_off:
                 try:
                     p = conn.execute("""SELECT COUNT(*),
                            SUM(CASE WHEN available_at IS NOT NULL AND available_at>decision_date THEN 1 ELSE 0 END)
@@ -109,11 +149,14 @@ def audit() -> dict:
                     }
                 except Exception:
                     provenance = None
-            passed = not uses_delayed or gate_off or bool(
-                provenance
-                and provenance["records"] == provenance["executed_entries"]
-                and provenance["invalid_available_at"] == 0
-            )
+            if multi_input:
+                passed = bool(provenance and provenance.get("passed"))
+            else:
+                passed = not uses_delayed or gate_off or bool(
+                    provenance
+                    and provenance["records"] == provenance["executed_entries"]
+                    and provenance["invalid_available_at"] == 0
+                )
             if not uses_delayed:
                 reason = "price/volume-only logic; delayed-data availability is not applicable"
             elif gate_off:
@@ -122,6 +165,13 @@ def audit() -> dict:
                     "opt-in gate off (verified against source, see "
                     "_VERIFIED_OPTIONAL_DELAYED_DATA_GATES) - not actually consumed"
                 )
+            elif multi_input and passed:
+                reason = ("every executed entry x required dataset has persisted source rows with "
+                          f"available_at <= signal_date ({provenance.get('pit_grade')})")
+            elif multi_input:
+                reason = ("multi-input evidence incomplete: "
+                          f"missing={provenance.get('missing_evidence') if provenance else 'n/a'}, "
+                          f"late={provenance.get('available_after_signal') if provenance else 'n/a'}")
             elif passed and provenance is not None:
                 reason = "every executed entry has persisted financial row/availability provenance"
             else:
@@ -144,6 +194,7 @@ def audit() -> dict:
             "delayed_dependencies": item["delayed_dependencies"],
             "data_asof_ts": item["data_asof_ts"],
             "provenance": item["provenance"],
+            "pit_grade": (item["provenance"] or {}).get("pit_grade") if isinstance(item["provenance"], dict) else None,
             "required_for_delayed_data": "persisted signal-input row ids and available_at values",
         })
 

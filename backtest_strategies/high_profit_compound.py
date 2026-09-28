@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    evidence_aggregate,
     DB_PATH,
     _final_liquidation_quote_for_code,
     _record_run_spec,
@@ -134,10 +136,12 @@ def run_backtest_high_profit_compound(
     # 공시일이 아님) 다른 전략들과 동일한 법정기한 근사(분기+45일/연간 익년 3월31일,
     # quarter=4는 사업보고서=연간으로 취급)로 avail_date를 계산.
     _contract_rows = conn.execute(
-        "SELECT stock_code, disclosed_at FROM dart_contracts WHERE signal_strength >= 2"
+        "SELECT stock_code, disclosed_at, rcept_no, id, contract_ratio_pct, signal_strength, updated_at"
+        " FROM dart_contracts WHERE signal_strength >= 2"
     ).fetchall()
     _backlog_rows = conn.execute(
-        "SELECT stock_code, year, quarter FROM order_backlog WHERE COALESCE(backlog_amount,0)>0"
+        "SELECT stock_code, year, quarter, id, rcept_no, backlog_amount, collected_at FROM order_backlog"
+        " WHERE COALESCE(backlog_amount,0)>0"
     ).fetchall()
 
     def _backlog_avail_date(year: int, quarter: int) -> str:
@@ -148,13 +152,63 @@ def run_backtest_high_profit_compound(
         )
 
     _contract_events = [
-        (code, f"{str(d)[:4]}-{str(d)[4:6]}-{str(d)[6:8]}")
-        for code, d in _contract_rows if d
+        (r[0], f"{str(r[1])[:4]}-{str(r[1])[4:6]}-{str(r[1])[6:8]}")
+        for r in _contract_rows if r[1]
     ]
     _backlog_events = [
-        (code, _backlog_avail_date(int(y), int(q)))
-        for code, y, q in _backlog_rows if y and q
+        (r[0], _backlog_avail_date(int(r[1]), int(r[2])))
+        for r in _backlog_rows if r[1] and r[2]
     ]
+    # 증거 원장용 원본 행(종목별). order_backlog는 공시일 컬럼이 없어 법정기한 근사 →
+    # availability_basis='statutory_estimate'로 남아 PIT는 approx로만 인정된다.
+    _catalyst_rows_by_code: dict = {}
+    for r in _contract_rows:
+        if r[1]:
+            _catalyst_rows_by_code.setdefault(r[0], []).append({
+                "row_id": f"dart_contracts:{r[3]}",
+                "available_at": f"{str(r[1])[:4]}-{str(r[1])[4:6]}-{str(r[1])[6:8]}",
+                "value": {"rcept_no": r[2], "contract_ratio_pct": r[4], "signal_strength": r[5],
+                          "updated_at": str(r[6]) if r[6] else None, "basis": "actual_disclosure"}})
+    for r in _backlog_rows:
+        if r[1] and r[2]:
+            _catalyst_rows_by_code.setdefault(r[0], []).append({
+                "row_id": f"order_backlog:{r[3]}",
+                "available_at": _backlog_avail_date(int(r[1]), int(r[2])),
+                "value": {"rcept_no": r[4], "year": r[1], "quarter": r[2], "backlog_amount": r[5],
+                          "collected_at": str(r[6]) if r[6] else None, "basis": "statutory_estimate"}})
+    evidence = SignalEvidenceLedger("high_profit_compound", {
+        "insider_days": insider_days, "insider_refresh_every_sim_days": 7,
+        "catalyst": "dart_contracts(signal_strength>=2) + order_backlog(backlog_amount>0)",
+        "sectors": list(sectors), "min_turnover_m": min_turnover_m,
+    })
+    _cache_as_of = {"insider": None, "catalyst": None}
+
+    def _note_evidence(code: str, day: str) -> None:
+        ins_day = _cache_as_of["insider"] or day
+        cutoff = (datetime.strptime(ins_day, '%Y-%m-%d') - timedelta(days=insider_days)).strftime('%Y-%m-%d')
+        ins_rows = [
+            {"row_id": f"dart_insider_holdings:{r[0]}", "available_at": str(r[2])[:10],
+             "value": {"rcept_no": r[1], "change_amount": r[3], "sp_stock_lmp_irds_cnt": r[4]}}
+            for r in conn.execute(
+                """SELECT id, rcept_no, rcept_dt, change_amount, sp_stock_lmp_irds_cnt
+                   FROM dart_insider_holdings
+                   WHERE stock_code=? AND rcept_dt BETWEEN ? AND ?
+                     AND COALESCE(change_amount, sp_stock_lmp_irds_cnt, 0) > 0""",
+                (code, cutoff, ins_day)).fetchall()
+        ]
+        cat_day = _cache_as_of["catalyst"] or day
+        cat_rows = [r for r in _catalyst_rows_by_code.get(code, ()) if r["available_at"] <= cat_day]
+        cat_item = evidence_aggregate("catalyst_disclosure", cat_rows,
+                                      source_key=f"catalyst_as_of:{cat_day}")
+        if cat_rows:
+            cat_item["availability_basis"] = (
+                "actual_disclosure" if any(r["value"]["basis"] == "actual_disclosure" for r in cat_rows)
+                else "statutory_estimate")
+        evidence.note(code, day, [
+            evidence_aggregate("dart_insider_holdings", ins_rows,
+                               source_key=f"window:{cutoff}~{ins_day}"),
+            cat_item,
+        ])
     _catalyst_events = _contract_events + _backlog_events
 
     def _catalyst_codes_as_of(as_of: str) -> set:
@@ -208,8 +262,10 @@ def run_backtest_high_profit_compound(
         if date_idx % 7 == 0 or not _insider_cache:
             _insider_cache.clear()
             _insider_cache.update({c: True for c in _insider_buy_codes(date)})
+            _cache_as_of["insider"] = date
         if date_idx % 7 == 0 or not _catalyst_cache:
             _catalyst_cache = _catalyst_codes_as_of(date)
+            _cache_as_of["catalyst"] = date
 
         # ── 매도 체크 ──
         for code in list(holdings.keys()):
@@ -316,6 +372,7 @@ def run_backtest_high_profit_compound(
                 break
             holdings[code] = {"entry": entry_price, "peak": entry_price, "entry_date": entry_date,
                               "signal_date": date}
+            _note_evidence(code, date)
             cash -= per_stock
 
     # 기간 종료 처리
@@ -376,6 +433,7 @@ def run_backtest_high_profit_compound(
     # 강제청산분을 반영 안 하므로 capital+total_pnl(모든 trades의 실현손익 합)로
     # 직접 계산 — 다른 26개 전략과 동일하게 "최종현금=초기자본+총손익" 원칙.
     _register_execution_artifacts(rid, capital, capital + total_pnl)
+    evidence.persist(rid, trades)
     conn.close()
     return rid
 

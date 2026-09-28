@@ -265,7 +265,17 @@ def build(conn: sqlite3.Connection, dry_run: bool = False) -> dict:
     # explains a return.  That verdict belongs to the downstream jump audit.
     confirmed_events = sum(1 for event in events if event[12] == 'factor_confirmed')
     explained = conn.execute("SELECT COUNT(*) FROM price_jump_audit WHERE classification='confirmed_corporate_action'").fetchone()[0]
-    unexplained = conn.execute("SELECT COUNT(*) FROM price_history_quality_v WHERE quality_status='unexplained_jump'").fetchone()[0]
+    # 2026-09-28: 1천만 행 뷰 전체 COUNT가 statement timeout에 걸려 이미 커밋한 갱신 뒤에
+    # 잡 전체가 실패로 끝났고, 그 뒤에 붙은 가격감사·forward 신호 체인이 8/14 이후 매일
+    # 건너뛰어졌다. 이 값은 진단용이므로 실패해도 잡을 실패시키지 않는다.
+    try:
+        unexplained = conn.execute("SELECT COUNT(*) FROM price_history_quality_v WHERE quality_status='unexplained_jump'").fetchone()[0]
+    except Exception as exc:  # noqa: BLE001
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        unexplained = f"unavailable: {type(exc).__name__}"
     return {"share_change_events": len(events), "confirmed_adjustment_events": confirmed_events,
             "event_types": counts, "explained_price_jumps_in_last_audit": explained,
             "unexplained_price_jumps": unexplained, "price_jump_audit_rebuild_required": not dry_run}

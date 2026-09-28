@@ -13,6 +13,10 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    _v11_financial_inputs,
+    evidence_item,
+    financial_row_evidence,
     DB_PATH,
     _calc_metrics,
     _corp_action_adjusted_entry,
@@ -115,7 +119,8 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
                           WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                           WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                           WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                          ELSE printf('%d-02-15', f.year+1) END) as avail_date
+                          ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                   f.id, f.report_type, f.created_at, f.updated_at
             FROM financial_data f
             LEFT JOIN fin_disclosure_dates d ON
                 d.stock_code = f.stock_code AND d.year = f.year
@@ -228,6 +233,11 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
         positions: Dict[str, dict] = {}
         ra_pending_sells: list = []
         ra_pending_buys: list = []
+        evidence = SignalEvidenceLedger("regime_adaptive", {
+            "bull_signal": "_is_buy_v1 (price/volume only)",
+            "bear_signal": "_is_buy_v11 (op profit YoY>30%, prior quarter YoY>=0)",
+            "data_asof_ts": data_asof_ts, "report_type": "CFS or ''",
+        })
         trades:    list = []
         equity_curve: list = []
         monthly_buys: Dict[str, int] = {}
@@ -353,6 +363,18 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
                         if sc not in [x[0] for x in ra_pending_buys] and \
                            len(positions) + len(ra_pending_buys) < max_positions:
                             ra_pending_buys.append((sc, cur_regime, stop_val, take_val))
+                            if is_bull:
+                                # BULL 진입은 V1(가격·거래량만) — 재무를 읽지 않았다는 명시적 증거.
+                                evidence.note(sc, day, [evidence_item(
+                                    "financial_data", None, None, source_key="not_consulted:bull_v1")])
+                            else:
+                                evidence.note(sc, day, [
+                                    financial_row_evidence(
+                                        r[11], sc, r[0], r[1], report_type=r[12], role=role,
+                                        value={"operating_profit": r[3]}, available_at=r[10],
+                                        collected_at=r[13], modified_at=r[14])
+                                    for role, r in _v11_financial_inputs(sd['fins'], day)
+                                ] or [evidence_item("financial_data", None, None)])
                             monthly_buys[month_key] = monthly_buys.get(month_key, 0) + 1
                         continue
                     curr = sd['prices'][i]
@@ -459,6 +481,7 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
         }
         _save_result(run_id, result)
         _register_execution_artifacts(run_id, total_capital, cash)
+        evidence.persist(run_id, trades)
         return run_id
 
     except Exception as e:

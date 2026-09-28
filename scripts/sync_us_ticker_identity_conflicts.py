@@ -71,6 +71,57 @@ CONFLICTS = (
      "independent press coverage: Unilever's ice cream business began trading as MICC on NYSE/"
      "Euronext Amsterdam/LSE on 2025-12-08 — exactly matching us_price_history's first MICC row "
      "(2025-12-08). Millicom International Cellular now trades as TIGO, unrelated."),
+    ("CA", "CA Technologies (CA, Inc.)", "2018-11-05", "cash_acquisition_broadcom",
+     "unidentified — NOT the historical CA Technologies",
+     "2023-12", "confirmed_different_entity",
+     "https://www.sec.gov/Archives/edgar/data/0001730168/000119312518317917/d648705dex991.htm",
+     "Broadcom completed the CA Technologies acquisition 2018-11-05. us_price_history CA rows "
+     "(inserted by the 2026-09-27 Tiingo backfill) run 2023-12-14 to 2026-09-25 — 5+ years after "
+     "delisting and continuing to the present day. Tiingo returned HTTP 200 with real-looking "
+     "OHLCV for a DIFFERENT current company reusing the ticker; this was not caught by the "
+     "backfill script's 404/no-valid-rows checks since the response was well-formed. Rows should "
+     "be deleted from us_price_history (not done automatically — see remediation note below)."),
+    ("CTRP", "Ctrip.com International, Ltd.", "2019-11-05", "ticker_rename_to_TCOM",
+     "unidentified — the real Trip.com Group trades as TCOM since 2019-11-05; CTRP data past "
+     "that date is not the same continuously-tracked instrument",
+     "unknown", "confirmed_different_entity",
+     "https://www.sec.gov/Archives/edgar/data/1269238/000119312521085779/d884543dex991.htm",
+     "Ctrip changed its Nasdaq ticker from CTRP to TCOM effective 2019-11-05 (same company, "
+     "renamed Trip.com Group). us_price_history CTRP rows (inserted by the 2026-09-27 Tiingo "
+     "backfill) continue uninterrupted through 2026-09-25 — 7 years past the rename — meaning "
+     "Tiingo is serving TCOM's ongoing price data mislabeled under the retired CTRP symbol. "
+     "Rows after 2019-11-05 should be deleted from us_price_history."),
+    ("SGEN", "Seagen Inc.", "2023-12-14", "cash_acquisition_pfizer",
+     "unidentified — NOT the historical Seagen",
+     "unknown", "confirmed_different_entity",
+     "https://www.sec.gov/Archives/edgar/data/78003/000007800323000118/pr121223ex991.htm",
+     "Pfizer completed the Seagen acquisition 2023-12-14. us_price_history SGEN rows (inserted by "
+     "the 2026-09-27 Tiingo backfill) continue uninterrupted through 2026-09-25, nearly 3 years "
+     "past delisting. Rows after 2023-12-14 should be deleted from us_price_history."),
+    ("SIVB", "SVB Financial Group", "2023-03-10", "fdic_receivership_collapse",
+     "unidentified — NOT the historical SVB Financial Group",
+     "unknown", "confirmed_different_entity",
+     "https://www.fdic.gov/resources/resolutions/bank-failures/failed-bank-list/silicon-valley.html",
+     "Silicon Valley Bank was closed by regulators 2023-03-10 (FDIC receivership); the holding "
+     "company filed Chapter 11 on 2023-03-17. us_price_history SIVB rows (inserted by the "
+     "2026-09-27 Tiingo backfill) continue uninterrupted through 2026-09-25. Rows after "
+     "2023-03-10 should be deleted from us_price_history."),
+    ("SPLK", "Splunk Inc.", "2024-03-18", "cash_acquisition_cisco",
+     "unidentified — NOT the historical Splunk",
+     "unknown", "confirmed_different_entity",
+     "https://www.tipranks.com/news/company-announcements/splunk-merges-with-cisco-transforms-stock-and-corporate-structure",
+     "Cisco completed the Splunk acquisition 2024-03-18 ($157.00/share cash); SPLK was delisted "
+     "from Nasdaq at close. us_price_history SPLK rows (inserted by the 2026-09-27 Tiingo "
+     "backfill) continue uninterrupted through 2026-09-25. Rows after 2024-03-18 should be "
+     "deleted from us_price_history."),
+    ("ANSS", "ANSYS, Inc.", "2025-07-17", "cash_stock_acquisition_synopsys",
+     "unidentified — NOT the historical Ansys",
+     "unknown", "confirmed_different_entity",
+     "https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2025-373",
+     "Synopsys completed the Ansys acquisition 2025-07-17 (merger closed prior to market open; "
+     "stock suspended 2025-07-18). us_price_history ANSS rows (inserted by the 2026-09-27 Tiingo "
+     "backfill) continue uninterrupted through 2026-09-25, over a year past delisting. Rows "
+     "after 2025-07-17 should be deleted from us_price_history."),
     ("MEDI", "MedImmune, Inc.", "2007-06-18", "cash_acquisition_astrazeneca",
      "unidentified — NOT the historical MedImmune",
      "2022-11", "confirmed_different_entity",

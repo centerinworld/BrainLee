@@ -501,6 +501,300 @@ def _register_financial_provenance_artifact(
 
 
 # ══════════════════════════════════════════════════════════════
+#  다중 입력 신호 증거 원장 (2026-09-28)
+# ══════════════════════════════════════════════════════════════
+# backtest_signal_data_provenance는 "거래당 재무 1행"만 담을 수 있어, 공시·수급·섹터
+# 집계 등 여러 입력을 쓰는 전략은 사후 검증이 불가능했다(선택 전략 67구간 실패).
+# 이 원장은 진입 거래 × 전략별 필수 데이터셋마다 실제로 신호에 쓰인 원본 행
+# (행 ID/공시번호, 원본 값, available_at, 수집·수정 시각)을 저장한다. 집계 입력은
+# 구성 원본 행 목록과 그 불변 snapshot hash를 함께 남긴다.
+#
+# 감사 규칙(evaluate_signal_evidence, 감사 스크립트와 공용):
+#   모든 진입(종목, 진입일) × 필수 데이터셋에 증거가 1건 이상 있고,
+#   행이 있는 증거는 전부 available_at(날짜) <= signal_date < entry_date.
+# source_row_id='NONE'은 "그 시점에 볼 수 있는 행이 없었다"는 명시적 증거다.
+
+SIGNAL_EVIDENCE_REQUIREMENTS: Dict[str, Tuple[str, ...]] = {
+    "contract_momentum": ("dart_contracts",),
+    "earnings_conviction": ("financial_data",),
+    "earnings_supply_discovery": ("financial_data",),
+    "moonshot_turnaround": ("financial_data",),
+    "recovery": ("financial_data",),
+    "regime_adaptive": ("financial_data",),
+    "se_momentum": ("financial_data",),
+    "turnaround": ("financial_data",),
+    "golden_cross": ("sector_financial_data", "sector_investor_flow"),
+    "sector_focus": ("sector_financial_data", "investor_flow", "price_momentum"),
+    "high_profit_compound": ("dart_insider_holdings", "catalyst_disclosure"),
+    "composite": ("financial_data", "event_adjustment"),
+}
+
+SIGNAL_EVIDENCE_TABLE_DDL = """CREATE TABLE IF NOT EXISTS backtest_signal_input_evidence (
+    run_id TEXT NOT NULL, run_hash TEXT NOT NULL, strategy TEXT NOT NULL,
+    stock_code TEXT NOT NULL, decision_date TEXT NOT NULL, entry_date TEXT NOT NULL,
+    dataset TEXT NOT NULL, evidence_seq INTEGER NOT NULL,
+    source_row_id TEXT NOT NULL, source_key TEXT NOT NULL DEFAULT '',
+    source_value TEXT, available_at TEXT, availability_basis TEXT,
+    source_collected_at TEXT, source_modified_at TEXT,
+    snapshot_hash TEXT, snapshot_rows TEXT, params_hash TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(run_id, stock_code, entry_date, dataset, evidence_seq)
+)"""
+
+
+def _evidence_text(value) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ", timespec="seconds")
+    return str(value)
+
+
+def _release_date_with_basis(year: int, quarter: int, is_annual: bool,
+                             stock_code: str = None) -> Tuple[str, str]:
+    """_release_date()와 같은 날짜 + 그 근거(actual_disclosure|statutory_estimate)."""
+    if stock_code and _DISC_DATES:
+        key = (stock_code, year, 4 if is_annual else quarter, 1 if is_annual else 0)
+        if key in _DISC_DATES:
+            return _DISC_DATES[key], "actual_disclosure"
+    return _release_date(year, quarter, is_annual, None), "statutory_estimate"
+
+
+def evidence_item(dataset: str, source_row_id, available_at, *, value=None,
+                  source_key: str = "", collected_at=None, modified_at=None,
+                  basis: str = None) -> dict:
+    """원본 행 하나의 증거. source_row_id=None → 'NONE'(볼 수 있는 행이 없었음)."""
+    return {
+        "dataset": dataset,
+        "source_row_id": "NONE" if source_row_id in (None, "") else str(source_row_id),
+        "available_at": _evidence_text(available_at),
+        "source_value": value,
+        "source_key": source_key or ("no_row_available" if source_row_id in (None, "") else ""),
+        "source_collected_at": _evidence_text(collected_at),
+        "source_modified_at": _evidence_text(modified_at),
+        "availability_basis": basis,
+    }
+
+
+def financial_row_evidence(row_id, stock_code: str, year: int, quarter: int, *,
+                           report_type: str = "", role: str = "", value=None,
+                           is_annual: bool = False, collected_at=None, modified_at=None,
+                           available_at: str = None, dataset: str = "financial_data") -> dict:
+    """financial_data(또는 같은 연·분기 키를 쓰는 재무성 테이블) 행 하나의 증거.
+
+    available_at을 넘기지 않으면 엔진과 같은 _release_date() 규칙으로 다시 계산하고,
+    실측 공시일인지 법정기한 추정인지(availability_basis)를 함께 남긴다.
+    """
+    if available_at is None:
+        available_at, basis = _release_date_with_basis(int(year), int(quarter), bool(is_annual), stock_code)
+    else:
+        _, basis = _release_date_with_basis(int(year), int(quarter), bool(is_annual), stock_code)
+    tag = "A" if is_annual else f"Q{quarter}"
+    return evidence_item(
+        dataset, row_id, available_at, basis=basis, value=value,
+        source_key=f"{year}{tag}:{report_type or ''}:{role or ''}",
+        collected_at=collected_at, modified_at=modified_at,
+    )
+
+
+def evidence_aggregate(dataset: str, rows: list, *, source_key: str = "", value=None,
+                       rows_summary=None) -> dict:
+    """집계 입력 증거. rows = [{'row_id','available_at','value'?}, ...].
+
+    구성 행 목록과 불변 snapshot hash(행 ID+값+available_at의 정렬 해시)를 남기고,
+    available_at은 구성 행 중 가장 늦은 값(=집계가 볼 수 있게 된 시점)이다.
+    구성 행이 하나도 없으면 NONE 증거가 된다.
+    """
+    import hashlib
+    norm = sorted(
+        (str(r.get("row_id")), _evidence_text(r.get("available_at")) or "",
+         json.dumps(r.get("value"), sort_keys=True, default=str, ensure_ascii=False))
+        for r in rows or []
+    )
+    if not norm:
+        item = evidence_item(dataset, None, None, value=value,
+                             source_key=source_key or "no_row_available")
+        item["snapshot_hash"] = None
+        item["snapshot_rows"] = []
+        return item
+    digest = hashlib.sha256(json.dumps(norm, ensure_ascii=False).encode("utf-8")).hexdigest()[:24]
+    dated = [a for _, a, _ in norm if a]
+    item = evidence_item(dataset, f"snapshot:{digest}", max(dated) if dated else None,
+                         value=value, source_key=source_key or f"aggregate:{len(norm)}")
+    item["snapshot_hash"] = digest
+    # 수천 행짜리 수급 집계는 전체 행 대신 요약(rows_summary)만 저장하고, 해시는 전체 행으로
+    # 계산한다 — 같은 DB 상태에서 같은 집계를 다시 뽑으면 해시가 일치해야 한다.
+    item["snapshot_rows"] = rows_summary if rows_summary is not None else [
+        {"row_id": rid, "available_at": avail or None, "value": json.loads(val)}
+        for rid, avail, val in norm
+    ]
+    if not dated:
+        item["available_at"] = None
+    return item
+
+
+def _normalize_entries(trades: list) -> List[Tuple[str, str]]:
+    """엔진마다 다른 거래 키(stock_code/code, entry_date/buy_date)를 (종목, 진입일)로 통일."""
+    entries = set()
+    for t in trades or []:
+        if not isinstance(t, dict):
+            continue
+        code = t.get("stock_code") or t.get("code") or t.get("sc")
+        entry = t.get("entry_date") or t.get("buy_date")
+        if not entry and isinstance(t.get("entry"), str):
+            entry = t.get("entry")  # composite 원장: {"sc","entry"(날짜),"exit"}
+        if not entry and str(t.get("action") or "").upper() == "BUY":
+            entry = t.get("date")  # sector_focus 원장: {"date","code","action":"BUY"}
+        if code and entry:
+            entries.add((str(code), str(entry)[:10]))
+    return sorted(entries)
+
+
+def evaluate_signal_evidence(strategy: str, entries: list, evidence_rows: list,
+                             required: Tuple[str, ...] = None) -> dict:
+    """진입 × 필수 데이터셋 증거 완전성 + available_at <= signal_date 판정(감사 공용).
+
+    evidence_rows: dict(stock_code, entry_date, decision_date, dataset, source_row_id,
+    available_at, availability_basis) 목록.
+    """
+    required = tuple(required if required is not None else SIGNAL_EVIDENCE_REQUIREMENTS.get(strategy, ()))
+    by_entry: Dict[Tuple[str, str], list] = {}
+    for row in evidence_rows:
+        by_entry.setdefault((str(row["stock_code"]), str(row["entry_date"])[:10]), []).append(row)
+    missing, late, bad_order, undated = [], [], [], []
+    estimated = 0
+    for code, entry in entries:
+        rows = by_entry.get((code, entry), [])
+        have = {r["dataset"] for r in rows}
+        for ds in required:
+            if ds not in have:
+                missing.append([code, entry, ds])
+        for r in rows:
+            decision = str(r["decision_date"])[:10]
+            if not decision < entry:
+                bad_order.append([code, entry, decision])
+            if r["source_row_id"] == "NONE":
+                continue
+            avail = r.get("available_at")
+            if not avail:
+                undated.append([code, entry, r["dataset"], r["source_row_id"]])
+            elif str(avail)[:10] > decision:
+                late.append([code, entry, r["dataset"], r["source_row_id"], str(avail)[:10], decision])
+            if r.get("availability_basis") == "statutory_estimate":
+                estimated += 1
+    orphan = sorted(set(by_entry) - set(entries))
+    passed = bool(required) and not (missing or late or bad_order or undated)
+    return {
+        "strategy": strategy,
+        "required_datasets": list(required),
+        "executed_entries": len(entries),
+        "evidence_rows": len(evidence_rows),
+        "missing_evidence": len(missing),
+        "available_after_signal": len(late),
+        "decision_not_before_entry": len(bad_order),
+        "row_without_available_at": len(undated),
+        "statutory_estimate_rows": estimated,
+        "orphan_evidence_entries": len(orphan),
+        "samples": {
+            "missing": missing[:10], "late": late[:10],
+            "bad_order": bad_order[:10], "undated": undated[:10],
+        },
+        # 추정 공시일에 기댄 증거가 있으면 PIT는 approx로만 인정한다(정적감사 DISCLOSURE_DATE_FALLBACK).
+        "pit_grade": ("point_in_time_verified" if passed and estimated == 0
+                      else "point_in_time_approx" if passed else "unverified"),
+        "passed": passed,
+    }
+
+
+class SignalEvidenceLedger:
+    """신호 판단 시점의 입력 증거 묶음을 모았다가 실제 진입 거래에만 연결해 저장한다.
+
+    엔진은 매수 대기열에 넣는 순간 note(code, signal_date, items)를 호출한다.
+    persist()는 trades에서 (종목, 진입일)을 도출하고, 각 진입보다 앞선 가장 최근
+    note를 그 진입의 신호로 연결한다(D 신호 → D+1 체결). 체결 로직을 건드리지 않으므로
+    증거 기록이 수익률을 바꾸지 않는다.
+    """
+
+    def __init__(self, strategy: str, signal_params: dict = None):
+        self.strategy = strategy
+        self.signal_params = dict(signal_params or {})
+        self._notes: Dict[str, List[Tuple[str, list]]] = {}
+
+    def note(self, stock_code: str, signal_date: str, items: list) -> None:
+        self._notes.setdefault(str(stock_code), []).append((str(signal_date)[:10], list(items)))
+
+    def _signal_for(self, code: str, entry: str):
+        best = None
+        for decision, items in self._notes.get(code, ()):
+            if decision < entry and (best is None or decision >= best[0]):
+                best = (decision, items)
+        return best
+
+    def rows_for(self, trades: list) -> Tuple[list, list]:
+        entries = _normalize_entries(trades)
+        rows = []
+        for code, entry in entries:
+            found = self._signal_for(code, entry)
+            if not found:
+                continue
+            decision, items = found
+            seq_by_ds: Dict[str, int] = {}
+            for item in items:
+                ds = item["dataset"]
+                seq_by_ds[ds] = seq_by_ds.get(ds, 0) + 1
+                rows.append({**item, "stock_code": code, "entry_date": entry,
+                             "decision_date": decision, "evidence_seq": seq_by_ds[ds]})
+        return entries, rows
+
+    def persist(self, run_id: str, trades: list) -> Optional[dict]:
+        import hashlib
+        try:
+            from run_registry import register_artifact
+            entries, rows = self.rows_for(trades)
+            verdict = evaluate_signal_evidence(self.strategy, entries, rows)
+            conn = connect_primary_db(timeout=120)
+            conn.execute(SIGNAL_EVIDENCE_TABLE_DDL)
+            spec = conn.execute(
+                "SELECT run_hash, parameter_json FROM backtest_run_specs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if not spec or not spec[0]:
+                conn.close()
+                return verdict
+            run_hash = str(spec[0])
+            params_hash = hashlib.sha256(str(spec[1] or "").encode("utf-8")).hexdigest()[:16]
+            conn.execute("DELETE FROM backtest_signal_input_evidence WHERE run_id=?", (run_id,))
+            now = datetime.now().isoformat(timespec="seconds")
+            for r in rows:
+                conn.execute("""INSERT INTO backtest_signal_input_evidence
+                    (run_id,run_hash,strategy,stock_code,decision_date,entry_date,dataset,evidence_seq,
+                     source_row_id,source_key,source_value,available_at,availability_basis,
+                     source_collected_at,source_modified_at,snapshot_hash,snapshot_rows,params_hash,created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                    run_id, run_hash, self.strategy, r["stock_code"], r["decision_date"],
+                    r["entry_date"], r["dataset"], r["evidence_seq"], r["source_row_id"],
+                    r.get("source_key") or "",
+                    json.dumps(r.get("source_value"), ensure_ascii=False, default=str),
+                    r.get("available_at"), r.get("availability_basis"),
+                    r.get("source_collected_at"), r.get("source_modified_at"),
+                    r.get("snapshot_hash"),
+                    json.dumps(r.get("snapshot_rows"), ensure_ascii=False, default=str)
+                    if r.get("snapshot_rows") is not None else None,
+                    params_hash, now,
+                ))
+            conn.commit()
+            conn.close()
+            verdict["signal_params"] = self.signal_params
+            verdict["params_hash"] = params_hash
+            verdict["policy"] = ("every executed entry x required dataset has persisted source rows "
+                                 "and every available_at <= signal_date < entry_date")
+            register_artifact(run_hash, "data_availability", verdict["passed"], verdict)
+            return verdict
+        except Exception as _e:
+            logger.warning(f"[signal_evidence] 기록 실패 {run_id}: {_e}")
+            return None
+
+
+# ══════════════════════════════════════════════════════════════
 #  거래비용 표준 모델 (V1~V10 + 텐버거 공통 적용)
 # ══════════════════════════════════════════════════════════════
 
@@ -2059,6 +2353,62 @@ def _is_buy_v11(
                 return False
 
     return True
+
+
+def _composite_financial_inputs(fin_rows: list, d: str) -> list:
+    """_score_stock()이 d 시점에 읽는 재무 행(흑자전환 f0·f1·전년동기, 가치보너스 최신행)."""
+    def _avail(r):
+        return r[10] if len(r) > 10 and r[10] else _release_date(r[0], r[1], bool(r[9]))
+    available = [r for r in fin_rows if not r[9] and r[1] in (1, 2, 3, 4) and _avail(r) <= d]
+    available.sort(key=lambda r: (r[0], r[1]), reverse=True)
+    out = []
+    if available:
+        out.append(("ta_f0", available[0]))
+        if len(available) >= 2:
+            out.append(("ta_f1", available[1]))
+        y0, q0 = available[0][0], available[0][1]
+        ya = [r for r in fin_rows if r[1] == q0 and r[0] == y0 - 1 and not r[9] and _avail(r) <= d]
+        if ya:
+            out.append(("ta_year_ago", ya[0]))
+    latest = _get_financial_as_of(fin_rows, d)
+    if latest is not None:
+        out.append(("value_latest", latest))
+    return out
+
+
+def _event_date_basis(stock_code: str, ev_date: str) -> str:
+    """이벤트 날짜가 fin_disclosure_dates 실측 공시일인지(없으면 법정기한 추정) 판별."""
+    for (code, _y, _q, _ia), avail in _DISC_DATES.items():
+        if code == stock_code and avail == ev_date:
+            return "actual_disclosure"
+    return "statutory_estimate"
+
+
+def _v11_financial_inputs(fin_rows: list, d: str) -> list:
+    """_is_buy_v11()이 d 시점에 읽는 재무 행을 같은 규칙으로 재현(증거 원장용).
+
+    반환: [(role, row), ...] — 최신 분기 f0, 전년동기 f0_yoy, 직전 분기 f1, 그 전년동기 f1_yoy.
+    """
+    available = [r for r in fin_rows
+                 if not r[9] and r[1] in (1, 2, 3, 4)
+                 and (r[10] if len(r) > 10 and r[10] else _release_date(r[0], r[1], bool(r[9]))) <= d]
+    available.sort(key=lambda r: (r[0], r[1]), reverse=True)
+    if not available:
+        return []
+    by_quarter: dict = {}
+    for r in available:
+        by_quarter.setdefault((r[0], r[1]), r)
+    out = [("f0", available[0])]
+    f0_yoy = by_quarter.get((available[0][0] - 1, available[0][1]))
+    if f0_yoy is not None:
+        out.append(("f0_yoy", f0_yoy))
+    if len(available) >= 2:
+        f1 = available[1]
+        out.append(("f1", f1))
+        f1_yoy = by_quarter.get((f1[0] - 1, f1[1]))
+        if f1_yoy is not None:
+            out.append(("f1_yoy", f1_yoy))
+    return out
 
 
 # ══════════════════════════════════════════════════════════════

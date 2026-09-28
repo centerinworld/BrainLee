@@ -13,6 +13,10 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    evidence_aggregate,
+    evidence_item,
+    financial_row_evidence,
     DB_PATH,
     _final_liquidation_quote_for_code,
     _net_profit,
@@ -205,7 +209,7 @@ def run_backtest_moonshot_turnaround(
             "SELECT stock_code, config_value FROM stock_collection_config "
             "WHERE config_key='preferred_report_type'")}
         raw_rows = conn.execute("""
-            SELECT stock_code, year, quarter, report_type, net_income, revenue
+            SELECT stock_code, year, quarter, report_type, net_income, revenue, id, created_at, updated_at
             FROM financial_data
             WHERE is_annual=0 AND quarter BETWEEN 1 AND 4 AND net_income IS NOT NULL
               AND stock_code IN ({})
@@ -220,27 +224,30 @@ def run_backtest_moonshot_turnaround(
             pref = overrides.get(code, "CFS")
             r_ni = variants.get(pref) or next(iter(variants.values()))
             r_rev = variants.get("CFS") or r_ni
-            panel.setdefault(code, []).append((y, q, r_ni[4], r_rev[5]))
+            panel.setdefault(code, []).append((y, q, r_ni[4], r_rev[5], r_ni, r_rev))
         for code in panel:
             panel[code].sort(key=lambda x: (x[0], x[1]))
 
         cf_map: Dict[tuple, dict] = {}
         for r in conn.execute("""
-            SELECT stock_code, year, quarter, report_type, depreciation_q, operating_cf_q
+            SELECT stock_code, year, quarter, report_type, depreciation_q, operating_cf_q,
+                   id, created_at, updated_at
             FROM cash_flow_data WHERE is_annual=0 AND stock_code IN ({})
         """.format(",".join("?" * len(sd))), list(sd.keys())):
             key = (r[0], r[1], r[2])
             cf_map.setdefault(key, {})[r[3]] = r
 
         dilution_map: Dict[str, list] = {}
+        dilution_rows: Dict[str, list] = {}
         for r in conn.execute("""
-            SELECT stock_code, disclosed_at FROM dilution_events
+            SELECT stock_code, disclosed_at, id, rcept_no FROM dilution_events
             WHERE event_type IN ('CB','BW','EB','RIGHTS')
               AND (risk_event_bucket IS NULL OR risk_event_bucket != 'legacy_non_issuance_event')
               AND stock_code IN ({})
         """.format(",".join("?" * len(sd))), list(sd.keys())):
             if r[1]:
                 dilution_map.setdefault(r[0], []).append(str(r[1])[:10])
+                dilution_rows.setdefault(r[0], []).append((str(r[1])[:10], r[2], r[3]))
         for c in dilution_map:
             dilution_map[c].sort()
 
@@ -264,7 +271,7 @@ def run_backtest_moonshot_turnaround(
             if n < 8:
                 continue
             for i in range(4, n):
-                y, q, ni, rev = qs[i]
+                y, q, ni, rev = qs[i][:4]
                 avail = _avail_date(y, q, code)
                 ttm_now = sum(x[2] or 0 for x in qs[max(0, i-3):i+1])
                 if not include_profitable:
@@ -299,9 +306,50 @@ def run_backtest_moonshot_turnaround(
                     # 자체는 turnaround-watch 발굴용으로만 쓰고 실전 편입 여부는 자본경쟁(30슬롯)
                     # 결과라는 점을 감안할 것 — 에이엘티가 미편입된 것은 편향 때문이 아니라 정상적인
                     # 슬롯 경쟁 결과로 판단됨(CLAUDE.md 참조).
-                    score_events.setdefault(code, []).append((avail, score))
+                    score_events.setdefault(code, []).append((avail, score, i))
         for code in score_events:
-            score_events[code].sort()
+            score_events[code].sort(key=lambda e: (e[0], e[1]))
+
+        evidence = SignalEvidenceLedger("moonshot_turnaround", {
+            "entry_score_min": entry_score_min, "dilution_max": dilution_max,
+            "include_profitable": include_profitable,
+            "report_type": "preferred(stock_collection_config) else CFS; revenue CFS",
+        })
+
+        def _note_evidence(code: str, day: str) -> None:
+            ev = _current_score(code, day)
+            items = []
+            if ev is not None:
+                qs = panel[code]
+                i = ev[2]
+                # comprehensive_score가 읽는 행: TTM(i-3..i) + 전년동기 매출(i-4) + 직전 4분기 흑자여부(i-4..i-1)
+                for j in range(max(0, i - 4), i + 1):
+                    y, q, ni, rev, r_ni, r_rev = qs[j]
+                    role = "signal_quarter" if j == i else f"lag{i - j}"
+                    items.append(financial_row_evidence(
+                        r_ni[6], code, y, q, report_type=r_ni[3], role=role + ":net_income",
+                        value={"net_income": ni}, collected_at=r_ni[7], modified_at=r_ni[8]))
+                    if r_rev is not r_ni:
+                        items.append(financial_row_evidence(
+                            r_rev[6], code, y, q, report_type=r_rev[3], role=role + ":revenue",
+                            value={"revenue": rev}, collected_at=r_rev[7], modified_at=r_rev[8]))
+                y, q = qs[i][0], qs[i][1]
+                cf = cf_map.get((code, y, q))
+                if cf:
+                    r = cf.get("CFS") or next(iter(cf.values()))
+                    items.append(financial_row_evidence(
+                        r[6], code, y, q, report_type=r[3], role="cash_flow",
+                        value={"depreciation_q": r[4], "operating_cf_q": r[5]},
+                        collected_at=r[7], modified_at=r[8], dataset="cash_flow_data"))
+                else:
+                    items.append(evidence_item("cash_flow_data", None, None))
+            cutoff = (datetime.strptime(day, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
+            items.append(evidence_aggregate("dilution_events", [
+                {"row_id": rid, "available_at": d, "value": {"rcept_no": no}}
+                for d, rid, no in dilution_rows.get(code, ()) if cutoff <= d <= day
+            ], source_key=f"window:{cutoff}~{day}"))
+            evidence.note(code, day, items if ev is not None else
+                          [evidence_item("financial_data", None, None)] + items)
 
         def _current_score(code: str, day: str):
             evs = score_events.get(code)
@@ -415,6 +463,7 @@ def run_backtest_moonshot_turnaround(
                 if strict_exec:
                     for _, code in picked:
                         pending_buys.append(code)
+                        _note_evidence(code, day)
                 else:
                     for _, code in picked:
                         i = didx[code].get(day)
@@ -458,6 +507,7 @@ def run_backtest_moonshot_turnaround(
         conn.commit()
         conn.close()
         _register_execution_artifacts(run_id, total_capital, cash, asof_mktcap=asof_mktcap)
+        evidence.persist(run_id, trades)
         return run_id
 
     except Exception as e:

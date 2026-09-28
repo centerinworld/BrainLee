@@ -110,11 +110,29 @@ def update_outcomes(conn=None) -> int:
                 (entry_date, entry_price, signal["signal_id"]),
             )
         future = _usable_prices(conn, signal["stock_code"], entry_date, strictly_after=False)
+        # 2026-09-28: 사용불가 가격 사건(분할·감자·미확인 급변 등, price_jump_audit.return_usable=0)은
+        # 그 날만 빼면 앞뒤 가격이 다른 기준으로 이어 붙어 수익률이 망가진다(417310 코람코더원리츠
+        # 2026-08-28 x0.2136 → -78% 오판). 창 안에 그런 사건이 있으면 완결로 치지 않고 제외한다.
+        blocked = [str(r[0])[:10] for r in conn.execute(
+            """SELECT event_date FROM price_jump_audit
+               WHERE stock_code=? AND event_date>? AND return_usable=0 ORDER BY event_date""",
+            (signal["stock_code"], str(entry_date)[:10]),
+        ).fetchall()]
         for horizon in HORIZONS:
             if len(future) <= horizon:
                 continue
             window = future[:horizon + 1]
             end = window[-1]
+            if any(str(entry_date)[:10] < d <= str(end[0])[:10] for d in blocked):
+                cursor = conn.execute(
+                    """UPDATE live_signal_outcomes
+                       SET outcome_date=NULL,outcome_price=NULL,return_pct=NULL,max_gain_pct=NULL,
+                           max_loss_pct=NULL,status='price_event_excluded',updated_at=?
+                       WHERE signal_id=? AND horizon_days=? AND status<>'price_event_excluded'""",
+                    (now, signal["signal_id"], horizon),
+                )
+                updated += max(cursor.rowcount, 0)
+                continue
             entry_price = float(entry_price)
             closes = [float(row[1]) for row in window]
             cursor = conn.execute(

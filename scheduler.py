@@ -4503,12 +4503,31 @@ class CollectionScheduler:
                             logger.info(f"[{label}] 갱신 완료: {refresh.stdout.strip()[-200:]}")
                         else:
                             logger.error(f"[{label}] 오류: {refresh.stderr[-300:]}")
+                            self._alert_forward_chain(label, refresh.stderr)
                 else:
                     logger.error(f"[가격급변감사] 오류: {audit.stderr[-300:]}")
+                    self._alert_forward_chain("가격급변감사", audit.stderr)
             else:
                 logger.error(f"[자본행위보정] 오류: {result.stderr[-300:]}")
+                self._alert_forward_chain("자본행위보정", result.stderr)
         except Exception as e:
             logger.error(f"[자본행위보정] 예외: {e}")
+            self._alert_forward_chain("자본행위보정", str(e))
+
+    def _alert_forward_chain(self, label: str, detail: str) -> None:
+        """2026-09-28: 자본행위보정→가격감사→forward 신호 체인이 8/14부터 매일 조용히
+        실패해 forward 표본이 46일간 0건 완결로 멈췄다. 체인 단계 실패는 텔레그램으로 알린다
+        (같은 날 같은 단계는 1회만)."""
+        try:
+            from notifier import send as _send
+            tail = (detail or "").strip().splitlines()[-1:] or [""]
+            _send(
+                f"⚠️ [forward 검증 체인] {label} 실패 — 전략센터 forward 신호 등록/결과 갱신이 "
+                f"오늘 실행되지 않았을 수 있음\n{tail[0][:200]}",
+                key=f"forward_chain_{label}_{date.today().isoformat()}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"[forward 체인 경보] 전송 실패: {exc}")
 
     # ──────────────────────────────────────────────────────────
     # FnGuide 연결/별도 재무제표 + 스냅샷 (매월 3일 05:00)

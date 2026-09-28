@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    evidence_item,
     DB_PATH,
     _calc_metrics,
     _final_liquidation_quote_for_code,
@@ -117,7 +119,8 @@ def run_backtest_contract_momentum(
         raw = conn.execute("""
             SELECT rcept_no, stock_code, disclosed_at, COALESCE(report_nm,''),
                    COALESCE(contract_ratio_pct,0), COALESCE(is_overseas,0), COALESCE(ai_score,0),
-                   COALESCE(contract_amount_krw,0), contract_start, contract_end
+                   COALESCE(contract_amount_krw,0), contract_start, contract_end,
+                   id, created_at, updated_at, corrects_rcept_no, corrected_by_rcept_no
             FROM dart_contracts
             WHERE stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]' AND contract_ratio_pct IS NOT NULL
               AND COALESCE(is_correction, 0) = 0
@@ -149,7 +152,9 @@ def run_backtest_contract_momentum(
 
         seen = set()
         events_raw = []
-        for rcept_no, code, dt, report_name, ratio, overseas, ai_score, amount_krw, c_start, c_end in raw:
+        event_meta: Dict[tuple, list] = {}
+        for (rcept_no, code, dt, report_name, ratio, overseas, ai_score, amount_krw, c_start, c_end,
+             row_id, created_at, updated_at, corrects_no, corrected_by_no) in raw:
             digits = "".join(ch for ch in str(dt or "") if ch.isdigit())
             if len(digits) < 8:
                 continue
@@ -167,6 +172,14 @@ def run_backtest_contract_momentum(
             dur_m = _duration_months(c_start, c_end)
             q_impact = (float(ratio or 0) / (dur_m / 3)) if (dur_m and ratio) else None
             events_raw.append((code, iso, float(ratio or 0), int(overseas or 0), float(ai_score or 0), q_impact))
+            event_meta.setdefault((code, iso), []).append({
+                "row_id": row_id, "rcept_no": rcept_no, "disclosed_at": iso, "report_nm": report_name,
+                "contract_ratio_pct": float(ratio or 0), "is_overseas": int(overseas or 0),
+                "ai_score": float(ai_score or 0), "contract_amount_krw": float(amount_krw or 0),
+                "contract_start": c_start, "contract_end": c_end, "quarterly_impact": q_impact,
+                "corrects_rcept_no": corrects_no, "corrected_by_rcept_no": corrected_by_no,
+                "created_at": created_at, "updated_at": updated_at,
+            })
 
         codes = sorted({e[0] for e in events_raw})
         sd: Dict[str, dict] = {}
@@ -197,6 +210,36 @@ def run_backtest_contract_momentum(
 
         # 이벤트별 진입일(entry_date=신호일 다음 거래일) 및 필터 지표(52주위치/MA20/20일평균거래대금) 계산
         buy_pool: Dict[str, list] = {}
+        pool_events: Dict[tuple, list] = {}
+        evidence = SignalEvidenceLedger("contract_momentum", {
+            "min_ratio": min_ratio, "overseas_only": overseas_only, "min_ai": min_ai,
+            "pos52_max": pos52_max, "min_ma20": min_ma20,
+            "min_quarterly_impact": min_quarterly_impact, "max_mom60": max_mom60,
+            "data_asof_ts": effective_data_asof_ts,
+        })
+
+        def _note_evidence(code: str, day: str) -> None:
+            items = []
+            for m in pool_events.get((day, code), ()):
+                # 정정 반영 시각: 정정은 원 공시 행의 계약금액·계약종료일만 덮어쓴다
+                # (collectors/dart_contract_collector.py _apply_correction). 계약비율·해외여부·
+                # 공시일은 원 공시 그대로다. 정정 공시일은 정정 rcept_no 앞 8자리(DART 접수일).
+                # min_quarterly_impact(계약종료일 사용)가 켜진 run만 정정값을 신호에 쓰므로 그때만
+                # 정정 공시일을 available_at으로 삼는다 — 신호일 이후 정정이면 감사에서 걸린다.
+                corr_no = str(m["corrected_by_rcept_no"] or "")
+                corr_date = (f"{corr_no[:4]}-{corr_no[4:6]}-{corr_no[6:8]}"
+                             if len(corr_no) >= 8 and corr_no[:8].isdigit() else None)
+                uses_corrected = min_quarterly_impact is not None
+                avail = (max(m["disclosed_at"], corr_date) if (corr_date and uses_corrected)
+                         else m["disclosed_at"])
+                value = {**m, "correction_disclosed_at": corr_date,
+                         "corrected_fields_used_by_signal": bool(corr_date and uses_corrected)}
+                items.append(evidence_item(
+                    "dart_contracts", m["rcept_no"], avail, basis="actual_disclosure",
+                    source_key=f"row:{m['row_id']}", value=value,
+                    collected_at=m["created_at"], modified_at=m["updated_at"],
+                ))
+            evidence.note(code, day, items or [evidence_item("dart_contracts", None, None)])
         for code, sig_date, ratio, overseas, ai_score, q_impact in events_raw:
             s = sd.get(code)
             if not s or code not in didx:
@@ -235,6 +278,10 @@ def run_backtest_contract_momentum(
             if entry_date < start_date or entry_date > end_date:
                 continue
             buy_pool.setdefault(entry_date, []).append((ratio, ai_score, code))
+            pool_events.setdefault((entry_date, code), []).extend(
+                m for m in event_meta.get((code, sig_date), ())
+                if m["contract_ratio_pct"] == ratio and m["ai_score"] == ai_score
+            )
         for d in buy_pool:
             buy_pool[d].sort(reverse=True)
 
@@ -310,6 +357,7 @@ def run_backtest_contract_momentum(
                         continue
                     pending_buys.append(code)
                     pending_codes.add(code)
+                    _note_evidence(code, day)
                     slots -= 1
 
             _mkval = cash
@@ -383,6 +431,7 @@ def run_backtest_contract_momentum(
                 pass
         conn.close()
         _register_execution_artifacts(run_id, total_capital, cash, asof_mktcap=False)
+        evidence.persist(run_id, trades)
         return run_id
     except Exception as e:
         import traceback as _tb

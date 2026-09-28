@@ -13,6 +13,9 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    evidence_item,
+    financial_row_evidence,
     DB_PATH,
     _CHART_BOTTOM_MIN,
     _CHART_TOP_MIN,
@@ -220,7 +223,8 @@ def run_backtest_turnaround(
                           WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                           WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
                           ELSE printf('%d-02-15', f.year+1) END
-                   ) as avail_date
+                   ) as avail_date,
+                   f.id, f.report_type, f.created_at, f.updated_at
             FROM financial_data f
             LEFT JOIN fin_disclosure_dates d ON
                 d.stock_code = f.stock_code AND d.year = f.year
@@ -248,10 +252,39 @@ def run_backtest_turnaround(
                 if ni is None:
                     continue
                 avail = row[10] if (len(row) > 10 and row[10]) else _release_date(y, q, False)
-                q_rows.append((avail, y, q, ni))
+                q_rows.append((avail, y, q, ni, row))
             q_rows.sort(key=lambda x: (x[1], x[2]))  # year, quarter 오름차순
             if q_rows:
                 ni_hist[sc] = q_rows
+
+        def _turnaround_rows(code: str, target_date: str) -> list:
+            """_get_turnaround()가 읽는 행(최신 공시 분기 + 직전 3분기)을 같은 정렬로 재현."""
+            avail_rows = [x for x in ni_hist.get(code, ()) if x[0] <= target_date]
+            avail_rows.sort(key=lambda x: (x[1], x[2]), reverse=True)
+            return avail_rows[:4]
+
+        evidence = SignalEvidenceLedger("turnaround", {
+            "hi52_drop_min": hi52_drop_min, "hi52_drop_max": hi52_drop_max, "max_pbr": max_pbr,
+            "vol_ratio": vol_ratio, "data_asof_ts": data_asof_ts,
+            "turnaround_cache": "first evaluation day of (code, month)",
+        })
+
+        def _note_evidence(code: str, day: str) -> None:
+            # 흑자전환 판정은 (종목, 월) 캐시 → 그 달 최초 평가일 기준 행이 실제 입력이다.
+            basis_day = ta_cache_day.get((code, day[:7]), day)
+            items = []
+            for role, (avail, y, q, ni, row) in zip(("latest", "lag1", "lag2", "lag3"),
+                                                   _turnaround_rows(code, basis_day)):
+                items.append(financial_row_evidence(
+                    row[11], code, y, q, report_type=row[12], role=role,
+                    value={"net_income": ni, "turnaround_eval_day": basis_day},
+                    available_at=avail, collected_at=row[13], modified_at=row[14]))
+            hist = pbr_hist.get(code) or []
+            idx = bisect_right([d for d, _ in hist], day) - 1
+            if idx >= 0:
+                items.append(evidence_item("valuation_history", f"{code}:{hist[idx][0]}", hist[idx][0],
+                                           value={"pbr": hist[idx][1]}, source_key="period_end"))
+            evidence.note(code, day, items or [evidence_item("financial_data", None, None)])
 
         def _get_turnaround(code: str, target_date: str):
             """
@@ -263,7 +296,7 @@ def run_backtest_turnaround(
             rows = ni_hist.get(code)
             if not rows:
                 return None
-            available = [(y, q, ni) for avail, y, q, ni in rows if avail <= target_date]
+            available = [(y, q, ni) for avail, y, q, ni, _row in rows if avail <= target_date]
             if len(available) < 2:
                 return None
             available.sort(key=lambda x: (x[0], x[1]), reverse=True)
@@ -416,6 +449,7 @@ def run_backtest_turnaround(
         # 흑자전환 감지 캐시 (동일 종목을 매일 재검사 비용 절감)
         # 캐시 키: (code, month) — 같은 달은 동일 결과로 가정
         ta_cache: Dict[tuple, object] = {}
+        ta_cache_day: Dict[tuple, str] = {}
 
         ta_pending_sells: list = []
         ta_pending_buys: list = []
@@ -581,6 +615,7 @@ def run_backtest_turnaround(
                 if ta_result == 'MISS':
                     ta_result = _get_turnaround(code, day)
                     ta_cache[cache_key] = ta_result
+                    ta_cache_day[cache_key] = day
                 if ta_result is None:
                     continue
 
@@ -610,6 +645,7 @@ def run_backtest_turnaround(
                     if code not in pos and code not in ta_pending_buys and \
                        len(pos) + len(ta_pending_buys) < max_positions:
                         ta_pending_buys.append(code)
+                        _note_evidence(code, day)
                     continue
                 if len(pos) >= max_positions: break
                 if cash < curr * 100: continue
@@ -673,6 +709,7 @@ def run_backtest_turnaround(
         conn.commit()
         conn.close()
         _register_execution_artifacts(run_id, init_cap, cash)
+        evidence.persist(run_id, sell_trades)
         return run_id
 
     except Exception as e:

@@ -13,6 +13,9 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    evidence_item,
+    financial_row_evidence,
     DB_PATH,
     _CHART_BOTTOM_MIN,
     _CHART_TOP_MIN,
@@ -253,7 +256,8 @@ def run_backtest_recovery(
                          CASE WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                               WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                               WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                              ELSE printf('%d-02-15', f.year+1) END) as avail_date
+                              ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                       f.id, f.report_type, f.created_at, f.updated_at
                 FROM financial_data f
                 LEFT JOIN fin_disclosure_dates d ON
                     d.stock_code=f.stock_code AND d.year=f.year AND d.quarter=f.quarter AND d.is_annual<1
@@ -262,7 +266,27 @@ def run_backtest_recovery(
                 ORDER BY f.stock_code, avail_date
             """.format(",".join("?" * len(sd))), list(sd.keys())).fetchall():
                 # 튜플: (avail_date, net_income, revenue, year, quarter) — 인덱스[0..2]는 기존 코드 호환
-                ta_fins.setdefault(r[0], []).append((r[5], r[1], r[2], r[3], r[4]))
+                ta_fins.setdefault(r[0], []).append((r[5], r[1], r[2], r[3], r[4], r[6], r[7], r[8], r[9]))
+
+        evidence = SignalEvidenceLedger("recovery", {
+            "turnaround_bonus": turnaround_bonus, "turnaround_rev_filter": turnaround_rev_filter,
+            "fin_health": fin_health, "ta_score_bonus": ta_score_bonus, "flow_bonus": flow_bonus,
+            "ma60_depth_min": ma60_depth_min, "ma60_depth_max": ma60_depth_max,
+            "pct_from_low_max": pct_from_low_max, "vol_ratio": vol_ratio,
+        })
+
+        def _note_evidence(code: str, day: str) -> None:
+            if turnaround_bonus is None and not fin_health and ta_score_bonus is None:
+                evidence.note(code, day, [evidence_item("financial_data", None, None,
+                                                        source_key="dataset_not_consulted_by_params")])
+                return
+            # 흑자전환/TTM/종합스코어 판정이 읽는 창: as-of 최근 5개 공시 분기(avail 정렬 그대로)
+            avail = [x for x in ta_fins.get(code, ()) if x[0] <= day][-5:]
+            items = [financial_row_evidence(
+                x[5], code, x[3], x[4], report_type=x[6], role=f"lag{len(avail) - 1 - k}",
+                value={"net_income": x[1], "revenue": x[2]}, available_at=x[0],
+                collected_at=x[7], modified_at=x[8]) for k, x in enumerate(avail)]
+            evidence.note(code, day, items or [evidence_item("financial_data", None, None)])
 
         def _fin_healthy(code: str, day: str) -> bool:
             """day 시점 공시된 최근 4개 분기 순이익 합(TTM) > 0 — '재무가 나쁘지 않은' 종목 판정."""
@@ -659,6 +683,7 @@ def run_backtest_recovery(
                     if code not in pos and code not in pending_buys and \
                        len(pos) + len(pending_buys) < max_positions:
                         pending_buys.append(code)
+                        _note_evidence(code, day)
                     continue
                 if len(pos) >= max_positions: break
                 if cash < curr * 100: continue  # 최소 100주 살 돈
@@ -718,6 +743,7 @@ def run_backtest_recovery(
         conn.commit()
         conn.close()
         _register_execution_artifacts(run_id, init_cap, cash)
+        evidence.persist(run_id, sell_trades)
         return run_id
 
     except Exception as e:

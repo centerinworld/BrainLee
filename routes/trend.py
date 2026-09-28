@@ -145,12 +145,13 @@ def _investable_cash(conn, strategy: str, seed: float, reserve_pct: float) -> fl
 def _record_paper_trade(
     conn, *, strategy: str, side: str, code: str, name: str, holding_id: int | None,
     qty: int, price: float, trade_id: int, occurred_at: str, gross_profit: float = 0.0,
+    cost_rates: dict | None = None,
 ) -> dict:
     result = record_trade(
         conn, strategy=strategy, initial_cash=100_000_000.0, side=side,
         stock_code=code, stock_name=name, holding_id=holding_id,
         quantity=qty, price=price, ref_key=f"peak_trade:{trade_id}",
-        occurred_at=occurred_at, gross_profit=gross_profit,
+        occurred_at=occurred_at, gross_profit=gross_profit, cost_rates=cost_rates,
     )
     # Keep the strategy-specific cash ledger authoritative, while mirroring the
     # fill into the shared lifecycle trail for reconciliation and forward tests.

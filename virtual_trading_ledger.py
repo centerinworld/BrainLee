@@ -105,6 +105,7 @@ def record_trade(
     occurred_at: str,
     gross_profit: float = 0.0,
     allow_unmatched_sell: bool = False,
+    cost_rates: dict | None = None,
 ) -> dict:
     """Record one idempotent paper fill and update account cash atomically.
 
@@ -127,9 +128,12 @@ def record_trade(
 
     balance = initialize_account(conn, strategy, initial_cash)
     gross = float(quantity) * float(price)
-    fee = gross * (BUY_COMMISSION_RATE if side == "buy" else SELL_COMMISSION_RATE)
-    tax = gross * SELL_TAX_RATE if side == "sell" else 0.0
-    slippage = gross * SLIPPAGE_RATE
+    # cost_rates(2026-09-28): paper_execution이 백테스트와 같은 비용(backtest_common._tx_cost:
+    # 수수료 0.015% + 매도세 0.18% + 시총구간 슬리피지)을 쓰도록 비율을 직접 넘긴다.
+    rates = cost_rates or {}
+    fee = gross * float(rates.get("fee", BUY_COMMISSION_RATE if side == "buy" else SELL_COMMISSION_RATE))
+    tax = gross * float(rates.get("tax", SELL_TAX_RATE)) if side == "sell" else 0.0
+    slippage = gross * float(rates.get("slippage", SLIPPAGE_RATE))
     buy_costs = 0.0
     if side == "sell" and holding_id is not None:
         cost = conn.execute(

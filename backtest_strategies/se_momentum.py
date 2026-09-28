@@ -15,6 +15,9 @@ from typing import Optional, Dict, List, Tuple
 from config import IS_POSTGRES
 
 from backtest_common import (
+    SignalEvidenceLedger,
+    evidence_item,
+    financial_row_evidence,
     DB_PATH,
     _CHART_BOTTOM_MIN,
     _chart_bottom_confluence,
@@ -274,7 +277,8 @@ def run_backtest_se_momentum(
                          CASE WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                               WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                               WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                              ELSE printf('%d-02-15', f.year+1) END) as avail_date
+                              ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                       f.id, f.report_type, f.created_at, f.updated_at
                 FROM financial_data f
                 LEFT JOIN fin_disclosure_dates d ON
                     d.stock_code=f.stock_code AND d.year=f.year AND d.quarter=f.quarter AND d.is_annual<1
@@ -294,7 +298,25 @@ def run_backtest_se_momentum(
                     continue
                 _earn_seen.add(key)
                 earn_fins.setdefault(r[0], []).append(
-                    (r[6], r[1], r[2], r[3], r[4], r[5]))  # (avail_date, rev, op, ni, year, quarter)
+                    (r[6], r[1], r[2], r[3], r[4], r[5], r[7], r[8], r[9], r[10]))  # (avail_date, rev, op, ni, year, quarter, id, report_type, created, updated)
+
+        evidence = SignalEvidenceLedger("se_momentum", {
+            "require_earnings_accel": require_earnings_accel, "top_sectors": top_sectors,
+            "min_sector_ret20": min_sector_ret20, "basket_per_sector": basket_per_sector,
+        })
+
+        def _note_evidence(code: str, day: str) -> None:
+            if not require_earnings_accel:
+                evidence.note(code, day, [evidence_item("financial_data", None, None,
+                                                        source_key="dataset_not_consulted_by_params")])
+                return
+            # 실적가속 게이트가 읽는 창: as-of 최근 5개 공시분기(cur=avail[-1], prev_y=avail[-5], prior3)
+            avail = [x for x in earn_fins.get(code, ()) if x[0] <= day][-5:]
+            items = [financial_row_evidence(
+                x[6], code, x[4], x[5], report_type=x[7], role=f"lag{len(avail) - 1 - k}",
+                value={"revenue": x[1], "operating_profit": x[2], "net_income": x[3]},
+                available_at=x[0], collected_at=x[8], modified_at=x[9]) for k, x in enumerate(avail)]
+            evidence.note(code, day, items or [evidence_item("financial_data", None, None)])
 
         def _earnings_accel_ok(code: str, day: str) -> bool:
             """실적가속: 최신 공시분기 매출YoY>0 AND 영업이익YoY>0(가속) 이거나, 흑자전환(직전 적자→흑자)."""
@@ -458,6 +480,7 @@ def run_backtest_se_momentum(
                 sec = se_sector[code]
                 if per_sec_count.get(sec, 0) >= basket_per_sector: continue
                 pending_buys.append(code)
+                _note_evidence(code, day)
                 per_sec_count[sec] = per_sec_count.get(sec, 0) + 1
                 available -= 1
 
@@ -491,6 +514,7 @@ def run_backtest_se_momentum(
               run_id))
         conn.commit()
         _register_execution_artifacts(run_id, init_cap, final_val)
+        evidence.persist(run_id, trades)
         return run_id
 
     except Exception as e:

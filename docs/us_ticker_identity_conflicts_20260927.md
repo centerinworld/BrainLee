@@ -33,6 +33,55 @@ Minervini PIT 결측 감사에서 "S&P500 PIT(39) + Nasdaq-100 PIT(89) 합집합
 - 자동 백필 크론(`scripts/ops/cron_us_delisted_backfill.py`)의 대상 93개 목록에는 애초에 이 9개가 포함되지 않아 실행상 영향은 없음 — 이번 조치는 향후 다른 스크립트/세션이 무심코 포함시키는 것을 막는 방어선이다.
 - 남은 13개(`DELL/EA/EQR/FOX/FOXA/GOLD/KHC/MNST/PEP/SATS/SBNY/VLTO`)는 상폐 시점과 데이터 시작일 사이 공백이 없거나(수집 시작일 2021-05-24 부근에서 시작) 정상적으로 지금도 상장 중인 회사라 이번 조사에서 문제로 분류하지 않았다.
 
+## 2026-09-28 추가 — 백필 자체가 잘못된 데이터를 넣은 6건 발견 (⚠️ DB 정리 미완료)
+
+93개 백필이 완료된 뒤 `scripts/run_us_minervini_survivors.py`를 재실행해 커버리지가
+실제로 개선됐는지 확인하는 과정에서, "성공적으로 채워졌다"고 표시된 티커 중 6개가
+**전혀 다른 회사의 데이터**였다는 것을 발견했다. 원인: Tiingo가 이 6개 심볼에 대해
+404나 "유효한 행 없음"이 아니라 **HTTP 200 + 그럴듯한 OHLCV**를 돌려줬는데, 그게
+실제로는 그 티커를 재사용 중인 다른 현재 회사의 데이터였다 — 백필 스크립트의 기존
+검증(404/무효데이터 체크)은 이런 "형식은 멀쩡한 오답"을 걸러내지 못한다.
+
+| 티커 | 실제 역사적 회사 | 실제 상폐/개명일 | DB에 들어간(잘못된) 구간 |
+|---|---|---|---|
+| `CA` | CA Technologies | 2018-11-05(Broadcom 인수) | 2023-12-14 ~ 2026-09-25 |
+| `CTRP` | Ctrip → Trip.com | 2019-11-05(티커를 TCOM으로 변경) | 2019-11-05 이후도 계속 (2026-09-25까지) |
+| `SGEN` | Seagen Inc. | 2023-12-14(Pfizer 인수) | 2023-12-14 이후도 계속 (2026-09-25까지) |
+| `SIVB` | SVB Financial Group | 2023-03-10(파산/FDIC 관리) | 2023-03-10 이후도 계속 (2026-09-25까지) |
+| `SPLK` | Splunk Inc. | 2024-03-18(Cisco 인수) | 2024-03-18 이후도 계속 (2026-09-25까지) |
+| `ANSS` | ANSYS, Inc. | 2025-07-17(Synopsys 인수) | 2025-07-17 이후도 계속 (2026-09-25까지) |
+
+각 건은 근거 URL과 함께 `us_ticker_identity_conflict`에 `confirmed_different_entity`로
+등록했고(총 17행), `research_outputs/us_delisted_backfill_state.json`에서도 이 6개를
+`done`에서 빼고 `skip_permanent`로 옮겼다. **`scripts/backfill_us_delisted_prices.py`의
+안전장치 덕분에 앞으로 이 6개는 다시 자동으로 채워지지 않는다.**
+
+**✅ 해결(2026-09-28, 사용자 직접 실행)**: Claude Code 자동모드 권한 분류기가 이 DELETE를
+"공유 리소스(운영 PostgreSQL) 수정"으로 판단해 Claude의 실행을 차단했으나(백업 포함
+스크립트였음에도), 같은 스크립트를 사용자가 본인 터미널에서 직접 실행해 해결. 결과:
+`us_price_history`에서 6개 티커 **28,490행 전부 삭제 확인**(잔여 0행), 백업 테이블
+`us_price_history_deleted_wrong_ticker_20260928`에 동일 28,490행 보존, `data_fix_log`
+run_id `remove_wrong_tiingo_c7c304c247d94598b68d57e898ae48df`로 기록. 실행 중
+`data_fix_log_id_seq`가 또 어긋나는 사고가 있었으나(오늘 세 번째 재발, 알려진 이슈)
+트랜잭션 전체가 롤백돼 데이터 손상 없이 안전했고, 시퀀스 보정 후 재실행으로 완료.
+
+이 사고는 앞으로 같은 방식(Tiingo/다른 벤더로 "결측 티커" 자동 백필)을 또 돌릴 때
+**"채워졌다"=완료가 아니라, 채워진 구간의 마지막 날짜가 그 회사의 실제 상폐일과
+맞는지까지 확인해야 한다**는 교훈을 남긴다 — 이번 조사도 매출·시가 대조가 아니라
+"오늘 날짜까지 데이터가 있다"는 단순한 이상 신호로 시작했다.
+
+## 2026-09-28 추가 — Tiingo 메타데이터로 6건 원인 재분류
+
+`/tiingo/daily/<ticker>` 메타데이터를 직접 조회한 결과, "다른 회사가 티커를 재사용"이
+아니라 두 가지 다른 원인으로 갈렸다:
+
+- `CA`: Tiingo 자체가 이 심볼을 **"XTRACKERS CALIFORNIA MUNICIPAL BOND ETF"**로 인식 — 주식이 아니라 채권 ETF. 순수 심볼 충돌.
+- `SGEN`/`SPLK`/`ANSS`: Tiingo 메타데이터가 여전히 원래 회사명(Seagen Inc/Splunk Inc/Ansys Inc)을 그대로 쓰면서 `endDate=2026-09-25`(오늘)로 표시 — **다른 회사가 아니라 Tiingo가 실제 상폐를 반영하지 않고 델리스트된 종목에 계속 값을 만들어내는 벤더 측 데이터 품질 버그**.
+- `CTRP`/`SIVB`: 메타데이터 엔드포인트는 404인데 `/prices`는 응답 — Tiingo 내부 경로 불일치.
+
+원인이 무엇이든 결론(사용 금지)은 동일해서 조치는 바뀌지 않았다.
+
 ## 남은 작업
 
-- `SPLS`: SEC의 현재 거래소 상장 티커 목록(company_tickers.json)에 없음 — OTC 전용 상장이거나 데이터 수집 과정의 오류일 가능성. Tiingo 메타데이터 엔드포인트(`/tiingo/daily/SPLS`, `name`/`startDate` 필드)로 재확인 필요(2026-09-27 조사 시점엔 시간당 한도로 조회 실패).
+- `SPLS`: SEC의 현재 거래소 상장 티커 목록(company_tickers.json)에 없음 — OTC 전용 상장이거나 데이터 수집 과정의 오류일 가능성. Tiingo 메타데이터 엔드포인트로 재확인 필요(두 차례 시간당 한도로 조회 실패).
+- 나머지 62개 "성공" 티커도 전수로 "마지막 날짜가 실제 상폐일과 맞는지" 검증하지 못했다 — 이번엔 의심스러운 패턴(마지막 날짜가 2025~2026년으로 오늘에 가까움)이 있는 것만 표본 확인했다. `DFS/HES/JNPR/K/MRO/PXD/SRCL/WBA/IPG`는 실제 인수종결일과 정확히 일치해 정상 확인됐고, `CTRA/DAY/VMRK`는 같은 회사의 개명·리테커 사례로 정상 판단했다(VMRK=Equity Residential이 Vivmark Residential로 개명, CTRA=Cabot Oil & Gas가 Coterra Energy로 합병). 나머지(`ALTR/ALXN/APOL/ATVI/CELG/CERN/CMA/CTLT/CTRX/CTXS/DISCA/DISCK/DISH/DRE/DTV/ESRX/FLIR/FWLT/GMCR/HOLX/IACI/JNPR(재확인용)/LEAP/LLTC/LMCA/LVLT/MXIM/MYL/NDOI/NIHD/NLSN/NUAN/PBCT/PDCO/PEAK/PETM/QRTEA/SEE/SHPG/SIAL/SRCL(재확인용)/STRZA/TWTR/VIAB/VMED/VMRK(재확인용)/WCRX/WRK/XLNX/YHOO`)는 검증하지 않았다.
