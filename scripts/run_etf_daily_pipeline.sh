@@ -40,6 +40,15 @@ echo "[$(date '+%F %T')] START base_date=$TARGET_DATE"
 cd "$ROOT" || exit 1
 export PYTHONPATH="$ROOT/runtime_pg_bootstrap:$ROOT/ETF_check"
 
+# A holiday or retry schedule may resolve to an already completed trading day.
+# Do not repeat 1,000+ KRX/KIS requests when that snapshot is already published.
+if [[ "$(sqlite3 "$ROOT/ETF_check/etf_check.db" "SELECT COUNT(*) FROM etf_direct_stock_publication WHERE base_date='$TARGET_DATE' AND status='published';")" == "1" ]] \
+  && "$PYTHON" ETF_check/verify_daily_pipeline.py --date "$TARGET_DATE"; then
+  echo "[$(date '+%F %T')] SKIP base_date=$TARGET_DATE already verified and published"
+  echo "[$(date '+%F %T')] END base_date=$TARGET_DATE exit=0"
+  exit 0
+fi
+
 run_stage() {
   local name="$1"
   shift

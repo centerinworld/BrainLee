@@ -20,6 +20,11 @@ conn = connect_primary_db()
 conn.row_factory = sqlite3.Row
 conn.execute("PRAGMA journal_mode=WAL")
 
+# 2026-09-26 (사용자 결정): FnGuide 기준 덮어쓰기는 금융업 종목에만 적용한다(비금융은 DART 기준 유지 — FnGuide 파싱·정의 차이로
+# 비금융 덮어쓰기 대부분이 원문과 어긋남을 확인). 아래 두 덮어쓰기 루프에서 비금융 종목은 건너뛴다.
+FIN_CODES = {r[0] for r in conn.execute(
+    "SELECT stock_code FROM stock_universe WHERE sector_large LIKE '%금융%' OR sector_large LIKE '%보험%' OR sector_large LIKE '%은행%' OR sector_large LIKE '%증권%'").fetchall()}
+
 # ── Step 0: stock_collection_config 테이블 생성 ──────────────────────
 conn.executescript("""
 CREATE TABLE IF NOT EXISTS stock_collection_config (
@@ -110,6 +115,8 @@ print(f"\n[UNIT_ERROR] {len(unit_errors)}건 처리")
 unit_fixed = 0
 for a in unit_errors:
     code = a["stock_code"]
+    if code not in FIN_CODES:
+        continue
     desc = a["description"]
     # 100배 vs 1000배 판단
     multiplier = 1000 if "1000배" in desc else 100
@@ -255,6 +262,8 @@ if ALL_MODE:
     disc_fixed = 0
     for a in discrepancies:
         code = a["stock_code"]
+        if code not in FIN_CODES:
+            continue
         year = a["sample_year"]
         affected = json.loads(a["affected_fields"] or "[]")
         if not year or not affected:

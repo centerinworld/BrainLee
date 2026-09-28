@@ -9,9 +9,13 @@ def _bars(ticker, count, growth):
 
 
 def test_trend_template_requires_relative_strength_and_ma_alignment():
-    passed, score = trend_template(_bars("AAA", 260, 1.003), _bars("SPY", 260, 1.0005))
+    passed, score = trend_template(
+        _bars("AAA", 260, 1.003),
+        _bars("QQQ", 260, 1.0005),
+        {"percentile": 95.0},
+    )
     assert passed is True
-    assert score > 0.15
+    assert score > 0.95
 
 
 def test_sepa_uses_only_available_quarters_and_yoy_growth():

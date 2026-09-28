@@ -440,8 +440,13 @@ def _register_universe_integrity_artifact(
         logger.warning(f"[universe_artifact] 기록 실패 {run_id}: {_e}")
 
 
-def _register_financial_provenance_artifact(run_id: str, records: list, trade_count: int) -> None:
-    """Persist the exact financial row available to every executed v4 entry."""
+def _register_financial_provenance_artifact(
+    run_id: str,
+    records: list,
+    trade_count: int,
+    strategy: str = "v4",
+) -> None:
+    """Persist the exact financial row available to every executed entry."""
     try:
         from run_registry import register_artifact
         conn = connect_primary_db(timeout=120)
@@ -475,7 +480,7 @@ def _register_financial_provenance_artifact(run_id: str, records: list, trade_co
                 (run_id,run_hash,strategy,stock_code,decision_date,entry_date,dataset,
                  source_row_id,available_at,source_key,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (
-                run_id, run_hash, "v4", record["stock_code"], decision_date,
+                run_id, run_hash, strategy, record["stock_code"], decision_date,
                 record["entry_date"], "financial_data",
                 str(record.get("source_row_id") or "NONE"), available_at,
                 record.get("source_key", ""), now,
@@ -485,7 +490,7 @@ def _register_financial_provenance_artifact(run_id: str, records: list, trade_co
         covered = len(records)
         passed = covered == int(trade_count or 0) and invalid == 0
         register_artifact(run_hash, "data_availability", passed, {
-            "strategy": "v4", "executed_entries": int(trade_count or 0),
+            "strategy": strategy, "executed_entries": int(trade_count or 0),
             "provenance_records": covered, "row_backed_records": row_backed,
             "no_financial_row_available": covered - row_backed,
             "available_after_decision": invalid,
@@ -2126,7 +2131,8 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
                           WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                           WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                           WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                          ELSE printf('%d-02-15', f.year+1) END) as avail_date
+                          ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                   f.id, f.report_type
             FROM financial_data f
             LEFT JOIN fin_disclosure_dates d ON
                 d.stock_code = f.stock_code AND d.year = f.year
@@ -2858,9 +2864,24 @@ def _run_generic_backtest(version: str, signal_fn,
         positions: Dict[str, dict] = {}
         trades:    list = []
         equity_curve: list = []
+        financial_provenance: list = []
         monthly_buys: Dict[str, int] = {}  # 'YYYY-MM' → 월별 신규 매수 건수
         _pb_g: Dict[str, dict] = {}   # pending buys  (D+1 집행)
         _ps_g: Dict[str, dict] = {}   # pending sells (D+1 집행)
+
+        def _financial_provenance_for(sc: str, sd: dict, decision_date: str) -> dict:
+            fin = _get_financial_as_of(sd.get('fins') or [], decision_date, sc)
+            if fin is None:
+                return {
+                    'decision_date': decision_date, 'source_row_id': 'NONE',
+                    'available_at': None, 'source_key': 'no_financial_row_available',
+                }
+            return {
+                'decision_date': decision_date,
+                'source_row_id': fin[11] if len(fin) > 11 else 'LEGACY_ROW_WITHOUT_ID',
+                'available_at': fin[10] if len(fin) > 10 else None,
+                'source_key': f"{fin[0]}Q{fin[1]}:{fin[12] if len(fin) > 12 else ''}",
+            }
 
         def _marked_equity(day: str) -> float:
             value = cash
@@ -2937,6 +2958,9 @@ def _run_generic_backtest(version: str, signal_fn,
                                  'qty': qty, 'cost': cost,
                                  'peak_price': curr, 'hold_days': 0,
                                  'mkt_cap_억': sd.get('mkt_cap_억', mktcap_min)}
+                provenance = dict(meta.get('financial_provenance') or {})
+                provenance.update({'stock_code': sc, 'entry_date': day})
+                financial_provenance.append(provenance)
                 monthly_buys[month_key] = monthly_buys.get(month_key, 0) + 1
             _pb_g.clear()
 
@@ -2996,7 +3020,9 @@ def _run_generic_backtest(version: str, signal_fn,
                         sigs.append((sc, float(entry_bonus_fn(sc, day) or 0.0)))
                     sigs.sort(key=lambda x: -x[1])
                     for sc, _ in sigs[:cap]:
-                        _pb_g[sc] = {}
+                        _pb_g[sc] = {
+                            'financial_provenance': _financial_provenance_for(sc, stock_data[sc], day)
+                        }
                 else:
                     for sc, sd in stock_data.items():
                         if len(_pb_g) >= cap:
@@ -3024,7 +3050,7 @@ def _run_generic_backtest(version: str, signal_fn,
                         if chart_confluence and _chart_bottom_confluence(
                             sd['prices'], sd['opens'], sd['highs'], sd['lows'], sd.get('chart'), i) < _CHART_BOTTOM_MIN:
                             continue
-                        _pb_g[sc] = {}
+                        _pb_g[sc] = {'financial_provenance': _financial_provenance_for(sc, sd, day)}
 
             # ── 에쿼티 ────────────────────────────────────────────────
             equity_curve.append({'date': day, 'equity': round(_marked_equity(day))})
@@ -3160,6 +3186,9 @@ def _run_generic_backtest(version: str, signal_fn,
                 })
                 _register_universe_integrity_artifact(
                     run_id, universe_candidate_count, excluded, warmup_start, end_date
+                )
+                _register_financial_provenance_artifact(
+                    run_id, financial_provenance, len(trades), strategy=_strat_key
                 )
         except Exception as artifact_error:
             logger.warning(f"[run_artifact] 기록 실패 {run_id}: {artifact_error}")

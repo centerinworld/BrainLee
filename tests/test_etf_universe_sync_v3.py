@@ -1,8 +1,8 @@
-import io,sys,unittest,zipfile
+import io,sqlite3,sys,unittest,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]; sys.path.insert(0,str(ROOT/"ETF_check"))
 from direct_etf_pipeline import NAMES,WIDTHS
-from etf_universe_sync_v3 import parse_master_zip
+from etf_universe_sync_v3 import parse_master_zip,preserve_certified_source_control
 
 class CompleteUniverseTest(unittest.TestCase):
     def test_parser_includes_alphanumeric_etfs(self):
@@ -27,5 +27,21 @@ class CompleteUniverseTest(unittest.TestCase):
         self.assertEqual(len(rows),2)
         self.assertIn("0194M0",codes)
         self.assertTrue(any(not code.isdigit() for code in codes))
+
+    def test_certified_cutover_survives_normal_universe_changes(self):
+        conn=sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE etf_source_control(control_id INTEGER,mode TEXT,required_pass_days INTEGER,consecutive_pass_days INTEGER,last_failure TEXT,updated_at TEXT)")
+        conn.execute("INSERT INTO etf_source_control VALUES(1,'krx_primary',5,5,NULL,'old')")
+        self.assertTrue(preserve_certified_source_control(conn,"new"))
+        row=conn.execute("SELECT mode,consecutive_pass_days,last_failure,updated_at FROM etf_source_control").fetchone()
+        self.assertEqual(row,("krx_primary",5,None,"old"))
+
+    def test_uncertified_source_is_kept_in_validation(self):
+        conn=sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE etf_source_control(control_id INTEGER,mode TEXT,required_pass_days INTEGER,consecutive_pass_days INTEGER,last_failure TEXT,updated_at TEXT)")
+        conn.execute("INSERT INTO etf_source_control VALUES(1,'legacy_validation',5,3,NULL,'old')")
+        self.assertFalse(preserve_certified_source_control(conn,"new"))
+        row=conn.execute("SELECT mode,consecutive_pass_days,last_failure,updated_at FROM etf_source_control").fetchone()
+        self.assertEqual(row,("legacy_validation",0,"universe_alphanumeric_correction","new"))
 
 if __name__=="__main__": unittest.main()

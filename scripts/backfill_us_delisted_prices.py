@@ -100,17 +100,43 @@ def apply_rows(rows_by_ticker: dict[str, list[tuple]]) -> dict:
     return {"run_id": run_id, "inserted": inserted}
 
 
+def reject_known_identity_conflicts(tickers: list[str], force: bool) -> None:
+    """Fail closed on tickers where the current occupant is a verified different
+    legal entity than the historical one (see scripts/sync_us_ticker_identity_conflicts.py).
+    Backfilling these under the shared symbol would splice two unrelated companies'
+    price history together (the exact mistake already documented for INFO/SBNY/VMRK)."""
+    conn = connect_primary_db(readonly=True, timeout=30)
+    try:
+        rows = conn.execute(
+            "SELECT ticker, status, current_occupant FROM us_ticker_identity_conflict"
+        ).fetchall()
+    except Exception:
+        return  # table not migrated yet on this DB — nothing to check against
+    finally:
+        conn.close()
+    flagged = {r[0]: (r[1], r[2]) for r in rows if r[0] in tickers}
+    if flagged and not force:
+        detail = "; ".join(f"{t} ({status}: {occ})" for t, (status, occ) in flagged.items())
+        raise SystemExit(
+            f"refusing to fetch tickers with a known identity conflict: {detail}. "
+            "Re-run with --force-identity-conflict only after manually confirming the "
+            "current occupant is actually the historical company you intend."
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tickers", default=",".join(DEFAULT_TICKERS))
     parser.add_argument("--start", default="2021-05-24")
     parser.add_argument("--end", default="2026-09-25")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--force-identity-conflict", action="store_true")
     args = parser.parse_args()
     token = os.getenv("TIINGO_API_KEY", "").strip()
     if not token:
         raise SystemExit("TIINGO_API_KEY is required; no database changes made")
     tickers = sorted({x.strip().upper() for x in args.tickers.split(",") if x.strip()})
+    reject_known_identity_conflicts(tickers, args.force_identity_conflict)
     rows_by_ticker: dict[str, list[tuple]] = {}
     failures: dict[str, str] = {}
     for ticker in tickers:

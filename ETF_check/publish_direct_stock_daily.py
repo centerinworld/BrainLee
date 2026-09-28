@@ -296,12 +296,37 @@ def publish(day: str, db_path: Path = DB_PATH) -> dict:
     }
 
 
+def latest_publishable_date(db_path: Path = DB_PATH) -> str:
+    """Select the newest internally complete trading date without ETF Check."""
+    conn = connect(db_path)
+    try:
+        days = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT DISTINCT base_date FROM etf_universe_daily ORDER BY base_date DESC LIMIT 30"
+            ).fetchall()
+        ]
+        rejected = {}
+        for day in days:
+            gate = _quality_gate(conn, day)
+            if not gate["failures"]:
+                return day
+            rejected[day] = gate["failures"]
+    finally:
+        conn.close()
+    raise RuntimeError(
+        "No publishable direct ETF date: " + json.dumps(rejected, ensure_ascii=False)
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--date", required=True)
+    parser.add_argument("--date")
     parser.add_argument("--db", default=str(DB_PATH))
     args = parser.parse_args()
-    print(json.dumps(publish(args.date, Path(args.db)), ensure_ascii=False, indent=2))
+    db_path = Path(args.db)
+    day = args.date or latest_publishable_date(db_path)
+    print(json.dumps(publish(day, db_path), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

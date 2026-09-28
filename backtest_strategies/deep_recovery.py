@@ -148,6 +148,22 @@ def run_backtest_deep_recovery(
                     (effective_from, effective_to, float(shares or 0), quality)
                 )
 
+        tradable_intervals: Dict[str, list] = {}
+        for code, effective_from, effective_to in conn.execute(
+            """SELECT stock_code,effective_from,effective_to
+               FROM security_master_history
+               WHERE is_tradable=1 AND is_etf_etn=0
+                 AND market IN ('KOSPI','KOSDAQ')
+               ORDER BY stock_code,effective_from"""
+        ):
+            tradable_intervals.setdefault(code, []).append((effective_from, effective_to))
+
+        def _is_tradable_day(code: str, day: str) -> bool:
+            for effective_from, effective_to in tradable_intervals.get(code, []):
+                if effective_from <= day and (effective_to is None or day < effective_to):
+                    return True
+            return False
+
         def _shares_asof(code: str, day: str) -> float:
             for effective_from, effective_to, shares, _quality in reversed(share_intervals.get(code, [])):
                 if effective_from <= day and (effective_to is None or day < effective_to):
@@ -216,6 +232,9 @@ def run_backtest_deep_recovery(
                 i = didx[code].get(day)
                 if i is None:
                     continue
+                if not _is_tradable_day(code, day):
+                    pending_buys.remove(code)
+                    continue
                 if code not in pos and len(pos) < position_limit:
                     fill = sd[code]['o'][i]
                     budget = min(per_stock, cash * 0.99)
@@ -274,6 +293,8 @@ def run_backtest_deep_recovery(
                 if code in pos or code in pending_buys: continue
                 i = didx[code].get(day)
                 if i is None or i < 80: continue
+                if not _is_tradable_day(code, day):
+                    continue
                 c = s['c']
                 v = s['v']
                 lo = s['lo']
@@ -378,6 +399,5 @@ def run_backtest_deep_recovery(
         except Exception:
             pass
         raise
-
 
 

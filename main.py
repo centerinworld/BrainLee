@@ -2803,10 +2803,17 @@ def get_us_screener_presets(
 
 
 @app.get("/api/us/stocks/chart/{ticker}")
-def get_us_stock_chart(ticker: str, days: int = 180):
-    """미국 종목 차트. source: us_price_history 우선, 없으면 radar_price_cache."""
+def get_us_stock_chart(ticker: str, days: int = 180, period: str = "daily"):
+    """미국 종목 차트. source: us_price_history 우선, 없으면 radar_price_cache.
+
+    period='weekly'|'monthly'면 일봉을 조회 기간(days, 최대 4000일) 안에서
+    먼저 모두 가져온 뒤 주/월봉으로 집계한다 — 원본 일봉 유니버스는 그대로 두고
+    표시 주기만 바꾸는 방식(us_market_data.aggregate_weekly/monthly_ohlcv 재사용).
+    """
     import sqlite3 as _sl3
+    from us_market_data import aggregate_monthly_ohlcv, aggregate_weekly_ohlcv
     t = (ticker or "").upper().strip()
+    period = (period or "daily").strip().lower()
     conn = connect_primary_db()
     conn.row_factory = _sl3.Row
     _ensure_us_tables()
@@ -2841,6 +2848,20 @@ def get_us_stock_chart(ticker: str, days: int = 180):
         out.append(o)
     # 오래된 -> 최신 순서로 정렬
     out.reverse()
+
+    if period in ("weekly", "monthly") and out:
+        agg_fn = aggregate_weekly_ohlcv if period == "weekly" else aggregate_monthly_ohlcv
+        daily_bars = [
+            (o["date"], o["open"] if o["open"] is not None else o["close"],
+             o["high"] if o["high"] is not None else o["close"],
+             o["low"] if o["low"] is not None else o["close"],
+             o["close"], o["volume"])
+            for o in out if o["close"] is not None
+        ]
+        out = [
+            {"date": d, "open": op, "high": hi, "low": lo, "close": cl, "volume": vol}
+            for d, op, hi, lo, cl, vol in agg_fn(daily_bars)
+        ]
 
     # ── 이동평균선 (MA5/20/60/200) 연산 ────────────────────────────
     closes = [r["close"] for r in out]

@@ -56,7 +56,7 @@ def run_backtest_high_profit_compound(
         {"per_stock": per_stock, "max_positions": max_positions, "stop": stop,
          "trail": trail, "trail_big": trail_big, "tp": tp, "max_hold": max_hold,
          "start": start_date, "end": end_date},
-        signal_timing="close_D", execution_timing="same_close",
+        signal_timing="close_D", execution_timing="next_open",
         market_cap_mode="current", allocation_rule="fixed_slot",
         universe_version="stock_universe_current",
     )
@@ -193,9 +193,18 @@ def run_backtest_high_profit_compound(
     _insider_cache: dict = {}
     _catalyst_cache: set = set()
 
-    for date in sim_dates:
+    def _next_trade_date(idx: int) -> Optional[str]:
+        return sim_dates[idx + 1] if idx + 1 < len(sim_dates) else None
+
+    def _open_on(code: str, date: str) -> float:
+        r = conn.execute(
+            "SELECT open FROM price_history WHERE stock_code=? AND date=? AND open>0",
+            (code, date),
+        ).fetchone()
+        return float(r[0]) if r else 0.0
+
+    for date_idx, date in enumerate(sim_dates):
         # 임원매수 코드 (7일마다 갱신)
-        date_idx = sim_dates.index(date)
         if date_idx % 7 == 0 or not _insider_cache:
             _insider_cache.clear()
             _insider_cache.update({c: True for c in _insider_buy_codes(date)})
@@ -226,9 +235,17 @@ def run_backtest_high_profit_compound(
             elif hold_days >= max_hold:
                 reason = "end"
             if reason:
-                pnl_abs = round(per_stock * pnl)
-                trades.append({"code": code, "buy_date": h["entry_date"], "sell_date": date,
-                                "entry": h["entry"], "exit": curr, "pnl_pct": round(pnl * 100, 2),
+                sell_date = _next_trade_date(date_idx)
+                if not sell_date:
+                    continue
+                fill = _open_on(code, sell_date)
+                if fill <= 0:
+                    continue
+                realized_pnl = (fill - h["entry"]) / h["entry"]
+                pnl_abs = round(per_stock * realized_pnl)
+                trades.append({"code": code, "buy_date": h["entry_date"], "sell_date": sell_date,
+                                "signal_date": date, "entry": h["entry"], "exit": fill,
+                                "pnl_pct": round(realized_pnl * 100, 2),
                                 "reason": reason, "pnl": pnl_abs})
                 cash += per_stock + pnl_abs
                 del holdings[code]
@@ -287,12 +304,18 @@ def run_backtest_high_profit_compound(
             continue  # KOSPI < MA60: 약세장 신규진입 금지
 
         slots = max_positions - len(holdings)
+        entry_date = _next_trade_date(date_idx)
+        if not entry_date:
+            continue
         for row in cands[:slots]:
             code = row[0]
-            entry_price = float(row[1])
+            entry_price = _open_on(code, entry_date)
+            if entry_price <= 0:
+                continue
             if cash < per_stock * 0.95:
                 break
-            holdings[code] = {"entry": entry_price, "peak": entry_price, "entry_date": date}
+            holdings[code] = {"entry": entry_price, "peak": entry_price, "entry_date": entry_date,
+                              "signal_date": date}
             cash -= per_stock
 
     # 기간 종료 처리
@@ -358,6 +381,5 @@ def run_backtest_high_profit_compound(
 
 
 # ─── 섹터 연동 유틸: 특정 날짜/종목의 섹터 BUY 여부 ───────────────────────
-
 
 

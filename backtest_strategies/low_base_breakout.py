@@ -137,6 +137,22 @@ def run_backtest_low_base_breakout(
                     (effective_from, effective_to, float(shares or 0), quality)
                 )
 
+        tradable_intervals: Dict[str, list] = {}
+        for code, effective_from, effective_to in conn.execute(
+            """SELECT stock_code,effective_from,effective_to
+               FROM security_master_history
+               WHERE is_tradable=1 AND is_etf_etn=0
+                 AND market IN ('KOSPI','KOSDAQ')
+               ORDER BY stock_code,effective_from"""
+        ):
+            tradable_intervals.setdefault(code, []).append((effective_from, effective_to))
+
+        def _is_tradable_day(code: str, day: str) -> bool:
+            for effective_from, effective_to in tradable_intervals.get(code, []):
+                if effective_from <= day and (effective_to is None or day < effective_to):
+                    return True
+            return False
+
         def _shares_asof(code: str, day: str) -> float:
             for effective_from, effective_to, shares, _quality in reversed(share_intervals.get(code, [])):
                 if effective_from <= day and (effective_to is None or day < effective_to):
@@ -201,6 +217,9 @@ def run_backtest_low_base_breakout(
             for code in list(pending_buys):
                 i = didx[code].get(day)
                 if i is None: continue
+                if not _is_tradable_day(code, day):
+                    pending_buys.remove(code)
+                    continue
                 if code not in pos and len(pos) < position_limit:
                     fill = sd[code]['o'][i]
                     invest = min(per_stock, cash)
@@ -250,6 +269,8 @@ def run_backtest_low_base_breakout(
                     if code in pos or code in pending_buys: continue
                     i = didx[code].get(day)
                     if i is None or i < 260: continue
+                    if not _is_tradable_day(code, day):
+                        continue
                     c_arr = s['c']
                     v_arr = s['v']
                     lo_arr = s['lo']
@@ -372,5 +393,4 @@ def run_backtest_low_base_breakout(
 
 
 # ─── V-TURNAROUND 흑자전환 특화 전략 ────────────────────────────────────────
-
 

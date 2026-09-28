@@ -41,6 +41,7 @@ docs_cache/
 # Build
 .vite/
 frontend/.vite-cache-new/
+frontend/dist_prev/
 StockAnalysis.app/
 reports/
 

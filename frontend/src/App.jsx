@@ -6081,6 +6081,7 @@ const _signalFrontCache = {};
     const [disclosures, setDisclosures] = React.useState([]);
     const [loadingUs, setLoadingUs] = React.useState(false);
     const [chartDaysUs, setChartDaysUs] = React.useState(365);
+    const [chartPeriodUs, setChartPeriodUs] = React.useState('daily'); // daily|weekly|monthly
     const [usFinPeriodView, setUsFinPeriodView] = React.useState('annual');   // annual|quarter
     const [usCfPeriodView, setUsCfPeriodView] = React.useState('annual');     // annual|quarter
     const [usPaper, setUsPaper] = React.useState(null);
@@ -6279,7 +6280,7 @@ const _signalFrontCache = {};
 	      try {
 	        const [rd, rc, rf, rk] = await Promise.all([
 	          fetch(API(`/api/us/stocks/detail/${ticker}`)),
-	          fetch(API(`/api/us/stocks/chart/${ticker}?days=${chartDaysUs}`)),
+	          fetch(API(`/api/us/stocks/chart/${ticker}?days=${chartDaysUs}&period=${chartPeriodUs}`)),
 	          fetch(API(`/api/us/stocks/disclosures/${ticker}`)),
 	          fetch(API(`/api/kiwoom/us/realtime/${ticker}`)),
 	        ]);
@@ -6291,7 +6292,7 @@ const _signalFrontCache = {};
 	        fetch(API(`/api/us/stocks/refresh/${ticker}`), { method: 'POST' }).catch(() => {});
 	      } catch {}
 	      finally { setLoadingUs(false); }
-	    }, [chartDaysUs]);
+	    }, [chartDaysUs, chartPeriodUs]);
 
     React.useEffect(() => { loadList(); }, [loadList]);
     React.useEffect(() => { loadIndices(); }, [loadIndices]);
@@ -7232,15 +7233,26 @@ const _signalFrontCache = {};
 
         <div className="glass-panel" style={{padding:'0.75rem'}}>
           <div style={{fontSize:'0.86rem', fontWeight:700, marginBottom:'0.45rem'}}>주가 차트</div>
-          <div style={{display:'flex', gap:'0.35rem', marginBottom:'0.45rem'}}>
-            {[90,365,1095,1825].map(d => (
+          <div style={{display:'flex', gap:'0.35rem', marginBottom:'0.4rem', flexWrap:'wrap'}}>
+            {[90,365,1095,1825,3650].map(d => (
               <button key={d} onClick={()=>setChartDaysUs(d)}
                 style={{
                   padding:'0.14rem 0.5rem', borderRadius:'5px', border:'1px solid rgba(15,23,42,0.2)',
                   background: chartDaysUs===d ? 'rgba(37,99,235,0.18)' : 'rgba(15,23,42,0.04)',
                   color: chartDaysUs===d ? '#2563eb' : 'var(--text-secondary)', cursor:'pointer', fontSize:'0.7rem'
                 }}>
-                {d===90?'3개월':d===365?'1년':d===1095?'3년':'5년'}
+                {d===90?'3개월':d===365?'1년':d===1095?'3년':d===1825?'5년':'10년'}
+              </button>
+            ))}
+            <div style={{width:'1px', background:'rgba(15,23,42,0.15)', margin:'0 0.15rem'}} />
+            {[['daily','일봉'],['weekly','주봉'],['monthly','월봉']].map(([p,label]) => (
+              <button key={p} onClick={()=>setChartPeriodUs(p)}
+                style={{
+                  padding:'0.14rem 0.5rem', borderRadius:'5px', border:'1px solid rgba(8,145,178,0.35)',
+                  background: chartPeriodUs===p ? 'rgba(8,145,178,0.2)' : 'rgba(15,23,42,0.04)',
+                  color: chartPeriodUs===p ? '#0891b2' : 'var(--text-secondary)', cursor:'pointer', fontSize:'0.7rem', fontWeight:700
+                }}>
+                {label}
               </button>
             ))}
           </div>

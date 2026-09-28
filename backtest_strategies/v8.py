@@ -24,6 +24,7 @@ from backtest_common import (
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
+    _register_financial_provenance_artifact,
     _final_liquidation_quote_for_code,
     _rsi,
     _save_result,
@@ -120,7 +121,8 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                       WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                       WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                       WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                      ELSE printf('%d-02-15', f.year+1) END) as avail_date
+                      ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+               f.id, f.report_type
         FROM financial_data f
         LEFT JOIN fin_disclosure_dates d ON
             d.stock_code = f.stock_code AND d.year = f.year
@@ -149,6 +151,22 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
         GROUP BY ph.stock_code HAVING COUNT(*) >= 200
     """, (warmup_start, end_date)).fetchall()
     if r[0] in export_stocks]
+
+    tradable_intervals: Dict[str, list] = {}
+    for sc, effective_from, effective_to in conn.execute("""
+        SELECT stock_code,effective_from,effective_to
+        FROM security_master_history
+        WHERE is_tradable=1 AND is_etf_etn=0
+          AND market IN ('KOSPI','KOSDAQ')
+        ORDER BY stock_code,effective_from
+    """).fetchall():
+        tradable_intervals.setdefault(sc, []).append((effective_from, effective_to))
+
+    def _is_tradable_day(sc: str, day: str) -> bool:
+        for effective_from, effective_to in tradable_intervals.get(sc, []):
+            if effective_from <= day and (effective_to is None or day < effective_to):
+                return True
+        return False
 
     # ── 종목별 가격 데이터 로드 ────────────────────────────────
     stock_data: Dict[str, dict] = {}
@@ -201,6 +219,21 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
     positions: Dict[str, dict] = {}
     trades:    list = []
     equity_curve: list = []
+    financial_provenance: list = []
+
+    def _financial_provenance_for(sc: str, sd: dict, decision_date: str) -> dict:
+        fin = _get_financial_as_of(sd.get('fins') or [], decision_date, sc)
+        if fin is None:
+            return {
+                'decision_date': decision_date, 'source_row_id': 'NONE',
+                'available_at': None, 'source_key': 'no_financial_row_available',
+            }
+        return {
+            'decision_date': decision_date,
+            'source_row_id': fin[11] if len(fin) > 11 else 'LEGACY_ROW_WITHOUT_ID',
+            'available_at': fin[10] if len(fin) > 10 else None,
+            'source_key': f"{fin[0]}Q{fin[1]}:{fin[12] if len(fin) > 12 else ''}",
+        }
 
     def _check_sell_v8(i, prices, pos, trade_sc=None, d=None):
         """
@@ -373,6 +406,7 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
 
     v8_pending_sells: list = []  # (sc, reason)
     v8_pending_buys: list = []   # sc
+    v8_pending_buy_provenance: Dict[str, dict] = {}
 
     for day in sim_dates:
         # ── strict_exec: 전일 신호 → 오늘 시가 체결 (Codex 계약) ──
@@ -407,6 +441,8 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                 im = date_idx.get(sc, {})
                 if day not in im:
                     continue
+                if not _is_tradable_day(sc, day):
+                    continue
                 i = im[day]
                 px = stock_data[sc]['opens'][i]
                 if px <= 0:
@@ -421,7 +457,11 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                     'qty': qty,
                     'peak_price': px, 'hold_days': 0,
                 }
+                provenance = dict(v8_pending_buy_provenance.get(sc) or {})
+                provenance.update({'stock_code': sc, 'entry_date': day})
+                financial_provenance.append(provenance)
             v8_pending_buys = []
+            v8_pending_buy_provenance.clear()
 
         # 매도 체크
         sold = []
@@ -477,6 +517,8 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                 im = date_idx.get(sc, {})
                 if day not in im:
                     continue
+                if not _is_tradable_day(sc, day):
+                    continue
                 i = im[day]
                 if not _is_buy_v8_signal(sc, sd, i, day):
                     continue
@@ -484,6 +526,7 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                     if sc not in v8_pending_buys and \
                        len(positions) + len(v8_pending_buys) < max_positions:
                         v8_pending_buys.append(sc)
+                        v8_pending_buy_provenance[sc] = _financial_provenance_for(sc, sd, day)
                     continue
                 curr = sd['prices'][i]
                 budget = min(per_stock, cash * 0.99)
@@ -498,6 +541,9 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                     'peak_price':  curr,
                     'hold_days':   0,
                 }
+                provenance = _financial_provenance_for(sc, sd, day)
+                provenance.update({'stock_code': sc, 'entry_date': day})
+                financial_provenance.append(provenance)
 
         # 에쿼티 커브 (현금원장 기준)
         marked = sum(
@@ -534,7 +580,7 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
         else:
             equity_curve.append(terminal)
 
-    return trades, equity_curve, len(stock_data), market_bullish, cash
+    return trades, equity_curve, len(stock_data), market_bullish, cash, financial_provenance
 
 
 
@@ -598,7 +644,7 @@ def run_backtest_v8(start_date: str, end_date: str,
                 ORDER BY date ASC
             """, (start_date, end_date)).fetchall()]
 
-        trades, equity_curve, n_stocks, market_bullish, final_cash = _run_backtest_v8(
+        trades, equity_curve, n_stocks, market_bullish, final_cash, financial_provenance = _run_backtest_v8(
             conn, warmup_start, start_date, end_date, sim_dates,
             per_stock, max_positions,
             stop_loss_pct=0.10,      # 선행 매수 → 넓은 손절 허용
@@ -668,6 +714,9 @@ def run_backtest_v8(start_date: str, end_date: str,
         }
         _save_result(run_id, result)
         _register_execution_artifacts(run_id, total_capital, final_cash)
+        _register_financial_provenance_artifact(
+            run_id, financial_provenance, len(trades), strategy="v8"
+        )
         return run_id
 
     except Exception as e:
@@ -686,4 +735,3 @@ def run_backtest_v8(start_date: str, end_date: str,
 # ══════════════════════════════════════════════════════════════
 #  레짐 적응형 전략: BULL→V1 MA추세, BEAR→V7 흑자전환 자동 전환
 # ══════════════════════════════════════════════════════════════
-

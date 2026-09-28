@@ -1074,6 +1074,10 @@ def run(
         """, having_params + (limit,)).fetchall()
     ]
 
+    # 2026-09-26 (사용자 결정): FnGuide 값으로 기존 값을 덮어쓰는 --override는 금융업 종목에만 적용(비금융은 DART 기준 유지, 빈 값 채움만).
+    fin_codes = {r[0] for r in conn.execute(
+        "SELECT stock_code FROM stock_universe WHERE sector_large LIKE '%금융%' OR sector_large LIKE '%보험%' OR sector_large LIKE '%은행%' OR sector_large LIKE '%증권%'").fetchall()}
+    override_all = override
     fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     stats = {
@@ -1089,8 +1093,10 @@ def run(
     }
 
     for i, code in enumerate(codes, 1):
+        override = override_all and code in fin_codes
         for rt in report_types:
             try:
+                conn.commit()  # 2026-09-26: 3s 간격 HTTP 대기 동안 트랜잭션을 열어두면 PG idle-in-transaction 타임아웃으로 연결이 끊겨 저장이 전부 실패함
                 result = fetch_fnguide_all(code, rt)
                 if not result or not result.get("annual"):
                     continue
@@ -1141,7 +1147,7 @@ def run(
                     for yr, ydata in annual_data.items():
                         if not (year_from <= yr <= year_to):
                             continue
-                        if yr in qtr_data and all(q in qtr_data[yr] for q in [1, 2, 3]):
+                        if code in fin_codes and yr in qtr_data and all(q in qtr_data[yr] for q in [1, 2, 3]):  # Q4 재계산(override=True)은 금융업만
                             q4_res = compute_and_upsert_q4(conn, code, yr, rt, ydata, qtr_data[yr])
                             if q4_res in ("inserted", "updated"):
                                 stats["q4_computed"] += 1
@@ -1152,6 +1158,7 @@ def run(
 
         # EPS/BPS: SVD_Main.asp에서 종목당 1회 수집 (CFS 연간 레코드에만 적용)
         try:
+            conn.commit()
             eps_bps = fetch_fnguide_eps_bps(code)
             for yr, eb in eps_bps.items():
                 if not (year_from <= yr <= year_to):

@@ -37,21 +37,21 @@ def technical_snapshot(
     )
 
 
-def aggregate_weekly_ohlcv(
+def _aggregate_by_bucket(
     rows: Sequence[tuple[str, float, float, float, float, float | None]],
+    bucket_key,
 ) -> list[tuple[str, float, float, float, float, float]]:
-    """Aggregate ascending daily bars into Monday-based trading weeks.
+    """Shared OHLCV rollup: group ascending daily bars by ``bucket_key(date)``.
 
-    Each returned date is the last actual trading date in that week.  This
-    avoids inventing Friday candles for holiday-shortened weeks.
+    Each returned date is the last actual trading date in that bucket, so
+    holiday-shortened weeks/months never get an invented closing date.
     """
-    weeks: dict[tuple[int, int], list[tuple[str, float, float, float, float, float | None]]] = {}
+    buckets: dict[object, list[tuple[str, float, float, float, float, float | None]]] = {}
     for row in rows:
         day = date.fromisoformat(str(row[0])[:10])
-        iso = day.isocalendar()
-        weeks.setdefault((iso.year, iso.week), []).append(row)
+        buckets.setdefault(bucket_key(day), []).append(row)
     out = []
-    for bars in weeks.values():
+    for bars in buckets.values():
         bars = sorted(bars, key=lambda x: x[0])
         out.append((
             str(bars[-1][0])[:10], float(bars[0][1]),
@@ -59,3 +59,17 @@ def aggregate_weekly_ohlcv(
             float(bars[-1][4]), sum(float(x[5] or 0) for x in bars),
         ))
     return sorted(out, key=lambda x: x[0])
+
+
+def aggregate_weekly_ohlcv(
+    rows: Sequence[tuple[str, float, float, float, float, float | None]],
+) -> list[tuple[str, float, float, float, float, float]]:
+    """Aggregate ascending daily bars into Monday-based trading weeks."""
+    return _aggregate_by_bucket(rows, lambda day: day.isocalendar()[:2])
+
+
+def aggregate_monthly_ohlcv(
+    rows: Sequence[tuple[str, float, float, float, float, float | None]],
+) -> list[tuple[str, float, float, float, float, float]]:
+    """Aggregate ascending daily bars into calendar-month trading months."""
+    return _aggregate_by_bucket(rows, lambda day: (day.year, day.month))

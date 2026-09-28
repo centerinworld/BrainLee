@@ -1,4 +1,4 @@
-from us_market_data import aggregate_weekly_ohlcv, technical_snapshot
+from us_market_data import aggregate_monthly_ohlcv, aggregate_weekly_ohlcv, technical_snapshot
 
 
 def test_technical_snapshot_uses_actual_high_low_and_builds_ma50():
@@ -21,4 +21,17 @@ def test_weekly_aggregation_labels_last_real_session_and_aggregates_ohlcv():
     assert aggregate_weekly_ohlcv(rows) == [
         ("2026-09-25", 10.0, 15.0, 8.0, 9.0, 600.0),
         ("2026-09-28", 20.0, 21.0, 19.0, 20.0, 400.0),
+    ]
+
+
+def test_monthly_aggregation_labels_last_real_session_and_aggregates_ohlcv():
+    rows = [
+        ("2026-08-28", 10, 12, 9, 11, 100),
+        ("2026-08-31", 11, 14, 10, 13, 200),
+        ("2026-09-01", 13, 15, 8, 9, 300),
+        ("2026-09-25", 20, 21, 19, 20, 400),
+    ]
+    assert aggregate_monthly_ohlcv(rows) == [
+        ("2026-08-31", 10.0, 14.0, 9.0, 13.0, 300.0),
+        ("2026-09-25", 13.0, 21.0, 8.0, 20.0, 700.0),
     ]

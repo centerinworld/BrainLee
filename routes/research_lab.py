@@ -4,6 +4,7 @@
   GET /api/research/quantstats          QuantStats 전략 성과 요약(곡선 출처 배지 포함)
   GET /api/research/strategy-decay      전략 성과 감쇠 감시(최근 3/6/12개월 vs 백테스트 기대 분포)
   GET /api/research/price-integrity     가격 무결성 현황(점프 감사 분류 집계·최근 복구 run·종가 공식 검증)
+  GET /api/research/us-minervini        미국 Minervini Nasdaq-100 PIT 연구 상태
 
 파일 읽기와 DB SELECT만 한다 — DB 쓰기·외부 호출 없음. 산출물이 없으면 items=[]와 note를 돌려준다.
 """
@@ -48,6 +49,56 @@ def quantstats_summary():
         "items": data,
         "source": "quantstats_summary_20260924.json",
         "notes": ["engine 곡선만 정확한 평가곡선. reconstructed_periods>0이면 거래로그+가격 MTM 근사."],
+    }
+
+
+@router.get("/us-minervini")
+def us_minervini_summary():
+    data = _load("us_minervini_nasdaq100_pit_latest.json")
+    if data is None:
+        return {
+            "available": False,
+            "note": "산출물 없음: scripts/run_us_minervini_survivors.py --universe-mode pit --index NASDAQ100 --benchmark QQQ 실행 필요",
+        }
+    variants = data.get("variants", {}) or {}
+    compact = []
+    for key, item in variants.items():
+        metrics = item.get("metrics", {}) or {}
+        quality = item.get("quality", {}) or {}
+        compact.append({
+            "variant": key,
+            "total_return_pct": metrics.get("total_return_pct"),
+            "cagr_pct": metrics.get("cagr_pct"),
+            "max_drawdown_pct": metrics.get("max_drawdown_pct"),
+            "sharpe": metrics.get("sharpe"),
+            "benchmark": metrics.get("benchmark") or quality.get("benchmark"),
+            "excess_return_pct": metrics.get("excess_return_pct"),
+            "trade_count": item.get("trade_count"),
+            "research_grade": quality.get("research_grade"),
+            "survivorship_bias": quality.get("survivorship_bias"),
+            "pit_price_coverage_min": quality.get("pit_price_coverage_min"),
+            "missing_open_rejections": quality.get("missing_open_rejections"),
+            "large_jump_count": quality.get("large_jump_count"),
+            "open_positions_at_end": len(quality.get("open_positions_at_end") or []),
+        })
+    return {
+        "available": True,
+        "generated_at": data.get("generated_at"),
+        "start": data.get("start"),
+        "end": data.get("end"),
+        "index": data.get("index"),
+        "benchmark": data.get("benchmark"),
+        "validation_grade": data.get("validation_grade"),
+        "forward_validated": data.get("forward_validated"),
+        "survivorship_bias": data.get("survivorship_bias"),
+        "pit_reference_complete": data.get("pit_reference_complete"),
+        "pit_price_coverage_min": data.get("pit_price_coverage_min"),
+        "research_grade": data.get("research_grade"),
+        "strategy_spec_hash": data.get("strategy_spec_hash"),
+        "membership_reference": data.get("membership_reference"),
+        "load_quality": data.get("load_quality"),
+        "variants": compact,
+        "source": "us_minervini_nasdaq100_pit_latest.json",
     }
 
 

@@ -48,6 +48,29 @@ def _digest(rows:list[ETFMeta])->str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def preserve_certified_source_control(conn:sqlite3.Connection,now:str)->bool:
+    """Keep a completed source cutover across ordinary ETF listings/delistings."""
+    row=conn.execute(
+        """
+        SELECT mode,consecutive_pass_days,required_pass_days
+        FROM etf_source_control WHERE control_id=1
+        """
+    ).fetchone()
+    if row and row[0]=="krx_primary" and int(row[1])>=int(row[2]):
+        return True
+    if row:
+        conn.execute(
+            """
+            UPDATE etf_source_control
+            SET consecutive_pass_days=0,mode='legacy_validation',
+                last_failure='universe_alphanumeric_correction',updated_at=?
+            WHERE control_id=1
+            """,
+            (now,),
+        )
+    return False
+
+
 def get_or_sync_universe(conn:sqlite3.Connection,day:str)->dict:
     initialize(conn)
     existing=conn.execute(
@@ -88,8 +111,8 @@ def get_or_sync_universe(conn:sqlite3.Connection,day:str)->dict:
             """,
             (day,"corrected_complete",len(previous),len(rows),len(added),len(removed),digest,json.dumps(details,ensure_ascii=False),now),
         )
-        conn.execute("UPDATE etf_source_control SET consecutive_pass_days=0,mode='legacy_validation',last_failure='universe_alphanumeric_correction',updated_at=? WHERE control_id=1",(now,))
-    return {"base_date":day,"count":len(rows),"previous_count":len(previous),"added":added,"removed":removed,"universe_hash":digest,"source":SOURCE_VERSION,"correction":correction}
+        source_control_preserved=preserve_certified_source_control(conn,now)
+    return {"base_date":day,"count":len(rows),"previous_count":len(previous),"added":added,"removed":removed,"universe_hash":digest,"source":SOURCE_VERSION,"correction":correction,"source_control_preserved":source_control_preserved}
 
 
 def dated_universe(conn:sqlite3.Connection,day:str):

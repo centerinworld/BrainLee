@@ -94,7 +94,7 @@ def audit() -> dict:
             uses_delayed = bool(dependencies)
             gate_off = uses_delayed and _delayed_data_gate_off(str(strategy), params)
             provenance = None
-            if uses_delayed and not gate_off and str(strategy) == "v4":
+            if uses_delayed and not gate_off:
                 try:
                     p = conn.execute("""SELECT COUNT(*),
                            SUM(CASE WHEN available_at IS NOT NULL AND available_at>decision_date THEN 1 ELSE 0 END)
