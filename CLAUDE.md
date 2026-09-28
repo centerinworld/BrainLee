@@ -61,7 +61,8 @@
 │   ├── public_data.py   # 공공데이터포털
 │   ├── dart_collector.py# DART 공시
 │   ├── yahoo_collector.py # Yahoo Finance (해외지수)
-│   └── base.py          # BaseCollector (rate limit, async)
+│   ├── base.py          # BaseCollector (rate limit, async)
+│   └── stock_status_collector.py  # 거래정지·관리종목·투자경고 (Naver 스크래핑)
 │
 ├── .claude/
 │   ├── settings.json    # hooks 설정 (UserPromptSubmit, Stop)
@@ -79,7 +80,7 @@
 | 테이블 | 행수 | 핵심 컬럼 | 용도 |
 |--------|------|-----------|------|
 | `price_history` | 516만 | stock_code, date, open/high/low/close, volume, inst_net_buy, frn_net_buy, ind_net_buy, **inst_net_buy_amt**, **frn_net_buy_amt**, **ind_net_buy_amt** | 일별 OHLCV + 투자자수급 |
-| `stock_universe` | 6693 | stock_code, stock_name, market, sector_large, shares_issued, market_cap, per, pbr, roe, roa | 전 종목 마스터 |
+| `stock_universe` | 6693 | stock_code, stock_name, market, sector_large, shares_issued, market_cap, per, pbr, roe, roa, **is_halt**, **is_admin**, **warn_type**, **status_updated** | 전 종목 마스터 |
 | `financial_data` | 9.2만 | stock_code, year, quarter, revenue, operating_profit, net_income, total_assets, total_equity, eps, bps, is_annual | 재무제표 |
 | `peak_holding` | 31 | stock_code, stock_name, buy_price, current_price, quantity, entry_date, is_active, strategy, profit_pct | 가상매매 보유 |
 | `peak_trade` | 31 | stock_name, tx_type(buy/sell), price, quantity, profit, strategy | 가상매매 거래내역 |
@@ -137,7 +138,7 @@ WHERE stock_code NOT LIKE '%^%'   -- ^KS11, ^KQ11, ^IXIC 등
 ```
 GET  /api/realtime/prices                  # KIS 실시간 주가 캐시
 GET  /api/realtime/macro                   # 거시지표 실시간
-GET  /api/dashboard/market-info/{code}     # 종목 시장정보 (sector, mktcap, 순위)
+GET  /api/dashboard/market-info/{code}     # 종목 시장정보 (sector, mktcap, 순위, is_halt, is_admin, warn_type)
 GET  /api/dashboard/chart/{code}           # 주가 차트 데이터
 GET  /api/dashboard/sectors                # 섹터 목록
 GET  /api/dashboard/screening/triple       # 3단계 스크리닝
@@ -279,6 +280,7 @@ POST /investor-trends    # 투자자 동향 저장
 | `_job_screener_precompute` | 매 30분 | 시그널 캐시 갱신 |
 | `_job_krx_daily` | 18:00 daily (영업일) | KRX API 전종목 OHLCV + 지수 수집 (KRX 데이터 확정 시간 고려) |
 | `_job_supply_daily` | 17:30 daily (영업일) | KIS 전종목 최근 30일 수급 누락분 보완 |
+| `_job_stock_status_daily` | 08:30 daily | 거래정지·관리종목·투자경고/위험/환기 수집 → stock_universe 갱신 |
 
 ---
 
@@ -462,4 +464,5 @@ app.include_router(_market_indicators_router, prefix="/api/market-indicators", t
 | 2026-04-17 | market_indicators.py investor-trend: `WHERE close>0` 제거→`HAVING MAX(close)>0` (^KS11 투자자row close=0 필터 버그 수정, 오늘 수급 +0억 오류 해결). turnover-top: prev_close+chg_pct 추가. App.jsx MarketIndicatorsView: 회전율 테이블 등락률 컬럼 추가, fmtAmt 0→'-', 일별 바차트 Cell 색상(빨강/파랑), 누적 차트 30일/3개월/6개월/1년 탭 추가(cumDays 상태), 개인 bar 제거 |
 | 2026-04-16 | data_collector.py 버그 3종 수정: ①`kis_data["date"].isoformat()` str 오류 → hasattr 분기 ②`_krx` 미정의 → `_krx = None` 초기화 ③pykrx `get_market_net_purchases_of_business_day` API 없음 → `collect_closing_investor` 비활성화. DART `could not find` 예외 처리 강화. 상시수집 루프에서 주가/수급/매크로 제거(scheduler.py와 중복) → 재무 수집 전용으로 최적화. data_collector.py 재시작 (PID 59720) |
 | 2026-09-27 | 거래량 모멘텀 기능 추가: `_calc_vol_momentum()` helper(main.py) 신규 → VR5/VR20/VR60 + breakout/pullback/surge 신호 계산, `/api/dashboard/fundamentals` 응답에 포함. `routes/market_indicators.py` `/volume-surge` 엔드포인트 추가(market=ALL/KR/US 필터). App.jsx `MarketIndicatorsView` 거래량 급등 탭 추가, `StockAnalysis` 모멘텀 게이지 패널 추가. `config.py` KRX_DATA_ID/PW 추가. |
+| 2026-09-28 | 거래정지·관리종목·투자경고/위험/환기 표시 구현: `collectors/stock_status_collector.py` 신규(네이버 금융 배치 스크래핑, `collect_stock_status`, `parse_status_from_soup`). `main.py` `get_market_info()` soup 파싱 + DB 폴백으로 is_halt/is_admin/warn_type 반환. `scheduler.py` `_job_stock_status_daily` 08:30 스케줄 추가. `App.jsx` StockAnalysis 헤더에 🔴 거래정지/⚠️ 관리종목/🟡🚨 투자경고 배지 추가. `stock_universe` 컬럼 4개(is_halt/is_admin/warn_type/status_updated) 자동 마이그레이션. |
 | 이전 세션 | routes/ingest.py, routes/portfolio.py 신규 분리; Yahoo Finance 제거; Trigger20 URL 수정; 야간 알림 억제; 시그널 warm-up 추가; 대차잔고 URL 수정; PBR/PER 재시도 로직 |

@@ -983,7 +983,8 @@ def get_market_info(stock_code: str, refresh: bool = False, db: Session = Depend
     if cached and cache_age < 3600 and not refresh:
         return cached
 
-    result = {"market": None, "mktcap": None, "mktcap_rank": None, "stock_name": None}
+    result = {"market": None, "mktcap": None, "mktcap_rank": None, "stock_name": None,
+              "is_halt": False, "is_admin": False, "warn_type": None}
 
     # ── 시장구분: DB 먼저 확인 ──────────────────────────────────
     meta = db.query(models.StockMeta).filter(
@@ -1052,8 +1053,35 @@ def get_market_info(stock_code: str, refresh: bool = False, db: Session = Depend
                     break
                 except: pass
 
+        # ── 거래정지/관리종목/투자경고 상태 (soup 실시간 파싱) ──
+        try:
+            from collectors.stock_status_collector import parse_status_from_soup as _parse_st
+            _st = _parse_st(soup)
+            result["is_halt"]   = _st.get("is_halt", False)
+            result["is_admin"]  = _st.get("is_admin", False)
+            result["warn_type"] = _st.get("warn_type")
+        except Exception:
+            pass
+
     except Exception as e:
         logger.warning(f"[MarketInfo] {stock_code} 네이버 스크래핑 오류: {e}")
+
+    # ── 거래정지/관리종목 DB 폴백 (배치 수집 캐시 — soup 미탐지 시) ─
+    if not result["is_halt"] and not result["is_admin"] and not result["warn_type"]:
+        try:
+            import sqlite3 as _sl3
+            _conn_st = _sl3.connect("stock.db")
+            _row_st = _conn_st.execute(
+                "SELECT is_halt, is_admin, warn_type FROM stock_universe WHERE stock_code=? LIMIT 1",
+                (stock_code,)
+            ).fetchone()
+            _conn_st.close()
+            if _row_st:
+                result["is_halt"]   = bool(_row_st[0])
+                result["is_admin"]  = bool(_row_st[1])
+                result["warn_type"] = _row_st[2]
+        except Exception:
+            pass
 
     # ── 시장구분 DB 저장 (최초 1회) ─────────────────────────────
     if result["market"] and not meta:

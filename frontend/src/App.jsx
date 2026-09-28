@@ -2468,6 +2468,27 @@ const App = () => {
                     시총순위 <span style={{ color:'var(--text-primary)', fontWeight:600 }}>{marketInfo.mktcap_rank}위</span>
                   </span>
                 )}
+                {marketInfo.is_halt && (
+                  <span style={{ fontSize:'0.7rem', padding:'0.1rem 0.55rem', borderRadius:'20px', fontWeight:700,
+                    background:'rgba(239,68,68,0.2)', color:'#ef4444', border:'1px solid rgba(239,68,68,0.5)' }}>
+                    🔴 거래정지
+                  </span>
+                )}
+                {marketInfo.is_admin && (
+                  <span style={{ fontSize:'0.7rem', padding:'0.1rem 0.55rem', borderRadius:'20px', fontWeight:700,
+                    background:'rgba(251,191,36,0.2)', color:'#fbbf24', border:'1px solid rgba(251,191,36,0.5)' }}>
+                    ⚠️ 관리종목
+                  </span>
+                )}
+                {marketInfo.warn_type && (
+                  <span style={{ fontSize:'0.7rem', padding:'0.1rem 0.55rem', borderRadius:'20px', fontWeight:700,
+                    background: marketInfo.warn_type==='위험' ? 'rgba(239,68,68,0.15)' : marketInfo.warn_type==='경고' ? 'rgba(249,115,22,0.15)' : 'rgba(234,179,8,0.15)',
+                    color: marketInfo.warn_type==='위험' ? '#f87171' : marketInfo.warn_type==='경고' ? '#fb923c' : '#eab308',
+                    border: marketInfo.warn_type==='위험' ? '1px solid rgba(239,68,68,0.4)' : marketInfo.warn_type==='경고' ? '1px solid rgba(249,115,22,0.4)' : '1px solid rgba(234,179,8,0.4)',
+                  }}>
+                    {marketInfo.warn_type==='위험' ? '🚨' : '🟡'} 투자{marketInfo.warn_type}
+                  </span>
+                )}
               </div>
             </div>
             {/* 현재가 */}
