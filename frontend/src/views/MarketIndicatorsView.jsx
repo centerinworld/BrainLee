@@ -38,6 +38,9 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
   const [cashRange, setCashRange] = React.useState(60);
   const [rankEvents, setRankEvents] = React.useState(null);
   const [attentionConfirmation, setAttentionConfirmation] = React.useState(null);
+  const [volSurge, setVolSurge] = React.useState(null);
+  const [volMarket, setVolMarket] = React.useState('ALL');
+  const [volLoading, setVolLoading] = React.useState(false);
 
   const loadShortForeign = React.useCallback(() => {
     fetch(API('/api/market-indicators/short-foreign?days=120'))
@@ -105,6 +108,16 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
       .then(setAttentionConfirmation)
       .catch(() => setAttentionConfirmation(null));
   }, [miTab]);
+
+  React.useEffect(() => {
+    if (miTab !== 'volume') return;
+    setVolLoading(true);
+    fetch(API(`/api/market-indicators/volume-surge?market=${volMarket}&limit=80`))
+      .then(r => r.ok ? r.json() : [])
+      .then(setVolSurge)
+      .catch(() => setVolSurge([]))
+      .finally(() => setVolLoading(false));
+  }, [miTab, volMarket]);
 
   // 대차 날짜 목록 + 내외국인대차 + 월별대차 초기 로드
   React.useEffect(() => {
@@ -360,6 +373,7 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
         {miTabBtn('investor',    '📊 투자자별 순매수')}
         {miTabBtn('turnover',    '🔄 회전율 상위')}
         {miTabBtn('trend',       '📈 수급 추이')}
+        {miTabBtn('volume',      '🔥 거래량 급등')}
         {miTabBtn('rank_events', '⚡ 순위 이벤트')}
         {miTabBtn('attention',   '🧭 관심도·수급 검증')}
         {miTabBtn('cash',        '💰 예탁금 추이')}
@@ -367,6 +381,70 @@ const MarketIndicatorsView = React.memo(({ onChangeStock, onChangeTab }) => {
         {miTabBtn('short_his',   '📉 대차거래현황')}
         {miTabBtn('short_forg',  '🌐 내외국인대차')}
       </div>
+
+      {/* ── 거래량 급등 탭 ── */}
+      {miTab === 'volume' && (
+        <div className="glass-panel" style={{padding:'1rem'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'0.75rem',flexWrap:'wrap',marginBottom:'0.8rem'}}>
+            <div>
+              <h3 style={{margin:0,fontSize:'0.92rem',fontWeight:700}}>🔥 거래량 급등 랭킹</h3>
+              <div style={{fontSize:'0.72rem',color:'var(--text-secondary)',marginTop:'0.25rem'}}>
+                최신 거래일 거래량을 직전 20거래일 평균과 비교합니다.
+              </div>
+            </div>
+            <div style={{display:'flex',gap:'0.35rem',alignItems:'center',flexWrap:'wrap'}}>
+              {[['ALL','전체'],['KR','한국'],['US','미국']].map(([key,label]) => (
+                <button key={key} onClick={()=>setVolMarket(key)} style={{
+                  padding:'0.28rem 0.7rem',borderRadius:'6px',border:'1px solid var(--glass-border)',cursor:'pointer',fontSize:'0.78rem',
+                  background:volMarket===key?'var(--accent-mint)':'var(--glass-bg)',
+                  color:volMarket===key?'#000':'var(--text-secondary)',fontWeight:volMarket===key?800:500,
+                }}>{label}</button>
+              ))}
+            </div>
+          </div>
+          {volLoading ? (
+            <div style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)'}}>로딩 중...</div>
+          ) : !volSurge || volSurge.length === 0 ? (
+            <div style={{padding:'2rem',textAlign:'center',color:'var(--text-secondary)'}}>거래량 급등 데이터가 없습니다.</div>
+          ) : (
+            <div style={{overflowX:'auto',overflowY:'clip'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.8rem'}}>
+                <thead>
+                  <tr style={{borderBottom:'2px solid var(--glass-border)'}}>
+                    {['순위','종목','시장','기준일','종가','오늘 거래량','20일 평균','VR20'].map(h => (
+                      <th key={h} style={{padding:'0.42rem 0.5rem',textAlign:['종목','시장','기준일'].includes(h)?'left':'right',color:'var(--text-secondary)',whiteSpace:'nowrap'}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {volSurge.map((r, i) => {
+                    const vr = Number(r.vr20 || 0);
+                    const color = vr >= 3 ? '#dc2626' : vr >= 2 ? '#b45309' : vr >= 1.5 ? '#d97706' : 'var(--text-primary)';
+                    const unit = r.market === 'KR' ? '원' : '';
+                    return (
+                      <tr key={`${r.stock_code}-${i}`} style={{borderBottom:'1px solid rgba(15,23,42,0.2)'}}>
+                        <td style={{padding:'0.38rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>{i + 1}</td>
+                        <td style={{padding:'0.38rem 0.5rem'}}>
+                          <button onClick={()=>{onChangeStock(r.stock_code);onChangeTab('analysis');}} style={{padding:0,border:0,background:'none',cursor:'pointer',color:'var(--text-primary)',fontWeight:700,fontSize:'0.8rem'}}>
+                            {r.stock_name || r.stock_code}
+                          </button>
+                          <div style={{fontSize:'0.66rem',color:'var(--text-secondary)'}}>{r.stock_code}</div>
+                        </td>
+                        <td style={{padding:'0.38rem 0.5rem',color:'var(--text-secondary)'}}>{r.market}</td>
+                        <td style={{padding:'0.38rem 0.5rem',color:'var(--text-secondary)'}}>{r.trade_date}</td>
+                        <td style={{padding:'0.38rem 0.5rem',textAlign:'right',whiteSpace:'nowrap'}}>{Number(r.today_close || 0).toLocaleString('ko-KR')}{unit}</td>
+                        <td style={{padding:'0.38rem 0.5rem',textAlign:'right'}}>{Number(r.today_volume || 0).toLocaleString('ko-KR')}</td>
+                        <td style={{padding:'0.38rem 0.5rem',textAlign:'right',color:'var(--text-secondary)'}}>{Number(r.avg_vol20 || 0).toLocaleString('ko-KR')}</td>
+                        <td style={{padding:'0.38rem 0.5rem',textAlign:'right',fontWeight:900,color}}>{vr ? `${vr.toFixed(2)}배` : '-'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── 순위 이벤트 탭 ── */}
       {miTab === 'rank_events' && (

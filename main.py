@@ -6513,6 +6513,99 @@ def get_disclosures(stock_code: str):
         _disclosure_cache[stock_code] = {"items": fallback, "cached_at": _tm.time()}
         return fallback
 
+
+def _calc_vol_momentum(stock_code: str) -> dict:
+    """Return volume-ratio momentum fields from stored adjusted daily prices."""
+    empty = {
+        "vr5": None,
+        "vr20": None,
+        "vr60": None,
+        "avg_vol20": None,
+        "today_vol": None,
+        "above_ma20": None,
+        "above_ma50": None,
+        "above_ma200": None,
+        "near52h": None,
+        "momentum_signal": "normal",
+        "momentum_label": "데이터 부족",
+    }
+    try:
+        conn = connect_primary_db(timeout=10)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT date, close, high, volume
+            FROM price_history
+            WHERE stock_code=? AND close>0 AND volume>0
+            ORDER BY date DESC
+            LIMIT 252
+            """,
+            (stock_code,),
+        ).fetchall()
+        conn.close()
+        if len(rows) < 21:
+            return empty
+
+        today_close = float(rows[0]["close"] or 0)
+        today_vol = float(rows[0]["volume"] or 0)
+
+        def _avg_vol(start: int, stop: int):
+            vols = [float(r["volume"] or 0) for r in rows[start:stop] if float(r["volume"] or 0) > 0]
+            return sum(vols) / len(vols) if vols else None
+
+        def _ma(n: int):
+            closes = [float(r["close"] or 0) for r in rows[:n] if float(r["close"] or 0) > 0]
+            return sum(closes) / len(closes) if len(closes) == n else None
+
+        avg5 = _avg_vol(1, 6)
+        avg20 = _avg_vol(1, 21)
+        avg60 = _avg_vol(1, 61)
+        ma20 = _ma(20)
+        ma50 = _ma(50)
+        ma200 = _ma(200)
+        high52 = max(float(r["high"] or r["close"] or 0) for r in rows) if rows else None
+
+        vr5 = round(today_vol / avg5, 2) if avg5 else None
+        vr20 = round(today_vol / avg20, 2) if avg20 else None
+        vr60 = round(today_vol / avg60, 2) if avg60 else None
+        near52h = round((today_close / high52 - 1) * 100, 1) if high52 and today_close else None
+        above_ma20 = (today_close > ma20) if ma20 else None
+        above_ma50 = (today_close > ma50) if ma50 else None
+        above_ma200 = (today_close > ma200) if ma200 else None
+
+        signal = "normal"
+        label = f"거래량 평소 수준 ({vr20:.1f}배)" if vr20 else "데이터 부족"
+        if vr20 and vr20 >= 1.5:
+            if near52h is not None and near52h >= -10 and above_ma50 is not False:
+                signal = "breakout"
+                label = f"돌파 후보: 거래량 {vr20:.1f}배, 52주 고점 근접"
+            else:
+                signal = "surge"
+                label = f"거래량 급등: {vr20:.1f}배"
+        elif vr20 and vr20 < 0.7 and above_ma50 is True and near52h is not None and near52h >= -20:
+            signal = "pullback"
+            label = "눌림목 후보: 거래량 감소, MA50 위"
+
+        return {
+            "vr5": vr5,
+            "vr20": vr20,
+            "vr60": vr60,
+            "avg_vol20": round(avg20) if avg20 else None,
+            "today_vol": round(today_vol),
+            "above_ma20": above_ma20,
+            "above_ma50": above_ma50,
+            "above_ma200": above_ma200,
+            "near52h": near52h,
+            "momentum_signal": signal,
+            "momentum_label": label,
+        }
+    except Exception as e:
+        logger.warning(f"[VR] {stock_code} 계산 오류: {e}")
+        failed = dict(empty)
+        failed["momentum_label"] = "계산 오류"
+        return failed
+
+
 @app.get("/api/dashboard/fundamentals/{stock_code}")
 def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
     """
@@ -6757,6 +6850,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
         "forward_period": None,
         "forward_source": None,
     }
+    vol_momentum = _calc_vol_momentum(stock_code)
 
     if not data:
         return {
@@ -6786,6 +6880,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
             "dart_data_quality_note": dart_quality_note,
             "verification_summary": verification_summary,
             "disputed_detail": disputed_detail,
+            **vol_momentum,
         }
 
     opm = (
@@ -6835,6 +6930,7 @@ def get_stock_fundamentals(stock_code: str, db: Session = Depends(get_db)):
         "dart_data_quality_note": dart_quality_note,
         "verification_summary": verification_summary,
         "disputed_detail": disputed_detail,
+        **vol_momentum,
     }
 
 
