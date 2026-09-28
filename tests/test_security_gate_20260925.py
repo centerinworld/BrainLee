@@ -42,9 +42,11 @@ def make_jwt(key=KEY, **over):
 
 def _client():
     from routes.portfolio_access import router as access_router
+    from routes.admin_auth import router as admin_router
     app = FastAPI()
     app.middleware("http")(api_token_gate)
     app.include_router(access_router, prefix="/api/portfolio-access")
+    app.include_router(admin_router, prefix="/api/admin-auth")
 
     @app.get("/api/portfolio")
     def pf():
@@ -76,23 +78,24 @@ def _client():
 class SecurityGateTests(unittest.TestCase):
     def setUp(self):
         sg._HITS.clear()
-        for k in ("API_GATE_MODE", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "CF_ACCESS_ALLOWED_EMAILS", "API_RATE_LIMIT_PER_MIN", "API_PUBLIC_WRITE_PATTERNS", "API_PUBLIC_WRITE_LIMIT_PER_MIN", "PORTFOLIO_VIEW_PASSWORD", "VIEW_COOKIE_SECRET"):
+        for k in ("API_GATE_MODE", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "CF_ACCESS_ALLOWED_EMAILS", "API_RATE_LIMIT_PER_MIN", "API_PUBLIC_WRITE_PATTERNS", "API_PUBLIC_WRITE_LIMIT_PER_MIN", "PORTFOLIO_VIEW_PASSWORD", "VIEW_COOKIE_SECRET", "ADMIN_PASSWORD", "ADMIN_PASSWORD_HASH", "ADMIN_COOKIE_SECRET"):
             os.environ.pop(k, None)
 
     def test_access_levels(self):
         for m, p in (("POST", "/api/anything"), ("DELETE", "/api/portfolio/005930"), ("POST", "/hs/run"), ("GET", "/api/dart-excel/download/abc"),
                      ("GET", "/api/x/export/all"), ("GET", "/api/backup/list"), ("GET", "/api/x/settings"), ("GET", "/openapi.json")):
             self.assertEqual(sg.access_level(m, p), "owner", f"{m} {p}")
-        for p in ("/api/portfolio", "/api/portfolio/transactions", "/api/realtime/prices", "/api/kis-trading/account/summary", "/api/kis-trading/cash-ledger"):
+        for p in ("/api/portfolio", "/api/portfolio/transactions", "/api/buy-candidates", "/api/realtime/prices", "/api/kis-trading/account/summary", "/api/kis-trading/cash-ledger"):
             self.assertEqual(sg.access_level("GET", p), "viewer", p)
         # everything else a friend can browse stays public: watchlist/collect status, paper (virtual) trading, risk gates
         for p in ("/api/commands/watchlist", "/api/commands/collect-status/005930", "/api/kis-trading/paper/positions", "/api/kis-trading/paper/pnl",
                   "/api/kis-trading/paper/orders", "/api/kis-trading/risk-gates/recent", "/api/kis-trading/status", "/api/kis-trading/orders/lifecycle"):
             self.assertEqual(sg.access_level("GET", p), "public", p)
         self.assertEqual(sg.access_level("GET", "/api/portfolio/export/excel"), "owner")       # 내보내기는 비밀번호로 열리지 않는다
-        for m, p in (("GET", "/api/market-regime"), ("GET", "/api/buy-candidates"), ("GET", "/api/trend/holdings"), ("GET", "/api/research/quantstats"),
+        for m, p in (("GET", "/api/market-regime"), ("GET", "/api/trend/holdings"), ("GET", "/api/research/quantstats"),
                      ("GET", "/api/tenbagger/empirical-scoreboard"), ("GET", "/api/cash-conversion-signals/top"), ("GET", "/"), ("GET", "/assets/index-abc.js"),
-                     ("OPTIONS", "/api/portfolio"), ("POST", "/static/x"), ("POST", "/api/portfolio-access/login"), ("GET", "/api/portfolio-access/status")):
+                     ("OPTIONS", "/api/portfolio"), ("POST", "/static/x"), ("POST", "/api/portfolio-access/login"), ("GET", "/api/portfolio-access/status"),
+                     ("POST", "/api/admin-auth/login"), ("GET", "/api/admin-auth/status")):
             self.assertEqual(sg.access_level(m, p), "public", f"{m} {p}")
 
     def test_public_interactive_writes_are_allowlisted_and_limited(self):
@@ -134,7 +137,7 @@ class SecurityGateTests(unittest.TestCase):
     def test_public_reads_need_nothing(self):
         with mock.patch.dict(os.environ, {"API_WRITE_TOKEN": "s3cret"}):
             c = _client()
-            for path in ("/api/market-regime", "/api/buy-candidates"):
+            for path in ("/api/market-regime",):
                 self.assertEqual(c.get(path, headers=TUNNEL).status_code, 200, path)
 
     def test_owner_actions_need_admin_token(self):
@@ -147,21 +150,23 @@ class SecurityGateTests(unittest.TestCase):
             self.assertEqual(c.get("/api/dart-excel/download/1", headers={**TUNNEL, "Authorization": "Bearer s3cret"}).status_code, 200)
 
     def test_account_pages_need_server_verified_password_cookie(self):
-        env = {"API_WRITE_TOKEN": "s3cret", "PORTFOLIO_VIEW_PASSWORD": "pw-1234"}
+        env = {"API_WRITE_TOKEN": "s3cret", "ADMIN_PASSWORD": "pw-1234"}
         with mock.patch.dict(os.environ, env):
             c = _client()
             r = c.get("/api/portfolio", headers=TUNNEL)
-            self.assertEqual((r.status_code, r.json()["detail"]), (401, "portfolio_password_required"))   # NOT api_token_required: friends are never asked for a token
+            self.assertEqual((r.status_code, r.json()["detail"]), (401, "invest_unlock_required"))
+            self.assertEqual(c.get("/api/buy-candidates", headers=TUNNEL).status_code, 401)
             self.assertEqual(c.get("/api/realtime/prices", headers=TUNNEL).status_code, 401)
-            self.assertEqual(c.post("/api/portfolio-access/login", json={"password": "nope"}, headers=TUNNEL).status_code, 401)
-            ok = c.post("/api/portfolio-access/login", json={"password": "pw-1234"}, headers=TUNNEL)
+            self.assertEqual(c.post("/api/admin-auth/invest-unlock", json={"password": "nope"}, headers=TUNNEL).status_code, 401)
+            ok = c.post("/api/admin-auth/invest-unlock", json={"password": "pw-1234"}, headers=TUNNEL)
             self.assertEqual(ok.status_code, 200)
-            self.assertIn("pf_view=", ok.headers["set-cookie"])
+            self.assertIn("sd_invest=", ok.headers["set-cookie"])
             self.assertIn("HttpOnly", ok.headers["set-cookie"])
             # the client keeps the cookie: viewer pages open, but owner actions stay closed
             self.assertEqual(c.get("/api/portfolio", headers=TUNNEL).status_code, 200)
+            self.assertEqual(c.get("/api/buy-candidates", headers=TUNNEL).status_code, 200)
             self.assertEqual(c.get("/api/realtime/prices", headers=TUNNEL).status_code, 200)
-            self.assertEqual(c.get("/api/portfolio-access/status", headers=TUNNEL).json(), {"authenticated": True})
+            self.assertEqual(c.get("/api/admin-auth/invest-status", headers=TUNNEL).json(), {"unlocked": True})
             self.assertEqual(c.post("/api/thing", headers=TUNNEL).status_code, 401)
             self.assertEqual(c.get("/api/dart-excel/download/1", headers=TUNNEL).status_code, 401)
 
@@ -201,7 +206,7 @@ class SecurityGateTests(unittest.TestCase):
         sg._HITS.clear()
 
     def test_fail_closed_without_any_auth_configured(self):
-        env = {k: v for k, v in os.environ.items() if k not in ("API_WRITE_TOKEN", "PORTFOLIO_VIEW_PASSWORD", "VIEW_COOKIE_SECRET")}
+        env = {k: v for k, v in os.environ.items() if k not in ("API_WRITE_TOKEN", "PORTFOLIO_VIEW_PASSWORD", "VIEW_COOKIE_SECRET", "ADMIN_PASSWORD", "ADMIN_PASSWORD_HASH", "ADMIN_COOKIE_SECRET")}
         with mock.patch.dict(os.environ, env, clear=True):
             c = _client()
             self.assertEqual(c.post("/api/thing", headers=TUNNEL).status_code, 503)
@@ -255,6 +260,9 @@ class SecurityGateTests(unittest.TestCase):
         with mock.patch.dict(os.environ, env), mock.patch.object(sg, "_fetch_jwks", return_value=JWKS):
             os.environ.pop("CF_ACCESS_ALLOWED_EMAILS", None)
             os.environ.pop("API_WRITE_TOKEN", None)
+            os.environ.pop("ADMIN_PASSWORD", None)
+            os.environ.pop("ADMIN_PASSWORD_HASH", None)
+            os.environ.pop("ADMIN_COOKIE_SECRET", None)
             c = _client()
             self.assertEqual(c.post("/api/thing", headers={**TUNNEL, "Cf-Access-Jwt-Assertion": make_jwt()}).status_code, 503)
 

@@ -49,7 +49,9 @@ def _read_json(path: Path) -> dict:
 
 
 def _matrix() -> dict:
-    response = requests.get(f"{API}/api/backtest/matrix?include_legacy=false", timeout=30)
+    # Audit the complete selected registry. A selected suite whose current
+    # grade is legacy is still a strategy-center strategy and must be counted.
+    response = requests.get(f"{API}/api/backtest/matrix?include_legacy=true", timeout=30)
     response.raise_for_status()
     return response.json()
 
@@ -62,6 +64,10 @@ def audit() -> dict:
     keys = {row.get("strategy") for row in strategies}
     adapter_keys = STANDALONE_ADAPTERS | COMBO_ONLY_ADAPTERS
     missing_adapters = sorted(keys - adapter_keys)
+    forward_validated_count = sum(
+        (row.get("governance") or {}).get("verification_status") == "forward_validated"
+        for row in strategies
+    )
 
     selected_end_dates = sorted({
         str(period.get("end_date"))[:10]
@@ -147,11 +153,13 @@ def audit() -> dict:
         center_key: by_virtual.get(virtual_key, {})
         for center_key, virtual_key in TRACKED_VIRTUAL.items()
     }
-    blockers = [
-        {
+    blockers = []
+    if forward_validated_count == 0:
+        blockers.append({
             "code": "NO_FORWARD_VALIDATED_STRATEGY",
-            "evidence": f"forward_validated=0, latest selected suite end={latest_selected_end} ({selected_age_days} days old)",
-        },
+            "evidence": f"forward_validated={forward_validated_count}, latest selected suite end={latest_selected_end} ({selected_age_days} days old)",
+        })
+    blockers.extend([
         {
             "code": "MOST_STRATEGIES_HAVE_NO_ORDERABLE_SIGNAL_ADAPTER",
             "evidence": f"strategy-center={len(keys)}, adapters={len(keys & adapter_keys)}, missing={len(missing_adapters)}",
@@ -179,7 +187,7 @@ def audit() -> dict:
                 for key in ("golden_cross", "recovery", "contract_momentum", "combo_605")
             }, ensure_ascii=False),
         },
-    ]
+    ])
     missing_ledger_accounts = sorted(
         strategy for strategy, summary in ledger_accounts.items() if summary is None
     )
@@ -213,6 +221,7 @@ def audit() -> dict:
         "verdict": "BLOCKED",
         "blockers": blockers,
         "strategy_count": len(keys),
+        "forward_validated_count": forward_validated_count,
         "standalone_adapter_count": len(keys & STANDALONE_ADAPTERS),
         "combo_only_adapter_count": len(keys & COMBO_ONLY_ADAPTERS),
         "missing_adapter_count": len(missing_adapters),

@@ -1298,3 +1298,53 @@ INFO·SBNY·VMRK처럼 현재 Yahoo 심볼이 다른 증권이거나 재사용�
 - 미국 일봉은 운영 DB에 4,189,826행·3,708종목, 최신 2026-09-25까지 있다. 일간 Yahoo 조정 OHLCV를 원본으로 유지하고 주봉은 `us_market_data.aggregate_weekly_ohlcv()`로 실제 주 마지막 거래일 기준 집계하도록 추가했다.
 - 일괄 수집기가 `ma50`을 저장하지 않고 52주 고저를 종가로 계산하던 결함을 수정했다. `scripts/rebuild_us_technical_factors.py --apply` 실행 `usfactor_e1c67e0ef5f74160aa9601dafe99f800`: 기존 3,673행 백업, 독립 사후검증 통과. 최종 3,675행 중 MA50 3,627, MA200 3,471, 실제 High/Low 기반 52주 고저 3,675행이다.
 - 상세 근거: `docs/us_index_price_infrastructure_20260927.md`.
+
+## Codex 전략센터 재점검 및 감사 집계 수정 (2026-09-28 12:20 KST)
+
+최신 운영 PostgreSQL, 선택 registry, 전략센터 API, 감사 산출물을 다시 대조했다. 가격·상장구간
+감사는 현재 선택 전략 **27/27 통과**이며 5%·7% 임계값에서 모두 같은 결과다. 그러나 이는
+가격 무결성만 통과했다는 뜻이고 전략센터 전체가 완료됐다는 뜻은 아니다.
+
+재점검 중 `/api/backtest/matrix?include_legacy=true`가 선택 registry 제한을 풀어버리는 결함을
+확인했다. 이 경우 선택 27개 대신 과거 미선택 실행까지 36개가 섞이고, 같은 전략·기간의 더
+최근 legacy 실행이 선택 실행을 덮어쓸 수 있었다. 반대로 기본 조회는 legacy 등급의 선택 전략을
+제외해 15개만 반환했다. `routes/backtest.py`를 수정해 `include_legacy`가 검증 등급 표시만
+제어하고 조회 대상은 항상 선택 registry로 제한되도록 했다. 수정 후 기본 조회 15개,
+감사용 전체 조회 27개이며 전체 조회에는 미선택 전략이 섞이지 않는다.
+
+`audit_strategy_center_execution_readiness.py`도 감사용 전체 선택 집합을 사용하도록 고쳤고,
+forward 검증 수를 하드코딩하지 않고 현재 거버넌스에서 계산하게 했다. 화면에 남아 있던 v4의
+과거 suite hash `3a1df776883808d8`와 고정 성과 설명도 제거했다. 현재 v4 선택 suite는
+`655093a76714dcb4`이며 수익률·검증 등급·거버넌스는 registry와 artifact에서 동적으로 표시한다.
+
+최신 감사 결과는 다음과 같다.
+
+- 선택 전략 데이터 가용시점: **95/162 통과, 67 실패**. 실패 구간은 신호가 소비한 재무·공시
+  입력의 row id와 `available_at`을 거래별로 저장하지 않은 실제 증거 공백이다. 실패 전략은
+  composite 1구간과 contract_momentum, earnings_conviction, earnings_supply_discovery,
+  golden_cross, high_profit_compound, moonshot_turnaround, recovery, regime_adaptive,
+  se_momentum, sector_focus, turnaround 각 6구간이다.
+- 선택 전략 검증 등급: `point_in_time_verified` 2, `point_in_time_approx` 8,
+  `execution_strict` 5, `legacy` 12, `forward_validated` 0.
+- forward 원장: `v_gc` 8건, `v_contract_momentum` 9건 모두 20일 결과가 아직 pending이다.
+  수집 46일로 정책의 90일·완결 신호 30건을 충족하지 못했다.
+- 주문 가능 신호 어댑터: 선택 27개 중 9개만 존재하고 18개는 없다. 기존 가상운용도
+  D일 종가 신호→D+1 시가 체결 계약과 다른 현재가 체결, golden_cross 파라미터 차이,
+  contract_momentum 진입 규칙 차이, combo 재계산 repaint 위험이 남아 있다.
+- 정적 계약 감사: P0 0, P1 29. P1은 `data_asof_ts` 부재, 추정 공시일 fallback,
+  high_profit_compound 현재시총 모드다.
+- 실전 데이터: 최신 가격 2,750/2,756(99.78%)로 6종목은 후보에서 fail-closed 된다.
+  기업행위 `review_required` 5,842건과 당일 거래대금 archive 0/234는 경고 상태다.
+
+전체 회귀검사에서 최근 사이트 접근정책 개편과 기존 보안 테스트가 어긋난 5건도 발견했다.
+`/api/buy-candidates`는 의도대로 「내 투자」 viewer 범위에 포함하고, `sd_invest` 재인증
+계약에 맞게 테스트를 갱신했다. API token·Cloudflare Access 관리자는 별도 관리자 비밀번호가
+설정되지 않은 서버에서도 viewer API를 통과해야 하는데, 검사 순서 때문에 먼저 503을 반환하던
+실제 결함도 수정했다. 최종 전체 테스트는 **588 passed, 54 subtests passed**이고 프론트
+production build도 통과했다.
+
+감사기는 이제 동일한 선택 27개를
+기준으로 숫자를 산출하지만 실전 주문은 계속 차단하는 것이 맞다. 다음 우선순위는 67개 구간의
+입력 provenance를 실제 거래별로 저장한 뒤 6구간을 재실행하는 것, 18개 전략 신호 어댑터를
+공유 체결엔진으로 연결하는 것, 그리고 prospective 표본이 90일·30건을 충족할 때까지 forward
+원장을 수집하는 것이다.

@@ -815,7 +815,7 @@ STRATEGY_DESC = {
     "v1_value": "Graham 내재가치 25%+ 할인 OR PBR<0.7·PER<10 + 영업흑자. 시장 사이클 무관 저평가 발굴 — 보수적 분할매수에 적합",
     "v2":       "영업이익률·ROE·ROA 수익성 3축 스코어 ≥3점 + 영업흑자 + 보조수급. 재무 우량주 장기 보유형 — 복리효과 극대화",
     "v5":       "기관+외국인 5일 동반 누적 순매수 + MA20>60>120 정배열 + 영업흑자. 스마트머니 방향에 편승하는 수급 주도 모멘텀",
-    "v4":       "Minervini RS(상대강도) + Graham PBR·PER 저평가 + 기관·외국인 수급 삼중 필터. 최신 선택 스위트(3a1df776883808d8)는 KRX 일별 상장구간·발행주식 수, 거래별 재무 공시 provenance, 합병 회수가치를 반영해 point_in_time_verified. avg6=+10.24%, 4/6기간 양수 [상승+27.35/하락0/회복+2.97/AI+8.80/최근-16.32/최신+38.62]. forward_validation은 없고 현재 거버넌스 tier는 retired이므로 자동매매 대상이 아님.",
+    "v4":       "Minervini RS(상대강도) + Graham PBR·PER 저평가 + 기관·외국인 수급 삼중 필터. 선택 스위트의 수익률·검증 등급·거버넌스는 현재 registry와 감사 artifact에서 동적으로 계산한다. forward validation을 통과하기 전에는 자동매매 대상이 아니다.",
     "v10":      "영업이익 YoY≥80% + 매출 YoY≥30% 2분기 연속 확인 + KOSPI MA60 위. 이익 폭발 구간을 압축 투자로 포착하는 고성장 모멘텀",
     "v11":      "V7 이익가속(Earnings Acceleration): OP YoY>30% 3분기 연속 가속 + 이익성장률>매출성장률(마진 레버리지) + MA60>MA120 추세전환 + 52W 50~88% + 기관OR외인 유입. avg5=+6.5%, 최신+60.7%. 회복장·최근 구간 특히 강세.",
     "v8":       "★V9 수출 변곡점 선행 전략: 수출 YoY 음수→양수 전환(진짜 변곡점) 포착 + MA60+20% 상단 차단(선반영 방지). 데이터기반 매도: 수출역전청산(YoY<-3%) + 수출전환실패청산. 2026-07-16 고정슬롯→현금원장 전환(execution_strict) 재등록: avg6=+16.1%, 2/6기간 양수 [상승+76.3/하락0/회복-3.6/AI-9.0/최근-0.3/최신+33.1]. 2026-07-27 코드 재확인 결과 애초에 시총 기반 유니버스 필터 자체가 없음(종목선정은 수출데이터 보유여부만 기준) — market_cap_mode를 \"current\"(부정확한 라벨)에서 \"not_applicable\"로 정정, 수치·로직 변경 없음.",
@@ -1380,9 +1380,10 @@ def get_backtest_matrix(include_legacy: bool = Query(False)):
     }
     allowed_hashes = selected_hashes | set(component_to_suite)
     selection_params = ()
-    if include_legacy:
-        selection_clause = ""
-    elif allowed_hashes:
+    # include_legacy controls the verification-grade filter below.  It must
+    # not widen the query beyond the selected registry; otherwise a newer,
+    # unselected run can overwrite a selected period in the matrix.
+    if allowed_hashes:
         selection_clause = "AND s.run_hash IN ({})".format(
             ",".join("?" for _ in allowed_hashes)
         )

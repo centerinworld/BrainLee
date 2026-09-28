@@ -331,10 +331,10 @@ async def api_token_gate(request: Request, call_next):
     if level == "viewer":
         # 2026-09-27: 「내 투자」(계좌현황·매수후보)는 관리자 로그인 상태여도 **비밀번호를 다시 입력해 발급한 잠금 해제 쿠키(sd_invest, 30분)** 가 있어야 한다.
         # 스크립트용 API 토큰·Cloudflare Access 관리자는 기존처럼 통과.
-        if not admin_configured():
-            return JSONResponse({"detail": "admin_not_configured"}, status_code=503)
         if valid_invest_cookie(request.cookies.get(INVEST_COOKIE, "")) or await _owner_ok(request, allow_admin_cookie=False):
             return await call_next(request)
+        if not admin_configured():
+            return JSONResponse({"detail": "admin_not_configured"}, status_code=503)
         return JSONResponse({"detail": "invest_unlock_required"}, status_code=401)
     if await _owner_ok(request):                       # 관리자는 나머지 단계 통과
         return await call_next(request)
