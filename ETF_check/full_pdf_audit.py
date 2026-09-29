@@ -48,6 +48,16 @@ def publication_dates(conn: sqlite3.Connection) -> list[str]:
     ]
 
 
+def _excluded_tickers(conn: sqlite3.Connection) -> set[str]:
+    """상장폐지 추정으로 자동 제외된 티커 — etf_delisting_watch.py 참조.
+    2026-09-29: KIS 마스터파일이 KRX 상장폐지를 즉시 반영 안 해 유니버스에 남아있는 종목이
+    계속 빈 PDF를 내면서 all-or-nothing 판정을 영구적으로 막던 문제 수정."""
+    try:
+        return {r[0] for r in conn.execute("SELECT etf_ticker FROM etf_delisting_exclusion")}
+    except sqlite3.OperationalError:
+        return set()  # 테이블 없으면(구버전 DB) 제외 없이 기존 동작 유지
+
+
 def health(conn: sqlite3.Connection, day: str | None = None) -> dict[str, Any]:
     selected = day or conn.execute(
         "SELECT MAX(base_date) FROM etf_pdf_full_snapshot"
@@ -57,8 +67,11 @@ def health(conn: sqlite3.Connection, day: str | None = None) -> dict[str, Any]:
     publication = conn.execute(
         "SELECT * FROM etf_pdf_full_publication WHERE base_date=?",(selected,)
     ).fetchone()
+    excluded = _excluded_tickers(conn)
+    excl_ph = ",".join("?" for _ in excluded) if excluded else "''"
+    excl_params = list(excluded)
     row = conn.execute(
-        """
+        f"""
         SELECT COUNT(*) snapshots,
                SUM(status='success') successes,
                SUM(status='empty') empty_count,
@@ -67,31 +80,36 @@ def health(conn: sqlite3.Connection, day: str | None = None) -> dict[str, Any]:
                SUM(raw_path IS NULL OR raw_path='') missing_raw,
                SUM(raw_sha256 IS NULL OR LENGTH(raw_sha256)!=64) invalid_hash,
                SUM(CASE WHEN status='success' AND component_count<=0 THEN 1 ELSE 0 END) invalid_success
-        FROM etf_pdf_full_snapshot WHERE base_date=?
+        FROM etf_pdf_full_snapshot WHERE base_date=? AND etf_ticker NOT IN ({excl_ph})
         """,
-        (selected,),
+        [selected, *excl_params],
     ).fetchone()
+    excluded_in_snapshot = conn.execute(
+        f"SELECT COUNT(*) FROM etf_pdf_full_snapshot WHERE base_date=? AND etf_ticker IN ({excl_ph})",
+        [selected, *excl_params],
+    ).fetchone()[0] if excluded else 0
     duplicate_rows = conn.execute(
-        """
+        f"""
         SELECT COUNT(*) FROM (
             SELECT etf_ticker,component_order,COUNT(*) n
-            FROM etf_pdf_full_component WHERE base_date=?
+            FROM etf_pdf_full_component WHERE base_date=? AND etf_ticker NOT IN ({excl_ph})
             GROUP BY etf_ticker,component_order HAVING n>1
         )
         """,
-        (selected,),
+        [selected, *excl_params],
     ).fetchone()[0]
     raw_missing_on_disk = 0
     for raw in conn.execute(
-        "SELECT raw_path FROM etf_pdf_full_snapshot WHERE base_date=? AND status='success'",
-        (selected,),
+        f"SELECT raw_path FROM etf_pdf_full_snapshot WHERE base_date=? AND status='success' AND etf_ticker NOT IN ({excl_ph})",
+        [selected, *excl_params],
     ):
         if not raw[0] or not Path(raw[0]).exists():
             raw_missing_on_disk += 1
     published = publication is not None
+    expected_snapshots = int(publication["universe_count"]) - excluded_in_snapshot if published else None
     checks_ok = bool(
         published
-        and int(row["snapshots"] or 0) == int(publication["universe_count"])
+        and int(row["snapshots"] or 0) == expected_snapshots
         and not int(row["empty_count"] or 0)
         and not int(row["error_count"] or 0)
         and not int(row["missing_raw"] or 0)
@@ -102,6 +120,7 @@ def health(conn: sqlite3.Connection, day: str | None = None) -> dict[str, Any]:
     )
     return {
         "base_date":selected,"status":"healthy" if checks_ok else "incomplete_or_invalid",
+        "excluded_delisted_count": len(excluded), "excluded_delisted_tickers": sorted(excluded) if excluded else [],
         "published":published,"snapshots":int(row["snapshots"] or 0),
         "successes":int(row["successes"] or 0),"empty":int(row["empty_count"] or 0),
         "errors":int(row["error_count"] or 0),"components":int(row["component_count"] or 0),

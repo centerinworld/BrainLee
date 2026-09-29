@@ -465,23 +465,41 @@ def save_failure(
         )
 
 
+def _excluded_delisted_tickers(conn: sqlite3.Connection) -> set[str]:
+    """상장폐지 추정 자동제외 티커 — etf_delisting_watch.py / full_pdf_audit.py 참조.
+    2026-09-29: KIS 마스터파일이 KRX 상장폐지를 즉시 반영 안 해 유니버스에 남은 종목이 계속
+    빈 PDF를 내면서 이 함수의 all-or-nothing 판정을 영구적으로 막던 문제 수정."""
+    try:
+        return {r[0] for r in conn.execute("SELECT etf_ticker FROM etf_delisting_exclusion")}
+    except sqlite3.OperationalError:
+        return set()
+
+
 def assess_and_publish(conn: sqlite3.Connection, day: str, universe_count: int) -> dict[str, int | bool]:
+    excluded = _excluded_delisted_tickers(conn)
+    excl_ph = ",".join("?" for _ in excluded) if excluded else "''"
+    excl_params = list(excluded)
     row = conn.execute(
-        """
+        f"""
         SELECT COUNT(*) snapshots,
                SUM(status='success' AND component_count>0) successes,
                SUM(status='empty' OR (status='success' AND component_count=0)) empty_count,
                SUM(status='error') errors,
                COALESCE(SUM(CASE WHEN status='success' THEN component_count ELSE 0 END),0) components
-        FROM etf_pdf_full_snapshot WHERE base_date=?
+        FROM etf_pdf_full_snapshot WHERE base_date=? AND etf_ticker NOT IN ({excl_ph})
         """,
-        (day,),
+        [day, *excl_params],
     ).fetchone()
+    excluded_in_snapshot = conn.execute(
+        f"SELECT COUNT(*) FROM etf_pdf_full_snapshot WHERE base_date=? AND etf_ticker IN ({excl_ph})",
+        [day, *excl_params],
+    ).fetchone()[0] if excluded else 0
+    effective_universe_count = universe_count - excluded_in_snapshot
     snapshots = int(row["snapshots"] or 0)
     successes = int(row["successes"] or 0)
     empty_count = int(row["empty_count"] or 0)
     errors = int(row["errors"] or 0)
-    complete = snapshots == universe_count and successes == universe_count and not empty_count and not errors
+    complete = snapshots == effective_universe_count and successes == effective_universe_count and not empty_count and not errors
     with conn:
         if complete:
             conn.execute(
@@ -510,6 +528,7 @@ def assess_and_publish(conn: sqlite3.Connection, day: str, universe_count: int) 
         "errors": errors,
         "components": int(row["components"]),
         "complete": complete,
+        "excluded_delisted_count": len(excluded),
     }
 
 

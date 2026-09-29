@@ -60,19 +60,39 @@ def _issuer_exception(conn: sqlite3.Connection, day: str, ticker: str) -> dict |
     )
 
 
+def _excluded_delisted_tickers(conn: sqlite3.Connection) -> set[str]:
+    """상장폐지 추정 자동제외 티커 — etf_delisting_watch.py 참조 (2026-09-29).
+    KIS 마스터파일이 KRX 상장폐지를 즉시 반영 안 해 유니버스에 남은 종목이 계속 빈 PDF를
+    내면서 이 스크립트의 품질게이트를 영구적으로 막던 문제 수정(4번째 중복 게이트 — full_pdf_audit.py,
+    full_pdf_collector.py, verify_daily_pipeline.py에도 같은 패치 적용됨)."""
+    try:
+        return {r[0] for r in conn.execute("SELECT etf_ticker FROM etf_delisting_exclusion")}
+    except sqlite3.OperationalError:
+        return set()
+
+
 def _quality_gate(conn: sqlite3.Connection, day: str) -> dict:
     legacy_validation = os.getenv("ENABLE_ETFCHECK_VALIDATION", "0") == "1"
-    universe = int(conn.execute(
+    excluded = _excluded_delisted_tickers(conn)
+    universe_raw = int(conn.execute(
         "SELECT COUNT(*) FROM etf_universe_daily WHERE base_date=?", (day,)
     ).fetchone()[0])
+    excl_ph = ",".join("?" for _ in excluded) if excluded else "''"
+    excluded_in_universe = conn.execute(
+        f"SELECT COUNT(*) FROM etf_universe_daily WHERE base_date=? AND etf_ticker IN ({excl_ph})",
+        [day, *excluded],
+    ).fetchone()[0] if excluded else 0
+    universe = universe_raw - excluded_in_universe
     rows = conn.execute(
-        """
+        f"""
         SELECT etf_ticker,status FROM etf_pdf_full_snapshot
-        WHERE base_date=? ORDER BY etf_ticker
+        WHERE base_date=? AND etf_ticker NOT IN ({excl_ph}) ORDER BY etf_ticker
         """,
-        (day,),
+        [day, *excluded],
     ).fetchall()
     successful = sum(row[1] == "success" for row in rows)
+    # 상장폐지(추정) 종목도 마지막 시가총액 캐시 등으로 scale 값은 여전히 존재할 수 있어
+    # 전체 유니버스(universe_raw) 기준으로 비교한다 — PDF 관련 체크만 excluded 반영.
     scale = int(conn.execute(
         "SELECT COUNT(*) FROM etf_scale_daily WHERE base_date=?", (day,)
     ).fetchone()[0])
@@ -113,7 +133,7 @@ def _quality_gate(conn: sqlite3.Connection, day: str) -> dict:
         failures.append("pdf_snapshot_coverage")
     if successful + len(exceptions) != universe or unresolved:
         failures.append("domestic_membership_unresolved")
-    if scale != universe:
+    if scale != universe_raw:
         failures.append("scale_coverage")
     attempted = int(sample[0] or 0) if sample else 0
     sample_success = int(sample[1] or 0) if sample else 0

@@ -15,6 +15,16 @@ from issuer_pdf_fallback import validated_domestic_exceptions
 AUDIT_ROOT = Path(__file__).with_name("audits")
 
 
+def _excluded_delisted_tickers(conn: sqlite3.Connection) -> set[str]:
+    """상장폐지 추정 자동제외 티커 — etf_delisting_watch.py 참조 (2026-09-29).
+    KIS 마스터파일이 KRX 상장폐지를 즉시 반영 안 해 유니버스에 남은 종목이 계속 빈 PDF를
+    내면서 이 스크립트의 all-or-nothing postcondition을 영구적으로 막던 문제 수정."""
+    try:
+        return {r[0] for r in conn.execute("SELECT etf_ticker FROM etf_delisting_exclusion")}
+    except sqlite3.OperationalError:
+        return set()
+
+
 def verify(day: str, db_path: Path = DB_PATH) -> dict:
     legacy_validation = os.getenv("ENABLE_ETFCHECK_VALIDATION", "0") == "1"
     conn = connect(db_path)
@@ -23,15 +33,27 @@ def verify(day: str, db_path: Path = DB_PATH) -> dict:
         universe = conn.execute(
             "SELECT COUNT(*) FROM etf_universe_daily WHERE base_date=?", (day,)
         ).fetchone()[0]
+        excluded = _excluded_delisted_tickers(conn)
+        excl_ph = ",".join("?" for _ in excluded) if excluded else "''"
+        excl_params = list(excluded)
+        excluded_in_universe = (
+            conn.execute(
+                f"SELECT COUNT(*) FROM etf_universe_daily WHERE base_date=? AND etf_ticker IN ({excl_ph})",
+                [day, *excl_params],
+            ).fetchone()[0] if excluded else 0
+        )
+        # scale/sample은 상장폐지 종목도 여전히 값이 나올 수 있어(마지막 시가총액 캐시 등) 전체
+        # universe로 비교하고, PDF 관련 체크만 제외 반영한 pdf_universe로 비교한다.
+        pdf_universe = int(universe or 0) - excluded_in_universe
         pdf = conn.execute(
-            """
+            f"""
             SELECT COUNT(*) snapshots,
                    SUM(status='success') successes,
                    SUM(status='empty') empty_count,
                    SUM(status='error') error_count
-            FROM etf_pdf_full_snapshot WHERE base_date=?
+            FROM etf_pdf_full_snapshot WHERE base_date=? AND etf_ticker NOT IN ({excl_ph})
             """,
-            (day,),
+            [day, *excl_params],
         ).fetchone()
         scale = conn.execute(
             "SELECT COUNT(*) FROM etf_scale_daily WHERE base_date=?", (day,)
@@ -64,10 +86,10 @@ def verify(day: str, db_path: Path = DB_PATH) -> dict:
     failures = []
     if not universe:
         failures.append("universe_missing")
-    if not pdf or int(pdf["snapshots"] or 0) != int(universe):
+    if not pdf or int(pdf["snapshots"] or 0) != int(pdf_universe):
         failures.append("pdf_snapshot_coverage")
     effective_successes = (int(pdf["successes"] or 0) if pdf else 0) + len(issuer_exceptions)
-    if effective_successes != int(universe):
+    if effective_successes != int(pdf_universe):
         failures.append("pdf_success_coverage")
     failed_pdf_count = (
         int(pdf["empty_count"] or 0) + int(pdf["error_count"] or 0) if pdf else 0
@@ -88,6 +110,8 @@ def verify(day: str, db_path: Path = DB_PATH) -> dict:
         "base_date": day,
         "ok": not failures,
         "universe": int(universe or 0),
+        "excluded_delisted_count": len(excluded),
+        "excluded_delisted_tickers": sorted(excluded) if excluded else [],
         "pdf_successes": int(pdf["successes"] or 0) if pdf else 0,
         "issuer_exception_count": len(issuer_exceptions),
         "issuer_exception_tickers": [item["etf_ticker"] for item in issuer_exceptions],

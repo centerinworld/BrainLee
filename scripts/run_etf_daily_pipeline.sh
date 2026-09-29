@@ -61,6 +61,10 @@ run_stage() {
 
 failed=0
 run_stage full_pdf "$PYTHON" ETF_check/full_pdf_collector_v7.py --date "$TARGET_DATE" || failed=1
+# 2026-09-29: 상장폐지(추정) ETF가 KIS 마스터파일에 계속 남아 빈 PDF를 내면서 all-or-nothing
+# 판정을 영구적으로 막던 문제 수정 — 매일 이 자리에서 자동으로 탐지·제외(및 부활 시 자동 복구).
+# 이 단계 자체가 실패해도(신규 DB 등) 파이프라인 전체를 막지 않도록 failed에 반영하지 않는다.
+run_stage delisting_watch "$PYTHON" ETF_check/etf_delisting_watch.py
 run_stage issuer_fallback "$PYTHON" ETF_check/issuer_pdf_fallback_v2.py --date "$TARGET_DATE" || failed=1
 run_stage scale "$PYTHON" ETF_check/etf_scale_collector.py --date "$TARGET_DATE" || failed=1
 run_stage full_pdf_audit "$PYTHON" ETF_check/full_pdf_audit.py || failed=1
