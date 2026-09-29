@@ -108,9 +108,11 @@ const EtfCheckView = () => {
   });
   const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' };
   const thStyle = {
-    padding: '0.6rem 0.5rem', textAlign: 'right', color: '#1e293b',
-    borderBottom: '2px solid rgba(37,99,235,0.5)', fontWeight: 600,
-    background: 'rgba(10,18,50,0.98)', whiteSpace: 'nowrap',
+    // 2026-09-29: 다크테마 시절 남은 근검정 배경(rgba(10,18,50,0.98))에 어두운 글자가 겹쳐 거의
+    // 안 보이던 문제 수정 — 다른 페이지의 sticky 표 헤더(#dbe6f7/#14315f)와 동일하게 통일.
+    padding: '0.6rem 0.5rem', textAlign: 'right', color: '#14315f',
+    borderBottom: '2px solid #8fa6cd', fontWeight: 700,
+    background: '#dbe6f7', whiteSpace: 'nowrap',
     position: 'sticky', top: 0, zIndex: 10,
   };
   const tdStyle = {

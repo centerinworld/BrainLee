@@ -287,6 +287,12 @@ def main() -> None:
     args = parser.parse_args()
     conn = connect_primary_db(timeout=60)
     try:
+        # 2026-09-29: 기본 statement_timeout(30s)이 이 스크립트의 stock_price_daily 전체 LAG
+        # 윈도우함수 스캔(격리 실행 시 ~18~20초, 스케줄러 동시부하 시 30초 초과)에는 너무 빠듯해서
+        # 매일 실패 → 이 스크립트가 이 잡 체인의 첫 단계라 가격급변감사·설명형신호·전략센터전진신호·
+        # 신호사후성과·전진검증감사까지 전부 연쇄로 안 돌고 있었음(2026-08-13 이후 live_signal_registry
+        # 신규 신호 0건으로 발견). 이 세션에서만 여유를 주고, 전역 30s는 그대로 유지.
+        conn.execute("SET statement_timeout='120s'")
         print(build(conn, args.dry_run))
     finally:
         conn.close()

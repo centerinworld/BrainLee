@@ -20,6 +20,11 @@ ANALYST_LOOKBACK_DAYS = 365
 MAX_INLINE_ANALYST_PDF_PREVIEWS = 1
 _PORTFOLIO_COMPARE_CACHE: dict[int, tuple[float, dict[str, Any]]] = {}
 _PORTFOLIO_COMPARE_CACHE_TTL_SEC = 300
+# 2026-09-29: /company/{code}가 텍스트 근거 스캔+동료기업 비교+DB 재기록(_persist_profile)까지
+# 매 GET마다 다시 계산해 종목 분석 페이지에서 평균 15~18초가 걸림(전체 로딩 지연의 주범 중 하나로
+# 사용자가 지적) — 리포트/메시지 텍스트는 하루 안에 자주 안 바뀌므로 종목당 캐시로 재계산을 줄인다.
+_COMPANY_INTEL_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_COMPANY_INTEL_CACHE_TTL_SEC = 600
 
 
 def _today() -> datetime:
@@ -1152,10 +1157,16 @@ def _compute_company_intelligence(conn: sqlite3.Connection, stock_code: str) -> 
 
 
 @router.get("/company/{stock_code}")
-def get_company_intelligence(stock_code: str):
+def get_company_intelligence(stock_code: str, refresh: bool = Query(False)):
+    if not refresh:
+        cached = _COMPANY_INTEL_CACHE.get(stock_code)
+        if cached and time.monotonic() - cached[0] < _COMPANY_INTEL_CACHE_TTL_SEC:
+            return cached[1]
     conn = connect_stock_db(timeout=15, row_factory=sqlite3.Row)
     try:
-        return _compute_company_intelligence(conn, stock_code)
+        result = _compute_company_intelligence(conn, stock_code)
+        _COMPANY_INTEL_CACHE[stock_code] = (time.monotonic(), result)
+        return result
     finally:
         conn.close()
 

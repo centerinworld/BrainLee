@@ -9220,13 +9220,13 @@ const _signalFrontCache = {};
                             const fr = light(frn), ins = light(inst);
                             return (
                               <div style={{display:'flex',gap:'4px',justifyContent:'center'}}>
-                                <div style={{minWidth:'54px',padding:'2px 4px',borderRadius:'6px',background:'rgba(20,30,50,0.75)',border:`1px solid ${fr.bd}`,display:'flex',flexDirection:'column',alignItems:'center',lineHeight:1.05}}>
-                                  <span style={{fontSize:'0.54rem',color:'rgba(15,23,42,0.88)'}}>외인</span>
+                                <div style={{minWidth:'54px',padding:'2px 4px',borderRadius:'6px',background:fr.bg,border:`1px solid ${fr.bd}`,display:'flex',flexDirection:'column',alignItems:'center',lineHeight:1.05}}>
+                                  <span style={{fontSize:'0.54rem',color:'#334155'}}>외인</span>
                                   <span style={{fontSize:'0.72rem',fontWeight:700,color:fr.fg}}>{fr.icon}</span>
                                   <span style={{fontSize:'0.66rem',fontWeight:700,color:fr.fg}}>{fmtAmt(frn)}</span>
                                 </div>
-                                <div style={{minWidth:'54px',padding:'2px 4px',borderRadius:'6px',background:'rgba(20,30,50,0.75)',border:`1px solid ${ins.bd}`,display:'flex',flexDirection:'column',alignItems:'center',lineHeight:1.05}}>
-                                  <span style={{fontSize:'0.54rem',color:'rgba(15,23,42,0.88)'}}>기관</span>
+                                <div style={{minWidth:'54px',padding:'2px 4px',borderRadius:'6px',background:ins.bg,border:`1px solid ${ins.bd}`,display:'flex',flexDirection:'column',alignItems:'center',lineHeight:1.05}}>
+                                  <span style={{fontSize:'0.54rem',color:'#334155'}}>기관</span>
                                   <span style={{fontSize:'0.72rem',fontWeight:700,color:ins.fg}}>{ins.icon}</span>
                                   <span style={{fontSize:'0.66rem',fontWeight:700,color:ins.fg}}>{fmtAmt(inst)}</span>
                                 </div>
