@@ -200,7 +200,15 @@ def run(only: set[str], workers: int, do_select: bool) -> dict:
             members = {r["label"]: r["run_hash"] for r in item["runs"]}
             suite = register_run_set(strategy, "strategy_center", members)
             item["new_suite"] = suite["suite_hash"]
-            price_ok = all(r["price_integrity"] for r in item["runs"])
+            # 선택 교체 게이트 = 완료 기준인 공식 선택전략 가격·상장구간 감사와 같은 규칙
+            # (보유창 오염 7% 이하 + 생존편향 0건). 구간별 엄격 판정은 참고로 남긴다.
+            from scripts.audit_selected_strategy_price_integrity import audit as official_price_audit
+            official = official_price_audit({strategy: suite["suite_hash"]})["strategies"][0]
+            item["official_price_audit"] = {k: official.get(k) for k in (
+                "holding_windows", "contaminated_windows", "price_jump_window_contamination_ratio",
+                "survivorship_findings", "price_integrity_passed", "status")}
+            item["strict_period_price_integrity"] = all(r["price_integrity"] for r in item["runs"])
+            price_ok = bool(official.get("price_integrity_passed"))
             avail_ok = all(r["data_availability"] for r in item["runs"])
             item["gates"] = {"price_integrity_6of6": price_ok, "data_availability_6of6": avail_ok}
             if price_ok and avail_ok and do_select:

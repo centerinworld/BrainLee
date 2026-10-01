@@ -1,13 +1,11 @@
 
 from db_compat import connect_primary_db
-import sqlite3
 import time
 import requests
 import config
 from datetime import date, datetime, timedelta
 
 # 설정
-DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 API_KEY = config.KRX_API_KEY
 BASE_URL = "https://openapi.krx.co.kr/svc/apis"
 HEADERS = {"AUTH_KEY": API_KEY}
@@ -71,15 +69,15 @@ def save_to_db(data: list, bas_dd_iso: str):
     updated_count = 0
     for code, s in stats.items():
         # price_history 에 해당 일자 레코드가 있는지 확인
-        cursor.execute("SELECT 1 FROM price_history WHERE stock_code=? AND date=?", (code, bas_dd_iso))
+        cursor.execute("SELECT 1 FROM price_history WHERE stock_code=%s AND date=%s", (code, bas_dd_iso))
         exists = cursor.fetchone()
         
         if exists:
             cursor.execute("""
-                UPDATE price_history 
-                SET inst_net_buy_amt = ?, frn_net_buy_amt = ?, ind_net_buy_amt = ?,
-                    inst_net_buy = ?, frn_net_buy = ?, ind_net_buy = ?
-                WHERE stock_code = ? AND date = ?
+                UPDATE price_history
+                SET inst_net_buy_amt = %s, frn_net_buy_amt = %s, ind_net_buy_amt = %s,
+                    inst_net_buy = %s, frn_net_buy = %s, ind_net_buy = %s
+                WHERE stock_code = %s AND date = %s
             """, (s["inst_amt"], s["frn_amt"], s["ind_amt"], s["inst_qty"], s["frn_qty"], s["ind_qty"], code, bas_dd_iso))
         else:
             # 레코드가 없으면 새로 생성 (가격 정보 등은 0으로 채움)
@@ -95,7 +93,7 @@ def save_to_db(data: list, bas_dd_iso: str):
                 (stock_code, date, open, high, low, close, volume,
                  inst_net_buy_amt, frn_net_buy_amt, ind_net_buy_amt,
                  inst_net_buy, frn_net_buy, ind_net_buy)
-                VALUES (?, ?, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, 0, 0, 0, 0, 0, %s, %s, %s, %s, %s, %s)
             """, (code, bas_dd_iso, s["inst_amt"], s["frn_amt"], s["ind_amt"], s["inst_qty"], s["frn_qty"], s["ind_qty"]))
         
         updated_count += 1

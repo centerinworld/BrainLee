@@ -126,19 +126,23 @@ def _parse_margin_row(data: dict) -> dict:
     row["dt"] = str(data.get("dt") or data.get("base_dt") or "").strip()
     # 응답 포맷 가변: 가장 흔한 key 후보들을 순차 매핑
     row["credit_balance"] = _to_num(data.get("crdt_bal") or data.get("credit_bal") or data.get("siny_bal") or data.get("jango"))
-    row["credit_buy_balance"] = _to_num(data.get("crdt_buy_bal") or data.get("buy_bal") or data.get("siny_buy") or data.get("new"))
-    row["credit_sell_balance"] = _to_num(data.get("crdt_sell_bal") or data.get("sell_bal") or data.get("siny_sell") or data.get("rpya"))
+    row["credit_buy_balance"] = abs(_to_num(data.get("crdt_buy_bal") or data.get("buy_bal") or data.get("siny_buy") or data.get("new")))
+    row["credit_sell_balance"] = abs(_to_num(data.get("crdt_sell_bal") or data.get("sell_bal") or data.get("siny_sell") or data.get("rpya")))
     if abs(row["credit_balance"]) < 1e-12:
         row["credit_balance"] = _to_num(data.get("remn"))
     row["loan_balance"] = _to_num(data.get("loan_bal") or data.get("yungja_bal") or data.get("loan"))
     row["short_balance"] = _to_num(data.get("short_bal") or data.get("daeju_bal") or data.get("short"))
+    # 2026-10-01: ka10013(crd_trde_trend)에서 shr_rt는 전일대비율이고,
+    # 실제 신용잔고비율은 remn_rt다. shr_rt를 잔고비율로 저장하면 100% 초과
+    # 또는 음수 값이 들어가 downstream 리스크게이트를 오염시킨다.
+    #
     # 2026-08-23 버그 수정: ka10013(crd_trde_trend) 응답에 신용잔고비율(shr_rt)이 매 행마다
     # 이미 포함돼 있는데도 지금까지 추출하지 않아 margin_balance_daily.credit_ratio가 생성
     # 이래(2026-06-01~) 단 한 건도 채워진 적이 없었음(항상 하드코딩 None 저장) — 이 프로젝트의
     # 여러 다운스트림(tenbagger_engine·리스크게이트·트리거알림 등)이 실제로는 구버전
     # kiwoom_credit_balance(2026-07-07 이후 수집 자체가 중단된 레거시 테이블)만 보고 있었으므로,
     # "최신 컬렉터인데 값이 비어있는" 조용한 회귀가 7주 넘게 발견되지 않고 있었다.
-    row["credit_ratio"] = _to_num(data.get("shr_rt") or data.get("crdt_rt"))
+    row["credit_ratio"] = _to_num(data.get("remn_rt") or data.get("credit_ratio") or data.get("crdt_rt"))
     row["credit_amount"] = _to_num(data.get("amt"))
     return row
 

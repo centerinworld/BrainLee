@@ -25,7 +25,10 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "agi_autonomous.log"
 STATE_FILE = LOG_DIR / "agi_daemon_state.json"
 
-STOCK_DB_PATH = Path("/Volumes/Realtek_NVME/stock_dashboard/stock.db")
+STOCK_RUNTIME_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
+sys.path.insert(0, str(STOCK_RUNTIME_DIR))
+from db_compat import connect_primary_db  # noqa: E402
+
 US_STOCK_DB_PATH = Path("/Volumes/Realtek_NVME/us_market_dashboard/us_market.db")
 CEO_DB_PATH = BASE_DIR / "codex/ceo-briefing-platform/data/ceo_briefing.db"
 
@@ -52,7 +55,7 @@ class AGIAutonomousDaemon:
                     "id": "STK-001",
                     "title": "국내 818만 행 & 미국 65만 행 퀀트 DB 고속 인덱스 무결성 검증",
                     "category": "stock_dashboard",
-                    "engine_used": "Codex (ChatGPT Plus) & SQLite Engine",
+                    "engine_used": "Codex (ChatGPT Plus) & PostgreSQL Engine",
                     "completed_at": "2026-09-12 14:30:12",
                     "result": "2,765개 종목 시세 조회 레이턴시 1.2ms 달성"
                 },
@@ -121,15 +124,14 @@ class AGIAutonomousDaemon:
         logger.info("⚡ [Phase 1 Focus] Executing stock_dashboard autonomous perfection cycle...")
         
         try:
-            if STOCK_DB_PATH.exists():
-                conn = sqlite3.connect(str(STOCK_DB_PATH))
-                c = conn.cursor()
-                c.execute("SELECT COUNT(*) FROM price_history")
-                daily_count = c.fetchone()[0]
-                c.execute("SELECT COUNT(DISTINCT code) FROM price_history")
-                stock_count = c.fetchone()[0]
-                conn.close()
-                logger.info(f"   ✓ [stock.db Verified] Stocks: {stock_count:,} | Price Records: {daily_count:,}")
+            conn = connect_primary_db(readonly=True, timeout=20)
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM price_history")
+            daily_count = c.fetchone()[0]
+            c.execute("SELECT COUNT(DISTINCT stock_code) FROM price_history")
+            stock_count = c.fetchone()[0]
+            conn.close()
+            logger.info(f"   ✓ [PostgreSQL Verified] Stocks: {stock_count:,} | Price Records: {daily_count:,}")
         except Exception as e:
             logger.warning(f"   ✗ Stock DB Check Error: {e}")
 

@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    _load_jump_aligned_corp_factors,
+    _rebase_positions_for_corp_actions,
     SignalEvidenceLedger,
     _release_date_with_basis,
     evidence_aggregate,
@@ -377,7 +379,12 @@ def run_backtest_sector(
             _sector_evidence_cache[key] = items
             return items
 
+        # 2026-09-28: 보유 중 확정 기업행위(권리락·분할 등) 날 포지션을 새 주식 기준으로 재기준
+        _ca_factors = _load_jump_aligned_corp_factors(conn, list(price_data.keys()))
+        _ca_prev_day = None
         for i, trade_date in enumerate(trade_dates):
+            _rebase_positions_for_corp_actions(_ca_factors, positions, _ca_prev_day, trade_date, ('buy_price', 'peak'), 'qty')
+            _ca_prev_day = trade_date
             # ── strict_exec: 전일 신호 → 오늘 시가 체결 ──
             if strict_exec:
                 _still = []

@@ -25,7 +25,7 @@ import pandas as pd
 from env_utils import BASE_DIR
 from sqlalchemy import (
     Column, Integer, String, Float, Date, DateTime,
-    UniqueConstraint, Index, create_engine, text
+    UniqueConstraint, Index, text
 )
 from sqlalchemy.orm import declarative_base, Session
 from sqlalchemy.sql import func
@@ -44,7 +44,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── DB 연결 (기존 프로젝트 database.py 재사용) ─────────────────
+# ── DB 연결 (운영 DB: PostgreSQL) ─────────────────────────────
 _BASE_DIR = BASE_DIR
 sys.path.insert(0, str(_BASE_DIR))
 
@@ -52,17 +52,10 @@ try:
     from database import engine, Base, SessionLocal
     logger.info("기존 database.py 사용")
 except ImportError:
-    # 단독 실행 시 fallback
-    _DB_PATH = _BASE_DIR / "stock.db"
-    engine = create_engine(
-        f"sqlite:///{_DB_PATH}",
-        connect_args={"check_same_thread": False},
+    raise RuntimeError(
+        "stock_universe requires runtime/database.py and the canonical PostgreSQL "
+        "connection. Run it from the runtime environment with POSTGRES_DATABASE_URL set."
     )
-    Base = declarative_base()
-    def SessionLocal():
-        from sqlalchemy.orm import sessionmaker
-        return sessionmaker(autocommit=False, autoflush=False, bind=engine)()
-    logger.info(f"단독 DB 연결: {_DB_PATH}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -145,7 +138,7 @@ def init_tables():
 def _migrate_add_columns():
     """
     기존 stock_universe 테이블에 신규 컬럼 자동 추가 (마이그레이션).
-    SQLite는 ALTER TABLE ADD COLUMN만 지원 — 없는 컬럼만 추가.
+    없는 컬럼만 추가.
     추가 대상: pbr, eps, bps  (KRX 투자지표/재무정보 신규 수집 컬럼)
     """
     new_cols = [
@@ -154,15 +147,10 @@ def _migrate_add_columns():
         ("bps",  "REAL"),
     ]
     with engine.connect() as conn:
-        # 현재 컬럼 목록 조회 (PostgreSQL은 PRAGMA 미지원 — information_schema 사용)
-        if engine.dialect.name == "postgresql":
-            result = conn.execute(text(
-                "SELECT column_name FROM information_schema.columns WHERE table_name='stock_universe'"
-            ))
-            existing = {row[0] for row in result}
-        else:
-            result = conn.execute(text("PRAGMA table_info(stock_universe)"))
-            existing = {row[1] for row in result}   # row[1] = 컬럼명
+        result = conn.execute(text(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='stock_universe'"
+        ))
+        existing = {row[0] for row in result}
 
         for col_name, col_type in new_cols:
             if col_name not in existing:

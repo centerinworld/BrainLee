@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from datetime import datetime
 
-from db_utils import connect_stock_db
+import db_compat
 
 
 DDL = """
@@ -23,7 +22,12 @@ HORIZONS = (1, 5, 20, 60, 120, 252)
 
 
 def ensure(conn) -> None:
-    conn.executescript(DDL)
+    cur = conn.cursor()
+    for stmt in DDL.strip().split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            cur.execute(stmt)
+    conn.commit()
 
 
 def _signal_id(signal_type: str, stock_code: str, signal_date: str, strategy_id: str | None) -> str:
@@ -34,16 +38,18 @@ def _signal_id(signal_type: str, stock_code: str, signal_date: str, strategy_id:
 
 def _usable_prices(conn, stock_code: str, start_date: str, *, strictly_after: bool) -> list:
     operator = ">" if strictly_after else ">="
-    return conn.execute(
+    cur = conn.cursor()
+    cur.execute(
         f"""SELECT p.date,p.close,p.open
             FROM price_history p
             LEFT JOIN price_jump_audit a
               ON a.stock_code=p.stock_code AND a.event_date=substr(p.date,1,10)
-            WHERE p.stock_code=? AND p.date{operator}? AND p.close>0
+            WHERE p.stock_code=%s AND p.date{operator}%s AND p.close>0
               AND COALESCE(a.return_usable,1)=1
             ORDER BY p.date""",
         (stock_code, start_date),
-    ).fetchall()
+    )
+    return cur.fetchall()
 
 
 def register_signal(
@@ -60,14 +66,15 @@ def register_signal(
     conn=None,
 ) -> str:
     owned = conn is None
-    conn = conn or connect_stock_db()
+    conn = conn or db_compat.connect_primary_db()
     ensure(conn)
     signal_id = _signal_id(signal_type, stock_code, signal_date, strategy_id)
     now = datetime.now().isoformat(timespec="seconds")
     entry = _usable_prices(conn, stock_code, signal_date, strictly_after=True)
     first_entry = entry[0] if entry else None
-    cursor = conn.execute(
-        """INSERT INTO live_signal_registry VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO live_signal_registry VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(signal_id) DO NOTHING""",
         (
             signal_id, stock_code, signal_type, strategy_id, signal_date, available_at,
@@ -76,11 +83,11 @@ def register_signal(
             json.dumps(payload, ensure_ascii=False), now,
         ),
     )
-    inserted = cursor.rowcount > 0
+    inserted = cur.rowcount > 0
     if inserted:
-        conn.executemany(
+        cur.executemany(
             """INSERT INTO live_signal_outcomes(signal_id,horizon_days,status,updated_at)
-               VALUES(?,?,?,?) ON CONFLICT(signal_id,horizon_days) DO NOTHING""",
+               VALUES(%s,%s,%s,%s) ON CONFLICT(signal_id,horizon_days) DO NOTHING""",
             [(signal_id, horizon, "pending", now) for horizon in HORIZONS],
         )
     if owned:
@@ -91,12 +98,18 @@ def register_signal(
 
 def update_outcomes(conn=None) -> int:
     owned = conn is None
-    conn = conn or connect_stock_db()
-    conn.row_factory = sqlite3.Row
+    conn = conn or db_compat.connect_primary_db()
     ensure(conn)
     now = datetime.now().isoformat(timespec="seconds")
     updated = 0
-    signals = conn.execute("SELECT * FROM live_signal_registry").fetchall()
+    cur = conn.cursor()
+    cur.execute("SELECT signal_id, stock_code, signal_type, strategy_id, signal_date, "
+                "available_at, entry_date, entry_price, price_basis, quality_score, "
+                "confidence_score, action, signal_payload_json, created_at "
+                "FROM live_signal_registry")
+    cols = [d[0] for d in cur.description]
+    signals = [dict(zip(cols, r)) for r in cur.fetchall()]
+
     for signal in signals:
         entry_date = signal["entry_date"]
         entry_price = signal["entry_price"]
@@ -105,41 +118,42 @@ def update_outcomes(conn=None) -> int:
             if not entries:
                 continue
             entry_date, entry_price = entries[0][0], float(entries[0][2])
-            conn.execute(
-                "UPDATE live_signal_registry SET entry_date=?,entry_price=? WHERE signal_id=?",
+            cur.execute(
+                "UPDATE live_signal_registry SET entry_date=%s,entry_price=%s WHERE signal_id=%s",
                 (entry_date, entry_price, signal["signal_id"]),
             )
         future = _usable_prices(conn, signal["stock_code"], entry_date, strictly_after=False)
         # 2026-09-28: 사용불가 가격 사건(분할·감자·미확인 급변 등, price_jump_audit.return_usable=0)은
         # 그 날만 빼면 앞뒤 가격이 다른 기준으로 이어 붙어 수익률이 망가진다(417310 코람코더원리츠
         # 2026-08-28 x0.2136 → -78% 오판). 창 안에 그런 사건이 있으면 완결로 치지 않고 제외한다.
-        blocked = [str(r[0])[:10] for r in conn.execute(
+        cur.execute(
             """SELECT event_date FROM price_jump_audit
-               WHERE stock_code=? AND event_date>? AND return_usable=0 ORDER BY event_date""",
+               WHERE stock_code=%s AND event_date>%s AND return_usable=0 ORDER BY event_date""",
             (signal["stock_code"], str(entry_date)[:10]),
-        ).fetchall()]
+        )
+        blocked = [str(r[0])[:10] for r in cur.fetchall()]
         for horizon in HORIZONS:
             if len(future) <= horizon:
                 continue
             window = future[:horizon + 1]
             end = window[-1]
             if any(str(entry_date)[:10] < d <= str(end[0])[:10] for d in blocked):
-                cursor = conn.execute(
+                cur.execute(
                     """UPDATE live_signal_outcomes
                        SET outcome_date=NULL,outcome_price=NULL,return_pct=NULL,max_gain_pct=NULL,
-                           max_loss_pct=NULL,status='price_event_excluded',updated_at=?
-                       WHERE signal_id=? AND horizon_days=? AND status<>'price_event_excluded'""",
+                           max_loss_pct=NULL,status='price_event_excluded',updated_at=%s
+                       WHERE signal_id=%s AND horizon_days=%s AND status<>'price_event_excluded'""",
                     (now, signal["signal_id"], horizon),
                 )
-                updated += max(cursor.rowcount, 0)
+                updated += max(cur.rowcount, 0)
                 continue
             entry_price = float(entry_price)
             closes = [float(row[1]) for row in window]
-            cursor = conn.execute(
+            cur.execute(
                 """UPDATE live_signal_outcomes
-                   SET outcome_date=?,outcome_price=?,return_pct=?,max_gain_pct=?,max_loss_pct=?,
-                       status='complete',updated_at=?
-                   WHERE signal_id=? AND horizon_days=? AND status<>'complete'""",
+                   SET outcome_date=%s,outcome_price=%s,return_pct=%s,max_gain_pct=%s,max_loss_pct=%s,
+                       status='complete',updated_at=%s
+                   WHERE signal_id=%s AND horizon_days=%s AND status<>'complete'""",
                 (
                     end[0], end[1], (float(end[1]) / entry_price - 1) * 100,
                     (max(closes) / entry_price - 1) * 100,
@@ -147,7 +161,7 @@ def update_outcomes(conn=None) -> int:
                     now, signal["signal_id"], horizon,
                 ),
             )
-            updated += max(cursor.rowcount, 0)
+            updated += max(cur.rowcount, 0)
     if owned:
         conn.commit()
         conn.close()

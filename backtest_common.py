@@ -943,6 +943,77 @@ def _load_corp_action_factors(conn, stock_codes: list, data_asof_ts: str = None)
 
 
 
+def _load_jump_aligned_corp_factors(conn, stock_codes: list) -> dict:
+    """가격 단절이 실제로 관측된 날(price_jump_audit confirmed_corporate_action)과 같은 날짜의
+    확정 계수만 로드한다 — {code: [(event_date, factor), ...]} (2026-09-28).
+
+    _load_corp_action_factors()는 확정 계수를 모두 읽어, 가격이 이미 수정주가로 이어진 구간의
+    계수까지 적용할 위험이 있다. 보유 포지션 재기준(_rebase_positions_for_corp_actions)은
+    감사 스크립트가 "확정 기업행위로 설명된다"고 인정하는 것과 같은 기준만 쓴다
+    (scripts/rerun_selected_after_price_repair._price_integrity와 동일한 날짜 일치 규칙).
+    """
+    if not stock_codes:
+        return {}
+    out: dict = {}
+    codes = sorted(set(stock_codes))
+    for start in range(0, len(codes), 500):
+        chunk = codes[start:start + 500]
+        ph = ",".join("?" * len(chunk))
+        rows = conn.execute(
+            f"""SELECT a.stock_code, a.event_date, a.price_ratio, e.backward_price_factor
+                FROM price_jump_audit a
+                JOIN corporate_action_events e
+                  ON e.stock_code=a.stock_code AND e.event_date=a.event_date
+                 AND e.adjustment_status='factor_confirmed' AND e.backward_price_factor IS NOT NULL
+                WHERE a.classification='confirmed_corporate_action' AND a.stock_code IN ({ph})""",
+            chunk,
+        ).fetchall()
+        best: dict = {}
+        for code, edate, ratio, factor in rows:
+            f = float(factor)
+            if f <= 0:
+                continue
+            key = (str(code), str(edate)[:10])
+            dist = abs(f - float(ratio)) if ratio else 0.0
+            if key not in best or dist < best[key][0]:
+                best[key] = (dist, f)
+        for (code, edate), (_, f) in best.items():
+            out.setdefault(code, []).append((edate, f))
+    for code in out:
+        out[code].sort()
+    return out
+
+
+def _rebase_positions_for_corp_actions(factors: dict, positions: dict, prev_day, day: str,
+                                       price_keys: tuple, qty_key: str = None) -> None:
+    """(prev_day, day]에 확정 기업행위가 있는 보유 포지션을 새 주식 기준으로 옮긴다.
+
+    가격 항목(진입가·고점 등)은 계수를 곱하고 수량은 계수로 나눠 원가(가격×수량)를 유지한다.
+    무상증자 1:1 권리락 날 가격이 반토막 나도 손절·추적손절이 가짜로 발동하지 않고,
+    청산 손익은 경제적으로 올바른 값이 된다. positions는 {code: dict}.
+    """
+    if not factors:
+        return
+    for code, pos in positions.items():
+        events = factors.get(code)
+        if not events:
+            continue
+        entry = str(pos.get("entry_date") or pos.get("buy_date") or "")[:10]
+        f = 1.0
+        for edate, factor in events:
+            # 진입 체결일(또는 그 이전) 사건은 이미 체결가에 반영돼 있다 — 진입 이후 사건만 재기준.
+            if (prev_day is None or prev_day < edate) and edate <= day and (not entry or entry < edate):
+                f *= factor
+        if f == 1.0:
+            continue
+        for key in price_keys:
+            if pos.get(key) is not None:
+                pos[key] = pos[key] * f
+        if qty_key and pos.get(qty_key):
+            pos[qty_key] = pos[qty_key] / f
+        pos["corp_action_rebased"] = round(pos.get("corp_action_rebased", 1.0) * f, 6)
+
+
 def _corp_action_adjusted_entry(factors: dict, code: str, entry_date: str,
                                  exit_date: str, entry_price: float) -> float:
     """entry_date와 exit_date(둘 다 'YYYY-MM-DD') 사이(진입일 초과, 청산일 이하)에
@@ -2500,6 +2571,7 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
                 SELECT stock_code FROM stock_universe
                 WHERE market_cap >= ?
                   AND LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+                  AND (kind_stkcert_nm IS NULL OR kind_stkcert_nm NOT LIKE '%우선주%')
             ) su ON ph.stock_code = su.stock_code
             WHERE ph.date>=? AND ph.date<=? AND ph.close>0
             GROUP BY ph.stock_code HAVING COUNT(*) >= 200
@@ -2989,6 +3061,7 @@ def _run_generic_backtest(version: str, signal_fn,
                   AND (sm.effective_to IS NULL OR substr(ph.date,1,10)<sm.effective_to)
                   AND sm.is_tradable=1 AND sm.is_etf_etn=0
                   AND sm.market IN ('KOSPI','KOSDAQ')
+                  AND (sm.security_type IS NULL OR sm.security_type != 'preferred')
                 WHERE ph.date>=? AND ph.date<=? AND ph.close>0
                 GROUP BY ph.stock_code HAVING COUNT(*) >= 200
                 ORDER BY ph.stock_code
@@ -2999,6 +3072,7 @@ def _run_generic_backtest(version: str, signal_fn,
                 FROM price_history ph
                 JOIN stock_universe su ON ph.stock_code=su.stock_code
                 WHERE su.market_cap>=? AND LENGTH(su.stock_code)=6
+                  AND (su.kind_stkcert_nm IS NULL OR su.kind_stkcert_nm NOT LIKE '%우선주%')
                   AND ph.date>=? AND ph.date<=? AND ph.close>0
                 GROUP BY ph.stock_code HAVING COUNT(*) >= 200
                 ORDER BY ph.stock_code
@@ -3437,9 +3511,8 @@ def _run_generic_backtest(version: str, signal_fn,
             batch = codes[idx:idx+100]
             ph = ','.join('?'*len(batch))
             for sc, sn in conn2.execute(f"""
-                SELECT DISTINCT ph.stock_code, COALESCE(su.stock_name, ph.stock_code)
-                FROM (SELECT DISTINCT stock_code FROM price_history WHERE stock_code IN ({ph})) ph
-                LEFT JOIN stock_universe su USING(stock_code)
+                SELECT stock_code, COALESCE(stock_name, stock_code)
+                FROM stock_universe WHERE stock_code IN ({ph})
             """, batch).fetchall():
                 name_map[sc] = sn
         conn2.close()

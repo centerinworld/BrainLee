@@ -334,7 +334,14 @@ def add_channel(conn, channel_id: str, name: str = "", entity_hint: str = None):
     _ensure_entity_hint_column(conn)
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO telegram_channels (channel_id, channel_name, entity_hint) VALUES (?,?,?)",
+            """
+            INSERT INTO telegram_channels (channel_id, channel_name, entity_hint)
+            VALUES (?,?,?)
+            ON CONFLICT(channel_id) DO UPDATE SET
+                channel_name=excluded.channel_name,
+                entity_hint=COALESCE(excluded.entity_hint, telegram_channels.entity_hint),
+                is_active=1
+            """,
             (channel_id, name or channel_id, entity_hint)
         )
         if entity_hint:

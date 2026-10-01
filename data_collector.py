@@ -320,29 +320,8 @@ class DataCollector:
                         "frn_net_buy":  kis_trends["frn_net_buy"]  if kis_trends else 0.0,
                     })
 
-            if not prices or force_history:
-                # ── Yahoo Finance (히스토리 or KIS 실패 시 fallback) ──
-                period   = "1y" if force_history else "5d"
-                interval = "1d"
-                for suffix in [".KS", ".KQ"]:
-                    ticker_symbol = f"{stock_code}{suffix}"
-                    df = yf.download(ticker_symbol, period=period, interval=interval, progress=False)
-                    if not df.empty:
-                        for index, row in df.iterrows():
-                            def _gv(col, _row=row):
-                                v = _row[col]
-                                return float(v.iloc[0] if isinstance(v, pd.Series) else v)
-                            prices.append({
-                                "date":         str(index),
-                                "open":         _gv("Open"),
-                                "high":         _gv("High"),
-                                "low":          _gv("Low"),
-                                "close":        _gv("Close"),
-                                "volume":       _gv("Volume"),
-                                "inst_net_buy": 0.0,
-                                "frn_net_buy":  0.0,
-                            })
-                        break
+            if not prices and stock_code.isdigit() and len(stock_code) == 6:
+                logger.warning("[주가] %s: KIS 가격 수집 실패 — 한국 개별종목은 Yahoo fallback 저장 금지", stock_code)
 
             if prices:
                 httpx.post(

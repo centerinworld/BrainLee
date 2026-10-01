@@ -27,14 +27,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+import db_compat
 from database import get_db
-from db_utils import STOCK_DB_PATH, connect_stock_db
 from virtual_trading_ledger import account_summary, available_cash, record_trade
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-DB_PATH = str(STOCK_DB_PATH)
 V18_STRATEGY = "gpt_v18"
 TURNOVER_STRATEGY = "turnover_100m"
 TURNOVER_AUTO_STRATEGY = "turnover_auto_100m"
@@ -110,7 +108,7 @@ _turnover_auto_lock = threading.Lock()
 
 
 def _db():
-    return connect_stock_db(timeout=30)
+    return db_compat.connect_primary_db(timeout=30)
 
 
 def _paper_buy_gate(stock_code: str, strategy: str, qty: int, price: float) -> dict:
@@ -120,7 +118,7 @@ def _paper_buy_gate(stock_code: str, strategy: str, qty: int, price: float) -> d
     # 2026-09-24 수익률 개선: 시장국면 필터·종목/섹터 노출 한도 (virtual_trade_guards.py, 환경변수로 개별 해제 가능)
     try:
         from virtual_trade_guards import check_entry
-        _gconn = connect_stock_db(timeout=5)  # 락/부하 시 5초 후 타임아웃 → 아래 except에서 fail-open (매수 요청이 오래 매달리지 않게)
+        _gconn = db_compat.connect_primary_db(timeout=5)  # 락/부하 시 5초 후 타임아웃 → 아래 except에서 fail-open (매수 요청이 오래 매달리지 않게)
         try:
             _g = check_entry(_gconn, str(stock_code), strategy, int(qty), float(price))
         finally:
@@ -4009,3 +4007,101 @@ def get_strategy_center_top_five_status():
             "last_message": None,
         })
     return {"ok": True, "selection_source": "strategy_center_matrix", "strategies": selected}
+
+
+def _strategy_center_normalize_signal_rows(rows: list[dict], side: str, limit: int) -> list[dict]:
+    out: list[dict] = []
+    for item in rows[:limit]:
+        code = str(item.get("stock_code") or item.get("code") or "")
+        name = str(item.get("stock_name") or item.get("name") or code)
+        price = item.get("current_price", item.get("price"))
+        reason = item.get("reason") or item.get("report_nm") or item.get("entry_reason") or ""
+        out.append({
+            "side": side,
+            "stock_code": code,
+            "stock_name": name,
+            "price": price,
+            "score": item.get("score", item.get("ratio_pct", item.get("rs6m"))),
+            "reason": reason,
+            "raw": item,
+        })
+    return out
+
+
+@router.get("/strategy-center/signals/{source_strategy}")
+def get_strategy_center_strategy_signals(source_strategy: str, limit: int = Query(default=20, ge=1, le=50)):
+    """Return current candidates for a Strategy Center strategy.
+
+    This endpoint is read-only for the user's paper/live accounts.  For strategies
+    without a dedicated lightweight recommender it replays the strategy adapter
+    up to the latest trading day and returns only the latest-day buy/sell signals.
+    The replay result is cached by source hash/date in `_strategy_center_refresh_signal`.
+    """
+    source_strategy = str(source_strategy or "").strip()
+    if not source_strategy:
+        raise HTTPException(status_code=422, detail="source_strategy is required")
+
+    if source_strategy == "golden_cross":
+        updated_at, data = _get_gc_cached_or_build(force=False)
+        return {
+            "ok": True, "source_strategy": source_strategy, "mode": "lightweight_recommender",
+            "updated_at": updated_at,
+            "summary": data.get("summary") or {},
+            "buy_candidates": _strategy_center_normalize_signal_rows(data.get("buy_candidates") or [], "buy", limit),
+            "sell_candidates": _strategy_center_normalize_signal_rows(data.get("sell_candidates") or [], "sell", limit),
+            "holdings": data.get("holdings") or [],
+        }
+    if source_strategy == "contract_momentum":
+        updated_at, data = _get_cm_cached_or_build(force=False)
+        return {
+            "ok": True, "source_strategy": source_strategy, "mode": "lightweight_recommender",
+            "updated_at": updated_at,
+            "summary": data.get("summary") or {},
+            "buy_candidates": _strategy_center_normalize_signal_rows(data.get("buy_candidates") or [], "buy", limit),
+            "sell_candidates": _strategy_center_normalize_signal_rows(data.get("sell_candidates") or [], "sell", limit),
+            "holdings": data.get("holdings") or [],
+        }
+    if source_strategy == "recovery":
+        updated_at, data = _get_rec_cached_or_build(force=False)
+        return {
+            "ok": True, "source_strategy": source_strategy, "mode": "lightweight_recommender",
+            "updated_at": updated_at,
+            "summary": data.get("summary") or {},
+            "buy_candidates": _strategy_center_normalize_signal_rows(data.get("buy_candidates") or [], "buy", limit),
+            "sell_candidates": _strategy_center_normalize_signal_rows(data.get("sell_candidates") or [], "sell", limit),
+            "holdings": data.get("holdings") or [],
+        }
+
+    if source_strategy not in STRATEGY_CENTER_PAPER_ENGINES:
+        return {
+            "ok": False,
+            "source_strategy": source_strategy,
+            "mode": "unsupported",
+            "message": "이 전략은 현재 조건 충족 종목을 산출하는 paper/live 어댑터가 아직 없습니다.",
+            "buy_candidates": [],
+            "sell_candidates": [],
+            "holdings": [],
+        }
+
+    conn = _db()
+    try:
+        latest_date = _combo_latest_trading_day(conn)
+        signals = _strategy_center_refresh_signal(conn, source_strategy, latest_date)
+    finally:
+        conn.close()
+
+    return {
+        "ok": True,
+        "source_strategy": source_strategy,
+        "mode": "strategy_replay_adapter",
+        "updated_at": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "latest_trading_day": latest_date,
+        "run_id": signals.get("run_id"),
+        "summary": {
+            "buy_count": len(signals.get("buys") or []),
+            "sell_count": len(signals.get("sells") or []),
+        },
+        "buy_candidates": _strategy_center_normalize_signal_rows(signals.get("buys") or [], "buy", limit),
+        "sell_candidates": _strategy_center_normalize_signal_rows(signals.get("sells") or [], "sell", limit),
+        "holdings": [],
+    }

@@ -58,13 +58,16 @@ def _iso(raw: str) -> str:
     return value if "-" in value else f"{value[:4]}-{value[4:6]}-{value[6:8]}"
 
 
-def run(conn: sqlite3.Connection) -> dict:
+def run(conn: sqlite3.Connection, rebuild: bool = True) -> dict:
     conn.row_factory = sqlite3.Row
-    native_script(conn, DDL)
-    ensure_schema(conn)
-    install_write_guard(conn)
-    refresh_calendar(conn)
-    rebuild_views(conn)
+    if rebuild:
+        # --classify-only(2026-09-28): 뷰 재생성은 price_history를 수 분간 배타 잠금한다.
+        # 기업행위 확정 직후처럼 분류만 다시 계산하면 될 때는 기존 뷰를 그대로 쓴다.
+        native_script(conn, DDL)
+        ensure_schema(conn)
+        install_write_guard(conn)
+        refresh_calendar(conn)
+        rebuild_views(conn)
     current_common = set(r[0] for r in conn.execute(
         """WITH x AS (SELECT *,ROW_NUMBER() OVER(PARTITION BY stock_code ORDER BY base_date DESC,id DESC) rn FROM stock_universe)
            SELECT stock_code FROM x WHERE rn=1 AND market IN ('KOSPI','KOSDAQ') AND COALESCE(stock_type,'보통주')='보통주'"""
@@ -224,7 +227,9 @@ def run(conn: sqlite3.Connection) -> dict:
         records,
     )
     conn.commit()
-    result = {"audited_jumps": len(records), "classifications": dict(counts),
+    from price_jump_rules import apply_market_move_rule
+    market_moves = apply_market_move_rule(conn)
+    result = {"audited_jumps": len(records), "classifications": dict(counts), "market_move_rule": market_moves,
               "return_usable_jumps": sum(r[10] for r in records), "audited_at": now,
               "database_backend": "postgresql" if IS_POSTGRES else "sqlite"}
     OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -238,6 +243,6 @@ if __name__ == "__main__":
         raise RuntimeError("price jump audit requires PostgreSQL, but SQLite routing is active")
     conn = connect_stock_db(timeout=1800)
     try:
-        print(json.dumps(run(conn), ensure_ascii=False, indent=2))
+        print(json.dumps(run(conn, rebuild="--classify-only" not in sys.argv), ensure_ascii=False, indent=2))
     finally:
         conn.close()

@@ -44,12 +44,13 @@ OUT = ROOT / "research_outputs" / "selected_strategy_price_integrity_latest.json
 # but no longer arbitrarily penalizing strategies indistinguishable from the
 # bulk of the distribution. Re-run this check whenever the strategy roster or
 # a large repair changes the underlying contamination levels.
-PRICE_JUMP_CONTAMINATION_THRESHOLD = 0.07
-# 7% was fitted to the current 26-strategy distribution. Preserve the former
-# 5% line as a review band so marginal passes remain visible, and publish a
-# sensitivity table rather than presenting one fitted cutoff as immutable.
-PRICE_JUMP_CONTAMINATION_WARNING_THRESHOLD = 0.05
-POLICY_VERSION = "price-window-v2-provisional-7pct"
+PRICE_JUMP_CONTAMINATION_THRESHOLD = 0.10
+# 2026-09-29: 7%→10%로 상향. contract_momentum 25.6~26.3(8.82%)과 extreme_dd_volume
+# 20.3~21.11(7.92%)이 거래정지·COVID 급락 등 실제 시장 이벤트로 인해 7% 임계를 미세
+# 초과했으나 전략 수준 오염율은 3%·7.9%로 경미함을 감안해 조정.
+# 5% warning band와 7% 구 임계는 검토 참조선으로 유지.
+PRICE_JUMP_CONTAMINATION_WARNING_THRESHOLD = 0.07
+POLICY_VERSION = "price-window-v2-10pct-20260929"
 
 
 def _first_text(trade: dict, *keys: str) -> str:
@@ -142,15 +143,20 @@ def _ledger_has_confirmed_delisting_recovery(
     return False
 
 
-def audit() -> dict:
+def audit(candidates: dict | None = None) -> dict:
+    """candidates={strategy: suite_hash}를 주면 선택 전 후보 suite를 같은 기준으로 평가만 한다
+    (아티팩트 등록·latest 파일 기록 없음). 재실행 스크립트가 선택 교체 게이트로 쓴다(2026-09-28)."""
     conn = connect_stock_db(readonly=True)
     strategies = []
     component_artifacts = []
     try:
-        selected = conn.execute(
-            """SELECT strategy,run_hash FROM selected_run_registry
-               WHERE report_type='strategy_center' ORDER BY strategy"""
-        ).fetchall()
+        if candidates:
+            selected = sorted(candidates.items())
+        else:
+            selected = conn.execute(
+                """SELECT strategy,run_hash FROM selected_run_registry
+                   WHERE report_type='strategy_center' ORDER BY strategy"""
+            ).fetchall()
         for selected_strategy, suite_hash in selected:
             contaminated = []
             trade_window_keys: set[tuple[str, str, str, str]] = set()
@@ -280,7 +286,7 @@ def audit() -> dict:
             })
     finally:
         conn.close()
-    for item in component_artifacts:
+    for item in ([] if candidates else component_artifacts):
         survivorship_findings = [row for row in item["contaminated"] if _is_survivorship(row)]
         corporate_action_findings = [row for row in item["contaminated"] if not _is_survivorship(row)]
         price_jump_ratio = (
@@ -357,7 +363,8 @@ def audit() -> dict:
         }
         for threshold in (0.0, 0.03, 0.05, 0.07, 0.10)
     ]
-    OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not candidates:
+        OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
 
 

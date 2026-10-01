@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import case
 import models, schemas, crud, processor, screener, ai_analyzer
 from database import get_db, engine
+from db_compat import connect_primary_db
 import logging
 from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
@@ -2076,8 +2077,7 @@ async def import_portfolio_excel(file: UploadFile = File(...), db: Session = Dep
 @app.get("/api/reports/stock/{stock_code}")
 def get_stock_reports(stock_code: str):
     """종목코드별 보고서 목록 — 코드 없으면 종목명으로 fallback."""
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     # 먼저 종목코드로 조회
     rows = conn.execute("""
         SELECT id, channel_id, stock_name, report_date,
@@ -2086,7 +2086,7 @@ def get_stock_reports(stock_code: str):
         WHERE stock_code=?
         ORDER BY report_date DESC LIMIT 50
     """, (stock_code,)).fetchall()
-    # 없으면 stock.db의 종목명으로 fallback 조회
+    # 없으면 primary DB의 종목명으로 fallback 조회
     if not rows:
         # watchlist 또는 listed_company_info에서 종목명 조회
         name_row = conn.execute(
@@ -2116,8 +2116,7 @@ def get_stock_reports(stock_code: str):
 def download_report(report_id: int):
     """보고서 파일 다운로드."""
     from fastapi.responses import FileResponse
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     row = conn.execute(
         "SELECT file_path, saved_name, mime_type FROM report_files WHERE id=?",
         (report_id,)
@@ -2133,8 +2132,7 @@ def download_report(report_id: int):
 @app.get("/api/reports/sectors")
 def get_report_sectors():
     """섹터별 보고서 통계 (종목코드 없는 것만)."""
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     rows = conn.execute("""
         SELECT sector, COUNT(*) as cnt, MAX(report_date) as latest
         FROM report_files
@@ -2149,8 +2147,7 @@ def get_report_sectors():
 @app.get("/api/reports/sector/{sector:path}")
 def get_sector_reports(sector: str, limit: int = 50):
     """특정 섹터 보고서 목록 (종목코드 없는 것만)."""
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     rows = conn.execute("""
         SELECT id, channel_id, stock_name, report_date,
                file_name, saved_name, file_size, caption
@@ -2165,8 +2162,7 @@ def get_sector_reports(sector: str, limit: int = 50):
 
 @app.get("/api/telegram/channels")
 def get_telegram_channels():
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     rows = conn.execute(
         "SELECT id,channel_id,channel_name,is_active,last_sync FROM telegram_channels ORDER BY id"
     ).fetchall()
@@ -2176,20 +2172,23 @@ def get_telegram_channels():
 
 @app.post("/api/telegram/channels")
 def add_telegram_channel(payload: dict):
-    import sqlite3 as _sl
     ch_id = payload.get("channel_id","").strip()
     if not ch_id: raise HTTPException(status_code=400, detail="channel_id 필수")
-    conn = _sl.connect("stock.db")
-    conn.execute("INSERT OR IGNORE INTO telegram_channels (channel_id,channel_name) VALUES (?,?)",
-                 (ch_id, payload.get("channel_name", ch_id)))
+    conn = connect_primary_db(timeout=30)
+    conn.execute("""
+        INSERT INTO telegram_channels (channel_id,channel_name)
+        VALUES (?,?)
+        ON CONFLICT(channel_id) DO UPDATE SET
+            channel_name=excluded.channel_name,
+            is_active=1
+    """, (ch_id, payload.get("channel_name", ch_id)))
     conn.commit(); conn.close()
     return {"status":"ok","channel_id":ch_id}
 
 
 @app.delete("/api/telegram/channels/{channel_id}")
 def delete_telegram_channel(channel_id: str):
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     conn.execute("UPDATE telegram_channels SET is_active=0 WHERE channel_id=?", (channel_id,))
     conn.commit(); conn.close()
     return {"status":"ok"}
@@ -2213,8 +2212,7 @@ def trigger_collect(payload: dict = {}):
 
 @app.get("/api/trend/holdings")
 def get_trend_holdings(db: Session = Depends(get_db)):
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     rows = conn.execute("""
         SELECT id, stock_name, buy_price, current_price,
                quantity, profit_pct, sell_price, sold_at, is_active,
@@ -2236,8 +2234,7 @@ def get_trend_holdings(db: Session = Depends(get_db)):
 
 @app.get("/api/trend/trades")
 def get_trend_trades(db: Session = Depends(get_db)):
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     rows = conn.execute("""
         SELECT id, stock_code, stock_name, tx_type, price,
                quantity, total_amount, profit, profit_pct, tx_at
@@ -2252,8 +2249,7 @@ def get_trend_trades(db: Session = Depends(get_db)):
 
 @app.get("/api/trend/summary")
 def get_trend_summary(db: Session = Depends(get_db)):
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     row = conn.execute("""
         SELECT COUNT(*) as total,
                SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as wins,
@@ -2289,9 +2285,8 @@ def init_signal():
 def get_market_signals():
     """종합현황 시그널 반환."""
     try:
-        import sqlite3 as _sl
         from signal_engine import calc_market_signals
-        conn = _sl.connect("stock.db")
+        conn = connect_primary_db(timeout=30)
         results = calc_market_signals(conn)
         conn.commit(); conn.close()
         return results
@@ -2304,9 +2299,8 @@ def get_market_signals():
 def get_stock_signals(stock_code: str):
     """개별종목 Smart Score 시그널 반환."""
     try:
-        import sqlite3 as _sl
         from signal_engine import calc_stock_signals
-        conn = _sl.connect("stock.db")
+        conn = connect_primary_db(timeout=30)
         result = calc_stock_signals(stock_code, conn)
         conn.commit(); conn.close()
         return result  # {smart_score, verdict, one_liner, signals, flags}
@@ -2319,8 +2313,7 @@ def get_stock_signals(stock_code: str):
 @app.get("/api/signals/config")
 def get_signal_configs():
     """시그널 설정 목록 반환."""
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     rows = conn.execute(
         "SELECT id,scope,name,label,description,logic_type,params,weight,is_active,sort_order "
         "FROM signal_config ORDER BY scope,sort_order"
@@ -2334,8 +2327,7 @@ def get_signal_configs():
 @app.put("/api/signals/config/{config_id}")
 def update_signal_config(config_id: int, payload: dict):
     """시그널 설정 수정."""
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     allowed = ['label','description','params','weight','is_active','sort_order']
     sets = []
     vals = []
@@ -2355,8 +2347,7 @@ def update_signal_config(config_id: int, payload: dict):
 @app.post("/api/signals/config")
 def add_signal_config(payload: dict):
     """시그널 설정 추가."""
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     conn.execute("""
         INSERT INTO signal_config (scope,name,label,description,logic_type,params,weight,sort_order)
         VALUES (?,?,?,?,?,?,?,?)
@@ -2377,8 +2368,7 @@ def add_signal_config(payload: dict):
 @app.delete("/api/signals/config/{config_id}")
 def delete_signal_config(config_id: int):
     """시그널 삭제."""
-    import sqlite3 as _sl
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     conn.execute("UPDATE signal_config SET is_active=0 WHERE id=?", (config_id,))
     conn.commit(); conn.close()
     return {"status": "ok"}
@@ -2387,13 +2377,17 @@ def delete_signal_config(config_id: int):
 @app.post("/api/signals/manual/{config_id}")
 def set_manual_signal(config_id: int, payload: dict):
     """수동 입력 시그널 값 설정 (Fear&Greed 등)."""
-    import sqlite3 as _sl
     from datetime import date as _d
-    conn = _sl.connect("stock.db")
+    conn = connect_primary_db(timeout=30)
     conn.execute("""
-        INSERT OR REPLACE INTO signal_result
+        INSERT INTO signal_result
         (config_id, stock_code, signal, value, description, calc_date)
         VALUES (?,?,?,?,?,?)
+        ON CONFLICT(config_id, stock_code, calc_date) DO UPDATE SET
+            signal=excluded.signal,
+            value=excluded.value,
+            description=excluded.description,
+            created_at=CURRENT_TIMESTAMP
     """, (
         config_id, '',
         payload.get("signal","yellow"),

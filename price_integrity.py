@@ -190,10 +190,7 @@ def rebuild_views(conn):
     # Keep all observations in LAG, including invalid/zero prices. No compressed
     # time series and no skip-over of a quarantined candle.
     sql = f"""
-DROP VIEW IF EXISTS canonical_price_returns_v;
-DROP VIEW IF EXISTS canonical_price_history_v;
-DROP VIEW IF EXISTS price_history_quality_v;
-CREATE VIEW price_history_quality_v AS
+CREATE OR REPLACE VIEW price_history_quality_v AS
 WITH p AS (
  SELECT ph.*, LAG(close) OVER(PARTITION BY stock_code ORDER BY date) prev_close,
  LAG(date) OVER(PARTITION BY stock_code ORDER BY date) previous_date
@@ -223,7 +220,7 @@ SELECT p.*,
  WHEN previous_date IS NULL THEN 'insufficient_history'
  ELSE 'normal' END quality_status
 FROM p;
-CREATE VIEW canonical_price_history_v AS
+CREATE OR REPLACE VIEW canonical_price_history_v AS
 SELECT q.*,
  CASE WHEN q.quality_status NOT IN ('normal','insufficient_history','unexplained_jump') THEN q.quality_status
       WHEN a.event_date IS NOT NULL AND (a.event_close<>q.close OR a.previous_close<>q.prev_close
@@ -235,7 +232,7 @@ SELECT q.*,
  'price_history' selected_series,'adjusted_intended_mixed_risk' price_basis
 FROM price_history_quality_v q
 LEFT JOIN price_jump_audit a ON a.stock_code=q.stock_code AND a.event_date=substr(q.date,1,10);
-CREATE VIEW canonical_price_returns_v AS
+CREATE OR REPLACE VIEW canonical_price_returns_v AS
 WITH x AS (
  SELECT c.*,LAG(return_usable) OVER(PARTITION BY stock_code ORDER BY date) previous_return_usable
  FROM canonical_price_history_v c

@@ -149,6 +149,12 @@ def _fmt_num(v: Optional[float], unit: str = "") -> str:
     return f"{v:,.0f}{unit}"
 
 
+def _fmt_pct(v: Optional[float]) -> str:
+    if v is None:
+        return "-"
+    return f"{v:+.1f}%"
+
+
 def _extract_quarter_key(text: str) -> Optional[str]:
     s = (text or "").lower()
     m = re.search(r"(20\d{2})[._\- ]?([1-4])q", s)
@@ -234,16 +240,75 @@ def _to_eok(v: Optional[float]) -> Optional[float]:
     return v
 
 
+def _collect_company_context(conn: sqlite3.Connection, stock_name: str, stock_code: Optional[str]) -> str:
+    row = None
+    if stock_code:
+        row = conn.execute(
+            """
+            SELECT stock_code, stock_name, market, sector_large, sector_mid, sector_small,
+                   market_cap, close, change_rate, per, pbr, eps, bps, revenue, operating_profit,
+                   base_date
+            FROM stock_universe
+            WHERE stock_code=?
+            ORDER BY base_date DESC
+            LIMIT 1
+            """,
+            (stock_code,),
+        ).fetchone()
+    if row is None:
+        row = conn.execute(
+            """
+            SELECT stock_code, stock_name, market, sector_large, sector_mid, sector_small,
+                   market_cap, close, change_rate, per, pbr, eps, bps, revenue, operating_profit,
+                   base_date
+            FROM stock_universe
+            WHERE stock_name=?
+            ORDER BY base_date DESC
+            LIMIT 1
+            """,
+            (stock_name,),
+        ).fetchone()
+    if row is None:
+        return f"기업 기본정보 없음: {stock_name}({stock_code or '-'})"
+
+    sectors = " / ".join(
+        [str(row[k]).strip() for k in ("sector_large", "sector_mid", "sector_small") if row[k]]
+    ) or "-"
+    market_cap_eok = _to_eok(_safe_num(row["market_cap"]))
+    revenue_eok = _to_eok(_safe_num(row["revenue"]))
+    op_eok = _to_eok(_safe_num(row["operating_profit"]))
+    lines = [
+        f"종목: {row['stock_name'] or stock_name}({row['stock_code'] or stock_code or '-'})",
+        f"시장/업종: {row['market'] or '-'} / {sectors}",
+        f"기준일: {row['base_date'] or '-'}",
+        f"시가총액: {_fmt_num(market_cap_eok, '억')}, 현재가: {_fmt_num(_safe_num(row['close']), '원')}, 등락률: {_fmt_pct(_safe_num(row['change_rate']))}",
+        f"밸류에이션: PER={row['per'] if row['per'] is not None else '-'}, PBR={row['pbr'] if row['pbr'] is not None else '-'}, EPS={_fmt_num(_safe_num(row['eps']))}, BPS={_fmt_num(_safe_num(row['bps']))}",
+        f"최근 스냅샷 실적: 매출={_fmt_num(revenue_eok, '억')}, 영업이익={_fmt_num(op_eok, '억')}",
+    ]
+    return "\n".join(lines)
+
+
 def _collect_financial_context(conn: sqlite3.Connection, stock_code: Optional[str]) -> str:
     if not stock_code:
         return "재무 데이터 없음"
     rows = conn.execute(
         """
-        SELECT year, quarter, revenue, operating_profit, net_income
-        FROM financial_data
-        WHERE stock_code=? AND is_annual=0 AND report_type='CFS'
+        SELECT year, quarter, report_type, data_source, revenue, operating_profit, net_income
+        FROM (
+            SELECT year, quarter, COALESCE(report_type, 'CFS') AS report_type, data_source,
+                   revenue, operating_profit, net_income,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY year, quarter
+                       ORDER BY CASE COALESCE(report_type, 'CFS') WHEN 'CFS' THEN 0 ELSE 1 END,
+                                CASE WHEN data_source LIKE 'fnguide%' THEN 0 ELSE 1 END,
+                                id DESC
+                   ) AS rn
+            FROM financial_data
+            WHERE stock_code=? AND is_annual=0 AND quarter > 0
+        ) dedup
+        WHERE rn=1
         ORDER BY year DESC, quarter DESC
-        LIMIT 6
+        LIMIT 8
         """,
         (stock_code,),
     ).fetchall()
@@ -251,13 +316,28 @@ def _collect_financial_context(conn: sqlite3.Connection, stock_code: Optional[st
         return "분기 재무 데이터 없음"
 
     lines = []
+    ordered = list(reversed(rows))
+    prev_by_quarter = {(r["year"], r["quarter"]): r for r in ordered}
     for r in rows:
+        prev_q = 4 if r["quarter"] == 1 else r["quarter"] - 1
+        prev_y = r["year"] - 1 if r["quarter"] == 1 else r["year"]
+        prev = prev_by_quarter.get((prev_y, prev_q))
+        yoy = prev_by_quarter.get((r["year"] - 1, r["quarter"]))
+        rev = _safe_num(r["revenue"])
+        op = _safe_num(r["operating_profit"])
+        rev_qoq = ((rev / _safe_num(prev["revenue"]) - 1) * 100) if prev and rev is not None and _safe_num(prev["revenue"]) not in (None, 0) else None
+        op_qoq = ((op / _safe_num(prev["operating_profit"]) - 1) * 100) if prev and op is not None and _safe_num(prev["operating_profit"]) not in (None, 0) else None
+        rev_yoy = ((rev / _safe_num(yoy["revenue"]) - 1) * 100) if yoy and rev is not None and _safe_num(yoy["revenue"]) not in (None, 0) else None
+        op_yoy = ((op / _safe_num(yoy["operating_profit"]) - 1) * 100) if yoy and op is not None and _safe_num(yoy["operating_profit"]) not in (None, 0) else None
         lines.append(
-            f"{r['year']}Q{r['quarter']}: 매출={_fmt_num(_to_eok(_safe_num(r['revenue'])), '억')}, "
+            f"{r['year']}Q{r['quarter']}({r['report_type']}, {r['data_source'] or '-'}): "
+            f"매출={_fmt_num(_to_eok(rev), '억')} (QoQ {_fmt_pct(rev_qoq)}, YoY {_fmt_pct(rev_yoy)}), "
             f"영업이익={_fmt_num(_to_eok(_safe_num(r['operating_profit'])), '억')}, "
+            f"OP QoQ {_fmt_pct(op_qoq)}, OP YoY {_fmt_pct(op_yoy)}, "
             f"순이익={_fmt_num(_to_eok(_safe_num(r['net_income'])), '억')}"
         )
-    return "\n".join(lines)
+    latest = rows[0]
+    return f"최신 가용 분기: {latest['year']}Q{latest['quarter']}({latest['report_type']})\n" + "\n".join(lines)
 
 
 def _collect_cashflow_context(conn: sqlite3.Connection, stock_code: Optional[str]) -> str:
@@ -265,11 +345,21 @@ def _collect_cashflow_context(conn: sqlite3.Connection, stock_code: Optional[str
         return "현금흐름 데이터 없음"
     rows = conn.execute(
         """
-        SELECT year, quarter, operating_cf, investing_cf, financing_cf, capex
-        FROM cash_flow_data
-        WHERE stock_code=? AND is_annual=0 AND report_type='CFS'
+        SELECT year, quarter, report_type, operating_cf, investing_cf, financing_cf, capex
+        FROM (
+            SELECT year, quarter, COALESCE(report_type, 'CFS') AS report_type,
+                   operating_cf, investing_cf, financing_cf, capex,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY year, quarter
+                       ORDER BY CASE COALESCE(report_type, 'CFS') WHEN 'CFS' THEN 0 ELSE 1 END,
+                                id DESC
+                   ) AS rn
+            FROM cash_flow_data
+            WHERE stock_code=? AND is_annual=0 AND quarter > 0
+        ) dedup
+        WHERE rn=1
         ORDER BY year DESC, quarter DESC
-        LIMIT 6
+        LIMIT 8
         """,
         (stock_code,),
     ).fetchall()
@@ -278,7 +368,7 @@ def _collect_cashflow_context(conn: sqlite3.Connection, stock_code: Optional[str
     lines = []
     for r in rows:
         lines.append(
-            f"{r['year']}Q{r['quarter']}: 영업CF={_fmt_num(_to_eok(_safe_num(r['operating_cf'])), '억')}, "
+            f"{r['year']}Q{r['quarter']}({r['report_type']}): 영업CF={_fmt_num(_to_eok(_safe_num(r['operating_cf'])), '억')}, "
             f"투자CF={_fmt_num(_to_eok(_safe_num(r['investing_cf'])), '억')}, "
             f"재무CF={_fmt_num(_to_eok(_safe_num(r['financing_cf'])), '억')}, "
             f"CAPEX={_fmt_num(_to_eok(_safe_num(r['capex'])), '억')}"
@@ -347,46 +437,67 @@ def _collect_telegram_signal_context(conn: sqlite3.Connection, stock_name: str, 
     return "\n".join(lines)
 
 
-def _openai_mini_investment_analysis(stock_name: str, stock_code: Optional[str], files: List[str], fin_ctx: str, cf_ctx: str, disc_ctx: str, tg_ctx: str) -> str:
+def _openai_mini_investment_analysis(
+    stock_name: str,
+    stock_code: Optional[str],
+    files: List[str],
+    company_ctx: str,
+    fin_ctx: str,
+    cf_ctx: str,
+    disc_ctx: str,
+    tg_ctx: str,
+) -> str:
     file_list = "\n".join([f"- {Path(fp).name}" for fp in files]) if files else "- 없음"
 
     fallback = (
         f"# {stock_name} 투자관점 상세분석\n\n"
-        "## 1) 최근 실적 흐름\n"
+        "## 1) 이 기업은 무엇으로 돈을 버나\n"
+        f"{company_ctx}\n\n"
+        "## 2) 최신 분기 실적 흐름\n"
         f"{fin_ctx}\n\n"
-        "## 2) 현금흐름/투자강도\n"
+        "## 3) 현금흐름/투자강도\n"
         f"{cf_ctx}\n\n"
-        "## 3) 최근 공시 핵심\n"
+        "## 4) 최근 공시 핵심\n"
         f"{disc_ctx}\n\n"
-        "## 4) 텔레그램/첨부자료 관심 포인트\n"
+        "## 5) 텔레그램/첨부자료 관심 포인트\n"
         f"{tg_ctx}\n\n"
-        "## 5) 투자관점 체크포인트\n"
-        "- 매출/영업이익의 동반 개선 여부\n"
-        "- 영업CF가 이익을 따라오는지 여부\n"
-        "- CAPEX 확대가 성장 투자 성격인지 점검\n"
-        "- 최근 공시에서 수요/원가/재고/인력 관련 방향성 확인\n"
+        "## 6) 투자 판단 체크리스트\n"
+        "- 최신 가용 분기의 매출과 영업이익이 전분기·전년동기 대비 동시에 개선되는지 확인\n"
+        "- 영업CF가 영업이익을 따라오는지, CAPEX가 성장 투자 성격인지 점검\n"
+        "- 업종 내 경쟁력, 수요 사이클, 원가/재고 부담, 밸류에이션 부담을 함께 비교\n"
+        "- 결론은 매수/관망/회피 중 하나로 정리하되, 근거가 부족한 항목은 보류로 표시\n"
     )
     if not is_configured():
         return fallback
 
     prompt = f"""
-너는 한국주식 투자분석가다. 아래 데이터(재무/현금흐름/공시/첨부파일)를 기반으로 {stock_name}({stock_code or '-'})을 분석해라.
+너는 한국주식 투자분석가다. 사용자가 "{stock_name}는 어떤 기업이야?"라고 물었을 때,
+처음 보는 투자자도 기업 정체성과 투자 판단 기준을 바로 이해하도록 {stock_name}({stock_code or '-'})을 분석해라.
 
 중요 규칙:
-1) 투자자 관점으로 작성: 매출 증가/감소, 원가·재료비 압력, 재고 변화, 인력/판관비, 현금흐름 질, 공시 이벤트의 실적영향.
-2) 확실하지 않은 내용은 추정이라고 표시.
-3) 의미 없는 시스템 안내문구(키 미설정, 시트 수 등) 절대 금지.
-4) 결과 형식:
-   - 한줄결론
-   - 실적/수익성 변화
-   - 현금흐름·투자(CAPEX) 해석
-   - 공시 기반 포인트(긍정/부정)
-   - 텔레그램/첨부자료 기반 '왜 지금 관심 가져야 하는지'
-   - 투자 관점 리스크
-   - 다음 분기 확인지표 3개
+1) 최신 가용 분기(예: 2026Q2가 있으면 2026Q2)를 최우선으로 언급한다. 오래된 2025년 연간 실적만으로 결론 내리지 마라.
+2) 기업 설명은 사업부/제품/고객/돈 버는 방식/경기 민감도를 포함한다. "전자제품 회사" 같은 얕은 설명 금지.
+3) 투자자 관점으로 작성: 매출 증가/감소, 수익성, 원가·재고·CAPEX, 현금흐름 질, 공시 이벤트의 실적영향.
+4) 확실하지 않은 내용은 추정이라고 표시하고, 데이터에 없는 사실을 단정하지 마라.
+5) 의미 없는 시스템 안내문구(키 미설정, 시트 수, API 내부 사정) 절대 금지.
+6) 마지막에는 반드시 "투자 판단"을 매수 후보 / 관망 / 회피 중 하나로 쓰고, 조건부 근거를 붙인다.
+7) 문체는 한국 개인투자자가 바로 이해할 수 있게 명확하고 단호하게 쓰되, 투자 조언을 과장하지 마라.
+8) 900~1300자 내외로 압축해서 속도와 가독성을 우선한다.
+
+결과 형식:
+## 한줄 결론
+## 어떤 기업인가
+## 돈 버는 구조와 핵심 경쟁력
+## 최신 실적에서 봐야 할 것
+## 투자 포인트
+## 리스크
+## 투자 판단
 
 [첨부파일 목록]
 {file_list}
+
+[기업 기본정보]
+{company_ctx}
 
 [재무 분기 데이터]
 {fin_ctx}
@@ -403,10 +514,13 @@ def _openai_mini_investment_analysis(stock_name: str, stock_code: Optional[str],
     try:
         text = generate_text(
             prompt,
-            system_instruction="당신은 숫자 기반 주식 투자 애널리스트다.",
+            system_instruction=(
+                "당신은 숫자와 사업모델을 함께 보는 한국 주식 투자 애널리스트다. "
+                "최신 분기 데이터와 기업 정체성을 우선해서 실전 투자 판단형 답변을 작성한다."
+            ),
             temperature=0.2,
-            max_output_tokens=1500,
-            timeout=60,
+            max_output_tokens=1200,
+            timeout=35,
         )
         return f"# {stock_name} 투자관점 상세분석\n\n{text}"
     except Exception:
@@ -790,11 +904,21 @@ def bootstrap_from_files(payload: BootstrapRequest):
                 (post_id,),
             ).fetchall()
             file_paths = [x["file_path"] for x in all_xlsx if x["file_path"]]
+            company_ctx = _collect_company_context(conn, stock_name, code)
             fin_ctx = _collect_financial_context(conn, code)
             cf_ctx = _collect_cashflow_context(conn, code)
             disc_ctx = _collect_disclosure_context(conn, code)
             tg_ctx = _collect_telegram_signal_context(conn, stock_name, code)
-            content_md = _openai_mini_investment_analysis(stock_name, code, file_paths, fin_ctx, cf_ctx, disc_ctx, tg_ctx)
+            content_md = _openai_mini_investment_analysis(
+                stock_name,
+                code,
+                file_paths,
+                company_ctx,
+                fin_ctx,
+                cf_ctx,
+                disc_ctx,
+                tg_ctx,
+            )
             conn.execute(
                 """
                 UPDATE detailed_analysis_posts

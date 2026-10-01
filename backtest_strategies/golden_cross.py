@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    _load_jump_aligned_corp_factors,
+    _rebase_positions_for_corp_actions,
     DB_PATH,
     _CHART_BOTTOM_MIN,
     _CHART_TOP_MIN,
@@ -426,7 +428,12 @@ def run_backtest_golden_cross(
         def _gc_limit(day: str) -> int:
             return max(max_positions, int(_gc_equity(day) // per_stock))
 
+        # 2026-09-28: 보유 중 확정 기업행위(권리락·분할 등) 날 포지션을 새 주식 기준으로 재기준
+        _ca_factors = _load_jump_aligned_corp_factors(conn, list(sd.keys()))
+        _ca_prev_day = None
         for day in sim_dates:
+            _rebase_positions_for_corp_actions(_ca_factors, pos, _ca_prev_day, day, ('entry', 'peak'), 'qty')
+            _ca_prev_day = day
             ym = day[:7]
 
             # 전일 종가 이후 생성된 주문을 다음 거래일 시가에 체결한다.

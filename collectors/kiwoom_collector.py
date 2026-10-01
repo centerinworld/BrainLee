@@ -256,7 +256,7 @@ class KiwoomCollector(BaseCollector):
                         (
                             stock_code,
                             dt,
-                            self._to_num(row.get("close_pric")),
+                            abs(self._to_num(row.get("close_pric"))),
                             self._to_num(row.get("chg_qty")),
                             self._to_num(row.get("poss_stkcnt")),
                             self._to_num(row.get("wght")),
@@ -1526,9 +1526,9 @@ class KiwoomCollector(BaseCollector):
                     stock_code, dt_val,
                     self._to_num(row.get("remn") or row.get("crdt_bal_qty")),
                     self._to_num(row.get("amt")  or row.get("crdt_bal_amt")),
-                    self._to_num(row.get("shr_rt") or row.get("crdt_rt")),
-                    self._to_num(row.get("new")  or row.get("new_crdt_qty")),
-                    self._to_num(row.get("rpya") or row.get("rpay_crdt_qty")),
+                    self._to_num(row.get("remn_rt") or row.get("credit_ratio") or row.get("crdt_rt")),
+                    abs(self._to_num(row.get("new")  or row.get("new_crdt_qty"))),
+                    abs(self._to_num(row.get("rpya") or row.get("rpay_crdt_qty"))),
                     json.dumps(row, ensure_ascii=False),
                 ))
                 saved += 1

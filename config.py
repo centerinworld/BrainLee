@@ -45,15 +45,21 @@ if _parent_env_file.exists():
                 if _key and _key not in os.environ:
                     os.environ[_key] = _val
 
-# Database
-# POSTGRES_DATABASE_URL lets us stage the migration without clobbering an
-# existing DATABASE_URL used by legacy SQLite scripts.
+# Database: the deployed dashboard uses Postgres as the canonical database.
 DATABASE_URL = os.getenv(
     "POSTGRES_DATABASE_URL",
-    os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/stock.db"),
+    os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://stock_dashboard:stock_dashboard_local@127.0.0.1:5432/stock_dashboard",
+    ),
 )
 IS_POSTGRES = DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg://"))
 IS_SQLITE = DATABASE_URL.startswith("sqlite:")
+if not IS_POSTGRES:
+    raise EnvironmentError(
+        "Postgres DATABASE_URL is required for the runtime dashboard. "
+        "Set POSTGRES_DATABASE_URL or DATABASE_URL to a postgresql+psycopg:// URL."
+    )
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

@@ -7,18 +7,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import db_compat
 from fastapi import APIRouter, Query
-
-from db_utils import connect_stock_db
 
 
 router = APIRouter()
-DB_PATH = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stock.db"
 ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard/runtime")
 
 
-def _db() -> sqlite3.Connection:
-    return connect_stock_db(timeout=30, row_factory=sqlite3.Row)
+def _db():
+    return db_compat.connect_primary_db(timeout=30, row_factory=sqlite3.Row)
 
 
 def _ensure_table(conn: sqlite3.Connection) -> None:

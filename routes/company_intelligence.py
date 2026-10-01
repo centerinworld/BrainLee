@@ -11,8 +11,8 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
+import db_compat
 from config import IS_POSTGRES
-from db_utils import connect_stock_db
 
 router = APIRouter()
 CHERRY_CHANNEL_PREFIX = "체리형부"
@@ -1162,7 +1162,7 @@ def get_company_intelligence(stock_code: str, refresh: bool = Query(False)):
         cached = _COMPANY_INTEL_CACHE.get(stock_code)
         if cached and time.monotonic() - cached[0] < _COMPANY_INTEL_CACHE_TTL_SEC:
             return cached[1]
-    conn = connect_stock_db(timeout=15, row_factory=sqlite3.Row)
+    conn = db_compat.connect_primary_db(timeout=15, row_factory=sqlite3.Row)
     try:
         result = _compute_company_intelligence(conn, stock_code)
         _COMPANY_INTEL_CACHE[stock_code] = (time.monotonic(), result)
@@ -1174,7 +1174,7 @@ def get_company_intelligence(stock_code: str, refresh: bool = Query(False)):
 @router.get("/compare")
 def compare_companies(codes: str = Query(..., description="comma-separated stock codes")):
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
-    conn = connect_stock_db(timeout=15, row_factory=sqlite3.Row)
+    conn = db_compat.connect_primary_db(timeout=15, row_factory=sqlite3.Row)
     try:
         items = [_compute_company_intelligence(conn, code) for code in code_list[:6]]
         rows = [item for item in items if item.get("found")]
@@ -1197,7 +1197,7 @@ def compare_portfolio_holdings(limit: int = Query(30, ge=1, le=100)):
     cached = _PORTFOLIO_COMPARE_CACHE.get(limit)
     if cached and time.monotonic() - cached[0] < _PORTFOLIO_COMPARE_CACHE_TTL_SEC:
         return cached[1]
-    conn = connect_stock_db(timeout=15, row_factory=sqlite3.Row)
+    conn = db_compat.connect_primary_db(timeout=15, row_factory=sqlite3.Row)
     try:
         holding_rows = conn.execute(
             """
@@ -1292,7 +1292,7 @@ def compare_portfolio_holdings(limit: int = Query(30, ge=1, le=100)):
 
 @router.get("/cherry-family/status")
 def get_cherry_family_status():
-    conn = connect_stock_db(timeout=15, row_factory=sqlite3.Row)
+    conn = db_compat.connect_primary_db(timeout=15, row_factory=sqlite3.Row)
     try:
         _ensure_tables(conn)
         family_ids = [

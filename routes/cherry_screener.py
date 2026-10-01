@@ -48,12 +48,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-# ⚠️ 2026-08-09: connect_primary_db(db_compat)는 Postgres 마이그레이션 진행 중(config.py
-# POSTGRES_DATABASE_URL, 미커밋 워크트리 작업으로 추정)이라 dart_major_holders 등 일부 신규
-# 테이블이 아직 이관되지 않은 상태 — 이 모듈은 항상 완전한 데이터를 가진 stock.db를 직접
-# 사용한다(db_utils.connect_stock_db, CLAUDE.md 표준 sqlite3 패턴). 마이그레이션이 완료되면
-# connect_primary_db로 교체 가능.
-from db_utils import connect_stock_db
+import db_compat
 from env_utils import BASE_DIR
 from fastapi import APIRouter, Query
 
@@ -657,7 +652,7 @@ def _render_cherry_analysis_markdown(
 
 def _compute_cherry_screener(min_mktcap: float = 300.0, max_mktcap: float = 30000.0) -> dict:
     """중소형주(min_mktcap~max_mktcap 억원) 대상 3대 스크리닝 + 보조신호 전종목 스캔."""
-    conn = connect_stock_db(timeout=15, row_factory=sqlite3.Row, readonly=True)
+    conn = db_compat.connect_primary_db(timeout=15, row_factory=sqlite3.Row, readonly=True)
     try:
         panel, _ = _build_quarterly_panel(conn)
 
@@ -968,7 +963,7 @@ def get_cherry_screener_analysis(stock_code: str):
     if not detail or detail.get("found") is False:
         return {"stock_code": stock_code, "found": False}
 
-    conn = connect_stock_db(timeout=15, row_factory=sqlite3.Row, readonly=True)
+    conn = db_compat.connect_primary_db(timeout=15, row_factory=sqlite3.Row, readonly=True)
     try:
         stock_name = _find_stock_name(conn, stock_code)
         financials = _load_recent_financials(conn, stock_code)

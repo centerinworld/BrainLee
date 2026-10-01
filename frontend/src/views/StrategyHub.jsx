@@ -68,6 +68,8 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
   const StrategyHub = ({ changeStock, changeTab, initialHubTab = 'matrix' }) => {
     const [hubTab, setHubTab]             = React.useState(initialHubTab);
     const [selectedStrat, setSelectedStrat] = React.useState('high_profit_compound');
+    const [strategySignals, setStrategySignals] = React.useState({});
+    const [strategySignalsLoading, setStrategySignalsLoading] = React.useState(false);
     const [stratSort, setStratSort] = React.useState({ key: null, dir: 'desc' });  // 매트릭스 정렬 (avg|cum)
     const [marketRegime, setMarketRegime] = React.useState(null);
     const [strategyResearch, setStrategyResearch] = React.useState(null);
@@ -213,16 +215,41 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
     const strategyGovernance = Object.fromEntries(
       (backtestMatrix?.strategies || []).map(item => [item.strategy, item.governance || {}]),
     );
-    const visibleTiers = new Set(['live_eligible', 'paper_core', 'offensive_satellite']);
+    const matrixStrategyByKey = Object.fromEntries((backtestMatrix?.strategies || []).map(item => [item.strategy, item]));
     const availableStrategies = STRATEGY_HUB_STRATEGIES.filter(strategy =>
       (strategyMethodology[strategy.key]?.results || []).length > 0
-      && visibleTiers.has(strategyGovernance[strategy.key]?.tier)
     );
+    const selectedMatrixStrategy = matrixStrategyByKey[selectedStrat] || null;
+    const selectedPeriods = matrixPeriodOrder.map(period => ({
+      period,
+      row: selectedMatrixStrategy?.periods?.[period] || null,
+    }));
+    const selectedGovernance = strategyGovernance[selectedStrat] || {};
     React.useEffect(() => {
       if (availableStrategies.length > 0 && !availableStrategies.some(strategy => strategy.key === selectedStrat)) {
         setSelectedStrat(availableStrategies[0].key);
       }
     }, [backtestMatrix, selectedStrat]);
+    React.useEffect(() => {
+      if (!selectedStrat) return;
+      let cancelled = false;
+      setStrategySignalsLoading(true);
+      fetch(API(`/api/trend/strategy-center/signals/${encodeURIComponent(selectedStrat)}?limit=20`))
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+        .then(d => {
+          if (!cancelled) setStrategySignals(prev => ({ ...prev, [selectedStrat]: d }));
+        })
+        .catch(e => {
+          if (!cancelled) setStrategySignals(prev => ({
+            ...prev,
+            [selectedStrat]: { ok:false, source_strategy:selectedStrat, message:e.message || '현재 후보를 불러오지 못했습니다.', buy_candidates:[], sell_candidates:[] },
+          }));
+        })
+        .finally(() => {
+          if (!cancelled) setStrategySignalsLoading(false);
+        });
+      return () => { cancelled = true; };
+    }, [selectedStrat]);
     const strategySummary = (strategy) => {
       const values = (PERIOD_RETURNS[strategy.key] || []).filter(v => v != null);
       if (!values.length) return 'API 백테스트 결과 없음';
@@ -232,6 +259,9 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
       return `API 기준 평균 ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}% · 최고 ${best >= 0 ? '+' : ''}${best.toFixed(1)}% · 최저 ${worst >= 0 ? '+' : ''}${worst.toFixed(1)}%`;
     };
     const sel = availableStrategies.find(s => s.key === selectedStrat) || availableStrategies[0] || STRATEGY_HUB_STRATEGIES[4];
+    const selectedSignalPayload = strategySignals[selectedStrat] || null;
+    const selectedBuyCandidates = Array.isArray(selectedSignalPayload?.buy_candidates) ? selectedSignalPayload.buy_candidates : [];
+    const selectedSellCandidates = Array.isArray(selectedSignalPayload?.sell_candidates) ? selectedSignalPayload.sell_candidates : [];
     const clrRet = v => v > 0 ? '#dc2626' : v < 0 ? '#2563eb' : 'rgba(15,23,42,0.4)';
     const fmtRet = v => v === 0.0 ? '0%' : (v > 0 ? '+' : '') + v.toFixed(1) + '%';
 
@@ -646,6 +676,115 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
             ))}
           </select>
         </div>
+
+        {selectedMatrixStrategy && (
+          <div className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.75rem',border:'1px solid rgba(37,99,235,0.22)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.8rem',flexWrap:'wrap'}}>
+              <div>
+                <div style={{fontSize:'0.9rem',fontWeight:900,color:sel.color || '#1e293b'}}>{selectedMatrixStrategy.label || sel.label}</div>
+                <div style={{fontSize:'0.68rem',lineHeight:1.55,color:'var(--text-secondary)',marginTop:3}}>
+                  {selectedMatrixStrategy.desc || '선택된 전략의 검증 기록과 현재 조건 충족 종목을 함께 표시합니다.'}
+                </div>
+              </div>
+              <div style={{display:'flex',gap:'0.35rem',flexWrap:'wrap',justifyContent:'flex-end'}}>
+                <span style={{fontSize:'0.64rem',fontWeight:800,padding:'0.18rem 0.45rem',borderRadius:5,border:'1px solid rgba(15,23,42,0.2)',color:'#334155'}}>
+                  {selectedGovernance.tier || 'unknown'}
+                </span>
+                <span style={{fontSize:'0.64rem',fontWeight:800,padding:'0.18rem 0.45rem',borderRadius:5,border:'1px solid rgba(217,119,6,0.35)',color:'#b45309'}}>
+                  {selectedGovernance.verification_status || strategyMethodology[selectedStrat]?.label || '검증 상태 없음'}
+                </span>
+                <span style={{fontSize:'0.64rem',fontWeight:800,padding:'0.18rem 0.45rem',borderRadius:5,border:'1px solid rgba(37,99,235,0.28)',color:'#2563eb'}}>
+                  avg {selectedGovernance.metrics?.average_return_pct != null ? `${selectedGovernance.metrics.average_return_pct}%` : '-'}
+                </span>
+                <span style={{fontSize:'0.64rem',fontWeight:800,padding:'0.18rem 0.45rem',borderRadius:5,border:'1px solid rgba(220,38,38,0.22)',color:'#dc2626'}}>
+                  최악 {selectedGovernance.metrics?.worst_period_return_pct != null ? `${selectedGovernance.metrics.worst_period_return_pct}%` : '-'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(118px,1fr))',gap:'0.45rem'}}>
+              {selectedPeriods.map(({period,row}) => (
+                <div key={period} style={{padding:'0.5rem 0.55rem',borderRadius:8,background:'rgba(15,23,42,0.025)',border:'1px solid rgba(15,23,42,0.16)'}}>
+                  <div style={{fontSize:'0.62rem',whiteSpace:'pre-line',lineHeight:1.25,color:'var(--text-secondary)'}}>{period}</div>
+                  <div style={{fontSize:'0.94rem',fontWeight:900,marginTop:4,color:row?.total_return_pct > 0 ? '#dc2626' : row?.total_return_pct < 0 ? '#2563eb' : '#334155'}}>
+                    {row?.total_return_pct == null ? '-' : `${row.total_return_pct >= 0 ? '+' : ''}${Number(row.total_return_pct).toFixed(1)}%`}
+                  </div>
+                  <div style={{fontSize:'0.58rem',lineHeight:1.35,color:'rgba(15,23,42,0.68)',marginTop:3}}>
+                    MDD {row?.mdd != null ? `${Number(row.mdd).toFixed(1)}%` : '-'} · 거래 {row?.trade_count ?? '-'}
+                  </div>
+                  <div style={{fontSize:'0.56rem',color:row?.methodology?.run_hash ? '#047857' : '#b45309',marginTop:3}}>
+                    {row?.methodology?.run_hash ? `run ${String(row.methodology.run_hash).slice(0, 8)}` : 'run 기록 없음'}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:'0.65rem'}}>
+              <div style={{padding:'0.65rem 0.75rem',borderRadius:8,background:'rgba(5,150,105,0.06)',border:'1px solid rgba(5,150,105,0.22)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'0.5rem',marginBottom:'0.45rem'}}>
+                  <strong style={{fontSize:'0.76rem',color:'#047857'}}>현재 조건 충족 매수 후보</strong>
+                  <span style={{fontSize:'0.62rem',color:'var(--text-secondary)'}}>
+                    {strategySignalsLoading ? '계산 중' : `${selectedBuyCandidates.length}개`}
+                  </span>
+                </div>
+                {selectedBuyCandidates.length ? (
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.35rem'}}>
+                    {selectedBuyCandidates.slice(0, 8).map((item, idx) => (
+                      <button key={`${item.stock_code}-${idx}`} onClick={() => { changeStock(item.stock_code); changeTab('analysis'); }}
+                        style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) auto',gap:'0.45rem',alignItems:'center',textAlign:'left',padding:'0.45rem 0.5rem',borderRadius:7,cursor:'pointer',background:'rgba(255,255,255,0.55)',border:'1px solid rgba(15,23,42,0.16)',color:'inherit'}}>
+                        <span>
+                          <span style={{fontSize:'0.72rem',fontWeight:850,color:'#1e293b'}}>{item.stock_name}</span>
+                          <span style={{fontSize:'0.62rem',color:'var(--text-secondary)',marginLeft:5}}>{item.stock_code}</span>
+                          {item.reason && <div style={{fontSize:'0.6rem',color:'rgba(15,23,42,0.68)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{item.reason}</div>}
+                        </span>
+                        <span style={{fontSize:'0.68rem',fontWeight:800,color:'#047857'}}>
+                          {item.score != null ? String(item.score) : item.price != null ? Number(item.price).toLocaleString() : '-'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{fontSize:'0.7rem',lineHeight:1.55,color:'#0f766e'}}>
+                    {selectedSignalPayload?.message || (strategySignalsLoading ? '현재 조건 충족 종목을 계산하고 있습니다.' : '현재 기준으로 신규 매수 후보가 없습니다.')}
+                  </div>
+                )}
+              </div>
+
+              <div style={{padding:'0.65rem 0.75rem',borderRadius:8,background:'rgba(220,38,38,0.045)',border:'1px solid rgba(220,38,38,0.18)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'0.5rem',marginBottom:'0.45rem'}}>
+                  <strong style={{fontSize:'0.76rem',color:'#dc2626'}}>현재 매도/리스크 후보</strong>
+                  <span style={{fontSize:'0.62rem',color:'var(--text-secondary)'}}>{selectedSellCandidates.length}개</span>
+                </div>
+                {selectedSellCandidates.length ? (
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.35rem'}}>
+                    {selectedSellCandidates.slice(0, 8).map((item, idx) => (
+                      <button key={`${item.stock_code}-${idx}`} onClick={() => { changeStock(item.stock_code); changeTab('analysis'); }}
+                        style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) auto',gap:'0.45rem',alignItems:'center',textAlign:'left',padding:'0.45rem 0.5rem',borderRadius:7,cursor:'pointer',background:'rgba(255,255,255,0.55)',border:'1px solid rgba(15,23,42,0.16)',color:'inherit'}}>
+                        <span>
+                          <span style={{fontSize:'0.72rem',fontWeight:850,color:'#1e293b'}}>{item.stock_name}</span>
+                          <span style={{fontSize:'0.62rem',color:'var(--text-secondary)',marginLeft:5}}>{item.stock_code}</span>
+                          {item.reason && <div style={{fontSize:'0.6rem',color:'rgba(15,23,42,0.68)',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{item.reason}</div>}
+                        </span>
+                        <span style={{fontSize:'0.68rem',fontWeight:800,color:'#dc2626'}}>
+                          {item.score != null ? String(item.score) : item.price != null ? Number(item.price).toLocaleString() : '-'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{fontSize:'0.7rem',lineHeight:1.55,color:'#b91c1c'}}>
+                    현재 기준 매도 후보가 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{fontSize:'0.64rem',lineHeight:1.5,color:'var(--text-secondary)'}}>
+              후보 산출 방식: {selectedSignalPayload?.mode || '로딩 중'} · 갱신 {selectedSignalPayload?.updated_at || '-'}.
+              백테스트 기록은 선택 registry의 run hash 기준이며, 최근 재무/현금흐름 개선 후에는 재검증이 필요할 수 있습니다.
+            </div>
+          </div>
+        )}
 
         {hubTab === 'desc' && selectedStrat === 'sector_focus' && (
           <div className="glass-panel" style={{

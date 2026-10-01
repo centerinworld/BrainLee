@@ -843,9 +843,14 @@ def calc_market_signals(db_conn=None) -> list:
                             "description":desc,"signal":sig,"value":val,"detail":detail})
             try:
                 conn.execute("""
-                    INSERT OR REPLACE INTO signal_result
+                    INSERT INTO signal_result
                     (config_id,stock_code,signal,value,description,calc_date)
                     VALUES (?,?,?,?,?,?)
+                    ON CONFLICT(config_id, stock_code, calc_date) DO UPDATE SET
+                        signal=excluded.signal,
+                        value=excluded.value,
+                        description=excluded.description,
+                        created_at=CURRENT_TIMESTAMP
                 """, (cfg_id,'',sig,val,detail,today))
             except Exception:
                 pass
@@ -1675,9 +1680,14 @@ def calc_stock_signals(stock_code: str, db_conn=None) -> list:
                             "description":desc,"signal":sig,"value":val,"detail":detail})
             try:
                 conn.execute("""
-                    INSERT OR REPLACE INTO signal_result
+                    INSERT INTO signal_result
                     (config_id,stock_code,signal,value,description,calc_date)
                     VALUES (?,?,?,?,?,?)
+                    ON CONFLICT(config_id, stock_code, calc_date) DO UPDATE SET
+                        signal=excluded.signal,
+                        value=excluded.value,
+                        description=excluded.description,
+                        created_at=CURRENT_TIMESTAMP
                 """, (cfg_id,stock_code,sig,val,detail,today))
             except Exception:
                 pass

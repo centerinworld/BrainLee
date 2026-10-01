@@ -242,7 +242,10 @@ def run(
                        WHERE stock_code=? AND event_date=?""", (row["stock_code"], row["event_date"]))
                 promoted += 1
     conn.commit()
-    result = {"stocks_requested": len(audits_by_code), "events_checked": len(records),
+    # 2026-09-28: 위에서 return_usable을 전부 0으로 초기화하므로 규칙 기반 시장변동 판정을 다시 적용한다.
+    from price_jump_rules import apply_market_move_rule
+    market_moves = apply_market_move_rule(conn)
+    result = {"market_move_rule": market_moves, "stocks_requested": len(audits_by_code), "events_checked": len(records),
               "request_errors": len(errors), "agreement": agreement_counts,
               "promoted": promoted, "elapsed_seconds": round(time.time()-started, 1), "verified_at": now}
     OUT.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

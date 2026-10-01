@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
 from backtest_common import (
+    _load_jump_aligned_corp_factors,
+    _rebase_positions_for_corp_actions,
     DB_PATH,
     SignalEvidenceLedger,
     evidence_item,
@@ -270,7 +272,12 @@ def run_backtest_earnings_conviction(
         pending_sells: list = []
         pending_buys: list = []
 
+        # 2026-09-28: 보유 중 확정 기업행위(권리락·분할 등) 날 포지션을 새 주식 기준으로 재기준
+        _ca_factors = _load_jump_aligned_corp_factors(conn, list(sd.keys()))
+        _ca_prev_day = None
         for day in sim_dates:
+            _rebase_positions_for_corp_actions(_ca_factors, pos, _ca_prev_day, day, ('entry', 'peak'), 'shares')
+            _ca_prev_day = day
             if strict_exec:
                 _still = []
                 for code, reason in pending_sells:

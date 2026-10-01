@@ -246,7 +246,8 @@ def _parse_num(s: str) -> Optional[float]:
         return None
 
 
-_UNIT_TAG_PAT = r"\(\s*단위\s*[:：][^)]{0,40}?(조원|억원|백만원|백만|천만원|천원|만원|원)[^)]{0,20}\)"
+# DART 원문에서 글자 사이 공백이 섞이는 경우("단 위") 포함
+_UNIT_TAG_PAT = r"\(\s*단\s*위\s*[:：][^)]{0,60}?(조원|억원|백만원|백만|천만원|천원|만원|원)[^)]{0,20}\)"
 
 
 def _canonical_unit(unit: str) -> str:
@@ -406,7 +407,8 @@ def _extract_backlog(text: str) -> BacklogMetric:
                 continue
             unit = m.group(2).replace(" ", "")
             unit = {"조": "조원", "억": "억원"}.get(unit, unit)
-            conf = 0.85
+            # 단위가 숫자 바로 옆에 명시돼 있어 가장 신뢰도 높은 패턴 — 0.96
+            conf = 0.96
             krw = _korean_to_krw(raw_v, unit)
             excerpt = t[max(0, m.start()-40):min(len(t), m.end()+40)]
             cands.append((krw, unit, conf, excerpt, _period_tier(t, m.start()), _has_total_marker(t, m.start())))
@@ -437,7 +439,9 @@ def _extract_backlog(text: str) -> BacklogMetric:
                 unit = _find_unit_nearby(t, em.start())
                 krw = _korean_to_krw(raw_v, unit)
                 excerpt = t[max(0, em.start()-40):em.end()+150]
-                cands.append((krw, unit, 0.92, excerpt, _period_tier(t, em.start()), _has_total_marker(t, em.start())))
+                # 단위 선언이 명시적으로 근처에 있으면 0.95, 없어도 0.92로 올림(기말 행 추출은 신뢰도 높음)
+                conf_1c = 0.95 if _has_explicit_unit_nearby(t, em.start()) else 0.92
+                cands.append((krw, unit, conf_1c, excerpt, _period_tier(t, em.start()), _has_total_marker(t, em.start())))
 
     # 1-b) 증감표(기초→신규계약→수익인식→기말) 구조 — 위 일반 패턴은 키워드 직후 첫 숫자(기초,
     # 즉 전기말 잔액이자 과거값)를 잡아버림. "기말" 열 값이 현재 시점의 실제 잔액이므로 별도로
@@ -488,7 +492,9 @@ def _extract_backlog(text: str) -> BacklogMetric:
                 if raw_v is not None:
                     krw = _korean_to_krw(raw_v, unit)
                     excerpt = t[km.start():km.end() + boundary]
-                    cands.append((krw, unit, 0.9, excerpt, _period_tier(t, km.start()), _has_total_marker(t, km.start())))
+                    # 단위 선언이 명시적이면 0.95, 그렇지 않으면 0.90 유지
+                    conf_1b = 0.95 if _has_explicit_unit_nearby(t, km.start()) else 0.90
+                    cands.append((krw, unit, conf_1b, excerpt, _period_tier(t, km.start()), _has_total_marker(t, km.start())))
 
     # 1-d) "구분 수주총액 매출인식액 수주잔고" 3열 표(IFRS15 잔여이행의무 공시 표준양식) —
     # 2026-08-12 신규: 010420 실측으로 발견 — 위 base패턴(kw_group 직후 첫 숫자)이 "계약잔액"

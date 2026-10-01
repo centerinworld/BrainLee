@@ -4,7 +4,7 @@ collectors/yahoo_collector.py — Yahoo Finance 수집기
 담당 데이터:
   · 글로벌 매크로 지표 (VIX, GOLD, OIL, USD/KRW, 나스닥, S&P500)
   · 국내 지수 히스토리 (KOSPI ^KS11, KOSDAQ ^KQ11) — KRX 불가 시 fallback
-  · 개별 종목 가격 히스토리 — KIS 불가 시 fallback
+  · 한국 개별 종목 가격 히스토리는 수집하지 않음 (KIS만 허용)
 
 yfinance는 동기 라이브러리 → asyncio.to_thread()로 병렬 실행
 MACRO_SYMBOLS는 config에서 override 가능
@@ -40,9 +40,6 @@ _DEFAULT_MACRO: dict[str, str] = {
 }
 
 MACRO_SYMBOLS: dict[str, str] = getattr(config, "YAHOO_MACRO_SYMBOLS", _DEFAULT_MACRO)
-
-# KIS 실패 시 종목 시장 구분 suffix 후보
-_KR_SUFFIXES = [".KS", ".KQ"]
 
 
 def _safe_float(v: Any) -> float:
@@ -172,7 +169,7 @@ class YahooCollector(BaseCollector):
         return await self.fetch_macro_batch(period="60d")
 
     # ══════════════════════════════════════════════════════════
-    # 2) 개별 종목 가격 히스토리 (KIS fallback)
+    # 2) 한국 개별 종목 가격 히스토리
     # ══════════════════════════════════════════════════════════
 
     async def fetch_stock_history(
@@ -180,18 +177,8 @@ class YahooCollector(BaseCollector):
         stock_code: str,
         period: str = "1y",
     ) -> list[dict]:
-        """
-        KIS 불가 시 Yahoo로 종목 가격 수집.
-        .KS(KOSPI) 먼저 시도 → 없으면 .KQ(KOSDAQ).
-        """
-        for suffix in _KR_SUFFIXES:
-            symbol = f"{stock_code}{suffix}"
-            rows   = await asyncio.to_thread(_download_sync, symbol, period)
-            if rows:
-                logger.debug(f"[Yahoo] {stock_code}{suffix}: {len(rows)}건")
-                return rows
-
-        logger.warning(f"[Yahoo] {stock_code}: .KS/.KQ 모두 데이터 없음")
+        """한국 개별 종목 가격은 KIS 검증 경로만 사용한다."""
+        logger.warning("[Yahoo] %s: 한국 개별 종목 가격 fallback 비활성화 — KIS만 허용", stock_code)
         return []
 
     async def fetch_stock_histories_bulk(

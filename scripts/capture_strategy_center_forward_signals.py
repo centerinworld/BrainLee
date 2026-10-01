@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from db_utils import connect_stock_db  # noqa: E402
+import db_compat  # noqa: E402
 from live_signal_tracker import register_signal  # noqa: E402
 
 ALLOWED_STRATEGIES = {"v_gc", "v_contract_momentum"}
@@ -49,26 +49,29 @@ def strategy_version(strategy: str) -> str:
 def capture() -> dict:
     signal_date = datetime.now().date().isoformat()
     available_at = datetime.now().isoformat(timespec="seconds")
-    conn = connect_stock_db()
+    conn = db_compat.connect_primary_db()
     try:
-        rows = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """SELECT stock_code,stock_name,strategy,buy_price,current_price,entry_date,
                       entry_reason_json,updated_at
                FROM peak_holding
                WHERE is_active=1 AND stock_code IS NOT NULL AND length(stock_code)=6
                ORDER BY strategy,stock_code"""
-        ).fetchall()
+        )
+        rows = cur.fetchall()
         selected = [row for row in rows if str(row[2] or "") in ALLOWED_STRATEGIES]
         versions = {name: strategy_version(name) for name in ALLOWED_STRATEGIES}
         signal_ids = []
         skipped_existing_episode = 0
         for row in selected:
-            prior = conn.execute(
+            cur.execute(
                 """SELECT signal_payload_json FROM live_signal_registry
-                   WHERE stock_code=? AND strategy_id=? AND action='BUY_CANDIDATE'
+                   WHERE stock_code=%s AND strategy_id=%s AND action='BUY_CANDIDATE'
                    ORDER BY signal_date DESC LIMIT 1""",
                 (row[0], row[2]),
-            ).fetchone()
+            )
+            prior = cur.fetchone()
             if prior:
                 try:
                     prior_payload = json.loads(prior[0] or "{}")

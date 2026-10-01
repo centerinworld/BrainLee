@@ -32,7 +32,7 @@ from collectors.dart_backlog_collector import (
 )
 
 logger = logging.getLogger(__name__)
-PARSER_VERSION = "cost_v1"
+PARSER_VERSION = "cost_v2"
 
 
 @dataclass
@@ -117,20 +117,44 @@ def _ensure_table() -> None:
         conn.close()
 
 
+_HEADER_UNIT_PAT = re.compile(
+    r"\(\s*단\s*위\s*[:：][^)]{0,60}?(조원|억원|백만원|백만|천만원|천원|만원|원)[^)]{0,20}\)",
+    re.IGNORECASE,
+)
+_HEADER_UNIT_MAP = {
+    "조원": "조원", "억원": "억원", "백만원": "백만원", "백만": "백만원",
+    "천만원": "천만원", "천원": "천원", "만원": "만원", "원": "원",
+}
+
+
 def _pick_amount(text: str, keywords: list[str]) -> tuple[Optional[float], str]:
     t = _normalize_ws(text)
     if not t:
         return None, ""
-    # 단위 명시 패턴 우선, 없으면 큰 숫자(5자리+)만 허용
+
+    # 표 헤더에서 단위 선언 추출 — "원" 기본값 대신 명시 단위 사용
+    header_unit: str = ""
+    m_hdr = _HEADER_UNIT_PAT.search(t[:3000])
+    if m_hdr:
+        header_unit = _HEADER_UNIT_MAP.get(m_hdr.group(1), "")
+
+    # 단위 명시 패턴 우선, 없으면 헤더 단위 활용(있을 때 2자리+, 없을 때 5자리+)
     pattern_with_unit = r"(?:%s)[^\d-]{0,40}(-?[\d,]+(?:\.\d+)?)\s*(조원|억원|백만원|천만원|만원|원)" % "|".join(keywords)
-    pattern_no_unit   = r"(?:%s)[^\d-]{0,40}(-?[\d,]{5,}(?:\.\d+)?)" % "|".join(keywords)
+    min_digits = 2 if (header_unit and header_unit != "원") else 5
+    pattern_no_unit = r"(?:%s)[^\d-]{0,40}(-?[\d,]{%d,}(?:\.\d+)?)" % ("|".join(keywords), min_digits)
+
     cands: list[tuple[float, str]] = []
     for pattern in (pattern_with_unit, pattern_no_unit):
         for m in re.finditer(pattern, t, re.IGNORECASE):
             v = _parse_num(m.group(1))
             if v is None:
                 continue
-            unit = (m.group(2) if m.lastindex and m.lastindex >= 2 else "원").strip()
+            if m.lastindex and m.lastindex >= 2:
+                unit = m.group(2).strip()
+            elif header_unit:
+                unit = header_unit  # 표 헤더 단위 사용
+            else:
+                unit = "원"  # 헤더 단위도 없을 때만 기본값
             krw = _korean_to_krw(v, unit)
             # 연도값(1990~2030) 또는 10만원 미만은 파싱 오류로 간주
             if 1_990 <= abs(krw) <= 2_030:
@@ -166,13 +190,21 @@ def _extract_cost_metrics(text: str) -> CostMetric:
 
 def _upsert_trigger_rows(conn, stock_code: str, fy: int, fq: int, report_type: str) -> None:
     # metric별 시계열 변화율 계산 후 trigger 저장
+    # validation_flags.overall_flag=FAIL인 행은 신뢰도 부족으로 제외
     def _series(metric_col: str):
         rows = conn.execute(
             f"""
-            SELECT fiscal_year, fiscal_quarter, {metric_col}
-            FROM dart_cost_quarterly
-            WHERE stock_code=? AND report_type=? AND {metric_col} IS NOT NULL
-            ORDER BY fiscal_year, fiscal_quarter
+            SELECT dcq.fiscal_year, dcq.fiscal_quarter, dcq.{metric_col}
+            FROM dart_cost_quarterly dcq
+            LEFT JOIN dart_cost_quarterly_validation_flags vf
+                ON vf.stock_code      = dcq.stock_code
+               AND vf.fiscal_year     = dcq.fiscal_year
+               AND vf.fiscal_quarter  = dcq.fiscal_quarter
+               AND vf.report_type     = dcq.report_type
+            WHERE dcq.stock_code=%s AND dcq.report_type=%s
+              AND dcq.{metric_col} IS NOT NULL
+              AND (vf.overall_flag IS NULL OR vf.overall_flag <> 'FAIL')
+            ORDER BY dcq.fiscal_year, dcq.fiscal_quarter
             """,
             (stock_code, report_type),
         ).fetchall()

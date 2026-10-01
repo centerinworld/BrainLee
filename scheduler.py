@@ -3701,6 +3701,20 @@ class CollectionScheduler:
             logger.info(f"[DART희석] 완료: {stats}")
         except Exception as e:
             logger.error(f"[DART희석] 잡 오류: {e}", exc_info=True)
+        # 수집 후 dilution validation 증분 갱신
+        try:
+            _vscript = Path(__file__).resolve().parent / "scripts" / "build_dilution_validation_flags.py"
+            _vproc = subprocess.run(
+                [sys.executable, str(_vscript)],
+                cwd=str(Path(__file__).resolve().parent),
+                capture_output=True, text=True, timeout=120,
+            )
+            if _vproc.returncode == 0:
+                logger.info("[DART희석] dilution validation 증분 갱신 완료: %s", (_vproc.stdout or "")[-300:])
+            else:
+                logger.warning("[DART희석] dilution validation 갱신 실패: %s", (_vproc.stderr or "")[-500:])
+        except Exception as _ve:
+            logger.warning("[DART희석] dilution validation 갱신 오류: %s", _ve)
 
     def _loop_dart_dilution_close(self) -> None:
         """평일 17:20 — 장 마감 뒤 접수된 희석 공시를 개별종목 화면에 반영."""
@@ -3997,6 +4011,20 @@ class CollectionScheduler:
             logger.info(f"[DART수주잔고] 완료: {stats}")
         except Exception as e:
             logger.error(f"[DART수주잔고] 잡 오류: {e}", exc_info=True)
+        # 수집 후 backlog validation 전체 재빌드
+        try:
+            _vscript = Path(__file__).resolve().parent / "scripts" / "build_backlog_validation_flags.py"
+            _vproc = subprocess.run(
+                [sys.executable, str(_vscript)],
+                cwd=str(Path(__file__).resolve().parent),
+                capture_output=True, text=True, timeout=300,
+            )
+            if _vproc.returncode == 0:
+                logger.info("[DART수주잔고] backlog validation 재빌드 완료: %s", (_vproc.stdout or "")[-300:])
+            else:
+                logger.warning("[DART수주잔고] backlog validation 재빌드 실패: %s", (_vproc.stderr or "")[-500:])
+        except Exception as _ve:
+            logger.warning("[DART수주잔고] backlog validation 재빌드 오류: %s", _ve)
 
     def _loop_dart_cost(self) -> None:
         """매주 일요일 01:50 — DART 매입재료비/재고/감가상각 분기 수집(최근 5년)."""
@@ -5731,6 +5759,21 @@ class CollectionScheduler:
             )
         except Exception as e:
             logger.error(f"[DB유지보수] hs_trade_lab.db 오류: {e}", exc_info=True)
+
+        # corporate_action_events_validation_flags 주간 재빌드
+        try:
+            _ca_script = Path(__file__).resolve().parent / "scripts" / "build_corporate_action_validation_20261001.py"
+            _ca_proc = subprocess.run(
+                [sys.executable, str(_ca_script)],
+                cwd=str(Path(__file__).resolve().parent),
+                capture_output=True, text=True, timeout=600,
+            )
+            if _ca_proc.returncode == 0:
+                logger.info("[DB유지보수] CA validation 재빌드 완료: %s", (_ca_proc.stdout or "")[-300:])
+            else:
+                logger.warning("[DB유지보수] CA validation 재빌드 실패: %s", (_ca_proc.stderr or "")[-500:])
+        except Exception as _cae:
+            logger.warning("[DB유지보수] CA validation 재빌드 오류: %s", _cae)
 
     # ── WAL 일별 크기 감시 (매일 04:30) ─────────────────────────────────────────
     def _loop_wal_daily_check(self) -> None:

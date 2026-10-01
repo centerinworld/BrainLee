@@ -79,6 +79,9 @@ def _selected_specs(only: set[str]) -> dict[str, list[dict]]:
 # 통과해버리는 사고가 난다.
 _STRATEGIES_WITH_CORP_ACTION_ADJUSTMENT = {
     "turnaround", "regime_adaptive", "composite", "v4",
+    # 2026-09-28: 보유 포지션 재기준(_rebase_positions_for_corp_actions) 연결 엔진
+    "earnings_conviction", "earnings_supply_discovery", "contract_momentum", "moonshot_turnaround",
+    "recovery", "se_momentum", "golden_cross", "sector_focus", "high_profit_compound",
 }
 
 

@@ -6,18 +6,15 @@ Automated Telegram Channel Sync & Stock Mention Mapper
 import os
 import sys
 import json
-import sqlite3
 import datetime
 from pathlib import Path
 
-WORKSPACE_ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard")
-STOCK_DB_PATH = WORKSPACE_ROOT / "stock.db"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from db_compat import connect_primary_db  # noqa: E402
 
 def get_telegram_channel_catalog():
     """M4에 로그인/등록된 전체 14개 텔레그램 채널 목록 및 수집 통계 반환"""
-    if not STOCK_DB_PATH.exists():
-        return []
-    conn = sqlite3.connect(str(STOCK_DB_PATH))
+    conn = connect_primary_db(readonly=True, timeout=30)
     c = conn.cursor()
     channels = []
     try:

@@ -24,12 +24,12 @@ import requests
 
 WORKSPACE_ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard")
 CEO_DB_PATH = Path("/Volumes/Realtek_NVME/AI System/codex/ceo-briefing-platform/data/ceo_briefing.db")
-STOCK_DB_PATH = WORKSPACE_ROOT / "stock.db"
 OUTPUT_DIR = WORKSPACE_ROOT / "presidential_reports"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-sys.path.insert(0, str(WORKSPACE_ROOT))
+sys.path.insert(0, str(WORKSPACE_ROOT / "runtime"))
 import config
+from db_compat import connect_primary_db
 
 GROQ_API_KEY = getattr(config, "GROQ_API_KEY", "") or os.getenv("GROQ_API_KEY", "")
 
@@ -48,19 +48,36 @@ def get_latest_macro_and_market_data() -> dict:
         "top_defense_movers": ["한국항공우주 (047810) +4.2%", "한화에어로스페이스 (012450) +3.8%", "현대로템 (064350) +5.1%"]
     }
     
-    # stock.db에서 실제 최근 시세/수급 데이터 조회 시도
-    if STOCK_DB_PATH.exists():
-        try:
-            conn = sqlite3.connect(str(STOCK_DB_PATH))
-            c = conn.cursor()
-            # 예: 최근 시장 지수 또는 종목 조회
-            c.execute("SELECT name, close, change_pct FROM daily_price ORDER BY date DESC LIMIT 5")
-            rows = c.fetchall()
-            if rows:
-                data["sample_stock_prices"] = [{"name": r[0], "close": r[1], "change": r[2]} for r in rows]
-            conn.close()
-        except Exception:
-            pass
+    # Primary PostgreSQL에서 실제 최근 종목 시세 샘플 조회
+    try:
+        conn = connect_primary_db(readonly=True, timeout=10)
+        c = conn.cursor()
+        c.execute("""
+            SELECT COALESCE(su.stock_name, ph.stock_code) AS name,
+                   ph.close,
+                   CASE
+                     WHEN prev.close > 0 THEN ROUND(((ph.close - prev.close) / prev.close * 100.0)::numeric, 2)
+                     ELSE NULL
+                   END AS change_pct
+            FROM price_history ph
+            LEFT JOIN stock_universe su ON su.stock_code = ph.stock_code
+            LEFT JOIN LATERAL (
+                SELECT close
+                FROM price_history p2
+                WHERE p2.stock_code = ph.stock_code AND p2.date < ph.date
+                ORDER BY p2.date DESC
+                LIMIT 1
+            ) prev ON TRUE
+            WHERE ph.date = (SELECT MAX(date) FROM price_history)
+            ORDER BY ph.volume DESC NULLS LAST
+            LIMIT 5
+        """)
+        rows = c.fetchall()
+        if rows:
+            data["sample_stock_prices"] = [{"name": r[0], "close": r[1], "change": r[2]} for r in rows]
+        conn.close()
+    except Exception:
+        pass
             
     return data
 
@@ -130,7 +147,7 @@ def synthesize_presidential_brief_with_ai(brief_type: str = "MORNING", macro_inf
     notebooklm_context = get_notebooklm_project_context()
 
     prompt = f"""당신은 글로벌 탑 티어 전략 컨설팅 펌(BCG, McKinsey)의 '항공우주·방산 및 글로벌 자본시장 전략 총괄 시니어 파트너(Senior Partner & Global Practice Leader)'입니다.
-시스템 데이터베이스(stock.db, ceo_briefing.db, notebooklm_sources)에 축적·창작된 실제 팩트와 수치를 기반으로, 한국항공우주산업(KAI) 최고경영진(CEO/C-Level) 및 전략 기획 총괄을 위한 최고 권위의 【BCG Strategic Intelligence Briefing】을 작성하십시오.
+시스템 데이터베이스(PostgreSQL primary DB, ceo_briefing.db, notebooklm_sources)에 축적·창작된 실제 팩트와 수치를 기반으로, 한국항공우주산업(KAI) 최고경영진(CEO/C-Level) 및 전략 기획 총괄을 위한 최고 권위의 【BCG Strategic Intelligence Briefing】을 작성하십시오.
 
 보고서 유형: {type_kr}
 작성 일시: {now_str}

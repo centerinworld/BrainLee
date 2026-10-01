@@ -5,32 +5,32 @@ Automated Gemini Batch Analyzer for 15,219+ Analyst Reports in NVME
 - Scans all 15,219+ analyst reports in /Volumes/Realtek_NVME/stock_dashboard/reports
 - Uses Google AI Studio Dual Key Pool (Up to 3,000 free RPD quota per day, $0 cost)
 - Extracts 2026-2027 business growth projections, target prices, Bull/Bear perspectives
-- Saves insights into stock_analyst_perspectives table in stock.db
+- Saves insights into stock_analyst_perspectives table in the primary PostgreSQL database
 """
 
 import os
 import sys
 import json
 import time
-import sqlite3
 import datetime
 from pathlib import Path
 
 WORKSPACE_ROOT = Path("/Volumes/Realtek_NVME/stock_dashboard")
+RUNTIME_ROOT = WORKSPACE_ROOT / "runtime"
+sys.path.insert(0, str(RUNTIME_ROOT))
+from db_compat import connect_primary_db  # noqa: E402
+
 REPORTS_DIR = WORKSPACE_ROOT / "reports"
-STOCK_DB_PATH = WORKSPACE_ROOT / "stock.db"
 STATE_FILE = WORKSPACE_ROOT / "analyst_pipeline_state.json"
 
 TOTAL_REAL_REPORTS = 15219
 
 def init_db_tables():
-    if not STOCK_DB_PATH.exists():
-        return
-    conn = sqlite3.connect(str(STOCK_DB_PATH))
+    conn = connect_primary_db(timeout=30)
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS stock_analyst_perspectives (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             stock_code TEXT NOT NULL,
             stock_name TEXT NOT NULL,
             sector TEXT,

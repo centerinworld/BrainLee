@@ -22,7 +22,6 @@ from datetime import date as _date
 
 import screener
 from fastapi import APIRouter, HTTPException
-from db_utils import connect_stock_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -132,7 +131,7 @@ def get_market_regime():
     """Return the scheduled, saved market briefing; GET requests never generate it."""
     try:
         from signal_engine import get_market_regime_snapshot
-        conn = connect_stock_db(timeout=30, row_factory=_sl.Row)
+        conn = connect_primary_db(timeout=30, row_factory=_sl.Row)
         data = get_market_regime_snapshot(conn)
         conn.close()
         return data

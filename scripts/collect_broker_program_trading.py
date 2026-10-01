@@ -15,7 +15,6 @@ from __future__ import annotations
 from db_compat import connect_primary_db
 import argparse
 import json
-import sqlite3
 import sys
 import time
 from datetime import date, datetime, timedelta
@@ -31,9 +30,6 @@ from collectors.kiwoom_collector import KiwoomCollector  # noqa: E402
 from db_utils import stock_db_write_lock  # noqa: E402
 from trading_calendar import is_kr_trading_day  # noqa: E402
 from kis_client import kis_client  # noqa: E402
-
-DB_PATH = Path(__file__).resolve().parent.parent / "stock.db"
-
 
 def _num(v: Any) -> float | None:
     if v is None:
@@ -64,14 +60,13 @@ def _parse_day(value: str) -> date:
     return datetime.strptime(value, "%Y%m%d").date()
 
 
-def _conn() -> sqlite3.Connection:
+def _conn() -> Any:
     con = connect_primary_db(timeout=90)
-    con.row_factory = sqlite3.Row
     con.execute("PRAGMA busy_timeout=90000")
     return con
 
 
-def ensure_tables(con: sqlite3.Connection) -> None:
+def ensure_tables(con: Any) -> None:
     last_err: Exception | None = None
     for _ in range(6):
         try:
@@ -128,15 +123,15 @@ def ensure_tables(con: sqlite3.Connection) -> None:
             )
             con.commit()
             return
-        except sqlite3.OperationalError as exc:
+        except Exception as exc:
             last_err = exc
             if "locked" not in str(exc).lower():
                 raise
             time.sleep(2)
-    raise sqlite3.OperationalError(f"database is locked while ensuring broker program tables: {last_err}")
+    raise RuntimeError(f"primary database is locked while ensuring broker program tables: {last_err}")
 
 
-def load_stock_codes(con: sqlite3.Connection, limit: int | None = None) -> list[str]:
+def load_stock_codes(con: Any, limit: int | None = None) -> list[str]:
     sql = """
         SELECT stock_code
         FROM stock_universe
@@ -170,7 +165,7 @@ def iter_trading_days(start: str, end: str) -> list[str]:
     return dates
 
 
-def existing_market_dates(con: sqlite3.Connection, source: str | None = None) -> set[tuple[str, str]]:
+def existing_market_dates(con: Any, source: str | None = None) -> set[tuple[str, str]]:
     source_filter = "" if not source else " AND source = ?"
     params = () if not source else (source,)
     rows = con.execute(
@@ -184,7 +179,7 @@ def existing_market_dates(con: sqlite3.Connection, source: str | None = None) ->
     return {(str(r["dt"]).replace("-", ""), r["market"]) for r in rows}
 
 
-def existing_stock_dates(con: sqlite3.Connection, source: str) -> set[tuple[str, str]]:
+def existing_stock_dates(con: Any, source: str) -> set[tuple[str, str]]:
     rows = con.execute(
         """
         SELECT stock_code, dt
@@ -196,7 +191,7 @@ def existing_stock_dates(con: sqlite3.Connection, source: str) -> set[tuple[str,
     return {(r["stock_code"], str(r["dt"]).replace("-", "")) for r in rows}
 
 
-def upsert_market(con: sqlite3.Connection, dt: str, market: str, row: dict[str, Any], source: str) -> None:
+def upsert_market(con: Any, dt: str, market: str, row: dict[str, Any], source: str) -> None:
     # KIS and Kiwoom market program fields are in million KRW. Existing table is 100M KRW.
     prog_eok = (_num(row.get("whol_smtn_ntby_tr_pbmn")) or _num(row.get("all_netprps")))
     arb_eok = (_num(row.get("arbt_smtn_ntby_tr_pbmn")) or _num(row.get("dfrt_trde_netprps")))
@@ -232,7 +227,7 @@ def upsert_market(con: sqlite3.Connection, dt: str, market: str, row: dict[str, 
     )
 
 
-def upsert_stock(con: sqlite3.Connection, source: str, stock_code: str, dt: str, row: dict[str, Any]) -> None:
+def upsert_stock(con: Any, source: str, stock_code: str, dt: str, row: dict[str, Any]) -> None:
     if source == "kis":
         close = _num(row.get("stck_clpr"))
         change_rate = _num(row.get("prdy_ctrt"))
@@ -307,7 +302,7 @@ def kis_headers(tr_id: str) -> dict[str, str]:
 
 
 def collect_kis(
-    con: sqlite3.Connection,
+    con: Any,
     dt: str,
     stocks: list[str],
     market_only: bool,
@@ -359,7 +354,7 @@ def collect_kis(
 
 
 def collect_kiwoom(
-    con: sqlite3.Connection,
+    con: Any,
     dt: str,
     stocks: list[str],
     market_only: bool,
@@ -413,7 +408,7 @@ def collect_kiwoom(
 
 
 def collect_range(
-    con: sqlite3.Connection,
+    con: Any,
     dates: list[str],
     stocks: list[str],
     source: str,
@@ -501,7 +496,7 @@ def main() -> None:
 
     with stock_db_write_lock("collect_broker_program_trading", timeout=600) as acquired:
         if not acquired:
-            raise SystemExit("stock.db writer lock timeout")
+            raise SystemExit("primary DB writer lock timeout")
         con = _conn()
         ensure_tables(con)
         try:

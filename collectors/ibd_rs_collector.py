@@ -70,11 +70,13 @@ def _fetch_price_matrix(conn, codes: list[str], min_rows: int = 253) -> dict[str
         return {}
     placeholders = ",".join(["%s"] * len(codes))
     cur = conn.cursor()
+    # 최근 400거래일만 스캔 — 전체 price_history 풀스캔에 의한 statement timeout 방지
     cur.execute(f"""
         SELECT stock_code, date, close
         FROM price_history
         WHERE stock_code IN ({placeholders})
           AND close > 0
+          AND date >= CURRENT_DATE - INTERVAL '400 days'
         ORDER BY stock_code, date
     """, codes)
     rows = cur.fetchall()
@@ -139,6 +141,7 @@ def compute_ibd_rs(target_date: Optional[str] = None) -> dict:
 
     conn = db_compat.connect_primary_db()
     try:
+        conn.execute("SET statement_timeout = '120s'")
         _ensure_table(conn)
 
         # 최신 거래일 결정

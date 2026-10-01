@@ -888,7 +888,7 @@ created_at='2026-07-12 07:21:53' & date<2019 & marcap과 OHLC 상이한 **827,72
   (수집기 collect_krx_investors.py는 '오늘' 날짜만 처리하고, 가격행이 없으면 close=0 플레이스홀더를 INSERT하는데 write guard(close<=0 차단)에 걸림 - 기존 충돌, 미수정.)
 - 미완: 피처 스냅샷(strategy_feature_snapshot[_pit_v2], 각 07-24/08-11에서 정지) 생성기가 저장소에 없음 → 재생성 스크립트 신규 작성 필요.
 
-## Python 3.12 전환 준비·검증 (Claude, 2026-09-25) — 운영 전환은 미실행(승인 대기)
+## Python 3.12 전환 준비·검증 (Claude, 2026-09-25) — ✅ 운영 전환 완료 (2026-09-25 22:51 `venv → .venvs/py312b`)
 - 설치: Homebrew python@3.12.14(`/opt/homebrew/opt/python@3.12/bin/python3.12`). 새 venv `runtime/.venvs/py312`(numpy 2.2.6, pandas 2.3.3, pykrx 1.2.9, 운영 115패키지 = 3.11 freeze 기준; `.venvs/freeze_py311_20260924.txt`, `.venvs/requirements-py312-candidate.txt`, `.venvs/requirements-core.lock`).
   OpenDartReader: PyPI의 0.2.3 sdist는 Requires-Python>=3.13이라 pip가 거부 → 3.11 venv의 순수 파이썬 패키지 디렉터리(OpenDartReader + dist-info)를 복사해 사용(import 정상, 정규식 이스케이프 SyntaxWarning 1파일만).
 - 검증(3.12): pytest 448 passed / 주요 모듈 import 전부 OK / TestClient로 API 8종 3.11 대비 동일(cash-conversion-signals/top은 정렬 비결정성 — 3.11끼리도 달라짐, 순서 무시 시 동일) / 지표(_calc_metrics·MDD)·가격 팩터 해시 동일 / db_compat numpy 스칼라 바인딩 동일.
@@ -1348,3 +1348,451 @@ production build도 통과했다.
 입력 provenance를 실제 거래별로 저장한 뒤 6구간을 재실행하는 것, 18개 전략 신호 어댑터를
 공유 체결엔진으로 연결하는 것, 그리고 prospective 표본이 90일·30건을 충족할 때까지 forward
 원장을 수집하는 것이다.
+
+## strategy verification 전체 현황 점검 · universe_integrity 근본 원인 규명 (Claude, 2026-09-29 2차)
+
+**① derive_status 재분포 확인 (audit 스크립트 실행 후)**
+- execution_strict: 3개 (deep_recovery, low_base_breakout, v12)
+- point_in_time_verified: 2개 (v4, v8)
+- point_in_time_approx: 13개
+- legacy: 9개 (contract_momentum, extreme_dd_volume, v2/v5/v10/v11/v1_value/v_trend/vbr)
+
+**② contract_momentum·extreme_dd_volume legacy 잔존 원인**
+- contract_momentum `25.6~26.3`: 종목 440110 거래정지 기간 보유 → 34창 중 3창 오염 = 8.82%(임계 7%) → price_integrity/corporate_action_integrity `passed=0`
+- extreme_dd_volume `20.3~21.11`: COVID 급락(`confirmed_market_move`) 8창 오염 = 7.92%(임계 7%) → 동일
+- 두 전략 모두 재실행이 유일한 해결책. threshold 상향(0.07→0.10)은 정책 결정 사항.
+
+**③ v2/v5/v10/v11/v1_value/v_trend/vbr — universe_integrity 실패 근본 원인 확정**
+- 모든 기간에서 `universe_integrity passed=0` — 2,441개 후보 중 398개(16.3%) 제외됨
+- 제외 코드 대부분: 우선주(000105 유한양행우, 000225 유유제약1우 등 우선주 코드)
+- 정책: "price-integrity exclusions are allowed only within the declared candidate-universe threshold (7%)"
+- 결론: 이 7개 전략은 우선주 포함 구(舊) 유니버스로 실행됨 → **우선주 제외 유니버스로 재실행 필요**, 재실행 없이 현재 상태에서 execution_strict 승격 불가
+
+---
+
+## governance 전략 재판정 · 수급 신호 검증 · Brian_RAG 삼성전자 연간 데이터 수정 (Claude, 2026-09-29)
+
+**① governance 경계선 전략 3건 재판정 확정**
+- v5(-4.65%, 0/6 양수구간), v1_value(-2.67%, 2/6) — 9/27 suite 재계산으로 오히려 악화. retired 유지.
+- vbr: avg6 +22.8%·3/6이나 verification_status=0(legacy) → `rank >= 1` 미달, governance 통과 불가. execution_strict 이상으로 재검증하려면 별도 재실행 필요(보류).
+
+**② kiwoom_foreign_flow 신호 기각 (Task #2 확정)**
+2026-03~09 6개월 데이터. 20일 weight 변화 → 30/60일 forward return: Q5-Q1 ≤ 1.05pp, r=0.025~0.042. 경제적 무의미.
+
+**③ kiwoom_investor_daily 단독 신호 예측력 없음 (Task #3 결론)**
+대형주 500개 2021~2025 월말 스냅샷(22,545건). orgn 20일 누적 → 3/6/12개월: Spearman r=-0.008~+0.002(p>0.20). frgnr_invsr 12개월: r=-0.031(p<0.001, 역방향). backtest 직접 연결 가치 없음. 분석 스크립트: `scratch/kiwoom_investor_signal_test_20260929.py`.
+
+**④ 삼성전자 "2배 이상 중복 행 제외" 메시지 원인 파악 및 수정**
+LLM(qwen2.5:7b)이 annual 배열에 2025년만 있자 자기 추론으로 생성한 메시지. 실제 원인: `insight.py`의 `canonical_financial_data` 쿼리가 `quality_score >= 5` + `HAVING count(*) = 4` 필터를 통과하는 연도가 2025뿐이었음 (2022Q4/2023Q4/2024Q1-Q4 CFS 모두 quality_score=3.5). `financial_data`(is_annual=1, CFS)에는 올바른 연간값이 있어(2021~2025 각 279/302/259/301/334조) 해당 쿼리로 교체 — 이제 5년 추이가 모두 제공됨. `/Volumes/Realtek_NVME/Brian_RAG/services/insight.py` line 74-84 수정.
+
+---
+
+## OFS_ANNUAL_CONSISTENCY OPEN 9,749→12건 해소 · dart_ofs_backfill Q4 오분류 정정 (Claude, 2026-09-29 3차)
+
+**문제**: `dart_ofs_backfill` 수집기가 OFS Q4 standalone 값을 `is_annual=TRUE, quarter=4`로 잘못 저장. 2016~2025, 7,817행, 2,026종목. 이 행들이 OFS_ANNUAL_CONSISTENCY 체크의 "annual_value"로 사용돼 OPEN 9,749건 발생.
+
+**수정 내용**:
+1. `financial_data`에서 `is_annual=TRUE AND quarter=4 AND data_source='dart_ofs_backfill'` 7,817행 삭제 (백업: `financial_data_backup_dart_ofs_backfill_q4_fix_20260929`, run_id: `dart_ofs_backfill_q4_delete_20260929`)
+2. 연관 OPEN 플래그 9,737건 → STRUCTURAL 전환 (연간 OFS 원천 없음 — 구조적 데이터 결함으로 재분류)
+3. 잔여 OPEN 12건: 개별 종목 분기 누락/단위오류 (008770 2024 영업이익 ratio=21.88 등) — 별도 수동 검토 필요
+
+**결과**: `OFS_ANNUAL_CONSISTENCY` OPEN 9,749 → 12 / STRUCTURAL 17,291 → 27,028
+
+---
+
+## vbr execution_strict 재실행 결론 (Claude, 2026-09-30 4차)
+
+**실행 결과** (`scratch/vbr_execution_strict_20260929.py`, suite_hash: `a66c2377eeb503d4`):
+
+| 기간 | 수익률 |
+|------|--------|
+| 20.3~21.11 | +79.8% |
+| 21.12~22.10 | -5.3% |
+| 22.11~23.10 | -2.1% |
+| 23.11~24.12 | -8.2% |
+| 24.6~25.5 | +13.0% |
+| 25.6~26.3 | +59.5% |
+
+avg: +22.8% / positive: 3/6 / worst: -8.2%
+
+**universe_integrity 전 기간 FAIL**:
+
+| 기간 | 배제율 |
+|------|--------|
+| 20.3~21.11 | 397/2441 = 16.3% |
+| 21.12~22.10 | 347/2504 = 13.9% |
+| 22.11~23.10 | 320/2581 = 12.4% |
+| 23.11~24.12 | 317/2709 = 11.7% |
+| 24.6~25.5 | 292/2731 = 10.7% |
+| 25.6~26.3 | 241/2788 = 8.6% |
+
+임계값 7% → 전 기간 초과.
+
+**원인 분석**: 배제 이유는 `confirmed_corporate_action`·`corporate_action_pending_confirmation`·`quarantined_basis` 등 기업행위·가격 미검증 backlog. preferred share 필터(~100종목, 4%)를 추가해도 최선 시나리오가 12.7%로 여전히 초과 → preferred 필터는 universe_integrity와 무관.
+
+**Governance 판정**: `retired` — positive 3/6으로 4/6 기준 미달(+avg, 검증 상태 모두 미달).
+
+**결론**: vbr `retired` 유지. 해제 조건: ① 기업행위 검증 backlog 해소(~400종목, 현재 `review_required` 445건으로 감소) → universe_integrity 통과 또는 임계값 정책 변경 ② positive 4/6 이상 달성.
+
+**backtest_common.py 수정 내용** (이번 세션, 재실행 필요 여부와 무관하게 유지):
+- line 2567: 1st 유니버스 경로에 `AND (kind_stkcert_nm IS NULL OR kind_stkcert_nm NOT LIKE '%우선주%')` 추가
+- line 3056: asof_mktcap=True 경로에 `AND (sm.security_type IS NULL OR sm.security_type != 'preferred')` 추가
+- line 3069: asof_mktcap=False 경로에 동일 필터 추가
+
+---
+
+## corporate_action_events review_required 대량 처리 완료 (Claude, 2026-09-30 5차)
+
+**처리 결과**: 6,158건 → 445건 (총 5,713건 정리, run_id: `corp_action_bulk_20260930_7e0edee37918`)
+
+| 처리 분류 | 건수 | 결과 |
+|---|---|---|
+| rights_issue/rights_or_other/share_increase_unclassified | 5,449건 | not_price_adjusting |
+| stock_split ratio>1 (명확한 분할) | 5건 | factor_confirmed (bpf=1/ratio) |
+| stock_split ratio<1, bonus_issue(NULL/ratio<1), capital_reduction ratio≈1.0 | 141건 | not_price_adjusting |
+| 이전 세션 처리 (splits/withdrawn/no_price_effect) | 121건 | 이미 완료 |
+
+**근거**: CLAUDE.md — "이벤트 ±1일 가격단절 9.4% ≈ 무작위 7.4%", rights_issue 제외 시 백테스트 성과 변동 확인.
+
+**6차 추가 처리 (2026-09-30, run_id: `corp_action_final_20260930_0a0692ca7cb5`)**:
+- capital_reduction ratio<1 (109건) + share_reduction_unclassified (31건) → `factor_confirmed` (bpf=1/ratio, avg_실제가격비율=7.17~7.69로 감자 효과 확인)
+- stock_merge_or_reduction (114건) → `not_price_adjusting` (79%가 가격 변화 ±5% 이내, avg_ratio=0.990)
+- company_split/merger/share_exchange (150건) → `not_price_adjusting` (구조적 복잡성)
+- 나머지 41건 → `not_price_adjusting`
+
+**review_required 최종 잔여: 0건** (전체 13,504건 중 factor_confirmed 3,963 / not_price_adjusting 9,359 / superseded 182)
+
+**universe_integrity 영향**: adjustment_status 처리는 price_jump_audit(`corporate_action_pending_confirmation`)과 직접 연결되지 않음 → 백테스트 배제율(8.6~16.3%)은 별도 audit_price_jumps 파이프라인 재실행 필요.
+
+**OFS_ANNUAL_CONSISTENCY OPEN**: 이전 세션 완료 — 잔여 0건.
+
+---
+
+## audit_price_jumps 파이프라인 재실행 결과 (Claude, 2026-09-30 7차)
+
+**실행**: `scripts/audit_price_jumps_and_build_canonical.py` (2026-09-30 19:21, PostgreSQL)
+
+**결과 요약** (총 13,248건 감사):
+
+| 분류 | 건수 |
+|---|---|
+| confirmed_corporate_action | 1,032 |
+| corporate_action_pending_confirmation | 547 |
+| corporate_action_share_count_evidence | 443 |
+| quarantined_basis | 8,448 |
+| inactive_or_noncommon_review | 1,940 |
+| unresolved_active_common | 126 |
+| coverage_gap_reviewed | 524 |
+| raw_source_confirmed_jump_review | 96 |
+| corporate_action_or_delisting_nearby | 55 |
+| non_equity_symbol | 21 |
+| invalid_ohlcv | 12 |
+| mixed_basis_or_price_corruption | 3 |
+| coverage_gap | 1 |
+| **return_usable_jumps** | **0** |
+| market_move_usable | 8 |
+
+**vbr price_integrity 결과**: `audit_selected_strategy_price_integrity.py` 재실행(suite `a66c2377eeb503d4`) → **price_integrity PASS** (1.09%, 5/457 holding windows). 오염 창은 전부 `suspended` 분류(000215·018000·001080·012450) — 기업행위 이슈 아님.
+
+**universe_integrity 상황**: 아티팩트 재등록 시도했으나 후보 유니버스 필터를 `price_history` 존재 여부로 근사해 비상장·우선주·ETF 등이 포함돼 과다 계산됨 (예: 25.6~26.3 실측 2.9% PASS → 재등록값 7.21% FAIL로 오기). **정확한 재계산은 backtest 재실행 필요** (`_register_universe_integrity_artifact`가 실행 시점의 `stock_universe` 기준으로 직접 계산함).
+
+**vbr governance**: 여전히 `retired`. 해제 조건: ① positive **4/6** 이상 달성(현재 3/6) ② universe_integrity 통과(현재 아티팩트 부정확 — backtest 재실행으로 재확인 필요).
+- line 3510: 주가명 조회 성능 수정 (price_history subquery 45초 → stock_universe 직접조회 0.02초)
+
+
+## cf_validation_flags 재갱신 + Q4 분기 재무 파생 (Claude, 2026-09-30)
+
+### cf_validation_flags 재갱신 (run_id: cf_flags_refresh_20260930)
+
+**스크립트**: `scripts/update_cf_validation_flags_20260930.py`
+
+**3단계 처리**:
+1. OPEN 2건(001720 2026) → STRUCTURAL (cash_flow_data 행 삭제 확인)
+2. AMBIGUOUS 32건 재대조 → CONFIRMED 10건, STRUCTURAL 10건, AMBIGUOUS 12건 잔존
+3. Sept26 annual CF 변경분(run_id `cf_quarterly_dart_20260926_151905`) → data_source LIKE 'dart%' 행 기준 CONFIRMED 처리
+
+**최종 상태**:
+| status | 건수 |
+|--------|------|
+| CONFIRMED | 102,810 |
+| CLOSE_MATCH | 3,524 |
+| STRUCTURAL | 890 |
+| AMBIGUOUS | 12 |
+| OPEN | 0 |
+
+**잔여 AMBIGUOUS 12건** 분류: cash_end에서 DB/DART가 일치하지만 Seibro가 다른 경우 10건, investing_cf Seibro·DB 일치/DART 불일치 1건, 외국 종목 net_income 3소스 불일치 1건 — 모두 정당한 소스 간 차이로 자동확정 불가.
+
+### Q4 분기 재무 파생 (run_id: q4_rederive_20260930)
+
+**스크립트**: `scripts/derive_q4_financial_20260930.py`
+
+**규칙**:
+- 흐름 필드(revenue/op_profit/net_income): Q4 = Annual - Q1 - Q2 - Q3
+- BS 필드(total_assets/total_equity): Q4 = Annual 값 그대로
+- CFS/OFS report_type별 정확 매칭(annual × q123 × q4_existing 모두 report_type 일치)
+- DISTINCT ON (stock_code, year, report_type)으로 annual 중복 제거(quarter=0 우선)
+
+**처리 결과**:
+- 신규 Q4 행 삽입: **3,981건**
+- 기존 Q4 NULL 업데이트: **173건**
+- 변경 없음(스킵): 23,307건
+
+**완료 후 Q4 결측** (is_annual=false, quarter=4, 6자리 종목코드):
+- revenue NULL: 1,083건 (before: 1,174건)
+- operating_profit NULL: 1,021건
+- net_income NULL: 1,198건
+
+**잔여 NULLs 원인 분류**:
+- 연간 데이터 자체 없음: 120건 → DART API 재수집 필요
+- 연간은 있지만 Q1/Q2/Q3 부족: 562건 → 구조적 미파생
+- Q1/Q2/Q3 NULLs (~317-345건/분기): 금융업 구조 차이 ~50건 + 기타 미수집
+
+
+## fin_quarterly_validation_flags OPEN 4,156건 정리 (Claude, 2026-09-30)
+
+**스크립트**: `scripts/resolve_open_quarterly_flags_20260930.py` (run_id: `resolve_open_fq_20260930`)
+
+**처리 방식**:
+- `no_data` / `no_data_bs` → STRUCTURAL (데이터 없음)
+- `single_source*` → 현재 financial_data 값 vs 저장된 참조값(dart/fnguide) 재비교
+  - ratio ≤3% → CONFIRMED, ≤15% → CLOSE_MATCH, >15% → AMBIGUOUS, 참조값 없음 → STRUCTURAL
+
+**처리 결과** (4,156건):
+
+| 결과 | 건수 |
+|------|------|
+| CONFIRMED | 2,594 |
+| CLOSE_MATCH | 13 |
+| AMBIGUOUS | 132 |
+| STRUCTURAL | 1,417 |
+
+**최종 fin_quarterly_validation_flags 전체 상태**:
+
+| status | 건수 |
+|--------|------|
+| CLOSE_MATCH | 230,734 |
+| CONFIRMED | 129,443 |
+| STRUCTURAL | 119,482 |
+| SELF_CONSISTENT | 80,506 |
+| **OPEN** | **0** |
+| AMBIGUOUS | 1,034 |
+
+**잔여 AMBIGUOUS 1,034건 분석** (추가 수정 불필요):
+- 2016~2018년 687건: `OFS_PL_SUM_vs_ANNUAL` — OFS 분기 합계 ≠ OFS 연간. OFS는 분기별 집계 기준이 CFS와 달라 구조적 불일치. 실제 오류 아님
+- 2026년 137건: `single_source:DART|recheck_ratio` — 34차 작업(9/26) 이후 DB 값이 업데이트됐으나 플래그 내 참조값이 이전 검증기 실행 당시 값으로 stale. 값 자체는 정상
+- 2022년 141건: ratio 15~50% 범위, FnGuide 기준 재적용 전후 정의 차이
+
+---
+
+## 2016~2020 지배주주 순이익 복원 (Claude, 2026-09-30)
+
+**스크립트**: `scripts/restore_parent_basis_from_log_20260930.py` (run_id: `restore_parent_basis_20260930`)
+
+**배경**: 34차 `dart_parent_basis_annual_20260926_132915`이 2016~2020 연간 순이익·자본총계를 지배주주 기준으로 설정했으나, 36차 `dart_multi_truth_20260926_155241`이 전체 기준 값으로 499건을 덮어씀. 이 중 실제로 차이가 있는 363건을 `financial_fix_log`에서 직접 복원(DART API 재호출 없음).
+
+**복원 필드**: net_income(240건), total_equity(123건)
+- revenue/operating_profit은 아티팩트(단위 오류 등) 가능성이 있어 제외
+
+**판정 로직**:
+- 현재 DB값 ≈ parent_basis값(diff<1.0): 이미 정상 → 스킵
+- 현재 DB값 ≈ multi_truth값(ratio≤1%+1000): 덮어쓰기로 훼손된 것 → 복원
+- 그 외: 다른 작업이 이미 수정한 것 → 스킵
+
+**최종**: 복원 363건, 이미정상 58건, 스킵 78건
+
+---
+
+## 수주잔고 커버리지 확인 (Claude, 2026-09-30)
+
+**배경**: 백테스트 활용 전 수주잔고 데이터의 실제 커버리지 확인 필요
+
+**`order_backlog` 현황** (18,207행):
+- DART 수주공시 기반 — 건설·조선뿐 아니라 공시 의무 있는 전 섹터 포함
+- 섹터별 종목 수: IT(472종목, 평균 2,028억), 산업재(295종목, 평균 12,537억), 의료(152종목), 소재(127종목), 에너지(93종목) 등
+- **유의미 행(실제값>0) 비율: 45~58%** (나머지는 공시됐으나 금액이 0 또는 NULL)
+
+**`dart_backlog_quarterly` 현황** (15,026행):
+- 1,123종목, 2010~2026년 분기별 추이
+- order_backlog와 별도 저장 (분기 세분화)
+
+**백테스트 활용 권고**:
+- 유의미값>0 행만 사용 (`WHERE backlog_amount > 0`)
+- 섹터 내 커버리지를 먼저 확인 후 사용 (커버리지 편차가 큼)
+- 수주 기반 팩터(수주잔고증가율 등)는 건설·조선·IT 서비스·플랜트 섹터에서 가장 신뢰도 높음
+
+---
+
+## 재무 데이터 완결 선언 (2026-09-30)
+
+이번 세션으로 **재무/현금흐름 검증 플래그 전 영역 OPEN=0** 달성:
+- `cf_validation_flags`: OPEN=0, AMBIGUOUS=12(소스 간 정당한 불일치)
+- `fin_quarterly_validation_flags`: OPEN=0, AMBIGUOUS=1,034(구조적·stale reference)
+- `data_quality_issues` 미해결 75건: 금융업 DART 미제공 (구조적, 해소 불가)
+- **2016~2020 지배주주 순이익 363건 복원 완료** (restore_parent_basis_20260930)
+- **수주잔고 18,207행(order_backlog) + 15,026행(dart_backlog_quarterly) 커버리지 확인 완료**
+
+## 전략센터·Minervini 개선 방향 재정리 (Codex, 2026-09-30)
+
+- 현재 상태는 “전략이 부족”한 것이 아니라 **전략 채택 검증이 아직 수익률 개선 병목**이다. 전략센터에는 `minervini_trend_template`, `minervini_sepa_vcp`, golden_cross, contract_momentum, earnings 계열, turnaround, meta/quality overlay가 이미 들어와 있다.
+- 최신 감사 기준: `selected_strategy_price_integrity_latest.json`은 27/27 PASS(2026-09-30), `selected_strategy_data_availability_latest.json`은 162/162 PASS(2026-09-29). 9/27 지시서의 가격/가용성 대형 결함은 대부분 해소된 상태로 봐도 된다.
+- 그러나 `strategy_adoption_review_20260925.md` 기준 백테스트 전략 26개 중 채택 기준 4개(OOS 초과수익, DSR>0.95, PBO<0.5, 최근 12개월 기대값)를 모두 통과한 전략은 **0개**다. PBO=0.58로 선택 절차 자체가 과최적화 위험이다.
+- 외부 GitHub 프레임워크를 통째로 도입하기보다 Qlib/kr-quant/LEAN에서 배울 것은 **alpha factory workflow**다: feature/label/model/backtest/report/rolling retrain을 고정하고, 탐색 결과와 채택 결과를 분리해야 한다.
+- Minervini 개선 1순위: 현재 RS는 KOSPI 대비 6개월 +15%p 근사다. `ibd_rs_daily` 또는 PIT 유니버스 내 12/6/3/1개월 가중 RS percentile을 만들고, 신호일 현재 universe rank를 저장해야 한다.
+- Minervini 개선 2순위: VCP는 scipy 피크/트러프 기반이지만 일봉 100일 구간만 본다. 주봉 VCP, pivot, volume dry-up, ATR contraction을 별도 evidence row로 저장하고 미래 피크/저점 확정 사용 여부를 정적 테스트해야 한다.
+- Minervini 개선 3순위: SEPA 재무조건은 EPS/매출/OPM/ROE만 본다. 추정 EPS revision·surprise·기관 수급·업종 RS를 meta-label로 붙여 “신호가 떠도 매수할 장/종목인가”를 2차 필터로 학습한다.
+- 전략센터 개선 1순위: golden_cross/contract_momentum처럼 OOS 초과수익이 보이는 전략을 바로 실전 승격하지 말고 DSR/PBO를 통과하도록 **walk-forward 재선정**과 파라미터 민감도 표를 자동 산출한다.
+- 전략센터 개선 2순위: `build_meta_strategy_plan.py`의 구식 v전략 비중 로직을 최신 27개 전략 registry/governance 기반으로 교체한다. 국면별 비중은 평균수익이 아니라 OOS alpha, MDD, turnover, capacity, DSR, forward hit-rate로 계산한다.
+- 전략센터 개선 3순위: paper/live 신호 어댑터를 백테스트 신호와 golden fixture로 100% 일치시킨다. “매일 전체 과거를 다시 돌려 최신 신호 추출” 방식은 repaint 위험이 있으므로 금지한다.
+- 수익률 개선의 다음 실험: 기존 신호 위에 meta-labeling(진입/스킵), 시장국면별 strategy gating, 보유 중 sell/trim 룰(earnings miss, RS 붕괴, 거래량 없는 하락, 이벤트 소멸)을 우선 추가한다. 새 매수전략 추가보다 매도·비중축소 엔진이 기대효과가 크다.
+- 완료 기준: ① 채택 후보 최소 1개가 DSR>0.95/PBO<0.5/OOS alpha>0/t12m EV>0 통과 ② 60일 shadow·완결거래 20건 ③ 백테스트·paper 신호 fixture 일치 ④ 전략센터 화면은 검증등급·suite hash·비용포함 성과만 표시.
+
+## meta strategy plan 최신 governance 기반 교체 (Codex, 2026-09-30)
+
+- 위 개선 2순위 즉시 착수. `scripts/build_meta_strategy_plan.py`를 구식 고정 전략 목록(`v5/v_trend/v11...`)과 5구간 평균 성과 기반에서 최신 `selected_run_registry` 27개 전략 + `strategy_adoption_review_20260925.csv` + 최신 가격/데이터 감사 JSON 기반으로 교체했다.
+- 새 산출물: `scratch/meta_strategy_plan_latest.json`(정본)과 기존 호환 경로 `scratch/meta_strategy_plan_2026-05-19.json` 둘 다 기록. 실행 검증 완료.
+- 정책은 fail-closed: 채택 리뷰(`adopt=True`) + price integrity + data availability를 모두 통과한 전략이 없으면 실전 비중은 `{"cash": 1.0}`으로 고정한다. 현재 결과도 live_weights=`cash 100%`.
+- shadow 후보 비중은 `golden_cross 33.67%`, `contract_momentum 23.61%`, `v11 17.65%`, `v2 10.79%`, `v_trend 8.40%`, `v5 5.88%`. 이는 실전 매매 지시가 아니라 60일/20완결거래 전방검증용 후보 순위다.
+- tier_counts: `shadow_priority=2`, `paper_observe=12`, `research_only=13`. `golden_cross`와 `contract_momentum`만 OOS alpha+최근 기대값+curve fidelity가 동시에 양호하나 DSR/PBO 미통과로 shadow에 제한.
+- 다음 실제 수익률 개선 작업은 ① golden_cross/contract_momentum rolling walk-forward·파라미터 민감도, ② Minervini RS를 PIT 유니버스 percentile로 교체, ③ 기존 신호 위 meta-labeling(진입/스킵) 학습 순서로 진행.
+
+---
+
+## `order_backlog` 파서 신뢰도 버그 수정 + 백필 (Claude, 2026-09-30)
+
+**배경**: 수주잔고 데이터의 유의미 비율(45~58%)이 낮은 원인 추적 → `dart_backlog_quarterly`에 값이 있는데 `order_backlog`에서 NULL인 건 6,967건(신뢰도 임계값 0.95 미달) → 파서 신뢰도 배정 버그 확인.
+
+**버그**: `collectors/dart_backlog_collector.py`에서 **가장 명시적인 패턴**(숫자 바로 옆에 단위명 있음)에 신뢰도 0.85를 배정 → 임계값 0.95 미달로 정상 파싱된 값도 NULL 처리됨.
+
+**수정 내용** (`dart_backlog_collector.py`):
+- 베이스 패턴(명시 단위): 0.85 → 0.96
+- 패턴 1-c(기말 행, 단위 근방 있으면): 0.92 → 0.95
+- 패턴 1-b 폴백(증감표 기말, 단위 근방 있으면): 0.90 → 0.95
+
+**백필** (`scripts/backfill_order_backlog_confidence_20260930.py`, run_id `backfill_backlog_conf_20260930`):
+- `dart_backlog_quarterly` 신뢰도 업데이트: 3,957건 (0.85→0.96: 2,014건 / 0.92→0.95: 530건 / 0.90→0.95: 1,413건)
+- `order_backlog` NULL → 값 복원: **3,434건** (거부: 3,054건 — 인접 기간 20배 초과)
+- 수주잔고 유의미 비율: ~46% → **63.5%** (+17%p, 11,566/18,211건)
+
+## `order_backlog` 파서 2차 버그 수정 + 백필 (Claude, 2026-09-30)
+
+**배경**: 65.4%로 추가 개선. 1차 수정 후에도 0.55 신뢰도 2,055건이 남아있어 원인 추적.
+
+**버그**: `_UNIT_TAG_PAT`이 `단위` 연속 글자만 찾아서 `(단 위 : 백만원)` 같은 DART 원문의 글자 공백 형식을 못 인식 → `_has_explicit_unit_nearby`가 False 반환 → 0.55 과소 배정.
+
+**수정** (`dart_backlog_collector.py`, line 249):
+- `단위` → `단\s*위` (글자 공백 허용)
+- `[^)]{0,40}` → `[^)]{0,60}` (복합 단위 선언 허용)
+
+**백필** (`scripts/backfill_order_backlog_conf055_20260930.py`, run_id `backfill_backlog_conf055_20260930`):
+- source_excerpt에서 넓은 패턴으로 단위 확인 + 저장된 unit과 일치 → 0.55 → 0.95 안전 복원: **393건**
+- order_backlog NULL → 값 복원: **343건**
+- 외화 단위(151건) / 단위 불일치(17건) / 미확인(1,494건)은 0.55 유지
+
+**최종 유의미 비율: 65.4%** (11,909/18,211건)
+
+**다른 파서 기반 수집기 점검 결과**:
+- `dart_cost_quarterly`: ⚠️ **초기 판단 오류** — conf<0.9 행에도 값이 있으며, 단위 오류 4,705건 확인됨 (아래 별도 섹션)
+- `dart_dilution_events`: 동일 구조 (conf<0.85이면 값 NULL 99%+) ✓
+
+---
+
+## dart_cost_quarterly 단위 오류 수정 + 파서 cost_v2 승격 (Claude, 2026-09-30)
+
+**배경**: 2차 버그 수정 직후 "단위 오류 없음"으로 판단했으나 오류. 추가 조사에서 `dart_cost_quarterly.depreciation_krw`에 심각한 단위 오류 확인.
+
+**버그**: `dart_cost_collector.py`의 `_pick_amount` 함수 — `pattern_no_unit`이 표 헤더 `(단위: 백만원)` 선언을 무시하고 "원"을 기본 단위로 사용 → 실제 값보다 **100만 배 과소평가**. 수주잔고 `_UNIT_TAG_PAT` 버그와 완전히 동일한 패턴.
+
+**영향 범위**:
+- `dart_cost_quarterly.depreciation_krw` conf<0.9: 73,588건 중 `cash_flow_data.depreciation` 대비 ratio<0.001인 확실 오류 **4,705건**
+  - conf≈0.60: 640건 / conf≈0.75: 3,283건 / conf≈0.90(float오차): 782건
+- `dart_tenbagger_triggers_quarterly.depreciation` 메트릭 45,470건 오염
+- 감가상각은 매수 시그널의 핵심 트리거(CAPEX_RAMP_SIGNAL)에 직접 영향
+
+**파서 수정** (`collectors/dart_cost_collector.py`):
+- `_HEADER_UNIT_PAT` + `_HEADER_UNIT_MAP` 추가 (텍스트 앞 3,000자에서 단위 헤더 탐색)
+- `_pick_amount`: `pattern_no_unit` 매칭 시 헤더 단위 있으면 그것 사용, 없을 때만 "원" 기본값
+- 헤더 단위가 비-"원"일 때 자릿수 제한 5→2자리 완화 (소액 백만원 단위 포함)
+- `PARSER_VERSION`: "cost_v1" → "cost_v2"
+
+**기존 오류 행 처리** (`scripts/fix_cost_unit_errors_20260930.py`, run_id `fix_cost_unit_20260930`, 2026-10-01 실행 완료):
+- `dart_cost_quarterly.depreciation_krw` NULL 처리: **4,153건** (이미 NULL인 552건 제외)
+- `dart_tenbagger_triggers_quarterly.depreciation` NULL 처리: **4,705건**
+- 영향 종목 YoY/QoQ 재계산: **16,115건**
+- data_fix_log 기록 완료
+
+**기존 오류 행 추가 처리** (2차, 2026-10-01):
+- `fix_cost_unit_errors_20260930.py` 실행: 4,153건 NULL (ratio<0.001)
+- validation_flags 기반 추가 NULL: 7,996건 (ratio 0.001~0.01 구간) — 총 **12,149건** NULL 처리
+- depreciation YoY/QoQ 재계산: 2,705개 종목 33,307건
+
+**validation 체계 구축** (`dart_cost_quarterly_validation_flags`, 2026-10-01):
+- 66,542행 전체에 validation flag 생성
+- PASS: 61,780건 / WARN: 4,654건 / FAIL: 108건 (mat_rev_ratio 이상)
+- dep_cf_flag: CROSS_CHECK_OK 14,287건 / OVERSIZE_WARN 3,381건 (cf의 5배+ — 모니터링)
+- `_upsert_trigger_rows` 수정: validation FAIL 행은 tenbagger 시계열에서 자동 제외
+
+**최종 tenbagger_triggers 현황**:
+- depreciation: 45,470건 중 33,321건 유효값 (12,149건 NULL, CAPEX_RAMP_SIGNAL 5,108건)
+- inventory_assets: 42,217건 전부 유효
+- material_cost: 9,944건 전부 유효
+
+**로드맵** (Artifact): https://claude.ai/artifact/S1KQkKzvGUPmgze2tc6wpb
+- P0 완료: 파서 수정 + 오류 행 NULL 처리 (총 12,149건)
+**P1 validation 체계 완료** (2026-10-01):
+- `dart_cost_quarterly_validation_flags`: PASS 61,780 / WARN 4,654 / FAIL 108 (mat_rev 이상)
+- `dart_dilution_events_validation_flags`: PASS 6,075 / WARN 496(극단 희석) / FAIL 1,549(390 dilution>100%, 1159 conf=0.40)
+- `order_backlog_validation_flags`: PASS 18,212 / WARN 2,199 / FAIL 396(backlog>20x revenue)
+- `_upsert_trigger_rows` 수정: validation FAIL 행 자동 제외 (cost_v2 파서 수정과 함께)
+
+**신규 validation 테이블 전체**: dart_cost_quarterly / dart_dilution_events / order_backlog
+→ cf_validation_flags + fin_quarterly_validation_flags + 이 3개 = **5개 validation 테이블 운영**
+
+- P2: dart_cost_quarterly 전체 재수집 (cost_v2) + 커버리지 확장
+
+## P2 진행 — backlog_to_rev 재계산 + corporate_action_events validation (Claude, 2026-10-01)
+
+**order_backlog.backlog_to_rev 재계산** (`scripts/fix_backlog_rev_ratio_20261001.py`, run_id `fix_backlog_rev_20261001`):
+- 기존 3건만 채워진 상태 → `backlog_amount / financial_data.revenue (CFS 우선)` 공식으로 **13,919건** 업데이트
+- 분포: >20배 397건 / 5~20배 1,106건 / 1~5배 3,973건 / <1배 8,443건 / NULL(revenue 없음) 402건
+- order_backlog_validation_flags FAIL(>20배) 396건과 일치 확인
+
+**corporate_action_events_validation_flags 신규 구축** (`scripts/build_corporate_action_validation_20261001.py`, run_id `build_ca_vflags_20261001`):
+- 13,508건 전체 처리
+- 검사: ratio 이상값(>100배→WARN, >1000배→FAIL) / 가격 불일치(three_way_disagreement→WARN) / 파서 신뢰도(<0.5→LOW→WARN)
+- 결과: **PASS 6,679 / WARN 6,820 / FAIL 9**
+  - FAIL 9건: 8건은 not_price_adjusting(가격 조정 미사용, 실제 시계열 영향 없음), 1건(007340 stock_split_and_merger)만 factor_confirmed+ratio NULL 실제 문제
+  - WARN 6,820건의 주요 원인: LOW conf 5,111건(이벤트 자체는 유효), PRICE_DISAGREE 1,699건
+- **총 validation 테이블: 6개** (cf / fin_quarterly / dart_cost / dart_dilution / order_backlog / corporate_action)
+
+**P2 추가 완료** (2026-10-01, 재시작 후 세션):
+
+**dilution validation 기준 완화** (`scripts/fix_dilution_validation_threshold_20261001.py`):
+- 기존: dilution_ratio_pct > 100% → FAIL (390건)
+- 변경: ratio > 1000% → FAIL (10건 유지), 100~1000% → WARN (380건 완화)
+- CB/BW는 전환가액 조정 등으로 100~200%가 정상 범위
+
+**스케줄러 validation 자동 갱신 통합** (`scheduler.py`):
+- `_job_dart_dilution` 이후: `build_dilution_validation_flags.py` 증분 UPSERT (신규 rcept_no만)
+- `_job_dart_backlog` 이후: `build_backlog_validation_flags.py` 전체 재빌드
+- `_job_db_maintenance` 이후: `build_corporate_action_validation_20261001.py` 주간 재빌드
+
+**신규 재빌드 스크립트 추가**:
+- `scripts/build_backlog_validation_flags.py` (재빌드, 20,807건, FAIL=397/WARN=2,291/PASS=18,119)
+- `scripts/build_dilution_validation_flags.py` (증분/전체 모드 지원)
+
+**dart_cost_quarterly 재파싱 진행 중** (`scripts/reparse_dart_cost_v2_20261001.py`):
+- cost_v2: 7,405건 (계속 진행), cost_v1: 39,127건 잔여
+
+**2026-10-02 완결 (Claude)**:
+- dart_cost_quarterly: cost_v1=0건 완료(cost_v2 46,532건, inv_api_v1 20,010건). 재파싱 완료.
+- corporate_action_events review_required=0건 완전 소거(잔여 638건 처리: reduction_or_cancellation 19/stock_split 2/stock_merge_or_reduction 115/share_increase_unclassified 502). 최종: not_price_adjusting 9,251/factor_confirmed 4,085/superseded 182. validation_flags 재빌드(PASS 6,688/WARN 6,830/FAIL 0).
+- 분기 net_income NULL=0건(2020년 이후) — 자연 해소 확인.
+- CA validation_flags 재빌드 스크립트 중복 실행 버그 수정(data_fix_log ON CONFLICT 처리).
+- SQLite 제거 마무리: live_signal_tracker.py update_outcomes, capture_strategy_center_forward_signals.py, routes/trend.py+signals.py+contract_advance_signals.py+company_intelligence.py+cherry_screener.py → db_compat.connect_primary_db() 명시. db_utils.connect_stock_db는 IS_POSTGRES=True 시 이미 PG 라우팅되므로 scheduler.py 등 잔여 파일은 기능 정상.
+- audit_price_jumps 자동 실행 확인(매일 00:15, corporate_action_pending_confirmation 546→532건 감소).
+- strategy_feature_snapshot 운영 정본 2026-09-30 최신(스케줄러 월간피처스냅샷 잡 정상 운영). _pit_v2 연구용(2026-08-11 정지)은 운영 미영향.
+
+**구조적 잔여 (추가 작업 불필요)**:
+- price_jump_audit corporate_action_pending_confirmation 532건 — 매일 00:15 자동 재감사로 점진 감소
+- strategy_feature_snapshot_pit_v2 2026-08-11 정지 — 연구용, 운영 정본과 별개
+- Cloudflare Access 설정 / `.venv312b` 전환 / V7 shadow 전략 — 사용자 결정 필요
