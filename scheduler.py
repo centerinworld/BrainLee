@@ -283,6 +283,27 @@ def _current_lock_holder() -> str:
         return "unknown"
 
 
+# 2026-10-03: 잡 안에서 하위 스크립트가 실패(종료 코드≠0)해도 경고 로그만 남기고 원장엔 success로 기록되던
+# 곳이 ~30군데였다(DART세그먼트·현금전환품질·DART직원수 등). 잡 스레드에서 실행된 subprocess.run 의 비정상 종료를
+# 스레드 로컬에 모아 _run_job_safe 가 'success_with_warning' + 실패 명령 목록으로 기록한다.
+import threading as _threading_sub
+_sub_track = _threading_sub.local()
+_orig_subprocess_run = subprocess.run
+
+
+def _tracked_subprocess_run(*args, **kwargs):
+    result = _orig_subprocess_run(*args, **kwargs)
+    track = getattr(_sub_track, "failures", None)
+    if track is not None and getattr(result, "returncode", 0) not in (0, None):
+        cmd = args[0] if args else kwargs.get("args")
+        cmd_s = " ".join(str(x) for x in cmd) if isinstance(cmd, (list, tuple)) else str(cmd)
+        track.append(f"rc={result.returncode} {cmd_s[-160:]}")
+    return result
+
+
+subprocess.run = _tracked_subprocess_run
+
+
 def _run_job_safe(name: str, fn: Callable) -> bool:
     """Run one collection job with a durable ledger and DB-lock retries."""
 
@@ -290,12 +311,18 @@ def _run_job_safe(name: str, fn: Callable) -> bool:
         run_id = start_collection_run(name, attempt=attempt)
         try:
             logger.info(f"[스케줄러] {name} 시작 (시도 {attempt})")
-            fn()
+            _sub_track.failures = []
+            try:
+                fn()
+            finally:
+                sub_failures, _sub_track.failures = _sub_track.failures, None
             outputs = evaluate_job_outputs(name)
             refresh_job_health_snapshot(name, outputs)
-            warning = any(item["status"] != "healthy" for item in outputs)
+            warning = any(item["status"] != "healthy" for item in outputs) or bool(sub_failures)
             status = "success_with_warning" if warning else "success"
-            finish_collection_run(run_id, status, details={"datasets": outputs})
+            finish_collection_run(run_id, status, details={"datasets": outputs, "subprocess_failures": sub_failures})
+            if sub_failures:
+                logger.warning(f"[스케줄러] {name} 하위 스크립트 실패 {len(sub_failures)}건: {sub_failures[:3]}")
             if warning:
                 logger.warning(f"[스케줄러] {name} 완료 후 데이터 계약 경고: {outputs}")
                 return False
@@ -337,12 +364,18 @@ def _run_job_safe(name: str, fn: Callable) -> bool:
                     )
                     continue
                 logger.info(f"[스케줄러] {name} 시작 (시도 {attempt})")
-                fn()
+                _sub_track.failures = []
+                try:
+                    fn()
+                finally:
+                    sub_failures, _sub_track.failures = _sub_track.failures, None
                 outputs = evaluate_job_outputs(name)
                 refresh_job_health_snapshot(name, outputs)
-                warning = any(item["status"] != "healthy" for item in outputs)
+                warning = any(item["status"] != "healthy" for item in outputs) or bool(sub_failures)
                 status = "success_with_warning" if warning else "success"
-                finish_collection_run(run_id, status, details={"datasets": outputs})
+                finish_collection_run(run_id, status, details={"datasets": outputs, "subprocess_failures": sub_failures})
+                if sub_failures:
+                    logger.warning(f"[스케줄러] {name} 하위 스크립트 실패 {len(sub_failures)}건: {sub_failures[:3]}")
                 if warning:
                     logger.warning(f"[스케줄러] {name} 완료 후 데이터 계약 경고: {outputs}")
                     return False
@@ -4328,9 +4361,9 @@ class CollectionScheduler:
                 capture_output=True, text=True, timeout=7200,
                 cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
             )
-            logger.info(f"[DART세그먼트] 완료: {result.stdout[-500:] if result.stdout else ''}")
+            logger.info(f"[DART세그먼트] 완료: {(result.stdout or result.stderr or '')[-500:]}")
             if result.returncode != 0:
-                logger.warning(f"[DART세그먼트] stderr: {result.stderr[-300:]}")
+                raise RuntimeError(f"DART세그먼트 실패 rc={result.returncode}: {result.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[DART세그먼트] 잡 오류: {e}", exc_info=True)
             raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다

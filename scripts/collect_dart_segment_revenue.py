@@ -67,20 +67,25 @@ def _dart_get(url, params, timeout=20):
 
 
 def _get_latest_rcept(corp_code: str, year: int) -> Optional[str]:
-    """사업보고서 rcept_no 조회"""
+    """회계연도 year 의 사업보고서 rcept_no 조회.
+
+    2026-10-03: 예전엔 '그해에 제출된' 사업보고서(= 직전 회계연도)를 찾아 year 로 저장해 전 행이 1년 밀렸다
+    (삼성전자 FY2025 DX 187.97조가 2026 행에). 사업보고서는 다음 해에 제출되고 보고서명이 '사업보고서 (YYYY.MM)'이므로
+    다음 해 제출분에서 회계연도 표기가 year 인 것을 고른다(정정 보고서 포함, 결산월이 12월이 아니어도 YYYY 일치).
+    """
     data = _dart_get('https://opendart.fss.or.kr/api/list.json', {
         'corp_code': corp_code,
-        'bgn_de': f'{year}0101',
-        'end_de': f'{year}1231',
+        'bgn_de': f'{year + 1}0101',
+        'end_de': f'{year + 1}1231',
         'pblntf_ty': 'A',
         'page_no': '1',
-        'page_count': '5',
+        'page_count': '10',
     })
     if not data:
         return None
     for item in data.get('list', []):
         nm = item.get('report_nm', '')
-        if '사업보고서' in nm and '반기' not in nm and '분기' not in nm:
+        if '사업보고서' in nm and '반기' not in nm and '분기' not in nm and f'({year}.' in nm:
             return item.get('rcept_no')
     return None
 
