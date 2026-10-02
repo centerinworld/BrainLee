@@ -40,6 +40,19 @@ def ingest_market_price(price_ingest: schemas.PriceIngest, db: Session = Depends
     """일일 주가 마감 데이터를 수신하여 일괄 저장합니다."""
     if not is_kr_trading_day(datetime.now().date()):
         return {"status": "skip", "reason": "kr_market_holiday"}
+    # 2026-10-02: 장 시작 전 KIS 현재가는 직전 거래일 종가인데 오늘 날짜로 라벨링돼(kis_client.get_current_price)
+    # 00:10 야간배치 등이 '전일 종가·거래량 0' 임시 행을 오늘 날짜로 만들었다. 국내 개별종목의 오늘 행은
+    # 09:00 이후이고 체결(거래량>0)이 있을 때만 받는다 — 확정 일봉은 18:00 KIS일별수집이 채운다.
+    if price_ingest.stock_code.isdigit() and len(price_ingest.stock_code) == 6:
+        _now = datetime.now()
+        _today = _now.date().isoformat()
+        _pre_open = _now.hour < 9
+        kept = [p for p in price_ingest.prices
+                if not (str(p.date)[:10] == _today and (_pre_open or (p.volume or 0) <= 0))]
+        if len(kept) != len(price_ingest.prices):
+            if not kept:
+                return {"status": "skip", "reason": "kr_today_row_before_first_trade"}
+            price_ingest = price_ingest.model_copy(update={"prices": kept})
     valid_prices, rejected = filter_plausible_price_rows(
         price_ingest.stock_code, price_ingest.prices
     )

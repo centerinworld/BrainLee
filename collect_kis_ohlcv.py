@@ -205,9 +205,12 @@ def fetch_ohlcv(code, start_yyyymmdd, end_yyyymmdd, token):
             )
             return result
 
+        # 장마감(15:40) 전에는 오늘 봉이 미확정(장 전엔 전일 종가·거래량 0) — 임시 행을 만들지 않는다(2026-10-02).
+        _now = datetime.now()
+        today_unfinal = _now.strftime("%Y%m%d") if (_now.hour, _now.minute) < (15, 40) else None
         for r in rows:
             d = r.get("stck_bsop_date", "")
-            if not d or len(d) != 8 or not start_yyyymmdd <= d <= end_yyyymmdd:
+            if not d or len(d) != 8 or not start_yyyymmdd <= d <= end_yyyymmdd or d == today_unfinal:
                 continue
             date_iso = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
             try:

@@ -2041,27 +2041,35 @@ class CollectionScheduler:
         logger.info(f"[캐치업] 기준 거래일 {target_str} 누락 데이터 확인 시작")
 
         # 휴장일 재시작도 직전 거래일의 미완료 전종목 적재를 복구한다.
+        # 2026-10-02: 장마감 확정 전(16:00 이전) 재시작이면 오늘 일봉은 아직 없으므로 직전 거래일을 점검한다 —
+        # 예전엔 오늘을 기준으로 잡아 시세 0건 → 오늘 날짜 전종목 재수집으로 장 전 임시 행(전일 종가·거래량 0)을 만들었다.
+        price_day = target_day
+        if price_day == now.date() and now.hour < 16:
+            price_day -= timedelta(days=1)
+            while not is_kr_trading_day(price_day):
+                price_day -= timedelta(days=1)
+        price_str = price_day.isoformat()
         try:
             conn = connect_stock_db(timeout=15)
             price_cnt = conn.execute(
                 """SELECT COUNT(DISTINCT stock_code) FROM price_history
                    WHERE date=? AND LENGTH(stock_code)=6
                      AND stock_code ~ '^[0-9]{6}$' AND close>0""",
-                (target_str,),
+                (price_str,),
             ).fetchone()[0]
             conn.close()
             if price_cnt < 2000:
-                logger.info(f"[캐치업] {target_str} 국내시세 {price_cnt}건 부족 → 전종목 재수집")
+                logger.info(f"[캐치업] {price_str} 국내시세 {price_cnt}건 부족 → 전종목 재수집")
                 py = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python"
                 result = subprocess.run(
-                    [py, "collect_kis_ohlcv.py", "--start", target_day.strftime("%Y%m%d"),
-                     "--end", target_day.strftime("%Y%m%d")],
+                    [py, "collect_kis_ohlcv.py", "--start", price_day.strftime("%Y%m%d"),
+                     "--end", price_day.strftime("%Y%m%d")],
                     cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
                     capture_output=True, text=True, timeout=3600,
                 )
                 if result.returncode != 0:
                     raise RuntimeError((result.stderr or result.stdout)[-1000:])
-                logger.info(f"[캐치업] {target_str} 전종목 재수집 완료: {result.stdout[-1000:]}")
+                logger.info(f"[캐치업] {price_str} 전종목 재수집 완료: {result.stdout[-1000:]}")
         except Exception as e:
             logger.warning(f"[캐치업] 국내시세 복구 오류: {e}")
 
