@@ -18440,17 +18440,18 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
       <AppBar current={module} isAdmin={isAdmin} onLogout={onLogout} showMenu onMenu={() => setSidebarOpen(v => !v)} />
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
       {/* 사이드바 오버레이 (모바일) */}
-      {isMobile && sidebarOpen && (
+      {isMobile && sidebarOpen && module !== 'stock-llm' && (
         <div onClick={()=>setSidebarOpen(false)}
           style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.35)',zIndex:19}}/>
       )}
+      {/* stock-llm은 iframe 전체 화면이라 사이드바 불필요(내부에 자체 메뉴가 있어 2개로 보이는 문제) */}
       <aside
         style={{
           width: sidebarOpen?'232px':(isMobile?'0':'0px'),
           minWidth: sidebarOpen?'232px':(isMobile?'0':'0px'),
           background:'var(--surface)',
           borderRight: sidebarOpen?'2px solid var(--line)':'none',
-          display:'flex',flexDirection:'column',
+          display: module === 'stock-llm' ? 'none' : 'flex', flexDirection:'column',
           padding: sidebarOpen?'0.75rem 0.5rem':'0',
           transition:'width 0.22s ease,min-width 0.22s ease,padding 0.22s ease',
           overflowX:'hidden', overflowY:'auto', flexShrink:0, zIndex:20,

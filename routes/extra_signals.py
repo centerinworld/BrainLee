@@ -6,6 +6,7 @@ routes/extra_signals.py — 개별종목 추가 시그널 API
 from db_compat import connect_primary_db
 import logging
 import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from fastapi import APIRouter
@@ -13,6 +14,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# 종목별 extra_signals 3분 TTL 캐시
+_EXTRA_SIGNALS_CACHE: dict[str, tuple[float, dict]] = {}
+_EXTRA_SIGNALS_TTL = 180
 
 MAIN_DB = str(Path(__file__).resolve().parent.parent / "stock.db")
 EMP_DB  = "employment_monitor/employment.db"
@@ -817,6 +822,9 @@ def _get_etf_inclusion_signal(code: str) -> dict:
 def get_extra_signals(code: str):
     if not code or not code.strip():
         return {}
+    cached = _EXTRA_SIGNALS_CACHE.get(code)
+    if cached and time.monotonic() - cached[0] < _EXTRA_SIGNALS_TTL:
+        return cached[1]
     # 6개 하위 시그널은 서로 독립적(각기 다른 DB/도메인)인데 순차 실행하면
     # 대기시간이 누적돼 이 엔드포인트 하나가 2~3초 이상 걸리는 게 확인됨
     # (2026-08-14, 개별종목 페이지 로딩 지연의 최대 원인). 병렬 실행으로 단축.
@@ -837,6 +845,7 @@ def get_extra_signals(code: str):
             except Exception as e:
                 logger.warning("%s 시그널 조회 실패 [%s]: %s", key, code, e)
                 result[key] = None
+    _EXTRA_SIGNALS_CACHE[code] = (time.monotonic(), result)
     return result
 
 

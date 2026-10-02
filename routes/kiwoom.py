@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sqlite3
 import json
+import time
 from typing import Any
 from fastapi import APIRouter, Body, Query
 
@@ -13,6 +14,10 @@ from collectors.kiwoom_collector import KiwoomCollector
 from db_utils import STOCK_DB_PATH, connect_stock_db
 
 router = APIRouter()
+
+# 종목별 kiwoom summary 5분 TTL 캐시
+_KIWOOM_SUMMARY_CACHE: dict[str, tuple[float, dict]] = {}
+_KIWOOM_SUMMARY_TTL = 300
 
 
 def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -528,6 +533,10 @@ def kiwoom_stock_summary(code: str):
     if not (len(code) == 6 and code.isdigit()):
         return {"ok": False, "reason": "종목코드는 6자리 숫자여야 합니다.", "stock_code": code}
 
+    cached = _KIWOOM_SUMMARY_CACHE.get(code)
+    if cached and time.monotonic() - cached[0] < _KIWOOM_SUMMARY_TTL:
+        return cached[1]
+
     conn = connect_stock_db(timeout=10)
     conn.row_factory = sqlite3.Row
     try:
@@ -652,7 +661,7 @@ def kiwoom_stock_summary(code: str):
             }
 
         has_data = any([base, foreign_latest, credit_latest, investor_summary, program_summary, realtime])
-        return {
+        result = {
             "ok": True,
             "stock_code": code,
             "source": "Kiwoom REST API + local DB",
@@ -667,6 +676,8 @@ def kiwoom_stock_summary(code: str):
             "flow_analysis": flow_analysis,
             "condition_membership": condition_membership,
         }
+        _KIWOOM_SUMMARY_CACHE[code] = (time.monotonic(), result)
+        return result
     except Exception as e:
         return {"ok": False, "stock_code": code, "reason": str(e)}
     finally:
