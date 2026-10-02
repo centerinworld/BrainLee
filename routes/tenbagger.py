@@ -4917,8 +4917,11 @@ def get_stock_quality_signals(stock_code: str):
                    revenue AS revenue_krw,
                    rolling4_operating_cf AS ocf_4q_krw,
                    rolling4_free_cf AS fcf_4q_krw,
+                   rolling4_fcf_margin_pct,
                    receivable_to_revenue_pct,
                    ocf_to_net_income_pct AS ocf_to_ni_pct,
+                   fcf_yield_pct, pfcf_ratio,
+                   fcf_per_share_krw, fcf_to_ni_pct, fcf_yoy_pct,
                    signal_type, signal_score, risk_score,
                    signal_label, quality_flag
             FROM cash_conversion_signals

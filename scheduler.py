@@ -2232,6 +2232,21 @@ class CollectionScheduler:
         if derived.returncode != 0:
             logger.warning(f"[현금전환품질] stderr: {derived.stderr[-500:]}")
 
+        fcf_derived = subprocess.run(
+            [sys.executable, "scripts/compute_fcf_derived_signals.py"],
+            cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        logger.info(
+            "[FCF파생지표] 계산 완료: returncode=%s stdout=%s",
+            fcf_derived.returncode,
+            fcf_derived.stdout[-200:] if fcf_derived.stdout else "",
+        )
+        if fcf_derived.returncode != 0:
+            logger.warning(f"[FCF파생지표] stderr: {fcf_derived.stderr[-300:]}")
+
     def _job_naver_fundamentals(self) -> None:
         """네이버금융 전종목 PBR/PER/EPS 배치 수집 → financial_data + stock_universe 동시 갱신.
 
@@ -4219,6 +4234,12 @@ class CollectionScheduler:
             )
             if cashq.returncode != 0:
                 logger.warning(f"[현금전환품질] stderr: {cashq.stderr[-500:]}")
+            fcf_d = subprocess.run(
+                [sys.executable, "scripts/compute_fcf_derived_signals.py"],
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                capture_output=True, text=True, timeout=120,
+            )
+            logger.info("[FCF파생지표] returncode=%s %s", fcf_d.returncode, (fcf_d.stdout or "")[-200:])
         except subprocess.TimeoutExpired:
             logger.warning("[DART임직원CH] 4시간 타임아웃 — 다음 주 재시도")
         except Exception as e:
