@@ -524,6 +524,8 @@ class CollectionScheduler:
             ("투자의사결정RAG", self._loop_investment_decision_rag), # 평일 저가 구간에만 대기 중인 문서 RAG 처리
             ("FnGuideDART전종목검증", self._loop_fnguide_dart_verify_sweep),   # ★ 매일 03:15 FNGUIDE 일일한도 내에서 전종목 순차 교차검증
             ("미검증스냅샷백필", self._loop_unverified_snapshot_backfill),   # ★ 매일 03:45 financial_source_snapshot unverified 백로그 정리(2026-08-28 신설, DART만 소비, FnGuide 재수집 불필요)
+            ("SC가상매매신호수집", self._loop_paper_signal_intake),           # ★ 평일 16:30 전략센터 BUY신호 → paper_order_queue 등록 (sc_paper, 2026-10-02)
+            ("SC가상매매체결",    self._loop_paper_fill),                    # ★ 평일 09:10 sc_paper pending → D+1 시가 체결
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -6025,6 +6027,58 @@ class CollectionScheduler:
             logger.info(f"[미검증스냅샷백필] 완료: {result}")
         except Exception as e:
             logger.error(f"[미검증스냅샷백필] 오류: {e}", exc_info=True)
+
+    # ── 전략센터 가상매매 (sc_paper) ────────────────────────────────────────────
+    def _loop_paper_signal_intake(self) -> None:
+        """평일 16:30 — 전략센터 BUY신호를 paper_order_queue에 등록."""
+        logger.info("[SC가상매매신호수집] 루프 시작")
+        self._wait_secs(30)
+        while not self._stop_event.is_set():
+            self._wait_until(16, 30, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("SC가상매매신호수집", self._job_paper_signal_intake)
+        logger.info("[SC가상매매신호수집] 루프 종료")
+
+    def _job_paper_signal_intake(self) -> None:
+        try:
+            import paper_adapters as _pa
+            conn = connect_stock_db(timeout=30)
+            try:
+                cnt = _pa.intake_signals(conn)
+                conn.commit()
+                logger.info(f"[SC가상매매신호수집] 등록 {cnt}건")
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error(f"[SC가상매매신호수집] 오류: {e}", exc_info=True)
+
+    def _loop_paper_fill(self) -> None:
+        """평일 09:10 — sc_paper pending 주문을 D+1 시가로 체결."""
+        logger.info("[SC가상매매체결] 루프 시작")
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            self._wait_until(9, 10, skip_weekend=True)
+            if self._stop_event.is_set():
+                break
+            _run_job_safe("SC가상매매체결", self._job_paper_fill)
+        logger.info("[SC가상매매체결] 루프 종료")
+
+    def _job_paper_fill(self) -> None:
+        try:
+            import paper_adapters as _pa
+            conn = connect_stock_db(timeout=30)
+            try:
+                result = _pa.fill_pending(conn)
+                logger.info(
+                    f"[SC가상매매체결] bought={len(result['bought'])} "
+                    f"sold={len(result['sold'])} unfilled={len(result['unfilled'])} "
+                    f"cancelled={len(result['cancelled'])}"
+                )
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error(f"[SC가상매매체결] 오류: {e}", exc_info=True)
 
     # ── 분기실적 TTM 신호 스캔 (매일 06:00, 분기시즌 추가) ──────────────────────
     def _loop_earnings_signal_scan(self) -> None:

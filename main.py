@@ -193,6 +193,7 @@ from routes.admin_auth         import router as _admin_auth_router
 from routes.hub                import router as _hub_router
 from routes.llm_proxy          import router as _llm_proxy_router
 from routes.system_map         import router as _system_map_router
+from routes.paper_trading      import router as _paper_trading_router
 import sys as _sys
 _sys.path.insert(0, "/Volumes/Realtek_NVME/stock_dashboard/runtime/ETF_check")
 from routes_etf                import router as _etf_check_router
@@ -259,6 +260,7 @@ app.include_router(_admin_auth_router, prefix="/api/admin-auth", tags=["admin-au
 app.include_router(_hub_router,        prefix="/api/hub",        tags=["hub"])
 app.include_router(_llm_proxy_router)
 app.include_router(_system_map_router, prefix="/api/sysmap", tags=["sysmap"])   # 관리자 전용 시스템 지도(security_gate OWNER_GET_PREFIXES)
+app.include_router(_paper_trading_router, tags=["paper-trading"])               # ★ 전략센터 가상매매(sc_paper) — 2026-10-02
 
 
 def _send_telegram(msg: str, dedup_key: str = ""):
