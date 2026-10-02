@@ -164,6 +164,7 @@ def main(full: bool = False, dry_run: bool = False) -> None:
               (table_name, scope, row_count, fix_rule,
                old_value_summary, new_value_summary, source, run_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
         """, (
             "dart_dilution_events_validation_flags", mode, total,
             "ratio>1000%→FAIL, 100~1000%→WARN(CB/BW정상), NO_DATA+LOW→FAIL",

@@ -412,6 +412,78 @@ def build_backlog_events(conn: sqlite3.Connection, start: str, names: dict[str, 
     return inserted
 
 
+def build_tenbagger_trigger_events(conn: sqlite3.Connection, start: str, names: dict[str, str]) -> int:
+    """dart_tenbagger_triggers_quarterly에서 CAPEX/재고/원가 트리거를 trigger_discovery에 추가."""
+    if not table_exists(conn, "dart_tenbagger_triggers_quarterly"):
+        return 0
+
+    METRIC_CONFIGS = [
+        ("depreciation", "CAPEX_RAMP_SIGNAL",    "dart_quarterly:capex_ramp",     "CAPEX 급증 신호 (감가상각비 YoY 급증)", "up"),
+        ("inventory_assets", "WARN_INVENTORY_SURGE", "dart_quarterly:inventory_surge", "재고 급증 경고 (재고자산 YoY 급증)", "up"),
+        ("material_cost", "WATCH_COST_INFLATION", "dart_quarterly:cost_inflation",  "원가 상승 주의 (재료비 YoY 급증)", "up"),
+    ]
+
+    inserted = 0
+    today = date.today().isoformat()
+
+    for metric, level, trigger_key, trigger_name, direction in METRIC_CONFIGS:
+        rows = conn.execute(
+            """
+            SELECT stock_code, fiscal_year, fiscal_quarter, metric_value, yoy_pct, qoq_pct
+            FROM dart_tenbagger_triggers_quarterly
+            WHERE metric_name = ?
+              AND trigger_level = ?
+              AND yoy_pct IS NOT NULL
+              AND ABS(yoy_pct) < 50000
+              AND length(stock_code) = 6
+            """,
+            (metric, level),
+        ).fetchall()
+
+        for r in rows:
+            try:
+                avail = quarter_available(int(r[1]), int(r[2]))
+            except Exception:
+                continue
+            if not (start <= avail <= today):
+                continue
+
+            yoy = float(r[4]) if r[4] is not None else None
+            strength = min(abs(yoy) / 100.0, 10.0) if yoy else 0.0
+            eid = event_id(["tenbagger_q", metric, r[0], r[1], r[2]])
+            insert_event(conn, {
+                "event_id": eid,
+                "source": "dart_tenbagger_triggers_quarterly",
+                "trigger_key": trigger_key,
+                "trigger_name": trigger_name,
+                "event_date": avail,
+                "available_date": avail,
+                "period": f"{r[1]}Q{r[2]}",
+                "entity_type": "stock",
+                "entity_key": r[0],
+                "stock_code": r[0],
+                "yoy_pct": yoy,
+                "direction": direction,
+                "strength": round(strength, 2),
+                "metadata_json": json.dumps({
+                    "metric_name": metric,
+                    "trigger_level": level,
+                    "yoy_pct": yoy,
+                    "qoq_pct": float(r[5]) if r[5] is not None else None,
+                }, ensure_ascii=False),
+            })
+            insert_link(conn, {
+                "event_id": eid,
+                "stock_code": r[0],
+                "stock_name": names.get(r[0]),
+                "link_source": "direct_stock_event",
+                "confidence": 0.85,
+            })
+            inserted += 1
+
+    return inserted
+
+
 def first_price(conn: sqlite3.Connection, code: str, after_date: str, max_gap_days: int = 10) -> sqlite3.Row | None:
     limit = (date.fromisoformat(after_date) + timedelta(days=max_gap_days)).isoformat()
     return conn.execute(
@@ -514,6 +586,7 @@ def main() -> int:
         "quant_events": build_quant_events(conn, args.start),
         "order_events": build_order_events(conn, args.start, names),
         "backlog_events": build_backlog_events(conn, args.start, names),
+        "tenbagger_trigger_events": build_tenbagger_trigger_events(conn, args.start, names),
     }
     conn.commit()
     counts["forward_return_rows"] = build_forward_returns(conn, args.limit_forward_events)

@@ -16,12 +16,21 @@ if str(ROOT) not in sys.path:
 import db_compat  # noqa: E402
 from live_signal_tracker import register_signal  # noqa: E402
 
-ALLOWED_STRATEGIES = {"v_gc", "v_contract_momentum"}
+ALLOWED_STRATEGIES = {
+    "v_gc", "v_contract_momentum",
+    # sc_* 접두사 전략센터 운용 전략 (peak_holding strategy 이름 그대로)
+    "ai_combo", "sc_v10", "sc_v5", "sc_v8", "sc_v11",
+}
 # 가상운용 엔진(routes/trend.py)에서 전략별 신호·체결 규칙을 담은 함수·상수 접두사.
 # 이 소스가 바뀌면 strategy_version이 바뀌고, forward 표본은 버전별로 따로 집계된다.
 _VERSION_SCOPE = {
     "v_gc": ("GC_", "_gc_", "_build_gc_", "execute_gc_", "paper_"),
     "v_contract_momentum": ("CM_", "_cm_", "_build_cm_", "execute_cm_", "paper_"),
+    "ai_combo": ("ai_combo", "_ai_combo", "AICOMBO_"),
+    "sc_v10": ("V10_", "_v10_", "sc_v10"),
+    "sc_v5": ("V5_", "_v5_", "sc_v5"),
+    "sc_v8": ("V8_", "_v8_", "sc_v8"),
+    "sc_v11": ("V11_", "_v11_", "sc_v11"),
 }
 
 

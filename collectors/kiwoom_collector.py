@@ -333,7 +333,7 @@ class KiwoomCollector(BaseCollector):
         body = {
             "mrkt_tp": market_type,
             "sort_tp": "1" if rank_type == "buy" else "2",
-            "case_pric_tp": str(min_case_amount),
+            "pric_tp": str(min_case_amount),
             # The live ka00190 contract requires both filters. Omitting either
             # field returns 1511 and leaves the ranking table empty.
             "trde_qty_tp": str(min_turnover),

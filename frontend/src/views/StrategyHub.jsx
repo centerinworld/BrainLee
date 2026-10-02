@@ -100,6 +100,14 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
         })
         .catch(() => setComboRuns([]));
     }, []);
+    // 복합전략 현재 활성 포지션
+    const [comboPositions, setComboPositions] = React.useState([]);
+    React.useEffect(() => {
+      fetch(API('/api/trend/combo-positions'))
+        .then(r => r.ok ? r.json() : [])
+        .then(d => setComboPositions(Array.isArray(d) ? d : []))
+        .catch(() => setComboPositions([]));
+    }, []);
     // 연속운용 실측 결과 (2026-08-30 — 사용자 지시 "백테스트가 돌고나면 자동으로
     // 프론트엔드가 수정되도록해": 하드코딩 STRATEGY_HUB_CONTINUOUS_RETURNS를 폴백으로
     // 두고, /api/backtest/continuous-returns가 반환하는 최신 실측값으로 덮어씀 — 이제
@@ -154,7 +162,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
       // 백테스트 동시 실행(다른 세션/스크립트)으로 인한 DB 일시 잠금·빈 응답 대비 재시도.
       // strategies가 비어 있으면 응답이 완전하지 않은 것으로 보고 짧은 지연 후 재조회한다.
       const load = (attempt = 0) => {
-        fetch(API('/api/backtest/matrix'))
+        fetch(API('/api/backtest/matrix?include_legacy=true'))
           .then(r => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.json();
@@ -1102,6 +1110,112 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                         원리: 전략별 신호 공백기의 유휴자본을 다른 전략이 재활용합니다. 저장 수익률은 실행 당시 데이터 스냅샷에만 해당합니다. 이후 가격·재무 데이터가 바뀌면 현재 성과로 표시하지 않고 재검증 대기로 전환합니다. 구성 전략의 신호는 각 전략 단독 계좌에서 생성된 1차 근사이므로 공유자본 완전 결합 시뮬레이션과 구분해 해석해야 합니다.
                       </div>
                     </div>
+                  )}
+                </div>
+              );
+            })()}
+            {/* ── 복합전략 현재 포지션 ── */}
+            {(() => {
+              const active = comboPositions.filter(p => p.is_active);
+              const recent = comboPositions.filter(p => !p.is_active).slice(0, 15);
+              if (comboPositions.length === 0) return null;
+              const fmtPct = v => `${v >= 0 ? '+' : ''}${(+v).toFixed(1)}%`;
+              const pctColor = v => +v >= 0 ? '#dc2626' : '#2563eb';
+              const stratLabel = s => s.replace('combo_', '조합 ').replace('ai_combo', 'AI콤보').replace('combined', '병합');
+              return (
+                <div className="glass-panel" style={{marginTop:'1rem', overflow:'hidden'}}>
+                  <div style={{padding:'0.65rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap'}}>
+                    <span style={{fontWeight:700, fontSize:'0.88rem'}}>복합전략 현재 포지션</span>
+                    <span style={{padding:'0.1rem 0.55rem', borderRadius:'999px', fontSize:'0.66rem', fontWeight:700,
+                      background:'rgba(5,150,105,0.15)', border:'1px solid rgba(5,150,105,0.4)', color:'#047857'}}>
+                      활성 {active.length}종목
+                    </span>
+                    <span style={{fontSize:'0.7rem', color:'var(--text-secondary)'}}>
+                      combo·ai_combo·combined 전략의 peak_holding 기준
+                    </span>
+                  </div>
+                  {active.length > 0 && (
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.76rem'}}>
+                        <thead>
+                          <tr style={{color:'var(--text-secondary)', textAlign:'left', borderBottom:'1px solid var(--glass-border)'}}>
+                            <th style={{padding:'0.4rem 1rem'}}>종목</th>
+                            <th style={{padding:'0.4rem 0.6rem'}}>전략</th>
+                            <th style={{padding:'0.4rem 0.6rem', textAlign:'right'}}>매수가</th>
+                            <th style={{padding:'0.4rem 0.6rem', textAlign:'right'}}>현재가</th>
+                            <th style={{padding:'0.4rem 0.6rem', textAlign:'right'}}>수익률</th>
+                            <th style={{padding:'0.4rem 0.6rem'}}>진입일</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...active].sort((a, b) => b.profit_pct - a.profit_pct).map(p => (
+                            <tr key={`${p.strategy}-${p.stock_code}-${p.id}`}
+                              style={{borderTop:'1px solid rgba(15,23,42,0.08)'}}>
+                              <td style={{padding:'0.4rem 1rem'}}>
+                                <span style={{fontWeight:700}}>{p.stock_name}</span>
+                                <span style={{marginLeft:'0.35rem', fontSize:'0.68rem', color:'var(--text-secondary)'}}>{p.stock_code}</span>
+                              </td>
+                              <td style={{padding:'0.4rem 0.6rem'}}>
+                                <span style={{padding:'0.1rem 0.4rem', borderRadius:'4px', fontSize:'0.65rem',
+                                  background:'rgba(79,70,229,0.12)', color:'#4f46e5', border:'1px solid rgba(79,70,229,0.3)'}}>
+                                  {stratLabel(p.strategy)}
+                                </span>
+                              </td>
+                              <td style={{padding:'0.4rem 0.6rem', textAlign:'right', color:'var(--text-secondary)', fontVariantNumeric:'tabular-nums'}}>
+                                {(+p.buy_price).toLocaleString()}
+                              </td>
+                              <td style={{padding:'0.4rem 0.6rem', textAlign:'right', fontWeight:600, fontVariantNumeric:'tabular-nums'}}>
+                                {(+p.current_price).toLocaleString()}
+                              </td>
+                              <td style={{padding:'0.4rem 0.6rem', textAlign:'right', fontWeight:800,
+                                color: pctColor(p.profit_pct), fontSize:'0.82rem'}}>
+                                {fmtPct(p.profit_pct)}
+                              </td>
+                              <td style={{padding:'0.4rem 0.6rem', color:'var(--text-secondary)', fontSize:'0.7rem'}}>
+                                {p.entry_date}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {recent.length > 0 && (
+                    <details style={{borderTop:'1px solid var(--glass-border)'}}>
+                      <summary style={{padding:'0.5rem 1rem', fontSize:'0.72rem', color:'var(--text-secondary)', cursor:'pointer'}}>
+                        최근 매도 이력 ({recent.length}건)
+                      </summary>
+                      <div style={{overflowX:'auto'}}>
+                        <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.72rem'}}>
+                          <thead>
+                            <tr style={{color:'var(--text-secondary)', borderBottom:'1px solid var(--glass-border)'}}>
+                              <th style={{padding:'0.35rem 1rem', textAlign:'left'}}>종목</th>
+                              <th style={{padding:'0.35rem 0.6rem', textAlign:'left'}}>전략</th>
+                              <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>매수가</th>
+                              <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>매도가</th>
+                              <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>수익률</th>
+                              <th style={{padding:'0.35rem 0.6rem'}}>매도일</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {recent.map(p => (
+                              <tr key={`sold-${p.strategy}-${p.stock_code}-${p.id}`}
+                                style={{borderTop:'1px solid rgba(15,23,42,0.06)', opacity:0.75}}>
+                                <td style={{padding:'0.35rem 1rem'}}>
+                                  {p.stock_name}
+                                  <span style={{marginLeft:'0.35rem', fontSize:'0.65rem', color:'var(--text-secondary)'}}>{p.stock_code}</span>
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', fontSize:'0.65rem', color:'#4f46e5'}}>{stratLabel(p.strategy)}</td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontVariantNumeric:'tabular-nums'}}>{(+p.buy_price).toLocaleString()}</td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontVariantNumeric:'tabular-nums'}}>{(+(p.sold_price || p.sell_price || 0)).toLocaleString()}</td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontWeight:700, color: pctColor(p.profit_pct)}}>{fmtPct(p.profit_pct)}</td>
+                                <td style={{padding:'0.35rem 0.6rem', color:'var(--text-secondary)', fontSize:'0.68rem'}}>{(p.sold_at||'').slice(0,10)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
                   )}
                 </div>
               );

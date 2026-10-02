@@ -1345,6 +1345,46 @@ def get_ai_holdings():
     return result
 
 
+# ── GET /api/trend/combo-positions ──────────────────────────────
+@router.get("/combo-positions")
+def get_combo_positions():
+    """복합전략(combo_*, ai_combo, combined) 현재 활성 포지션 + 최근 매도 이력."""
+    conn = _db()
+    rows = conn.execute(
+        """SELECT stock_code, stock_name, strategy, buy_price, current_price,
+                  sell_price, sold_price, entry_date, sold_at, profit_pct,
+                  quantity, is_active, id
+           FROM peak_holding
+           WHERE strategy ILIKE 'combo_%'
+              OR strategy = 'ai_combo'
+              OR strategy = 'combined'
+           ORDER BY is_active DESC, entry_date DESC"""
+    ).fetchall()
+    result = []
+    for r in rows:
+        stock_code = r[0]; buy_price = r[3] or 0; qty = r[10] or 0
+        is_active = bool(r[11])
+        if is_active and stock_code:
+            pr = conn.execute(
+                "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 1",
+                (stock_code,)
+            ).fetchone()
+            current_price = pr[0] if pr else (r[4] or buy_price)
+        else:
+            current_price = r[5] or r[6] or r[4] or buy_price
+        profit_pct = round((current_price - buy_price) / buy_price * 100, 2) if buy_price else 0
+        result.append({
+            "stock_code": stock_code, "stock_name": r[1], "strategy": r[2],
+            "buy_price": buy_price, "current_price": current_price,
+            "sell_price": r[5], "sold_price": r[6],
+            "entry_date": r[7], "sold_at": r[8],
+            "profit_pct": profit_pct, "quantity": qty,
+            "is_active": is_active, "id": r[12],
+        })
+    conn.close()
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════════
 # V12 골든크로스 가상매매
 # ═══════════════════════════════════════════════════════════════════

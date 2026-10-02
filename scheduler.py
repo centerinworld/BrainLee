@@ -526,6 +526,8 @@ class CollectionScheduler:
             ("미검증스냅샷백필", self._loop_unverified_snapshot_backfill),   # ★ 매일 03:45 financial_source_snapshot unverified 백로그 정리(2026-08-28 신설, DART만 소비, FnGuide 재수집 불필요)
             ("SC가상매매신호수집", self._loop_paper_signal_intake),           # ★ 평일 16:30 전략센터 BUY신호 → paper_order_queue 등록 (sc_paper, 2026-10-02)
             ("SC가상매매체결",    self._loop_paper_fill),                    # ★ 평일 09:10 sc_paper pending → D+1 시가 체결
+            ("트리거디스커버리갱신", self._loop_trigger_discovery_rebuild),  # ★ 매일 02:30 trigger_discovery_events 전체 재빌드
+            ("DART배당수집",       self._loop_dart_dividends),             # ★ 매년 4월 1일 03:00 사업보고서 배당 데이터 수집
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -6630,6 +6632,83 @@ class CollectionScheduler:
                 logger.error(f"[텐버거트리거] 오류: {result.stderr[-200:]}")
         except Exception as e:
             logger.error(f"[텐버거트리거] 오류: {e}", exc_info=True)
+
+    # ── Trigger Discovery Lab 야간 재빌드 ────────────────────────────
+    # ── DART 배당 데이터 연간 수집 ────────────────────────────────────
+    def _loop_dart_dividends(self) -> None:
+        """매년 4월 1일 03:00 사업보고서 기준 배당 데이터 수집 (전종목)."""
+        logger.info("[DART배당수집] 루프 시작")
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            # 매년 4월 1일 03:00
+            target = now.replace(month=4, day=1, hour=3, minute=0, second=0, microsecond=0)
+            if now >= target:
+                import calendar
+                target = target.replace(year=now.year + 1)
+            wait = (target - now).total_seconds()
+            logger.info(f"[DART배당수집] 다음 실행: {target.strftime('%Y/%m/%d %H:%M')} ({wait/86400:.1f}일 후)")
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("DART배당수집", self._job_dart_dividends)
+
+    def _job_dart_dividends(self) -> None:
+        try:
+            import subprocess
+            prev_year = datetime.now().year - 1
+            logger.info(f"[DART배당수집] {prev_year}년 배당 수집 시작")
+            env = dict(os.environ)
+            pp = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = "runtime_pg_bootstrap:." + ((":" + pp) if pp else "")
+            result = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/collect_dart_dividends.py",
+                 "--year", str(prev_year)],
+                capture_output=True, text=True, timeout=7200,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                env=env,
+            )
+            if result.returncode == 0:
+                logger.info(f"[DART배당수집] ✅ 완료: {(result.stdout or '').strip()[-300:]}")
+            else:
+                logger.error(f"[DART배당수집] ❌ 오류: {(result.stderr or '')[-500:]}")
+        except subprocess.TimeoutExpired:
+            logger.error("[DART배당수집] 타임아웃 (2시간 초과)")
+        except Exception as e:
+            logger.error(f"[DART배당수집] 오류: {e}", exc_info=True)
+
+    # ── Trigger Discovery Lab 야간 재빌드 ────────────────────────────
+    def _loop_trigger_discovery_rebuild(self) -> None:
+        """매일 02:30 trigger_discovery_events/stock_links/forward_returns 전체 재빌드."""
+        logger.info("[트리거디스커버리갱신] 루프 시작")
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            wait = _seconds_until(2, 30)
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("트리거디스커버리갱신", self._job_trigger_discovery_rebuild)
+
+    def _job_trigger_discovery_rebuild(self) -> None:
+        try:
+            import subprocess
+            logger.info("[트리거디스커버리갱신] build_trigger_discovery_lab.py 시작 (--start 2020-01-01)")
+            env = dict(os.environ)
+            pp = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = "runtime_pg_bootstrap:." + ((":" + pp) if pp else "")
+            result = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/build_trigger_discovery_lab.py",
+                 "--start", "2020-01-01"],
+                capture_output=True, text=True, timeout=1800,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                env=env,
+            )
+            if result.returncode == 0:
+                logger.info(f"[트리거디스커버리갱신] ✅ 완료: {(result.stdout or '').strip()[-500:]}")
+            else:
+                logger.error(f"[트리거디스커버리갱신] ❌ 오류: {(result.stderr or '')[-1000:]}")
+        except subprocess.TimeoutExpired:
+            logger.error("[트리거디스커버리갱신] 타임아웃 (30분 초과)")
+        except Exception as e:
+            logger.error(f"[트리거디스커버리갱신] 오류: {e}", exc_info=True)
 
     # ── 미국 종목 OHLCV 일별 시세 & 팩터 자동 적재 ───────────────────
     def _loop_us_daily_quotes_and_factors(self) -> None:
