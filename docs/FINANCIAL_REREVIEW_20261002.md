@@ -153,6 +153,10 @@
 
 ### 파생 테이블 재구축
 cash_conversion_signals → FCF 파생 → kr_quality_factor → valuation_history.per_ttm → strategy_feature_snapshot(스테이징·점검 후 교체). 로그 `research_outputs/financial_rereview_20261002/derived_rebuild.log`.
+결과(10-03 완료): cash_conversion_signals 62,406행(2,576종목) · FCF 파생 재계산 · kr_quality_factor 2,740종목 · valuation_history.per_ttm 39,619행 채움(66,080행 중) · **strategy_feature_snapshot 193,093행으로 교체**(이전 189,950, 최신월 PER 채움률 62.6%). → 이 시점 이전에 돌린 백테스트·전략 판정은 정정 전 재무값 기준이므로 재실행이 필요하다.
+
+### 2016~2022 재수집 (진행 중)
+`run_fetch_2016_2022.sh`가 2,521종목 × 28보고서(약 7만 건)를 키1·키3으로 수집(키2=운영 공시 전용, 보호). 하루 한도가 차면 다음 날 00:20 이후 자동 재개 → 2~3일 소요. 완료 후 `apply_dart_refetch_20261002.py`의 입력을 `dart_cf_2016_2022.jsonl`로 바꿔 같은 절차(dry-run → 표본 10건 → 적용 → 150종목 재측정 → 파생 재구축).
 
 ### 남은 일 (갱신)
 1. 2016~2022 재무·현금흐름 재수집(같은 스크립트, 연도 범위만 확장 — 약 2,600종목 × 28보고서).

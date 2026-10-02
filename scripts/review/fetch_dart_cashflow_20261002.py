@@ -68,10 +68,18 @@ def worker(key, items, fh, done):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--years", default="", help="예: 2016-2022 (지정 시 해당 연도 1Q·반기·3Q·사업보고서, 출력 dart_cf_<범위>.jsonl)")
     a = ap.parse_args()
+    global OUT, JOBS
+    if a.years:
+        y0, y1 = (int(x) for x in a.years.split("-"))
+        JOBS = [(y, q) for y in range(y0, y1 + 1) for q in (1, 2, 3, 0)]
+        OUT = OUT.with_name(f"dart_cf_{y0}_{y1}.jsonl")
     conn = connect_primary_db(timeout=120, readonly=True)
+    y_lo, y_hi = min(j[0] for j in JOBS), max(j[0] for j in JOBS)
     rows = conn.execute("""SELECT stock_code, MIN(CASE WHEN report_type='CFS' THEN 0 ELSE 1 END)
-                           FROM cash_flow_data WHERE year>=2023 AND stock_code ~ '^[0-9]{5}[0-9A-Z]$' GROUP BY 1 ORDER BY 1""").fetchall()
+                           FROM cash_flow_data WHERE year BETWEEN ? AND ? AND stock_code ~ '^[0-9]{5}[0-9A-Z]$' GROUP BY 1 ORDER BY 1""",
+                        (y_lo, y_hi)).fetchall()
     conn.close()
     targets = [(r[0], "CFS" if r[1] == 0 else "OFS") for r in rows]
     if a.limit:
@@ -87,14 +95,15 @@ def main():
     keys = list(config.DART_API_KEYS)
     print(f"대상 {len(items)}종목 × {len(JOBS)}보고서, 이미 완료 {len(done)}", flush=True)
     # 2026-10-03: 단일 스레드(분당 ~45건)는 9시간 → 키 2개 2스레드(합계 초당 ~1.5건). 차단은 초당 ~14건에서 발생했다.
-    workers = keys[:2]
+    # 키2(DART_API_KEY2)는 운영 공시 수집 전용 — 재수집이 소진하지 않게 제외한다(2026-10-03)
+    workers = [k for k in keys if k != getattr(config, "DART_API_KEY2", None)][:2] or keys[:1]
     chunks = [items[i::len(workers)] for i in range(len(workers))]
 
     def run(key, chunk):
         try:
             worker(key, chunk, fh, done)
         except RuntimeError as e:
-            spare = [k for k in keys if k not in workers]
+            spare = []  # 예비 키 사용 안 함(공시 키 보호) — 다음 날 재개
             print("키 한도 소진:", e, "→ 예비 키", bool(spare), flush=True)
             if spare:
                 worker(spare[0], chunk, fh, done)
