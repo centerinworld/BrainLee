@@ -23,6 +23,8 @@ from db_compat import _ORIGINAL_SQLITE_CONNECT  # noqa: E402
 from scripts.migrate_operational_postgres import POSTGRES_URL, convert  # noqa: E402
 
 DEFAULT_TABLES = ("backtest_run_specs", "backtest_runs")
+# 사용자가 직접 관리하는 테이블은 PG가 정본 — SQLite 스냅샷으로 되살리지 않는다(2026-10-02 portfolio 49행 부활 사고).
+USER_MANAGED_TABLES = {"portfolio", "portfolio_tx", "watchlist", "buy_candidates"}
 
 
 def quote_sqlite(name: str) -> str:
@@ -183,6 +185,9 @@ def main() -> None:
     pg_conn = psycopg.connect(POSTGRES_URL)
     try:
         for table in args.tables:
+            if table in USER_MANAGED_TABLES:
+                print(f"{table}: skipped (user-managed, PostgreSQL authoritative)")
+                continue
             rows = sync_table(sqlite_conn, pg_conn, table, args.chunk_size)
             sqlite_count = sqlite_conn.execute(
                 f"SELECT COUNT(*) FROM {quote_sqlite(table)}"

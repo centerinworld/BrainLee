@@ -58,6 +58,12 @@ POSTGRES_AUTHORITATIVE_SNAPSHOTS = {
     "cafe_stock_indicator_mappings": "updated_at",
 }
 
+# User-managed tables: PostgreSQL is the only source of truth and fewer rows than the
+# frozen SQLite copy means the user deleted them on purpose. 2026-10-02: the drift heal
+# re-inserted 49 portfolio rows the user had removed on 09-29 (sqlite=50 → postgres 10→59),
+# doubling holdings such as 172670 (47,591 → 95,182 shares). Never heal these from SQLite.
+POSTGRES_USER_MANAGED_TABLES = {"portfolio", "portfolio_tx", "watchlist", "buy_candidates"}
+
 
 def sqlite_count(conn: sqlite3.Connection, table: str) -> int:
     quoted = '"' + table.replace('"', '""') + '"'
@@ -140,6 +146,7 @@ def main() -> None:
             if item["delta"] is not None
             and item["delta"] < 0
             and item["table"] not in POSTGRES_AUTHORITATIVE_SNAPSHOTS
+            and item["table"] not in POSTGRES_USER_MANAGED_TABLES
             and item["table"] != "dart_insider_holdings"
         ]
         snapshot_freshness = []
