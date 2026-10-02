@@ -116,6 +116,14 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
         .then(d => setQualityOverview(d))
         .catch(() => {});
     }, []);
+    // Risk Parity 분석
+    const [rpAnalysis, setRpAnalysis] = React.useState(null);
+    React.useEffect(() => {
+      fetch(API('/api/trend/risk-parity-analysis'))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setRpAnalysis(d))
+        .catch(() => {});
+    }, []);
     // 연속운용 실측 결과 (2026-08-30 — 사용자 지시 "백테스트가 돌고나면 자동으로
     // 프론트엔드가 수정되도록해": 하드코딩 STRATEGY_HUB_CONTINUOUS_RETURNS를 폴백으로
     // 두고, /api/backtest/continuous-returns가 반환하는 최신 실측값으로 덮어씀 — 이제
@@ -1311,6 +1319,90 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                       </div>
                     </details>
                   )}
+                </div>
+              );
+            })()}
+
+            {/* ── Risk Parity 포지션 사이즈 분석 ── */}
+            {rpAnalysis && rpAnalysis.positions?.length > 0 && (() => {
+              const oversize = rpAnalysis.positions.filter(p => p.sizing_status === 'OVERSIZE');
+              const undersize = rpAnalysis.positions.filter(p => p.sizing_status === 'UNDERSIZE');
+              const portRisk = rpAnalysis.portfolio_daily_risk_pct;
+              const rp = rpAnalysis.rp_params;
+              return (
+                <div className="glass-panel" style={{marginTop:'1rem', overflow:'hidden'}}>
+                  <div style={{padding:'0.65rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.8rem', flexWrap:'wrap'}}>
+                    <span style={{fontWeight:700, fontSize:'0.88rem'}}>Risk Parity 포지션 사이즈 분석</span>
+                    <span style={{fontSize:'0.7rem', padding:'0.1rem 0.55rem', borderRadius:'999px',
+                      background:'rgba(124,58,237,0.1)', border:'1px solid rgba(124,58,237,0.3)', color:'#6d28d9'}}>
+                      목표리스크 {rp.target_risk_pct}% · 최대 {rp.max_position_pct}% · 최소 {(rp.min_ticket_krw/10000).toFixed(0)}만원
+                    </span>
+                    <span style={{fontSize:'0.72rem', color: portRisk > 15 ? '#b91c1c' : '#047857', fontWeight:700}}>
+                      포트폴리오 일일 리스크: {portRisk}%
+                    </span>
+                    {oversize.length > 0 && (
+                      <span style={{fontSize:'0.7rem', color:'#b45309', fontWeight:600}}>
+                        ⚠ 과대 포지션 {oversize.length}건 (감소 권장)
+                      </span>
+                    )}
+                  </div>
+                  <details style={{borderTop:'1px solid var(--glass-border)'}}>
+                    <summary style={{padding:'0.5rem 1rem', fontSize:'0.72rem', color:'var(--text-secondary)', cursor:'pointer'}}>
+                      전체 포지션 RP 분석 ({rpAnalysis.positions.length}건) — 변동성 높은 순
+                    </summary>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.72rem'}}>
+                        <thead>
+                          <tr style={{color:'var(--text-secondary)', borderBottom:'1px solid var(--glass-border)'}}>
+                            <th style={{padding:'0.35rem 1rem', textAlign:'left'}}>종목</th>
+                            <th style={{padding:'0.35rem 0.6rem', textAlign:'left'}}>전략</th>
+                            <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>연간변동성</th>
+                            <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>현재금액</th>
+                            <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>RP권장</th>
+                            <th style={{padding:'0.35rem 0.6rem', textAlign:'center'}}>상태</th>
+                            <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>수익률</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rpAnalysis.positions.map(p => {
+                            const statusColors = {OVERSIZE:'#b45309', UNDERSIZE:'#0369a1', OK:'#047857'};
+                            const statusColor = statusColors[p.sizing_status] || '#64748b';
+                            return (
+                              <tr key={`rp-${p.stock_code}-${p.strategy}`}
+                                style={{borderTop:'1px solid rgba(15,23,42,0.06)',
+                                  background: p.sizing_status === 'OVERSIZE' ? 'rgba(180,83,9,0.04)' : 'transparent'}}>
+                                <td style={{padding:'0.35rem 1rem'}}>
+                                  {p.stock_name}
+                                  <span style={{marginLeft:'0.3rem', fontSize:'0.65rem', color:'var(--text-secondary)'}}>{p.stock_code}</span>
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', fontSize:'0.68rem', color:'#4f46e5'}}>{p.strategy}</td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontVariantNumeric:'tabular-nums',
+                                  color: p.annual_vol_pct > 80 ? '#b91c1c' : p.annual_vol_pct > 50 ? '#b45309' : 'inherit'}}>
+                                  {p.annual_vol_pct != null ? `${p.annual_vol_pct}%` : '-'}
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontVariantNumeric:'tabular-nums'}}>
+                                  {(p.current_value/10000).toFixed(0)}만원
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontVariantNumeric:'tabular-nums', color:'#4f46e5', fontWeight:600}}>
+                                  {(p.recommended_ticket/10000).toFixed(0)}만원
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'center'}}>
+                                  <span style={{padding:'0.1rem 0.4rem', borderRadius:'4px', fontSize:'0.65rem', fontWeight:700,
+                                    color: statusColor, background:`${statusColor}18`, border:`1px solid ${statusColor}40`}}>
+                                    {p.sizing_status === 'OVERSIZE' ? '과대' : p.sizing_status === 'UNDERSIZE' ? '과소' : '적정'}
+                                  </span>
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontWeight:700,
+                                  color: +p.profit_pct >= 0 ? '#dc2626' : '#2563eb'}}>
+                                  {+p.profit_pct >= 0 ? '+' : ''}{(+p.profit_pct).toFixed(1)}%
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
                 </div>
               );
             })()}

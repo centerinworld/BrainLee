@@ -529,6 +529,7 @@ class CollectionScheduler:
             ("트리거디스커버리갱신", self._loop_trigger_discovery_rebuild),  # ★ 매일 02:30 trigger_discovery_events 전체 재빌드
             ("DART배당수집",       self._loop_dart_dividends),             # ★ 매년 4월 1일 03:00 사업보고서 배당 데이터 수집
             ("Quality팩터빌드",    self._loop_quality_factor_build),       # ★ 매일 03:30 kr_quality_factor 최신 분기 갱신
+            ("RiskParity사이징",   self._loop_risk_parity_sizing),         # ★ 매일 18:10 종가 업데이트 후 RP 포지션 사이즈 갱신
             ("DART연구개발수집",   self._loop_dart_rd_collect),            # ★ 매주 토요일 04:00 전종목 R&D 비용 PostgreSQL 수집
         ]
         for name, target in jobs:
@@ -6713,6 +6714,38 @@ class CollectionScheduler:
             logger.error(f"[트리거디스커버리갱신] 오류: {e}", exc_info=True)
 
     # ── Quality 팩터 일일 빌드 ─────────────────────────────────────────
+    def _loop_risk_parity_sizing(self) -> None:
+        """매일 18:10 종가 업데이트 후 활성 포지션 RP 사이즈 갱신."""
+        logger.info("[RiskParity사이징] 루프 시작")
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            wait = _seconds_until(18, 10)
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("RiskParity사이징", self._job_risk_parity_sizing)
+
+    def _job_risk_parity_sizing(self) -> None:
+        try:
+            import subprocess
+            logger.info("[RiskParity사이징] build_risk_parity_sizing.py 시작")
+            env = dict(os.environ)
+            pp = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = "runtime_pg_bootstrap:." + ((":" + pp) if pp else "")
+            result = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/build_risk_parity_sizing.py"],
+                capture_output=True, text=True, timeout=300,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                env=env,
+            )
+            if result.returncode == 0:
+                logger.info(f"[RiskParity사이징] ✅ 완료: {(result.stdout or '').strip()[-200:]}")
+            else:
+                logger.error(f"[RiskParity사이징] ❌ 오류: {(result.stderr or '')[-400:]}")
+        except subprocess.TimeoutExpired:
+            logger.error("[RiskParity사이징] 타임아웃")
+        except Exception as e:
+            logger.error(f"[RiskParity사이징] 오류: {e}", exc_info=True)
+
     def _loop_quality_factor_build(self) -> None:
         """매일 03:30 kr_quality_factor 최신 분기 갱신."""
         logger.info("[Quality팩터빌드] 루프 시작")

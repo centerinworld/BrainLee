@@ -107,6 +107,46 @@ _turnover_auto_state: dict = {
 _turnover_auto_lock = threading.Lock()
 
 
+RP_TARGET_RISK_PCT = 0.005   # 종목당 목표 리스크 = 자본금 × 0.5%
+RP_MAX_POSITION_PCT = 0.15   # 최대 포지션 = 자본금 × 15%
+RP_MIN_TICKET_KRW = 3_000_000  # 최소 포지션 금액 300만원
+
+
+def _rp_ticket_krw(
+    conn,
+    stock_code: str,
+    price: float,
+    base_capital: float = 100_000_000,
+    target_risk_pct: float = RP_TARGET_RISK_PCT,
+    max_pct: float = RP_MAX_POSITION_PCT,
+    min_krw: float = RP_MIN_TICKET_KRW,
+) -> float:
+    """변동성 역비례 Risk Parity 포지션 금액 산출.
+
+    position_value = (capital × target_risk_pct) / daily_vol
+    변동성 낮은 종목 → 큰 포지션, 변동성 높은 종목 → 작은 포지션.
+    결과는 [min_krw, capital × max_pct] 범위로 클램핑.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 22",
+            (stock_code,),
+        ).fetchall()
+        if len(rows) < 10:
+            return base_capital * 0.10
+        prices = [float(r[0]) for r in rows]
+        returns = [(prices[i] - prices[i + 1]) / prices[i + 1] for i in range(len(prices) - 1)]
+        daily_vol = (sum(r ** 2 for r in returns) / len(returns)) ** 0.5
+        daily_vol = max(daily_vol, 0.005)  # 최소 0.5% 변동성 보장
+        target_risk = base_capital * target_risk_pct
+        position_value = target_risk / daily_vol
+        position_value = min(position_value, base_capital * max_pct)
+        position_value = max(position_value, min_krw)
+        return position_value
+    except Exception:
+        return base_capital * 0.10
+
+
 def _db():
     return db_compat.connect_primary_db(timeout=30)
 
@@ -1438,6 +1478,70 @@ def get_quality_overview():
     }
 
 
+# ── GET /api/trend/risk-parity-analysis ──────────────────────────
+@router.get("/risk-parity-analysis")
+def get_risk_parity_analysis():
+    """활성 포지션별 현재 변동성 vs 권장 Risk Parity 사이즈 비교."""
+    conn = _db()
+    rows = conn.execute("""
+        SELECT stock_code, stock_name, strategy, buy_price, quantity, profit_pct, entry_date
+        FROM peak_holding WHERE is_active=1 AND stock_code IS NOT NULL
+        ORDER BY strategy, stock_code
+    """).fetchall()
+
+    result = []
+    portfolio_total_risk = 0.0
+    for r in rows:
+        code = r[0]; price = float(r[3] or 0); qty = float(r[4] or 0)
+        current_value = price * qty
+        # 변동성 계산
+        ph = conn.execute(
+            "SELECT close FROM price_history WHERE stock_code=? AND close>0 ORDER BY date DESC LIMIT 22",
+            (code,)
+        ).fetchall()
+        if len(ph) >= 10:
+            prices = [float(x[0]) for x in ph]
+            returns = [(prices[i] - prices[i+1]) / prices[i+1] for i in range(len(prices)-1)]
+            daily_vol = (sum(x**2 for x in returns) / len(returns)) ** 0.5
+            annual_vol = round(daily_vol * (252 ** 0.5) * 100, 1)
+        else:
+            daily_vol = 0.02
+            annual_vol = None
+
+        recommended_ticket = round(_rp_ticket_krw(conn, code, price, 100_000_000))
+        risk_contribution = round(current_value * daily_vol * 100, 2)
+        portfolio_total_risk += current_value * daily_vol
+
+        sizing_status = "OK"
+        if current_value > recommended_ticket * 1.5:
+            sizing_status = "OVERSIZE"
+        elif current_value < recommended_ticket * 0.5:
+            sizing_status = "UNDERSIZE"
+
+        result.append({
+            "stock_code": code, "stock_name": r[1], "strategy": r[2],
+            "current_value": round(current_value),
+            "recommended_ticket": recommended_ticket,
+            "daily_vol_pct": round(daily_vol * 100, 2),
+            "annual_vol_pct": annual_vol,
+            "risk_contribution_pct": risk_contribution,
+            "sizing_status": sizing_status,
+            "profit_pct": r[5],
+        })
+
+    conn.close()
+    result.sort(key=lambda x: x["risk_contribution_pct"], reverse=True)
+    return {
+        "positions": result,
+        "portfolio_daily_risk_pct": round(portfolio_total_risk / 100_000_000 * 100, 2),
+        "rp_params": {
+            "target_risk_pct": RP_TARGET_RISK_PCT * 100,
+            "max_position_pct": RP_MAX_POSITION_PCT * 100,
+            "min_ticket_krw": RP_MIN_TICKET_KRW,
+        },
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════
 # V12 골든크로스 가상매매
 # ═══════════════════════════════════════════════════════════════════
@@ -1790,7 +1894,8 @@ def execute_gc_now():
         ).fetchone()[0]
         if existing > 0:
             continue
-        qty = int(GC_TICKET_KRW // cur)
+        ticket = _rp_ticket_krw(conn, code, cur, GC_CAPITAL_KRW)
+        qty = int(ticket // cur)
         if qty <= 0:
             continue
         gate = _paper_buy_gate(code, GC_STRATEGY, qty, cur)
@@ -2187,7 +2292,8 @@ def execute_cm_now():
         ).fetchone()[0]
         if existing > 0:
             continue
-        qty = int(CM_TICKET_KRW // cur)
+        ticket = _rp_ticket_krw(conn, code, cur, CM_CAPITAL_KRW)
+        qty = int(ticket // cur)
         if qty <= 0:
             continue
         gate = _paper_buy_gate(code, CM_STRATEGY, qty, cur)
@@ -2505,7 +2611,8 @@ def execute_rec_now():
         ).fetchone()[0]
         if existing > 0:
             continue
-        qty = int(REC_TICKET_KRW // cur)
+        ticket = _rp_ticket_krw(conn, code, cur, REC_CAPITAL_KRW)
+        qty = int(ticket // cur)
         if qty <= 0:
             continue
         gate = _paper_buy_gate(code, REC_STRATEGY, qty, cur)
@@ -2646,7 +2753,8 @@ def execute_v18_now():
         cur, _, _ = _latest_price_and_ma(conn, code, 20)
         if cur <= 0:
             continue
-        qty = int(V18_TICKET_KRW // cur)
+        ticket = _rp_ticket_krw(conn, code, cur, VIRTUAL_CAPITAL)
+        qty = int(ticket // cur)
         if qty <= 0:
             continue
         reason_text = f"V18 score={b.get('score')} match={b.get('match_count')} reason={b.get('reason')}"
@@ -2932,7 +3040,8 @@ def execute_turnover_now(payload: dict | None = None):
         cur = _safe_float(c.get("close"))
         if cur <= 0:
             continue
-        qty = int(TURNOVER_TICKET_KRW // cur)
+        ticket = _rp_ticket_krw(conn, code, cur, TURNOVER_CAPITAL_KRW)
+        qty = int(ticket // cur)
         if qty <= 0:
             continue
 
@@ -3638,7 +3747,9 @@ def execute_combo_now(combo_key: str):
         ).fetchone()[0]
         if existing > 0:
             continue
-        qty = int(min(ticket_krw, avail_cash) // cur)
+        rp_ticket = _rp_ticket_krw(conn, code, cur, COMBO_CAPITAL_KRW)
+        effective_ticket = min(ticket_krw, rp_ticket)
+        qty = int(min(effective_ticket, avail_cash) // cur)
         if qty <= 0:
             continue
         gate = _paper_buy_gate(code, combo_key, qty, cur)
