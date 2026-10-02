@@ -339,6 +339,7 @@ class KiwoomCollector(BaseCollector):
             "trde_qty_tp": str(min_turnover),
             "trde_prica_tp": str(min_turnover),
             "stk_tp": str(stock_filter),
+            "crd_tp": "0",  # 신용구분 0=전체 (필수 파라미터, 누락 시 1511 오류)
         }
         try:
             response = requests.post(

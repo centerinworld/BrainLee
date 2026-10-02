@@ -191,7 +191,7 @@ def collect_with_playwright(dates: list[str], dry_run: bool = False,
 
         # ── 로그인 ──────────────────────────────────────────────
         logger.info("data.krx.co.kr 로그인...")
-        page.goto("https://data.krx.co.kr/", wait_until="networkidle", timeout=30000)
+        page.goto("https://data.krx.co.kr/", wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(2000)
         page.click("a[href*='MDCCOMS001']", timeout=10000)
         page.wait_for_timeout(3000)
