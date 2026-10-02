@@ -16,7 +16,7 @@ START, END = "2026-09-14", "2026-09-18"
 
 def main(apply):
     conn = connect_primary_db(timeout=300, readonly=not apply)
-    now = datetime.now().isoformat(timespec="seconds"); run_id = f"supply_backfill_kiwoom_20260924_{datetime.now().strftime('%H%M%S')}"
+    now = datetime.now().isoformat(timespec="seconds"); run_id = f"supply_backfill_kiwoom_{START.replace('-','')}_{END.replace('-','')}_{datetime.now().strftime('%H%M%S')}"
     # validate mapping on already-filled rows of the same window and neighbouring days
     v = conn.execute("""SELECT COUNT(*),
         SUM(CASE WHEN ABS(p.inst_net_buy_amt-k.orgn)<=1 THEN 1 ELSE 0 END),
@@ -50,4 +50,8 @@ def main(apply):
     conn.close(); print(json.dumps({"rows": len(rows), "run_id": run_id, "dry_run": not apply}))
 
 if __name__ == "__main__":
+    # 2026-10-02: --start/--end YYYY-MM-DD 로 기간 지정(기본은 최초 백필 구간 09-14~18).
+    for _i, _a in enumerate(sys.argv):
+        if _a == "--start": START = sys.argv[_i + 1]
+        if _a == "--end": END = sys.argv[_i + 1]
     main("--apply" in sys.argv)

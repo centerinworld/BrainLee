@@ -351,7 +351,7 @@ class Auditor:
                 FROM price_history ph
                 JOIN stock_price_daily spd
                   ON spd.stock_code = ph.stock_code
-                 AND spd.bas_dt = ph.date
+                 AND spd.bas_dt = replace(ph.date, '-', '')
                 WHERE ph.stock_code ~ '^[0-9]{6}$'
                   AND (
                     COALESCE(ph.open,-1) <> COALESCE(spd.open_price,-1) OR
@@ -376,7 +376,7 @@ class Auditor:
             FROM price_history ph
             JOIN stock_price_daily spd
               ON spd.stock_code = ph.stock_code
-             AND spd.bas_dt = ph.date
+             AND spd.bas_dt = replace(ph.date, '-', '')
             WHERE ph.stock_code ~ '^[0-9]{6}$'
               AND (
                 COALESCE(ph.open,-1) <> COALESCE(spd.open_price,-1) OR
@@ -390,7 +390,17 @@ class Auditor:
             """,
             timeout_ms=240000,
         )
-        self.sections["price_cross_source"] = {"price_history_vs_stock_price_daily_mismatch_rows": mismatch, "sample": sample}
+        # 2026-10-02: 날짜 형식('YYYYMMDD' vs 'YYYY-MM-DD') 불일치로 조인 0건인데 "불일치 0"으로 보고됐다 — 비교 건수를 함께 남기고 0이면 이슈로 올린다.
+        compared = int(self.one(
+            "SELECT COUNT(*) FROM price_history ph JOIN stock_price_daily spd ON spd.stock_code = ph.stock_code "
+            "AND spd.bas_dt = replace(ph.date, '-', '') WHERE ph.stock_code ~ '^[0-9]{6}$' AND ph.date >= to_char(CURRENT_DATE - 30, 'YYYY-MM-DD')",
+            timeout_ms=240000,
+        ) or 0)
+        if compared == 0:
+            self.add_issue("CRITICAL", "price", "price_cross_source_compared_zero", 1,
+                           detail="price_history vs stock_price_daily join compared 0 rows in last 30 days — check date formats/collection")
+        self.sections["price_cross_source"] = {"price_history_vs_stock_price_daily_mismatch_rows": mismatch,
+                                               "compared_rows_last_30d": compared, "sample": sample}
         self.add_issue(
             "HIGH",
             "price",

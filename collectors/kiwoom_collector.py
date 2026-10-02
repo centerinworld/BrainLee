@@ -1378,13 +1378,15 @@ class KiwoomCollector(BaseCollector):
                     ).fetchone()
                     if target and target[0]:
                         target_dt = str(target[0])[:10]
+                        # 2026-10-02: 장중(오전 재시작 캐치업 등)에 만든 0값 행도 '이미 있음'으로 건너뛰어
+                        # 10-02 2,769행 중 2,651행이 0으로 굳었다. 그날 18:00 이후 갱신된 확정 행만 건너뛴다.
                         existing_rows = conn.execute(
                             """
                             SELECT stock_code
                             FROM kiwoom_investor_daily
-                            WHERE dt = ?
+                            WHERE dt = ? AND updated_at >= ?
                             """,
-                            (target_dt,),
+                            (target_dt, f"{target_dt} 18:00:00"),
                         ).fetchall()
                         existing = {str(r[0]).zfill(6) for r in existing_rows}
                         before = len(stock_codes)

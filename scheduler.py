@@ -554,7 +554,11 @@ class CollectionScheduler:
         logger.info("[스케줄러] 중지 신호 전송")
 
     def _loop_postgres_sync(self) -> None:
-        """Keep PostgreSQL current while legacy collectors are being retired."""
+        """Keep PostgreSQL current while legacy collectors are being retired.
+
+        ⚠️ 2026-10-02 확인: 미등록(실행 안 됨). 등록 금지 — 레거시 stock.db의 price_history 45일·재무 3년·stock_universe를
+        PG에 DO UPDATE로 덮어써 PG에서 정정한 값(종가 정정, 재무 정정 등)을 되돌린다. PG가 정본이다.
+        """
         if not config.IS_POSTGRES:
             return
         self._wait_secs(90)
@@ -2111,7 +2115,8 @@ class CollectionScheduler:
                     (target_str,)
                 ).fetchone()[0]
                 conn.close()
-                if amt_cnt < 50:
+                # 2026-10-02: 50건 기준이라 17:30 수집이 재시작으로 중단돼 483건만 찬 날도 정상 처리됐다(10-01·10-02).
+                if amt_cnt < 1500:
                     logger.info(f"[캐치업] {target_str} 수급 amt {amt_cnt}건 부족 → 즉시 수집 (~43분 소요)")
                     _run_job_safe("캐치업수급", self._job_supply_daily)
                 else:
@@ -2120,28 +2125,42 @@ class CollectionScheduler:
                 logger.warning(f"[캐치업] 수급 확인 오류: {e}")
 
         # 키움 수급은 과거 일별 조회가 가능하므로 휴장일에도 직전 거래일을 복구한다.
+        # 2026-10-02: 정규 수집(19:00) 전 재시작이면 오늘 대신 직전 거래일을 본다 — 오전 재시작이 오늘 0값 행을 만들고
+        # 19:00 수집이 그 행을 '이미 있음'으로 건너뛰던 문제. 확정 행(18:00 이후 갱신)만 센다.
+        investor_day = target_day
+        if investor_day == now.date() and now.hour < 20:
+            investor_day -= timedelta(days=1)
+            while not is_kr_trading_day(investor_day):
+                investor_day -= timedelta(days=1)
         try:
             conn = connect_stock_db(timeout=15)
             investor_cnt = conn.execute(
-                "SELECT COUNT(DISTINCT stock_code) FROM kiwoom_investor_daily WHERE dt=?",
-                (target_str,),
+                "SELECT COUNT(DISTINCT stock_code) FROM kiwoom_investor_daily WHERE dt=? AND updated_at >= ?",
+                (investor_day.isoformat(), f"{investor_day.isoformat()} 18:00:00"),
             ).fetchone()[0]
             conn.close()
             if investor_cnt < 2000:
-                logger.info(f"[캐치업] {target_str} 키움수급 {investor_cnt}건 부족 → 즉시 복구")
+                logger.info(f"[캐치업] {investor_day} 키움수급 {investor_cnt}건 부족 → 즉시 복구")
                 _run_job_safe("캐치업키움수급", self._job_kiwoom_investor_daily)
         except Exception as e:
             logger.warning(f"[캐치업] 키움수급 복구 오류: {e}")
 
         try:
+            # 2026-10-02: kiwoom_foreign_flow.dt는 'YYYYMMDD'인데 'YYYY-MM-DD'로 조회해 항상 0건 → 재시작마다
+            # 전종목 외국인지분 재수집(78회 중 34회 실패, 키움 요청 폭주)을 돌렸다. 정규 수집(19:15) 전이면 직전 거래일을 본다.
+            foreign_day = target_day
+            if foreign_day == now.date() and now.hour < 20:
+                foreign_day -= timedelta(days=1)
+                while not is_kr_trading_day(foreign_day):
+                    foreign_day -= timedelta(days=1)
             conn = connect_stock_db(timeout=15)
             foreign_cnt = conn.execute(
                 "SELECT COUNT(DISTINCT stock_code) FROM kiwoom_foreign_flow WHERE dt=?",
-                (target_str,),
+                (foreign_day.strftime("%Y%m%d"),),
             ).fetchone()[0]
             conn.close()
             if foreign_cnt < 2000:
-                logger.info(f"[캐치업] {target_str} 외국인지분 {foreign_cnt}건 부족 → 즉시 복구")
+                logger.info(f"[캐치업] {foreign_day} 외국인지분 {foreign_cnt}건 부족 → 즉시 복구")
                 _run_job_safe("캐치업외국인지분", self._job_kiwoom_foreign_hold)
         except Exception as e:
             logger.warning(f"[캐치업] 외국인지분 복구 오류: {e}")

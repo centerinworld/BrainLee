@@ -165,6 +165,9 @@ def _parse_finstate(df: pd.DataFrame) -> dict:
                     # "부채와자본총계"는 자본총계 키워드에 걸리지만 자산합계이므로 제외
                     if "부채" in acc:
                         continue
+                if field == "total_liabilities" and "자본" in acc:
+                    # 2026-10-02: "자본과부채총계"(=자산총계)는 부채총계 키워드에 걸리지만 자산합계이므로 제외
+                    continue
                 if any(kw in acc for kw in keywords):
                     if m[field] is None:
                         m[field] = val

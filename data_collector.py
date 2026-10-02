@@ -1237,7 +1237,8 @@ class DataCollector:
                 if val != 0 or m["net_income"] is None: m["net_income"] = val
             elif "자산총계" in acc:
                 if val != 0 or m["total_assets"] is None: m["total_assets"] = val
-            elif "부채총계" in acc:
+            elif "부채총계" in acc and "자본" not in acc:
+                # 2026-10-02: "자본과부채총계"(=자산총계)가 아래 행에서 진짜 부채총계를 덮어써 1,974행이 부채=자산으로 저장됐다.
                 if val != 0 or m["total_liabilities"] is None: m["total_liabilities"] = val
             elif "자본총계" in acc:
                 if val != 0 or m["total_equity"] is None: m["total_equity"] = val

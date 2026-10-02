@@ -366,7 +366,31 @@ def _is_footnote_marker(t: str, start: int, end: int) -> bool:
     return before.endswith("주") or before.endswith("(*") or before.endswith("*") or before.endswith("(") or before.endswith("[")
 
 
+_FX_UNIT = re.compile(r"단\s*위\s*[:：]?\s*(?:천\s*)?(USD|US\$|달러|EUR|유로|JPY|엔화|CNY|위안|\$)", re.I)
+_KRW_UNIT = re.compile(r"단\s*위\s*[:：][^)]{0,30}(백만원|천원|억원|조원|원)")
+
+
 def _extract_backlog(text: str) -> BacklogMetric:
+    """_extract_backlog_raw 결과에 사후 검증을 씌운다(2026-10-02 독립 재검토).
+
+    - 외화 단위만 선언된 표(예: '(단위 : USD)')는 원화로 환산할 근거가 없어 버린다
+      (011000 USD 6.83M → 6.8조원, 054300 달러 → 백만원 등 124건이 원화로 저장됐었다).
+    - 채택한 숫자가 원문 발췌에 없으면 신뢰도를 0.5 이하로 낮춘다(합산값일 수도 있어 버리지는 않음).
+    """
+    m = _extract_backlog_raw(text)
+    if m.backlog_amount is None:
+        return m
+    exc = m.source_excerpt or ""
+    if _FX_UNIT.search(exc) and not _KRW_UNIT.search(exc):
+        return BacklogMetric(source_excerpt=exc)
+    amt = m.backlog_amount
+    shown = {f"{amt:,.0f}", f"{amt:.0f}"}
+    if amt and not any(x in exc for x in shown):
+        m.backlog_confidence = min(m.backlog_confidence, 0.5)
+    return m
+
+
+def _extract_backlog_raw(text: str) -> BacklogMetric:
     t = _normalize_ws(text)
     if not t:
         return BacklogMetric()
