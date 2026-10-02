@@ -877,10 +877,21 @@ def get_annual_top(limit: int = 9999, sort_by: str = "latest"):
         finally:
             stock_conn.close()
 
+        # 실제 DB에 있는 최신 연말 연도 기준 자동 계산
+        latest_row = conn.execute("""
+            SELECT ym FROM employment_company WHERE ym LIKE '%-12'
+            ORDER BY ym DESC LIMIT 1
+        """).fetchone()
+        latest_ym = latest_row["ym"] if latest_row else "2025-12"
+        base_year = int(latest_ym[:4])
+        ym0 = f"{base_year}-12"
+        ym1 = f"{base_year - 1}-12"
+        ym2 = f"{base_year - 2}-12"
+
         emp_rows = conn.execute("""
             SELECT stock_code, ym, worker_count FROM employment_company
-            WHERE ym IN ('2025-12', '2024-12', '2023-12')
-        """).fetchall()
+            WHERE ym IN (?, ?, ?)
+        """, (ym0, ym1, ym2)).fetchall()
         emp_by_code_ym: dict[tuple[str, str], int | None] = {}
         for r in emp_rows:
             emp_by_code_ym[(r["stock_code"], r["ym"])] = r["worker_count"]
@@ -888,15 +899,16 @@ def get_annual_top(limit: int = 9999, sort_by: str = "latest"):
         result = []
         for u in universe_rows:
             code = u["stock_code"]
-            cnt_2025 = emp_by_code_ym.get((code, "2025-12"))
-            cnt_2024 = emp_by_code_ym.get((code, "2024-12"))
-            cnt_2023 = emp_by_code_ym.get((code, "2023-12"))
-            diff_1y = (cnt_2025 - (cnt_2024 if cnt_2024 is not None else cnt_2025)) if cnt_2025 is not None else None
-            diff_2y = (cnt_2025 - (cnt_2023 if cnt_2023 is not None else cnt_2025)) if cnt_2025 is not None else None
+            c0 = emp_by_code_ym.get((code, ym0))
+            c1 = emp_by_code_ym.get((code, ym1))
+            c2 = emp_by_code_ym.get((code, ym2))
+            diff_1y = (c0 - (c1 if c1 is not None else c0)) if c0 is not None else None
+            diff_2y = (c0 - (c2 if c2 is not None else c0)) if c0 is not None else None
             result.append({
                 "stock_code": code, "stock_name": u["stock_name"],
                 "market": u["market"], "sector": u["sector"],
-                "cnt_2025": cnt_2025, "cnt_2024": cnt_2024, "cnt_2023": cnt_2023,
+                f"cnt_{base_year}": c0, f"cnt_{base_year - 1}": c1, f"cnt_{base_year - 2}": c2,
+                "cnt_base": c0, "cnt_1y_ago": c1, "cnt_2y_ago": c2,
                 "diff_1y": diff_1y, "diff_2y": diff_2y,
             })
 
@@ -905,11 +917,16 @@ def get_annual_top(limit: int = 9999, sort_by: str = "latest"):
         elif sort_by == 'name':
             result.sort(key=lambda x: x.get('stock_name') or '')
         else:
-            with_val = [d for d in result if d['cnt_2025'] is not None]
-            without_val = [d for d in result if d['cnt_2025'] is None]
-            with_val.sort(key=lambda d: d['cnt_2025'], reverse=True)
+            with_val = [d for d in result if d.get('cnt_base') is not None]
+            without_val = [d for d in result if d.get('cnt_base') is None]
+            with_val.sort(key=lambda d: d['cnt_base'], reverse=True)
             result = with_val + without_val
 
-        return {"rows": result, "count": len(result), "base_ym": "2025-12", "compare_ym": "2024-12"}
+        return {
+            "rows": result, "count": len(result),
+            "base_ym": ym0, "compare_ym": ym1,
+            "base_year": base_year,
+            "years": [base_year, base_year - 1, base_year - 2],
+        }
     finally:
         conn.close()

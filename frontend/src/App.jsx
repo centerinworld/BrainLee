@@ -1211,13 +1211,18 @@ const _signalFrontCache = {};
     const [topSort, setTopSort]           = React.useState('latest');
     const [topShowAll, setTopShowAll]     = React.useState(false);
     const [topSearch, setTopSearch]       = React.useState('');
+    const [empBaseYear, setEmpBaseYear]   = React.useState(null);
 
     React.useEffect(() => {
       setTopLoading(true);
       setTopShowAll(false);
       fetch(`/api/employment-v2/annual-top?sort_by=${topSort}`)
         .then(r => r.json())
-        .then(d => { setTopRows(d.rows || []); setTopLoading(false); })
+        .then(d => {
+          setTopRows(d.rows || []);
+          if (d.base_year) setEmpBaseYear(d.base_year);
+          setTopLoading(false);
+        })
         .catch(() => setTopLoading(false));
     }, [topSort]);
 
@@ -1255,7 +1260,8 @@ const _signalFrontCache = {};
 
     const filterHistory = (history) => {
       if (!history) return [];
-      const cutYear = years === '1' ? '2025' : years === '2' ? '2024' : '2023';
+      const baseYear = empBaseYear || new Date().getFullYear() - 1;
+      const cutYear = years === '1' ? String(baseYear) : years === '2' ? String(baseYear - 1) : String(baseYear - 2);
       return history.filter(h => h.ym >= cutYear);
     };
 
@@ -1266,7 +1272,7 @@ const _signalFrontCache = {};
     return (
       <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div className="glass-panel" style={{ padding: '0.7rem 1.2rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.78rem', alignItems: 'center' }}>
-          <span>📊 기업별 고용인원 연간 추이 — <strong style={{color:'#047857'}}>사업보고서</strong> 기준 (2023~2025년 연말 기준)</span>
+          <span>📊 기업별 고용인원 연간 추이 — <strong style={{color:'#047857'}}>사업보고서</strong> 기준 ({empBaseYear ? `${empBaseYear-2}~${empBaseYear}년 연말 기준` : '연말 기준'})</span>
           <span style={{color:'var(--text-secondary)'}}>• 직접 고용인원만 집계 (자회사 제외)</span>
           <span style={{color:'var(--text-secondary)'}}>• 482개 상장기업 대상</span>
           <span style={{color:'#b45309', marginLeft:'auto'}}>⚠️ 국민연금과 다른 기준의 사업보고서 데이터</span>
@@ -1353,7 +1359,10 @@ const _signalFrontCache = {};
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.81rem' }}>
                 <thead>
                   <tr>
-                    {['#','종목명','섹터','2025년말','2024년말','2023년말','1년 증감','2년 증감'].map((h,i) => (
+                    {(() => {
+                      const by = empBaseYear || 2025;
+                      return ['#','종목명','섹터',`${by}년말`,`${by-1}년말`,`${by-2}년말`,'1년 증감','2년 증감'];
+                    })().map((h,i) => (
                       <th key={i} style={{
                         padding: '0.55rem 0.8rem', textAlign: i <= 2 ? 'left' : 'right',
                         color: '#1e293b', borderBottom: '2px solid rgba(37,99,235,0.5)',
@@ -1379,9 +1388,9 @@ const _signalFrontCache = {};
                         {r.stock_name}
                       </td>
                       <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', color:'rgba(15,23,42,0.88)', fontSize:'0.74rem' }}>{r.sector||'-'}</td>
-                      <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', fontWeight:700, color:'#047857' }}>{fmtWc(r.cnt_2025)}</td>
-                      <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', color:'rgba(15,23,42,0.88)' }}>{fmtWc(r.cnt_2024)}</td>
-                      <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', color:'rgba(15,23,42,0.88)', fontSize:'0.78rem' }}>{fmtWc(r.cnt_2023)}</td>
+                      <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', fontWeight:700, color:'#047857' }}>{fmtWc(r.cnt_base)}</td>
+                      <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', color:'rgba(15,23,42,0.88)' }}>{fmtWc(r.cnt_1y_ago)}</td>
+                      <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', color:'rgba(15,23,42,0.88)', fontSize:'0.78rem' }}>{fmtWc(r.cnt_2y_ago)}</td>
                       <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', fontWeight:600, color:diffColor2(r.diff_1y) }}>{fmtDiff2(r.diff_1y)}</td>
                       <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', fontSize:'0.78rem', color:diffColor2(r.diff_2y) }}>{fmtDiff2(r.diff_2y)}</td>
                     </tr>
@@ -1452,13 +1461,14 @@ const _signalFrontCache = {};
           const [topRows, setTopRows]           = React.useState([]);
           const [topLoading, setTopLoading]     = React.useState(true);
           const [topSort, setTopSort]           = React.useState('latest');
+          const [topBaseYear, setTopBaseYear]   = React.useState(null);
 
           // 상위 기업 목록 로드
           React.useEffect(() => {
             setTopLoading(true);
             fetch(`/api/employment-v2/annual-top?limit=200&sort_by=${topSort}`)
               .then(r => r.json())
-              .then(d => { setTopRows(d.rows || []); setTopLoading(false); })
+              .then(d => { setTopRows(d.rows || []); if (d.base_year) setTopBaseYear(d.base_year); setTopLoading(false); })
               .catch(() => setTopLoading(false));
           }, [topSort]);
 
@@ -1475,10 +1485,11 @@ const _signalFrontCache = {};
             setAnnualLoading(false);
           };
 
-          // 기간 필터링
+          // 기간 필터링 (API base_year 동적 연도)
+          const _baseYear2 = topBaseYear || (new Date().getFullYear() - 1);
           const filterHistory = (history) => {
             if (!history) return [];
-            const cutYear = years === '1' ? '2025' : years === '2' ? '2024' : '2023';
+            const cutYear = years === '1' ? String(_baseYear2) : years === '2' ? String(_baseYear2 - 1) : String(_baseYear2 - 2);
             return history.filter(h => h.ym >= cutYear);
           };
 
@@ -1492,7 +1503,7 @@ const _signalFrontCache = {};
             <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {/* 안내 배너 */}
               <div className="glass-panel" style={{ padding: '0.7rem 1.2rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.78rem', alignItems: 'center' }}>
-                <span>📊 기업별 고용인원 연간 추이 — <strong style={{color:'#047857'}}>사업보고서</strong> 기준 (2023~2025년 연말 기준)</span>
+                <span>📊 기업별 고용인원 연간 추이 — <strong style={{color:'#047857'}}>사업보고서</strong> 기준 ({_baseYear2-2}~{_baseYear2}년 연말 기준)</span>
                 <span style={{color:'var(--text-secondary)'}}>• 직접 고용인원만 집계 (자회사 제외)</span>
                 <span style={{color:'var(--text-secondary)'}}>• 482개 상장기업 대상</span>
                 <span style={{color:'#b45309', marginLeft:'auto'}}>⚠️ 국민연금과 다른 기준의 사업보고서 데이터</span>
@@ -1521,7 +1532,7 @@ const _signalFrontCache = {};
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.81rem' }}>
                       <thead>
                         <tr>
-                          {['#','종목명','섹터','2025년말','2024년말','2023년말','1년 증감','2년 증감'].map((h,i) => (
+                          {['#','종목명','섹터',`${_baseYear2}년말`,`${_baseYear2-1}년말`,`${_baseYear2-2}년말`,'1년 증감','2년 증감'].map((h,i) => (
                             <th key={i} style={{
                               padding: '0.55rem 0.8rem', textAlign: i <= 2 ? 'left' : 'right',
                               color: '#1e293b', borderBottom: '2px solid rgba(37,99,235,0.5)',
@@ -1535,7 +1546,7 @@ const _signalFrontCache = {};
                         {topRows.map((r, i) => (
                           <tr key={r.stock_code}
                             style={{ cursor: 'pointer', transition: 'background 0.12s' }}
-                            onClick={() => { setAnnualQ(r.stock_name); setSelectedCompany({ stock_code: r.stock_code, stock_name: r.stock_name, history: [{ ym: '2023-12', worker_count: r.cnt_2023 }, { ym: '2024-12', worker_count: r.cnt_2024 }, { ym: '2025-12', worker_count: r.cnt_2025 }].filter(h => h.worker_count != null) }); }}
+                            onClick={() => { setAnnualQ(r.stock_name); setSelectedCompany({ stock_code: r.stock_code, stock_name: r.stock_name, history: [{ ym: `${_baseYear2-2}-12`, worker_count: r.cnt_2y_ago }, { ym: `${_baseYear2-1}-12`, worker_count: r.cnt_1y_ago }, { ym: `${_baseYear2}-12`, worker_count: r.cnt_base }].filter(h => h.worker_count != null) }); }}
                             onMouseOver={e => e.currentTarget.style.background = 'rgba(15,23,42,0.04)'}
                             onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
                             <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'center', color:'rgba(15,23,42,0.88)', fontSize:'0.73rem' }}>{i+1}</td>
@@ -1544,9 +1555,9 @@ const _signalFrontCache = {};
                               {r.stock_name}
                             </td>
                             <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', color:'rgba(15,23,42,0.88)', fontSize:'0.74rem' }}>{r.sector||'-'}</td>
-                            <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', fontWeight:700, color:'#047857' }}>{fmtWc(r.cnt_2025)}</td>
-                            <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', color:'rgba(15,23,42,0.88)' }}>{fmtWc(r.cnt_2024)}</td>
-                            <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', color:'rgba(15,23,42,0.88)', fontSize:'0.78rem' }}>{fmtWc(r.cnt_2023)}</td>
+                            <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', fontWeight:700, color:'#047857' }}>{fmtWc(r.cnt_base)}</td>
+                            <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', color:'rgba(15,23,42,0.88)' }}>{fmtWc(r.cnt_1y_ago)}</td>
+                            <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', color:'rgba(15,23,42,0.88)', fontSize:'0.78rem' }}>{fmtWc(r.cnt_2y_ago)}</td>
                             <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', fontWeight:600, color:diffColor2(r.diff_1y) }}>{fmtDiff2(r.diff_1y)}</td>
                             <td style={{ padding:'0.45rem 0.8rem', borderBottom:'1px solid rgba(15,23,42,0.2)', textAlign:'right', fontSize:'0.78rem', color:diffColor2(r.diff_2y) }}>{fmtDiff2(r.diff_2y)}</td>
                           </tr>
