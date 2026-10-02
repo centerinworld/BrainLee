@@ -13206,16 +13206,12 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
         const execTimer = setInterval(() => { if (!isStale()) fetchExec(); else clearInterval(execTimer); }, 60000);
       }
 
-      // ② OFS 데이터 존재 여부 확인 (별도재무제표 탭 표시/숨김 결정)
-      setHasOfs(null); // 종목 전환 시 초기화
-      fetch(API(`/api/dashboard/financial-table/${code}?type=annual&report_type=OFS`))
-        .then(r => r.ok ? r.json() : [])
-        .then(d => { if (!isStale()) setHasOfs(Array.isArray(d) && d.length > 0); })
-        .catch(() => { if (!isStale()) setHasOfs(false); });
+      // ② OFS 존재 여부는 Promise.all에 포함해 별도 연결 제거
+      setHasOfs(null);
 
       // 요청 기간 이상 항상 확보 (최소 365일, 10년 탭도 대응)
       const fetchDays = Math.max(d, 365);
-      const [chartRes, tableRes, quarterRes, summRes, aiRes, cfARes, cfQRes, consRes] = await Promise.all([
+      const [chartRes, tableRes, quarterRes, summRes, aiRes, cfARes, cfQRes, consRes, ofsRes] = await Promise.all([
         timedFetch(API(`/api/dashboard/chart/${code}?days=${fetchDays}`)),
         timedFetch(API(`/api/dashboard/financial-table/${code}?type=annual&report_type=CFS`)),
         timedFetch(API(`/api/dashboard/financial-table/${code}?type=quarter&report_type=CFS`)),
@@ -13224,6 +13220,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
         timedFetch(API(`/api/dashboard/cashflow/${code}?type=annual&report_type=CFS`)),
         timedFetch(API(`/api/dashboard/cashflow/${code}?type=quarter&report_type=CFS`)),
         isKrStockCode(code) ? timedFetch(API(`/api/consensus/${code}`)) : Promise.resolve(null),
+        isKrStockCode(code) ? timedFetch(API(`/api/dashboard/financial-table/${code}?type=annual&report_type=OFS`)) : Promise.resolve(null),
       ]);
 
       if (isStale()) return;  // 종목 전환됨 → 결과 버림
@@ -13235,7 +13232,9 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
       const consData = await safeJson(consRes, { records: [] });
       const cfAData = await safeJson(cfARes, []);
       const cfQData = await safeJson(cfQRes, []);
+      const ofsData = await safeJson(ofsRes, []);
 
+      if (!isStale()) setHasOfs(Array.isArray(ofsData) && ofsData.length > 0);
       if (!isStale()) setChartData(Array.isArray(chartDataFetched) ? chartDataFetched : []);
       if (!isStale()) setFinTable(Array.isArray(annualTableData) ? annualTableData : []);
       if (!isStale()) setQuarterTable(Array.isArray(quarterTableData) ? quarterTableData : []);
@@ -13294,8 +13293,8 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
           const poll = async () => {
             if (isStale()) return;  // ★ 종목 바뀌면 폴링 즉시 중단
             pollCount++;
-            if (pollCount > 24) { if (!isStale()) setCollecting(false); return; }
-            await new Promise(r => setTimeout(r, 10000));
+            if (pollCount > 12) { if (!isStale()) setCollecting(false); return; }
+            await new Promise(r => setTimeout(r, 25000));
             if (isStale()) return;  // ★ 대기 후 다시 체크
             try {
               const [c2, t2, q2, s2, cf2a, cf2q] = await Promise.all([
