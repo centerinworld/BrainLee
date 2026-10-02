@@ -182,3 +182,6 @@ cash_conversion_signals → FCF 파생 → kr_quality_factor → valuation_histo
 3. 수주잔고 검토 표시(약 3,000건) — 파서 재작성 시 합계행 규칙을 기본으로.
 4. 백테스트·전략 판정 재실행(정정 전 재무값 기준이었음).
 5. 텔레그램 봇 토큰 교체(사용자).
+
+### 9-1. 정정값 보호 (야간 잡 점검)
+야간에 재무 값을 쓰는 스크립트 5개를 점검했다. `backfill_dart_q2_financials`(빈 값 행만, DART), `resolve_quarterly_risks_with_dart`(DART), `repair_integrity_findings`(극단값 규칙), FnGuide 월간(금융업만 override)은 정정값을 되돌리지 않는다. **`legacy_dart_recollect.py`(매일 00:30)는 연결/별도 구분 없이 비-legacy 행을 먼저 집어 덮어쓰고 report_type을 CFS로 바꾸는 구조**였다 → `legacy_collected` CFS 행만 갱신하도록 수정. 이 운영 스크립트가 git 밖 `scratch/`에 있어 `scripts/ops/`로 옮겼다. 주간 전략 재검증(일요일 01:30)이 정정된 재무·피처 스냅샷으로 등록 전략을 자동 재실행한다.
