@@ -1,0 +1,72 @@
+name: 해외 뉴스 자동 수집 (Overseas News Sync)
+
+on:
+  schedule:
+    # 매일 01:00, 07:00, 13:00, 19:00 UTC (한국 10시, 16시, 22시, 04시)
+    - cron: '0 1,7,13,19 * * *'
+  workflow_dispatch:
+    inputs:
+      feed_type:
+        description: '수집 대상 피드 (company / competitor / both)'
+        required: false
+        default: 'both'
+
+jobs:
+  sync-news:
+    name: RSS 해외 뉴스 수집
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write   # 수집 결과를 저장소에 커밋하기 위해 필요
+
+    defaults:
+      run:
+        working-directory: codex/ceo-briefing-platform   # 실행 기준 디렉토리
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 의존성 설치
+        run: pip install feedparser requests python-dateutil
+
+      - name: 해외 뉴스 RSS 수집
+        env:
+          FEED_TYPE: ${{ github.event.inputs.feed_type || 'both' }}
+        run: python3 scripts/collect_overseas_news.py
+
+      - name: 수집 결과를 저장소에 자동 커밋
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/overseas-news-latest.json
+          if git diff --cached --quiet; then
+            echo "변경 없음 — 커밋 생략"
+          else
+            COUNT=$(python3 -c "import json; d=json.load(open('data/overseas-news-latest.json')); print(d.get('total', 0))" 2>/dev/null || echo "?")
+            git commit -m "chore(news): 해외 뉴스 자동 수집 ${COUNT}건 [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+            git push
+            echo "저장소에 커밋 완료"
+          fi
+
+      - name: 수집 결과 아티팩트 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: overseas-news-${{ github.run_number }}
+          path: codex/ceo-briefing-platform/data/overseas-news-latest.json
+          retention-days: 7
+
+      - name: 수집 현황 요약
+        run: |
+          echo "### 해외 뉴스 수집 완료" >> $GITHUB_STEP_SUMMARY
+          if [ -f data/overseas-news-latest.json ]; then
+            COUNT=$(python3 -c "import json; d=json.load(open('data/overseas-news-latest.json')); print(d.get('total', 0))" 2>/dev/null || echo "0")
+            echo "- **수집 건수**: ${COUNT}건" >> $GITHUB_STEP_SUMMARY
+            echo "- **실행 시각**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          fi
