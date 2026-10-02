@@ -1,11 +1,61 @@
 {
   "description": "GitHub Actions로 수집하는 해외 경제·방산·시장 뉴스 RSS 소스 목록",
   "updated": "2026-10-02",
+  "importance_keywords": [
+    "korea", "fed", "interest rate", "recession", "inflation", "gdp", "war", "defense",
+    "semiconductor", "chip", "supply chain", "tariff", "oil", "dollar", "yen",
+    "earnings", "stock market", "wall street", "china", "north korea", "pentagon",
+    "contract", "billion", "trillion", "crisis", "sanction"
+  ],
+  "source_weights": {
+    "AP Top News": 1.5,
+    "Reuters Top News": 1.5,
+    "Google News Business": 1.4,
+    "CNBC Finance": 1.3,
+    "Financial Times": 1.3,
+    "Breaking Defense": 1.3,
+    "Defense News": 1.2,
+    "Yonhap English Economy": 1.2,
+    "Korea Herald Economy": 1.1,
+    "Janes Defense Weekly": 1.1
+  },
   "sources": [
     {
-      "name": "Reuters Business",
-      "url": "https://feeds.reuters.com/reuters/businessNews",
+      "name": "AP Top News",
+      "url": "https://rsshub.app/apnews/topics/ap-top-news",
+      "category": "국제",
+      "lang": "en",
+      "fallback_url": "https://feeds.apnews.com/rss/topnews"
+    },
+    {
+      "name": "Reuters Top News",
+      "url": "https://feeds.reuters.com/reuters/topNews",
+      "category": "국제",
+      "lang": "en",
+      "fallback_url": "https://feeds.reuters.com/reuters/businessNews"
+    },
+    {
+      "name": "Google News Business",
+      "url": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
       "category": "경제",
+      "lang": "en"
+    },
+    {
+      "name": "Google News Korea",
+      "url": "https://news.google.com/rss/search?q=korea+economy+defense&hl=en-US&gl=US&ceid=US:en",
+      "category": "한국경제",
+      "lang": "en"
+    },
+    {
+      "name": "CNBC Finance",
+      "url": "https://www.cnbc.com/id/100727362/device/rss/rss.html",
+      "category": "경제",
+      "lang": "en"
+    },
+    {
+      "name": "Breaking Defense",
+      "url": "https://breakingdefense.com/feed/",
+      "category": "방산",
       "lang": "en"
     },
     {
@@ -24,18 +74,6 @@
       "name": "Korea Herald Economy",
       "url": "https://www.koreaherald.com/rss/economy.xml",
       "category": "국내(영문)",
-      "lang": "en"
-    },
-    {
-      "name": "CNBC Finance",
-      "url": "https://www.cnbc.com/id/100727362/device/rss/rss.html",
-      "category": "경제",
-      "lang": "en"
-    },
-    {
-      "name": "Breaking Defense",
-      "url": "https://breakingdefense.com/feed/",
-      "category": "방산",
       "lang": "en"
     },
     {

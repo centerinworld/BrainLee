@@ -1,4 +1,4 @@
-name: 해외 뉴스 자동 수집 (Overseas News Sync)
+name: 해외 뉴스 AI 브리핑 (Overseas News + AI Insight)
 
 on:
   schedule:
@@ -6,22 +6,26 @@ on:
     - cron: '0 1,7,13,19 * * *'
   workflow_dispatch:
     inputs:
-      feed_type:
-        description: '수집 대상 피드 (company / competitor / both)'
+      send_telegram:
+        description: '텔레그램 전송 여부 (true/false)'
         required: false
-        default: 'both'
+        default: 'true'
+      top_n:
+        description: 'AI 분석 상위 뉴스 수 (기본: 12)'
+        required: false
+        default: '12'
 
 jobs:
   sync-news:
-    name: RSS 해외 뉴스 수집
+    name: 해외 뉴스 수집 + AI 인사이트 + 텔레그램
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
-      contents: write   # 수집 결과를 저장소에 커밋하기 위해 필요
+      contents: write
 
     defaults:
       run:
-        working-directory: codex/ceo-briefing-platform   # 실행 기준 디렉토리
+        working-directory: codex/ceo-briefing-platform
 
     steps:
       - name: 저장소 체크아웃
@@ -36,9 +40,13 @@ jobs:
       - name: 의존성 설치
         run: pip install feedparser requests python-dateutil
 
-      - name: 해외 뉴스 RSS 수집
+      - name: 해외 뉴스 수집 + AI 인사이트 생성 + 텔레그램 전송
         env:
-          FEED_TYPE: ${{ github.event.inputs.feed_type || 'both' }}
+          GEMINI_API_KEY:     ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          NEWSINFO_API_TOKEN: ${{ secrets.NEWSINFO_API_TOKEN }}
+          TOP_N:              ${{ github.event.inputs.top_n || '12' }}
         run: python3 scripts/collect_overseas_news.py
 
       - name: 수집 결과를 저장소에 자동 커밋
@@ -50,7 +58,8 @@ jobs:
             echo "변경 없음 — 커밋 생략"
           else
             COUNT=$(python3 -c "import json; d=json.load(open('data/overseas-news-latest.json')); print(d.get('total', 0))" 2>/dev/null || echo "?")
-            git commit -m "chore(news): 해외 뉴스 자동 수집 ${COUNT}건 [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+            HAS_INSIGHT=$(python3 -c "import json; d=json.load(open('data/overseas-news-latest.json')); print('✓' if d.get('ai_insight') else '✗')" 2>/dev/null || echo "?")
+            git commit -m "chore(news): 해외 뉴스 ${COUNT}건 AI인사이트${HAS_INSIGHT} [$(date -u '+%Y-%m-%d %H:%M UTC')]"
             git push
             echo "저장소에 커밋 완료"
           fi
@@ -64,9 +73,11 @@ jobs:
 
       - name: 수집 현황 요약
         run: |
-          echo "### 해외 뉴스 수집 완료" >> $GITHUB_STEP_SUMMARY
+          echo "### 해외 뉴스 AI 브리핑 완료" >> $GITHUB_STEP_SUMMARY
           if [ -f data/overseas-news-latest.json ]; then
             COUNT=$(python3 -c "import json; d=json.load(open('data/overseas-news-latest.json')); print(d.get('total', 0))" 2>/dev/null || echo "0")
+            HAS_INSIGHT=$(python3 -c "import json; d=json.load(open('data/overseas-news-latest.json')); print('✅ 있음' if d.get('ai_insight') else '❌ 없음 (GEMINI_API_KEY 확인 필요)')" 2>/dev/null || echo "확인 불가")
             echo "- **수집 건수**: ${COUNT}건" >> $GITHUB_STEP_SUMMARY
+            echo "- **AI 인사이트**: ${HAS_INSIGHT}" >> $GITHUB_STEP_SUMMARY
             echo "- **실행 시각**: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
           fi

@@ -88,6 +88,33 @@
   // GitHub Actions 수집 뉴스 JSON URL (저장소 공개 후 또는 GitHub Pages 사용 시 설정)
   var GITHUB_NEWS_URL = '/data/overseas-news-latest.json';
 
+  function _mdToHtml(text) {
+    // 간단한 마크다운 → HTML 변환 (## 제목, **강조**, 리스트)
+    return text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+      .replace(/\n{2,}/g, '</p><p>')
+      .replace(/^(?!<[hup])/gm, '')
+      .replace(/<p><h/g, '<h').replace(/<\/h(\d)><\/p>/g, '</h$1>');
+  }
+
+  function renderAiInsight(insight) {
+    var el = $('news-ai-insight');
+    if (!el) return;
+    if (!insight || !insight.content) { el.hidden = true; return; }
+    var ts = insight.generated_at ? insight.generated_at.slice(0, 16).replace('T', ' ') + ' UTC' : '';
+    el.innerHTML =
+      '<div class="ai-insight-header">' +
+        '<span>🤖 AI 인사이트</span>' +
+        (ts ? '<span style="margin-left:auto;font-weight:400;color:#8fa8c8">' + ts + '</span>' : '') +
+      '</div>' +
+      '<div style="line-height:1.75">' + _mdToHtml(insight.content) + '</div>';
+    el.hidden = false;
+  }
+
   function loadNews() {
     var feedType = currentNewsType || 'company';
 
@@ -107,16 +134,23 @@
               source: item.category || '해외',
             };
           });
-          news.items = items.sort(function (a, b) { return String(b.article_published_at).localeCompare(String(a.article_published_at)); });
+          news.items = items; // 이미 score 순으로 정렬된 JSON을 그대로 사용
           var meta = $('news-meta');
           if (meta && d.generated_at) meta.textContent = '수집 시각: ' + d.generated_at.slice(0, 16).replace('T', ' ') + ' UTC · ' + (d.total || 0) + '건';
+          renderAiInsight(d.ai_insight);
           renderNews();
         })
         .catch(function () {
+          var insightEl = $('news-ai-insight');
+          if (insightEl) insightEl.hidden = true;
           $('news-list').innerHTML = '<li class="ki-muted">GitHub Actions 수집 데이터를 불러오지 못했습니다. 워크플로우가 아직 실행되지 않았거나 파일이 없습니다.</li>';
         });
       return;
     }
+
+    // company/competitor 탭으로 전환 시 인사이트 카드 숨기기
+    var insightEl = $('news-ai-insight');
+    if (insightEl) insightEl.hidden = true;
 
     get('/feeds/' + feedType).then(function (d) {
       news.loaded = true;
