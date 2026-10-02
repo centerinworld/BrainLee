@@ -1,4 +1,4 @@
-/* keyindicator.js — Key Indicator 공개 화면 (2026-09-27): 로그인 없이 읽기 전용 API만 호출한다(backend/role_gate.py PUBLIC_READ). */
+/* keyindicator.js — Key Indicator 공개 화면 (2026-10-02): 로그인 없이 읽기 전용 API만 호출한다(backend/role_gate.py PUBLIC_READ). */
 (function () {
   var host = location.hostname;
   var API = /(^|\.)newsinfo\.cloud$/.test(host) ? 'https://api.newsinfo.cloud' : 'http://127.0.0.1:8011';
@@ -13,7 +13,7 @@
   var get = function (path) { return fetch(API + path + (path.indexOf('?') < 0 ? '?' : '&') + 'role=staff').then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); };
   var fail = function (tbodyId, cols, msg) { $(tbodyId).innerHTML = '<tr><td colspan="' + cols + '" class="ki-muted">' + esc(msg) + '</td></tr>'; };
 
-  // 탭
+  // 서브탭 (경제지표/뉴스정보)
   document.querySelectorAll('.ki-tabs button').forEach(function (b) {
     b.onclick = function () {
       document.querySelectorAll('.ki-tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
@@ -22,6 +22,21 @@
       if (b.dataset.tab === 'news' && !news.loaded) loadNews();
     };
   });
+
+  // 뉴스 타입 전환 (company/competitor) - index.html 통합 시 전역 함수로 노출
+  var currentNewsType = 'company';
+  window.switchNewsType = function (type) {
+    if (currentNewsType === type) return;
+    currentNewsType = type;
+    var btnCo = $('news-btn-company');
+    var btnCr = $('news-btn-competitor');
+    if (btnCo) btnCo.classList.toggle('on', type === 'company');
+    if (btnCr) btnCr.classList.toggle('on', type === 'competitor');
+    news.loaded = false;
+    news.items = [];
+    $('news-list').innerHTML = '<li class="ki-muted">불러오는 중…</li>';
+    loadNews();
+  };
 
   // 국내 지표 — 증감(절대값)과 증감률(이전값이 양수일 때만: 0 근처·음수 기준의 %는 의미가 없다)
   var diffCell = function (a, b) {
@@ -71,7 +86,8 @@
     }).join('') || '<li class="ki-muted">조건에 맞는 뉴스가 없습니다.</li>';
   }
   function loadNews() {
-    get('/feeds/company').then(function (d) {
+    var feedType = currentNewsType || 'company';
+    get('/feeds/' + feedType).then(function (d) {
       news.loaded = true;
       news.items = (d.published || []).slice().sort(function (a, b) { return String(b.article_published_at).localeCompare(String(a.article_published_at)); });
       renderNews();

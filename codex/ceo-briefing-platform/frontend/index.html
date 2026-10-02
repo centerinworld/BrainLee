@@ -2,52 +2,170 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Key Indicator — 주요 경제지표 · 뉴스정보</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Key Indicator · 시장 인텔리전스</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+  <!-- kai.css: 시장인텔리전스/시장분석/주요기사 탭 스타일 -->
+  <link rel="stylesheet" href="./kai.css?v=5.1.0">
+  <!-- keyindicator.css: 주요경제지표 패널 테이블/카드 스타일 -->
   <link rel="stylesheet" href="./keyindicator.css?v=20260929">
+  <style>
+    :root {
+      --p: #1a73e8;
+      --p2: #1557b0;
+      --pl: #e8f0fe;
+      --t1: #202124;
+      --t2: #5f6368;
+      --t3: #80868b;
+      --b: #dadce0;
+      --s: #ffffff;
+      --bg: #f8f9fa;
+      --success: #137333;
+      --card-radius: 10px;
+    }
+    * { box-sizing: border-box; font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif !important; }
+    body { background-color: var(--bg); color: var(--t1); margin: 0; padding: 0; font-size: 13.5px; -webkit-font-smoothing: antialiased; }
+    .agx-pill { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .agx-pill.online { background: #e6f4ea; color: var(--success); border: 1px solid #ceead6; }
+    .agx-btn-secondary { background: var(--s); color: var(--t1); border: 1px solid var(--b); padding: 7px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .agx-btn-secondary:hover { background: var(--bg); }
+    /* 주요경제지표 패널 래퍼 */
+    #pane-ki {
+      background: var(--bg);
+      min-height: calc(100vh - 120px);
+    }
+    #pane-ki .ki {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 18px 20px 48px;
+    }
+    /* ki-tabs 서브탭은 kai 탭 바와 구분 */
+    #pane-ki .ki-tabs {
+      margin-top: 0;
+    }
+    /* 뉴스 탭 헤더(기사 타입 선택) */
+    .ki-news-type-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .ki-news-type-bar button {
+      padding: 6px 14px;
+      border: 1px solid var(--b);
+      border-radius: 20px;
+      background: #fff;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--muted, #334155);
+      cursor: pointer;
+    }
+    .ki-news-type-bar button.on {
+      background: var(--primary, #1a73e8);
+      border-color: var(--primary, #1a73e8);
+      color: #fff;
+    }
+  </style>
   <script src="/hubbar.js?v=20260927" defer></script>
 </head>
 <body>
-  <main class="ki">
-    <header class="ki-head">
-      <div>
-        <h1>Key Indicator</h1>
-        <p>주요 경제지표와 뉴스를 한눈에 — 누구나 볼 수 있는 공개 화면입니다.</p>
-      </div>
-    </header>
 
-    <div class="ki-tabs" role="tablist">
-      <button role="tab" id="tab-eco" class="on" data-tab="eco">주요 경제지표</button>
-      <button role="tab" id="tab-news" data-tab="news">뉴스정보</button>
-      <a href="/kai/" class="ki-tab-agi" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:0 16px;font-size:13px;font-weight:700;color:#1a73e8;text-decoration:none;border-left:1px solid var(--line-strong,#dadce0);white-space:nowrap;">
-        🛰️ 시장분석 · AI 인텔리전스 <span style="font-size:11px;opacity:0.7;">↗</span>
-      </a>
+  <!-- ===== 상단 헤더 (kai/index.html 스타일) ===== -->
+  <header style="background:var(--s); border-bottom:1px solid var(--b); position:sticky; top:0; z-index:100; box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+    <div style="padding:10px 24px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f1f3f4; max-width:1960px; margin:0 auto;">
+      <div style="display:flex; align-items:center; gap:12px; white-space:nowrap;">
+        <strong style="font-size:14.5px; color:var(--t1);">📡 Key Indicator · 시장 인텔리전스</strong>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; white-space:nowrap;">
+        <span class="agx-pill online">● LIVE</span>
+        <button class="agx-btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="location.reload()">🔄 새로고침</button>
+        <span id="kTime" style="font-size:12px; color:var(--t3);">방금 전</span>
+      </div>
     </div>
 
-    <section id="pane-eco">
-      <div class="ki-card">
-        <div class="ki-row"><h2>국내 주요 지표</h2><span class="ki-muted" id="kr-meta"></span></div>
-        <div class="ki-table-wrap"><table class="ki-table" id="kr-table"><thead><tr><th>지표</th><th>구분</th><th>기준월</th><th class="num">현재값</th><th class="num">이전값</th><th class="num">증감</th><th class="num">증감률</th><th>출처</th></tr></thead><tbody><tr><td colspan="8" class="ki-muted">불러오는 중…</td></tr></tbody></table></div>
-      </div>
-      <div class="ki-card">
-        <div class="ki-row"><h2>글로벌 주요 지표</h2><input id="gl-q" class="ki-search" placeholder="지표·국가 검색 (예: 금리, US, 환율)"></div>
-        <div class="ki-chips" id="gl-cats"></div>
-        <div class="ki-table-wrap ki-tall"><table class="ki-table" id="gl-table"><thead><tr><th>지표</th><th>구분</th><th>단위</th><th>기준일</th><th class="num">값</th><th class="num">직전</th><th class="num">변화</th><th>출처</th></tr></thead><tbody><tr><td colspan="8" class="ki-muted">불러오는 중…</td></tr></tbody></table></div>
-        <p class="ki-muted ki-foot" id="gl-meta"></p>
-      </div>
-    </section>
+    <!-- ===== 통합 탭 바 ===== -->
+    <div style="max-width:1960px; margin:0 auto; padding:8px 24px;">
+      <nav class="kn" id="kNav" style="display:flex; gap:8px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:10px; padding:6px 10px; overflow-x:auto;">
 
-    <section id="pane-news" hidden>
-      <div class="ki-card">
-        <div class="ki-row"><h2>뉴스정보</h2><input id="news-q" class="ki-search" placeholder="제목·요약·언론사 검색"></div>
-        <p class="ki-muted" id="news-meta"></p>
-        <ul class="ki-news" id="news-list"><li class="ki-muted">불러오는 중…</li></ul>
+        <!-- 주요경제지표 탭 (keyindicator.js 패널) -->
+        <button class="kt ki-owned" data-p="eco_indicators"
+          style="padding:8px 18px; font-size:13.5px; font-weight:700; border-radius:8px; border:none; cursor:pointer; background:#1a73e8; color:#fff; white-space:nowrap; display:flex; align-items:center; gap:6px;">
+          <span>📊</span> 주요 경제지표
+        </button>
+
+        <!-- kai.js 탭들 -->
+        <button class="kt" data-p="company"
+          style="padding:8px 18px; font-size:13.5px; font-weight:700; border-radius:8px; border:1px solid transparent; cursor:pointer; background:#fff; color:#334155; white-space:nowrap; display:flex; align-items:center; gap:6px;">
+          <span>📰</span> 주요기사
+        </button>
+        <button class="kt" data-p="global"
+          style="padding:8px 18px; font-size:13.5px; font-weight:700; border-radius:8px; border:1px solid transparent; cursor:pointer; background:#fff; color:#334155; white-space:nowrap; display:flex; align-items:center; gap:6px;">
+          <span>🌐</span> 시장 인텔리전스
+        </button>
+        <button class="kt" data-p="market_analysis"
+          style="padding:8px 18px; font-size:13.5px; font-weight:700; border-radius:8px; border:1px solid transparent; cursor:pointer; background:#fff; color:#334155; white-space:nowrap; display:flex; align-items:center; gap:6px;">
+          <span>📈</span> 시장분석
+        </button>
+
+      </nav>
+    </div>
+  </header>
+
+  <!-- ===== 주요경제지표 패널 (keyindicator.js) ===== -->
+  <div id="pane-ki">
+    <main class="ki">
+
+      <!-- 서브탭: 경제지표 / 뉴스정보 -->
+      <div class="ki-tabs" role="tablist">
+        <button role="tab" id="tab-eco" class="on" data-tab="eco">주요 경제지표</button>
+        <button role="tab" id="tab-news" data-tab="news">뉴스정보</button>
       </div>
-    </section>
+
+      <section id="pane-eco">
+        <div class="ki-card">
+          <div class="ki-row"><h2>국내 주요 지표</h2><span class="ki-muted" id="kr-meta"></span></div>
+          <div class="ki-table-wrap"><table class="ki-table" id="kr-table">
+            <thead><tr><th>지표</th><th>구분</th><th>기준월</th><th class="num">현재값</th><th class="num">이전값</th><th class="num">증감</th><th class="num">증감률</th><th>출처</th></tr></thead>
+            <tbody><tr><td colspan="8" class="ki-muted">불러오는 중…</td></tr></tbody>
+          </table></div>
+        </div>
+        <div class="ki-card">
+          <div class="ki-row"><h2>글로벌 주요 지표</h2><input id="gl-q" class="ki-search" placeholder="지표·국가 검색 (예: 금리, US, 환율)"></div>
+          <div class="ki-chips" id="gl-cats"></div>
+          <div class="ki-table-wrap ki-tall"><table class="ki-table" id="gl-table">
+            <thead><tr><th>지표</th><th>구분</th><th>단위</th><th>기준일</th><th class="num">값</th><th class="num">직전</th><th class="num">변화</th><th>출처</th></tr></thead>
+            <tbody><tr><td colspan="8" class="ki-muted">불러오는 중…</td></tr></tbody>
+          </table></div>
+          <p class="ki-muted ki-foot" id="gl-meta"></p>
+        </div>
+      </section>
+
+      <section id="pane-news" hidden>
+        <div class="ki-card">
+          <div class="ki-row"><h2>뉴스정보</h2><input id="news-q" class="ki-search" placeholder="제목·요약·언론사 검색"></div>
+          <!-- 뉴스 타입 선택 (국내/경쟁사) -->
+          <div class="ki-news-type-bar">
+            <button id="news-btn-company" class="on" onclick="switchNewsType('company')">📰 주요기사</button>
+            <button id="news-btn-competitor" onclick="switchNewsType('competitor')">🌍 경쟁사·해외</button>
+          </div>
+          <p class="ki-muted" id="news-meta"></p>
+          <ul class="ki-news" id="news-list"><li class="ki-muted">불러오는 중…</li></ul>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ===== kai.js 렌더링 영역 ===== -->
+  <main id="kMain" hidden>
+    <div class="loading"><div class="spinner"></div><p>페이지를 불러오는 중...</p></div>
   </main>
 
-  <!-- 지표 상세(이력) 모달 — 행 클릭 시 표시. 2026-09-29: 공개 화면에서 상세 내역이 안 보인다는 지적으로 복원. -->
+  <!-- ===== 지표 상세(이력) 모달 ===== -->
   <div class="ki-modal-backdrop" id="ki-modal" hidden>
     <div class="ki-modal" role="dialog" aria-modal="true">
       <div class="ki-modal-head">
@@ -65,6 +183,67 @@
     </div>
   </div>
 
-  <script src="./keyindicator.js?v=20260929"></script>
+  <!-- ===== 스크립트 로드 ===== -->
+  <!-- ceo-auth.js: kai.js 역할(role) 확인 -->
+  <script src="./ceo-auth.js?v=20260926"></script>
+  <!-- kai.js: 주요기사/시장인텔리전스/시장분석 렌더링 -->
+  <script src="./kai.js?v=7.6.0"></script>
+  <!-- keyindicator.js: 주요경제지표 패널 데이터 로드 -->
+  <script src="./keyindicator.js?v=20261002"></script>
+
+  <!-- ===== 탭 전환 통합 로직 ===== -->
+  <script>
+  (function () {
+    var paneKi = document.getElementById('pane-ki');
+    var kMain  = document.getElementById('kMain');
+
+    // 탭 스타일 업데이트
+    function setTabActive(activeP) {
+      document.querySelectorAll('.kt').forEach(function (t) {
+        var isAct = t.dataset.p === activeP;
+        t.classList.toggle('active', isAct);
+        if (isAct) {
+          t.style.background = '#1a73e8';
+          t.style.color = '#fff';
+          t.style.borderColor = 'transparent';
+        } else {
+          t.style.background = '#fff';
+          t.style.color = '#334155';
+          t.style.borderColor = 'transparent';
+        }
+      });
+    }
+
+    // 주요경제지표 ↔ kai.js 탭 전환
+    document.getElementById('kNav').addEventListener('click', function (e) {
+      var kt = e.target.closest('.kt');
+      if (!kt) return;
+      var p = kt.dataset.p;
+
+      if (p === 'eco_indicators') {
+        // 주요경제지표 패널 표시
+        paneKi.hidden = false;
+        kMain.hidden  = true;
+        setTabActive('eco_indicators');
+        // keyindicator 서브탭 상태 유지 (reload 불필요)
+      } else {
+        // kai.js 탭: eco 패널 숨기고 kai 렌더링
+        paneKi.hidden = true;
+        kMain.hidden  = false;
+        // kai.js의 go() 함수가 tab active 스타일도 처리하므로 직접 호출
+        if (typeof go === 'function') go(p);
+      }
+    }, false);
+
+    // 초기 상태: 주요경제지표 탭 활성화
+    document.addEventListener('DOMContentLoaded', function () {
+      paneKi.hidden = false;
+      kMain.hidden  = true;
+      setTabActive('eco_indicators');
+    });
+
+  })();
+  </script>
+
 </body>
 </html>
