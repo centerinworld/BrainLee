@@ -655,6 +655,7 @@ class CollectionScheduler:
                 logger.error(f"[공시최근증분] 오류: {r.stderr.strip()[-500:]}")
         except Exception as e:
             logger.error(f"[공시최근증분] 예외: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_intraday_price(self) -> None:
         """장중 매 1분 — watchlist 현재가 갱신."""
@@ -857,6 +858,7 @@ class CollectionScheduler:
             stock_universe.update_from_krx()
         except Exception as e:
             logger.error(f"[월간업데이트] {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _job_disclosure_check(self) -> None:
         """DART 공시 → 전체 상장종목 중 재무 공시 있는 종목 재수집 + FnGuide 잔여 보완."""
@@ -1141,6 +1143,7 @@ class CollectionScheduler:
             _main._run_screener_precompute()
         except Exception as e:
             logger.error(f"[스크리너] 사전계산 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _job_public_data(self) -> None:
         """공공데이터포털 수집 (Gap 자동감지 + 백필).
@@ -2316,6 +2319,7 @@ class CollectionScheduler:
             logger.info(f"[텐버거{run_type}] {len(results)}종목 선정")
         except Exception as e:
             logger.error(f"[텐버거{run_type}] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ══════════════════════════════════════════════════════════
     # NPS 고용 데이터 자동 업데이트 (매일 06:00)
@@ -2366,6 +2370,7 @@ class CollectionScheduler:
                 pass
         except Exception as e:
             logger.error(f"[NPS고용] 잡 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ══════════════════════════════════════════════════════════
     # HOT 섹터 블로그 자동파싱 (매일 07:00)
@@ -2475,6 +2480,7 @@ class CollectionScheduler:
                 logger.warning(f"[섹터지수보완] {reason} — 19:30 재시도에서 보정된다")
         except Exception as e:
             logger.error(f"[섹터지수보완] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_etf_freshness(self) -> None:
         """매일 22:30 — launchd ETF 파이프라인이 실제로 적재했는지 검증한다.
@@ -2630,6 +2636,7 @@ class CollectionScheduler:
             logger.info(f"[시장시그널브리핑] 완료: {res}")
         except Exception as e:
             logger.error(f"[시장시그널브리핑] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _job_sector_blog(self) -> None:
         """블로그 자동파싱 — Sector_define/blog_parser.run_parser() 위임."""
@@ -2642,6 +2649,7 @@ class CollectionScheduler:
             logger.info("[HOT섹터] 블로그 파싱 완료")
         except Exception as e:
             logger.error(f"[HOT섹터] 블로그 파싱 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_sector_rotation_cache(self) -> None:
         """장중 1시간마다, 장후 15:45에 주도섹터 로테이션 캐시 갱신."""
@@ -2701,6 +2709,7 @@ class CollectionScheduler:
             logger.info(f"[AI주도섹터] 리포트 갱신 완료: {sectors}")
         except Exception as e:
             logger.error(f"[AI주도섹터] 리포트 갱신 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ══════════════════════════════════════════════════════════
     # 섹터 AI 텔레그램 — 오전 8:30 / 점심 12:30
@@ -2723,6 +2732,7 @@ class CollectionScheduler:
             logger.info(f"[섹터오전텔레그램] {'발송완료' if ok else '스킵(캐시없음)'}")
         except Exception as e:
             logger.error(f"[섹터오전텔레그램] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_sector_lunch_tg(self) -> None:
         """매일 12:30 (평일) — 오전장 마감 섹터 분석 텔레그램 발송."""
@@ -2741,6 +2751,7 @@ class CollectionScheduler:
             logger.info(f"[섹터점심텔레그램] {'발송완료' if ok else '스킵(캐시없음)'}")
         except Exception as e:
             logger.error(f"[섹터점심텔레그램] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ══════════════════════════════════════════════════════════
     # 스탁이지 전략 분석 (매일 16:30 + 일요일 09:00 주간 요약)
@@ -2792,6 +2803,7 @@ class CollectionScheduler:
             logger.info("[스탁이지] 일별 분석 완료")
         except Exception as e:
             logger.error(f"[스탁이지] 분석 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _job_stockeasy_weekly(self) -> None:
         """주간 전략 패턴 요약 — DB 누적 분석 결과 기반 리포트."""
@@ -2804,6 +2816,7 @@ class CollectionScheduler:
             logger.info("[스탁이지] 주간 요약 완료")
         except Exception as e:
             logger.error(f"[스탁이지] 주간 요약 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_stockeasy_30m_sync(self) -> None:
         """장중 5분 / 장외 30분 — StockEasy 모멘텀 편입 즉시 실주문."""
@@ -2827,6 +2840,7 @@ class CollectionScheduler:
             logger.info(f"[스탁이지30분동기화] {result}")
         except Exception as e:
             logger.error(f"[스탁이지30분동기화] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_portfolio_sell_alerts(self) -> None:
         """매일 15:00 — 실제 보유종목 매도검토 텔레그램 요약 1회."""
@@ -2860,6 +2874,7 @@ class CollectionScheduler:
                 logger.error(f"[보유종목매도알림] 오류: {result.stderr[-500:] if result.stderr else ''}")
         except Exception as e:
             logger.error(f"[보유종목매도알림] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_v14_10m(self) -> None:
         """평일 장중 10분마다 V18.1 가상매매 실행.
@@ -2898,6 +2913,7 @@ class CollectionScheduler:
             logger.info(f"[V18가상매매] {result}")
         except Exception as e:
             logger.error(f"[V18가상매매] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_gc_20m(self) -> None:
         """평일 장중 20분마다 V12 골든크로스 가상매매 실행."""
@@ -2923,6 +2939,7 @@ class CollectionScheduler:
             logger.info(f"[V12골든크로스] sold={result.get('sold')} bought={result.get('bought')}")
         except Exception as e:
             logger.error(f"[V12골든크로스] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_rec_20m(self) -> None:
         """평일 장중 20분마다 V-RECOVERY 낙폭반등 가상매매 실행."""
@@ -2948,6 +2965,7 @@ class CollectionScheduler:
             logger.info(f"[V-RECOVERY] sold={result.get('sold')} bought={result.get('bought')}")
         except Exception as e:
             logger.error(f"[V-RECOVERY] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_cm_20m(self) -> None:
         """평일 장중 20분마다 V-CONTRACT-MOMENTUM 해외수주 모멘텀 가상매매 실행.
@@ -2976,6 +2994,7 @@ class CollectionScheduler:
             logger.info(f"[V-CONTRACT] sold={result.get('sold')} bought={result.get('bought')}")
         except Exception as e:
             logger.error(f"[V-CONTRACT] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_forward_validation_check(self) -> None:
         """매일 06:15 — 라이브 가상매매(peak_holding/peak_trade) 실측 데이터로
@@ -3002,6 +3021,7 @@ class CollectionScheduler:
             logger.info("[전방검증체크] 완료")
         except Exception as e:
             logger.error(f"[전방검증체크] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_combo_daily(self) -> None:
         """평일 18:35에 전략센터 현재 상위 5개를 가상매매로 재선정·실행한다.
@@ -3027,6 +3047,7 @@ class CollectionScheduler:
                 logger.info(f"[전략센터상위5가상매매] {key} sold={r.get('sold')} bought={r.get('bought')} ok={r.get('ok')}")
         except Exception as e:
             logger.error(f"[전략센터상위5가상매매] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_namu_execution_strength(self) -> None:
         """한국 장중 30분마다 관심/보유 종목의 나무 체결강도를 이력화한다."""
@@ -3116,6 +3137,7 @@ class CollectionScheduler:
                 logger.info(f"[가상매매공통손절] {sold}건 청산")
         except Exception as e:
             logger.error(f"[가상매매공통손절] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_kiwoom_ip_watch(self) -> None:
         """24시간 10분마다 공인 IP 변경을 감시한다(키움 REST는 등록 IP에서만 인증됨)."""
@@ -3198,6 +3220,7 @@ class CollectionScheduler:
                         logger.warning(f"[키움연결체크] 텔레그램 알림 실패: {_e}")
         except Exception as e:
             logger.error(f"[키움연결체크] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     @staticmethod
     def _kiwoom_rt_in_session(now: datetime) -> bool:
@@ -3373,6 +3396,7 @@ class CollectionScheduler:
             logger.info("[키움조건검색] 완료: %s", result)
         except Exception as exc:
             logger.error("[키움조건검색] 오류: %s", exc, exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ══════════════════════════════════════════════════════════
     # 고용보험 상시인원 배치 (매월 5일 02:00)
@@ -3408,6 +3432,7 @@ class CollectionScheduler:
                 logger.warning(f"[고용보험] 오류(returncode={result.returncode}): {(result.stderr or '')[-200:]}")
         except Exception as e:
             logger.error(f"[고용보험] 잡 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ══════════════════════════════════════════════════════════
     # BigQuery 동기화 (매일 23:30)
@@ -3459,6 +3484,7 @@ class CollectionScheduler:
             logger.error("[BigQuery동기화] 타임아웃 (30분 초과)")
         except Exception as e:
             logger.error(f"[BigQuery동기화] 실행 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _job_bq_triple_pipeline(self) -> None:
         """BigQuery 3배 패턴 계산 스크립트 실행."""
@@ -3487,6 +3513,7 @@ class CollectionScheduler:
                 logger.error(f"[BQ3배파이프라인] ❌ {(result.stderr or '')[-500:]}")
         except Exception as e:
             logger.error(f"[BQ3배파이프라인] 실행 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_bq_morning_alert(self) -> None:
         """매일 07:30 BigQuery 3배 패턴 아침 알림 실행."""
@@ -3520,6 +3547,7 @@ class CollectionScheduler:
                 logger.error(f"[텐버거알림] ❌ {(result.stderr or '')[-500:]}")
         except Exception as e:
             logger.error(f"[텐버거알림] 실행 오류: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ══════════════════════════════════════════════════════════
     # DART 수주공시 (매일 08:00 / 13:00 / 17:00)
@@ -3623,6 +3651,7 @@ class CollectionScheduler:
                 logger.warning("[근로복지공단] 매칭 결과 없음")
         except Exception as e:
             logger.error(f"[근로복지공단] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _job_wlb_monthly(self) -> None:
         """근로복지공단 고용보험 전사업장 스캔 → wlb_monthly 테이블 저장 (수동 호출용)."""
@@ -3696,6 +3725,7 @@ class CollectionScheduler:
             )
         except Exception as e:
             logger.error(f"[DART수주계약] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_dilution(self) -> None:
         """매일 07:10 — CB/BW/EB 및 유상/무상증자 희석 이벤트 공시 수집."""
@@ -3735,6 +3765,7 @@ class CollectionScheduler:
                 logger.warning("[DART희석] dilution validation 갱신 실패: %s", (_vproc.stderr or "")[-500:])
         except Exception as _ve:
             logger.warning("[DART희석] dilution validation 갱신 오류: %s", _ve)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_dilution_close(self) -> None:
         """평일 17:20 — 장 마감 뒤 접수된 희석 공시를 개별종목 화면에 반영."""
@@ -3760,6 +3791,7 @@ class CollectionScheduler:
             logger.info("[미국바이오파이프라인] 완료: %s", stats)
         except Exception as e:
             logger.error("[미국바이오파이프라인] 잡 오류: %s", e, exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_source_intelligence_weekly(self) -> None:
         """매일 20:00 — 소스별 신규 글을 반영하고 전수 요약을 갱신한다."""
@@ -3777,6 +3809,7 @@ class CollectionScheduler:
             logger.info("[소스인텔리전스주간] 완료: %s", (result.stdout or "ok")[-500:])
         except Exception as exc:
             logger.error("[소스인텔리전스주간] 오류: %s", exc, exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_us_13f_refresh(self) -> None:
         """매일 07:12 — 공개 13F/PTR 변경 여부를 확인해 미국종목 화면 캐시를 갱신."""
@@ -3794,6 +3827,7 @@ class CollectionScheduler:
             logger.info("[미국13F거물공시] 운용사 %s명, 정치인 %s명, 오류 %s건", len(result.get("managers", [])), len(result.get("politicians", [])), len(result.get("errors", [])))
         except Exception as exc:
             logger.error("[미국13F거물공시] 갱신 실패: %s", exc, exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_kiwoom_margin(self) -> None:
         """평일 18:45 — 키움 종목별 신용/대주 잔고 수집.
@@ -3815,6 +3849,12 @@ class CollectionScheduler:
             logger.info(f"[키움신용잔고] 완료: {stats}")
         except Exception as e:
             logger.error(f"[키움신용잔고] 잡 오류: {e}", exc_info=True)
+            raise
+        # 2026-10-02: 키움 IP 미등록(8050)으로 2,200종목 전부 token_fail 이어도 ok=True·success로 기록돼
+        # 7~9월 공백을 아무도 몰랐다. 토큰 실패가 절반을 넘으면 실패로 올린다.
+        reasons = dict(stats.get("fail_reasons_top") or [])
+        if reasons.get("token_fail", 0) > stats.get("target", 0) * 0.5:
+            raise RuntimeError(f"키움신용잔고 토큰 실패 {reasons.get('token_fail')}/{stats.get('target')} — 키움 허용 IP 확인 필요")
 
     # ── 키움 업종별투자자순매수 (2026-09-05 신규) ─────────────────────────
     # 2026-09-05: 원래 3개(ka10062/ka10035/ka10051)를 추가했으나, ka10062(동일
@@ -3841,6 +3881,7 @@ class CollectionScheduler:
                         f"ok={kospi.get('ok')}/{kosdaq.get('ok')}")
         except Exception as e:
             logger.error(f"[키움업종수급] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_kiwoom_sector_flow_validation(self) -> None:
         """매주 월요일 08:15 — ka10051 수급→다음날 수익률 상관관계 누적 검증 리포트.
@@ -3877,6 +3918,7 @@ class CollectionScheduler:
             send("\n".join(lines), key=f"kiwoom_sector_flow_validation_{date.today().isoformat()}")
         except Exception as e:
             logger.error(f"[키움업종수급검증] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 키움 대량체결 순위 (장중 10분) ────────────────────────────────────
     def _loop_kiwoom_large_trade_rank(self) -> None:
@@ -3953,6 +3995,7 @@ class CollectionScheduler:
             logger.info(f"[키움외국인지분율] 완료: {result}")
         except Exception as e:
             logger.error(f"[키움외국인지분율] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── DART 임원매매 (매주 일요일 02:30 전종목 + 매일 공시 incremental) ───
     def _loop_dart_insider(self) -> None:
@@ -3984,6 +4027,7 @@ class CollectionScheduler:
             logger.info(f"[주식수/주요주주프로필] daily 재생성 완료: {profile_stats}")
         except Exception as e:
             logger.error(f"[DART임원매매daily] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _job_dart_insider_bulk(self) -> None:
         """DART 임원매매와 5% 주요주주 공시를 전종목 단위로 주간 백필한다."""
@@ -4001,6 +4045,7 @@ class CollectionScheduler:
             logger.info(f"[주식수/주요주주프로필] bulk 재생성 완료: {profile_stats}")
         except Exception as e:
             logger.error(f"[DART임원매매bulk] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_backlog(self) -> None:
         """매주 일요일 01:20 — DART 수주잔고 분기 수집(2020년 이후)."""
@@ -4045,6 +4090,7 @@ class CollectionScheduler:
                 logger.warning("[DART수주잔고] backlog validation 재빌드 실패: %s", (_vproc.stderr or "")[-500:])
         except Exception as _ve:
             logger.warning("[DART수주잔고] backlog validation 재빌드 오류: %s", _ve)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_cost(self) -> None:
         """매주 일요일 01:50 — DART 매입재료비/재고/감가상각 분기 수집(최근 5년)."""
@@ -4086,6 +4132,7 @@ class CollectionScheduler:
                 logger.warning(f"[DART원가재고] 재고·매출·수주 시그널 빌드 오류: {_sig_e}")
         except Exception as e:
             logger.error(f"[DART원가재고] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_material_purchase(self) -> None:
         """매주 일요일 02:20 — DART 사업보고서 원재료 매입액 전용 수집."""
@@ -4125,6 +4172,7 @@ class CollectionScheduler:
             logger.warning("[DART매입재료비] 4시간 타임아웃 — 다음 주 재시도")
         except Exception as e:
             logger.error(f"[DART매입재료비] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_employee_count(self) -> None:
         """매주 일요일 02:55 — DART empSttus 기반 dart_employee_count 전용 수집."""
@@ -4162,6 +4210,7 @@ class CollectionScheduler:
             logger.warning("[DART직원수] 4시간 타임아웃 — 다음 주 재시도")
         except Exception as e:
             logger.error(f"[DART직원수] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_ch_extra(self) -> None:
         """매주 일요일 03:10 — 직원현황/판관비/매출채권 CH 보강 수집."""
@@ -4247,6 +4296,7 @@ class CollectionScheduler:
             logger.warning("[DART임직원CH] 4시간 타임아웃 — 다음 주 재시도")
         except Exception as e:
             logger.error(f"[DART임직원CH] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_segment(self) -> None:
         """매주 일요일 03:30 — 사업부문별 매출 수집."""
@@ -4283,6 +4333,7 @@ class CollectionScheduler:
                 logger.warning(f"[DART세그먼트] stderr: {result.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[DART세그먼트] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 한경 컨센서스 수집 ─────────────────────────────────────────────────
 
@@ -4301,6 +4352,7 @@ class CollectionScheduler:
             logger.info(f"[컨센서스] 증분 수집 완료 — {saved}건 신규 저장")
         except Exception as e:
             logger.error(f"[컨센서스] 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ══════════════════════════════════════════════════════════
     # 재무 무결점 — 월간 + 분기 마감 후
@@ -4360,6 +4412,7 @@ class CollectionScheduler:
             logger.warning("[재무무결성일일] 15분 타임아웃")
         except Exception as e:
             logger.error(f"[재무무결성일일] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_financial_integrity_monthly(self) -> None:
         """매월 1일 05:00 — 재무제표·현금흐름표 무결점 검사 및 자동 보완."""
@@ -4384,6 +4437,7 @@ class CollectionScheduler:
             logger.info("[재무무결점] 월간 점검 완료")
         except Exception as e:
             logger.error(f"[재무무결점] 월간 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_financial_integrity_quarterly(self) -> None:
         """분기 공시 마감 1주일 후 자동 재무 보완.
@@ -4463,6 +4517,7 @@ class CollectionScheduler:
             logger.info("[재무무결점] 분기 마감 후 점검 완료")
         except Exception as e:
             logger.error(f"[재무무결점] 분기 잡 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ──────────────────────────────────────────────────────────
     # KRX 종목기본정보 + 일별 변동 추적 (매일 18:35)
@@ -4869,6 +4924,7 @@ class CollectionScheduler:
                     logger.error(f"[시점일치원장] 오류: {ledger.stderr[-300:]}")
         except Exception as e:
             logger.error(f"[공시DB배치] 예외: {e}")
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── KRX 전종목 투자자 수급 — Playwright 브라우저 (매일 18:10 영업일) ──
     def _loop_krx_investor_playwright(self) -> None:
@@ -5092,6 +5148,7 @@ class CollectionScheduler:
                 logger.error(f"[주간4중검증] stderr: {result.stderr[-500:]}")
         except Exception as e:
             logger.error(f"[주간4중검증] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_postgres_weekly_backup(self) -> None:
         """매주 일요일 05:10 전체 PostgreSQL 스냅샷 백업."""
@@ -5310,6 +5367,7 @@ class CollectionScheduler:
             )
         except Exception as e:
             logger.error(f"[CF3중검증] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── DART 재무 재수집 (매일 00:30 — 상폐·ETF·ETN 제외 활성 종목) ───────────
     def _loop_data_integrity_followup(self) -> None:
@@ -5355,6 +5413,7 @@ class CollectionScheduler:
             logger.warning("[데이터무결성후속검증] 30분 타임아웃 — 내일 재시도")
         except Exception as e:
             logger.error(f"[데이터무결성후속검증] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_multi_source_financial_crosscheck(self) -> None:
         """매일 00:25 — scripts/multi_source_financial_crosscheck.py 실행.
@@ -5402,6 +5461,7 @@ class CollectionScheduler:
             logger.warning("[다중소스재무교차검증] 40분 타임아웃 — 내일 이어서 진행(미확인 대상만 재조회)")
         except Exception as e:
             logger.error(f"[다중소스재무교차검증] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_corporate_action_confirmation_followup(self) -> None:
         """매일 00:10 — scripts/corporate_action_confirmation_followup.py 실행.
@@ -5449,6 +5509,7 @@ class CollectionScheduler:
             logger.warning("[기업행위조정계수후속확정] 10분 타임아웃 — 내일 재시도")
         except Exception as e:
             logger.error(f"[기업행위조정계수후속확정] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_price_jump_audit_rebuild(self) -> None:
         """매일 00:15 — price_jump_audit 전체 재빌드.
@@ -5535,6 +5596,7 @@ class CollectionScheduler:
             logger.warning("[가격외부소스재대조] 30분 타임아웃")
         except Exception as e:
             logger.error(f"[가격외부소스재대조] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_naver_coverage_backfill(self) -> None:
         """매일 19:15 — KIS일별수집(18:00, 최대 1시간)이 끝날 시간을 잡아, 그날
@@ -5571,6 +5633,7 @@ class CollectionScheduler:
             logger.warning("[가격커버리지백필] 30분 타임아웃")
         except Exception as e:
             logger.error(f"[가격커버리지백필] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_weekly_strategy_reverify(self) -> None:
         """매주 일요일 01:30 — 등록된 전략 전량을 최신 가격/데이터로 재실행해
@@ -5610,6 +5673,7 @@ class CollectionScheduler:
             logger.warning("[전략센터주간재검증] 1시간 타임아웃 — 다음주 재시도")
         except Exception as e:
             logger.error(f"[전략센터주간재검증] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_dart_financial_recollect(self) -> None:
         """매일 00:30 — DART API로 2016~현재 재무제표 재수집 (legacy_dart_recollect.py).
@@ -5677,6 +5741,7 @@ class CollectionScheduler:
             logger.warning("[DART재무재수집] 4시간 타임아웃 — 내일 재시도")
         except Exception as e:
             logger.error(f"[DART재무재수집] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── DART CF 위험군 재수집 (매일 01:00 — MISSING_Q123/NULL_Q123_DEPR/MIXED_SOURCE) ──
     def _loop_dart_cf_risk_recollect(self) -> None:
@@ -5746,6 +5811,7 @@ class CollectionScheduler:
             logger.warning("[DART_CF위험군재수집] 3시간 타임아웃 — 내일 재시도")
         except Exception as e:
             logger.error(f"[DART_CF위험군재수집] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── DB 유지보수 (매주 일요일 04:00) ─────────────────────────────────────────
     def _loop_db_maintenance(self) -> None:
@@ -5908,6 +5974,7 @@ class CollectionScheduler:
             logger.warning("[페이지데이터감사] 30분 타임아웃")
         except Exception as e:
             logger.error(f"[페이지데이터감사] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 턴어라운드워치 사전계산 (매일 04:40, CPU 유휴시간대) ──────────────────
     def _loop_turnaround_watch_precompute(self) -> None:
@@ -5934,6 +6001,7 @@ class CollectionScheduler:
             logger.info(f"[턴어라운드워치사전계산] 완료: {counts}")
         except Exception as e:
             logger.error(f"[턴어라운드워치사전계산] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 투자 의사결정 RAG (평일 20:05, DeepSeek 비피크) ─────────────────────
     def _loop_investment_decision_rag(self) -> None:
@@ -5953,6 +6021,7 @@ class CollectionScheduler:
             logger.info(f"[투자의사결정RAG] 대기 작업 {resumed}건 재개")
         except Exception as e:
             logger.error(f"[투자의사결정RAG] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 체리형부식 스크리너 사전계산 (매일 04:45) ──────────────────────────────
     def _loop_cherry_screener_precompute(self) -> None:
@@ -5977,6 +6046,7 @@ class CollectionScheduler:
                 f"3스크린 {len(data['three_screen_pass'])}건, 2스크린 {len(data['two_screen_pass'])}건")
         except Exception as e:
             logger.error(f"[체리형부스크리너사전계산] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── FnGuide/DART 전종목 순차 교차검증 (매일 03:15, FNGUIDE 일일한도 준수) ────
     def _loop_fnguide_dart_verify_sweep(self) -> None:
@@ -6018,6 +6088,7 @@ class CollectionScheduler:
                 self._record_fnguide_dart_mismatches(result["mismatches"])
         except Exception as e:
             logger.error(f"[FnGuideDART전종목검증] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _record_fnguide_dart_mismatches(self, mismatches: list) -> None:
         """발견된 불일치를 fnguide_dart_mismatch_log에 누적 기록 — 계정 오매칭 재발 여부를
@@ -6086,6 +6157,7 @@ class CollectionScheduler:
             logger.info(f"[미검증스냅샷백필] 완료: {result}")
         except Exception as e:
             logger.error(f"[미검증스냅샷백필] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 전략센터 가상매매 (sc_paper) ────────────────────────────────────────────
     def _loop_paper_signal_intake(self) -> None:
@@ -6111,6 +6183,7 @@ class CollectionScheduler:
                 conn.close()
         except Exception as e:
             logger.error(f"[SC가상매매신호수집] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_paper_fill(self) -> None:
         """평일 09:10 — sc_paper pending 주문을 D+1 시가로 체결."""
@@ -6138,6 +6211,7 @@ class CollectionScheduler:
                 conn.close()
         except Exception as e:
             logger.error(f"[SC가상매매체결] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 분기실적 TTM 신호 스캔 (매일 06:00, 분기시즌 추가) ──────────────────────
     def _loop_earnings_signal_scan(self) -> None:
@@ -6178,6 +6252,7 @@ class CollectionScheduler:
                 self._send_earnings_signal_telegram(result, days_back)
         except Exception as e:
             logger.error(f"[실적신호스캔] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _send_earnings_signal_telegram(self, result: dict, days_back: int) -> None:
         """신규 TTM 신호를 텔레그램으로 발송"""
@@ -6271,6 +6346,7 @@ class CollectionScheduler:
             )
         except Exception as e:
             logger.error(f"[키움투자자수급] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 키움 종목기본정보 PER/PBR/유동주식수 (매주 월요일 06:30) ──────────────
     def _loop_kiwoom_stock_universe(self) -> None:
@@ -6305,6 +6381,7 @@ class CollectionScheduler:
             )
         except Exception as e:
             logger.error(f"[키움종목기본정보] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 텐버거 위클리 리포트 ─────────────────────────────────────────
     def _loop_tenbagger_weekly(self) -> None:
@@ -6339,6 +6416,7 @@ class CollectionScheduler:
                 logger.error(f"[텐버거위클리] 오류: {result.stderr[-200:]}")
         except Exception as e:
             logger.error(f"[텐버거위클리] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 지표상회 카페 시그널 구조화 ────────────────────────────────
     def _loop_cafe_signal_weekly(self) -> None:
@@ -6444,6 +6522,7 @@ class CollectionScheduler:
                 logger.error(f"[카페시그널] 지표 이상치 계산 오류: {indicator_signals.stderr[-400:]}")
         except Exception as e:
             logger.error(f"[카페시그널] {run_type} 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 퀀트 지표 이상치 → 관련 종목 매수 후보 ────────────────────────
     def _loop_quant_indicator_signal(self) -> None:
@@ -6508,6 +6587,7 @@ class CollectionScheduler:
                 logger.error(f"[퀀트지표트리거] 종목 매매 시그널 스냅샷 오류: {snapshots.stderr[-400:]}")
         except Exception as e:
             logger.error(f"[퀀트지표트리거] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # 2026-08-11 제거: _job_quant_major_indicator_daily가 crontab의
     # "30 19 * * 1-5 ... quant_indicators_cron.py --mode daily"와 5분 차이로
@@ -6605,6 +6685,7 @@ class CollectionScheduler:
             logger.error("[체리형부최신채널] 30분 타임아웃")
         except Exception as e:
             logger.error(f"[체리형부최신채널] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_cherry_family_learning(self) -> None:
         """매일 09:05 — 체리형부 family 4채널 등록 상태를 확인하고 증분 수집/재학습 메타를 저장."""
@@ -6645,6 +6726,7 @@ class CollectionScheduler:
             logger.error("[체리형부패밀리학습] 45분 타임아웃")
         except Exception as e:
             logger.error(f"[체리형부패밀리학습] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 텐버거 트리거 알림 ──────────────────────────────────────────
     def _loop_tenbagger_trigger(self) -> None:
@@ -6668,6 +6750,7 @@ class CollectionScheduler:
                 logger.error(f"[텐버거트리거] 오류: {result.stderr[-200:]}")
         except Exception as e:
             logger.error(f"[텐버거트리거] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── Trigger Discovery Lab 야간 재빌드 ────────────────────────────
     # ── DART 배당 데이터 연간 수집 ────────────────────────────────────
@@ -6711,6 +6794,7 @@ class CollectionScheduler:
             logger.error("[DART배당수집] 타임아웃 (2시간 초과)")
         except Exception as e:
             logger.error(f"[DART배당수집] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── Trigger Discovery Lab 야간 재빌드 ────────────────────────────
     def _loop_trigger_discovery_rebuild(self) -> None:
@@ -6745,6 +6829,7 @@ class CollectionScheduler:
             logger.error("[트리거디스커버리갱신] 타임아웃 (30분 초과)")
         except Exception as e:
             logger.error(f"[트리거디스커버리갱신] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── Quality 팩터 일일 빌드 ─────────────────────────────────────────
     def _loop_risk_parity_sizing(self) -> None:
@@ -6778,6 +6863,7 @@ class CollectionScheduler:
             logger.error("[RiskParity사이징] 타임아웃")
         except Exception as e:
             logger.error(f"[RiskParity사이징] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _loop_quality_factor_build(self) -> None:
         """매일 03:30 kr_quality_factor 최신 분기 갱신."""
@@ -6810,6 +6896,7 @@ class CollectionScheduler:
             logger.error("[Quality팩터빌드] 타임아웃 (10분 초과)")
         except Exception as e:
             logger.error(f"[Quality팩터빌드] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── DART 연구개발비 PostgreSQL 수집 ───────────────────────────────
     def _loop_dart_rd_collect(self) -> None:
@@ -6854,6 +6941,7 @@ class CollectionScheduler:
             logger.error("[DART연구개발수집] 타임아웃 (2시간 초과)")
         except Exception as e:
             logger.error(f"[DART연구개발수집] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     # ── 미국 종목 OHLCV 일별 시세 & 팩터 자동 적재 ───────────────────
     def _loop_us_daily_quotes_and_factors(self) -> None:
@@ -6899,6 +6987,7 @@ class CollectionScheduler:
             self._job_us_virtual_rebalance(expected_session.isoformat())
         except Exception as e:
             logger.error(f"[미국일별시세팩터수집] 오류: {e}", exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다
 
     def _job_us_virtual_rebalance(self, expected_market_date: str) -> None:
         try:
@@ -6914,3 +7003,4 @@ class CollectionScheduler:
             )
         except Exception as e:
             logger.error("[미국가상매매리밸런싱] 오류: %s", e, exc_info=True)
+            raise  # 2026-10-02: 실패를 삼키면 원장에 success로 남아 침묵 실패가 된다

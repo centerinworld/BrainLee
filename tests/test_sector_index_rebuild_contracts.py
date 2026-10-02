@@ -170,5 +170,8 @@ class TestJobLogging:
         errors: list[str] = []
         monkeypatch.setattr(subprocess, "run", _fake_run(returncode=1, stderr="boom"))
         monkeypatch.setattr(scheduler.logger, "error", lambda msg, *a, **k: errors.append(str(msg)))
-        _JobStub()._job()  # 예외를 밖으로 던지지 않는다(원장 기록은 _run_job_safe 몫)
+        # 2026-10-02: 실패를 삼키면 _run_job_safe 원장에 success로 남는다 → 오류를 기록하고 예외를 다시 던진다
+        import pytest
+        with pytest.raises(RuntimeError):
+            _JobStub()._job()
         assert any("섹터지수보완" in e for e in errors), errors
