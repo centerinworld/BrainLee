@@ -6345,11 +6345,17 @@ def get_data_quality(stock_code: str):
     finally:
         _tmp_mc.close()
 
+    # 2026-10-03: 이 등급은 검증 플래그(재분류 결과 포함) 기준이며 값 자체의 원문 일치율이 아니다.
+    # 독립 재검토(docs/FINANCIAL_REREVIEW_20261002.md)에서 2023년 이후는 DART 원문으로 정정, 감가상각은 주석 공시라 미검증.
+    verification_note = ("등급은 검증 기록 기준입니다. 2023년 이후 재무·현금흐름은 2026-10 DART 원문 재대조로 정정됐고, "
+                         "2016~2022년은 재대조 진행 중, 감가상각비는 주석 공시라 원문 검증 전입니다.")
+    grade_desc = f"{grade_desc} — {verification_note}" if grade_desc else verification_note
     return {
         "grade": grade,
         "grade_label": grade_label,
         "grade_color": grade_color,
         "grade_desc": grade_desc,
+        "verification_note": verification_note,
         "items": items,
         "has_validation": has_validation,
         "val_year_min": _min_yr,
