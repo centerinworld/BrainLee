@@ -1,0 +1,48 @@
+{
+  "description": "GitHub Actions로 수집하는 해외 경제·방산·시장 뉴스 RSS 소스 목록",
+  "updated": "2026-10-02",
+  "sources": [
+    {
+      "name": "Reuters Business",
+      "url": "https://feeds.reuters.com/reuters/businessNews",
+      "category": "경제",
+      "lang": "en"
+    },
+    {
+      "name": "Defense News",
+      "url": "https://www.defensenews.com/arc/outboundfeeds/rss/",
+      "category": "방산",
+      "lang": "en"
+    },
+    {
+      "name": "Yonhap English Economy",
+      "url": "https://en.yna.co.kr/RSS/economy.xml",
+      "category": "국내(영문)",
+      "lang": "en"
+    },
+    {
+      "name": "Korea Herald Economy",
+      "url": "https://www.koreaherald.com/rss/economy.xml",
+      "category": "국내(영문)",
+      "lang": "en"
+    },
+    {
+      "name": "CNBC Finance",
+      "url": "https://www.cnbc.com/id/100727362/device/rss/rss.html",
+      "category": "경제",
+      "lang": "en"
+    },
+    {
+      "name": "Breaking Defense",
+      "url": "https://breakingdefense.com/feed/",
+      "category": "방산",
+      "lang": "en"
+    },
+    {
+      "name": "Janes Defense Weekly",
+      "url": "https://www.janes.com/feeds/news",
+      "category": "방산",
+      "lang": "en"
+    }
+  ]
+}

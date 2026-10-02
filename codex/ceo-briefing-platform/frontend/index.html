@@ -147,10 +147,11 @@
       <section id="pane-news" hidden>
         <div class="ki-card">
           <div class="ki-row"><h2>뉴스정보</h2><input id="news-q" class="ki-search" placeholder="제목·요약·언론사 검색"></div>
-          <!-- 뉴스 타입 선택 (국내/경쟁사) -->
+          <!-- 뉴스 타입 선택 (국내/경쟁사/GitHub Actions 수집) -->
           <div class="ki-news-type-bar">
             <button id="news-btn-company" class="on" onclick="switchNewsType('company')">📰 주요기사</button>
             <button id="news-btn-competitor" onclick="switchNewsType('competitor')">🌍 경쟁사·해외</button>
+            <button id="news-btn-github" onclick="switchNewsType('github')" title="GitHub Actions가 수집한 해외 뉴스 RSS">⚙️ GitHub Actions 수집</button>
           </div>
           <p class="ki-muted" id="news-meta"></p>
           <ul class="ki-news" id="news-list"><li class="ki-muted">불러오는 중…</li></ul>

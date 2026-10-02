@@ -23,15 +23,15 @@
     };
   });
 
-  // 뉴스 타입 전환 (company/competitor) - index.html 통합 시 전역 함수로 노출
+  // 뉴스 타입 전환 (company/competitor/github) - index.html 통합 시 전역 함수로 노출
   var currentNewsType = 'company';
   window.switchNewsType = function (type) {
     if (currentNewsType === type) return;
     currentNewsType = type;
-    var btnCo = $('news-btn-company');
-    var btnCr = $('news-btn-competitor');
-    if (btnCo) btnCo.classList.toggle('on', type === 'company');
-    if (btnCr) btnCr.classList.toggle('on', type === 'competitor');
+    ['company', 'competitor', 'github'].forEach(function (t) {
+      var btn = $('news-btn-' + t);
+      if (btn) btn.classList.toggle('on', t === type);
+    });
     news.loaded = false;
     news.items = [];
     $('news-list').innerHTML = '<li class="ki-muted">불러오는 중…</li>';
@@ -85,8 +85,39 @@
       return '<li><div class="meta"><span class="pub">' + esc(n.article_publisher || n.source) + '</span><span>' + esc(kst(n.article_published_at)) + '</span></div><a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(n.title) + '</a><p>' + esc(n.summary) + '</p></li>';
     }).join('') || '<li class="ki-muted">조건에 맞는 뉴스가 없습니다.</li>';
   }
+  // GitHub Actions 수집 뉴스 JSON URL (저장소 공개 후 또는 GitHub Pages 사용 시 설정)
+  var GITHUB_NEWS_URL = '/data/overseas-news-latest.json';
+
   function loadNews() {
     var feedType = currentNewsType || 'company';
+
+    if (feedType === 'github') {
+      // GitHub Actions가 수집한 정적 JSON에서 로드
+      fetch(GITHUB_NEWS_URL + '?t=' + Date.now())
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (d) {
+          news.loaded = true;
+          var items = (d.items || []).map(function (item) {
+            return {
+              title: item.title || '',
+              link: item.link || '',
+              summary: item.summary || '',
+              article_published_at: item.published || '',
+              article_publisher: item.source_name || item.category || '해외',
+              source: item.category || '해외',
+            };
+          });
+          news.items = items.sort(function (a, b) { return String(b.article_published_at).localeCompare(String(a.article_published_at)); });
+          var meta = $('news-meta');
+          if (meta && d.generated_at) meta.textContent = '수집 시각: ' + d.generated_at.slice(0, 16).replace('T', ' ') + ' UTC · ' + (d.total || 0) + '건';
+          renderNews();
+        })
+        .catch(function () {
+          $('news-list').innerHTML = '<li class="ki-muted">GitHub Actions 수집 데이터를 불러오지 못했습니다. 워크플로우가 아직 실행되지 않았거나 파일이 없습니다.</li>';
+        });
+      return;
+    }
+
     get('/feeds/' + feedType).then(function (d) {
       news.loaded = true;
       news.items = (d.published || []).slice().sort(function (a, b) { return String(b.article_published_at).localeCompare(String(a.article_published_at)); });
