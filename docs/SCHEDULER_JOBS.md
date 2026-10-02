@@ -41,7 +41,7 @@
 | `HOT섹터블로그` (`_loop_sector_blog`) | 활성 | 매일 07:00 블로그 신규 포스트 파싱 |
 | `섹터지수보완` (`_loop_sector_index_rebuild`) | 활성 | 매일 18:40 + 19:30 가격히스토리 기반 섹터지수 보완 |
 | `종목다중분류` (`_loop_sector_taxonomy`) | 활성 | 매일 20:10 StockEasy·Kiwoom 업종/테마 + 내부 밸류체인 갱신 |
-| `ETF수집점검` (`_loop_etf_freshness`) | 활성 | 매일 21:45 launchd ETF 파이프라인 계약 검증(미실행 시 1회 재시도) |
+| `ETF수집점검` (`_loop_etf_freshness`) | 활성 | 매일 22:30(게시 22:05 이후) launchd ETF 파이프라인 계약 검증(미실행 시 1회 재시도) |
 | `섹터로테이션캐시` (`_loop_sector_rotation_cache`) | 활성 | 장중 1시간 + 장마감 기준 주도섹터 캐시 |
 | `AI주도섹터` (`_loop_ai_leading_sector`) | 활성 | 매일 07:20 미국 증시 기반 주도 섹터 판독 |
 | `섹터오전텔레그램` (`_loop_sector_morning_tg`) | 활성 | 매일 08:30 섹터 AI 리포트 텔레그램 |

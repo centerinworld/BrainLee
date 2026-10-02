@@ -13,7 +13,7 @@ cron retry 스크립트로 돌기 때문이다. 즉 계약이 "잡 실행"을 �
 ----------------
 1. `collection_health.JOB_DATASET_KEYS["ETF수집점검"] = ("etf",)` — 점검 잡을 계약에 묶는다
    (`_run_job_safe` 가 실행 후 계약을 평가해 details·상태에 남긴다).
-2. `scheduler._loop_etf_freshness` — 매일 21:45(launchd 21:15 뒤) 계약을 확인한다.
+2. `scheduler._loop_etf_freshness` — 매일 22:30(게시 launchd 22:05 뒤, 2026-10-02 변경) 계약을 확인한다.
 3. `_job_etf_freshness_check` — 비정상이고 **오늘 파이프라인이 아직 안 돌았으면** 한 번 실행,
    그래도 비정상이면 예외로 올려 원장에 `failed` 로 남긴다. 오늘 이미 돌았으면 재실행하지 않고
    로그의 실패 스테이지를 근거로 보고한다(수십 분짜리 파이프라인 중복 실행 방지).
@@ -149,7 +149,7 @@ class TestFreshnessJob:
 
 
 class TestScheduleOrder:
-    def test_runs_once_daily_at_2145(self, monkeypatch):
+    def test_runs_once_daily_at_2230(self, monkeypatch):
         runs: list[str] = []
         monkeypatch.setattr(scheduler, "_run_job_safe", lambda name, fn: runs.append(name) or True)
 
@@ -170,7 +170,7 @@ class TestScheduleOrder:
 
         stub = Stub()
         stub._loop()
-        assert stub.calls == [("secs", 76), ("until", 21, 45)]
+        assert stub.calls == [("secs", 76), ("until", 22, 30)]
         assert runs == ["ETF수집점검"]
 
     def test_job_is_registered_in_the_scheduler_jobs_list(self):

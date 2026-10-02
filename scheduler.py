@@ -553,27 +553,6 @@ class CollectionScheduler:
         self._stop_event.set()
         logger.info("[스케줄러] 중지 신호 전송")
 
-    def _loop_postgres_sync(self) -> None:
-        """Keep PostgreSQL current while legacy collectors are being retired.
-
-        ⚠️ 2026-10-02 확인: 미등록(실행 안 됨). 등록 금지 — 레거시 stock.db의 price_history 45일·재무 3년·stock_universe를
-        PG에 DO UPDATE로 덮어써 PG에서 정정한 값(종가 정정, 재무 정정 등)을 되돌린다. PG가 정본이다.
-        """
-        if not config.IS_POSTGRES:
-            return
-        self._wait_secs(90)
-        while not self._stop_event.is_set():
-            try:
-                subprocess.run(
-                    [sys.executable, str(Path(__file__).parent / "scripts" / "sync_tenbagger_postgres.py")],
-                    cwd=str(Path(__file__).parent),
-                    check=True,
-                    timeout=25 * 60,
-                )
-            except Exception as exc:
-                logger.error("[PostgreSQL증분동기화] 실패: %s", exc)
-            self._wait_secs(30 * 60)
-
     def _loop_tenbagger_historical_validation(self) -> None:
         """Rebuild the leakage-controlled historical scoreboard every Monday."""
         while not self._stop_event.is_set():
@@ -3479,19 +3458,6 @@ class CollectionScheduler:
             logger.error("[BigQuery동기화] 타임아웃 (30분 초과)")
         except Exception as e:
             logger.error(f"[BigQuery동기화] 실행 오류: {e}")
-
-    def _loop_bq_triple_pipeline(self) -> None:
-        """매일 18:30 BigQuery 3배 패턴 일일 파이프라인 실행."""
-        if os.getenv("ENABLE_BQ_TRIPLE_PIPELINE", "0") != "1":
-            logger.info("[BQ3배파이프라인] 자동 실행 비활성화: ENABLE_BQ_TRIPLE_PIPELINE=1 설정 시에만 실행")
-            return
-        logger.info("[BQ3배파이프라인] 루프 시작")
-        self._wait_secs(60)
-        while not self._stop_event.is_set():
-            self._wait_until(18, 30, skip_weekend=False)
-            if self._stop_event.is_set():
-                break
-            _run_job_safe("BQ3배파이프라인", self._job_bq_triple_pipeline)
 
     def _job_bq_triple_pipeline(self) -> None:
         """BigQuery 3배 패턴 계산 스크립트 실행."""
