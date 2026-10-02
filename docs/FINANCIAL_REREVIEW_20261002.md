@@ -164,3 +164,21 @@ cash_conversion_signals → FCF 파생 → kr_quality_factor → valuation_histo
 3. segment_revenue 수집 재개, 수주잔고 파서 재작성(의심 2,236건).
 4. valuation_history 레거시 `per`/`eps`는 스냅샷마다 정의가 달라 재현 불가 — `per_ttm`만 신뢰.
 5. 텔레그램 봇 토큰 교체(사용자).
+
+## 9. 4단계 — 남은 항목 처리 (2026-10-03 오전)
+
+| 대상 | 발견 | 조치 / run_id |
+|---|---|---|
+| **segment_revenue** | 8-01 이후 갱신 0인데 잡은 매주 success. 원인 ① 수집기가 '그해 제출' 사업보고서(=직전 회계연도)를 그해로 저장 → **연간 부문 행 전체가 1년 밀림**(부문합이 1년 전 매출과 일치 367 vs 같은 해 42, 삼성 FY2025 DX 187.97조가 2026 행), ② 비정상 종료도 경고만 | 8,630행 year−1 `segment_year_shift_20261003_083230`(백업 `segment_revenue_backup_year_shift_20261003`), 수집기는 다음 해 제출 `사업보고서 (YYYY.)`로 회계연도 매칭, 실패 시 raise |
+| 스케줄러 하위 스크립트 실패 | ~30곳이 `returncode != 0`을 경고만 하고 success | `_run_job_safe`가 잡 스레드의 subprocess 비정상 종료를 모아 `success_with_warning` + `subprocess_failures` 기록 |
+| 감가상각 | 모든 출처에서 '유형 감가상각만'과 'D&A'가 섞임. DART CF 본문엔 40개 중 31개가 상각 행 없음(주석) | 명백한 오류(DART 유형 감가상각 대비 <0.99배 또는 >1.7배) 1,615행 + 다음 분기 3개월 422행 NULL `dep_definite_wrong_null_20261003_083609` |
+| 감가상각 정의 | XBRL 주석으로 확인: 삼성 FY2024 연결 유형 감가상각 39.65조 = DB quarter=4 값, FnGuide 51.85조는 근거 없음 | **정의 확정: `cash_flow_data.depreciation` = 유형자산 감가상각비, `financial_data.depreciation_amortization` = 유형+무형+사용권 상각.** XBRL 수집기 `scripts/review/fetch_xbrl_depreciation_20261003.py`(2021~2025 사업보고서, 진행 중) → 완료 후 두 컬럼 일괄 정정 |
+| 수주잔고 빈 값 | 원문에 숫자가 있는데 NULL | 합계 행 보조 추출기(기존 정상값 대비 정확도 94.9%)로 90건 채움 `backlog_total_row_fill_20261003_083731`. 기존 값과 다른 770건은 `backlog_review_flags_20261002`(reason extractor_disagrees 등) — 표본 10건 중 5건은 **기존 값이 틀림**(거래처 수·각주 기준금액을 저장) |
+| 데이터 품질 등급 화면 | 검증 플래그 기준 등급이 정확도처럼 보임 | `/api/dashboard/data-quality/{code}`의 `grade_desc`·`verification_note`에 기준·한계 문구 |
+
+### 남은 일 (갱신)
+1. 2016~2022 재수집(진행 중, `run_fetch_2016_2022.sh`) → 같은 절차로 적용·재측정·파생 재구축.
+2. XBRL 감가상각 수집 완료 → `cash_flow_data.depreciation`(연간)·`financial_data.depreciation_amortization` 정정, 분기는 반기·분기보고서 XBRL로 확장.
+3. 수주잔고 검토 표시(약 3,000건) — 파서 재작성 시 합계행 규칙을 기본으로.
+4. 백테스트·전략 판정 재실행(정정 전 재무값 기준이었음).
+5. 텔레그램 봇 토큰 교체(사용자).
