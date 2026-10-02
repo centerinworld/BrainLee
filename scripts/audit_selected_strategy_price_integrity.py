@@ -48,8 +48,9 @@ PRICE_JUMP_CONTAMINATION_THRESHOLD = 0.10
 # 2026-09-29: 7%→10%로 상향. contract_momentum 25.6~26.3(8.82%)과 extreme_dd_volume
 # 20.3~21.11(7.92%)이 거래정지·COVID 급락 등 실제 시장 이벤트로 인해 7% 임계를 미세
 # 초과했으나 전략 수준 오염율은 3%·7.9%로 경미함을 감안해 조정.
-# 5% warning band와 7% 구 임계는 검토 참조선으로 유지.
-PRICE_JUMP_CONTAMINATION_WARNING_THRESHOLD = 0.07
+# 5% warning band는 검토 참조선으로 유지한다. 5~10% 구간은 통과하더라도
+# 경고로 노출해 임계값 상향이 경계 사례를 숨기지 않게 한다.
+PRICE_JUMP_CONTAMINATION_WARNING_THRESHOLD = 0.05
 POLICY_VERSION = "price-window-v2-10pct-20260929"
 
 

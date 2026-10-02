@@ -1842,7 +1842,7 @@ def get_volume_surge(
         rows = conn.execute(
             """
             WITH latest AS (
-                SELECT stock_code, MAX(substr(date,1,10)) AS trade_date
+                SELECT stock_code, MAX(date) AS trade_ts
                 FROM price_history
                 WHERE stock_code NOT LIKE '%^%'
                   AND stock_code NOT LIKE 'GC%'
@@ -1851,37 +1851,43 @@ def get_volume_surge(
                   AND stock_code NOT LIKE 'NQ%'
                   AND stock_code NOT LIKE '%-F'
                   AND stock_code NOT LIKE '%=%'
+                  AND (
+                    stock_code !~ '^[0-9]{6}$'
+                    OR EXISTS (
+                        SELECT 1 FROM stock_universe u
+                        WHERE u.stock_code = price_history.stock_code
+                    )
+                  )
                   AND close > 0
                   AND volume > 0
                 GROUP BY stock_code
+                HAVING MAX(date) >= (
+                    (SELECT MAX(date)::date FROM price_history) - INTERVAL '7 days'
+                )::text
             ),
-            today_vol AS (
-                SELECT p.stock_code, l.trade_date, p.volume AS today_volume, p.close AS today_close
-                FROM price_history p
-                JOIN latest l ON p.stock_code = l.stock_code AND substr(p.date,1,10) = l.trade_date
-                WHERE p.close > 0 AND p.volume > 0
-            ),
-            ranked_vols AS (
-                SELECT p.stock_code, p.volume,
-                       ROW_NUMBER() OVER (
-                         PARTITION BY p.stock_code
-                         ORDER BY substr(p.date,1,10) DESC
-                       ) AS rn
-                FROM price_history p
-                JOIN latest l ON p.stock_code = l.stock_code AND substr(p.date,1,10) <= l.trade_date
-                WHERE p.close > 0 AND p.volume > 0
-            ),
-            avg20 AS (
-                SELECT stock_code, AVG(volume) AS avg_vol20
-                FROM ranked_vols
-                WHERE rn BETWEEN 2 AND 21
-                GROUP BY stock_code
-                HAVING COUNT(*) >= 10
+            volume_stats AS (
+                SELECT l.stock_code, substr(l.trade_ts,1,10) AS trade_date,
+                       t.volume AS today_volume, t.close AS today_close,
+                       a.avg_vol20
+                FROM latest l
+                JOIN price_history t
+                  ON t.stock_code = l.stock_code AND t.date = l.trade_ts
+                JOIN LATERAL (
+                    SELECT AVG(h.volume) AS avg_vol20, COUNT(*) AS sample_count
+                    FROM (
+                        SELECT p.volume
+                        FROM price_history p
+                        WHERE p.stock_code = l.stock_code
+                          AND p.date < l.trade_ts
+                          AND p.close > 0 AND p.volume > 0
+                        ORDER BY p.date DESC
+                        LIMIT 20
+                    ) h
+                ) a ON a.sample_count >= 10
             )
-            SELECT t.stock_code, t.trade_date, t.today_volume, t.today_close, a.avg_vol20,
-                   CAST(t.today_volume AS REAL) / a.avg_vol20 AS vr20
-            FROM today_vol t
-            JOIN avg20 a ON t.stock_code = a.stock_code
+            SELECT stock_code, trade_date, today_volume, today_close, avg_vol20,
+                   CAST(today_volume AS REAL) / avg_vol20 AS vr20
+            FROM volume_stats
             ORDER BY vr20 DESC
             LIMIT ?
             """,

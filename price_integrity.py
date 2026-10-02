@@ -241,6 +241,16 @@ SELECT x.*,prev_close canonical_prev_close,
  CASE WHEN return_usable=1 AND previous_return_usable=1 AND prev_close>0
  THEN close/prev_close-1 END safe_daily_return FROM x;
 """
+    if not hasattr(conn, '_connection'):
+        # SQLite has no CREATE OR REPLACE VIEW.  Keep the in-memory/test path
+        # equivalent to PostgreSQL by dropping dependants first and rebuilding
+        # the same three views with ordinary CREATE VIEW statements.
+        sql = (
+            "DROP VIEW IF EXISTS canonical_price_returns_v;\n"
+            "DROP VIEW IF EXISTS canonical_price_history_v;\n"
+            "DROP VIEW IF EXISTS price_history_quality_v;\n"
+            + sql.replace("CREATE OR REPLACE VIEW", "CREATE VIEW")
+        )
     native_script(conn, sql)
 
 
