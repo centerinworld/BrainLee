@@ -630,13 +630,19 @@ def sync_price_fields_from_history() -> int:
     conn = connect_primary_db(timeout=120)
     try:
         updated = conn.execute(_PRICE_SYNC_SQL).rowcount
+        # 2026-10-02: market_cap(억원)도 월 1회만 갱신돼 '종가×상장주식수'와 2% 이내인 종목이 절반뿐이었다.
+        # 최신 종가로 다시 계산하되, 기존 값과 2배 넘게 다르면 주식수 자체가 바뀌었을 수 있어(병합·정리매매) 건드리지 않는다.
+        mc = conn.execute("""UPDATE stock_universe SET market_cap=ROUND(CAST(close*shares_issued/1e8 AS NUMERIC), 1)
+                             WHERE close>0 AND shares_issued>0 AND market_cap>0
+                               AND close*shares_issued/1e8 BETWEEN market_cap*0.5 AND market_cap*2
+                               AND abs(market_cap - close*shares_issued/1e8) > 0.05""").rowcount
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-    logger.info(f"[stock_universe] price_history → 가격 필드 동기화 {updated}건")
+    logger.info(f"[stock_universe] price_history → 가격 필드 동기화 {updated}건, 시가총액 재계산 {mc}건")
     return max(updated or 0, 0)
 
 

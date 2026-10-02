@@ -479,7 +479,8 @@ class CollectionScheduler:
             ("재무무결성일일", self._loop_financial_integrity_daily), # ★ 매일 06:20 재무 이상값 수리 + 무결성 리포트
             ("재무무결점월간", self._loop_financial_integrity_monthly),  # ★ 매월 1일 05:00 재무 무결점 검사
             ("재무무결점분기", self._loop_financial_integrity_quarterly), # ★ 분기 공시마감 1주 후 자동 보완
-            ("유니버스종가동기화", self._loop_universe_price_sync),  # ★ 기동 1분 후 + 평일 16:10·19:40 price_history → stock_universe 종가/기준일
+            ("유니버스종가동기화", self._loop_universe_price_sync),
+            ("분기수급집계", self._loop_flow_quarterly),  # ★ 평일 19:50 price_history → investor/foreign_flow_quarterly(직전·현재 분기)  # ★ 기동 1분 후 + 평일 16:10·19:40 price_history → stock_universe 종가/기준일
             ("KRX종목기본정보", self._loop_krx_base_info),               # ★ 매일 18:35 KRX 종목기본정보 + 변동 감지
             ("FnGuide재무월간", self._loop_fnguide_financial_monthly),  # ★ 매월 3일 05:00 연결/별도 재무제표 전종목
             ("수출입가집계",   self._loop_trade_provisional),          # ★ 매주 월요일 06:00 수출입 10일 가집계 수집
@@ -4481,6 +4482,25 @@ class CollectionScheduler:
                 if self._stop_event.is_set():
                     return
                 _run_job_safe("유니버스종가동기화", stock_universe.sync_price_fields_from_history)
+
+    def _loop_flow_quarterly(self) -> None:
+        """평일 19:50 — investor_flow_quarterly / foreign_flow_quarterly 직전·현재 분기 재집계.
+
+        2026-10-02: 레거시 SQLite→PG 동기화로만 채워져 06-11 이후 멈춰 있었다(routes/tenbagger.py 사용).
+        """
+        self._wait_secs(90)
+        while not self._stop_event.is_set():
+            self._wait_until(19, 50, skip_weekend=True)
+            if self._stop_event.is_set():
+                return
+            _run_job_safe("분기수급집계", self._job_flow_quarterly)
+
+    def _job_flow_quarterly(self) -> None:
+        res = subprocess.run([sys.executable, "scripts/build_flow_quarterly.py"], capture_output=True, text=True, timeout=1800,
+                             cwd=str(Path(__file__).resolve().parent))
+        logger.info(f"[분기수급집계] {res.stdout.strip()[-300:]}")
+        if res.returncode != 0:
+            raise RuntimeError((res.stderr or res.stdout)[-500:])
 
     def _loop_krx_base_info(self) -> None:
         """매일 18:35 영업일 — KRX 종목기본정보 갱신 + 변동 감지.

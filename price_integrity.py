@@ -369,6 +369,18 @@ def gate_price_batch(conn, code, rows, source, *, today=None, provisional_days=0
     # The series' last stored day is the likeliest live snapshot even when collection
     # stalled for longer than the window (JPYKRW stuck since 09-14 on a 0.64% gap).
     last_stored = None
+    if provisional_from and code.isdigit() and len(code) == 6:
+        # price_history는 원주가 기준인데 KIS 일봉은 수정주가다. 최근 기업행위가 있으면 '정정'이 아니라 기준 변경일 수 있어
+        # 정정 허용을 끈다(2026-10-02 독립 재검토: 원주가/수정주가 혼입 방지).
+        try:
+            recent_ca = conn.execute(
+                "SELECT 1 FROM corporate_action_events WHERE stock_code=? AND event_date>=? LIMIT 1",
+                (code, (date.fromisoformat(today) - timedelta(days=max(provisional_days, 30))).isoformat()),
+            ).fetchone()
+        except Exception:
+            recent_ca = None
+        if recent_ca:
+            provisional_from = None
     if provisional_from:
         _last = conn.execute('SELECT MAX(date) FROM price_history WHERE stock_code=?', (code,)).fetchone()
         last_stored = str(_last[0])[:10] if _last and _last[0] else None

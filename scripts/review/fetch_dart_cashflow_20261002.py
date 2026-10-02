@@ -62,7 +62,7 @@ def worker(key, items, fh, done):
             with lock:
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 fh.flush()
-            time.sleep(0.9)  # 2026-10-02: 키 3개 병렬 초당 ~14건으로 OpenDART IP 차단을 유발 → 단일 스레드 초당 ~1건
+            time.sleep(0.35)  # 2026-10-02: 키 3개 병렬 초당 ~14건으로 OpenDART IP 차단을 유발 → 단일 스레드 초당 ~1건
 
 
 def main():
