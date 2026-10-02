@@ -14357,49 +14357,60 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
       return () => { cancelled = true; };
     }, [selectedStock, chartDays, activeTab]);
 
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) {
-        setLocalCompanyIntel(null);
-        if (setCompanyIntel) setCompanyIntel(null);
-        return;
-      }
-      let cancelled = false;
-      fetch(API(`/api/company-intelligence/company/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => {
-          if (cancelled) return;
-          const intel = d?.found ? d : null;
-          setLocalCompanyIntel(intel);
-          if (setCompanyIntel) setCompanyIntel(intel);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setLocalCompanyIntel(null);
-          if (setCompanyIntel) setCompanyIntel(null);
-        });
-      return () => { cancelled = true; };
-    }, [selectedStock, setCompanyIntel, activeTab]);
-
+    // ── 국내종목 상세 보조 데이터 번들 조회 (12개 API → 1회 호출) ─────────────
+    const [chartSignals, setChartSignals] = React.useState(null);
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
       if (!selectedStock || !isKrStockCode(selectedStock)) {
         setCorporateActions([]);
+        setChartSignals(null);
+        setStockQualitySignals(null);
+        setStockExtra(null);
+        setStockChData(null);
+        setStockInsight(null);
+        setStockEstimate(null);
+        setStockKiwoom(null);
+        setDataQuality(null);
+        setDqExpanded(false);
+        setDisclosures([]);
+        setExtraSignals(null);
+        setExtraSignalsLoading(false);
+        setNotices([]);
+        setMajorHolders({ current_holders: [], history: [] });
+        setLocalCompanyIntel(null);
+        if (setCompanyIntel) setCompanyIntel(null);
         return;
       }
-      let cancelled = false;
-      fetch(API(`/api/dashboard/corporate-actions/${selectedStock}?days=${Math.max(chartDays || 365, 365)}`))
+      const snap = selectedStock;
+      fetch(API(`/api/dashboard/stock-bundle/${selectedStock}`))
         .then(r => r.ok ? r.json() : null)
-        .then(d => { if (!cancelled) setCorporateActions(Array.isArray(d?.events) ? d.events : []); })
-        .catch(() => { if (!cancelled) setCorporateActions([]); });
-      return () => { cancelled = true; };
-    }, [selectedStock, chartDays, activeTab]);
+        .then(bundle => {
+          if (selectedStock !== snap || !bundle) return;
+          setCorporateActions(Array.isArray(bundle.corporate_actions?.events) ? bundle.corporate_actions.events : []);
+          setChartSignals(bundle.chart_signals?.ok ? bundle.chart_signals : null);
+          setStockQualitySignals(bundle.stock_quality_signals ?? null);
+          setStockExtra(bundle.stock_extra ?? null);
+          setStockChData(bundle.ch_data ?? null);
+          setStockInsight(bundle.stock_insight ?? null);
+          setStockEstimate(bundle.estimated_performance ?? null);
+          setStockKiwoom(bundle.kiwoom_summary ?? null);
+          setDataQuality(bundle.data_quality ?? null);
+          setDisclosures(Array.isArray(bundle.disclosures) ? bundle.disclosures : []);
+          setExtraSignals(bundle.extra_signals ?? null);
+          setExtraSignalsLoading(false);
+          setNotices(Array.isArray(bundle.notices) ? bundle.notices : []);
+          setMajorHolders(bundle.major_holders || { current_holders: [], history: [] });
+          const intel = bundle.company_intel?.found ? bundle.company_intel : null;
+          setLocalCompanyIntel(intel);
+          if (setCompanyIntel) setCompanyIntel(intel);
+        })
+        .catch(() => {});
+    }, [selectedStock, activeTab]);
 
-    // 📐 차트 시그널 (2026-07-18): 백테스트 검증된 컨플루언스 모듈 기반 바닥/고점 판독
-    const [chartSignals, setChartSignals] = React.useState(null);
+    // 📐 차트 시그널 10분 폴링 (초기값은 bundle에서)
     React.useEffect(() => {
       if (activeTab !== 'analysis') return undefined;
-      if (!selectedStock || !isKrStockCode(selectedStock)) { setChartSignals(null); return undefined; }
+      if (!selectedStock || !isKrStockCode(selectedStock)) return undefined;
       let cancelled = false;
       const loadChartSignals = () => {
         fetch(API(`/api/extra-signals/chart/${selectedStock}?_=${Date.now()}`))
@@ -14407,10 +14418,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
           .then(d => { if (!cancelled) setChartSignals(d && d.ok ? d : null); })
           .catch(() => { if (!cancelled) setChartSignals(null); });
       };
-      const onVisible = () => {
-        if (!document.hidden) loadChartSignals();
-      };
-      loadChartSignals();
+      const onVisible = () => { if (!document.hidden) loadChartSignals(); };
       const timer = window.setInterval(loadChartSignals, 10 * 60 * 1000);
       document.addEventListener('visibilitychange', onVisible);
       window.addEventListener('focus', loadChartSignals);
@@ -14420,18 +14428,6 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
         document.removeEventListener('visibilitychange', onVisible);
         window.removeEventListener('focus', loadChartSignals);
       };
-    }, [selectedStock, activeTab]);
-
-    // ── 수주·선수금·현금전환 보조 신호 조회 ─────────────────────
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) return;
-      setStockQualitySignals(null);
-      const snap = selectedStock;
-      fetch(API(`/api/tenbagger/stock-quality-signals/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (selectedStock === snap) setStockQualitySignals(d); })
-        .catch(() => {});
     }, [selectedStock, activeTab]);
 
     const viewChartData = (chartData && chartData.length > 0) ? chartData : localChartData;
@@ -14454,20 +14450,9 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
     }, [viewChartData, chartDays]);
     const viewCompanyIntel = companyIntel || localCompanyIntel;
 
-    // ── 데이터 신뢰도 ─────────────────────────────────────────────────
+    // ── 데이터 신뢰도 (bundle에서 로드됨, state만 선언) ──────────────
     const [dataQuality, setDataQuality] = React.useState(null);
     const [dqExpanded, setDqExpanded] = React.useState(false);
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) { setDataQuality(null); return; }
-      setDataQuality(null);
-      setDqExpanded(false);
-      const snap = selectedStock;
-      fetch(API(`/api/dashboard/data-quality/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (selectedStock === snap) setDataQuality(d); })
-        .catch(() => {});
-    }, [selectedStock, activeTab]);
 
     // 종목별 보고서
     const [stockReports, setStockReports] = React.useState([]);
@@ -14490,71 +14475,8 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
         .catch(() => {});
     }, [selectedStock, activeTab]);
 
-    // ── 매입재료비/재고자산/수주잔고 조회 ────────────────────────────
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) return;
-      setStockExtra(null);
-      const snap = selectedStock;
-      fetch(API(`/api/tenbagger/stock-extra/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (selectedStock === snap) setStockExtra(d); })
-        .catch(() => {});
-    }, [selectedStock, activeTab]);
-
-    // ── CH 시트 데이터 조회 (사업부문/직원수/매출채권) ──────────────
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) return;
-      setStockChData(null);
-      const snap = selectedStock;
-      fetch(API(`/api/dart-excel/ch-data/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (selectedStock === snap) setStockChData(d); })
-        .catch(() => {});
-    }, [selectedStock, activeTab]);
-
-    // ── 심층 인사이트 조회 (역사적밸류/수급/임원/신용) ─────────────
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) return;
-      setStockInsight(null);
-      const snap = selectedStock;
-      fetch(API(`/api/tenbagger/stock-insight/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (selectedStock === snap) setStockInsight(d); })
-        .catch(() => {});
-    }, [selectedStock, activeTab]);
-
-    // ── KIS 종목추정실적 조회 (공시 재무와 별도 표시) ─────────────
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) {
-        setStockEstimate(null);
-        return;
-      }
-      setStockEstimate(null);
-      const snap = selectedStock;
-      fetch(API(`/api/dashboard/estimated-performance/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (selectedStock === snap) setStockEstimate(d); })
-        .catch(() => {});
-    }, [selectedStock, activeTab]);
-
-    // ── 키움 확장정보 조회 (수급/신용/프로그램/실시간 보조 시그널) ──
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) {
-        setStockKiwoom(null);
-        return;
-      }
-      setStockKiwoom(null);
-      const snap = selectedStock;
-      fetch(API(`/api/kiwoom/summary/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (selectedStock === snap) setStockKiwoom(d); })
-        .catch(() => {});
-    }, [selectedStock, activeTab]);
+    // stock-extra, ch-data, stock-insight, estimated-performance, kiwoom-summary
+    // → 모두 bundle useEffect에서 처리됨 (위 stock-bundle 호출 참조)
 
     // ── DART 공시 조회 (5분 폴링 / 장일 08:00~20:00 KST) ────────────
     const [disclosures, setDisclosures] = React.useState([]);
@@ -14575,34 +14497,22 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
       finally { setDisclosureLoading(false); }
     }, [selectedStock, activeTab]);
 
+    // disclosure 초기값은 bundle에서, 5분 폴링만 유지
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
       if (!selectedStock) return;
-      setDisclosures([]);
       setShowAllDisclosures(false);
-      fetchDisclosures();
-      // 공시 가능 시간(평일 08:00~20:00)에만 5분 폴링
       if (!isDisclosureTime()) return;
       const iv = setInterval(fetchDisclosures, 300000);
       return () => clearInterval(iv);
     }, [selectedStock, fetchDisclosures, activeTab]);
 
-    // ── 추가 시그널 (고용/수출/섹터/수급/ETF) ───────────────────────
+    // ── 추가 시그널 (bundle에서 로드됨, state 선언만) ───────────────
     const [extraSignals, setExtraSignals] = React.useState(null);
     const [extraSignalsLoading, setExtraSignalsLoading] = React.useState(false);
     const [stockHsRevenueContext, setStockHsRevenueContext] = React.useState(null);
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) { setExtraSignals(null); setExtraSignalsLoading(false); return; }
-      setExtraSignals(null);
-      setExtraSignalsLoading(true);
-      const snap = selectedStock;
-      fetch(API(`/api/extra-signals/extra-signals/${selectedStock}`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (selectedStock === snap) { setExtraSignals(d); setExtraSignalsLoading(false); } })
-        .catch(() => { setExtraSignalsLoading(false); });
-    }, [selectedStock, activeTab]);
 
+    // HS 수출 맥락 — bundle에 없는 별도 조회
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
       if (!selectedStock || !isKrStockCode(selectedStock)) {
@@ -14617,25 +14527,9 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
         .catch(() => {});
     }, [selectedStock, activeTab]);
 
-    // ── KRX 공지사항 + 대주주 지분변동 ────────────────────────
-    // 임원 매매 이력(/api/insider/holdings)은 심층 인사이트가 같은 테이블
-    // (dart_insider_holdings)을 조회해 표시하므로 여기서는 더 이상 fetch하지 않는다.
+    // notices, majorHolders — bundle에서 로드됨, state만 선언
     const [notices, setNotices] = React.useState([]);
     const [majorHolders, setMajorHolders] = React.useState({ current_holders: [], history: [] });
-    React.useEffect(() => {
-      if (activeTab !== 'analysis') return;
-      if (!selectedStock || !isKrStockCode(selectedStock)) {
-        setNotices([]); setMajorHolders({ current_holders: [], history: [] }); return;
-      }
-      fetch(API(`/api/notices/stock/${selectedStock}`))
-        .then(r => r.ok ? r.json() : [])
-        .then(d => setNotices(Array.isArray(d) ? d : []))
-        .catch(() => {});
-      fetch(API(`/api/insider/major/${selectedStock}?limit=50`))
-        .then(r => r.ok ? r.json() : null)
-        .then(d => setMajorHolders(d || { current_holders: [], history: [] }))
-        .catch(() => {});
-    }, [selectedStock, activeTab]);
 
     const numColor = (v) => (v != null && Number(v) < 0) ? 'var(--accent-red)' : 'inherit';
     const fmtSignedQty = (v) => {
