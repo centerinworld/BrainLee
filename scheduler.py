@@ -528,6 +528,8 @@ class CollectionScheduler:
             ("SC가상매매체결",    self._loop_paper_fill),                    # ★ 평일 09:10 sc_paper pending → D+1 시가 체결
             ("트리거디스커버리갱신", self._loop_trigger_discovery_rebuild),  # ★ 매일 02:30 trigger_discovery_events 전체 재빌드
             ("DART배당수집",       self._loop_dart_dividends),             # ★ 매년 4월 1일 03:00 사업보고서 배당 데이터 수집
+            ("Quality팩터빌드",    self._loop_quality_factor_build),       # ★ 매일 03:30 kr_quality_factor 최신 분기 갱신
+            ("DART연구개발수집",   self._loop_dart_rd_collect),            # ★ 매주 토요일 04:00 전종목 R&D 비용 PostgreSQL 수집
         ]
         for name, target in jobs:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -6709,6 +6711,83 @@ class CollectionScheduler:
             logger.error("[트리거디스커버리갱신] 타임아웃 (30분 초과)")
         except Exception as e:
             logger.error(f"[트리거디스커버리갱신] 오류: {e}", exc_info=True)
+
+    # ── Quality 팩터 일일 빌드 ─────────────────────────────────────────
+    def _loop_quality_factor_build(self) -> None:
+        """매일 03:30 kr_quality_factor 최신 분기 갱신."""
+        logger.info("[Quality팩터빌드] 루프 시작")
+        self._wait_secs(60)
+        while not self._stop_event.is_set():
+            wait = _seconds_until(3, 30)
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("Quality팩터빌드", self._job_quality_factor_build)
+
+    def _job_quality_factor_build(self) -> None:
+        try:
+            import subprocess
+            logger.info("[Quality팩터빌드] build_kr_quality_factor.py 시작")
+            env = dict(os.environ)
+            pp = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = "runtime_pg_bootstrap:." + ((":" + pp) if pp else "")
+            result = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/build_kr_quality_factor.py"],
+                capture_output=True, text=True, timeout=600,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                env=env,
+            )
+            if result.returncode == 0:
+                logger.info(f"[Quality팩터빌드] ✅ 완료: {(result.stdout or '').strip()[-300:]}")
+            else:
+                logger.error(f"[Quality팩터빌드] ❌ 오류: {(result.stderr or '')[-500:]}")
+        except subprocess.TimeoutExpired:
+            logger.error("[Quality팩터빌드] 타임아웃 (10분 초과)")
+        except Exception as e:
+            logger.error(f"[Quality팩터빌드] 오류: {e}", exc_info=True)
+
+    # ── DART 연구개발비 PostgreSQL 수집 ───────────────────────────────
+    def _loop_dart_rd_collect(self) -> None:
+        """매주 토요일 04:00 전종목 R&D 비용 DART API → PostgreSQL 수집."""
+        logger.info("[DART연구개발수집] 루프 시작")
+        self._wait_secs(120)
+        while not self._stop_event.is_set():
+            now = datetime.now()
+            # 토요일 04:00 대기
+            days_to_sat = (5 - now.weekday()) % 7
+            next_sat = now.replace(hour=4, minute=0, second=0, microsecond=0)
+            if days_to_sat > 0:
+                import datetime as _dt
+                next_sat = next_sat + _dt.timedelta(days=days_to_sat)
+            elif now.hour >= 4:
+                import datetime as _dt
+                next_sat = next_sat + _dt.timedelta(days=7)
+            wait = max(0, (next_sat - datetime.now()).total_seconds())
+            if self._stop_event.wait(wait):
+                break
+            _run_job_safe("DART연구개발수집", self._job_dart_rd_collect)
+
+    def _job_dart_rd_collect(self) -> None:
+        try:
+            import subprocess
+            logger.info("[DART연구개발수집] collect_dart_rd_pg.py 시작")
+            env = dict(os.environ)
+            pp = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = "runtime_pg_bootstrap:." + ((":" + pp) if pp else "")
+            result = subprocess.run(
+                [sys.executable, "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/collect_dart_rd_pg.py",
+                 "--years", "2022", "2023", "2024", "2025", "2026"],
+                capture_output=True, text=True, timeout=7200,
+                cwd="/Volumes/Realtek_NVME/stock_dashboard/runtime",
+                env=env,
+            )
+            if result.returncode == 0:
+                logger.info(f"[DART연구개발수집] ✅ 완료: {(result.stdout or '').strip()[-300:]}")
+            else:
+                logger.error(f"[DART연구개발수집] ❌ 오류: {(result.stderr or '')[-500:]}")
+        except subprocess.TimeoutExpired:
+            logger.error("[DART연구개발수집] 타임아웃 (2시간 초과)")
+        except Exception as e:
+            logger.error(f"[DART연구개발수집] 오류: {e}", exc_info=True)
 
     # ── 미국 종목 OHLCV 일별 시세 & 팩터 자동 적재 ───────────────────
     def _loop_us_daily_quotes_and_factors(self) -> None:

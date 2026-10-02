@@ -1360,6 +1360,20 @@ def get_combo_positions():
               OR strategy = 'combined'
            ORDER BY is_active DESC, entry_date DESC"""
     ).fetchall()
+    # quality 스코어 일괄 조회 (최신 분기)
+    stock_codes = list({r[0] for r in rows if r[0]})
+    quality_map: dict[str, dict] = {}
+    if stock_codes:
+        placeholders = ",".join(["%s"] * len(stock_codes))
+        qrows = conn.execute(f"""
+            SELECT DISTINCT ON (stock_code) stock_code, quality_score, quality_grade
+            FROM kr_quality_factor
+            WHERE stock_code IN ({placeholders})
+            ORDER BY stock_code, year DESC, quarter DESC
+        """, stock_codes).fetchall() if hasattr(conn, "execute") else []
+        for qr in qrows:
+            quality_map[qr[0]] = {"quality_score": qr[1], "quality_grade": qr[2]}
+
     result = []
     for r in rows:
         stock_code = r[0]; buy_price = r[3] or 0; qty = r[10] or 0
@@ -1373,6 +1387,7 @@ def get_combo_positions():
         else:
             current_price = r[5] or r[6] or r[4] or buy_price
         profit_pct = round((current_price - buy_price) / buy_price * 100, 2) if buy_price else 0
+        qf = quality_map.get(stock_code or "", {})
         result.append({
             "stock_code": stock_code, "stock_name": r[1], "strategy": r[2],
             "buy_price": buy_price, "current_price": current_price,
@@ -1380,9 +1395,47 @@ def get_combo_positions():
             "entry_date": r[7], "sold_at": r[8],
             "profit_pct": profit_pct, "quantity": qty,
             "is_active": is_active, "id": r[12],
+            "quality_score": qf.get("quality_score"),
+            "quality_grade": qf.get("quality_grade"),
         })
     conn.close()
     return result
+
+
+# ── GET /api/trend/quality-overview ──────────────────────────────
+@router.get("/quality-overview")
+def get_quality_overview():
+    """활성 포지션 전체 Quality 분포 + 하위(D/F) 종목 경고 목록."""
+    conn = _db()
+    rows = conn.execute("""
+        SELECT ph.stock_code, ph.stock_name, ph.strategy, ph.profit_pct,
+               kq.quality_score, kq.quality_grade
+        FROM peak_holding ph
+        LEFT JOIN LATERAL (
+            SELECT quality_score, quality_grade
+            FROM kr_quality_factor
+            WHERE stock_code = ph.stock_code
+            ORDER BY year DESC, quarter DESC LIMIT 1
+        ) kq ON true
+        WHERE ph.is_active = 1 AND ph.stock_code IS NOT NULL
+        ORDER BY kq.quality_score ASC NULLS FIRST
+    """).fetchall()
+    grade_dist = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0, "N/A": 0}
+    low_quality = []
+    for r in rows:
+        grade = r[5] or "N/A"
+        grade_dist[grade] = grade_dist.get(grade, 0) + 1
+        if grade in ("D", "F", "N/A"):
+            low_quality.append({
+                "stock_code": r[0], "stock_name": r[1], "strategy": r[2],
+                "profit_pct": r[3], "quality_score": r[4], "quality_grade": grade,
+            })
+    conn.close()
+    return {
+        "total_active": len(rows),
+        "grade_distribution": grade_dist,
+        "low_quality_positions": low_quality,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -108,6 +108,14 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
         .then(d => setComboPositions(Array.isArray(d) ? d : []))
         .catch(() => setComboPositions([]));
     }, []);
+    // Quality 팩터 현황
+    const [qualityOverview, setQualityOverview] = React.useState(null);
+    React.useEffect(() => {
+      fetch(API('/api/trend/quality-overview'))
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setQualityOverview(d))
+        .catch(() => {});
+    }, []);
     // 연속운용 실측 결과 (2026-08-30 — 사용자 지시 "백테스트가 돌고나면 자동으로
     // 프론트엔드가 수정되도록해": 하드코딩 STRATEGY_HUB_CONTINUOUS_RETURNS를 폴백으로
     // 두고, /api/backtest/continuous-returns가 반환하는 최신 실측값으로 덮어씀 — 이제
@@ -1144,11 +1152,15 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                             <th style={{padding:'0.4rem 0.6rem', textAlign:'right'}}>매수가</th>
                             <th style={{padding:'0.4rem 0.6rem', textAlign:'right'}}>현재가</th>
                             <th style={{padding:'0.4rem 0.6rem', textAlign:'right'}}>수익률</th>
+                            <th style={{padding:'0.4rem 0.6rem', textAlign:'center'}}>품질등급</th>
                             <th style={{padding:'0.4rem 0.6rem'}}>진입일</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {[...active].sort((a, b) => b.profit_pct - a.profit_pct).map(p => (
+                          {[...active].sort((a, b) => b.profit_pct - a.profit_pct).map(p => {
+                            const gradeColors = {A:'#047857',B:'#0369a1',C:'#92400e',D:'#b45309',F:'#b91c1c'};
+                            const gradeColor = gradeColors[p.quality_grade] || '#64748b';
+                            return (
                             <tr key={`${p.strategy}-${p.stock_code}-${p.id}`}
                               style={{borderTop:'1px solid rgba(15,23,42,0.08)'}}>
                               <td style={{padding:'0.4rem 1rem'}}>
@@ -1171,11 +1183,20 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                                 color: pctColor(p.profit_pct), fontSize:'0.82rem'}}>
                                 {fmtPct(p.profit_pct)}
                               </td>
+                              <td style={{padding:'0.4rem 0.6rem', textAlign:'center'}}>
+                                {p.quality_grade
+                                  ? <span style={{padding:'0.1rem 0.45rem', borderRadius:'4px', fontSize:'0.68rem', fontWeight:800,
+                                      color: gradeColor, background:`${gradeColor}18`, border:`1px solid ${gradeColor}40`}}>
+                                      {p.quality_grade}
+                                    </span>
+                                  : <span style={{color:'var(--text-secondary)', fontSize:'0.65rem'}}>-</span>}
+                              </td>
                               <td style={{padding:'0.4rem 0.6rem', color:'var(--text-secondary)', fontSize:'0.7rem'}}>
                                 {p.entry_date}
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1210,6 +1231,79 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                                 <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontVariantNumeric:'tabular-nums'}}>{(+(p.sold_price || p.sell_price || 0)).toLocaleString()}</td>
                                 <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontWeight:700, color: pctColor(p.profit_pct)}}>{fmtPct(p.profit_pct)}</td>
                                 <td style={{padding:'0.35rem 0.6rem', color:'var(--text-secondary)', fontSize:'0.68rem'}}>{(p.sold_at||'').slice(0,10)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── Quality 팩터 현황 ── */}
+            {qualityOverview && qualityOverview.total_active > 0 && (() => {
+              const gd = qualityOverview.grade_distribution || {};
+              const total = qualityOverview.total_active;
+              const gradeColors = {A:'#047857',B:'#0369a1',C:'#92400e',D:'#b45309',F:'#b91c1c','N/A':'#64748b'};
+              const grades = ['A','B','C','D','F'];
+              return (
+                <div className="glass-panel" style={{marginTop:'1rem', overflow:'hidden'}}>
+                  <div style={{padding:'0.65rem 1rem', borderBottom:'1px solid var(--glass-border)', display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap'}}>
+                    <span style={{fontWeight:700, fontSize:'0.88rem'}}>활성 포지션 Quality 분포</span>
+                    <span style={{fontSize:'0.7rem', color:'var(--text-secondary)'}}>전체 {total}종목 · ROE·영업이익률·FCF·부채비율·발생액 5팩터 복합 등급</span>
+                  </div>
+                  <div style={{padding:'0.75rem 1rem', display:'flex', gap:'0.6rem', flexWrap:'wrap', alignItems:'center'}}>
+                    {grades.map(g => gd[g] > 0 && (
+                      <div key={g} style={{display:'flex', alignItems:'center', gap:'0.3rem'}}>
+                        <span style={{padding:'0.15rem 0.5rem', borderRadius:'4px', fontSize:'0.72rem', fontWeight:800,
+                          color: gradeColors[g], background:`${gradeColors[g]}18`, border:`1px solid ${gradeColors[g]}40`}}>
+                          {g}
+                        </span>
+                        <span style={{fontSize:'0.72rem', fontVariantNumeric:'tabular-nums'}}>{gd[g]}종목</span>
+                        <span style={{fontSize:'0.66rem', color:'var(--text-secondary)'}}>({Math.round(gd[g]/total*100)}%)</span>
+                      </div>
+                    ))}
+                  </div>
+                  {qualityOverview.low_quality_positions?.length > 0 && (
+                    <details style={{borderTop:'1px solid var(--glass-border)'}}>
+                      <summary style={{padding:'0.5rem 1rem', fontSize:'0.72rem', color:'#b45309', cursor:'pointer', fontWeight:600}}>
+                        ⚠ Quality D/F 포지션 ({qualityOverview.low_quality_positions.length}건) — 리밸런싱 검토 필요
+                      </summary>
+                      <div style={{overflowX:'auto'}}>
+                        <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.72rem'}}>
+                          <thead>
+                            <tr style={{color:'var(--text-secondary)', borderBottom:'1px solid var(--glass-border)'}}>
+                              <th style={{padding:'0.35rem 1rem', textAlign:'left'}}>종목</th>
+                              <th style={{padding:'0.35rem 0.6rem', textAlign:'left'}}>전략</th>
+                              <th style={{padding:'0.35rem 0.6rem', textAlign:'center'}}>등급</th>
+                              <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>Quality점수</th>
+                              <th style={{padding:'0.35rem 0.6rem', textAlign:'right'}}>수익률</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {qualityOverview.low_quality_positions.map(p => (
+                              <tr key={`lq-${p.stock_code}`} style={{borderTop:'1px solid rgba(15,23,42,0.06)'}}>
+                                <td style={{padding:'0.35rem 1rem'}}>
+                                  {p.stock_name}
+                                  <span style={{marginLeft:'0.3rem', fontSize:'0.65rem', color:'var(--text-secondary)'}}>{p.stock_code}</span>
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', fontSize:'0.68rem', color:'#4f46e5'}}>{p.strategy}</td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'center'}}>
+                                  <span style={{padding:'0.1rem 0.4rem', borderRadius:'4px', fontSize:'0.68rem', fontWeight:800,
+                                    color: gradeColors[p.quality_grade] || '#64748b',
+                                    background:`${gradeColors[p.quality_grade] || '#64748b'}18`}}>
+                                    {p.quality_grade}
+                                  </span>
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontVariantNumeric:'tabular-nums'}}>
+                                  {p.quality_score != null ? (p.quality_score*100).toFixed(1) : '-'}
+                                </td>
+                                <td style={{padding:'0.35rem 0.6rem', textAlign:'right', fontWeight:700,
+                                  color: +p.profit_pct >= 0 ? '#dc2626' : '#2563eb'}}>
+                                  {+p.profit_pct >= 0 ? '+' : ''}{(+p.profit_pct).toFixed(1)}%
+                                </td>
                               </tr>
                             ))}
                           </tbody>
