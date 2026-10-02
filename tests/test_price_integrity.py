@@ -87,6 +87,12 @@ class IntegrityTests(unittest.TestCase):
         rows=[('2026-01-05',99.3,99.3,99.3,99.3,10),('2026-01-06',103,103,103,103,10)]
         self.assertFalse(gate_price_batch(self.c,'005930',rows,'test',today='2026-01-06'))
         self.assertTrue(gate_price_batch(self.c,'005930',rows,'test',today='2026-01-06',provisional_days=7))
+    def test_provisional_allows_stale_last_stored_day(self):
+        # 2026-10-02: 수집이 7일 넘게 멈춘 시계열(JPYKRW 09-14)도 마지막 저장일의 장중 값은 정정 허용.
+        self.add('2026-01-02',100,code='JPYKRW=X');self.add('2026-01-05',100,code='JPYKRW=X')
+        rows=[('2026-01-02',100,100,100,100,0),('2026-01-05',100.7,100.7,100.7,100.7,0),('2026-01-20',101,101,101,101,0)]
+        self.assertFalse(gate_price_batch(self.c,'JPYKRW=X',rows,'test',today='2026-01-20'))
+        self.assertTrue(gate_price_batch(self.c,'JPYKRW=X',rows,'test',today='2026-01-20',provisional_days=7))
     def test_provisional_window_still_blocks_basis_change(self):
         self.add('2026-01-02',100);self.add('2026-01-05',100)
         rows=[('2026-01-05',50,50,50,50,10),('2026-01-06',51,51,51,51,10)]

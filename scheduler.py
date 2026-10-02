@@ -435,7 +435,7 @@ class CollectionScheduler:
             ("HOT섹터블로그",   self._loop_sector_blog),          # ★ 매일 07:00 블로그 신규 포스트 파싱
             ("섹터지수보완",    self._loop_sector_index_rebuild),  # ★ 매일 18:40 + 19:30 가격히스토리 기반 섹터지수 보완
             ("종목다중분류",    self._loop_sector_taxonomy),       # ★ 매일 20:10 StockEasy·Kiwoom 업종/테마 + 내부 밸류체인 갱신
-            ("ETF수집점검",      self._loop_etf_freshness),          # ★ 매일 21:45 launchd ETF 파이프라인 계약 검증(미실행 시 1회 재시도)
+            ("ETF수집점검",      self._loop_etf_freshness),          # ★ 매일 22:30(게시 22:05 이후) launchd ETF 파이프라인 계약 검증(미실행 시 1회 재시도)
             ("섹터로테이션캐시", self._loop_sector_rotation_cache), # ★ 장중 1시간 + 장마감 기준 주도섹터 캐시
             ("AI주도섹터",      self._loop_ai_leading_sector),    # ★ 매일 07:20 미국 증시 기반 주도 섹터 판독
             ("섹터오전텔레그램", self._loop_sector_morning_tg),    # ★ 매일 08:30 섹터 AI 리포트 텔레그램
@@ -2478,7 +2478,10 @@ class CollectionScheduler:
             logger.error(f"[섹터지수보완] 오류: {e}", exc_info=True)
 
     def _loop_etf_freshness(self) -> None:
-        """매일 21:45 — launchd ETF 파이프라인이 실제로 적재했는지 검증한다.
+        """매일 22:30 — launchd ETF 파이프라인이 실제로 적재했는지 검증한다.
+
+        2026-10-02: 예전 21:45는 게시(`etf-direct-publish` 22:05)보다 앞서 매일 전날 데이터만 보고
+        stale(lag=1)로 실패했다(11/11) — 진짜 장애(KRX 로그인 타임아웃)도 이 상시 실패에 묻혔다.
 
         ETF 구성 수집은 스케줄러 밖(launchd `com.stock-dashboard.etf-daily` 21:15 ·
         `etf-direct-publish` 22:05 + cron retry 스크립트)에서 돌아 원장
@@ -2488,7 +2491,7 @@ class CollectionScheduler:
         """
         self._wait_secs(76)
         while not self._stop_event.is_set():
-            self._wait_until(21, 45, skip_weekend=True)
+            self._wait_until(22, 30, skip_weekend=True)
             _run_job_safe("ETF수집점검", self._job_etf_freshness_check)
 
     @staticmethod

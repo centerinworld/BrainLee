@@ -337,7 +337,7 @@ def assert_research_prices(
     return excluded
 
 
-def gate_price_batch(conn, code, rows, source, *, today=None, provisional_days=0):
+def gate_price_batch(conn, code, rows, source, *, today=None, provisional_days=0, overlap_tolerance=0.005):
     """Rows: date, open, high, low, close, volume. Stage incompatible batches.
 
     Historical overlap must agree before a partial batch can be spliced into a
@@ -366,12 +366,20 @@ def gate_price_batch(conn, code, rows, source, *, today=None, provisional_days=0
         (code,str(rows[0][0])[:10],str(rows[-1][0])[:10]))}
     historical = [r for r in rows if str(r[0])[:10] < today]
     overlap = [r for r in historical if str(r[0])[:10] in existing and existing[str(r[0])[:10]]]
+    # The series' last stored day is the likeliest live snapshot even when collection
+    # stalled for longer than the window (JPYKRW stuck since 09-14 on a 0.64% gap).
+    last_stored = None
+    if provisional_from:
+        _last = conn.execute('SELECT MAX(date) FROM price_history WHERE stock_code=?', (code,)).fetchone()
+        last_stored = str(_last[0])[:10] if _last and _last[0] else None
+
     def _basis_mismatch(r):
         d = str(r[0])[:10]
         stored = existing[d]
-        if abs(float(r[4])/stored-1) <= 0.005:
+        if abs(float(r[4])/stored-1) <= overlap_tolerance:
             return False
-        return not (provisional_from and d >= provisional_from and not outside_band(stored, float(r[4]), d))
+        provisional = provisional_from and (d >= provisional_from or d == last_stored)
+        return not (provisional and not outside_band(stored, float(r[4]), d))
     if any(_basis_mismatch(r) for r in overlap):
         reason = 'historical_overlap_basis_mismatch'
     bounds = conn.execute('SELECT MIN(date),MAX(date) FROM price_history WHERE stock_code=?',(code,)).fetchone()

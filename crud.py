@@ -82,9 +82,21 @@ def bulk_insert_price_history(db: Session, price_ingest: schemas.PriceIngest):
     gate_conn = connect_stock_db(timeout=30)
     try:
         ensure_schema(gate_conn)
+        # 2026-10-02: 해외·거시 지표(yfinance 일봉=확정값)는 최근 7일 저장 행이 장중 스냅샷일 수 있어 정정을 허용한다.
+        # 이전엔 마지막 장중 값과 0.5% 넘게 달라 배치 전체가 격리돼 JPY/EUR/HKD/TWDKRW·^DJI가 09-14~16 이후 멈췄다.
+        # 국내 개별종목은 18:00 KIS 공식 일봉(collect_kis_ohlcv)이 정정하므로 여기선 기존 엄격 판정 유지.
+        _is_kr_stock = price_ingest.stock_code.isdigit() and len(price_ingest.stock_code) == 6
+        _prov_days = 0 if _is_kr_stock else 7
+        if not _is_kr_stock:
+            # yfinance가 가끔 종가<저가 같은 비정상 행을 섞어 보낸다 — 그 행만 버리고 나머지는 받는다(USDKRW 주간 640건 격리).
+            from price_integrity import invalid_ohlcv as _invalid
+            past_rows = [r for r in past_rows if not _invalid(r['open'], r['high'], r['low'], r['close'], r['volume'])]
+            today_rows = [r for r in today_rows if not _invalid(r['open'], r['high'], r['low'], r['close'], r['volume'])]
         accepted = gate_price_batch(gate_conn, price_ingest.stock_code,
             [(r['date'],r['open'],r['high'],r['low'],r['close'],r['volume'])
-             for r in past_rows+today_rows], 'market_price_api')
+             for r in past_rows+today_rows], 'market_price_api', provisional_days=_prov_days,
+            # 해외·거시는 출처별 고시 시점 차이로 과거값이 0.5~2.6% 어긋난다(JPY/EUR/HKD/TWDKRW 실측) — 단위 변경·혼입만 막는다.
+            overlap_tolerance=0.005 if _is_kr_stock else 0.03)
         gate_conn.commit()
     finally:
         gate_conn.close()
@@ -95,9 +107,27 @@ def bulk_insert_price_history(db: Session, price_ingest: schemas.PriceIngest):
         db.execute(text("SELECT set_config('app.price_basis_checked','1',true)"))
     # 과거 데이터: INSERT IGNORE
     if past_rows:
-        stmt = insert(models.PriceHistory).values(past_rows)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["stock_code", "date"])
-        db.execute(stmt)
+        from datetime import timedelta as _td
+        _prov_from = (today - _td(days=_prov_days)).isoformat() if _prov_days else None
+        if _prov_from:
+            _last = db.execute(text("SELECT MAX(date) FROM price_history WHERE stock_code=:c"),
+                               {"c": price_ingest.stock_code}).scalar()
+            if _last and str(_last)[:10] < _prov_from:
+                _prov_from = str(_last)[:10]
+        recent = [r for r in past_rows if _prov_from and r["date"] >= _prov_from]
+        older = [r for r in past_rows if not (_prov_from and r["date"] >= _prov_from)]
+        if older:
+            stmt = insert(models.PriceHistory).values(older)
+            stmt = stmt.on_conflict_do_nothing(index_elements=["stock_code", "date"])
+            db.execute(stmt)
+        if recent:
+            # 최근 구간은 확정 일봉으로 가격 필드만 갱신(수급 필드는 보존).
+            stmt = insert(models.PriceHistory).values(recent)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["stock_code", "date"],
+                set_={k: getattr(stmt.excluded, k) for k in ("open", "high", "low", "close", "volume")},
+            )
+            db.execute(stmt)
 
     # 당일 데이터: 기존 수급 데이터 보존 후 가격만 갱신
     # (1분마다 실행되는 _realtime_fetch_price 가 supply=0 으로 덮어쓰는 것을 방지)

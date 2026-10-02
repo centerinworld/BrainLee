@@ -333,13 +333,18 @@ class KiwoomCollector(BaseCollector):
         body = {
             "mrkt_tp": market_type,
             "sort_tp": "1" if rank_type == "buy" else "2",
-            "pric_tp": str(min_case_amount),
+            # 2026-10-02 실호출로 필수 파라미터 재확인: 건별 금액은 case_pric_tp이고 pric_tp는 가격 구분.
+            # 예전엔 min_case_amount를 pric_tp에 넣고 case_pric_tp·mac_tp·stex_tp를 빠뜨려 09-25 이후 162회 전부 1511로 실패했다.
+            "pric_tp": "0",
+            "case_pric_tp": str(min_case_amount),
             # The live ka00190 contract requires both filters. Omitting either
             # field returns 1511 and leaves the ranking table empty.
             "trde_qty_tp": str(min_turnover),
             "trde_prica_tp": str(min_turnover),
             "stk_tp": str(stock_filter),
             "crd_tp": "0",  # 신용구분 0=전체 (필수 파라미터, 누락 시 1511 오류)
+            "mac_tp": "0",
+            "stex_tp": "1",  # 거래소 1=KRX (키움 공통 관례 1=KRX/2=NXT/3=통합)
         }
         try:
             response = requests.post(
