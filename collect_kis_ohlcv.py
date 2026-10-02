@@ -228,6 +228,9 @@ def fetch_ohlcv(code, start_yyyymmdd, end_yyyymmdd, token):
     return sorted({r[0]: r for r in result}.values(), key=lambda r: r[0])
 
 
+# 최근 N일 저장 행은 장중 임시값일 수 있어 공식 일봉으로 정정 허용(price_integrity.gate_price_batch 참조, 2026-10-02)
+PROVISIONAL_DAYS = 7
+
 # ── DB 저장 ────────────────────────────────────────────
 def save_batch(records, conn):
     """records: [(code, date, o, h, l, c, v, trade_amount)]"""
@@ -238,7 +241,7 @@ def save_batch(records, conn):
     for row in records:
         grouped[row[0]].append(row[1:7])
     accepted = {code for code, rows in grouped.items()
-                if gate_price_batch(conn, code, rows, 'kis_itemchart_adjusted_0')}
+                if gate_price_batch(conn, code, rows, 'kis_itemchart_adjusted_0', provisional_days=PROVISIONAL_DAYS)}
     ins = upd = 0
     for (code, date_iso, o, h, l, c, v, trade_amount) in records:
         if code not in accepted:
@@ -300,9 +303,13 @@ def main():
     parser.add_argument('--end',   default=None,  help='종료일 YYYYMMDD (기본: 오늘)')
     parser.add_argument('--limit', type=int, default=0, help='종목 수 제한 (0=전체)')
     parser.add_argument('--days', type=int, default=0, help='최근 N일 (start/end 대신)')
+    parser.add_argument('--provisional-days', type=int, default=None, help='임시값 정정 허용 기간(일, 기본 7) — 일회성 복구용')
     parser.add_argument('--missing-trade-amount', action='store_true',
                         help='종료일 가격은 있으나 거래대금이 없는 종목만 재수집')
     args = parser.parse_args()
+    global PROVISIONAL_DAYS
+    if args.provisional_days is not None:
+        PROVISIONAL_DAYS = args.provisional_days
 
     today = date.today()
     today_str = today.strftime("%Y%m%d")
@@ -408,7 +415,7 @@ def main():
     kr_today = conn.execute(f"""
         SELECT COUNT(*) FROM price_history
         WHERE date='{today_iso}' AND close>0
-          AND stock_code ~ '^[0-9A-Z]{6}$'
+          AND stock_code ~ '^[0-9A-Z]{{6}}$'
     """).fetchone()[0]
 
     # 샘플 확인
@@ -417,7 +424,7 @@ def main():
         FROM price_history p
         LEFT JOIN stock_universe u ON p.stock_code = u.stock_code
         WHERE p.date='{today_iso}' AND p.close>0
-          AND p.stock_code ~ '^[0-9A-Z]{6}$'
+          AND p.stock_code ~ '^[0-9A-Z]{{6}}$'
         ORDER BY CAST(COALESCE(u.market_cap,0) AS REAL) DESC
         LIMIT 5
     """).fetchall()

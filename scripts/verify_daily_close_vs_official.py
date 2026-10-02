@@ -60,28 +60,30 @@ def main() -> int:
     rest = rng.sample(rows[a.sample // 2:], min(a.sample - len(top), len(rows) - len(top)))
     sample = list(top) + list(rest)
 
-    from pykrx import stock
+    # 2026-10-02: pykrx는 KRX 차단 이후 응답 없이 멈춰 매일 900초 타임아웃(09-25 이후 검증 0회) → KIS 일봉(KRX 공식 종가)으로 대조.
+    conn.commit()
+    from collect_kis_ohlcv import fetch_ohlcv, get_token
+    token = get_token()
     ymd = iso.replace("-", "")
     compared = close_bad = vol_bad = failed = 0
     bad = []
     for code, close, vol in sample:
         try:
-            k = stock.get_market_ohlcv(ymd, ymd, code)
+            k = [r for r in fetch_ohlcv(code, ymd, ymd, token) if r[0] == iso]
         except Exception:  # noqa: BLE001
             failed += 1
             continue
-        if k is None or k.empty:
+        if not k:
             failed += 1
             continue
-        r = k.iloc[-1]
         compared += 1
-        kc, kv = float(r["종가"]), float(r["거래량"])
+        kc, kv = float(k[-1][4]), float(k[-1][5])
         cb = abs(kc - float(close)) > 0.5
         vb = kv > 0 and abs(kv - float(vol or 0)) / kv > 0.02
         close_bad += cb
         vol_bad += vb
         if cb and len(bad) < 10:
-            bad.append({"code": code, "db_close": float(close), "krx_close": kc})
+            bad.append({"code": code, "db_close": float(close), "official_close": kc})
     pct = close_bad / compared if compared else 1.0
     fail_share = failed / max(len(sample), 1)
     status = "ok" if (compared and pct <= a.threshold and fail_share <= 0.3) else ("fetch_failed" if fail_share > 0.3 else "mismatch")

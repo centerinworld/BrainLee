@@ -81,6 +81,16 @@ class IntegrityTests(unittest.TestCase):
     def test_ingestion_matching_overlap_allowed(self):
         self.add('2026-01-02',100)
         self.assertTrue(gate_price_batch(self.c,'005930',[('2026-01-02',100,100,100,100,10),('2026-01-05',102,102,102,102,10)],'test',today='2026-01-06'))
+    def test_ingestion_corrects_recent_provisional_close(self):
+        # 2026-10-02: 장중 임시 종가(14110)가 공식 일봉(14210)을 영구 격리시키던 연쇄 차단 회귀 방지.
+        self.add('2026-01-02',100);self.add('2026-01-05',98.6)
+        rows=[('2026-01-05',99.3,99.3,99.3,99.3,10),('2026-01-06',103,103,103,103,10)]
+        self.assertFalse(gate_price_batch(self.c,'005930',rows,'test',today='2026-01-06'))
+        self.assertTrue(gate_price_batch(self.c,'005930',rows,'test',today='2026-01-06',provisional_days=7))
+    def test_provisional_window_still_blocks_basis_change(self):
+        self.add('2026-01-02',100);self.add('2026-01-05',100)
+        rows=[('2026-01-05',50,50,50,50,10),('2026-01-06',51,51,51,51,10)]
+        self.assertFalse(gate_price_batch(self.c,'005930',rows,'test',today='2026-01-06',provisional_days=7))
     def test_gap_fill_row_accepts_isolated_missing_day_in_band(self):
         # gate_price_batch would reject this exact case (no existing overlap on
         # any of the batch's own dates) - gate_gap_fill_row is the counterpart

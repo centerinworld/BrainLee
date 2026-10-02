@@ -603,6 +603,43 @@ def update_from_krx(trade_date: str | None = None) -> int:
     return upserted
 
 
+# 2026-10-02: stock_universe 종가·기준일은 월 1회 update_from_krx()와 (KRX 차단으로 미등록인) _job_krx_daily에서만
+# 갱신돼, 매일 들어오는 price_history와 어긋났다(09-26 일회성 스크립트로 맞춰도 다시 굳는 재발 원인).
+# 최신 price_history 행으로 가격 필드를 매일 끌어올린다 — scripts/refresh_stock_universe_price_fields_20260926.py 로직의 상시판.
+_PRICE_SYNC_SQL = """
+WITH r AS (
+    SELECT stock_code, CAST(date AS TEXT) AS d, open, high, low, close, volume, trade_amount,
+           ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) rn
+    FROM price_history
+    WHERE close > 0 AND CAST(date AS TEXT) >= CAST(CURRENT_DATE - 30 AS TEXT)
+      AND stock_code IN (SELECT stock_code FROM stock_universe)
+)
+UPDATE stock_universe u SET base_date=a.d, open=a.open, high=a.high, low=a.low, close=a.close, volume=a.volume,
+    trading_value=COALESCE(NULLIF(a.trade_amount, 0), u.trading_value),
+    change_rate=CASE WHEN b.close > 0 THEN ROUND(CAST((a.close / b.close - 1) * 100 AS NUMERIC), 2) ELSE u.change_rate END,
+    updated_at=CAST(now() AS TEXT)
+FROM r a LEFT JOIN r b ON b.stock_code=a.stock_code AND b.rn=2
+WHERE a.rn=1 AND u.stock_code=a.stock_code
+  AND (a.d > COALESCE(u.base_date, '') OR (a.d = u.base_date AND u.close IS DISTINCT FROM a.close))
+"""
+
+
+def sync_price_fields_from_history() -> int:
+    """stock_universe의 close/open/high/low/volume/change_rate/base_date를 최신 price_history 행으로 갱신(앞으로만 이동)."""
+    from db_compat import connect_primary_db
+    conn = connect_primary_db(timeout=120)
+    try:
+        updated = conn.execute(_PRICE_SYNC_SQL).rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    logger.info(f"[stock_universe] price_history → 가격 필드 동기화 {updated}건")
+    return max(updated or 0, 0)
+
+
 # ═══════════════════════════════════════════════════════════════
 #  자정 스케줄러
 # ═══════════════════════════════════════════════════════════════

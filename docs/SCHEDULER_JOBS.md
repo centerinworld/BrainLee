@@ -1,6 +1,6 @@
 # 스케줄러 잡 목록 (자동 생성)
 
-> `scripts/ops/gen_scheduler_doc.py` 가 `scheduler.py` 루프 등록부에서 생성 — 2026-09-24 기준 117개. **수동 편집 금지**(잡 추가/변경 후 스크립트 재실행).
+> `scripts/ops/gen_scheduler_doc.py` 가 `scheduler.py` 루프 등록부에서 생성 — 2026-10-02 기준 133개. **수동 편집 금지**(잡 추가/변경 후 스크립트 재실행).
 > 시각/주기 설명은 등록 라인의 주석에서 가져오므로 주석이 없는 잡은 설명이 비어 있다. 정확한 실행 조건은 `scheduler.py`의 `_loop_*`/`_job_*` 참조.
 
 | 잡 | 상태 | 설명 |
@@ -15,6 +15,11 @@
 | `스크리너사전계산` (`_loop_screener`) | 활성 |  |
 | `공공데이터` (`_loop_public_data`) | 활성 |  |
 | `KIS일별수집` (`_loop_kis_daily`) | 활성 | KIS API 전종목 OHLCV (KRX 차단 대체) |
+| `종가공식검증` (`_loop_close_verify`) | 활성 | 19:30 당일 종가 표본을 KRX 공식값과 대조(2026-09-25) |
+| `월간피처스냅샷` (`_loop_feature_snapshot_monthly`) | 활성 | 월 마지막 거래일 20:30 정본 스냅샷 재생성(스테이징→점검→교체, 2026-09-25 §11 S2) |
+| `가드사후성과` (`_loop_guard_outcomes`) | 활성 | 영업일 20:50 virtual_guard_log 차단 진입의 5/20/60일 사후 수익 채움(§11 S3) |
+| `전략감쇠감시` (`_loop_strategy_decay`) | 활성 | 매월 첫 영업일 06:30 운영 전략 최근 3/6/12개월 vs 백테스트 기대 분포 하위 5% 이탈 경고(§12 R8) |
+| `데이터계약점검` (`_loop_data_contract`) | 활성 | 매일 07:10 반복 결함 유형(DEFAULT 누락·CFS/OFS 혼재·스냅샷 누설·단위 역전·날짜 형식·종가 대조) 점검(§12 R9) |
 | `KIS추정실적` (`_loop_kis_forward_estimates`) | 활성 | KIS Forward EPS/PER 등 순환 갱신 |
 | `전종목수급17시` (`_loop_supply_daily`) | 활성 | 17:30 KIS 전종목 수급 |
 | `전종목수급21시` (`_loop_supply_evening`) | 활성 | 21:00 재갱신 |
@@ -34,7 +39,9 @@
 | `미국13F거물공시` (`_loop_us_13f_refresh`) | 활성 | 매일 07:12 SEC 13F + House PTR 갱신 |
 | `시장시그널브리핑` (`_loop_market_signal_briefing`) | 활성 | 매일 07:00 시장 5단계 국면 + AI 브리핑 |
 | `HOT섹터블로그` (`_loop_sector_blog`) | 활성 | 매일 07:00 블로그 신규 포스트 파싱 |
-| `섹터지수보완` (`_loop_sector_index_rebuild`) | 활성 | 매일 18:40 가격히스토리 기반 섹터지수 보완 |
+| `섹터지수보완` (`_loop_sector_index_rebuild`) | 활성 | 매일 18:40 + 19:30 가격히스토리 기반 섹터지수 보완 |
+| `종목다중분류` (`_loop_sector_taxonomy`) | 활성 | 매일 20:10 StockEasy·Kiwoom 업종/테마 + 내부 밸류체인 갱신 |
+| `ETF수집점검` (`_loop_etf_freshness`) | 활성 | 매일 21:45 launchd ETF 파이프라인 계약 검증(미실행 시 1회 재시도) |
 | `섹터로테이션캐시` (`_loop_sector_rotation_cache`) | 활성 | 장중 1시간 + 장마감 기준 주도섹터 캐시 |
 | `AI주도섹터` (`_loop_ai_leading_sector`) | 활성 | 매일 07:20 미국 증시 기반 주도 섹터 판독 |
 | `섹터오전텔레그램` (`_loop_sector_morning_tg`) | 활성 | 매일 08:30 섹터 AI 리포트 텔레그램 |
@@ -78,6 +85,7 @@
 | `재무무결성일일` (`_loop_financial_integrity_daily`) | 활성 | 매일 06:20 재무 이상값 수리 + 무결성 리포트 |
 | `재무무결점월간` (`_loop_financial_integrity_monthly`) | 활성 | 매월 1일 05:00 재무 무결점 검사 |
 | `재무무결점분기` (`_loop_financial_integrity_quarterly`) | 활성 | 분기 공시마감 1주 후 자동 보완 |
+| `유니버스종가동기화` (`_loop_universe_price_sync`) | 활성 | 기동 1분 후 + 평일 16:10·19:40 price_history → stock_universe 종가/기준일 |
 | `KRX종목기본정보` (`_loop_krx_base_info`) | 활성 | 매일 18:35 KRX 종목기본정보 + 변동 감지 |
 | `FnGuide재무월간` (`_loop_fnguide_financial_monthly`) | 활성 | 매월 3일 05:00 연결/별도 재무제표 전종목 |
 | `수출입가집계` (`_loop_trade_provisional`) | 활성 | 매주 월요일 06:00 수출입 10일 가집계 수집 |
@@ -86,6 +94,7 @@
 | `KRX프로그램매매` (`_loop_krx_program_trading`) | 활성 | 매일 18:20 KRX 프로그램매매(차익/비차익) Playwright |
 | `종목프로그램매매` (`_loop_broker_program_stock_trading`) | 활성 | 매일 18:50 Kiwoom 종목별 프로그램 매수/매도 |
 | `RS사전계산` (`_loop_rs_precompute`) | 활성 | 매일 18:30 RS/52주 캐시 사전계산 |
+| `IBDRS일별계산` (`_loop_ibd_rs_daily`) | 활성 | 매일 19:00 IBD RS 4분기 가중 상대강도 계산 → ibd_rs_daily |
 | `CF3중검증` (`_loop_cf_triple_validate`) | 활성 | 매일 05:30 신규 CF 3중 검증 (DART·FnGuide·Seibro) |
 | `주간4중검증` (`_loop_weekly_revalidation`) | 활성 | 매주 일요일 03:00 전종목 4중 검증 Phase A+B+C+E+F |
 | `DB유지보수` (`_loop_db_maintenance`) | 활성 | 매주 일요일 04:00 VACUUM/ANALYZE/WAL checkpoint |
@@ -122,3 +131,10 @@
 | `투자의사결정RAG` (`_loop_investment_decision_rag`) | 활성 | 평일 저가 구간에만 대기 중인 문서 RAG 처리 |
 | `FnGuideDART전종목검증` (`_loop_fnguide_dart_verify_sweep`) | 활성 | 매일 03:15 FNGUIDE 일일한도 내에서 전종목 순차 교차검증 |
 | `미검증스냅샷백필` (`_loop_unverified_snapshot_backfill`) | 활성 | 매일 03:45 financial_source_snapshot unverified 백로그 정리(2026-08-28 신설, DART만 소비, FnGuide 재수집 불필요) |
+| `SC가상매매신호수집` (`_loop_paper_signal_intake`) | 활성 | 평일 16:30 전략센터 BUY신호 → paper_order_queue 등록 (sc_paper, 2026-10-02) |
+| `SC가상매매체결` (`_loop_paper_fill`) | 활성 | 평일 09:10 sc_paper pending → D+1 시가 체결 |
+| `트리거디스커버리갱신` (`_loop_trigger_discovery_rebuild`) | 활성 | 매일 02:30 trigger_discovery_events 전체 재빌드 |
+| `DART배당수집` (`_loop_dart_dividends`) | 활성 | 매년 4월 1일 03:00 사업보고서 배당 데이터 수집 |
+| `Quality팩터빌드` (`_loop_quality_factor_build`) | 활성 | 매일 03:30 kr_quality_factor 최신 분기 갱신 |
+| `RiskParity사이징` (`_loop_risk_parity_sizing`) | 활성 | 매일 18:10 종가 업데이트 후 RP 포지션 사이즈 갱신 |
+| `DART연구개발수집` (`_loop_dart_rd_collect`) | 활성 | 매주 토요일 04:00 전종목 R&D 비용 PostgreSQL 수집 |

@@ -479,6 +479,7 @@ class CollectionScheduler:
             ("재무무결성일일", self._loop_financial_integrity_daily), # ★ 매일 06:20 재무 이상값 수리 + 무결성 리포트
             ("재무무결점월간", self._loop_financial_integrity_monthly),  # ★ 매월 1일 05:00 재무 무결점 검사
             ("재무무결점분기", self._loop_financial_integrity_quarterly), # ★ 분기 공시마감 1주 후 자동 보완
+            ("유니버스종가동기화", self._loop_universe_price_sync),  # ★ 기동 1분 후 + 평일 16:10·19:40 price_history → stock_universe 종가/기준일
             ("KRX종목기본정보", self._loop_krx_base_info),               # ★ 매일 18:35 KRX 종목기본정보 + 변동 감지
             ("FnGuide재무월간", self._loop_fnguide_financial_monthly),  # ★ 매월 3일 05:00 연결/별도 재무제표 전종목
             ("수출입가집계",   self._loop_trade_provisional),          # ★ 매주 월요일 06:00 수출입 10일 가집계 수집
@@ -4469,6 +4470,22 @@ class CollectionScheduler:
     # ──────────────────────────────────────────────────────────
     # KRX 종목기본정보 + 일별 변동 추적 (매일 18:35)
     # ──────────────────────────────────────────────────────────
+    def _loop_universe_price_sync(self) -> None:
+        """기동 1분 후 1회 + 평일 16:10(장마감 수집 후)·19:40(KIS/네이버 보정 후) — stock_universe 가격 필드를 price_history 최신 행으로 동기화.
+
+        2026-10-02: stock_universe 종가는 월 1회 update_from_krx()에서만 갱신돼 종목 상세(키움 요약 등)가 며칠 전 가격을 보여주는 일이 반복됐다.
+        """
+        import stock_universe
+        self._wait_secs(60)
+        if not self._stop_event.is_set():
+            _run_job_safe("유니버스종가동기화", stock_universe.sync_price_fields_from_history)
+        while not self._stop_event.is_set():
+            for hh, mm in ((16, 10), (19, 40)):
+                self._wait_until(hh, mm, skip_weekend=True)
+                if self._stop_event.is_set():
+                    return
+                _run_job_safe("유니버스종가동기화", stock_universe.sync_price_fields_from_history)
+
     def _loop_krx_base_info(self) -> None:
         """매일 18:35 영업일 — KRX 종목기본정보 갱신 + 변동 감지.
 

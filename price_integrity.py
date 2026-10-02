@@ -337,13 +337,22 @@ def assert_research_prices(
     return excluded
 
 
-def gate_price_batch(conn, code, rows, source, *, today=None):
+def gate_price_batch(conn, code, rows, source, *, today=None, provisional_days=0):
     """Rows: date, open, high, low, close, volume. Stage incompatible batches.
 
     Historical overlap must agree before a partial batch can be spliced into a
     stored series. A full basis replacement belongs to the repair workflow.
+
+    provisional_days (official end-of-day sources only): stored rows dated within
+    this many calendar days may be intraday/pre-open placeholders written by the
+    live price ingest. A difference there that stays inside the daily price-limit
+    band is a correction, not a basis change, so it does not block the batch.
+    2026-10-02: without this, one placeholder close made every later official batch
+    look like a basis mismatch and the wrong close carried forward day after day
+    (~1,000 stocks/day quarantined, e.g. 172670 10-01 14,110 vs official 14,210).
     """
     today = today or date.today().isoformat()
+    provisional_from = (date.fromisoformat(today) - timedelta(days=provisional_days)).isoformat() if provisional_days else None
     rows = sorted(rows, key=lambda r: str(r[0])[:10])
     if not rows:
         return True
@@ -357,7 +366,13 @@ def gate_price_batch(conn, code, rows, source, *, today=None):
         (code,str(rows[0][0])[:10],str(rows[-1][0])[:10]))}
     historical = [r for r in rows if str(r[0])[:10] < today]
     overlap = [r for r in historical if str(r[0])[:10] in existing and existing[str(r[0])[:10]]]
-    if any(abs(float(r[4])/existing[str(r[0])[:10]]-1)>0.005 for r in overlap):
+    def _basis_mismatch(r):
+        d = str(r[0])[:10]
+        stored = existing[d]
+        if abs(float(r[4])/stored-1) <= 0.005:
+            return False
+        return not (provisional_from and d >= provisional_from and not outside_band(stored, float(r[4]), d))
+    if any(_basis_mismatch(r) for r in overlap):
         reason = 'historical_overlap_basis_mismatch'
     bounds = conn.execute('SELECT MIN(date),MAX(date) FROM price_history WHERE stock_code=?',(code,)).fetchone()
     if bounds and bounds[0] and historical and not overlap:
