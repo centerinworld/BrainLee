@@ -5756,7 +5756,7 @@ class CollectionScheduler:
                     raise RuntimeError(f"Q2 verified backfill failed: {q2_result.stderr[-700:]}")
                 logger.info("[DART재무재수집] Q2 검증 수집: %s", q2_result.stdout[-500:])
 
-            script = "/Volumes/Realtek_NVME/stock_dashboard/runtime/scratch/legacy_dart_recollect.py"
+            script = "/Volumes/Realtek_NVME/stock_dashboard/runtime/scripts/ops/legacy_dart_recollect.py"
             cmd = [sys.executable, script, "--resume"]
             logger.info(f"[DART재무재수집] 시작: {' '.join(cmd)}")
             result = subprocess.run(
