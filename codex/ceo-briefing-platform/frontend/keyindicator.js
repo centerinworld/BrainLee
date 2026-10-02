@@ -32,10 +32,10 @@
   get('/api/eco/indicators').then(function (rows) {
     var body = rows.map(function (r) {
       var pct = r.prev_value > 0 && r.value != null ? (r.value - r.prev_value) / r.prev_value * 100 : null;
-      return '<tr><td>' + esc(r.name_kr) + '</td><td>' + esc(r.category) + '</td><td>' + esc(String(r.date || '').slice(0, 7)) + '</td><td class="num">' + num(r.value) + '</td><td class="num">' + num(r.prev_value) + '</td><td class="num">' + diffCell(r.value, r.prev_value) + '</td><td class="num">' + chg(pct) + '</td><td>' + esc(r.source_ref) + '</td></tr>';
+      return '<tr class="ki-clickable" data-kind="eco" data-code="' + esc(r.indicator_code) + '" data-name="' + esc(r.name_kr) + '"><td>' + esc(r.name_kr) + '</td><td>' + esc(r.category) + '</td><td>' + esc(String(r.date || '').slice(0, 7)) + '</td><td class="num">' + num(r.value) + '</td><td class="num">' + num(r.prev_value) + '</td><td class="num">' + diffCell(r.value, r.prev_value) + '</td><td class="num">' + chg(pct) + '</td><td>' + esc(r.source_ref) + '</td></tr>';
     }).join('');
     $('kr-table').querySelector('tbody').innerHTML = body || '<tr><td colspan="8" class="ki-muted">데이터가 없습니다.</td></tr>';
-    $('kr-meta').textContent = rows.length + '개 지표';
+    $('kr-meta').textContent = rows.length + '개 지표 · 행을 클릭하면 과거 이력을 볼 수 있습니다';
   }).catch(function () { fail('kr-table', 8, '지표를 불러오지 못했습니다. 잠시 후 다시 시도하세요.'); });
 
   // 글로벌 지표
@@ -45,9 +45,9 @@
     var rows = gl.rows.filter(function (r) { return (gl.cat === '전체' || r.category === gl.cat) && (!q || (r.name + ' ' + r.category + ' ' + (r.name_en || '') + ' ' + r.source).toLowerCase().indexOf(q) >= 0); });
     var shown = rows.slice(0, 300);
     $('gl-table').querySelector('tbody').innerHTML = shown.map(function (r) {
-      return '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.category) + '</td><td>' + esc(r.unit) + '</td><td>' + esc(r.date) + '</td><td class="num">' + num(r.value) + '</td><td class="num">' + num(r.prev_value) + '</td><td class="num">' + chg(r.change_pct) + '</td><td>' + esc(r.source) + '</td></tr>';
+      return '<tr class="ki-clickable" data-kind="global" data-code="' + esc(r.code) + '" data-name="' + esc(r.name) + '"><td>' + esc(r.name) + '</td><td>' + esc(r.category) + '</td><td>' + esc(r.unit) + '</td><td>' + esc(r.date) + '</td><td class="num">' + num(r.value) + '</td><td class="num">' + num(r.prev_value) + '</td><td class="num">' + chg(r.change_pct) + '</td><td>' + esc(r.source) + '</td></tr>';
     }).join('') || '<tr><td colspan="8" class="ki-muted">조건에 맞는 지표가 없습니다.</td></tr>';
-    $('gl-meta').textContent = rows.length + '개 중 ' + shown.length + '개 표시 · 값이 있는 지표만, 중요도 높은 순';
+    $('gl-meta').textContent = rows.length + '개 중 ' + shown.length + '개 표시 · 값이 있는 지표만, 중요도 높은 순 · 행을 클릭하면 과거 이력을 볼 수 있습니다';
   }
   get('/api/global-macro/latest').then(function (rows) {
     gl.rows = rows.filter(function (r) { return r.value != null; }).sort(function (a, b) { return (b.importance || 0) - (a.importance || 0) || String(b.date).localeCompare(String(a.date)); });
@@ -78,4 +78,90 @@
     }).catch(function () { $('news-list').innerHTML = '<li class="ki-muted">뉴스를 불러오지 못했습니다. 잠시 후 다시 시도하세요.</li>'; });
   }
   $('news-q').oninput = function () { news.q = this.value.trim(); renderNews(); };
+
+  // 지표 상세(이력) 모달 — 2026-09-29: "예전엔 상세 내역이 보였는데 지금은 안 보인다"는 지적으로 복원.
+  // /api/eco/indicators/{code}/history 와 /api/global-macro/timeseries/{code} 는 이미 공개(PUBLIC_READ) 엔드포인트라
+  // 백엔드 변경 없이 프런트에서 클릭→이력 조회만 추가하면 된다.
+  var modal = $('ki-modal');
+  function closeModal() { modal.hidden = true; }
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+  $('ki-modal-close').onclick = closeModal;
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
+
+  function sparkline(points) {
+    // points: [{date, value}], 의존성 없는 인라인 SVG 라인차트
+    var vals = points.map(function (p) { return p.value; }).filter(function (v) { return v != null && !isNaN(v); });
+    if (!vals.length) return '<p class="ki-muted">차트를 그릴 값이 없습니다.</p>';
+    var w = 760, h = 220, pad = 28;
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    if (min === max) { min -= 1; max += 1; }
+    var n = points.length;
+    var x = function (i) { return pad + (n <= 1 ? 0 : (w - pad * 2) * i / (n - 1)); };
+    var y = function (v) { return h - pad - (h - pad * 2) * (v - min) / (max - min); };
+    var d = '', started = false;
+    points.forEach(function (p, i) {
+      if (p.value == null || isNaN(p.value)) return;
+      d += (started ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(p.value).toFixed(1) + ' ';
+      started = true;
+    });
+    var last = points[points.length - 1];
+    var lastX = x(n - 1), lastY = y(last.value);
+    var firstLabel = points[0] ? points[0].date : '';
+    var lastLabel = last ? last.date : '';
+    return '' +
+      '<svg viewBox="0 0 ' + w + ' ' + h + '" class="ki-spark" preserveAspectRatio="xMidYMid meet">' +
+      '<line x1="' + pad + '" y1="' + (h - pad) + '" x2="' + (w - pad) + '" y2="' + (h - pad) + '" stroke="var(--line-strong)" stroke-width="1"/>' +
+      '<path d="' + d + '" fill="none" stroke="#1a73e8" stroke-width="2"/>' +
+      '<circle cx="' + lastX.toFixed(1) + '" cy="' + lastY.toFixed(1) + '" r="3.5" fill="#1a73e8"/>' +
+      '<text x="' + pad + '" y="' + (h - 8) + '" font-size="11" fill="var(--muted)">' + esc(firstLabel) + '</text>' +
+      '<text x="' + (w - pad) + '" y="' + (h - 8) + '" font-size="11" fill="var(--muted)" text-anchor="end">' + esc(lastLabel) + '</text>' +
+      '<text x="' + (w - pad) + '" y="' + (pad - 8) + '" font-size="11" fill="var(--muted)" text-anchor="end">최고 ' + num(max) + '</text>' +
+      '<text x="' + (w - pad) + '" y="' + (h - pad + 14) + '" font-size="11" fill="var(--muted)" text-anchor="end">최저 ' + num(min) + '</text>' +
+      '</svg>';
+  }
+
+  function openDetail(kind, code, name) {
+    if (!code) return;
+    $('ki-modal-title').textContent = name + ' 상세 이력';
+    $('ki-modal-meta').textContent = '불러오는 중…';
+    $('ki-modal-chart').innerHTML = '';
+    $('ki-modal-table').querySelector('tbody').innerHTML = '<tr><td colspan="4" class="ki-muted">불러오는 중…</td></tr>';
+    modal.hidden = false;
+
+    var req = kind === 'eco'
+      ? get('/api/eco/indicators/' + encodeURIComponent(code) + '/history').then(function (rows) {
+          return (rows || []).map(function (r) { return { date: r.date, value: r.value, prev_value: r.prev_value, change_pct: r.change_rate }; });
+        })
+      : get('/api/global-macro/timeseries/' + encodeURIComponent(code)).then(function (d) {
+          return ((d && d.data) || []).map(function (r) { return { date: r.date, value: r.value, prev_value: r.prev_value, change_pct: r.change_pct }; });
+        });
+
+    req.then(function (points) {
+      if (!points.length) {
+        $('ki-modal-meta').textContent = '이력 데이터가 없습니다.';
+        $('ki-modal-table').querySelector('tbody').innerHTML = '<tr><td colspan="4" class="ki-muted">데이터가 없습니다.</td></tr>';
+        return;
+      }
+      $('ki-modal-meta').textContent = '표시 범위: ' + points[0].date + ' ~ ' + points[points.length - 1].date + ' · 총 ' + points.length.toLocaleString('ko-KR') + '건';
+      $('ki-modal-chart').innerHTML = sparkline(points);
+      var recent = points.slice().reverse().slice(0, 30);
+      $('ki-modal-table').querySelector('tbody').innerHTML = recent.map(function (r) {
+        var d = r.prev_value != null && r.value != null ? r.value - r.prev_value : null;
+        var cls = d > 0 ? 'up' : d < 0 ? 'down' : '';
+        return '<tr><td>' + esc(r.date) + '</td><td class="num">' + num(r.value) + '</td><td class="num ' + cls + '">' + (d == null ? '–' : (d > 0 ? '+' : '') + num(d, 2)) + '</td><td class="num">' + chg(r.change_pct) + '</td></tr>';
+      }).join('');
+    }).catch(function () {
+      $('ki-modal-meta').textContent = '이력을 불러오지 못했습니다. 잠시 후 다시 시도하세요.';
+      $('ki-modal-table').querySelector('tbody').innerHTML = '<tr><td colspan="4" class="ki-muted">불러오기 실패</td></tr>';
+    });
+  }
+
+  $('kr-table').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-code]');
+    if (tr) openDetail('eco', tr.dataset.code, tr.dataset.name);
+  });
+  $('gl-table').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-code]');
+    if (tr) openDetail('global', tr.dataset.code, tr.dataset.name);
+  });
 })();

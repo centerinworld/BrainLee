@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Key Indicator — 주요 경제지표 · 뉴스정보</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="./keyindicator.css?v=20260927b">
+  <link rel="stylesheet" href="./keyindicator.css?v=20260929">
   <script src="/hubbar.js?v=20260927" defer></script>
 </head>
 <body>
@@ -15,12 +15,14 @@
         <h1>Key Indicator</h1>
         <p>주요 경제지표와 뉴스를 한눈에 — 누구나 볼 수 있는 공개 화면입니다.</p>
       </div>
-      <a class="ki-admin" href="https://stock.leanguy.cloud/admin/admin_ki">관리 콘솔 (관리자)</a>
     </header>
 
     <div class="ki-tabs" role="tablist">
       <button role="tab" id="tab-eco" class="on" data-tab="eco">주요 경제지표</button>
       <button role="tab" id="tab-news" data-tab="news">뉴스정보</button>
+      <a href="/kai/" class="ki-tab-agi" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:0 16px;font-size:13px;font-weight:700;color:#1a73e8;text-decoration:none;border-left:1px solid var(--line-strong,#dadce0);white-space:nowrap;">
+        🛰️ 시장분석 · AI 인텔리전스 <span style="font-size:11px;opacity:0.7;">↗</span>
+      </a>
     </div>
 
     <section id="pane-eco">
@@ -44,6 +46,25 @@
       </div>
     </section>
   </main>
-  <script src="./keyindicator.js?v=20260927b"></script>
+
+  <!-- 지표 상세(이력) 모달 — 행 클릭 시 표시. 2026-09-29: 공개 화면에서 상세 내역이 안 보인다는 지적으로 복원. -->
+  <div class="ki-modal-backdrop" id="ki-modal" hidden>
+    <div class="ki-modal" role="dialog" aria-modal="true">
+      <div class="ki-modal-head">
+        <h3 id="ki-modal-title">지표 상세</h3>
+        <button id="ki-modal-close" class="ki-modal-x" aria-label="닫기">✕</button>
+      </div>
+      <p class="ki-muted" id="ki-modal-meta"></p>
+      <div class="ki-modal-chart" id="ki-modal-chart"></div>
+      <div class="ki-table-wrap ki-tall">
+        <table class="ki-table" id="ki-modal-table">
+          <thead><tr><th>날짜</th><th class="num">값</th><th class="num">증감</th><th class="num">증감률</th></tr></thead>
+          <tbody><tr><td colspan="4" class="ki-muted">불러오는 중…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="./keyindicator.js?v=20260929"></script>
 </body>
 </html>

@@ -35,4 +35,14 @@ body { font-family: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI'
 .ki-news .pub { font-weight: 700; color: #14315f; background: var(--primary-soft); padding: 1px 8px; border-radius: 999px; }
 .ki-news a { color: var(--text); font-weight: 700; font-size: 15px; text-decoration: none; } .ki-news a:hover { color: var(--primary); text-decoration: underline; }
 .ki-news p { margin-top: 5px; color: #1e293b; line-height: 1.55; white-space: pre-line; }
-@media (max-width: 640px) { .ki { padding: 14px 12px 40px; } .ki-search { min-width: 0; width: 100%; } .ki-head h1 { font-size: 22px; } }
+.ki-clickable { cursor: pointer; }
+.ki-modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
+.ki-modal-backdrop[hidden] { display: none; }
+.ki-modal { background: var(--surface); border-radius: 14px; padding: 20px 22px; width: min(820px, 100%); max-height: 88vh; overflow: auto; box-shadow: 0 12px 40px rgba(15,23,42,.25); }
+.ki-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ki-modal-head h3 { font-size: 18px; font-weight: 800; }
+.ki-modal-x { border: none; background: none; font-size: 18px; color: var(--muted); cursor: pointer; padding: 4px 8px; line-height: 1; }
+.ki-modal-x:hover { color: var(--text); }
+.ki-modal-chart { margin: 12px 0; }
+.ki-spark { width: 100%; height: auto; display: block; }
+@media (max-width: 640px) { .ki { padding: 14px 12px 40px; } .ki-search { min-width: 0; width: 100%; } .ki-head h1 { font-size: 22px; } .ki-modal { padding: 16px; } }
