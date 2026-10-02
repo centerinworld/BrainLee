@@ -86,18 +86,25 @@ def main():
     items = [(c, corp[c], fs) for c, fs in targets if c in corp]
     keys = list(config.DART_API_KEYS)
     print(f"대상 {len(items)}종목 × {len(JOBS)}보고서, 이미 완료 {len(done)}", flush=True)
-    # 단일 스레드·키 순차 전환(2026-10-02: 키 3개 병렬로 OpenDART IP 차단을 유발했다)
+    # 2026-10-03: 단일 스레드(분당 ~45건)는 9시간 → 키 2개 2스레드(합계 초당 ~1.5건). 차단은 초당 ~14건에서 발생했다.
+    workers = keys[:2]
+    chunks = [items[i::len(workers)] for i in range(len(workers))]
+
+    def run(key, chunk):
+        try:
+            worker(key, chunk, fh, done)
+        except RuntimeError as e:
+            spare = [k for k in keys if k not in workers]
+            print("키 한도 소진:", e, "→ 예비 키", bool(spare), flush=True)
+            if spare:
+                worker(spare[0], chunk, fh, done)
+
     with open(OUT, "a") as fh:
-        for key in keys:
-            try:
-                worker(key, items, fh, done)
-                break
-            except RuntimeError as e:
-                print("키 한도 소진 → 다음 키:", e, flush=True)
-                for line in open(OUT):
-                    d = json.loads(line)
-                    if d.get("ok"):
-                        done.add((d["code"], d["year"], d["q"]))
+        ths = [threading.Thread(target=run, args=(k, ch)) for k, ch in zip(workers, chunks)]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join()
     print("완료", flush=True)
 
 

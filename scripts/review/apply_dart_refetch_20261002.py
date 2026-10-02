@@ -30,7 +30,9 @@ sys.path.insert(0, str(ROOT))
 from db_compat import connect_primary_db  # noqa: E402
 
 SRC = ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_full.jsonl"
-CF_FIELDS = {"ocf": "operating_cf", "icf": "investing_cf", "fcf": "financing_cf", "capex": "capex", "depreciation": "depreciation"}
+# 2026-10-03: 감가상각은 제외 — DART 현금흐름표에 행이 있는 회사가 ~20%뿐이고 '유형자산 감가상각비'만이라
+# 기존 D&A(무형 포함) 값과 정의가 달라 일부만 바꾸면 종목별 정의가 섞인다. 정의 단일화 후 별도 처리(§5-4).
+CF_FIELDS = {"ocf": "operating_cf", "icf": "investing_cf", "fcf": "financing_cf", "capex": "capex"}
 ABS = {"capex", "depreciation"}
 
 
@@ -207,7 +209,7 @@ def main():
         conn.execute(f"SELECT setval('{tbl}_id_seq', (SELECT COALESCE(MAX(id),1) FROM {tbl}))")
         conn.executemany(f"""INSERT INTO {tbl}(fixed_at,row_id,stock_code,year,quarter,is_annual,report_type,field_name,old_value,new_value,fix_rule,source,run_id)
                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                         [(now, rid, code, year, q, (1 if is_ann else 0) if tbl == "financial_fix_log" else bool(is_ann), fs, f, old, new, rule,
+                         [(now, rid, code, year, q, 1 if is_ann else 0, fs, f, old, new, rule,
                            "DART fnlttSinglAcntAll 재수집", run_id) for rid, code, year, q, is_ann, fs, f, old, new, rule in rows])
     conn.execute("SELECT setval('data_fix_log_id_seq', (SELECT MAX(id) FROM data_fix_log))")
     conn.execute("""INSERT INTO data_fix_log(fixed_at,table_name,scope,row_count,fix_rule,old_value_summary,new_value_summary,source,run_id)
