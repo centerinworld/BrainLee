@@ -5,7 +5,7 @@
   cash_flow_data.depreciation (is_annual 행)        = 유형자산 감가상각(DepreciationPropertyPlantAndEquipment),
                                                     없으면 현금흐름 조정 감가상각(AdjustmentsForDepreciationExpense).
                                                     조정값이 유형값의 1.5배를 넘으면 유형값이 일부만 잡혔을 수 있어 건너뜀.
-  financial_data.depreciation_amortization (연간)    = 위 값 + 무형자산 상각(Amortisation…, 없으면 조정 상각) + 사용권자산 상각.
+  financial_data.depreciation_amortization (연간)    = 위 값 + 무형자산 상각(Amortisation…, 없으면 조정 상각). 사용권자산 상각 제외(FnGuide 표시 기준).
 CFS 행 ↔ XBRL 연결(ConsolidatedMember 또는 차원 없음), OFS 행 ↔ SeparateMember. data_lock 잠금 연도는 건너뜀.
 사용: --apply 없으면 dry-run.
 """
@@ -39,7 +39,8 @@ def values():
             if not dep:
                 continue
             amort = v.get("amort") or v.get("adj_amort") or 0
-            out[(d["code"], d["year"], fs)] = (dep, dep + amort + (v.get("dep_rou") or 0), d.get("rcept_no"))
+            # 2026-10-03: FnGuide 표시 기준(유형자산감가상각비 + 기타무형자산상각비 + 개발비상각)에 맞춰 사용권자산 상각은 제외
+            out[(d["code"], d["year"], fs)] = (dep, dep + amort, d.get("rcept_no"))
     return out
 
 
@@ -100,7 +101,7 @@ def main():
     conn.execute("SELECT setval('data_fix_log_id_seq',(SELECT MAX(id) FROM data_fix_log))")
     conn.execute("INSERT INTO data_fix_log(fixed_at,table_name,scope,row_count,fix_rule,old_value_summary,new_value_summary,source,run_id) VALUES (?,?,?,?,?,?,?,?,?)",
                  (now, "cash_flow_data+financial_data", "연간 감가상각(2021~2025) XBRL 주석 기준", len(cf_ch) + len(fd_ch),
-                  "depreciation=유형자산 감가상각(없으면 조정), D&A=+무형+사용권", json.dumps(dict(st), ensure_ascii=False), "XBRL 값",
+                  "depreciation=유형자산 감가상각(없으면 조정), D&A=+무형(사용권 제외, FnGuide 기준)", json.dumps(dict(st), ensure_ascii=False), "XBRL 값",
                   "scripts/review/apply_xbrl_depreciation_20261003.py", run_id))
     conn.commit()
     print("적용 완료", run_id)
