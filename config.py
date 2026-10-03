@@ -85,7 +85,8 @@ def _require_env(key: str) -> str:
 DART_API_KEY   = _require_env("DART_API_KEY")           # 재무제표 수집 전용 (KEY1)
 DART_API_KEY2  = os.getenv("DART_API_KEY2", DART_API_KEY)  # 공시정보 수집 전용 (KEY2, 미설정 시 KEY1 폴백)
 DART_API_KEY3  = os.getenv("DART_API_KEY3", None)          # 추가 재무제표 수집 (KEY3, 2026-05-26 추가)
-DART_API_KEYS  = list(dict.fromkeys(k for k in (DART_API_KEY, DART_API_KEY2, DART_API_KEY3) if k))
+DART_API_KEY4  = os.getenv("DART_API_KEY4", None)          # 추가 재무제표 수집 (KEY4, 2026-10-03 추가)
+DART_API_KEYS  = list(dict.fromkeys(k for k in (DART_API_KEY, DART_API_KEY2, DART_API_KEY3, DART_API_KEY4) if k))
 KIS_APP_KEY    = _require_env("KIS_APP_KEY")
 KIS_APP_SECRET = _require_env("KIS_APP_SECRET")
 

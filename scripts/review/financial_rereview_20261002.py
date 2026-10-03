@@ -113,6 +113,9 @@ class Dart:
                     self.i += 1
                     continue
                 return d
+            if r.content[:2] != b"PK" and (b'"020"' in r.content[:200] or b"<status>020<" in r.content[:200]):  # 바이너리(zip) 요청도 한도 초과면 다음 키(2026-10-03)
+                self.i += 1
+                continue
             return r.content
         raise RuntimeError("DART 전 키 한도 초과")
 

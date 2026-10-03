@@ -25,6 +25,7 @@ import requests  # noqa: E402
 
 import config  # noqa: E402
 from db_compat import connect_primary_db  # noqa: E402
+import dart_keys  # noqa: E402
 from financial_rereview_20261002 import Dart, REPRT, extract  # noqa: E402
 
 OUT = ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_full.jsonl"
@@ -33,6 +34,8 @@ lock = threading.Lock()
 
 
 def fetch(key, corp, year, q, fs):
+    if not dart_keys.allow(key):  # KEY2 일괄 사용 상한(공시 수집 몫 보호)
+        raise RuntimeError("quota")
     for attempt in range(4):
         try:
             d = requests.get("https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json",
@@ -66,12 +69,15 @@ def worker(key, items, fh, done):
             with lock:
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 fh.flush()
+                done.add((code, year, q))  # 키 교체 후 이어 받을 때 다시 받지 않게
             time.sleep(0.35)  # 2026-10-02: 키 3개 병렬 초당 ~14건으로 OpenDART IP 차단을 유발 → 단일 스레드 초당 ~1건
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--codes", default="", help="쉼표 구분 종목코드만 재수집(예: 005930,000660)")
+    ap.add_argument("--max-workers", type=int, default=2, help="동시 DART 키 수. 기본 2, KEY2는 제외")
     ap.add_argument("--repair-parent", action="store_true",
                     help="이미 받은 CFS 보고서 중 지배주주 순이익/자본이 없는 것만 개선된 추출기로 다시 받는다(뒤 줄이 앞 줄을 덮어씀)")
     ap.add_argument("--prev-only", action="store_true",
@@ -92,6 +98,9 @@ def main():
                         (y_lo, y_hi)).fetchall()
     conn.close()
     targets = [(r[0], "CFS" if r[1] == 0 else "OFS") for r in rows]
+    if a.codes:
+        keep = {c.strip() for c in a.codes.split(",") if c.strip()}
+        targets = [t for t in targets if t[0] in keep]
     if a.limit:
         targets = targets[: a.limit]
     corp = Dart().corp_codes()
@@ -111,24 +120,28 @@ def main():
             if not needs:
                 done.add(k)
     items = [(c, corp[c], fs) for c, fs in targets if c in corp]
-    keys = list(config.DART_API_KEYS)
     print(f"대상 {len(items)}종목 × {len(JOBS)}보고서, 이미 완료 {len(done)}", flush=True)
-    # 2026-10-03: 단일 스레드(분당 ~45건)는 9시간 → 키 2개 2스레드(합계 초당 ~1.5건). 차단은 초당 ~14건에서 발생했다.
-    # 키2(DART_API_KEY2)는 운영 공시 수집 전용 — 재수집이 소진하지 않게 제외한다(2026-10-03)
-    workers = [k for k in keys if k != getattr(config, "DART_API_KEY2", None)][:2] or keys[:1]
-    chunks = [items[i::len(workers)] for i in range(len(workers))]
+    # 2026-10-03 사용자 지시: 키 4개를 순차적으로 모두 사용 — KEY1 → KEY3 → KEY4 → KEY2(일괄 상한, dart_keys.py).
+    # 동시 스레드는 2개(초당 ~2~3건) 그대로. 스레드가 쓰던 키가 한도에 걸리면 공유 대기열의 다음 키로 넘어가 남은 일을 잇는다.
+    order = dart_keys.ordered_keys()
+    worker_count = max(1, min(a.max_workers, 2, len(order)))
+    queue = order[worker_count:]
+    chunks = [items[i::worker_count] for i in range(worker_count)]
 
     def run(key, chunk):
-        try:
-            worker(key, chunk, fh, done)
-        except RuntimeError as e:
-            spare = []  # 예비 키 사용 안 함(공시 키 보호) — 다음 날 재개
-            print("키 한도 소진:", e, "→ 예비 키", bool(spare), flush=True)
-            if spare:
-                worker(spare[0], chunk, fh, done)
+        cur = key
+        while cur:
+            try:
+                worker(cur, chunk, fh, done)
+                return
+            except RuntimeError as e:
+                with lock:
+                    nxt = queue.pop(0) if queue else None
+                print(f"키 한도 소진({e}) → 다음 키 {'있음' if nxt else '없음 — 내일 재개'}", flush=True)
+                cur = nxt
 
     with open(OUT, "a") as fh:
-        ths = [threading.Thread(target=run, args=(k, ch)) for k, ch in zip(workers, chunks)]
+        ths = [threading.Thread(target=run, args=(k, ch)) for k, ch in zip(order[:worker_count], chunks)]
         for t in ths:
             t.start()
         for t in ths:

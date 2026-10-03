@@ -39,7 +39,10 @@ WANT = {
     "adj_dep": ["AdjustmentsForDepreciationExpense"],
     "adj_amort": ["AdjustmentsForAmortisationExpense"],
 }
-KEYS = [k for k in config.DART_API_KEYS if k != getattr(config, "DART_API_KEY2", None)]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import dart_keys  # noqa: E402
+# 2026-10-03 사용자 지시: 키 4개 순차 사용 — KEY1 → KEY3 → KEY4 → KEY2(일괄 상한)
+KEYS = dart_keys.ordered_keys()
 
 
 class Quota(Exception):
@@ -47,6 +50,8 @@ class Quota(Exception):
 
 
 def get(url, params, key, binary=False):
+    if not dart_keys.allow(key):
+        raise Quota()
     for attempt in range(4):
         try:
             r = requests.get(url, params=dict(params, crtfc_key=key), timeout=60)
@@ -57,6 +62,8 @@ def get(url, params, key, binary=False):
         if binary:
             if r.content[:2] == b"PK":
                 return r.content
+            if b"<status>020<" in r.content[:200]:
+                raise Quota()
             try:
                 d = r.json()
             except Exception:
