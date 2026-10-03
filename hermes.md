@@ -1,4 +1,6 @@
-> **필수(2026-10-03)**: 재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터는 [docs/Financial Statements.md](docs/Financial%20Statements.md)가 유일한 정본이다. 판정·수정 전 반드시 읽고, **숫자 데이터 작업 기록은 이 파일이 아니라 그 파일 §7에** 남긴다(이 파일의 관련 절은 그 파일 부록 B로 이관됨). 이 파일은 전략·백테스트·인프라 작업 로그용.
+> **⛔ 최우선 원칙 0: DART 파싱값을 100% 신뢰하지 않는다 — DART 값은 원본 후보일 뿐, FnGuide(필수)·네이버(보조)와 연결·별도를 나눠 값 대조로 일치해야 확정. 불일치·반복 차이는 먼저 우리 파싱 오류를 의심하고 종목 특징(stock_collection_config fs_quirk:*)으로 기록. 목표 99.99%.**
+>
+> **필수(2026-10-03)**: 재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터는 [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md)가 유일한 정본이다. 판정·수정 전 반드시 읽고, **숫자 데이터 작업 기록은 이 파일이 아니라 그 파일 §7에** 남긴다(이 파일의 관련 절은 그 파일 부록 B로 이관됨). 이 파일은 전략·백테스트·인프라 작업 로그용.
 
 # Stock Data Integrity / 다중 AI 작업 현황 (hermes.md)
 
@@ -322,13 +324,13 @@ security master/share history의 근사 구간이 남아 `point_in_time_exact`�
 ---
 
 ## unresolved_active_common pykrx 검증 — 대형 발견: 2010~2021 구간 전반의 미확인 가격기준 불일치 (Claude, 2026-09-23)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 000670(SK하이닉스) 미스터리 완전 해결 + 실제 수정 완료 (Claude, 2026-09-23)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 035720(카카오) 동일 패턴 확인·수정 + 256940/300720 최종 판정 (Claude, 2026-09-23)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## v4 과거 데이터 인프라 완성 및 PIT 검증 승격 (Codex, 2026-09-23)
 
@@ -385,16 +387,16 @@ security master/share history의 근사 구간이 남아 `point_in_time_exact`�
 ---
 
 ## ⚠️ 최우선 발견: price_history 전체 29%(297만행, 2,662종목)가 소수점 보간값 오염 — 2026-03-31~04-07 특정 배치 사고로 확정 (Claude, 2026-09-23)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## ✅ 위 사고 실제 수정 완료 — 297만행 중 218만행 복구, 나머지는 지수/미커버 확인 (Claude, 2026-09-23)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## ✅ 재발방지 가드 + 전체 재감사 + 2차 복구 (Claude, 2026-09-24)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 기업이벤트 등록 + coverage_gap 사유 기록 (Claude, 2026-09-24 저녁)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 연구 도구 도입 1~2단계 (Claude, 2026-09-24)
 - 연구용 venv: `stock_dashboard/research_venv`(numpy 2.4.6, quantstats/alphalens-reloaded/vectorbt/PyPortfolioOpt). 운영 venv(numpy 1.26.4/pandas 2.3.3)는 미변경.
@@ -441,7 +443,7 @@ security master/share history의 근사 구간이 남아 `point_in_time_exact`�
 - CEO 플랫폼(8011): 3.12 전환 완료 확인. 기존 500 원인 — `psutil` 미설치(3.11에도 없었음, 설치 후 monitoring-status/unified_metrics 200), `/health`는 응답모델 `Dict[str,str]`에 중첩 dict(`autonomous_state`) 반환 → ResponseValidationError(미수정, 파일 수정 중).
 
 ## ⚠️ PER 결함 발견·수정 — 이전 연구 결과 무효화 (Claude, 2026-09-25)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 📋 추가 계획 — 사용자 검토 대기 (Claude, 2026-09-25)
 > 아래는 **제안**이며 아직 구현하지 않았습니다(프런트엔드·서버 재시작·운영 패키지 변경은 승인 후). 우선순위/범위를 알려주시면 진행합니다.
@@ -917,7 +919,7 @@ LLM(qwen2.5:7b)이 annual 배열에 2025년만 있자 자기 추론으로 생성
 ---
 
 ## OFS_ANNUAL_CONSISTENCY OPEN 9,749→12건 해소 · dart_ofs_backfill Q4 오분류 정정 (Claude, 2026-09-29 3차)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## vbr execution_strict 재실행 결론 (Claude, 2026-09-30 4차)
 
@@ -961,25 +963,25 @@ avg: +22.8% / positive: 3/6 / worst: -8.2%
 ---
 
 ## corporate_action_events review_required 대량 처리 완료 (Claude, 2026-09-30 5차)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## audit_price_jumps 파이프라인 재실행 결과 (Claude, 2026-09-30 7차)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## cf_validation_flags 재갱신 + Q4 분기 재무 파생 (Claude, 2026-09-30)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## fin_quarterly_validation_flags OPEN 4,156건 정리 (Claude, 2026-09-30)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 2016~2020 지배주주 순이익 복원 (Claude, 2026-09-30)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 수주잔고 커버리지 확인 (Claude, 2026-09-30)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 재무 데이터 완결 선언 (2026-09-30)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 전략센터·Minervini 개선 방향 재정리 (Codex, 2026-09-30)
 
@@ -1008,14 +1010,14 @@ avg: +22.8% / positive: 3/6 / worst: -8.2%
 ---
 
 ## `order_backlog` 파서 신뢰도 버그 수정 + 백필 (Claude, 2026-09-30)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## `order_backlog` 파서 2차 버그 수정 + 백필 (Claude, 2026-09-30)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## dart_cost_quarterly 단위 오류 수정 + 파서 cost_v2 승격 (Claude, 2026-09-30)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## P2 진행 — backlog_to_rev 재계산 + corporate_action_events validation (Claude, 2026-10-01)
-> 📦 숫자 데이터 기록 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 B
+> 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 

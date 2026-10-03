@@ -60,6 +60,9 @@ def worker(key, items, fh, done):
                     break
             rec = {"code": code, "year": year, "q": q, "fs": used, "vals": extract(rows) if rows else {}, "ok": rows is not None,
                    "parent_checked": True}
+            # 2026-10-03: 사업보고서는 전기 칸(직전 연도 재작성값)도 저장 — FnGuide·네이버가 표시하는 최신 재작성값의 원문
+            if rows and q == 0:
+                rec["vals_prev"] = extract(rows, "frmtrm_amount")
             with lock:
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 fh.flush()
@@ -71,12 +74,16 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--repair-parent", action="store_true",
                     help="이미 받은 CFS 보고서 중 지배주주 순이익/자본이 없는 것만 개선된 추출기로 다시 받는다(뒤 줄이 앞 줄을 덮어씀)")
+    ap.add_argument("--prev-only", action="store_true",
+                    help="사업보고서 중 전기 칸(vals_prev)이 없는 것만 다시 받는다(재작성값 확보용, 2026-10-03)")
     ap.add_argument("--years", default="", help="예: 2016-2022 (지정 시 해당 연도 1Q·반기·3Q·사업보고서, 출력 dart_cf_<범위>.jsonl)")
     a = ap.parse_args()
     global OUT, JOBS
+    if a.prev_only:
+        JOBS = [j for j in JOBS if j[1] == 0]
     if a.years:
         y0, y1 = (int(x) for x in a.years.split("-"))
-        JOBS = [(y, q) for y in range(y0, y1 + 1) for q in (1, 2, 3, 0)]
+        JOBS = [(y, q) for y in range(y0, y1 + 1) for q in ((0,) if a.prev_only else (1, 2, 3, 0))]
         OUT = OUT.with_name(f"dart_cf_{y0}_{y1}.jsonl")
     conn = connect_primary_db(timeout=120, readonly=True)
     y_lo, y_hi = min(j[0] for j in JOBS), max(j[0] for j in JOBS)
@@ -99,6 +106,8 @@ def main():
             v = d.get("vals") or {}
             needs = (a.repair_parent and d.get("fs") == "CFS" and v and not d.get("parent_checked")
                      and ("ni_parent" not in v or "equity_parent" not in v))
+            if a.prev_only:
+                needs = d["q"] == 0 and bool(d.get("fs")) and "vals_prev" not in d
             if not needs:
                 done.add(k)
     items = [(c, corp[c], fs) for c, fs in targets if c in corp]

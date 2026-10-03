@@ -124,7 +124,7 @@ class Dart:
         return d.get("list") or [] if d.get("status") == "000" else []
 
 
-def _parent_by_name(rows, kind, total):
+def _parent_by_name(rows, kind, total, col="thstrm_amount"):
     """지배주주 귀속 값을 계정명·순서로 찾고 '지배 + 비지배 = 전체'로 검산한다(2026-10-03).
 
     오래된 공시는 표준 ID 없이 이름만 있고 오타도 있다('지배지주 지분순이익'). 손익계산서에서는 순이익 귀속 행이
@@ -136,13 +136,13 @@ def _parent_by_name(rows, kind, total):
         for idx, r in enumerate(seq):
             nm = (r.get("account_nm") or "").replace(" ", "")
             if "지배" in nm and "비지배" not in nm and "포괄" not in nm:
-                p = num(r.get("thstrm_amount"))
+                p = num(r.get(col))
                 if p is None:
                     continue
                 nci = None
                 for r2 in seq[idx + 1: idx + 4]:
                     if "비지배" in (r2.get("account_nm") or ""):
-                        nci = num(r2.get("thstrm_amount"))
+                        nci = num(r2.get(col))
                         break
                 if total is None:
                     return None
@@ -154,22 +154,23 @@ def _parent_by_name(rows, kind, total):
     return None
 
 
-def extract(rows):
+def extract(rows, col="thstrm_amount"):
+    # col="frmtrm_amount": 사업보고서 전기 칸 = 그 해 보고서 기준으로 재작성된 직전 연도 값(2026-10-03)
     out = {}
     for f, ids in IDS.items():
         cand = [r for r in rows if r.get("sj_div") in SJ[f] and r.get("account_id") in ids]
         if not cand and f in NAMES:
             cand = [r for r in rows if r.get("sj_div") in SJ[f] and (r.get("account_nm") or "").replace(" ", "") in NAMES[f]]
         if cand:
-            v = num(cand[0].get("thstrm_amount"))
+            v = num(cand[0].get(col))
             if v is not None:
                 out[f] = abs(v) if f in ("capex", "depreciation") else v
     if "ni_parent" not in out:
-        v = _parent_by_name(rows, "ni", out.get("ni_total"))
+        v = _parent_by_name(rows, "ni", out.get("ni_total"), col)
         if v is not None:
             out["ni_parent"] = v
     if "equity_parent" not in out:
-        v = _parent_by_name(rows, "eq", out.get("equity_total"))
+        v = _parent_by_name(rows, "eq", out.get("equity_total"), col)
         if v is not None:
             out["equity_parent"] = v
     return out

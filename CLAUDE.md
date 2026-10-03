@@ -14,7 +14,9 @@
 - 키움 REST는 등록 IP에서만 인증됨 — 8050 알림이 오면 포털 허용 IP에 등록(섹션 4).
 
 ### 숫자 데이터 규칙 (필수 — 2026-10-03, 모든 AI 공통)
-- **재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터를 판정·수집·수정하기 전에 반드시 [docs/Financial Statements.md](docs/Financial%20Statements.md) 를 먼저 읽고 그 기준대로만 작업한다.** 정답 소스·정의·판정 규칙·필수 절차·실패 사례·현재 상태·한계가 모두 그 파일에 있다(이 CLAUDE.md의 관련 규칙·이력은 2026-10-03 그 파일 부록 A로 이관).
+> **⛔ 최우선 원칙 0: DART 파싱값을 100% 신뢰하지 않는다 — DART 값은 원본 후보일 뿐, FnGuide(필수)·네이버(보조)와 연결·별도를 나눠 값 대조로 일치해야 확정. 불일치·반복 차이는 먼저 우리 파싱 오류를 의심하고 종목 특징(stock_collection_config fs_quirk:*)으로 기록. 목표 99.99%.**
+
+- **재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터를 판정·수집·수정하기 전에 반드시 [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 를 먼저 읽고 그 기준대로만 작업한다.** 정답 소스·정의·판정 규칙·필수 절차·실패 사례·현재 상태·한계가 모두 그 파일에 있다(이 CLAUDE.md의 관련 규칙·이력은 2026-10-03 그 파일 부록 A로 이관).
 - 기준(FnGuide vs DART, 지배 vs 전체 등)은 사용자 승인 없이 바꾸지 않는다. 숫자 데이터 작업 기록은 그 파일 §7에 남긴다.
 
 ### 서버 재시작 (필수 — 코드 수정 후 반드시 이 방법으로만)
@@ -80,7 +82,7 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 - 컴포넌트 위치 확인 → 섹션 6 참조 (App.jsx 전체 스캔 안 함)
 - 전체 API/스케줄러/테이블 목록 → `docs/API_ENDPOINTS.md` · `docs/SCHEDULER_JOBS.md` · `docs/DB_TABLES_PG.md` (자동 생성, 수동 편집 금지 — 해당 코드를 바꾼 뒤 `scripts/ops/gen_*_doc.py` 재실행)
 
-> 📦 **재무/현금흐름 무결성 선행 규칙 · FnGuide급 신뢰도 운영 규칙** → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 A
+> 📦 **재무/현금흐름 무결성 선행 규칙 · FnGuide급 신뢰도 운영 규칙** → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A
 
 ## 0. 사이트 구조(2026-09-27 전면 개편) — 먼저 [docs/SYSTEM_MAP.md](docs/SYSTEM_MAP.md)(자동 생성 압축 지도)를 읽고 필요한 파일만 열 것
 
@@ -209,7 +211,7 @@ launchctl kickstart -k "gui/$(id -u)/com.stock-dashboard.local"
 | `live_cash_ledger` | 1 | ts, mode, delta_krw, balance_after, reason, ref_order_id | 페이퍼 현금원장(seed 1억원 기본, `KIS_PAPER_INITIAL_CASH`로 조정). ★신규(2026-07-23) |
 | `risk_gate_decisions` | 1,982 | ts, stock_code, side, strategy_key, decision, reasons, gate_snapshot, order_id | A2 리스크게이트 판정 이력(전량 기록, 차단/통과 모두). ★신규(2026-07-23, Codex A2 제안) |
 
-> 📦 **중요 단위 규칙(시가총액 억원·수급 백만원)** → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 A
+> 📦 **중요 단위 규칙(시가총액 억원·수급 백만원)** → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A
 
 ### DB 연결 패턴
 ```python
@@ -427,7 +429,7 @@ ESTAT_APP_ID=                          # 일본 e-Stat API 앱ID(무료 가입 �
 
 ## 8. 핵심 코딩 패턴
 
-> 📦 **현재가 조회 패턴** → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 A
+> 📦 **현재가 조회 패턴** → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A
 
 ### Telegram 야간 알림 억제 (peak_monitor.py)
 ```python
@@ -442,7 +444,7 @@ if not (8 <= _cur_h < 22):
 # TTL 초과: 캐시 즉시 반환 + 백그라운드 갱신 시작 (_bg_compute)
 ```
 
-> 📦 **수급 금액 단위 변환** → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 A
+> 📦 **수급 금액 단위 변환** → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A
 
 ### 라우터 등록 위치 (main.py 38~56줄)
 ```python
@@ -475,7 +477,7 @@ same_sector_codes = {r["stock_code"] for r in mc.execute(
 ).fetchall()}
 ```
 
-> 📦 **종목별 수집 특성·FnGuide 동기화·데이터 소스 우선순위·DART 불일치 원칙·PER/PBR·EPS/BPS 계산** → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 A
+> 📦 **종목별 수집 특성·FnGuide 동기화·데이터 소스 우선순위·DART 불일치 원칙·PER/PBR·EPS/BPS 계산** → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A
 
 ## 9. 알려진 이슈 & 제한사항
 
@@ -512,7 +514,7 @@ URI: /api/dostk/frgnistt
 
 ---
 
-> 📦 숫자 데이터 관련 이슈 12행 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 A
+> 📦 숫자 데이터 관련 이슈 12행 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A
 
 ### 해결된 이슈 — 재발방지 규칙 요약 (전문: [docs/CLAUDE_KNOWN_ISSUES_RESOLVED.md](docs/CLAUDE_KNOWN_ISSUES_RESOLVED.md))
 - **모바일에서 계좌현황(포트폴리오) 진입 불가**: `window.prompt`/`alert`/`confirm` 등 브라우저 네이티브 다이얼로그는 모바일 인앱 브라우저 호환성이 보장되지 않으므로 신규 UI에 사용 금지 — 항상 앱 내부 모달 컴포넌트 사용(기존 `window.confirm` 사용처 다수 잔존, 동일 부류 위험 후속 검토 필요). 또한 NAV_ITEMS가 기능 추가로 계속 길어지고 있으므로, 자주 쓰는 개인화 메뉴(계좌/매수후보 등)는 새 항목 
@@ -522,7 +524,7 @@ URI: /api/dostk/frgnistt
 - **섹터 트렌드 오분류**: 섹터 분류는 반드시 `sector_large` 기준으로. `sector_mid`는 신뢰도 낮음
 - **수출공동 표시 이종업종 혼입**: HS코드 기반 공동 매핑 시 반드시 sector_large 교집합 필터 필수
 
-> 📦 **9-1 데이터 검증 규칙(EPS/BPS 신뢰 계층·shares_issued·외부 비교)** → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 A
+> 📦 **9-1 데이터 검증 규칙(EPS/BPS 신뢰 계층·shares_issued·외부 비교)** → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A
 
 ## 10. 고용정보 페이지 — 데이터 수집·로직 필수 참조
 
@@ -623,7 +625,7 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 
 ## 12. 변경 이력
 
-> 📦 숫자 데이터(재무·가격·현금흐름·수주잔고·원가·감가상각·검증 플래그) 변경 이력 34건 → 이관: [docs/Financial Statements.md](docs/Financial%20Statements.md) 부록 A. 새 숫자 데이터 작업 기록은 그 파일 §7에.
+> 📦 숫자 데이터(재무·가격·현금흐름·수주잔고·원가·감가상각·검증 플래그) 변경 이력 34건 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A. 새 숫자 데이터 작업 기록은 그 파일 §7에.
 
 
 > 🪙 **토큰 최적화**: 이 섹션은 매 세션 자동 로드된다. **항목은 1~3문장만**, 근거/SQL/장문 분석은 `docs/`에 날짜 파일로 두고 링크만. 최근 1~2주(약 15개)만 유지하고 초과분은 [docs/CLAUDE_CHANGELOG_ARCHIVE.md](docs/CLAUDE_CHANGELOG_ARCHIVE.md) 맨 아래로 이동.
