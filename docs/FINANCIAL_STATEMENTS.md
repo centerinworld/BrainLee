@@ -246,7 +246,7 @@
 11. **valuation_history 레거시 per/eps** — 스냅샷마다 정의 상이, `per_ttm`만 신뢰.
 12. **백테스트·전략 재판정** — 정정 전 재무값 기반 결과는 무효 후보. 주간 재검증(일 01:30)이 자동 재실행하지만, 2016~2022 적용 후 한 번 더.
 13. **검증 플래그 테이블 정리** — `*_validation_flags`·`fnguide_dart_mismatch_log` 등은 재분류 결과가 섞여 있다. 원문 대조 결과로 다시 만들거나 화면 표시를 중단.
-14. **텔레그램 봇 토큰 무효**(09-21 이후 알림 0건) — 사용자 조치. 그 전까지 실패 알림이 전달되지 않는다.
+14. ~~텔레그램 봇 토큰 무효~~ → 2026-10-02 사용자 교체, 10-03 getMe·발송 테스트 성공(재확인 완료).
 
 ### 9-1. Codex 재검토 보강 의견 (2026-10-03)
 
@@ -296,6 +296,7 @@
 | **FinanceData/finstate** | README에는 PL/BS/CF CSV 행 수가 적혀 있으나 `raw.githubusercontent.com/FinanceData/finstate/master/PL_CON.csv.gz`는 404. GitHub 저장소 파일 트리에도 CSV가 바로 보이지 않음. | **보류.** 자료 설명은 유용하지만, 현재 GitHub에서 즉시 내려받아 자동 대조하기 어렵다. 별도 다운로드 위치를 찾기 전까지 우선순위 낮춤. |
 | **aikstockdata 가격 최소판** | `index.json` 접근 성공. `generated_at=2026-10-02T18:11+09:00`, `quote_basis_date=20261001`, quotes 2,785행. PostgreSQL `price_history` 2026-10-01자 2,755행과 전수 대조: 매칭 2,669, aik only 116, PG only 86, 종가 불일치 1건(207940, 차이 11,001원·0.77%). 최신행 기준으로는 조인 2,740종목, 2026-10-01/10-02가 아닌 stale 후보 71종목. | **가격·신선도 검증에 바로 유용.** 본 테이블 값 복사 금지. 매일 `price_history` 최신성·basis mismatch·상장상태 누락을 잡는 read-only 비교 잡으로 적합. |
 | **aikstockdata 재무(earnings)** | `earnings.json` 접근 성공. 최근 120일 실적 공시 2,319건 중 2026.06 누적·연결/별도·최신 code/basis 1,702조합을 PostgreSQL Q1+Q2 3개월 합계와 비교. 총 5,106필드(매출·영업이익·순이익) 중 OK 3,546, 불일치 1,281, PG 결측 279. 별도 샘플: 삼성전자(005930)는 2026H1 매출·영업이익·순이익 모두 일치, 에이엘티(172670)는 매출·영업이익 일치·순이익 217,750,655원 차이. 큰 괴리는 900/950 계열 외국기업 통화·환산 문제와 정의 차이가 우선 의심됨. | **재무 sanity check 후보를 전수 범위로 확장 가능.** 값 채택 근거가 아니라 mismatch review 큐다. `aik_earnings_2026h1_mismatches.csv`를 `fs_quirk:reporting_currency`, 지배/전체 순이익, 연결/별도 혼입, Q1+Q2 산식 문제로 분류한다. |
+| **aikstockdata 종목별 JSON 전체** | PostgreSQL `stock_universe` 2,801개 전체를 대상으로 `/data/public/s/{code}.json`을 내려받아 대조. JSON 확보 2,697개, 404/미게시 104개. 재무 섹션 보유 2,596개, 재무 섹션 없음 101개. 2026H1 외부 누적값과 PostgreSQL Q1+Q2 합계 비교: 7,788필드 중 OK 5,824, 불일치 1,811, PG 결측 9, 외부 필드 결측 144. 불일치 분류: `financial_mapping_review` 808필드/708종목, `ofs_mapping_or_source_basis_review` 539필드/202종목, `net_income_definition_or_rounding` 392필드/392종목, `currency_or_foreign_issuer_priority` 54필드/21종목, `rounding_or_unit_tolerance_review` 18필드/18종목. | **전체 주식 기준 review 큐.** DART 키 소진 상태에서도 가능한 전종목 제3자 검증이다. 값 복사는 금지하고, 불일치/결측 큐를 원인분류·파서/통화/연결별도 확인 대상으로 쓴다. |
 | **KoTaP** | 논문/데이터 설명 확인: KOSPI/KOSDAQ 비금융, 2011~2024, 1,754개 기업, 12,653 firm-year, 65변수. DART/OpenDART 회계항목과 FSC/data.go.kr 시장·소유 데이터를 결합. 단, Zenodo 원본 파일은 현재 도구에서 직접 열지 못해 파일 단위 대조는 미실시. | **유망하지만 파일 확보 후 재검증 필요.** 연간 비금융 sanity check에 적합하나 필터(비금융, 12월 결산, 양의 세전이익 등) 때문에 전체 DB 정답 대체 불가. |
 | **FinanceDataReader / pykrx** | 현재 번들 Python에는 `FinanceDataReader`, `pykrx` 미설치. 즉석 라이브러리 실행 검증 불가. | **설치 후 별도 검증.** pykrx는 가격·PER/PBR·배당수익률 검증, FinanceDataReader는 Naver/FINSTATE snapshot 보조 검증으로 제한. |
 
@@ -306,7 +307,8 @@
 - `aik_financial_h1_sample_vs_pg_q1q2_sum.csv`: 2026H1 재무 샘플 대조.
 - `aik_earnings_2026h1_vs_pg_q1q2_long.csv`, `aik_earnings_2026h1_mismatches.csv`, `aik_earnings_2026h1_missing.csv`: 최근 120일 실적 공시 기반 2026H1 재무 대조.
 - `aik_earnings_2026h1_{mismatches,missing}_classified.csv`, `aik_earnings_2026h1_classification_summary.csv`, `aik_quotes_pg_latest_stale_classified.csv`: 1차 원인 분류.
-- 테스트(2026-10-03): `venv/bin/python -m py_compile scripts/review/third_party_crosscheck_20261003.py`, `venv/bin/python -m pytest tests/test_third_party_crosscheck_20261003.py -q`(2 passed), `venv/bin/python scripts/review/third_party_crosscheck_20261003.py --input-dir /tmp/third_party_crosscheck_inputs`(PostgreSQL 읽기 전용 재현 실행).
+- `aik_stock_json_all_financial_vs_pg_q1q2_long.csv`, `aik_stock_json_all_financial_mismatches_classified.csv`, `aik_stock_json_all_financial_classification_summary.csv`, `aik_stock_json_all_status_summary.csv`: `stock_universe` 2,801개 전체 기준 종목별 JSON 재무 대조.
+- 테스트(2026-10-03): `venv/bin/python -m py_compile scripts/review/third_party_crosscheck_20261003.py`, `venv/bin/python -m pytest tests/test_third_party_crosscheck_20261003.py -q`(2 passed), `venv/bin/python scripts/review/third_party_crosscheck_20261003.py --input-dir /tmp/third_party_crosscheck_inputs --stock-json-dir /tmp/aik_stock_json_all`(PostgreSQL 읽기 전용, `stock_universe` 2,801개 전체 JSON 대조 포함 재현 실행).
 
 1차 원인 분류:
 - 재무 불일치 1,281필드: `financial_mapping_review` 507필드/456종목, `ofs_mapping_or_source_basis_review` 473필드/165종목, `net_income_definition_or_rounding` 266필드/266종목, `currency_or_foreign_issuer_priority` 22필드/10종목, `rounding_or_unit_tolerance_review` 13필드/13종목.
@@ -341,7 +343,7 @@
 - **감가상각**: 연간만 XBRL로 정렬(2021~2025, 수집 진행 중). 분기 감가상각은 정의가 섞여 있어 측정 불가.
 - **재고자산**: 원문 대조 미실시.
 - **파생 테이블**: 원천을 고친 뒤 재구축했지만, 그 이전에 계산된 백테스트·전략 판정 결과는 정정 전 값 기준이다.
-- **외부 의존**: DART 일일 한도(키당 ~2만 건)와 IP 차단 위험 때문에 전 기간 재수집은 며칠이 걸린다. 텔레그램 알림이 끊겨 있어(봇 토큰 무효) 실패 알림이 전달되지 않는다.
+- **외부 의존**: DART 일일 한도(키당 ~2만 건)와 IP 차단 위험 때문에 전 기간 재수집은 며칠이 걸린다. 텔레그램 알림은 2026-10-03 정상 확인.
 
 ## 11. 변경 이력
 | 날짜 | 변경 | 승인/근거 |
@@ -358,7 +360,7 @@
 | 2026-10-03 | 보고통화 종목 원화 환산 규칙(손익=기간평균, BS·CF=기말 매매기준율) — FnGuide 실측 규칙을 그대로 채택 | 사용자 확정 원칙 '표시 정의 = FnGuide'에 따른 적용 |
 | 2026-10-03 | **감가상각 = 현금흐름표 조정 감가상각(FnGuide 표시값) + 구성요소(유형·사용권·무형 상각, 유형·무형 취득) 별도 보존·표시.** 오전의 '유형자산만'·'사용권 제외' 정의는 대체 | 사용자 제안("분리해서 관리·표시하면 되지 않나")·승인 |
 | 2026-10-03 | Codex 재검토 보강: 레거시 품질 라벨 fail-closed, 필드 단위 확정 상태 스키마화, point-in-time 재작성 테이블, FnGuide snapshot provenance, canonical 지위 재정의, **제3자 데이터·비교 검증 후보**(FinanceData/finstate, KoTaP, Accidental Order, aikstockdata, kr-company-registry, krx-fundamentals-client, kr-stock-scanner, 독립 DART 파서, FSC/data.go.kr, pykrx) 기록 | 사용자 지시("재검토나 보강", "DART/FnGuide 외 추가 검증·비교분석 소스, GitHub 한국주식 데이터") |
-| 2026-10-03 | Codex 제3자 데이터 직접 검증을 **운영 PostgreSQL 기준**으로 재실행: kr-company-registry 식별자 전수 대조, FinanceData/stock_master historical 대조, aikstockdata 가격 2026-10-01 전수 대조, `earnings.json` 기반 2026H1 재무 5,106필드 대조. 재현 스크립트와 pytest 추가. 산출 `runtime/research_outputs/third_party_crosscheck_20261003/` | 사용자 지시("3자 교차검증을 모든 항목에 대해서 진행", "우리 데이터 베이스는 PostgreSQL", "너가 해보고 테스트") |
+| 2026-10-03 | Codex 제3자 데이터 직접 검증을 **운영 PostgreSQL 기준**으로 재실행: kr-company-registry 식별자 전수 대조, FinanceData/stock_master historical 대조, aikstockdata 가격 2026-10-01 전수 대조, `earnings.json` 기반 2026H1 재무 5,106필드 대조, **종목별 JSON을 PostgreSQL `stock_universe` 2,801개 전체 대상으로 대조**(JSON 확보 2,697개, 재무 7,788필드 비교). 재현 스크립트와 pytest 추가. 산출 `runtime/research_outputs/third_party_crosscheck_20261003/` | 사용자 지시("3자 교차검증을 모든 항목에 대해서 진행", "우리 데이터 베이스는 PostgreSQL", "너가 해보고 테스트", "전체 주식에 대해서 모두 검토") |
 
 
 ## 12. 사용자와의 논의 기록 (2026-10-02~03, 모든 세션·AI가 같은 값·같은 기준으로 작업하기 위한 근거)
