@@ -58,7 +58,8 @@ def worker(key, items, fh, done):
                 if rows:
                     used = fs
                     break
-            rec = {"code": code, "year": year, "q": q, "fs": used, "vals": extract(rows) if rows else {}, "ok": rows is not None}
+            rec = {"code": code, "year": year, "q": q, "fs": used, "vals": extract(rows) if rows else {}, "ok": rows is not None,
+                   "parent_checked": True}
             with lock:
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 fh.flush()
@@ -68,6 +69,8 @@ def worker(key, items, fh, done):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--repair-parent", action="store_true",
+                    help="이미 받은 CFS 보고서 중 지배주주 순이익/자본이 없는 것만 개선된 추출기로 다시 받는다(뒤 줄이 앞 줄을 덮어씀)")
     ap.add_argument("--years", default="", help="예: 2016-2022 (지정 시 해당 연도 1Q·반기·3Q·사업보고서, 출력 dart_cf_<범위>.jsonl)")
     a = ap.parse_args()
     global OUT, JOBS
@@ -87,10 +90,17 @@ def main():
     corp = Dart().corp_codes()
     done = set()
     if OUT.exists():
+        last = {}
         for line in open(OUT):
             d = json.loads(line)
             if d.get("ok"):
-                done.add((d["code"], d["year"], d["q"]))
+                last[(d["code"], d["year"], d["q"])] = d
+        for k, d in last.items():
+            v = d.get("vals") or {}
+            needs = (a.repair_parent and d.get("fs") == "CFS" and v and not d.get("parent_checked")
+                     and ("ni_parent" not in v or "equity_parent" not in v))
+            if not needs:
+                done.add(k)
     items = [(c, corp[c], fs) for c, fs in targets if c in corp]
     keys = list(config.DART_API_KEYS)
     print(f"대상 {len(items)}종목 × {len(JOBS)}보고서, 이미 완료 {len(done)}", flush=True)

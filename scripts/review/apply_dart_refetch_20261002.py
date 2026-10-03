@@ -92,11 +92,10 @@ def main():
                 v = x[1]
                 want = {"revenue": v.get("revenue"), "operating_profit": v.get("operating_profit"),
                         "total_assets": v.get("total_assets"), "total_liabilities": v.get("total_liabilities")}
-                if r[8] is None or not (close(r[8], v.get("ni_total")) or close(r[8], v.get("ni_parent"))):
-                    want["net_income"] = v.get("ni_total")
-                if r[11] is None or not (close(r[11], v.get("equity_total")) or close(r[11], v.get("equity_parent"))):
-                    want["total_equity"] = v.get("equity_total")
-                rule = "DART 원문값(분기 3개월/연간)"
+                # 2026-10-03 사용자 확정: 순이익·자본 = 지배주주 기준. 연결은 검산된 지배값, 별도는 전체(=지배).
+                want["net_income"] = v.get("ni_parent") if fs == "CFS" else v.get("ni_total")
+                want["total_equity"] = v.get("equity_parent") if fs == "CFS" else v.get("equity_total")
+                rule = "DART 원문값(분기 3개월/연간), 순이익·자본 지배주주 기준"
             else:  # Q4 파생
                 xs = [truth.get((code, year, k)) for k in (0, 1, 2, 3)]
                 if not all(xs) or any(x[0] != fs for x in xs):
@@ -106,17 +105,13 @@ def main():
                 for f in ("revenue", "operating_profit"):
                     if all(f in z for z in (ann, q1, q2, q3)):
                         want[f] = ann[f] - q1[f] - q2[f] - q3[f]
-                if all("ni_total" in z for z in (ann, q1, q2, q3)):
-                    tot = ann["ni_total"] - q1["ni_total"] - q2["ni_total"] - q3["ni_total"]
-                    par = (ann["ni_parent"] - q1["ni_parent"] - q2["ni_parent"] - q3["ni_parent"]
-                           if all("ni_parent" in z for z in (ann, q1, q2, q3)) else None)
-                    if r[8] is None or not (close(r[8], tot) or (par is not None and close(r[8], par))):
-                        want["net_income"] = tot
+                nik = "ni_parent" if fs == "CFS" else "ni_total"
+                if all(nik in z for z in (ann, q1, q2, q3)):
+                    want["net_income"] = ann[nik] - q1[nik] - q2[nik] - q3[nik]
                 want["total_assets"] = ann.get("total_assets")
                 want["total_liabilities"] = ann.get("total_liabilities")
-                if r[11] is None or not (close(r[11], ann.get("equity_total")) or close(r[11], ann.get("equity_parent"))):
-                    want["total_equity"] = ann.get("equity_total")
-                rule = "Q4 = DART 연간 − (Q1+Q2+Q3), 재무상태 = 연간"
+                want["total_equity"] = ann.get("equity_parent") if fs == "CFS" else ann.get("equity_total")
+                rule = "Q4 = DART 연간 − (Q1+Q2+Q3), 재무상태 = 연간, 순이익·자본 지배주주 기준"
             cols = {"revenue": 6, "operating_profit": 7, "net_income": 8, "total_assets": 9, "total_liabilities": 10, "total_equity": 11}
             for f, new in want.items():
                 if new is None:

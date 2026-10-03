@@ -65,6 +65,10 @@ NAMES = {
     "operating_profit": {"영업이익", "영업이익(손실)", "영업손실"},
     "ni_total": {"당기순이익", "당기순이익(손실)", "분기순이익", "분기순이익(손실)", "반기순이익", "반기순이익(손실)"},
     "depreciation": {"감가상각비", "유형자산감가상각비"},
+    # 2026-10-03: 2016~2018 공시는 재무상태표 총계에도 표준 ID가 없는 경우가 많다(정확 일치만 — '자본과부채총계' 등 배제).
+    "total_assets": {"자산총계"},
+    "total_liabilities": {"부채총계"},
+    "equity_total": {"자본총계"},
     # 2026-10-02: 국내 공시는 CapEx에 표준 IFRS ID를 거의 안 써서(표본 0건 추출) 계정명으로도 찾는다.
     "capex": {"유형자산의취득", "유형자산취득", "유형자산의증가", "유형자산증가"},
 }
@@ -120,6 +124,36 @@ class Dart:
         return d.get("list") or [] if d.get("status") == "000" else []
 
 
+def _parent_by_name(rows, kind, total):
+    """지배주주 귀속 값을 계정명·순서로 찾고 '지배 + 비지배 = 전체'로 검산한다(2026-10-03).
+
+    오래된 공시는 표준 ID 없이 이름만 있고 오타도 있다('지배지주 지분순이익'). 손익계산서에서는 순이익 귀속 행이
+    총포괄이익 귀속 행보다 먼저 나오므로 '지배'(비지배 제외)가 든 **첫 행**을 쓰고, 바로 뒤 '비지배' 행과 합쳐
+    전체 순이익(또는 자본총계)과 맞을 때만 채택한다. 비지배 행이 없으면 지배 값이 전체와 같을 때만 채택."""
+    sjs = ("IS", "CIS") if kind == "ni" else ("BS",)
+    for sj in sjs:
+        seq = [r for r in rows if r.get("sj_div") == sj]
+        for idx, r in enumerate(seq):
+            nm = (r.get("account_nm") or "").replace(" ", "")
+            if "지배" in nm and "비지배" not in nm and "포괄" not in nm:
+                p = num(r.get("thstrm_amount"))
+                if p is None:
+                    continue
+                nci = None
+                for r2 in seq[idx + 1: idx + 4]:
+                    if "비지배" in (r2.get("account_nm") or ""):
+                        nci = num(r2.get("thstrm_amount"))
+                        break
+                if total is None:
+                    return None
+                if nci is not None and abs(p + nci - total) <= max(1e6, abs(total) * 0.005):
+                    return p
+                if nci is None and abs(p - total) <= max(1e6, abs(total) * 0.005):
+                    return p
+                return None
+    return None
+
+
 def extract(rows):
     out = {}
     for f, ids in IDS.items():
@@ -130,6 +164,14 @@ def extract(rows):
             v = num(cand[0].get("thstrm_amount"))
             if v is not None:
                 out[f] = abs(v) if f in ("capex", "depreciation") else v
+    if "ni_parent" not in out:
+        v = _parent_by_name(rows, "ni", out.get("ni_total"))
+        if v is not None:
+            out["ni_parent"] = v
+    if "equity_parent" not in out:
+        v = _parent_by_name(rows, "eq", out.get("equity_total"))
+        if v is not None:
+            out["equity_parent"] = v
     return out
 
 
