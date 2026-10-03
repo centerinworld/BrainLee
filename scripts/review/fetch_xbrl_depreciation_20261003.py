@@ -105,6 +105,8 @@ def parse(xbrl_bytes, year):
 
 
 def main():
+    # --exit-on-quota: 한도 소진 시 대기하지 않고 종료(launchd 일일 실행용, 2026-10-03)
+    exit_on_quota = "--exit-on-quota" in sys.argv
     conn = connect_primary_db(timeout=120, readonly=True)
     codes = [r[0] for r in conn.execute("""SELECT DISTINCT stock_code FROM cash_flow_data WHERE year>=2021
                                            AND stock_code ~ '^[0-9]{5}[0-9A-Z]$' ORDER BY 1""").fetchall()]
@@ -125,6 +127,9 @@ def main():
                 break
         if zb is None:
             nxt = (datetime.now() + timedelta(days=1)).replace(hour=0, minute=20, second=0)
+            if exit_on_quota:
+                print("회사코드: 모든 키 한도 소진 → 종료(내일 재실행)", flush=True)
+                return
             print(f"회사코드: 모든 키 한도 소진 → {nxt} 까지 대기", flush=True)
             time.sleep(max(60, (nxt - datetime.now()).total_seconds()))
     z = zipfile.ZipFile(io.BytesIO(zb))
@@ -173,6 +178,9 @@ def main():
                     print("키 한도 → 다음 키", flush=True)
                     continue
                 nxt = (datetime.now() + timedelta(days=1)).replace(hour=0, minute=20, second=0)
+                if exit_on_quota:
+                    print("모든 키 한도 소진 → 종료(내일 재실행)", flush=True)
+                    return
                 print(f"모든 키 한도 소진 → {nxt} 까지 대기", flush=True)
                 time.sleep(max(60, (nxt - datetime.now()).total_seconds()))
                 ki = 0

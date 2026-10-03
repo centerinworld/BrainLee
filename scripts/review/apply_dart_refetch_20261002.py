@@ -68,6 +68,13 @@ def main():
     codes = sorted({k[0] for k in truth})
     print(f"DART 재수집 {len(truth)}건, {len(codes)}종목")
     conn = connect_primary_db(timeout=900, readonly=not a.apply)
+    # 2026-10-03: 보고통화(USD·CNY 등) 종목은 DART 값이 원통화라 그대로 덮으면 원화 환산값이 깨진다 → 제외
+    # (환산은 scripts/review/convert_foreign_currency_20261003.py, FINANCIAL_STATEMENTS.md §2-6)
+    fx_codes = {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:reporting_currency'").fetchall()}
+    if fx_codes & set(codes):
+        truth = {k: v for k, v in truth.items() if k[0] not in fx_codes}
+        print(f"보고통화 종목 {len(fx_codes & set(codes))}개 제외(원통화 값)")
+        codes = sorted({k[0] for k in truth})
     run_id = f"dart_refetch_apply_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     now = datetime.now().isoformat(timespec="seconds")
     fin_changes, cf_changes = [], []   # (row_id, code, year, q, is_annual, fs, field, old, new, rule)

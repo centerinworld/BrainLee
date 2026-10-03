@@ -27,12 +27,22 @@ def close(a, b):
     return a is not None and b is not None and abs(a - b) <= max(1e6, abs(b) * 0.005)
 
 
+BASIS = "adj" if "--basis-adj" in sys.argv else "ppe"  # 2026-10-03: adj = FnGuide 실측 정의(현금흐름표 조정 감가상각) — 사용자 승인 대기
+
+
 def values():
     out = {}
     for line in open(SRC):
         d = json.loads(line)
         for fs, v in d.get("vals", {}).items():
             p, a = v.get("dep_ppe"), v.get("adj_dep")
+            if BASIS == "adj":
+                # FnGuide 유형자산감가상각비 = 현금흐름표 조정 '감가상각비'(사용권 포함), 무형 = 조정 '무형자산상각비'
+                dep = a or p
+                amort = v.get("adj_amort") or v.get("amort") or 0
+                if dep:
+                    out[(d["code"], d["year"], fs)] = (dep, dep + amort, d.get("rcept_no"))
+                continue
             if p and a and a / p > 1.5:
                 continue
             dep = p or a
@@ -47,10 +57,14 @@ def values():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--basis-adj", action="store_true", help="FnGuide 실측 정의(조정 감가상각, 사용권 포함) — 사용자 승인 후에만 --apply")
     a = ap.parse_args()
     x = values()
     conn = connect_primary_db(timeout=600, readonly=not a.apply)
     locks = {(r[0], r[1], r[2]) for r in conn.execute("SELECT stock_code, year, table_name FROM data_lock WHERE is_locked=1").fetchall()}
+    # 2026-10-03: 보고통화 종목(XBRL 값이 원통화)은 제외 — 원화 환산값 보호(FINANCIAL_STATEMENTS.md §2-6)
+    fx_codes = {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:reporting_currency'").fetchall()}
+    x = {k: v for k, v in x.items() if k[0] not in fx_codes}
     cf_ch, fd_ch, st = [], [], collections.Counter()
     for rid, code, y, q, fs, dep in conn.execute("""SELECT id, stock_code, year, quarter, report_type, depreciation FROM cash_flow_data
                                                     WHERE is_annual AND year BETWEEN 2021 AND 2025""").fetchall():

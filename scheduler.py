@@ -6112,7 +6112,8 @@ class CollectionScheduler:
             if _root not in _sys.path:
                 _sys.path.insert(0, _root)
             from scripts.verify_all_fnguide_dart_20260809 import run_verify_sweep
-            result = run_verify_sweep(limit=450)
+            # 2026-10-03: 450→150 — 연간 연결만 매일 재수집하던 한도를 줄이고, 나머지는 원문 수집(scripts/review/fetch_fnguide_raw_20261003.py, launchd 04:00)이 연결·별도·분기까지 받는다
+            result = run_verify_sweep(limit=150)
             stats = result["stats"]
             logger.info(
                 f"[FnGuideDART전종목검증] 완료: 대상 {result['target_count']}종목, {stats}, "
