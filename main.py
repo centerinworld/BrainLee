@@ -6347,10 +6347,38 @@ def get_data_quality(stock_code: str):
 
     # 2026-10-03: 이 등급은 검증 플래그(재분류 결과 포함) 기준이며 값 자체의 원문 일치율이 아니다.
     # 독립 재검토(docs/FINANCIAL_REREVIEW_20261002.md)에서 2023년 이후는 DART 원문으로 정정, 감가상각은 주석 공시라 미검증.
-    verification_note = ("등급은 검증 기록 기준입니다. 2023년 이후 재무·현금흐름은 2026-10 DART 원문 재대조로 정정됐고, "
-                         "2016~2022년은 재대조 진행 중, 감가상각비는 주석 공시라 원문 검증 전입니다.")
+    # 2026-10-03 fail-closed(docs/FINANCIAL_STATEMENTS.md §2-2, Codex 의견 §9-1-2): 위 등급은 레거시 검증 플래그 기준이다.
+    # 현행 기준(FnGuide 실제 값 대조, financial_field_verification) 결과가 없거나 원인 조사 필드가 있으면 '확정'으로 보이지 않게 덮는다.
+    current_verification = {"total": 0, "confirmed": 0, "investigating": 0, "db_missing": 0, "verified_at": None}
+    try:
+        _cv = connect_primary_db(timeout=10)
+        _r = _cv.execute("""SELECT COUNT(*), SUM(CASE WHEN status LIKE '확정%' THEN 1 ELSE 0 END),
+                                   SUM(CASE WHEN status='원인 조사' THEN 1 ELSE 0 END),
+                                   SUM(CASE WHEN status LIKE '미확인%' THEN 1 ELSE 0 END), MAX(verified_at)
+                            FROM financial_field_verification WHERE stock_code=?""", (stock_code,)).fetchone()
+        _cv.close()
+        if _r:
+            current_verification = {"total": int(_r[0] or 0), "confirmed": int(_r[1] or 0), "investigating": int(_r[2] or 0),
+                                    "db_missing": int(_r[3] or 0), "verified_at": _r[4]}
+    except Exception:
+        pass
+    _legacy = f"(레거시 검증 기록: {grade} {grade_label})"
+    _cvt = current_verification
+    if _cvt["total"] == 0:
+        grade, grade_label, grade_color = "U", "현행 기준 미확인", "#6b7280"
+        grade_desc = f"FnGuide 실제 값과의 현행 기준 대조 결과가 아직 없습니다 {_legacy} — {grade_desc}"
+    elif _cvt["investigating"] > 0 or _cvt["db_missing"] > 0:
+        grade, grade_label, grade_color = "C", "원인 조사 중", "#f59e0b"
+        grade_desc = (f"현행 기준 대조 {_cvt['total']}필드 중 확정 {_cvt['confirmed']} · 원인 조사 {_cvt['investigating']} · "
+                      f"DB 없음 {_cvt['db_missing']} {_legacy}")
+    else:
+        grade, grade_label, grade_color = "A", "확정(현행 기준)", "#10b981"
+        grade_desc = f"현행 기준 대조 {_cvt['total']}필드 전부 FnGuide(·네이버)와 일치 {_legacy}"
+    verification_note = ("등급은 docs/FINANCIAL_STATEMENTS.md 현행 기준(DART 값 ↔ FnGuide 실제 값, 연결·별도 분리) 대조 결과입니다. "
+                         "FnGuide는 최근 3개 연도·4개 분기만 제공하므로 그 이전 기간은 외부 확인이 없습니다(미확인).")
     grade_desc = f"{grade_desc} — {verification_note}" if grade_desc else verification_note
     return {
+        "current_verification": current_verification,
         "grade": grade,
         "grade_label": grade_label,
         "grade_color": grade_color,

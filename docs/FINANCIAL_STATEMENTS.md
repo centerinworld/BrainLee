@@ -150,6 +150,7 @@
 | 수주잔고 | `runtime/scripts/review/fix_backlog_definite_errors_20261002.py`, `runtime/scripts/review/backlog_total_row_extractor_20261003.py --eval/--apply` |
 | **FnGuide 캡처 전수 대조**(읽기 전용) | `runtime/scripts/review/compare_db_vs_fnguide_snapshot_20261003.py` → `research_outputs/financial_rereview_20261002/fnguide_compare_{summary.json,mismatches.csv}` |
 | 불일치 원인 분류·종목 특징 기록 | `runtime/scripts/review/classify_fnguide_mismatch_20261003.py [--apply]` → `fnguide_mismatch_classified.csv`, `fnguide_stock_quirks.csv`, `stock_collection_config` `fs_quirk:*` |
+| 현행 기준 필드 확정 상태 / 시점(PIT) 사실 | `build_field_verification_20261003.py`, `build_financial_pit_20261003.py` (둘 다 매일 자동) |
 | **매일 자동 재수집(launchd)** | `scripts/review/daily_numeric_recollect.sh dart|fnguide` ← `launchd/com.stock-dashboard.numeric-recollect-{dart,fnguide}.plist`(00:20 / 04:00). 로그 `research_outputs/financial_rereview_20261002/daily_numeric_recollect.log`. 수집만 하고 운영 테이블은 바꾸지 않는다 |
 | FnGuide 원문 저장·대조 | `fetch_fnguide_raw_20261003.py [--max-calls N] [--codes]`, `compare_db_vs_fnguide_raw_20261003.py` |
 | 외국기업 원화 환산 | `convert_foreign_currency_20261003.py [--apply]` (ECOS 환율 `data_raw/ecos_fx/731Y001_daily.json`) |
@@ -173,6 +174,7 @@
 | 2026-10-03 09:50 | Claude | 지배주주 전환 후 파생 재구축(cash_conversion 62,412·품질 2,740·per_ttm 39,587·피처 스냅샷 193,093). D&A 사용권 제외 재적용은 그 직후라 **다음 재구축에 반영 필요** | 보완 수집 적용 후 재구축 예정 |
 | 2026-10-03 10:00 | Claude | **FnGuide 캡처 전 종목 전수 대조**(2022+, 연결·별도, 연간·분기, 177,219칸) → 불일치 8,240칸 원인 분류 → 종목 특징 1,241건(897종목) `fs_quirk:*` 기록. 문서명 FINANCIAL_STATEMENTS.md로 변경, 최우선 원칙 0 추가, 재작성 기준(§2-5) 확정, 5% 제안 폐기. 수집기에 전기 칸(`vals_prev`) 저장 추가, 파이프라인 v2 | §8-1 — DB 확정 오류·미확인 남음, 99.99% 미달 |
 | 2026-10-03 13:00 | Claude | **자동 수집 재구성**: DART(00:20)·FnGuide 원문(04:00) launchd 2개(재부팅 유지, 한도 소진 시 종료 후 다음 날 재개), 기존 nohup 루프 종료. FnGuide 원문 저장 수집기·원문 대조기 신설. **외국기업 16종목 원화 환산 적용**(`fx_krw_20261003_131733`, 9,720필드). 감가상각 FnGuide 정의 실측(조정값 = FnGuide) — 변경은 승인 대기. 파생 재구축(D&A 반영) | 환산 후 FnGuide 연간 자산·부채 일치 100% |
+| 2026-10-03 13:40 | Claude | Codex 의견 반영: 화면 품질 등급 fail-closed(main.py data-quality, 현행 기준 테이블 우선), 필드 단위 확정 상태 테이블 `financial_field_verification`, 시점 사실 테이블 `financial_facts_pit` 신설·일일 자동 갱신 | 확정 93.2%(41,339필드, FnGuide 실제 값 기준) |
 
 상세 수치·run_id·백업 테이블: [FINANCIAL_REREVIEW_20261002.md](FINANCIAL_REREVIEW_20261002.md). 이관된 과거 원문: 부록 A(CLAUDE.md), 부록 B(hermes.md).
 
@@ -247,9 +249,9 @@
 문서의 방향은 맞다. 다만 "정본 원칙"이 문서에만 있고 DB·화면·배치가 강제하지 못하면 같은 문제가 반복된다. 아래는 다음 세션에서 우선 반영할 보강 사항이다.
 
 1. **문서 내부 충돌 제거** — §11의 "5% 넘으면 별도 저장·표시, 사용자 확인 대기" 항목은 이후 사용자 지시로 폐기됐다. 변경 이력에는 남기되 "폐기됨, §2-5·§5 실패 23·§11 후속 항목이 우선"이라고 명시한다.
-2. **화면 품질 라벨 fail-closed** — `runtime/main.py`의 데이터 품질 API는 레거시 `cf_validation_flags` 기준으로 `CONFIRMED`, `CLOSE_MATCH`, `AMBIGUOUS 0건`을 "검증 완료"처럼 보여 줄 수 있다. §3 기준으로는 FnGuide·네이버 실제 외부 행과 비교한 `field_verification_status_v2` 또는 새 전수대조 결과가 없으면 `확정`이 아니라 `미확인/레거시 검증`으로 표시해야 한다. 불일치가 적거나 15% 이하라는 이유로 `ok` 처리하지 않는다.
-3. **필드 단위 확정 상태를 스키마화** — `canonical_financial_data`·`canonical_cashflow_data`는 내부 정합성 게이트는 있지만, `확정(3소스)`, `확정(2소스)`, `원인 조사`, `미확인` 상태를 보존하지 않는다. 별도 테이블 또는 컬럼으로 `verification_status`, `sources_checked`, `dart_rcp_no`, `dart_account_id`, `fnguide_snapshot_id`, `naver_snapshot_id`, `currency`, `report_basis`, `restatement_flag`, `basis_version`, `verified_at`, `run_id`를 남긴다.
-4. **재작성값 적용 전 point-in-time 테이블 설계** — 표시값은 최신 재작성값이 맞지만, 백테스트는 당시 알 수 있었던 값이어야 한다. 본 테이블 덮어쓰기 전에 `financial_facts_point_in_time` 또는 유사 테이블을 만들어 `as_reported`, `restated`, `current_display`, `filing_date`, `available_at`, `source_rcp_no`를 분리한다. 그 전까지 2016~2022 대량 재작성 적용 후 전략 백테스트는 미래참조 위험이 있다.
+2. ✅ (2026-10-03 Claude 반영: `financial_field_verification` 기준으로 등급을 덮음 — 현행 대조 없음='U 현행 기준 미확인', 원인 조사·DB 없음 있으면 'C', 전부 일치일 때만 'A 확정(현행 기준)'. 레거시 등급은 괄호로만 표시) **화면 품질 라벨 fail-closed** — `runtime/main.py`의 데이터 품질 API는 레거시 `cf_validation_flags` 기준으로 `CONFIRMED`, `CLOSE_MATCH`, `AMBIGUOUS 0건`을 "검증 완료"처럼 보여 줄 수 있다. §3 기준으로는 FnGuide·네이버 실제 외부 행과 비교한 `field_verification_status_v2` 또는 새 전수대조 결과가 없으면 `확정`이 아니라 `미확인/레거시 검증`으로 표시해야 한다. 불일치가 적거나 15% 이하라는 이유로 `ok` 처리하지 않는다.
+3. ✅ 1차 반영(2026-10-03 Claude): 테이블 `financial_field_verification`(종목·연도·분기·구분·필드, db/fnguide/naver 값, status, cause, fnguide_source, basis_version, run_id) — `build_field_verification_20261003.py`, 매일 04:00 FnGuide 수집 뒤 재구축. 첫 실행 41,339필드: 확정(3소스) 10,061 · 확정(2소스) 28,477 · 원인 조사 1,841 · DB 없음 960. 남은 것: dart_rcp_no·account_id·currency·restatement_flag 컬럼. **필드 단위 확정 상태를 스키마화** — `canonical_financial_data`·`canonical_cashflow_data`는 내부 정합성 게이트는 있지만, `확정(3소스)`, `확정(2소스)`, `원인 조사`, `미확인` 상태를 보존하지 않는다. 별도 테이블 또는 컬럼으로 `verification_status`, `sources_checked`, `dart_rcp_no`, `dart_account_id`, `fnguide_snapshot_id`, `naver_snapshot_id`, `currency`, `report_basis`, `restatement_flag`, `basis_version`, `verified_at`, `run_id`를 남긴다.
+4. ✅ 1차 반영(2026-10-03 Claude): `financial_facts_pit`(value_kind = as_reported/restated, source_report, available_at = 법정기한 추정) — `build_financial_pit_20261003.py`, 매일 DART 수집 뒤 재구축. 첫 실행 as_reported 607,077, restated 0(전기 칸 수집 시작 전). 남은 것: 실제 접수일(rcept_dt)로 available_at 교체, 분기 재작성. **재작성값 적용 전 point-in-time 테이블 설계** — 표시값은 최신 재작성값이 맞지만, 백테스트는 당시 알 수 있었던 값이어야 한다. 본 테이블 덮어쓰기 전에 `financial_facts_point_in_time` 또는 유사 테이블을 만들어 `as_reported`, `restated`, `current_display`, `filing_date`, `available_at`, `source_rcp_no`를 분리한다. 그 전까지 2016~2022 대량 재작성 적용 후 전략 백테스트는 미래참조 위험이 있다.
 5. **FnGuide snapshot provenance 강제** — `financial_source_snapshot`에는 실제 외부 URL·수집 payload hash·parser_version·source_url을 필수화하고, DB 재구성값(`reconstructed_*`)은 별도 테이블로 분리한다. 실제 `comp.fnguide.com`/`wcomp.fnguide.com` 수집 행만 외부 대조로 인정한다.
 6. **canonical 테이블의 지위 재정의** — 과거 canonical 재빌드가 raw 중복/오염을 그대로 재현한 기록이 있다. canonical을 화면·전략의 정본으로 쓸지, 임시 표준화 산출물로만 쓸지 명시하고, 재빌드 전에는 BigQuery sync·전략 피처가 canonical을 신뢰하지 않도록 한다.
 7. **정확도 표에 run_id/as_of 추가** — §8의 정확도 수치마다 `run_id`, 표본 seed, 산출 파일, DB 적용 시각, 적용 전/후 여부를 붙인다. "99.8%" 같은 숫자는 DB 상태와 묶여 있지 않으면 다음 세션에서 재현할 수 없다.
@@ -281,6 +283,8 @@
 
 #### 9-2-1. 후보 직접 검증 결과 (Codex, 2026-10-03)
 
+> ⚠ (Claude 주석 2026-10-03) 아래 수치는 **레거시 SQLite 기준**이라 운영 판단에 쓰지 않는다. 운영 PostgreSQL은 정상 가동 중(`db_compat.connect_primary_db()`, 같은 시각 Claude 작업에서 정상 접속) — Codex 실행 환경(샌드박스)에서 접속이 안 됐던 것으로 보인다. PG에서 재실행 후 판정.
+
 검증은 공개 파일을 `/tmp`에 읽기 전용으로 내려받아 레거시 `runtime/stock.db`와 대조했다. 운영 PostgreSQL은 이 시점 로컬 `127.0.0.1:5432`가 응답하지 않아 직접 대조하지 못했다. 따라서 아래 수치는 **레거시 SQLite 기준**이며, 운영 DB 반영 전에는 PostgreSQL에서 다시 실행해야 한다.
 
 | 후보 | 실제 접근·대조 결과 | 판정 |
@@ -305,7 +309,7 @@
 3. **confidence가 아니라 evidence 기반 UI** — 화면에는 `A/B/C` 등급보다 먼저 `비교 행 수`, `비교 소스`, `미확인 필드`, `불일치 필드`를 보여 준다. "검증 완료" 문구는 `확정(2소스+)` 필드에만 쓴다.
 4. **source freshness ledger** — DART, FnGuide, Naver, KRX, pykrx, FinanceDataReader, SEC 각각에 대해 마지막 성공 수집 시각, 실패 수, 호출 제한 상태, 최근 payload hash 변화를 `source_freshness_ledger`에 기록한다.
 5. **restatement watcher** — 다음 연도 사업보고서 전기 칸이 기존 표시값과 다르면 자동으로 `restatement_candidate`에 올리고, 본 테이블 적용 전 FnGuide·Naver와 대조한다.
-6. **currency conversion audit** — 외국기업 19종목은 FnGuide 표시값을 역산해 평균환율/기말환율/원문 통화 여부를 분류하고, `reporting_currency`, `display_currency`, `fx_basis`를 필수 저장한다.
+6. ✅ (2026-10-03 Claude, §2-6: 16종목 환산 완료·보류 4종목) **currency conversion audit** — 외국기업 19종목은 FnGuide 표시값을 역산해 평균환율/기말환율/원문 통화 여부를 분류하고, `reporting_currency`, `display_currency`, `fx_basis`를 필수 저장한다.
 7. **quarantine before rebuild** — 2016~2022 재수집 적용 후 파생 재구축 전에 무조건 `compare_db_vs_fnguide_snapshot_20261003.py`와 DART 표본 재측정을 통과해야 한다. 통과 전에는 백테스트·전략 결과를 "재무 정정 전/후 혼재"로 표시한다.
 
 ## 10. 한계 (이 문서의 수치를 읽을 때)
