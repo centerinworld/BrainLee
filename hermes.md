@@ -1,3 +1,5 @@
+> **필수(2026-10-03)**: 데이터(가격·재무·현금흐름·감가상각·수주잔고·사업부문·미국 재무) 판정·수정 전 [docs/DATA_VERIFICATION_STANDARD.md](docs/DATA_VERIFICATION_STANDARD.md)를 먼저 읽을 것. 기준 변경은 사용자 승인 필요.
+
 # Stock Data Integrity / 다중 AI 작업 현황 (hermes.md)
 
 > 🪙 **토큰 최적화(2026-09-24)**: 이 파일은 Claude/Codex/code-doer가 작업 결과를 덧붙이는 로그다. **최근(2026-09-23~) 섹션만 유지**하고, 그 이전(2026-09-20~22, 낡은 '남은 작업' 수치 포함)은 [docs/hermes_archive_20260920-22.md](docs/hermes_archive_20260920-22.md)로 이관했다.

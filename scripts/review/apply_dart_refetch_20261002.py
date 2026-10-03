@@ -55,6 +55,8 @@ def main():
     ap.add_argument("--codes", default="")
     ap.add_argument("--src", default="", help="재수집 jsonl 파일명(기본 dart_cf_full.jsonl, 예: dart_cf_2016_2022.jsonl)")
     ap.add_argument("--min-year", type=int, default=2023)
+    ap.add_argument("--unlock-covered", action="store_true",
+                    help="원문(재수집) 값이 있는 종목·연도의 data_lock을 사유와 함께 해제(2026-10-03 사용자 승인 원칙: 원문 > 잠금)")
     a = ap.parse_args()
     global SRC
     if a.src:
@@ -194,6 +196,14 @@ def main():
         print("dry-run — 미리보기 apply_preview.json (적용은 --apply)")
         return
 
+    if a.unlock_covered:
+        covered = {(k[0], k[1]) for k in truth}
+        reason = "원문 재수집 값 존재 → 원문 우선(2026-10-03 사용자 승인, docs/DATA_VERIFICATION_STANDARD.md)"
+        n_un = 0
+        for code, year in covered:
+            n_un += conn.execute("UPDATE data_lock SET is_locked=0, unlock_reason=?, unlocked_at=? WHERE stock_code=? AND year=? AND is_locked=1",
+                                 (reason, now, code, year)).rowcount
+        print("잠금 해제", n_un)
     # data_lock 잠금(종목·연도·테이블)은 건너뛴다 — 관리자 override 원칙(CLAUDE.md 재무 무결성 규칙)
     locks = {(r[0], r[1], r[2]) for r in conn.execute("SELECT stock_code, year, table_name FROM data_lock WHERE is_locked=1").fetchall()}
     nf, nc = len(fin_changes), len(cf_changes)

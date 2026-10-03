@@ -13,6 +13,12 @@
 - `/Applications/stock_dashboard`, `/System/Volumes/Data/Volumes/...` 사용·하드코딩 금지. 경로는 `Path(__file__)` 기준 또는 `/Volumes/Realtek_NVME/stock_dashboard/...`.
 - 키움 REST는 등록 IP에서만 인증됨 — 8050 알림이 오면 포털 허용 IP에 등록(섹션 4).
 
+### 데이터 검증 기준 (필수 — 2026-10-03, 모든 AI 공통)
+- **가격·재무제표·현금흐름·감가상각·수주잔고·사업부문·미국 재무를 판정하거나 고치기 전에 [docs/DATA_VERIFICATION_STANDARD.md](docs/DATA_VERIFICATION_STANDARD.md)를 먼저 읽는다.** 정답 소스·정의·허용오차·필수 절차·금지 사항(실제 실패 18건)이 고정돼 있다.
+- 기준(예: FnGuide vs DART, 지배 vs 전체)은 **사용자 승인 없이 바꾸지 않는다.** 세션마다 기준이 바뀌어 같은 칸이 최대 6회 이상 덮어써진 전례가 있다.
+- "정상/완결" 판정은 정답 소스와의 **값 대조(비교 건수 포함)**로만 한다. 재분류·임계값 완화·행 존재 확인은 검증이 아니다.
+- 진행 중 작업·남은 일: 위 문서 §6·§7, 상세 경위 [docs/FINANCIAL_REREVIEW_20261002.md](docs/FINANCIAL_REREVIEW_20261002.md).
+
 ### 서버 재시작 (필수 — 코드 수정 후 반드시 이 방법으로만)
 
 > **직접 uvicorn kill 절대 금지.** launchd `KeepAlive:true` 때문에 kill 후 launchd가 자동 재시작 → 이어서 수동으로 uvicorn 시작하면 두 프로세스가 공존함.
