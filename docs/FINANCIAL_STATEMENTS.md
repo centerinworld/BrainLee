@@ -158,6 +158,7 @@
 | 외국기업 원화 환산 | `convert_foreign_currency_20261003.py [--apply]` (ECOS 환율 `data_raw/ecos_fx/731Y001_daily.json`) |
 | 감가상각 적용 | `apply_xbrl_depreciation_20261003.py [--basis-adj] [--apply]` |
 | 재작성값(전기 칸) 수집 | `runtime/scripts/review/fetch_dart_cashflow_20261002.py --prev-only [--years 2016-2022]` (`vals_prev`) |
+| 제3자 공개 데이터 교차검증(읽기 전용) | `runtime/scripts/review/third_party_crosscheck_20261003.py [--fetch] [--input-dir DIR]` → `runtime/research_outputs/third_party_crosscheck_20261003/` |
 | 이전 세션의 FnGuide 도구(참고) | `verify_all_fnguide_dart_20260809.py`(연간 스윕, 일 ~500종목), `backfill_unverified_snapshot.py`, 결과 테이블 `fnguide_dart_mismatch_log`(87,391)·`multi_source_financial_mismatch_log`(12,015)·`fin_quarterly_validation_flags` — **재분류 결과가 섞여 있어 판정 근거로 쓰지 말 것** |
 
 ## 7. 검토 경과 요약 (시간순)
@@ -236,7 +237,7 @@
 2. **표본 밖 연도 측정** — 2016~2018, 2020, 2022를 포함한 새 표본으로 재측정(현재 표본은 2019·2021·2023+만).
 3. **금융업 검증** — 정의가 달라 비교에서 빠져 있다. 은행·보험·증권별 DART 계정 매핑으로 별도 측정 필요.
 4. **2015년 이전** — financial_data는 2016부터. 그 이전 데이터를 쓰는 전략이 있으면 범위 확인.
-5. **감가상각 분기** — 반기·분기보고서 XBRL(11012/11013/11014)로 `depreciation_q` 재구축. 그 전까지 분기 감가상각 기반 신호(CAPEX ramp 등)는 신뢰 낮음.
+5. **감가상각 분기 (2026-10-03 조사)** — 분기 감가상각은 대부분 회사가 현금흐름표 **주석**에만 공시한다. DART 재무제표 API(본문) 분기 자료에 감가상각 행이 있는 비율은 20~35%(2025년 20%). 주석 XBRL 의무화 일정(금감원 발표): 자산 2조↑ 사업·반기·분기 2023~(DB 기준 약 155곳), 2천억~2조 사업·반기 2025~·분기 2029~, 1천억~2천억 2026 사업보고서~, 1천억 미만 2027 사업보고서~, 금융업 10조↑ 2025 반기~. **방법(우선순위)**: ① 본문 감가상각 행 보유 회사 — 이미 받은 `dart_cf_*.jsonl` 분기 누적값 차분으로 3개월 값(즉시 가능) ② 자산 2조↑ — `fnlttXbrl` 1분기(11013)·반기(11012)·3분기(11014) 주석 XBRL(2023~) ③ 자산 2천억↑ — 반기 주석 XBRL(2025~)로 상·하반기 단위 ④ 중소형사 — 2029년 전에는 보고서 원문(HTML) 주석 표 파싱뿐(정확도 위험, 필요성 판단 후) ⑤ FnGuide 분기 원문(최근 4분기)은 매일 쌓이는 외부 확인용. **미확인**: 실제 분기 XBRL에 주석이 들어 있는지 — DART 키 리셋 후 대형사 표본 시험 필요. 그 전까지 `depreciation_q` 기반 신호(CAPEX ramp 등)는 신뢰 낮음.
 6. **XBRL 감가상각 보류 86건** — 조정 감가상각이 유형 감가상각의 1.5배 초과(유형 값 일부만 잡혔을 가능성).
 7. **수주잔고 파서 재작성** — 합계 행 규칙을 기본으로, 의심 ~3,000건 재판정. '정상' 판정 값에도 오류가 섞여 있음(표본 10건 중 5건 기존 값 오류).
 8. **사업부문 매출 값 검증** — 부문 합계 vs 연결 매출 대조 등.
@@ -304,6 +305,16 @@
 - `aik_quotes_{aik_only,pg_only,close_mismatch}_20261001.csv`, `aik_quotes_pg_latest_stale_vs_20261001.csv`: 가격·신선도 review 큐.
 - `aik_financial_h1_sample_vs_pg_q1q2_sum.csv`: 2026H1 재무 샘플 대조.
 - `aik_earnings_2026h1_vs_pg_q1q2_long.csv`, `aik_earnings_2026h1_mismatches.csv`, `aik_earnings_2026h1_missing.csv`: 최근 120일 실적 공시 기반 2026H1 재무 대조.
+- `aik_earnings_2026h1_{mismatches,missing}_classified.csv`, `aik_earnings_2026h1_classification_summary.csv`, `aik_quotes_pg_latest_stale_classified.csv`: 1차 원인 분류.
+- 테스트(2026-10-03): `venv/bin/python -m py_compile scripts/review/third_party_crosscheck_20261003.py`, `venv/bin/python -m pytest tests/test_third_party_crosscheck_20261003.py -q`(2 passed), `venv/bin/python scripts/review/third_party_crosscheck_20261003.py --input-dir /tmp/third_party_crosscheck_inputs`(PostgreSQL 읽기 전용 재현 실행).
+
+1차 원인 분류:
+- 재무 불일치 1,281필드: `financial_mapping_review` 507필드/456종목, `ofs_mapping_or_source_basis_review` 473필드/165종목, `net_income_definition_or_rounding` 266필드/266종목, `currency_or_foreign_issuer_priority` 22필드/10종목, `rounding_or_unit_tolerance_review` 13필드/13종목.
+- 재무 결측 279필드: `pg_financial_missing_or_basis_gap` 216필드/82종목, `known_quirk_gap` 63필드/46종목.
+- 가격 stale 71종목: `very_stale_possible_delisted_or_ticker_identity` 61종목, `recent_no_volume_or_suspended_review` 10종목.
+- 종가 불일치 1건: 207940(삼성바이오로직스), aik 1,429,000 vs PG 1,417,999(2026-10-01, 차이 0.77%). 주변 PG 가격도 연속적으로 비정상 소수값(09-29 1,374,338 / 09-30 1,380,292 / 10-01 1,417,999)이어서 가격 파이프라인 review 우선 후보.
+- 207940 추가 추적: `data_fix_log`에는 2026-09-19 `unresolved_active_common_isolated_glitch_repair_20260919_224844`로 207940이 이미 고정값/단일일 가격 오류 복구 대상이었다. `price_ingestion_quarantine`에는 2026-09-29 `kis_itemchart_adjusted_0`의 `historical_overlap_basis_mismatch`가 207940에 남아 있다. 따라서 이 건은 단순 제3자 차이가 아니라 **최근 가격 기준 혼입/보정가 잔존 재발 후보**로 본다.
+- pykrx 추가 확인: `get_market_ohlcv_by_date`는 207940·005930·172670 모두 Naver 일봉 계열을 반환했고, 207940은 1,417,007처럼 보정/소수형 값이 나왔다. `get_market_ohlcv_by_ticker`는 KRX 응답 파싱 실패. 따라서 **pykrx 일봉을 원주가 정답으로 쓰지 않고**, 가격·밸류에이션 보조 검증용으로만 둔다는 §9-2 판단을 유지한다.
 
 결론:
 1. **즉시 도입 1순위**: `kr-company-registry`로 `stock_universe`에 `corp_code`, `bizr_no`, `jurir_no`, `is_listed`, `corp_cls`, `registry_extracted_at` 검증 캐시를 만들고, DART 수집 전 ticker→corp_code 오류를 차단한다.
@@ -347,7 +358,7 @@
 | 2026-10-03 | 보고통화 종목 원화 환산 규칙(손익=기간평균, BS·CF=기말 매매기준율) — FnGuide 실측 규칙을 그대로 채택 | 사용자 확정 원칙 '표시 정의 = FnGuide'에 따른 적용 |
 | 2026-10-03 | **감가상각 = 현금흐름표 조정 감가상각(FnGuide 표시값) + 구성요소(유형·사용권·무형 상각, 유형·무형 취득) 별도 보존·표시.** 오전의 '유형자산만'·'사용권 제외' 정의는 대체 | 사용자 제안("분리해서 관리·표시하면 되지 않나")·승인 |
 | 2026-10-03 | Codex 재검토 보강: 레거시 품질 라벨 fail-closed, 필드 단위 확정 상태 스키마화, point-in-time 재작성 테이블, FnGuide snapshot provenance, canonical 지위 재정의, **제3자 데이터·비교 검증 후보**(FinanceData/finstate, KoTaP, Accidental Order, aikstockdata, kr-company-registry, krx-fundamentals-client, kr-stock-scanner, 독립 DART 파서, FSC/data.go.kr, pykrx) 기록 | 사용자 지시("재검토나 보강", "DART/FnGuide 외 추가 검증·비교분석 소스, GitHub 한국주식 데이터") |
-| 2026-10-03 | Codex 제3자 데이터 직접 검증을 **운영 PostgreSQL 기준**으로 재실행: kr-company-registry 식별자 전수 대조, FinanceData/stock_master historical 대조, aikstockdata 가격 2026-10-01 전수 대조, `earnings.json` 기반 2026H1 재무 5,106필드 대조. 산출 `runtime/research_outputs/third_party_crosscheck_20261003/` | 사용자 지시("3자 교차검증을 모든 항목에 대해서 진행", "우리 데이터 베이스는 PostgreSQL") |
+| 2026-10-03 | Codex 제3자 데이터 직접 검증을 **운영 PostgreSQL 기준**으로 재실행: kr-company-registry 식별자 전수 대조, FinanceData/stock_master historical 대조, aikstockdata 가격 2026-10-01 전수 대조, `earnings.json` 기반 2026H1 재무 5,106필드 대조. 재현 스크립트와 pytest 추가. 산출 `runtime/research_outputs/third_party_crosscheck_20261003/` | 사용자 지시("3자 교차검증을 모든 항목에 대해서 진행", "우리 데이터 베이스는 PostgreSQL", "너가 해보고 테스트") |
 
 
 ## 12. 사용자와의 논의 기록 (2026-10-02~03, 모든 세션·AI가 같은 값·같은 기준으로 작업하기 위한 근거)
