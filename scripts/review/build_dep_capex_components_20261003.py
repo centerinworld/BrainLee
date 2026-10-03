@@ -58,6 +58,28 @@ def main():
             v = (d.get("vals") or {}).get("capex_intangible")
             if d.get("q") == 0 and v is not None and d.get("fs"):
                 rows.setdefault((d["code"], d["year"], 0, d["fs"]), {})["capex_intangible"] = abs(v)
+    # 분기 3개월 감가상각(현금흐름표 본문 행, 누적 차분) — 본문에 행이 있는 회사만(약 20~35%), 2026-10-03
+    ytd = {}
+    for fn in ("dart_cf_2016_2022.jsonl", "dart_cf_full.jsonl"):
+        p = SRC / fn
+        if p.exists():
+            for line in open(p):
+                d = json.loads(line)
+                v = (d.get("vals") or {}).get("depreciation")
+                if d.get("fs") and v is not None:
+                    ytd[(d["code"], d["year"], d["q"], d["fs"])] = abs(v)
+    for (code, y, q, fs), v in ytd.items():
+        if code in fx or q == 0:
+            continue
+        prev = 0.0 if q == 1 else ytd.get((code, y, q - 1, fs))
+        if prev is None or v - prev < 0:
+            continue
+        row = rows.setdefault((code, y, q, fs), {})
+        row["dep_cf_total"], row["dep_source"] = v - prev, "dart_cf_statement(누적 차분)"
+    for (code, y, q, fs), v in ytd.items():
+        if q == 3 and code not in fx and ytd.get((code, y, 0, fs)) is not None and ytd[(code, y, 0, fs)] - v >= 0:
+            row = rows.setdefault((code, y, 4, fs), {})
+            row["dep_cf_total"], row["dep_source"] = ytd[(code, y, 0, fs)] - v, "dart_cf_statement(연간−3분기 누적)"
     # 감가상각 구성요소(사업보고서 XBRL 주석·조정)
     for line in open(SRC / "xbrl_depreciation.jsonl"):
         d = json.loads(line)
