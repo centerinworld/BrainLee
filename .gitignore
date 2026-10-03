@@ -106,3 +106,4 @@ data/strict_generic_matrix_20260712.json
 .env
 .naver_cafe_cookie.tmp
 .naver_cafe_browser_profile*/
+env_overrides/
