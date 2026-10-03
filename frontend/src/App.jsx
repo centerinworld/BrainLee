@@ -17038,11 +17038,15 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
             { key:'operating_cf', label:'영업활동현금흐름', hint:'영업에서 창출한 현금' },
             { key:'investing_cf', label:'투자활동현금흐름', hint:'설비·투자에 사용한 현금' },
             { key:'financing_cf', label:'재무활동현금흐름', hint:'차입·배당 등 재무활동' },
-            { key:'capex',        label:'설비투자(CapEx)',  hint:'유형자산 취득(절대값)' },
+            { key:'capex',        label:'설비투자(CapEx)',  hint:'유형자산 취득(절대값) = FnGuide 유형자산의증가' },
+            { key:'capex_intangible', label:'└ 무형자산 투자', hint:'무형자산 취득(개발비·소프트웨어 등) = FnGuide 무형자산의증가', optional:true },
             { key:'free_cf',      label:'잉여현금흐름(FCF)',hint:'영업CF - CapEx' },
             { key:'cash_end',     label:'기말현금',         hint:'기말 현금및현금성자산' },
-            { key:'depreciation', label:'감가상각비',       hint:'비현금 비용' },
-          ];
+            { key:'depreciation', label:'감가상각비',       hint:"현금흐름표 '감가상각비' 행 = FnGuide 표시값. 회사마다 사용권자산(리스) 상각 포함 여부가 다름 — 아래 내역 참고" },
+            { key:'dep_ppe',      label:'└ 유형자산 감가상각', hint:'주석 공시 — 공장·설비 등', optional:true },
+            { key:'dep_rou',      label:'└ 사용권자산 상각',  hint:'주석 공시 — 리스(빌린 건물·장비). 현금 지출이 아니며 CapEx 아님', optional:true },
+            { key:'amort_intangible', label:'무형자산 상각', hint:'기타무형자산상각비 + 개발비상각', optional:true },
+          ].filter(r => !r.optional || activeCfTable.some(t => t[r.key] != null));
           const cfColor = (key, val) => {
             if (val == null) return 'rgba(15,23,42,0.5)';
             if (key === 'investing_cf' || key === 'financing_cf') return 'rgba(15,23,42,0.7)';

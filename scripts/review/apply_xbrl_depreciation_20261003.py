@@ -38,7 +38,8 @@ def values():
             p, a = v.get("dep_ppe"), v.get("adj_dep")
             if BASIS == "adj":
                 # FnGuide 유형자산감가상각비 = 현금흐름표 조정 '감가상각비'(사용권 포함), 무형 = 조정 '무형자산상각비'
-                dep = a or p
+                # 조정값이 없으면 유형자산 값으로 대신하지 않는다(FnGuide 정의와 다름) — 회사 고유 항목(adj_dep_custom)만 허용
+                dep = a or v.get("adj_dep_custom")
                 amort = v.get("adj_amort") or v.get("amort") or 0
                 if dep:
                     out[(d["code"], d["year"], fs)] = (dep, dep + amort, d.get("rcept_no"))
@@ -115,7 +116,7 @@ def main():
     conn.execute("SELECT setval('data_fix_log_id_seq',(SELECT MAX(id) FROM data_fix_log))")
     conn.execute("INSERT INTO data_fix_log(fixed_at,table_name,scope,row_count,fix_rule,old_value_summary,new_value_summary,source,run_id) VALUES (?,?,?,?,?,?,?,?,?)",
                  (now, "cash_flow_data+financial_data", "연간 감가상각(2021~2025) XBRL 주석 기준", len(cf_ch) + len(fd_ch),
-                  "depreciation=유형자산 감가상각(없으면 조정), D&A=+무형(사용권 제외, FnGuide 기준)", json.dumps(dict(st), ensure_ascii=False), "XBRL 값",
+                  ("depreciation=현금흐름표 조정 감가상각(사용권 포함, FnGuide 표시 기준), D&A=+무형자산상각" if BASIS == "adj" else "depreciation=유형자산 감가상각(없으면 조정), D&A=+무형(사용권 제외)"), json.dumps(dict(st), ensure_ascii=False), "XBRL 값",
                   "scripts/review/apply_xbrl_depreciation_20261003.py", run_id))
     conn.commit()
     print("적용 완료", run_id)

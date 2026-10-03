@@ -105,7 +105,7 @@ def main():
                 elif nval is not None and close(nval, dv):
                     cause = "네이버=DB, FnGuide 단독 차이"
                 elif f in ("depreciation", "depreciation_amortization"):
-                    cause = "감가상각 정의 미결(FnGuide=현금흐름표 조정 감가상각)"
+                    cause = "감가상각: 현금흐름표 조정값 미수집(유형자산 값으로 채워진 행) — XBRL 재수집 대기"
                 else:
                     cause = "미분류"
             st[status] += 1

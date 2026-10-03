@@ -4964,6 +4964,27 @@ def get_cashflow_table(stock_code: str, type: str = "annual", report_type: str =
             "cash_end":     _uk(cash_v),
             "depreciation": _uk(depr_v),
         })
+    # 2026-10-03 감가상각·CapEx 구성요소(사용자 승인, docs/FINANCIAL_STATEMENTS.md §2-1) — 연간만.
+    # depreciation = 현금흐름표 '감가상각비' 행(FnGuide 표시값). 행 구성이 회사마다 달라(유형만/유형+사용권/기타) 내역을 함께 준다.
+    if is_annual and result:
+        try:
+            _cc = connect_primary_db(timeout=10)
+            _comp = {r[0]: r[1:] for r in _cc.execute(
+                """SELECT year, dep_ppe, dep_rou, amort_intangible, capex_intangible, cf_line_basis
+                   FROM financial_dep_capex_components WHERE stock_code=? AND quarter=0 AND report_type=?""",
+                (stock_code, "OFS" if report_type == "OFS" else "CFS")).fetchall()}
+            _cc.close()
+            for row in result:
+                try:
+                    _y = int(str(row["period"]).rstrip("년"))
+                except ValueError:
+                    continue
+                c = _comp.get(_y)
+                if c:
+                    row["dep_ppe"], row["dep_rou"], row["amort_intangible"], row["capex_intangible"] = (_uk(c[0]), _uk(c[1]), _uk(c[2]), _uk(c[3]))
+                    row["dep_cf_line_basis"] = c[4]
+        except Exception:
+            pass
     return result
 
 

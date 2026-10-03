@@ -30,6 +30,7 @@ from db_compat import connect_primary_db  # noqa: E402
 
 OUT = ROOT / "research_outputs" / "financial_rereview_20261002" / "xbrl_depreciation.jsonl"
 YEARS = range(2021, 2026)
+RAWX = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_xbrl")
 NS = {"xbrli": "http://www.xbrl.org/2003/instance", "xbrldi": "http://xbrl.org/2006/xbrldi"}
 WANT = {
     "dep_ppe": ["DepreciationPropertyPlantAndEquipment", "DepreciationExpense"],
@@ -92,6 +93,21 @@ def parse(xbrl_bytes, year):
         fs = "OFS" if (mems and "Separate" in mems[0]) else ("CFS" if (not mems or "Consolidated" in mems[0]) else None)
         if not fs:
             continue
+        # 2026-10-03: 표준 이름에 없는 회사 고유 항목도 진단용으로 전부 기록(이름에 Depreciation/Amorti* 포함)
+        low = tag.lower()
+        if "depreciation" in low or "amorti" in low:
+            try:
+                vals[fs].setdefault("_all", {})
+                vals[fs]["_all"][tag] = (abs(float(el.text)), 99)
+            except ValueError:
+                pass
+            if "adjustment" in low and "depreciation" in low and "amorti" not in low and tag not in WANT["adj_dep"]:
+                cur = vals[fs].get("adj_dep_custom")
+                if cur is None:
+                    try:
+                        vals[fs]["adj_dep_custom"] = (abs(float(el.text)), 50)
+                    except ValueError:
+                        pass
         for k, tags in WANT.items():
             if tag in tags:
                 prio = tags.index(tag)
@@ -101,7 +117,15 @@ def parse(xbrl_bytes, year):
                         vals[fs][k] = (abs(float(el.text)), prio)
                     except ValueError:
                         pass
-    return {fs: {k: v[0] for k, v in d.items()} for fs, d in vals.items() if d}
+    out = {}
+    for fs, d in vals.items():
+        if not d:
+            continue
+        o = {k: v[0] for k, v in d.items() if k != "_all"}
+        if "_all" in d:
+            o["_all"] = {t: v[0] for t, v in d["_all"].items()}
+        out[fs] = o
+    return out
 
 
 def main():
@@ -111,11 +135,19 @@ def main():
     codes = [r[0] for r in conn.execute("""SELECT DISTINCT stock_code FROM cash_flow_data WHERE year>=2021
                                            AND stock_code ~ '^[0-9]{5}[0-9A-Z]$' ORDER BY 1""").fetchall()]
     conn.close()
-    done = set()
+    # --redo-missing-adj: 현금흐름표 조정 감가상각(adj_dep)을 못 찾은 건만 다시 받는다(원문 zip 저장 + 확장 파서, 2026-10-03)
+    redo = "--redo-missing-adj" in sys.argv
+    last = {}
     if OUT.exists():
         for line in open(OUT):
             d = json.loads(line)
-            done.add((d["code"], d["year"]))
+            last[(d["code"], d["year"])] = d
+    done = set()
+    for k, d in last.items():
+        v = d.get("vals") or {}
+        missing_adj = bool(d.get("rcept_no")) and not any("adj_dep" in x for x in v.values()) and not d.get("redone")
+        if not (redo and missing_adj):
+            done.add(k)
     ki = 0
     key = KEYS[ki]
     zb = None
@@ -154,10 +186,12 @@ def main():
                 for y in YEARS:
                     if (code, y) in done:
                         continue
-                    rec = {"code": code, "year": y, "rcept_no": reports.get(y), "vals": {}}
+                    rec = {"code": code, "year": y, "rcept_no": reports.get(y), "vals": {}, "redone": redo}
                     if reports.get(y):
                         zb = get("https://opendart.fss.or.kr/api/fnlttXbrl.xml", {"rcept_no": reports[y], "reprt_code": "11011"}, key, binary=True)
                         if zb:
+                            RAWX.mkdir(parents=True, exist_ok=True)
+                            (RAWX / f"{code}_{y}_{reports[y]}.zip").write_bytes(zb)  # 원문 보존 — 파서를 고쳐도 재호출 불필요
                             zz = zipfile.ZipFile(io.BytesIO(zb))
                             inst = [n for n in zz.namelist() if n.endswith(".xbrl")]
                             if inst:

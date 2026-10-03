@@ -57,6 +57,9 @@ IDS = {
     "fcf": ["ifrs-full_CashFlowsFromUsedInFinancingActivities"],
     "capex": ["ifrs-full_PurchaseOfPropertyPlantAndEquipment", "ifrs-full_PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",
               "dart_PurchaseOfPropertyPlantAndEquipment"],
+    # 2026-10-03: 무형자산 취득(FnGuide '무형자산의증가') — 감가상각·CapEx 구성요소 분리 관리(사용자 승인)
+    "capex_intangible": ["ifrs-full_PurchaseOfIntangibleAssets", "ifrs-full_PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities",
+                         "dart_PurchaseOfIntangibleAssets"],
     "depreciation": ["ifrs-full_AdjustmentsForDepreciationExpense", "dart_AdjustmentsForDepreciationExpense",
                      "ifrs-full_DepreciationExpense"],
 }
@@ -71,10 +74,11 @@ NAMES = {
     "equity_total": {"자본총계"},
     # 2026-10-02: 국내 공시는 CapEx에 표준 IFRS ID를 거의 안 써서(표본 0건 추출) 계정명으로도 찾는다.
     "capex": {"유형자산의취득", "유형자산취득", "유형자산의증가", "유형자산증가"},
+    "capex_intangible": {"무형자산의취득", "무형자산취득", "무형자산의증가", "무형자산증가"},
 }
 SJ = {"revenue": ("IS", "CIS"), "operating_profit": ("IS", "CIS"), "ni_total": ("IS", "CIS"), "ni_parent": ("IS", "CIS"),
       "total_assets": ("BS",), "total_liabilities": ("BS",), "equity_total": ("BS",), "equity_parent": ("BS",),
-      "ocf": ("CF",), "icf": ("CF",), "fcf": ("CF",), "capex": ("CF",), "depreciation": ("CF",)}
+      "ocf": ("CF",), "icf": ("CF",), "fcf": ("CF",), "capex": ("CF",), "capex_intangible": ("CF",), "depreciation": ("CF",)}
 
 
 def num(s):
@@ -164,7 +168,7 @@ def extract(rows, col="thstrm_amount"):
         if cand:
             v = num(cand[0].get(col))
             if v is not None:
-                out[f] = abs(v) if f in ("capex", "depreciation") else v
+                out[f] = abs(v) if f in ("capex", "capex_intangible", "depreciation") else v
     if "ni_parent" not in out:
         v = _parent_by_name(rows, "ni", out.get("ni_total"), col)
         if v is not None:
