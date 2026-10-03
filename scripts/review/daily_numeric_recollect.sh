@@ -13,6 +13,7 @@ step() { echo "$(date '+%F %T') ▶ $*" >> $LOG; "$@" >> $LOG 2>&1; echo "$(date
 
 case "$1" in
   dart)
+    step $PY $R/test_quarterly_xbrl_20261003.py                              # 1회: 대형사 분기 주석 XBRL 시험(결과 있으면 건너뜀)
     step $PY $R/fetch_dart_cashflow_20261002.py --repair-parent              # 2023+ 지배주주 보완
     step $PY $R/fetch_dart_cashflow_20261002.py --prev-only                  # 2023+ 재작성값(전기 칸)
     step $PY $R/fetch_xbrl_depreciation_20261003.py --exit-on-quota          # 감가상각 XBRL
