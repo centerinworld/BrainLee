@@ -53,7 +53,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--codes", default="")
+    ap.add_argument("--src", default="", help="재수집 jsonl 파일명(기본 dart_cf_full.jsonl, 예: dart_cf_2016_2022.jsonl)")
+    ap.add_argument("--min-year", type=int, default=2023)
     a = ap.parse_args()
+    global SRC
+    if a.src:
+        SRC = SRC.with_name(a.src)
     truth = load()
     if a.codes:
         keep = set(a.codes.split(","))
@@ -74,7 +79,7 @@ def main():
         chunk = codes[i:i + 300]
         ph = ",".join("?" * len(chunk))
         fd = conn.execute(f"""SELECT id,stock_code,year,quarter,is_annual,report_type,revenue,operating_profit,net_income,total_assets,
-                               total_liabilities,total_equity FROM financial_data WHERE year>=2023 AND stock_code IN ({ph})""", chunk).fetchall()
+                               total_liabilities,total_equity FROM financial_data WHERE year>=? AND stock_code IN ({ph})""", [a.min_year] + chunk).fetchall()
         for r in fd:
             rid, code, year, quarter, is_ann, fs = r[0], r[1], r[2], r[3], r[4], r[5]
             pq = 0 if is_ann else quarter
@@ -123,7 +128,7 @@ def main():
 
         cf = conn.execute(f"""SELECT id,stock_code,year,quarter,is_annual,report_type,operating_cf,investing_cf,financing_cf,capex,depreciation,
                                operating_cf_q,investing_cf_q,financing_cf_q,capex_q,depreciation_q,data_source FROM cash_flow_data
-                               WHERE year>=2023 AND stock_code IN ({ph})""", chunk).fetchall()
+                               WHERE year>=? AND stock_code IN ({ph})""", [a.min_year] + chunk).fetchall()
         for r in cf:
             rid, code, year, quarter, is_ann, fs, src = r[0], r[1], r[2], r[3], r[4], r[5], r[16]
             if is_ann or quarter == 0:
@@ -189,6 +194,12 @@ def main():
         print("dry-run — 미리보기 apply_preview.json (적용은 --apply)")
         return
 
+    # data_lock 잠금(종목·연도·테이블)은 건너뛴다 — 관리자 override 원칙(CLAUDE.md 재무 무결성 규칙)
+    locks = {(r[0], r[1], r[2]) for r in conn.execute("SELECT stock_code, year, table_name FROM data_lock WHERE is_locked=1").fetchall()}
+    nf, nc = len(fin_changes), len(cf_changes)
+    fin_changes = [c for c in fin_changes if (c[1], c[2], "financial_data") not in locks]
+    cf_changes = [c for c in cf_changes if (c[1], c[2], "cash_flow_data") not in locks]
+    print(f"잠금 제외: financial {nf - len(fin_changes)}, cashflow {nc - len(cf_changes)}")
     fin_ids = sorted({c[0] for c in fin_changes})
     cf_ids = sorted({c[0] for c in cf_changes})
     conn.execute("CREATE TABLE IF NOT EXISTS financial_data_backup_dart_refetch_20261002 AS SELECT *, CAST(NULL AS TEXT) run_id FROM financial_data WHERE false")

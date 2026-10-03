@@ -185,3 +185,8 @@ cash_conversion_signals → FCF 파생 → kr_quality_factor → valuation_histo
 
 ### 9-1. 정정값 보호 (야간 잡 점검)
 야간에 재무 값을 쓰는 스크립트 5개를 점검했다. `backfill_dart_q2_financials`(빈 값 행만, DART), `resolve_quarterly_risks_with_dart`(DART), `repair_integrity_findings`(극단값 규칙), FnGuide 월간(금융업만 override)은 정정값을 되돌리지 않는다. **`legacy_dart_recollect.py`(매일 00:30)는 연결/별도 구분 없이 비-legacy 행을 먼저 집어 덮어쓰고 report_type을 CFS로 바꾸는 구조**였다 → `legacy_collected` CFS 행만 갱신하도록 수정. 이 운영 스크립트가 git 밖 `scratch/`에 있어 `scripts/ops/`로 옮겼다. 주간 전략 재검증(일요일 01:30)이 정정된 재무·피처 스냅샷으로 등록 전략을 자동 재실행한다.
+
+## 10. 5단계 (2026-10-03 09시)
+- **2016~2022 부분 적용**(받은 955종목분): `dart_refetch_apply_20261003_091752` — financial_data 6,117필드, cash_flow_data 4,893필드. 큰 오류 예: 006260 LS 2022 연결 매출 DB 1.88조 vs DART 17.49조(별도 값이 연결로), 056080 매출 1,884만 vs 817억(단위). 작은 차이(0.5~3%)는 대개 후속 재작성 값 → 원칙대로 최초 공시 당기 값으로. **잠금(data_lock)으로 못 고친 필드: 재무 715, 현금흐름 2,162 — 잠금 근거였던 검증이 틀린 사례가 있어 해제 여부 사용자 결정 필요.**
+- **XBRL 감가상각 적용**(받은 3,099 종목·연도·구분): `xbrl_dep_apply_20261003_091927` — cash_flow_data.depreciation 정정 1,988·채움 1,395, financial_data.depreciation_amortization 정정 1,667·채움 2,737(잠금 1,366 제외). 연간 두 행(q0/q4)이 같은 값이 됨(삼성 2024 D 39.65조, D&A 43.85조). 조정값이 유형값의 1.5배를 넘는 86건은 보류.
+- 적용 스크립트: `apply_dart_refetch_20261002.py --src --min-year`(잠금 제외 추가), `apply_xbrl_depreciation_20261003.py`. 두 수집이 끝나면 같은 명령을 다시 실행하면 나머지가 반영된다(이미 맞는 값은 건드리지 않음).
