@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, Bot, ExternalLink, Gauge, LogOut, ServerCog, Settings, ShieldAlert } from 'lucide-react';
+import { Activity, Bot, ExternalLink, Gauge, LogOut, Radio, ServerCog, Settings, ShieldAlert } from 'lucide-react';
 import { KEY_INDICATOR_URL, LLM_PATH } from './modules';
 
 const MODS = [
@@ -19,6 +19,7 @@ export default function AdminHome({ onLogout, changeTab }) {
     return () => clearInterval(t);
   }, []);
   const shortcuts = [
+    { Icon: Radio, title: '텔레그램 채널 관리', desc: '채널 등록·수집 항목(PDF/본문/사진)·RAG 임베딩', run: () => changeTab('admin_telegram') },
     { Icon: Activity, title: '시스템 현황', desc: '코드·API·데이터·프로세스 자동 집계', run: () => changeTab('system_map') },
     { Icon: ServerCog, title: '수집 상태', desc: '수집 실행 기록·DB 현황', run: () => changeTab('system') },
     { Icon: ShieldAlert, title: '리스크게이트', desc: '주문 차단·통과 판정 이력', run: () => changeTab('risk_gate') },

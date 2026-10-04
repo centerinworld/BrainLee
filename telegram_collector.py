@@ -26,6 +26,7 @@ telegram_collector.py — 텔레그램 채널 보고서 자동 수집
 """
 
 from db_compat import connect_primary_db
+from telegram_store import ensure_schema, flags_of, PHOTO_DIR, safe_dirname
 import sys, os, asyncio, sqlite3, logging, logging.handlers, argparse, re, time, unicodedata
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -314,10 +315,13 @@ def make_safe_filename(date_str: str, original: str, caption: str = "") -> str:
 # ══════════════════════════════════════════════════════════════════
 def get_channels(conn) -> list:
     _ensure_entity_hint_column(conn)
+    ensure_schema(conn)
     rows = conn.execute(
-        "SELECT channel_id, channel_name, last_sync, entity_hint FROM telegram_channels WHERE is_active=1"
+        "SELECT channel_id, channel_name, last_sync, entity_hint, collect_pdf, collect_text, collect_photo "
+        "FROM telegram_channels WHERE is_active=1"
     ).fetchall()
-    return [{"channel_id": r[0], "channel_name": r[1], "last_sync": r[2], "entity_hint": r[3]} for r in rows]
+    return [{"channel_id": r[0], "channel_name": r[1], "last_sync": r[2], "entity_hint": r[3],
+             "collect_pdf": r[4], "collect_text": r[5], "collect_photo": r[6]} for r in rows]
 
 
 def _ensure_entity_hint_column(conn):
@@ -377,8 +381,77 @@ def list_channels(conn):
 # ══════════════════════════════════════════════════════════════════
 # 텔레그램 수집 (Telethon)
 # ══════════════════════════════════════════════════════════════════
+async def _store_post(client, conn, channel_id: str, message, flags: dict) -> None:
+    """메시지 1건의 본문(원문)과 사진을 저장한다. LLM 해석 없음.
+
+    - 본문 옵션: telegram_channel_posts에 upsert(수정된 글/조회수 갱신 반영)
+    - 사진 옵션: telegram_media/photos/<채널>/<message_id>.jpg 다운로드 후 경로 기록
+    - 내용도 사진도 없는(서비스 메시지 등) 건은 저장하지 않는다.
+    """
+    text = message.message or ""
+    has_photo = bool(message.photo)
+    doc = message.document
+    file_name = ""
+    if doc:
+        for attr in doc.attributes:
+            if hasattr(attr, "file_name") and attr.file_name:
+                file_name = attr.file_name
+                break
+
+    photo_path = ""
+    if flags["collect_photo"] and has_photo:
+        d = PHOTO_DIR / safe_dirname(channel_id)
+        d.mkdir(parents=True, exist_ok=True)
+        target = d / f"{message.id}.jpg"
+        if not (target.exists() and target.stat().st_size > 0):
+            try:
+                await client.download_media(message, str(target))
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.warning(f"  사진 다운로드 실패: message_id={message.id} {e}")
+        if target.exists() and target.stat().st_size > 0:
+            photo_path = str(target)
+
+    store_text = flags["collect_text"] and text.strip() != ""
+    if not store_text and not photo_path:
+        return
+
+    sender = ""
+    try:
+        sender = getattr(message, "post_author", None) or (str(message.sender_id) if message.sender_id else "")
+    except Exception:
+        pass
+    fwd = ""
+    try:
+        if message.fwd_from:
+            fwd = getattr(message.fwd_from, "from_name", None) or str(getattr(message.fwd_from, "from_id", "") or "")
+    except Exception:
+        pass
+    reply_to = getattr(getattr(message, "reply_to", None), "reply_to_msg_id", None)
+
+    conn.execute("""
+        INSERT INTO telegram_channel_posts
+        (channel_id, message_id, msg_date, text, has_photo, photo_path, has_document, file_name,
+         views, forwards, sender, fwd_from, reply_to_id, collected_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(channel_id, message_id) DO UPDATE SET
+          text=CASE WHEN excluded.text <> '' THEN excluded.text ELSE telegram_channel_posts.text END,
+          views=excluded.views,
+          forwards=excluded.forwards,
+          photo_path=CASE WHEN excluded.photo_path <> '' THEN excluded.photo_path
+                          ELSE telegram_channel_posts.photo_path END
+    """, (
+        channel_id, message.id, message.date.strftime("%Y-%m-%d %H:%M:%S") if message.date else None,
+        text if flags["collect_text"] else "", int(has_photo), photo_path, int(bool(doc)), file_name,
+        getattr(message, "views", None), getattr(message, "forwards", None),
+        sender, fwd, reply_to, datetime.now().isoformat(timespec="seconds"),
+    ))
+    conn.commit()
+
+
+# ══════════════════════════════════════════════════════════════════
 async def collect_channel(client, conn, channel_id: str, limit: int = 500,
-                          since_days: int = None, entity_hint: str = None) -> int:
+                          since_days: int = None, entity_hint: str = None, flags: dict = None) -> int:
     """채널에서 파일 메시지 수집.
 
     entity_hint: channel_id 문자열이 Telethon get_entity()로 바로 resolve 안 되는
@@ -387,6 +460,7 @@ async def collect_channel(client, conn, channel_id: str, limit: int = 500,
     항상 channel_id 그대로 사용해 기존 레코드와의 dedup/연속성을 유지한다.
     """
     from telethon.tl.types import DocumentAttributeFilename
+    flags = flags or flags_of({})
     saved = 0
     skipped = 0
     stock_candidates = _load_stock_name_candidates(conn)
@@ -411,6 +485,15 @@ async def collect_channel(client, conn, channel_id: str, limit: int = 500,
         async for message in client.iter_messages(entity, limit=limit, reverse=False):
             # min_date 이전 메시지는 스킵
             if min_date and message.date and message.date < min_date:
+                continue
+            # 채팅 본문·사진 저장 (LLM 없이 원문 수집). 채널별 옵션으로 제어.
+            if flags["collect_text"] or flags["collect_photo"]:
+                try:
+                    await _store_post(client, conn, channel_id, message, flags)
+                except Exception as e:
+                    conn.rollback()
+                    logger.warning(f"  본문/사진 저장 오류: message_id={message.id} {e}")
+            if not flags["collect_pdf"]:
                 continue
             if not message.document:
                 continue
@@ -568,7 +651,7 @@ async def run_collect(channels: list, limit: int = 500, since_days: int = None):
     for ch in channels:
         n = await collect_channel(client, conn, ch["channel_id"],
                                   limit=limit, since_days=since_days,
-                                  entity_hint=ch.get("entity_hint"))
+                                  entity_hint=ch.get("entity_hint"), flags=flags_of(ch))
         total += n
         if len(channels) > 1:
             await asyncio.sleep(2)  # 채널 간 딜레이
@@ -623,6 +706,7 @@ def main():
     conn = connect_primary_db(timeout=30)
     conn.execute("PRAGMA busy_timeout=30000")
     init_db(conn)
+    ensure_schema(conn)
 
     if args.list:
         list_channels(conn); conn.close(); return
@@ -652,7 +736,15 @@ def main():
         # 최초 인증 모드
         channels = [{"channel_id": "me", "channel_name": "인증테스트"}]
     elif args.channel:
-        channels = [{"channel_id": args.channel, "channel_name": args.channel}]
+        row = conn.execute(
+            "SELECT channel_id, channel_name, last_sync, entity_hint, collect_pdf, collect_text, collect_photo "
+            "FROM telegram_channels WHERE channel_id=?", (args.channel,)
+        ).fetchone()
+        if row:
+            channels = [{"channel_id": row[0], "channel_name": row[1], "last_sync": row[2], "entity_hint": row[3],
+                         "collect_pdf": row[4], "collect_text": row[5], "collect_photo": row[6]}]
+        else:
+            channels = [{"channel_id": args.channel, "channel_name": args.channel}]
     else:
         channels = get_channels(conn)
         if not channels:

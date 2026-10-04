@@ -52,7 +52,7 @@ export const MODULES = {
   admin: {
     key: 'admin', title: '관리자', short: '관리자 모드', path: '/admin', defaultTab: 'admin_home',
     sections: [
-      { label: '관리', tabs: ['admin_home', 'system_map', 'admin_ki', 'system', 'risk_gate', 'settings'] },
+      { label: '관리', tabs: ['admin_home', 'system_map', 'admin_telegram', 'admin_ki', 'system', 'risk_gate', 'settings'] },
     ],
     hidden: [],
   },

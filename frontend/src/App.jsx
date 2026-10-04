@@ -58,6 +58,7 @@ const PriceChart = React.lazy(() => import('./views/PriceChart'));
 const AdminHome = React.lazy(() => import('./hub/AdminHome.jsx'));
 const AdminSystemMap = React.lazy(() => import('./hub/AdminSystemMap.jsx'));
 const AdminKeyIndicator = React.lazy(() => import('./hub/AdminKeyIndicator.jsx'));
+const AdminTelegram = React.lazy(() => import('./hub/AdminTelegram.jsx'));
 const StockLlmView = React.lazy(() => import('./hub/StockLlmView.jsx'));
 const SectorRotationView = React.lazy(() => import('./views/SectorRotationView'));
 const PeerCompareView = React.lazy(() => import('./views/PeerCompareView'));
@@ -12975,6 +12976,7 @@ const NAV_DEFS = {
   admin_home: { key: 'admin_home', icon: <LayoutDashboard size={17} />, label: '관리자 개요' },
   system_map: { key: 'system_map', icon: <Activity size={17} />,        label: '시스템 현황' },
   admin_ki:   { key: 'admin_ki',   icon: <Globe size={17} />,           label: 'Key Indicator 관리' },
+  admin_telegram: { key: 'admin_telegram', icon: <span style={{fontSize:'14px',lineHeight:1}}>📡</span>, label: '텔레그램 채널 관리' },
   llm_console: { key: 'llm_console', icon: <span style={{fontSize:'14px',lineHeight:1}}>🤖</span>, label: 'AI 어시스턴트' },
   system:     { key: 'system',     icon: <Server size={17} />,          label: '수집 상태' },
 };
@@ -13518,6 +13520,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
     admin_home:     "관리자 개요",
     system_map:     "시스템 현황 — 코드·API·데이터·프로세스 자동 집계",
     admin_ki:       "Key Indicator 관리 — 콘솔 · KAI 관제 센터",
+    admin_telegram: "텔레그램 채널 관리 — 채널 등록·수집 항목(PDF/본문/사진) 설정",
   };
 
 
@@ -18624,6 +18627,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
           {activeTab === 'admin_home' && <AdminHome onLogout={onLogout} changeTab={changeTab} />}
           {activeTab === 'system_map' && <AdminSystemMap />}
           {activeTab === 'admin_ki' && <AdminKeyIndicator />}
+          {activeTab === 'admin_telegram' && <AdminTelegram />}
           {activeTab === 'llm_console' && <StockLlmView />}
           </React.Suspense>
         </div>
