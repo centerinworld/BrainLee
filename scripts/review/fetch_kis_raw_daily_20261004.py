@@ -31,9 +31,32 @@ def targets():
     return {c: (g.date.min(), g.date.max(), set(g.date)) for c, g in t.groupby("code")}
 
 
+def etf_targets():
+    """2026-10-04: ETF·ETN 전체 — price_history의 ETF 행은 공식·marcap 기준이 없어 전혀 대조되지 않았다(117만 행)."""
+    from db_compat import connect_primary_db
+    c = connect_primary_db(timeout=600, readonly=True)
+    rows = c.execute("""SELECT p.stock_code, MIN(substr(p.date,1,10)), MAX(substr(p.date,1,10)) FROM price_history p
+                        JOIN (SELECT DISTINCT stock_code FROM security_master_history WHERE security_type IN ('ETF','ETN')) e USING (stock_code)
+                        GROUP BY 1""").fetchall()
+    out = {}
+    for code, d0, d1 in map(tuple, rows):
+        p = RAW / f"{code}.json"
+        have = set(json.loads(p.read_text())) if p.exists() else set()
+        if not (have and min(have) <= d0 and max(have) >= d1):
+            out[code] = (d0, d1, {d0, d1})
+    return out
+
+
 async def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--etf-all", action="store_true", help="ETF·ETN 전체 가격 구간 원주가 수집(매일 일부씩)")
+    ap.add_argument("--max-codes", type=int, default=0, help="이번 실행 최대 종목 수(0=제한 없음)")
+    a = ap.parse_args()
     RAW.mkdir(parents=True, exist_ok=True)
-    tg = targets()
+    tg = etf_targets() if a.etf_all else targets()
+    if a.max_codes:
+        tg = dict(sorted(tg.items())[:a.max_codes])
     col = KISCollector(kis_client=KISClient())
     print(f"대상 {len(tg)}종목", flush=True)
     for i, (code, (d0, d1, need)) in enumerate(sorted(tg.items()), 1):

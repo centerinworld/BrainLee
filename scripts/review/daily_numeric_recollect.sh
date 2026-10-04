@@ -35,6 +35,7 @@ case "$1" in
   fnguide)
     step $PY $R/fetch_fnguide_raw_20261003.py --max-calls 1000 --stale-days 30   # 스윕(03:15) 450건과 합쳐 일 1,500건 이내(한도 카운터가 프로세스별이라 명시적으로 나눔)
     step $PY $R/compare_db_vs_fnguide_raw_20261003.py                        # 원문 ↔ DB 대조(읽기 전용) → fnguide_raw_compare_*.json/csv
+    step $PY $R/fetch_kis_raw_daily_20261004.py --etf-all --max-codes 60       # ETF·ETN 원주가(KIS) 원문 — 하루 60종목(~1시간), 가격 대조 근거
     step $PY $R/build_field_verification_20261003.py                         # 현행 기준 필드 확정 상태(financial_field_verification) — 화면 품질 등급 근거
     ;;
   *) echo "usage: $0 dart|fnguide"; exit 2 ;;
