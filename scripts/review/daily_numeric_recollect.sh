@@ -28,6 +28,7 @@ case "$1" in
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022            # 2016~2022 본 수집
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022 --repair-parent
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022 --prev-only
+    step $PY $R/fetch_dart_cashflow_20261002.py --refetch-raw                # 2023+ 원문 계정 행 보충(재고자산·CapEx 세부 재파싱용, 낮은 우선순위)
     step $PY $R/build_dep_capex_components_20261003.py                       # 감가상각·CapEx 구성요소 테이블
     step $PY $R/build_financial_pit_20261003.py                              # 시점(PIT) 사실 테이블: 최초 공시값·재작성값 이력
     ;;

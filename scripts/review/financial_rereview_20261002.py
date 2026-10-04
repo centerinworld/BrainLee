@@ -57,6 +57,10 @@ IDS = {
     "fcf": ["ifrs-full_CashFlowsFromUsedInFinancingActivities"],
     "capex": ["ifrs-full_PurchaseOfPropertyPlantAndEquipment", "ifrs-full_PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",
               "dart_PurchaseOfPropertyPlantAndEquipment"],
+    # 2026-10-04: 재고자산(재무상태표) — dart_cost_quarterly 본문 파싱값(FnGuide 대비 53% 일치)을 대체할 정본 후보
+    "inventory": ["ifrs-full_Inventories", "ifrs-full_CurrentInventoriesHeldForSale", "dart_Inventories"],
+    # 2026-10-04: CapEx 세부(건설중인자산 취득) — FnGuide '유형자산의증가'가 합산값인지 판정용
+    "capex_cip": ["dart_PurchaseOfConstructionInProgress", "ifrs-full_PurchaseOfConstructionInProgress"],
     # 2026-10-03: 무형자산 취득(FnGuide '무형자산의증가') — 감가상각·CapEx 구성요소 분리 관리(사용자 승인)
     "capex_intangible": ["ifrs-full_PurchaseOfIntangibleAssets", "ifrs-full_PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities",
                          "dart_PurchaseOfIntangibleAssets"],
@@ -75,10 +79,12 @@ NAMES = {
     # 2026-10-02: 국내 공시는 CapEx에 표준 IFRS ID를 거의 안 써서(표본 0건 추출) 계정명으로도 찾는다.
     "capex": {"유형자산의취득", "유형자산취득", "유형자산의증가", "유형자산증가"},
     "capex_intangible": {"무형자산의취득", "무형자산취득", "무형자산의증가", "무형자산증가"},
+    "inventory": {"재고자산"},
+    "capex_cip": {"건설중인자산의취득", "건설중인자산의증가", "건설중인자산취득"},
 }
 SJ = {"revenue": ("IS", "CIS"), "operating_profit": ("IS", "CIS"), "ni_total": ("IS", "CIS"), "ni_parent": ("IS", "CIS"),
       "total_assets": ("BS",), "total_liabilities": ("BS",), "equity_total": ("BS",), "equity_parent": ("BS",),
-      "ocf": ("CF",), "icf": ("CF",), "fcf": ("CF",), "capex": ("CF",), "capex_intangible": ("CF",), "depreciation": ("CF",)}
+      "ocf": ("CF",), "icf": ("CF",), "fcf": ("CF",), "capex": ("CF",), "capex_intangible": ("CF",), "capex_cip": ("CF",), "inventory": ("BS",), "depreciation": ("CF",)}
 
 
 def num(s):
@@ -171,7 +177,7 @@ def extract(rows, col="thstrm_amount"):
         if cand:
             v = num(cand[0].get(col))
             if v is not None:
-                out[f] = abs(v) if f in ("capex", "capex_intangible", "depreciation") else v
+                out[f] = abs(v) if f in ("capex", "capex_intangible", "capex_cip", "depreciation") else v
     if "ni_parent" not in out:
         v = _parent_by_name(rows, "ni", out.get("ni_total"), col)
         if v is not None:

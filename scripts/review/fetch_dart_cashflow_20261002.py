@@ -11,6 +11,7 @@ apply_dart_cashflow_20261002.py 가 교체한다.
 사용: venv/bin/python scripts/review/fetch_dart_cashflow_20261002.py [--limit N]
 """
 import argparse
+import gzip
 import json
 import sys
 import threading
@@ -28,6 +29,7 @@ from db_compat import connect_primary_db  # noqa: E402
 import dart_keys  # noqa: E402
 from financial_rereview_20261002 import Dart, REPRT, extract  # noqa: E402
 
+RAW_DART = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_fnltt")
 OUT = ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_full.jsonl"
 JOBS = [(y, q) for y in (2023, 2024, 2025) for q in (1, 2, 3, 0)] + [(2026, 1), (2026, 2)]
 lock = threading.Lock()
@@ -61,6 +63,10 @@ def worker(key, items, fh, done):
                 if rows:
                     used = fs
                     break
+            if rows:  # 2026-10-04: 원문 계정 행 전체 저장 — 정의 판정(CapEx 합산·재고자산 등)을 재호출 없이 재파싱
+                rawp = RAW_DART / code
+                rawp.mkdir(parents=True, exist_ok=True)
+                (rawp / f"{year}_{q}_{used}.json.gz").write_bytes(gzip.compress(json.dumps(rows, ensure_ascii=False).encode()))
             rec = {"code": code, "year": year, "q": q, "fs": used, "vals": extract(rows) if rows else {}, "ok": rows is not None,
                    "parent_checked": True}
             # 2026-10-03: 사업보고서는 전기 칸(직전 연도 재작성값)도 저장 — FnGuide·네이버가 표시하는 최신 재작성값의 원문
@@ -81,6 +87,8 @@ def main():
     ap.add_argument("--key4-only", action="store_true", help="DART_API_KEY4만 사용해 재조회(#4 키 검증용)")
     ap.add_argument("--repair-parent", action="store_true",
                     help="이미 받은 CFS 보고서 중 지배주주 순이익/자본이 없는 것만 개선된 추출기로 다시 받는다(뒤 줄이 앞 줄을 덮어씀)")
+    ap.add_argument("--refetch-raw", action="store_true",
+                    help="원문 계정 행(data_raw/dart_fnltt)이 없는 보고서를 다시 받는다 — 재고자산·CapEx 세부 등 재파싱용(2026-10-04)")
     ap.add_argument("--prev-only", action="store_true",
                     help="사업보고서 중 전기 칸(vals_prev)이 없는 것만 다시 받는다(재작성값 확보용, 2026-10-03)")
     ap.add_argument("--years", default="", help="예: 2016-2022 (지정 시 해당 연도 1Q·반기·3Q·사업보고서, 출력 dart_cf_<범위>.jsonl)")
@@ -121,6 +129,8 @@ def main():
                      and ("ni_parent" not in v or "equity_parent" not in v))
             if a.prev_only:
                 needs = d["q"] == 0 and bool(d.get("fs")) and "vals_prev" not in d
+            if a.refetch_raw:
+                needs = bool(d.get("fs")) and not (RAW_DART / k[0] / f"{k[1]}_{k[2]}_{d['fs']}.json.gz").exists()
             if not needs:
                 done.add(k)
     items = [(c, corp[c], fs) for c, fs in targets if c in corp]
