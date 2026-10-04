@@ -55,6 +55,7 @@ def main():
     ap.add_argument("--codes", default="")
     ap.add_argument("--src", default="", help="재수집 jsonl 파일명(기본 dart_cf_full.jsonl, 예: dart_cf_2016_2022.jsonl)")
     ap.add_argument("--min-year", type=int, default=2023)
+    ap.add_argument("--quarterly-only", action="store_true", help="분기 칸만 적용(연간 제외)")
     ap.add_argument("--unlock-covered", action="store_true",
                     help="원문(재수집) 값이 있는 종목·연도의 data_lock을 사유와 함께 해제(2026-10-03 사용자 승인 원칙: 원문 > 잠금)")
     a = ap.parse_args()
@@ -190,6 +191,19 @@ def main():
                         stats[("cash_flow_data", col + "_q", "NULL채움" if oq is None else "정정")] += 1
                         cf_changes.append((rid, code, year, quarter, is_ann, fs, col + "_q", oq, nq, "3개월 = DART YTD 차분"))
 
+    # 2026-10-04: 이후 기준으로 일부러 바꾼 칸(재작성값 §2-5, 보고통화 원화 환산 §2-6)은 각 연도 보고서 당기값으로 되돌리지 않는다
+    protected = set()
+    for tbl, log in (("financial_data", "financial_fix_log"), ("cash_flow_data", "cashflow_fix_log")):
+        for r_ in conn.execute(f"SELECT row_id, field_name FROM {log} WHERE run_id LIKE 'restated_annual_%' OR run_id LIKE 'fx_krw_%'").fetchall():
+            protected.add((tbl, r_[0], r_[1]))
+    n0 = len(fin_changes) + len(cf_changes)
+    fin_changes = [c for c in fin_changes if ("financial_data", c[0], c[6]) not in protected]
+    cf_changes = [c for c in cf_changes if ("cash_flow_data", c[0], c[6]) not in protected]
+    print(f"보호 칸(재작성값·원화 환산) 제외: {n0 - len(fin_changes) - len(cf_changes)}필드")
+    if a.quarterly_only:  # 2026-10-04: 운영 수집기가 분기 신규분을 전체 기준으로 넣은 드리프트만 바로잡을 때 — 연간은 외부 확인 절차로만
+        fin_changes = [c for c in fin_changes if not (c[4] or c[3] == 0)]
+        cf_changes = [c for c in cf_changes if not (c[4] or c[3] == 0)]
+        print(f"분기 칸만: 재무 {len(fin_changes)} / 현금흐름 {len(cf_changes)}")
     for k in sorted(stats):
         print(k, stats[k])
     print(f"financial_data 변경 {len(fin_changes)}필드 / cash_flow_data 변경 {len(cf_changes)}필드")

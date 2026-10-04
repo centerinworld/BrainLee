@@ -308,7 +308,46 @@ def _parse_fin_df(df, stock_code: Optional[str] = None) -> dict:
     if m.get("revenue") is not None and m["revenue"] < 0:
         m["revenue"] = None
 
+    _apply_parent_basis(df, m)
     return m
+
+
+def _apply_parent_basis(df, m: dict) -> None:
+    """순이익·자본을 지배주주 기준으로 맞춘다(2026-10-04, docs/FINANCIAL_STATEMENTS.md §2-1 확정 기준: 연결=지배주주, 별도=전체).
+
+    이 수집기는 예전부터 '당기순이익(전체)'을 뽑고 '귀속' 행을 일부러 제외해, 재수집으로 지배주주 기준을 맞춰도
+    매 분기 신규 수집분(분기 백필 포함)이 다시 전체 기준으로 들어갔다. 지배주주 귀속 행이 있으면(=연결) 그 값을 쓰고,
+    '지배 + 비지배 = 전체' 검산이 맞을 때만 반영한다. 귀속 행이 없으면(별도 등) 기존 값을 그대로 둔다.
+    """
+    import pandas as _pd
+
+    def num(v):
+        try:
+            return float(str(v).replace(",", "")) if v is not None and not _pd.isna(v) else None
+        except ValueError:
+            return None
+
+    rows = [(str(r.get("sj_nm", "")).replace(" ", ""), str(r.get("account_nm", "")).replace(" ", ""),
+             str(r.get("account_id", "")).strip(), num(r.get("thstrm_amount"))) for _, r in df.iterrows()]
+    for kind, sj_key, pid, nid, field in (
+        ("ni", "손익계산서", "ifrs-full_ProfitLossAttributableToOwnersOfParent", "ifrs-full_ProfitLossAttributableToNoncontrollingInterests", "net_income"),
+        ("eq", "재무상태표", "ifrs-full_EquityAttributableToOwnersOfParent", "ifrs-full_NoncontrollingInterests", "total_equity"),
+    ):
+        seq = [r for r in rows if sj_key in r[0] and r[3] is not None]
+        parent = next((r[3] for r in seq if r[2] == pid), None)
+        nci = next((r[3] for r in seq if r[2] == nid), None)
+        if parent is None:  # 표준 ID가 없으면 계정명: '지배'가 든 첫 행(비지배·포괄 제외), 바로 뒤 '비지배' 행
+            for i, r in enumerate(seq):
+                if "지배" in r[1] and "비지배" not in r[1] and "포괄" not in r[1] and "주당" not in r[1]:
+                    parent = r[3]
+                    nci = next((r2[3] for r2 in seq[i + 1:i + 4] if "비지배" in r2[1]), None)
+                    break
+        total = m.get(field)
+        if parent is None or total is None:
+            continue
+        tol = max(1e6, abs(total) * 0.005)
+        if (nci is not None and abs(parent + nci - total) <= tol) or (nci is None and abs(parent - total) <= tol):
+            m[field] = parent
 
 
 # capex를 위한 PP&E 우선 account_id 목록 (무형자산 account_id보다 신뢰도 높음)

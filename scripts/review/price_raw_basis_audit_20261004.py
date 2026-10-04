@@ -22,6 +22,7 @@ from db_compat import connect_primary_db  # noqa: E402
 
 OUT = ROOT / "research_outputs" / "price_raw_basis_audit_20261004"
 MARCAP = ROOT / "data_cache" / "marcap"
+KRAW = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/kis_raw_daily")
 
 
 def ratio_kind(r):
@@ -57,9 +58,35 @@ def main():
     both = both[both.off_close > 0]
     st["marcap 신뢰도 표본(공식·marcap 둘 다)"] = len(both)
     st["  그중 marcap=공식"] = int(((both.mc_close - both.off_close).abs() <= 1).sum())
-    ref = m.off_close.where(m.off_close.notna() & (m.off_close > 0), m.mc_close)
-    src = pd.Series(["공식"] * len(m), index=m.index).where(m.off_close.notna() & (m.off_close > 0), "marcap")
-    src = src.where(ref.notna(), "없음")
+    # 2026-10-04: 공식(stock_price_daily)도 틀리는 사례(거래정지 기간 기준가 등) 확인 → KIS 원주가(제3 소스, data_raw/kis_raw_daily)로 다수결
+    kis_rows = []
+    for p in KRAW.glob("*.json"):
+        for d, v in json.loads(p.read_text()).items():
+            if v.get("close"):
+                kis_rows.append((p.stem, d, float(v["close"])))
+    kis = pd.DataFrame(kis_rows, columns=["code", "date", "kis_close"]).drop_duplicates(["code", "date"])
+    m = m.merge(kis, on=["code", "date"], how="left")
+    o_ok = m.off_close.notna() & (m.off_close > 0)
+    m_ok = m.mc_close.notna() & (m.mc_close > 0)
+    k_ok = m.kis_close.notna() & (m.kis_close > 0)
+    om = o_ok & m_ok & ((m.off_close - m.mc_close).abs() <= 1)
+    ok_ = o_ok & k_ok & ((m.off_close - m.kis_close).abs() <= 1)
+    mk = m_ok & k_ok & ((m.mc_close - m.kis_close).abs() <= 1)
+    ref = pd.Series(float("nan"), index=m.index)
+    src = pd.Series("없음", index=m.index)
+    # 우선순위: 두 소스 이상 합의 → 그 값. 한 소스뿐이면 그 값(공식>marcap>KIS). 공식≠marcap이고 KIS 없으면 '판정 보류'
+    for cond, val, name in ((om, m.off_close, "공식=marcap"), (ok_, m.off_close, "공식=KIS"), (mk, m.mc_close, "marcap=KIS")):
+        sel = cond & ref.isna()
+        ref[sel], src[sel] = val[sel], name
+    only_o = o_ok & ~m_ok & ~k_ok & ref.isna()
+    only_m = m_ok & ~o_ok & ~k_ok & ref.isna()
+    only_k = k_ok & ~o_ok & ~m_ok & ref.isna()
+    ref[only_o], src[only_o] = m.off_close[only_o], "공식만"
+    ref[only_m], src[only_m] = m.mc_close[only_m], "marcap만"
+    ref[only_k], src[only_k] = m.kis_close[only_k], "KIS만"
+    amb = ref.isna() & (o_ok | m_ok | k_ok)
+    src[amb] = "소스 간 불일치(판정 보류)"
+    st["소스 간 불일치(판정 보류)"] = int(amb.sum())
     m["ref"], m["ref_src"] = ref, src
     has = m.ref.notna() & (m.ref > 0) & m.close.notna() & (m.close > 0)
     st["PG 행"] = len(m)

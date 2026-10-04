@@ -508,6 +508,35 @@ Claude 적용 안내: `xbrl_missing_adj_tag_review_20261004.csv`를 보고 회�
 
 **LLM 보강(Stock LLM, 숫자 데이터 아님 — 참고)**: 실패 ~40%의 원인은 7B 모델의 JSON 항목 무한 반복. 반복 억제(repeat_penalty 1.15)·글자 수 제한·토큰 한도 축소로 실패 표본 3/3 성공(출력 1/10). Brian_RAG `services/local_llm.py`·`scripts/run_enrichment.py` 적용(백업 runtime/backups/*before_repeat_fix_20261004).
 
+### 9-2-4. Codex 다음 검토 지시서 (Claude 작성, 2026-10-04 22시) — 반드시 이 순서로, 값 대조로만 판정
+
+**A. Claude가 이번에 바꾼 것 — Codex가 독립 재검증할 것** (각 run_id는 `data_fix_log`·백업 테이블로 되돌릴 수 있음)
+| run_id | 내용 | 재검증 방법 |
+|---|---|---|
+| `price_raw_restore_20261004_212520`, `..._212732` | price_history 원주가 복원 43,441행(A 이중조정·E PG 단독 단절) | `price_raw_basis_audit_20261004.py` 재실행(공식·marcap·KIS 3소스 다수결). 표본 20행을 KRX 공식 화면과 육안 대조 |
+| `price_prelisting_remove_20261004_213543` | 상장 전 오염 4,137행 삭제(사용자 승인) | 16종목이 marcap 첫 출현일 이전 행 0건인지 확인 |
+| `price_kis_tiebreak_*` (아래 B-1 적용 후 기입) | KIS 원주가 판정 복원(주식·ETF) | 같은 감사 재실행 |
+| `restated_annual_20261004_213838` | 연간 재작성값 2,189칸(FnGuide/네이버 확인분만) | `apply_restated_annual_20261004.py` dry-run 재실행 시 '외부 확인 → 반영' 0이어야 함. `financial_facts_pit`에 최초값 보존 확인 |
+| `dart_refetch_apply_20261004_214442` | 2023+ 분기 칸 지배주주 기준 재적용(재무 2,530·현금흐름 787) — 운영 수집기가 신규 분기를 전체 기준으로 넣던 드리프트 | 2026Q1·Q2 연결 순이익이 DART `ProfitLossAttributableToOwnersOfParent`와 일치하는지 표본 |
+| `fx_krw_20261004_214711` | 008700·241560 USD 원본 → 원화(연간 30/30 FnGuide 일치) | 분기 값도 FnGuide 분기 원문과 대조 |
+| 코드: `collectors/dart_collector.py` `_apply_parent_basis` | **운영 수집기 순이익·자본을 연결=지배주주로**(검산 통과 시만). 이전엔 '귀속' 행을 일부러 빼고 전체를 저장 → 매 분기 기준 드리프트의 근본 원인 | 다음 분기 공시 수집 후 신규 행 표본 대조 |
+| 코드: `apply_dart_refetch_20261002.py` | 재작성값·원화 환산 칸 보호, `--quarterly-only` | — |
+| 코드: `compare_db_vs_fnguide_raw_20261003.py` | **비12월 결산 회사 회계기간 환산**(이전엔 달력 분기로 잘못 비교) | 9월·3월·6월 결산 표본 |
+
+**B. 남은 일 — 99.99%까지 (우선순위, 파일 첨부)**
+1. **가격**: [가격 최종 — 아래 9-2-5에 기입]
+2. **감가상각 946칸**: 현금흐름표 조정 감가상각 미수집(유형자산 값으로 채워진 행). 00:20 `--redo-missing-adj`가 원문 zip 저장·회사 고유 태그(`_all`) 기록 → `data_raw/dart_xbrl/`의 `_all` 태그를 보고 파서 규칙 확정 → `apply_xbrl_depreciation_20261003.py --basis-adj` 재적용.
+3. **재무 미분류 855칸**: `research_outputs/financial_rereview_20261002/handoff_financial_open_fields_20261004.csv`(전체 원인 조사 목록). 종목 집중(상위 20종목 45%) — 종목 단위 원인부터.
+4. **비12월 결산 회사의 DB 기간 키 불일치**: 연간=결산 종료 연도인데 분기는 시작 연도/종료 연도가 섞여 저장됨(예: 008870 2025.10~12 → (2025,1), 2026.1~3 → (2026,2)). 기준 확정(회계연도=종료 연도, 회계분기) 후 분기 행 키 재배치 — **사용자 확인 필요(기간 키 변경은 화면·신호 전반 영향)**.
+5. **분기 재작성값**: FnGuide는 분기도 재작성값을 보여 준다(2025Q4 등 불일치). 분기보고서 전기 칸 수집이 아직 없음.
+6. **보류 외국기업**: 900290·900120(CNY, FnGuide 환율과 1~8% 차), 950170(JPY 2월 결산), 950210(USD 결산월 미확정), 900070 2023년.
+7. **순이익 '해결' 재판정**: `research_outputs/third_party_crosscheck_20261003/claude_reverify_net_income_resolved_20261004.csv` — PG 오류 후보 13건(일부는 위 A의 분기 재적용으로 해소 가능 → 재측정), 외부 쪽 차이 26, DART 원문 없음 209.
+8. **CapEx**: FnGuide '유형자산의증가'가 건설중인자산 취득 등 합산일 가능성. 00:20부터 DART 원문 계정 행(`data_raw/dart_fnltt/`) 저장·`capex_cip` 추출 → 합산 규칙 판정.
+9. **재고자산**: FnGuide 대비 `dart_cost_quarterly` 53% 일치(Codex). DART 재무상태표 `Inventories` 추출을 추가(00:20 원문 보충분부터) → FnGuide와 대조해 정본 교체 여부 판단.
+10. **수주잔고**: 외부 비교 소스가 없음(FnGuide·네이버 미표시) → 99.99% '확인' 수단 자체가 없다. DART 본문 원문 재파싱(합계 행 규칙)과 표본 육안 검증만 가능. 측정 방법부터 사용자와 합의 필요.
+
+**C. Codex가 지킬 규칙(이번 실수 재발 방지)**: §5 실패 24(수정주가 소스와 같다는 이유로 원주가 정상 판정 금지)·25(값 근거 없는 resolved 금지). 결과 파일에는 판정 근거 값(외부값·원문값·소스명)을 반드시 채운다. 생성 코드 없는 결과 CSV는 무효.
+
 ### 9-3. 추가 개선 실험 제안
 
 1. **differential parser test** — 같은 `rcp_no`·사업연도·보고서구분·CFS/OFS에 대해 우리 파서, OpenDartReader/opendart, 원본 XBRL 직접 파서를 나란히 돌리고 필드별 차이를 저장한다. 2개 이상 구현이 같은데 DB만 다르면 파서 회귀 후보로 올린다.

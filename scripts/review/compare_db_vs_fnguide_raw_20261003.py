@@ -58,6 +58,20 @@ def parse_code(code):
         return {}, None
     day = files[-1].name[:8]
     res = {}  # (year, q, fs) -> {field: value}  q=0 연간
+    # 2026-10-04: 결산월(FY 종료 월)을 연간 표 기간 표기에서 읽어 회계연도·회계분기로 환산한다.
+    # 회계연도 = 결산 종료 연도(정본 §2-4 사업부문 규칙과 같음), 분기 = 회계 분기(9월 결산이면 10~12월이 1분기).
+    # 예전엔 달력 기준(3월=1분기)으로 배정해 비12월 결산 회사가 엉뚱한 기간과 비교됐다.
+    fy_mm = 12
+    for f0 in sorted(d.glob(f"{day}_*_Y_getFinIncome.json.gz")):
+        try:
+            for x in (json.loads(gzip.decompress(f0.read_bytes())).get("dataset") or {}).get("header") or []:
+                raw0 = str(x.get("YYMM", "")).strip()
+                if re.fullmatch(r"20\d{2}/\d{2}", raw0):
+                    fy_mm = int(raw0[5:])
+                    break
+        except Exception:
+            pass
+        break
     for consol, fs in (("C", "CFS"), ("P", "OFS")):
         for freq in ("Y", "Q"):
             parts = {}
@@ -85,10 +99,13 @@ def parse_code(code):
             periods = sorted({raw for (_, raw) in cols})
             for raw in periods:
                 yy, mm = int(raw[:4]), raw[5:]
+                mo = int(mm)
                 if freq == "Y":
-                    key = (yy, 0, fs) if mm == "12" else (yy, "FY" + mm, fs)
+                    key = (yy, 0, fs) if mo == fy_mm else (yy, "FY" + mm, fs)
                 else:
-                    key = (yy, QMAP.get(mm, "M" + mm), fs)
+                    fq = ((mo - fy_mm - 1) % 12) // 3 + 1
+                    fy = yy if mo <= fy_mm else yy + 1
+                    key = (fy, fq, fs) if mo % 3 == fy_mm % 3 else (yy, "M" + mm, fs)
                 ci, cb, cc = (cols.get(("getFinIncome", raw)), cols.get(("getFinBalance", raw)), cols.get(("getFinCashFlow", raw)))
                 v = {}
                 if ci:
