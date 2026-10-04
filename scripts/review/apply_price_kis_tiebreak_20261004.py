@@ -31,12 +31,16 @@ MARCAP = ROOT / "data_cache" / "marcap"
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--etf-adjusted", action="store_true",
+                    help="ETF 정수 행 중 PG가 배당 조정 수정주가(FDR 계열)인 것 → KIS 원주가로. 근거: KIS 수정모드(ADJ=0)≈PG·FDR, 원주가모드(ADJ=1)만 다름(2026-10-04 표본 확인)")
     a = ap.parse_args()
     m = pd.read_csv(D / "mismatch_rows.csv", dtype={"code": str})
     f = pd.read_csv(D / "fractional_rows_classified.csv", dtype={"code": str})
     etf = f[f.cls == "marcap에 종목 없음"][["code", "date"]].assign(kind="etf")
     stk = m[["code", "date"]].assign(kind="stock")
     t = pd.concat([stk, etf]).drop_duplicates(["code", "date"])
+    if a.etf_adjusted:
+        t = m[m.ref_src == "KIS만"][["code", "date"]].assign(kind="etf_adj")
     kis = {}
     for code in t.code.unique():
         p = KRAW / f"{code}.json"
@@ -72,6 +76,10 @@ def main():
             agree = (o is not None and abs(kc - o) <= 1) or (mk is not None and abs(kc - mk) <= 1)
             if not agree:
                 st["stock: KIS가 공식·marcap과도 다름 → 보류"] += 1
+                continue
+        elif r.kind == "etf_adj":
+            if kc != round(kc) or not (0.75 <= pc / kc < 1.0):
+                st["etf_adj: 조정 방향·범위 밖 → 보류"] += 1
                 continue
         else:
             if pc == round(pc) or kc != round(kc):

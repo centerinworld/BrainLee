@@ -46,13 +46,19 @@ def main():
     universe = [r[0] for r in conn.execute("""SELECT DISTINCT stock_code FROM financial_data
                  WHERE year>=2024 AND stock_code ~ '^[0-9]{6}$' ORDER BY 1""").fetchall()]
     quirk = {r[0] for r in conn.execute("SELECT DISTINCT stock_code FROM stock_collection_config WHERE config_key LIKE 'fs_quirk:%'").fetchall()}
+    # 2026-10-04: 원문 없이 구 캡처로만 '원인 조사'가 난 종목을 가장 먼저(재판정 속도)
+    try:
+        openq = {r[0] for r in conn.execute("""SELECT DISTINCT stock_code FROM financial_field_verification
+                                                WHERE status='원인 조사' AND fnguide_source <> 'fnguide_wcomp_raw'""").fetchall()}
+    except Exception:
+        openq = set()
     conn.close()
     if a.codes:
         targets = a.codes.split(",")
     else:
         cut = datetime.now() - timedelta(days=a.stale_days)
         due = [c for c in universe if (last_fetch(c) or datetime(2000, 1, 1)) < cut]
-        targets = [c for c in due if c in quirk] + [c for c in due if c not in quirk]
+        targets = [c for c in due if c in openq] + [c for c in due if c in quirk and c not in openq] + [c for c in due if c not in quirk and c not in openq]
     today = datetime.now().strftime("%Y%m%d")
     calls = done = 0
     print(f"대상 {len(targets)}종목(우선 {len(quirk & set(targets))}), 호출 한도 {a.max_calls}", flush=True)
