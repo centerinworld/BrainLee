@@ -44,7 +44,7 @@ except Exception:  # noqa: BLE001
     pass
 
 SOURCE = "dart_disclosure+marcap_jump_2026-09-24"
-KEYS = [k for k in (os.getenv("DART_API_KEY"), os.getenv("DART_API_KEY2"), os.getenv("DART_API_KEY3")) if k]
+KEYS = [k for k in (os.getenv("DART_API_KEY"), os.getenv("DART_API_KEY2"), os.getenv("DART_API_KEY3"), os.getenv("DART_API_KEY4")) if k]
 RULES = [  # priority order
     ("company_split", ("회사분할", "분할결정", "분할합병", "분할 합병")),
     ("reverse_split", ("주식병합", "액면병합", "병합결정")),

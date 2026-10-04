@@ -31,6 +31,7 @@ DART_API_KEYS = [
     os.getenv("DART_API_KEY", ""),
     os.getenv("DART_API_KEY2", ""),
     os.getenv("DART_API_KEY3", ""),
+    os.getenv("DART_API_KEY4", ""),
 ]
 DART_API_KEYS = [k for k in DART_API_KEYS if k]
 ALOT_URL = "https://opendart.fss.or.kr/api/alotMatter.json"

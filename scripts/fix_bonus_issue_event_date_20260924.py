@@ -53,7 +53,7 @@ print(f"[{RUN_ID}] 검사 {len(ev)}건 → 정정 후보 {len(cands)}건, 제외
 
 # ── DART 원문 대조(샘플) ──────────────────────────────────────────────
 def dart_record_date(rcept):
-    keys = [os.environ.get(k) for k in ("DART_API_KEY", "DART_API_KEY2", "DART_API_KEY3") if os.environ.get(k)]
+    keys = [os.environ.get(k) for k in ("DART_API_KEY", "DART_API_KEY2", "DART_API_KEY3", "DART_API_KEY4") if os.environ.get(k)]
     for key in keys:
         r = requests.get("https://opendart.fss.or.kr/api/document.xml", params={"crtfc_key": key, "rcept_no": rcept}, timeout=30)
         if r.content[:2] != b"PK":

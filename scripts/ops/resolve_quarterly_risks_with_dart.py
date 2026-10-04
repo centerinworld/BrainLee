@@ -270,6 +270,7 @@ def run(args) -> int:
         env.get("DART_API_KEY", ""),
         env.get("DART_API_KEY2", ""),
         env.get("DART_API_KEY3", ""),
+        env.get("DART_API_KEY4", ""),
     ]
     keys = [k for k in keys if k]
     if not keys:

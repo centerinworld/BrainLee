@@ -116,11 +116,12 @@ def main():
     import config
     import OpenDartReader
 
-    # DART API 키 라운드로빈: KEY2 → KEY1 → KEY3 순, 한도 초과 시 자동 교체
+    # DART API 키 라운드로빈: KEY2 → KEY1 → KEY3 → KEY4 순, 한도 초과 시 자동 교체
     _dart_keys = [k for k in [
         config.DART_API_KEY2,
         config.DART_API_KEY,
         getattr(config, "DART_API_KEY3", None),
+        getattr(config, "DART_API_KEY4", None),
     ] if k]
     _key_idx = [0]  # mutable container for closure
 

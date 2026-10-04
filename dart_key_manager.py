@@ -2,7 +2,7 @@
 DART API key rotation helpers.
 
 Keep secrets out of source code. Keys are read from config/.env only:
-    DART_API_KEY, DART_API_KEY2, DART_API_KEY3
+    DART_API_KEY, DART_API_KEY2, DART_API_KEY3, DART_API_KEY4
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ _DART_QUOTA_MARKERS = ("020", "사용한도", "한도", "quota", "limit")
 def get_dart_api_keys() -> list[str]:
     """Return configured unique DART keys in priority order."""
     keys: list[str] = []
-    for key in (config.DART_API_KEY, config.DART_API_KEY2, config.DART_API_KEY3):
+    for key in (config.DART_API_KEY, config.DART_API_KEY2, config.DART_API_KEY3, getattr(config, "DART_API_KEY4", None)):
         if key and key not in keys:
             keys.append(key)
     return keys

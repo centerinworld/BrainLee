@@ -33,6 +33,7 @@ DART_KEYS = [
     os.environ.get("DART_API_KEY", ""),
     os.environ.get("DART_API_KEY2", ""),
     os.environ.get("DART_API_KEY3", ""),
+    os.environ.get("DART_API_KEY4", ""),
 ]
 DART_KEYS = [k for k in DART_KEYS if k]
 

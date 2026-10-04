@@ -30,7 +30,7 @@ def _load_keys():
     try:
         for line in open(os.path.join(os.path.dirname(__file__), '..', '.env')):
             line = line.strip()
-            for k in ['DART_API_KEY', 'DART_API_KEY2', 'DART_API_KEY3']:
+            for k in ['DART_API_KEY', 'DART_API_KEY2', 'DART_API_KEY3', 'DART_API_KEY4']:
                 if line.startswith(k + '='):
                     v = line.split('=', 1)[1].strip()
                     if v:

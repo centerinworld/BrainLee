@@ -115,8 +115,8 @@ def _get_api_keys() -> list[str]:
     if _root not in sys.path:
         sys.path.insert(0, _root)
     try:
-        from config import DART_API_KEY, DART_API_KEY2, DART_API_KEY3
-        keys = [DART_API_KEY2, DART_API_KEY, DART_API_KEY3]
+        from config import DART_API_KEY, DART_API_KEY2, DART_API_KEY3, DART_API_KEY4
+        keys = [DART_API_KEY2, DART_API_KEY, DART_API_KEY3, DART_API_KEY4]
     except Exception:
         keys: list[str] = []
         # .env 파일 직접 읽기 (fallback)
@@ -130,11 +130,14 @@ def _get_api_keys() -> list[str]:
                     keys.append(line.split("=", 1)[1].strip().strip('"\''))
                 elif line.startswith("DART_API_KEY3="):
                     keys.append(line.split("=", 1)[1].strip().strip('"\''))
+                elif line.startswith("DART_API_KEY4="):
+                    keys.append(line.split("=", 1)[1].strip().strip('"\''))
         if not keys:
             keys = [
                 os.getenv("DART_API_KEY2", ""),
                 os.getenv("DART_API_KEY", ""),
                 os.getenv("DART_API_KEY3", ""),
+                os.getenv("DART_API_KEY4", ""),
             ]
 
     deduped = [key for key in dict.fromkeys(key.strip() for key in keys if key and key.strip())]

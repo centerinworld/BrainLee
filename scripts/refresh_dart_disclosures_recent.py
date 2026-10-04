@@ -49,6 +49,7 @@ def load_keys() -> list[str]:
         getattr(config, "DART_API_KEY2", None),
         getattr(config, "DART_API_KEY", None),
         getattr(config, "DART_API_KEY3", None),
+        getattr(config, "DART_API_KEY4", None),
     ]
     return [k for k in keys if k]
 
