@@ -201,10 +201,13 @@ def collect_one(dart, code: str, year: int) -> tuple[str, str]:
             last_error = "statement parsed without core values"
             continue
         cf = _parse_cf_df(df, stock_code=code)
+        # 2026-10-04: 비12월 결산은 DART bsns_year(기간 종료 달력 연도) → 회계연도(결산 종료 연도). 반기 = 회계 2분기
+        import fiscal_period as _fp
+        fy, _ = _fp.to_fiscal(code, year, 2, False)
         with engine.begin() as conn:
-            _upsert_financial(conn, code, year, report_type, fin)
+            _upsert_financial(conn, code, fy, report_type, fin)
             if any(cf.get(k) is not None for k in ("operating_cf", "investing_cf", "financing_cf", "capex")):
-                _upsert_cashflow(conn, code, year, report_type, cf)
+                _upsert_cashflow(conn, code, fy, report_type, cf)
         return "saved", report_type
     return "missing", last_error
 

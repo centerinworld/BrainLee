@@ -202,6 +202,13 @@ def collect_targets(conn: sqlite3.Connection, years_from: int, years_to: int, li
 
 def upsert_cf_row(conn: sqlite3.Connection, stock_code: str, year: int, quarter: int, is_annual: int, report_type: str,
                   vals: dict[str, Optional[float]], run_id: str) -> int:
+    # 2026-10-04: 비12월 결산은 DART 표기(bsns_year)와 DB 회계 키가 달라 같은 키로 쓰면 다른 기간을 덮는다 → 건너뜀
+    try:
+        import fiscal_period as _fp
+        if _fp.fiscal_month(stock_code) != 12:
+            return 0
+    except Exception:
+        pass
     existing = conn.execute(
         """
         SELECT id, operating_cf, investing_cf, financing_cf, capex, cash_end, depreciation, value_type

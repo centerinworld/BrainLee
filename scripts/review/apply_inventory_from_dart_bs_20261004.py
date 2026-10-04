@@ -50,6 +50,8 @@ def main():
                 if isinstance(q, int) and v.get("inventory") is not None:
                     fg[(p.name, y, 4 if q == 0 else q, fs)] = v["inventory"]
     conn = connect_primary_db(timeout=600, readonly=not a.apply)
+    nondec = {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:fiscal_month' AND config_value<>'12'").fetchall()}
+    dart = {k: v for k, v in dart.items() if k[0] not in nondec}  # 비12월 결산: 기간 키 체계가 달라 제외(2026-10-04)
     db = {(r[0], r[1], r[2]): (r[3], r[4]) for r in map(tuple, conn.execute(
         "SELECT stock_code, fiscal_year, fiscal_quarter, inventory_assets_krw, parser_version FROM dart_cost_quarterly").fetchall())}
     st, plan, hold = collections.Counter(), [], []

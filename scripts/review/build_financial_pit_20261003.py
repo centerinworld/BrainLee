@@ -29,11 +29,17 @@ DDL = """CREATE TABLE IF NOT EXISTS financial_facts_pit (
     PRIMARY KEY (stock_code, year, quarter, report_type, field, value_kind))"""
 
 
-def avail(y, q, kind):
-    if kind == "restated":
-        return date(y + 1, 12, 31) + timedelta(days=90)
-    m, d = QEND[q]
-    return date(y, m, d) + timedelta(days=90 if q == 0 else 45)
+def avail(y, q, kind, code=None):
+    """기간 종료일 + 법정기한(분·반기 45일, 사업보고서 90일). 비12월 결산은 fiscal_period.period_end 기준(2026-10-04)."""
+    import calendar
+    import fiscal_period as fp
+    if kind == "restated":  # 다음 회계연도 사업보고서 제출 기한
+        pe = fp.period_end(code, y + 1, 0) if code else f"{y + 1}-12"
+        yy, mm = int(pe[:4]), int(pe[5:7])
+        return date(yy, mm, calendar.monthrange(yy, mm)[1]) + timedelta(days=90)
+    pe = fp.period_end(code, y, q) if code else f"{y}-{QEND[q][0]:02d}"
+    yy, mm = int(pe[:4]), int(pe[5:7])
+    return date(yy, mm, calendar.monthrange(yy, mm)[1]) + timedelta(days=90 if q == 0 else 45)
 
 
 def main():
@@ -49,15 +55,18 @@ def main():
     run_id = f"pit_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     now = datetime.now().isoformat(timespec="seconds")
     rows = {}
-    for (code, y, q), d in last.items():
+    import fiscal_period as fp
+    fp.fiscal_month_map()
+    for (code, y0, q), d in last.items():
         fs = d["fs"]
+        y, _ = fp.to_fiscal(code, y0, q, q == 0)  # 2026-10-04: 회계 기준 키(비12월 결산)
         rep = {0: "사업보고서", 1: "1분기보고서", 2: "반기보고서", 3: "3분기보고서"}[q]
         for f, v in (d.get("vals") or {}).items():
-            rows[(code, y, q, fs, f, "as_reported")] = (v, f"{y} {rep} 당기", avail(y, q, "as_reported"))
+            rows[(code, y, q, fs, f, "as_reported")] = (v, f"{y} {rep} 당기", avail(y, q, "as_reported", code))
         if q == 0:
             for f, v in (d.get("vals_prev") or {}).items():
                 # y년 사업보고서의 전기 칸 = (y-1)년 재작성 값
-                rows[(code, y - 1, 0, fs, f, "restated")] = (v, f"{y} 사업보고서 전기", avail(y - 1, 0, "restated"))
+                rows[(code, y - 1, 0, fs, f, "restated")] = (v, f"{y} 사업보고서 전기", avail(y - 1, 0, "restated", code))
     conn = connect_primary_db(timeout=900)
     conn.execute(DDL)
     conn.execute("DELETE FROM financial_facts_pit")

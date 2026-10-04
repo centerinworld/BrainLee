@@ -422,9 +422,17 @@ def _collect_dart_to_db(stock_code: str, db, latest_only: bool = False) -> int:
                 elif any(k in acc for k in ["주당순자산","1주당순자산가액"]):           m["bps"] = val
                 elif any(k in acc for k in ["주당배당금","주당현금배당금"]):            m["dps"] = val
                 elif any(k in acc for k in ["현금및현금성자산","현금성자산"]):          m["cash"] = val
+            # 2026-10-04: 순이익·자본 연결=지배주주(검산 통과 시만), 비12월 결산은 회계 기준 키(fiscal_period.to_fiscal)
+            try:
+                from collectors.dart_collector import _apply_parent_basis
+                _apply_parent_basis(fn_data, m)
+            except Exception:
+                pass
+            import fiscal_period as _fp
+            _fy, _fq = _fp.to_fiscal(stock_code, year, qnum, rcode == "11011")
             try:
                 fin = schemas.FinancialIngest(
-                    stock_code=stock_code, year=year, quarter=qnum,
+                    stock_code=stock_code, year=_fy, quarter=_fq,
                     is_annual=(rcode == "11011"), **m)
                 crud.upsert_financial_data(db, fin)
                 saved += 1
@@ -459,7 +467,7 @@ def _collect_dart_to_db(stock_code: str, db, latest_only: bool = False) -> int:
                             models.FinancialData.quarter == 4,
                             models.FinancialData.is_annual.is_(False),
                         ).first()
-                        if q1 and q2 and q3 and not q4_exists:
+                        if q1 and q2 and q3 and not q4_exists and _fp.fiscal_month(stock_code) == 12:  # 비12월 결산은 회계연도 기준 재계산 스크립트가 담당
                             def _sub(a, b, c, annual):
                                 """annual - q1 - q2 - q3, None 안전 처리"""
                                 if annual is None: return None
@@ -571,8 +579,10 @@ def _collect_dart_cashflow(stock_code: str, db, latest_only: bool = False) -> in
                     continue
 
                 try:
+                    import fiscal_period as _fp  # 2026-10-04: 비12월 결산 회계 기준 키
+                    _cfy, _cfq = _fp.to_fiscal(stock_code, year, qnum, is_annual_flag)
                     cf = schemas.CashFlowIngest(
-                        stock_code=stock_code, year=year, quarter=qnum,
+                        stock_code=stock_code, year=_cfy, quarter=_cfq,
                         is_annual=is_annual_flag, report_type=fs, **m)
                     _upsert_cashflow(db, cf)
                     saved += 1

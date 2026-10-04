@@ -526,6 +526,14 @@ def update_cf_annual(conn, sc: str, year: int, cf: dict,
 REPRT = {1: "11013", 2: "11012", 3: "11014", 0: "11011"}  # quarter → reprt_code
 
 def process_stock_year(conn, sc: str, year: int, corp_code: str, log_rows: list) -> str:
+    # 2026-10-04: 비12월 결산은 한 DART 연도(bsns_year=기간 종료 달력 연도) 안의 보고서들이 서로 다른 회계연도라
+    # 여기서 1~4분기를 계산하면 틀린다 → 건너뜀. 이 회사들은 회계 기준 키(fiscal_period, rekey_fiscal_nondec)로 관리.
+    try:
+        import fiscal_period as _fp
+        if _fp.fiscal_month(sc) != 12:
+            return "skip_non_december_fiscal"
+    except Exception:
+        pass
     """
     (sc, year)에 대해 DART 3개 분기보고서 호출 → Q1~Q4 재계산 → DB 업데이트
     반환: 결과 문자열

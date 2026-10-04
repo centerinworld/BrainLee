@@ -72,6 +72,8 @@ def main():
     # 2026-10-03: 보고통화(USD·CNY 등) 종목은 DART 값이 원통화라 그대로 덮으면 원화 환산값이 깨진다 → 제외
     # (환산은 scripts/review/convert_foreign_currency_20261003.py, FINANCIAL_STATEMENTS.md §2-6)
     fx_codes = {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:reporting_currency'").fetchall()}
+    # 2026-10-04: 비12월 결산은 DART 표기(bsns_year)≠DB 회계 키 → 이 스크립트(DART 키로 씀)에서 제외, rekey_fiscal_nondec가 관리
+    fx_codes |= {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:fiscal_month' AND config_value<>'12'").fetchall()}
     if fx_codes & set(codes):
         truth = {k: v for k, v in truth.items() if k[0] not in fx_codes}
         print(f"보고통화 종목 {len(fx_codes & set(codes))}개 제외(원통화 값)")

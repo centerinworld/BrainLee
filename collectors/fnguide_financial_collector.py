@@ -905,6 +905,13 @@ def upsert_financial(
     'inserted': 신규 삽입
     'skipped': 변경없음
     """
+    # 2026-10-04: FnGuide 분기 열은 달력 분기 표기라 비12월 결산사의 DB 회계 키(fiscal_period)와 다르다 → 분기 행은 쓰지 않음
+    try:
+        import fiscal_period as _fp
+        if not is_annual and _fp.fiscal_month(stock_code) != 12:
+            return "skipped"
+    except Exception:
+        pass
     # FnGuide 표 행 오매칭 시 자산총계 대신 소액 구성항목이 들어오는 사례를 차단한다.
     # 원본 snapshot은 보존하되 운영 financial_data에는 명백히 모순된 BS 값을 쓰지 않는다.
     data = dict(data)
@@ -978,6 +985,13 @@ def upsert_cashflow(
     data: dict,
     override: bool,
 ) -> str:
+    # 2026-10-04: FnGuide 분기 열은 달력 분기 표기라 비12월 결산사의 DB 회계 키(fiscal_period)와 다르다 → 분기 행은 쓰지 않음
+    try:
+        import fiscal_period as _fp
+        if not is_annual and _fp.fiscal_month(stock_code) != 12:
+            return "skipped"
+    except Exception:
+        pass
     existing = conn.execute("""
         SELECT id, operating_cf, investing_cf, financing_cf, capex, cash_end, depreciation
         FROM cash_flow_data
