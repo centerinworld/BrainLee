@@ -153,7 +153,7 @@
 | **FnGuide 캡처 전수 대조**(읽기 전용) | `runtime/scripts/review/compare_db_vs_fnguide_snapshot_20261003.py` → `research_outputs/financial_rereview_20261002/fnguide_compare_{summary.json,mismatches.csv}` |
 | 불일치 원인 분류·종목 특징 기록 | `runtime/scripts/review/classify_fnguide_mismatch_20261003.py [--apply]` → `fnguide_mismatch_classified.csv`, `fnguide_stock_quirks.csv`, `stock_collection_config` `fs_quirk:*` |
 | 현행 기준 필드 확정 상태 / 시점(PIT) 사실 | `build_field_verification_20261003.py`, `build_financial_pit_20261003.py` (둘 다 매일 자동) |
-| **매일 자동 재수집(launchd)** | `scripts/review/daily_numeric_recollect.sh dart|fnguide` ← `launchd/com.stock-dashboard.numeric-recollect-{dart,fnguide}.plist`(00:20 / 04:00). 로그 `research_outputs/financial_rereview_20261002/daily_numeric_recollect.log`. 수집만 하고 운영 테이블은 바꾸지 않는다 |
+| **매일 자동 재수집(launchd)** | `scripts/review/daily_numeric_recollect.sh dart|fnguide` ← `launchd/com.stock-dashboard.numeric-recollect-{dart,fnguide}.plist`(00:20 / 04:00, `~/Library/LaunchAgents/` 설치 및 `launchctl print gui/501/...` 등록 확인, 2026-10-04 last exit code 0). DART는 KEY1→KEY3→KEY4→KEY2 순서, 한도 소진 시 종료 후 다음 날 재개. 2026-10-04 08:34 `--years 2016-2022 --prev-only`에서 `RuntimeError: DART 전 키 한도 초과` 확인 — 오늘 DART 키는 전부 소진. 로그 `research_outputs/financial_rereview_20261002/daily_numeric_recollect.log`. 수집·검증 테이블 재구축만 하고 운영 재무값은 사람이 dry-run 확인 후 별도 적용 |
 | FnGuide 원문 저장·대조 | `fetch_fnguide_raw_20261003.py [--max-calls N] [--codes]`, `compare_db_vs_fnguide_raw_20261003.py` |
 | 외국기업 원화 환산 | `convert_foreign_currency_20261003.py [--apply]` (ECOS 환율 `data_raw/ecos_fx/731Y001_daily.json`) |
 | 감가상각 적용 | `apply_xbrl_depreciation_20261003.py [--basis-adj] [--apply]` |
@@ -223,21 +223,21 @@
 
 ## 9. 검토 사항 — 부족한 부분·추가 검토 (Claude 판단, 우선순위 순)
 
-000. **재작성값 적용(§2-5)** — `run_dart_pipeline_v2.sh`가 전기 칸(`vals_prev`)을 다 받으면, 재작성 기간을 전기 칸 값으로 바꾸는 적용 스크립트(백업·fix_log, 최초값 보존)를 만들고 dry-run→FnGuide·네이버 재대조→`--apply`. 분기 재작성(분기보고서 전기 칸)도 수집 필요.
+000. **재작성값 적용(§2-5)** — 2026-10-04 Codex 점검: `dart_cf_full.jsonl`은 연간 값 7,604건 중 `vals_prev` 7,543건이 있으나, `dart_cf_2016_2022.jsonl`은 연간 값 6,532건의 `vals_prev`가 0건이다. `build_financial_pit_20261003.py` 재구축 결과 `pit_20261004_012649`: as_reported 616,753 / restated 93,456. `apply_dart_refetch_20261002.py --src dart_cf_2016_2022.jsonl --min-year 2016 --unlock-covered` dry-run은 `financial_data 변경 0필드 / cash_flow_data 변경 0필드`였다. 따라서 **2023+ 재작성 시점 테이블은 일부 준비, 2016~2022 전기 칸 재작성 적용은 아직 준비 안 됨**. KEY reset 후 일일 DART 수집이 `--prev-only`까지 이어 받아야 하며, 운영 적용은 백업·fix_log·FnGuide/네이버 재대조 후에만 한다.
 001. ~~외국기업 원화 환산~~ → 2026-10-03 16종목 적용(§2-6). 남은 것: 보류 4종목 + 900070 2023, 분기 현금흐름 환율(기말 적용) FnGuide 분기 원문으로 검증, eps/bps 통화 확인.
-001-1. **감가상각 정의 결정(사용자)** — FnGuide = 현금흐름표 조정 감가상각(사용권 포함)으로 실측. 승인되면 `apply_xbrl_depreciation_20261003.py --basis-adj --apply`(약 740칸) 후 파생 재구축.
+001-1. ~~감가상각 정의 결정(사용자)~~ → 2026-10-03 사용자 제안·승인으로 `감가상각 = 현금흐름표 조정 감가상각(FnGuide 표시값)`, 구성요소는 별도 보존으로 확정. 적용 완료분 외 남은 일은 §9-2-4의 조정 태그 누락/회사 고유 항목명 검토다. 구성요소 합계를 운영 감가상각으로 자동 대체하지 않는다.
 002. **FnGuide 원문 재캡처 — 자동화됨(2026-10-03)**: launchd `com.stock-dashboard.numeric-recollect-fnguide`(매일 04:00) → `fetch_fnguide_raw_20261003.py --max-calls 1000`(종목당 12회, 하루 ~83종목, 전 종목 ~33일 주기) → `compare_db_vs_fnguide_raw_20261003.py`(읽기 전용, 결과 `fnguide_raw_compare_*`). 원문 저장 `/Volumes/Realtek_NVME/stock_dashboard/data_raw/fnguide_wcomp/`. 기존 스윕(03:15)은 450→150종목으로 축소. 전 종목 한 바퀴 뒤 미확인 3,175칸·연결/별도 607칸 재판정.
 003. **`fs_quirk:unexplained` 304종목** 원문 개별 확인.
 
-00. **지배주주 기준 전환 마무리** — `run_dart_pipeline_v2.sh`(10-03 10:00 교체, 전기 칸 수집 포함)가 매일 00:20부터 2016~2022 본 수집 → 지배주주 보완(2016~2022, 2023+)을 이어 받는다(로그 `research_outputs/financial_rereview_20261002/dart_pipeline.log`). 끝나면 `apply_dart_refetch_20261002.py`(2023+)와 `--src dart_cf_2016_2022.jsonl --min-year 2016 --unlock-covered`를 dry-run→표본→`--apply`, 이후 파생 재구축(§4-7). **그 전까지 일부 연결 행의 순이익·자본은 전체 기준이다**(특히 2016~2018).
-01. **금융업 FnGuide 정의 조사** — 은행·보험·증권·지주의 매출·영업이익에 FnGuide가 쓰는 계정(영업수익/순영업수익 등)을 확인하고, 같은 정의로 DART 원문에서 값을 만드는 매핑을 설계(사용자 의견: "DART로 통일, 회계 정의가 다르면 FnGuide 기준"). 확정 전까지 금융업은 기존 상태 유지.
+00. **지배주주 기준 전환 마무리** — `daily_numeric_recollect.sh dart`가 00:20부터 2023+ 지배주주 보완 → 2023+ 전기 칸 → XBRL 감가상각 → 분기 XBRL → 2016~2022 본수집·지배주주 보완·전기 칸 → 구성요소/PIT 재구축 순서로 이어 받는다. 2026-10-04 dry-run 기준 2016~2022 수집분은 운영 변경 0필드였으나, `vals_prev`가 아직 비어 있어 재작성 적용 판단은 보류한다. **운영 적용 전 필수**: dry-run 결과 저장, 표본 10건 원문 확인, FnGuide/네이버 재대조, 적용 후 `build_field_verification_20261003.py`.
+01. **금융업 FnGuide 정의 조사** — 2026-10-04 Codex가 로컬 FnGuide wcomp 원문을 금융업 137종목 중 원문 보유 23종목에 대해 확인. 증권/은행은 매출 축이 `순영업이익`(및 `순이자이익`, `순수수료이익`) 중심이고, 보험은 `영업수익`·`보험료수익`·`보험금비용` 등이 표시된다. 산출 `financial_sector_fnguide_labels_20261004.csv`. 표본이 23/137뿐이라 전체 금융업 매핑 확정은 아직 금지. FnGuide 원문이 더 쌓인 뒤 업권별 DART 계정 매핑을 설계하고, 그 전까지 금융업은 기존 상태 유지.
 02. ~~재작성 값 처리 확정 대기~~ → 2026-10-03 확정(§2-5, 외부 관행). 적용은 000.
-0. **재고자산 원문 대조** — DART 재무상태표 `Inventories`와 `dart_cost_quarterly.inventory_assets_krw`(본문 파싱) 비교. 원가 감가상각처럼 단위 오류(10^3배) 가능성 점검.
-1. **2016~2022 재무·현금흐름 재수집 완료 및 적용** — `run_fetch_2016_2022.sh` 진행 중(DART 한도로 2~3일). 끝나면 `apply_dart_refetch_20261002.py --src dart_cf_2016_2022.jsonl --min-year 2016 --unlock-covered`(dry-run→표본 10건→`--apply`), 이후 §3-6·7.
+0. **재고자산 원문 대조** — 2026-10-04 Codex가 `compare_inventory_fnguide_raw_20261004.py`로 FnGuide 원문 `재고자산`과 `dart_cost_quarterly.inventory_assets_krw`를 읽기 전용 비교. FnGuide 재고 859칸 중 비교 303칸, 일치 162(53.465%), DB 결측 535, 불일치 141, 비12월/hold 21. 불일치 분류: 기간/기준 검토 117, DB가 FnGuide의 1000배 11, DB가 1/1000배 5, 부분표/구성요소 의심 1, 반올림 경계 7. 산출 `inventory_fnguide_raw_summary_20261004.json`, `inventory_fnguide_raw_mismatches_classified_20261004.csv`. **운영 자동수정 금지**: Claude는 1000배/1/1000배처럼 명백한 단위 후보만 원문 excerpt 확인→백업→fix_log 후 제한 적용하고, 기간/기준 117건은 수동 분류한다.
+1. **2016~2022 재무·현금흐름 재수집 완료 및 적용** — 2026-10-04 현재 `dart_cf_2016_2022.jsonl` dry-run은 운영 변경 0필드. 다만 전기 칸(`vals_prev`)이 없어 재작성값 표시 기준에는 아직 부족하다. 매일 00:20 DART 수집이 KEY reset마다 재개되며, 완료 후 `apply_dart_refetch_20261002.py --src dart_cf_2016_2022.jsonl --min-year 2016 --unlock-covered`를 다시 dry-run→표본 10건→`--apply` 후보 판단한다. 적용 전에는 "완료"로 쓰지 않는다.
 2. **표본 밖 연도 측정** — 2016~2018, 2020, 2022를 포함한 새 표본으로 재측정(현재 표본은 2019·2021·2023+만).
 3. **금융업 검증** — 정의가 달라 비교에서 빠져 있다. 은행·보험·증권별 DART 계정 매핑으로 별도 측정 필요.
 4. **2015년 이전** — financial_data는 2016부터. 그 이전 데이터를 쓰는 전략이 있으면 범위 확인.
-5. **감가상각 분기 (2026-10-03 조사)** — 분기 감가상각은 대부분 회사가 현금흐름표 **주석**에만 공시한다. DART 재무제표 API(본문) 분기 자료에 감가상각 행이 있는 비율은 20~35%(2025년 20%). 주석 XBRL 의무화 일정(금감원 발표): 자산 2조↑ 사업·반기·분기 2023~(DB 기준 약 155곳), 2천억~2조 사업·반기 2025~·분기 2029~, 1천억~2천억 2026 사업보고서~, 1천억 미만 2027 사업보고서~, 금융업 10조↑ 2025 반기~. **방법(우선순위)**: ① 본문 감가상각 행 보유 회사 — 이미 받은 `dart_cf_*.jsonl` 분기 누적값 차분으로 3개월 값(즉시 가능) ② 자산 2조↑ — `fnlttXbrl` 1분기(11013)·반기(11012)·3분기(11014) 주석 XBRL(2023~) ③ 자산 2천억↑ — 반기 주석 XBRL(2025~)로 상·하반기 단위 ④ 중소형사 — 2029년 전에는 보고서 원문(HTML) 주석 표 파싱뿐(정확도 위험, 필요성 판단 후) ⑤ FnGuide 분기 원문(최근 4분기)은 매일 쌓이는 외부 확인용. **진행(2026-10-03 14:00)**: ① 완료 — `financial_dep_capex_components` 분기 행에 3개월 감가상각 14,914건(누적 차분 11,531 + 4분기=연간−3분기 3,383, `dep_source`로 구분; 운영 `depreciation_q`는 아직 미변경 — FnGuide 분기 원문 대조 후 적용). ①의 1차 검증: FnGuide 분기 원문(68종목 시점)과 대조 45건 중 **일치 25(56%)** — 본문 '감가상각비' 행 구성 차이(유형만/사용권 포함)와 누적 차분 오류 가능성. 운영 적용 전 불일치 원인 분류 필요. ② 시험 — `test_quarterly_xbrl_20261003.py`가 다음 00:20 DART 작업에서 1회 실행(대형사 30곳 2025Q1, 결과 `quarterly_xbrl_test.json`, 원문 zip `data_raw/dart_xbrl/`). 다음 세션: 결과 보고 ②·③을 일일 수집에 추가. **미확인**: 실제 분기 XBRL에 주석이 들어 있는지 — DART 키 리셋 후 대형사 표본 시험 필요. 그 전까지 `depreciation_q` 기반 신호(CAPEX ramp 등)는 신뢰 낮음.
+5. **감가상각 분기 (2026-10-04 갱신)** — 분기 감가상각은 대부분 회사가 현금흐름표 **주석**에만 공시한다. DART 재무제표 API(본문) 분기 자료에 감가상각 행이 있는 비율은 20~35%(2025년 20%). 2026-10-04 Codex가 #4 키 포함 로테이션으로 `test_quarterly_xbrl_20261003.py`를 수정·실행했고, 대형사 30곳 2025Q1 모두 감가상각 관련 XBRL 태그를 확인했다(`quarterly_xbrl_test.json`, 원문 zip 30개). 신규 `fetch_quarterly_xbrl_depreciation_20261003.py`는 대형사 Q1/H1/Q3 주석 XBRL YTD 값을 저장하고, 처음 잘못 잡은 기간 파일은 `quarterly_xbrl_depreciation.bad_period_20261003.jsonl`로 격리했다. 올바른 2025년 30종목 시험은 90레코드 중 88레코드에 값 존재(Q1 30, Q2 29, Q3 29). `build_dep_capex_components_20261003.py`는 YTD 차분으로 `financial_dep_capex_components`의 `quarterly_xbrl_adj_ytd_diff` 구성요소 행만 채운다. **운영 `cash_flow_data.depreciation_q`는 아직 바꾸지 않았다.** FnGuide 분기 원문과 56% 일치하던 본문 행 기반 값은 정의 혼재가 있어 운영 적용 전 원인 분류가 필요하다.
 6. **XBRL 감가상각 보류 86건** — 조정 감가상각이 유형 감가상각의 1.5배 초과(유형 값 일부만 잡혔을 가능성).
 7. **수주잔고 파서 재작성** — 합계 행 규칙을 기본으로, 의심 ~3,000건 재판정. '정상' 판정 값에도 오류가 섞여 있음(표본 10건 중 5건 기존 값 오류).
 8. **사업부문 매출 값 검증** — 부문 합계 vs 연결 매출 대조 등.
@@ -254,8 +254,8 @@
 
 1. **문서 내부 충돌 제거** — §11의 "5% 넘으면 별도 저장·표시, 사용자 확인 대기" 항목은 이후 사용자 지시로 폐기됐다. 변경 이력에는 남기되 "폐기됨, §2-5·§5 실패 23·§11 후속 항목이 우선"이라고 명시한다.
 2. ✅ (2026-10-03 Claude 반영: `financial_field_verification` 기준으로 등급을 덮음 — 현행 대조 없음='U 현행 기준 미확인', 원인 조사·DB 없음 있으면 'C', 전부 일치일 때만 'A 확정(현행 기준)'. 레거시 등급은 괄호로만 표시) **화면 품질 라벨 fail-closed** — `runtime/main.py`의 데이터 품질 API는 레거시 `cf_validation_flags` 기준으로 `CONFIRMED`, `CLOSE_MATCH`, `AMBIGUOUS 0건`을 "검증 완료"처럼 보여 줄 수 있다. §3 기준으로는 FnGuide·네이버 실제 외부 행과 비교한 `field_verification_status_v2` 또는 새 전수대조 결과가 없으면 `확정`이 아니라 `미확인/레거시 검증`으로 표시해야 한다. 불일치가 적거나 15% 이하라는 이유로 `ok` 처리하지 않는다.
-3. ✅ 1차 반영(2026-10-03 Claude): 테이블 `financial_field_verification`(종목·연도·분기·구분·필드, db/fnguide/naver 값, status, cause, fnguide_source, basis_version, run_id) — `build_field_verification_20261003.py`, 매일 04:00 FnGuide 수집 뒤 재구축. 첫 실행 41,339필드: 확정(3소스) 10,061 · 확정(2소스) 28,477 · 원인 조사 1,841 · DB 없음 960. 남은 것: dart_rcp_no·account_id·currency·restatement_flag 컬럼. **필드 단위 확정 상태를 스키마화** — `canonical_financial_data`·`canonical_cashflow_data`는 내부 정합성 게이트는 있지만, `확정(3소스)`, `확정(2소스)`, `원인 조사`, `미확인` 상태를 보존하지 않는다. 별도 테이블 또는 컬럼으로 `verification_status`, `sources_checked`, `dart_rcp_no`, `dart_account_id`, `fnguide_snapshot_id`, `naver_snapshot_id`, `currency`, `report_basis`, `restatement_flag`, `basis_version`, `verified_at`, `run_id`를 남긴다.
-4. ✅ 1차 반영(2026-10-03 Claude): `financial_facts_pit`(value_kind = as_reported/restated, source_report, available_at = 법정기한 추정) — `build_financial_pit_20261003.py`, 매일 DART 수집 뒤 재구축. 첫 실행 as_reported 607,077, restated 0(전기 칸 수집 시작 전). 남은 것: 실제 접수일(rcept_dt)로 available_at 교체, 분기 재작성. **재작성값 적용 전 point-in-time 테이블 설계** — 표시값은 최신 재작성값이 맞지만, 백테스트는 당시 알 수 있었던 값이어야 한다. 본 테이블 덮어쓰기 전에 `financial_facts_point_in_time` 또는 유사 테이블을 만들어 `as_reported`, `restated`, `current_display`, `filing_date`, `available_at`, `source_rcp_no`를 분리한다. 그 전까지 2016~2022 대량 재작성 적용 후 전략 백테스트는 미래참조 위험이 있다.
+3. ✅ 1차 반영(2026-10-03 Claude), 최신 재구축(2026-10-04 Codex): 테이블 `financial_field_verification`(종목·연도·분기·구분·필드, db/fnguide/naver 값, status, cause, fnguide_source, basis_version, run_id) — `build_field_verification_20261003.py`, 매일 04:00 FnGuide 수집 뒤 재구축. 첫 실행 41,339필드: 확정(3소스) 10,061 · 확정(2소스) 28,477 · 원인 조사 1,841 · DB 없음 960. 2026-10-04 재구축 `field_verif_20261004_013049`: 48,837필드, 확정(3소스) 10,188 · 확정(2소스) 33,526 · 원인 조사 2,701 · 미확인(DB 없음) 2,422. 남은 것: dart_rcp_no·account_id·currency·restatement_flag 컬럼. **필드 단위 확정 상태를 스키마화** — `canonical_financial_data`·`canonical_cashflow_data`는 내부 정합성 게이트는 있지만, `확정(3소스)`, `확정(2소스)`, `원인 조사`, `미확인` 상태를 보존하지 않는다. 별도 테이블 또는 컬럼으로 `verification_status`, `sources_checked`, `dart_rcp_no`, `dart_account_id`, `fnguide_snapshot_id`, `naver_snapshot_id`, `currency`, `report_basis`, `restatement_flag`, `basis_version`, `verified_at`, `run_id`를 남긴다.
+4. ✅ 1차 반영(2026-10-03 Claude), 최신 재구축(2026-10-04 Codex): `financial_facts_pit`(value_kind = as_reported/restated, source_report, available_at = 법정기한 추정) — `build_financial_pit_20261003.py`, 매일 DART 수집 뒤 재구축. 첫 실행 as_reported 607,077, restated 0(전기 칸 수집 시작 전). 2026-10-04 재구축 `pit_20261004_012649`: as_reported 616,753 / restated 93,456. 남은 것: 실제 접수일(rcept_dt)로 available_at 교체, 분기 재작성, 2016~2022 `vals_prev` 확보. **재작성값 적용 전 point-in-time 테이블 설계** — 표시값은 최신 재작성값이 맞지만, 백테스트는 당시 알 수 있었던 값이어야 한다. 본 테이블 덮어쓰기 전에 `financial_facts_point_in_time` 또는 유사 테이블을 만들어 `as_reported`, `restated`, `current_display`, `filing_date`, `available_at`, `source_rcp_no`를 분리한다. 그 전까지 2016~2022 대량 재작성 적용 후 전략 백테스트는 미래참조 위험이 있다.
 5. **FnGuide snapshot provenance 강제** — `financial_source_snapshot`에는 실제 외부 URL·수집 payload hash·parser_version·source_url을 필수화하고, DB 재구성값(`reconstructed_*`)은 별도 테이블로 분리한다. 실제 `comp.fnguide.com`/`wcomp.fnguide.com` 수집 행만 외부 대조로 인정한다.
 6. **canonical 테이블의 지위 재정의** — 과거 canonical 재빌드가 raw 중복/오염을 그대로 재현한 기록이 있다. canonical을 화면·전략의 정본으로 쓸지, 임시 표준화 산출물로만 쓸지 명시하고, 재빌드 전에는 BigQuery sync·전략 피처가 canonical을 신뢰하지 않도록 한다.
 7. **정확도 표에 run_id/as_of 추가** — §8의 정확도 수치마다 `run_id`, 표본 seed, 산출 파일, DB 적용 시각, 적용 전/후 여부를 붙인다. "99.8%" 같은 숫자는 DB 상태와 묶여 있지 않으면 다음 세션에서 재현할 수 없다.
@@ -277,6 +277,7 @@
 | **opendart-client / dartlab / OpenDartReader / opendart-py 등 GitHub 파서** | DART API 접근·XBRL·전체 재무제표를 다루는 독립 코드 구현 | 같은 corp_code/year/report/fs_div에 대해 우리 파서와 제3자 파서를 동시에 실행하는 differential parser test. 계정명 폴백·XBRL zip·taxonomy 처리 edge case 참고 | **높음(파서 회귀 테스트)**. 라이브러리도 같은 DART를 읽으므로 소스 독립성은 낮지만 구현 독립성이 있어 "우리 파서 버그" 탐지에 좋다 |
 | **FSC/data.go.kr 금융위 공공데이터** | KRX 상장증권정보, 주식시세정보, 외국인지분/소유 관련 공공데이터 | 시가총액·상장상태·종가·상장주식수·외국인지분율 검산. KoTaP도 이 계열 데이터를 시장/소유 변수에 활용 | **높음(시장·소유 변수)**. 재무제표 숫자 자체가 아니라 분모·가격·시장 변수 검증 |
 | **pykrx / KRX 정보데이터시스템** | KRX 가격, 거래대금, PER/PBR/배당수익률, 투자자별 매매 등 | price_history, valuation_history, KRX PER/PBR/배당수익률, 종목별 시장 데이터 검증. 재무값과 주가가 섞인 파생지표(PER/PBR) 오류 탐지 | **중간~높음(가격·밸류에이션 검증)**. 재무제표 본문 검증 소스가 아니라 시장 데이터/비율 검증 소스 |
+| **FinanceDataReader / marcap 로컬 캐시** | FinanceDataReader는 KRX·상장폐지·시가총액 계열을 조회할 수 있고, 본 저장소에는 `data_cache/marcap/marcap-2010~2026.parquet`가 있음 | `price_history` 원주가·상장 첫/마지막 출현일·상장 전 이력 혼입·시가총액/상장주식수 검증 | **높음(가격/상장구간 검증)**. KRX 로그인형 수집은 `KRX_ID/KRX_PW` 없으면 불가하지만, 로컬 marcap 캐시는 DART 키 없이 즉시 사용 가능 |
 
 우선 실행 순서:
 1. **FinanceData/finstate 과거 CSV를 내려받아 2016~2018/2018 인접 구간 표본 비교** — 연결/별도·계정명·CF 부호·PL/BS/CF 분류 오류를 잡는다.
@@ -284,6 +285,7 @@
 3. **kr-company-registry로 corp_code↔ticker crosswalk 주기 검증** — 식별자 오류를 먼저 차단한다.
 4. **opendart-client/OpenDartReader/dartlab 중 하나를 골라 differential parser test** — 같은 DART 원문에 대해 우리 파서와 독립 구현의 필드별 차이를 기록한다.
 5. **pykrx/FSC/data.go.kr로 가격·시총·상장주식수·PER/PBR 검증** — 재무 원천이 아니라 파생 지표와 백테스트 분모를 검증한다.
+6. **로컬 marcap으로 가격 P0 후보의 상장구간 검증** — 소수 원화 가격 후보가 실제 거래일 원주가인지, 상장 전/티커 신원/보정계열 과거 이력 오염인지 먼저 가른다.
 
 #### 9-2-1. 후보 직접 검증 결과 (Codex, 2026-10-03)
 
@@ -296,9 +298,9 @@
 | **FinanceData/finstate** | README에는 PL/BS/CF CSV 행 수가 적혀 있으나 `raw.githubusercontent.com/FinanceData/finstate/master/PL_CON.csv.gz`는 404. GitHub 저장소 파일 트리에도 CSV가 바로 보이지 않음. | **보류.** 자료 설명은 유용하지만, 현재 GitHub에서 즉시 내려받아 자동 대조하기 어렵다. 별도 다운로드 위치를 찾기 전까지 우선순위 낮춤. |
 | **aikstockdata 가격 최소판** | `index.json` 접근 성공. `generated_at=2026-10-02T18:11+09:00`, `quote_basis_date=20261001`, quotes 2,785행. PostgreSQL `price_history` 2026-10-01자 2,755행과 전수 대조: 매칭 2,669, aik only 116, PG only 86, 종가 불일치 1건(207940, 차이 11,001원·0.77%). 최신행 기준으로는 조인 2,740종목, 2026-10-01/10-02가 아닌 stale 후보 71종목. | **가격·신선도 검증에 바로 유용.** 본 테이블 값 복사 금지. 매일 `price_history` 최신성·basis mismatch·상장상태 누락을 잡는 read-only 비교 잡으로 적합. |
 | **aikstockdata 재무(earnings)** | `earnings.json` 접근 성공. 최근 120일 실적 공시 2,319건 중 2026.06 누적·연결/별도·최신 code/basis 1,702조합을 PostgreSQL Q1+Q2 3개월 합계와 비교. 총 5,106필드(매출·영업이익·순이익) 중 OK 3,546, 불일치 1,281, PG 결측 279. 별도 샘플: 삼성전자(005930)는 2026H1 매출·영업이익·순이익 모두 일치, 에이엘티(172670)는 매출·영업이익 일치·순이익 217,750,655원 차이. 큰 괴리는 900/950 계열 외국기업 통화·환산 문제와 정의 차이가 우선 의심됨. | **재무 sanity check 후보를 전수 범위로 확장 가능.** 값 채택 근거가 아니라 mismatch review 큐다. `aik_earnings_2026h1_mismatches.csv`를 `fs_quirk:reporting_currency`, 지배/전체 순이익, 연결/별도 혼입, Q1+Q2 산식 문제로 분류한다. |
-| **aikstockdata 종목별 JSON 전체** | PostgreSQL `stock_universe` 2,801개 전체를 대상으로 `/data/public/s/{code}.json`을 내려받아 대조. JSON 확보 2,697개, 404/미게시 104개. 재무 섹션 보유 2,596개, 재무 섹션 없음 101개. 2026H1 외부 누적값과 PostgreSQL Q1+Q2 합계 비교: 7,788필드 중 OK 5,824, 불일치 1,811, PG 결측 9, 외부 필드 결측 144. 불일치 분류: `financial_mapping_review` 808필드/708종목, `ofs_mapping_or_source_basis_review` 539필드/202종목, `net_income_definition_or_rounding` 392필드/392종목, `currency_or_foreign_issuer_priority` 54필드/21종목, `rounding_or_unit_tolerance_review` 18필드/18종목. | **전체 주식 기준 review 큐.** DART 키 소진 상태에서도 가능한 전종목 제3자 검증이다. 값 복사는 금지하고, 불일치/결측 큐를 원인분류·파서/통화/연결별도 확인 대상으로 쓴다. |
+| **aikstockdata 종목별 JSON 전체** | PostgreSQL `stock_universe` 2,801개 전체를 대상으로 `/data/public/s/{code}.json`을 내려받아 대조. JSON 확보 2,697개, 404/미게시 104개. 재무 섹션 보유 2,596개, 재무 섹션 없음 101개. 기간별로 `2026Q1`은 PostgreSQL Q1, `2026H1`은 Q1+Q2 합계와 비교(초기에는 Q1도 H1처럼 비교해 과대 불일치가 있어 정정). 7,788필드 중 OK 5,843, 불일치 1,792, PG 결측 9, 외부 필드 결측 144. 1차 불일치 분류: `financial_mapping_review` 787필드/702종목, `ofs_mapping_or_source_basis_review` 539필드/202종목, `net_income_definition_or_rounding` 394필드/394종목, `currency_or_foreign_issuer_priority` 54필드/21종목, `rounding_or_unit_tolerance_review` 18필드/18종목. | **전체 주식 기준 review 큐.** DART 키 소진 상태에서도 가능한 전종목 제3자 검증이다. 값 복사는 금지하고, 불일치/결측 큐를 원인분류·파서/통화/연결별도 확인 대상으로 쓴다. |
 | **KoTaP** | 논문/데이터 설명 확인: KOSPI/KOSDAQ 비금융, 2011~2024, 1,754개 기업, 12,653 firm-year, 65변수. DART/OpenDART 회계항목과 FSC/data.go.kr 시장·소유 데이터를 결합. 단, Zenodo 원본 파일은 현재 도구에서 직접 열지 못해 파일 단위 대조는 미실시. | **유망하지만 파일 확보 후 재검증 필요.** 연간 비금융 sanity check에 적합하나 필터(비금융, 12월 결산, 양의 세전이익 등) 때문에 전체 DB 정답 대체 불가. |
-| **FinanceDataReader / pykrx** | 현재 번들 Python에는 `FinanceDataReader`, `pykrx` 미설치. 즉석 라이브러리 실행 검증 불가. | **설치 후 별도 검증.** pykrx는 가격·PER/PBR·배당수익률 검증, FinanceDataReader는 Naver/FINSTATE snapshot 보조 검증으로 제한. |
+| **FinanceDataReader / pykrx** | 2026-10-04 Codex 확인: 둘 다 설치됨. 단 KRX 로그인형 수집은 `KRX_ID/KRX_PW` 환경변수가 없어 불가하고, pykrx 일부 일봉 응답은 Naver 보정계열처럼 소수형 값이 나올 수 있음 | **가격·밸류에이션 보조 검증용.** pykrx 일봉을 원주가 정답으로 단독 채택하지 않고, FinanceDataReader/marcap/공식 raw와 교차 확인 |
 
 산출 파일:
 - `summary.json`: 위 숫자의 재현 가능한 요약.
@@ -311,12 +313,77 @@
 - 테스트(2026-10-03): `venv/bin/python -m py_compile scripts/review/third_party_crosscheck_20261003.py`, `venv/bin/python -m pytest tests/test_third_party_crosscheck_20261003.py -q`(2 passed), `venv/bin/python scripts/review/third_party_crosscheck_20261003.py --input-dir /tmp/third_party_crosscheck_inputs --stock-json-dir /tmp/aik_stock_json_all`(PostgreSQL 읽기 전용, `stock_universe` 2,801개 전체 JSON 대조 포함 재현 실행).
 
 1차 원인 분류:
-- 재무 불일치 1,281필드: `financial_mapping_review` 507필드/456종목, `ofs_mapping_or_source_basis_review` 473필드/165종목, `net_income_definition_or_rounding` 266필드/266종목, `currency_or_foreign_issuer_priority` 22필드/10종목, `rounding_or_unit_tolerance_review` 13필드/13종목.
+- `earnings.json` 재무 불일치 1,281필드: `financial_mapping_review` 507필드/456종목, `ofs_mapping_or_source_basis_review` 473필드/165종목, `net_income_definition_or_rounding` 266필드/266종목, `currency_or_foreign_issuer_priority` 22필드/10종목, `rounding_or_unit_tolerance_review` 13필드/13종목.
 - 재무 결측 279필드: `pg_financial_missing_or_basis_gap` 216필드/82종목, `known_quirk_gap` 63필드/46종목.
+- 종목별 JSON 전체 심화 원인(기간 인식형 재실행 후): 순이익 정의/비지배주주 지분 계열 1,256필드/1,256종목(994종목은 순이익만 불일치), 별도/OFS 기준 차이 350필드/202종목, 미해결 매핑/파서 114필드/72종목, 외국기업 통화·배율 54필드/21종목, 반올림/허용오차 경계 18필드/18종목.
+- 미해결 매핑/파서 114필드 추가 분해: 레거시 FnGuide basis 소스 혼합 55필드/38종목, 남은 파서 매핑 검토 40필드/24종목, 리츠/비12월 결산 기준 검토 10필드/6종목, PG가 외부값의 약 2배인 누적/중복 후보 9필드/6종목.
+- DART 키 없이 추가 해결(원인 확정/준확정, 운영 DB 수정 아님): 1,792개 불일치 중 `resolved_cause_net_income_definition` 1,241필드/1,241종목, `resolved_cause_ofs_basis_mismatch` 347필드/199종목, `resolved_cause_foreign_currency_or_scale` 54필드/21종목, `resolved_alt_period_match` 43필드/22종목, `resolved_alt_report_type_match` 6필드/5종목, `resolved_cause_possible_duplicate_or_cumulative_double` 1필드/1종목. 레거시 FnGuide source mix는 83필드/64종목으로 부분 해결. **진짜 잔여 미해결은 17필드/9종목**(`unresolved_needs_dart_or_manual`)이며, 종목은 093380 풍강, 153890 져스텍, 282620 기도산업, 387690 레메디, 417030 니어스랩, 475040 스트라드비젼, 483350 딜리셔스, 477850 마키나락스, 487580 폴레드.
+- DART #4 키 재검증(2026-10-03 Codex): `DART_API_KEY4`를 공통 설정·로테이터·DART 수집 보조 스크립트에 추가하고, worktree `.env`의 #4 키로 `company.json` 상태 `000 정상`을 확인했다. `unresolved_needs_dart_or_manual` 9종목은 `dart_cf_key4_unresolved_20261003.jsonl`로 2026년 36개 보고서를 재조회했고 14개 보고서에서 값 확보. `apply_dart_refetch_20261002.py` dry-run 결과 `financial_data 변경 0필드 / cash_flow_data 변경 0필드`로, 현재 PostgreSQL 값은 DART #4 원문과 허용오차 내 일치했다.
+- DART 미보유 gap #4 전용 재조회(2026-10-03 Codex): 2023년 이후 FnGuide 대조 파일의 `DART 미보유/미확인` 후보 5,011필드/1,571 종목-연도 중 기존 DART jsonl로 이미 일부 원문이 있던 1,533 종목-연도를 제외하고, 원문이 전혀 없던 38 종목-연도를 추출했다. #4 키만 사용해 30종목 × 2023~2026 × 4보고서 = 480개 보고서를 `dart_cf_key4_gap38_20261003.jsonl`로 재조회했고 164개 보고서/70종목-연도에서 값 확보. dry-run 결과 `financial_data 변경 0필드 / cash_flow_data 변경 0필드`. 최초 gap 38종목-연도 중 1종목-연도는 해소, 37종목-연도는 #4 `fnlttSinglAcntAll`에서도 해당 연도 1Q/반기/3Q/사업보고서 값이 없어 `dart_key4_remaining_gap_stock_years_20261003.csv`에 남겼다(잔여: 2023년 25, 2024년 12). 이 잔여는 DB 값 정정 후보가 아니라 **DART API가 해당 연도 값을 반환하지 않는 원천 공백/상장 초기 공백**으로 분류하고, 수기 보고서 HTML/XBRL 또는 후속 재작성 공시로만 추가 확인한다.
+- 산출: `aik_stock_json_all_mismatches_without_dart_resolved.csv`, `aik_stock_json_all_without_dart_resolution_summary.csv`, `aik_stock_json_all_without_dart_resolution_examples.csv`.
 - 가격 stale 71종목: `very_stale_possible_delisted_or_ticker_identity` 61종목, `recent_no_volume_or_suspended_review` 10종목.
 - 종가 불일치 1건: 207940(삼성바이오로직스), aik 1,429,000 vs PG 1,417,999(2026-10-01, 차이 0.77%). 주변 PG 가격도 연속적으로 비정상 소수값(09-29 1,374,338 / 09-30 1,380,292 / 10-01 1,417,999)이어서 가격 파이프라인 review 우선 후보.
 - 207940 추가 추적: `data_fix_log`에는 2026-09-19 `unresolved_active_common_isolated_glitch_repair_20260919_224844`로 207940이 이미 고정값/단일일 가격 오류 복구 대상이었다. `price_ingestion_quarantine`에는 2026-09-29 `kis_itemchart_adjusted_0`의 `historical_overlap_basis_mismatch`가 207940에 남아 있다. 따라서 이 건은 단순 제3자 차이가 아니라 **최근 가격 기준 혼입/보정가 잔존 재발 후보**로 본다.
 - pykrx 추가 확인: `get_market_ohlcv_by_date`는 207940·005930·172670 모두 Naver 일봉 계열을 반환했고, 207940은 1,417,007처럼 보정/소수형 값이 나왔다. `get_market_ohlcv_by_ticker`는 KRX 응답 파싱 실패. 따라서 **pykrx 일봉을 원주가 정답으로 쓰지 않고**, 가격·밸류에이션 보조 검증용으로만 둔다는 §9-2 판단을 유지한다.
+- DART 없이 추가 검증(2026-10-04 Codex): `FinanceDataReader`와 `pykrx`는 설치 확인. KRX 로그인형 수집은 `KRX_ID/KRX_PW` 환경변수가 없어 불가. 로컬 `data_cache/marcap/marcap-2010~2026.parquet`는 사용 가능.
+
+#### 9-2-2. 주가 데이터 99.99% 기준 재확인 (Codex, 2026-10-03)
+
+결론: **주가 데이터는 아직 "99.99% 확정 정본"이라고 부르면 안 된다.** `price_history`는 중복키가 없고 최신 공식 종가 검증 로그도 2026-10-02 `ok`지만, 99.99% 운영 기준에는 미달한다. DART 키와 무관한 PostgreSQL 읽기 전용 감사 결과는 `runtime/research_outputs/price_accuracy_recheck_20261003/`에 저장했다.
+
+범위와 산출:
+- 스크립트: `runtime/scripts/review/price_accuracy_recheck_20261003.py`(읽기 전용, psql 기반, DART 미사용). `runtime/venv/bin/python -m py_compile runtime/scripts/review/price_accuracy_recheck_20261003.py` 통과.
+- 대상: PostgreSQL `price_history`의 KRX/KONEX 계열 2,801종목, 8,239,506행, 기간 2010-01-04~2026-10-02.
+- 산출: `summary.json`, `price_invalid_ohlcv.csv`, `price_fractional_krw_candidates.csv`, `price_latest_freshness_by_stock.csv`, `price_ingestion_quarantine_counts.csv`, `price_ingestion_quarantine_recent_14d.csv`, `price_close_verify_recent.csv`.
+- DART 미사용 P0 추가 대조 산출(2026-10-03 Codex): `price_p0_without_dart_resolution.csv`, `price_p0_without_dart_resolution_summary.csv`, `price_p0_without_dart_resolution_by_stock.csv`, `price_fractional_fdr_cache_coverage.csv`.
+
+주요 결과:
+- 중복키: 0건. `(stock_code,date)` 중복은 발견되지 않음.
+- OHLC 내부 불가능값: 30행/6종목. 모두 영숫자 우선주·신형 코드 계열에서 `open=high=low=0`, `close>0`, `volume=0` 형태(`0099X0`, `00806K`, `00781K`, `33637L`, `28513K`, `18064K`). 거래정지 표식이라도 close가 남아 있으면 raw OHLCV 규칙상 정본 아님.
+- 원화 소수 가격 후보: 4,137행/16종목. 예: 188040의 2025-03~04 구간이 14,836.345703125처럼 수정주가/보정계열 소수값으로 남아 있다. `price_history`는 원주가 KRW 정수 기준이므로 전량 review 큐다.
+- 최신성: 2,801종목 중 2,751종목만 2026-10-02 최신(`98.214923%`). `recent_lag` 9, `stale_30d` 14, `very_stale` 27. 일부는 상폐·스팩·거래정지일 수 있지만, 99.99% 정본 운영 관점에서는 상장상태/거래정지/상폐 사유로 분리 확정해야 한다.
+- 내부 품질뷰 참고 집계(완료 산출물 기준): `normal` 8,230,375행, `quarantined_basis` 4,186행, `unexplained_jump` 2,100행, `coverage_gap` 30행, `suspended` 30행, `insufficient_history` 2,785행. 뷰 전체 재집계는 인터랙티브 감사 한도를 넘겨 스크립트에서는 생략했지만, 기존 완료 산출물은 보존했다.
+- 수집 격리 잔여: `price_ingestion_quarantine`에 `historical_overlap_basis_mismatch` 8,082행/2,326종목, `historical_batch_without_overlap` 798행/400종목, `left_boundary_review` 218행/68종목 등이 남아 있다. 이는 새 수집값이 본테이블과 basis가 달라 격리된 증거이므로, 본테이블이 이미 99.99%라고 말할 수 없게 하는 운영 리스크다.
+- 제3자 대조(aikstockdata): 2026-10-01 종가 불일치 1건(207940), 최신행 stale 후보 71건, aik only 116, PG only 86. 가격 보조 검증으로 유용하지만 값 복사 금지.
+
+정량 판정:
+- 결정적 내부 게이트(중복키 + OHLC 불가능값 + 원화 소수 후보만 계산)의 통과율 **상한**은 `99.949427%`다(8,239,506행 중 review/bad 후보 4,167행). 이 수치는 stale, `unexplained_jump`, `quarantined_basis`, 제3자 불일치를 행 단위 결함으로 전부 세지 않은 **낙관적 상한**이므로, 사용자 목표 99.99%에는 미달한다.
+
+주가 데이터 개선 우선순위:
+1. `price_fractional_krw_candidates.csv` 16종목/4,137행을 원주가 공식 소스(KRX 공공데이터/KIS 원주가/기존 raw 백업)와 대조해 정수 KRW로 복구하거나, 복구 불가 시 해당 구간을 `return_usable=0`으로 고정한다.
+2. `price_invalid_ohlcv.csv` 30행은 거래정지 표식이면 `open/high/low/close=0` 일관 표식으로 바꾸거나, 실제 종가가 맞으면 open/high/low를 공식값으로 채운다. close만 남은 zero-OHLC 행은 정본 금지.
+3. 최신성 50종목(`recent_lag`+`stale_30d`+`very_stale`)은 상장상태·거래정지·스팩합병·상폐 여부를 `stock_universe`/식별자 테이블에 확정 기록하고, 살아있는 종목이면 가격 백필을 수행한다.
+4. `quarantined_basis`·`historical_overlap_basis_mismatch`는 수집기별 가격 기준(KIS 원주가/수정주가, Naver 보정계열, pykrx 응답계열)을 소스 메타데이터로 강제하고, 본테이블 write 전 overlap 검증 실패분을 매일 review 큐로 남긴다.
+5. 207940은 최근 보정가 잔존 재발 후보로 별도 우선 처리한다. 단일 종목이지만 대형주라 포트폴리오·지수·밸류에이션 영향이 크다.
+
+99.99%로 올리는 방법(Claude 적용 큐):
+1. **P0: 원화 소수 가격 후보 제거** — `price_fractional_krw_candidates.csv` 16종목/4,137행을 공식 raw 소스(KRX 공공데이터/KIS 원주가/이미 검증된 raw 백업)와 대조한다. 2026-10-03 Codex가 `stock_price_daily`, `naver_price_history_backfill`, `price_history_fix_backup`, marcap 로컬 parquet, FDR 로컬 캐시를 DART 없이 재대조했으나 **현재 로컬 자료만으로 바로 대체 가능한 행은 0건**이다. FDR 캐시는 16종목 모두 존재하지만 후보 구간 다음 날부터 시작해 overlap 0건이다(`price_fractional_fdr_cache_coverage.csv`). 따라서 99.99% 달성에는 (a) 공식 raw를 추가 확보해 정수 KRW OHLCV로 복구하거나, (b) 공식 raw가 없으면 해당 구간을 정본 raw로 쓰지 않고 `return_usable=0`/quarantine으로 고정하는 처리가 필요하다.
+2. **P0: OHLC 내부 불가능값 정책 결정** — `price_invalid_ohlcv.csv` 30행/6종목(`0099X0`, `00806K`, `00781K`, `33637L`, `28513K`, `18064K`)은 marcap도 같은 `open=high=low=0`, `close>0`, `volume=0` 형태라 단순 값 복구가 아니라 **정책 결정 대상**이다(`source_agrees_zero_ohlc_positive_close_policy_decision`). 거래정지/단일가 표식으로 인정할지, 아니면 raw OHLCV 정본에서는 `return_usable=0`으로 제외할지 결정해야 한다. `open=high=low=0`에 `close>0`인 행을 일반 tradable OHLCV로 취급하는 것은 금지한다.
+3. **P0: 207940 basis 재발 확인** — 2026-09-29~2026-10-01 최소 3영업일을 KRX/KIS 원주가로 재확인한다. PostgreSQL이 보정가/혼합 basis면 단일 행이 아니라 해당 수집 run 또는 인접 구간을 백업 후 복구한다. `aikstockdata` 값은 write 소스가 아니라 review 큐다.
+4. **P1: 최신성 50종목 분류** — `price_latest_freshness_by_stock.csv`의 `recent_lag` 9, `stale_30d` 14, `very_stale` 27을 active/suspended/SPAC merger/delisted/ticker identity/missing collection으로 확정한다. 살아있는 종목만 공식 raw 소스로 백필하고, 상폐·거래정지·합병은 식별자/상장상태 근거를 남겨 freshness 분모에서 오해되지 않게 한다.
+5. **P1: quarantine 원인 정리** — `price_ingestion_quarantine_counts.csv`의 `historical_overlap_basis_mismatch` 8,082행/2,326종목, `historical_batch_without_overlap` 798행/400종목, `left_boundary_review` 218행/68종목은 대량 해제 금지. 먼저 KIS/Naver/pykrx/FDR 중 어느 경로가 원주가 자리에 수정주가/보정계열을 넣는지 소스별 basis 메타데이터를 확정하고, 이후 새 수집값의 본테이블 write 전 검증을 강화한다.
+6. **적용 절차** — 모든 PostgreSQL 반영은 적용 전 백업(`price_history_fix_backup` 또는 전용 백업 테이블), `data_fix_log` run_id, 적용 후 `runtime/scripts/review/price_accuracy_recheck_20261003.py` 재실행을 필수로 한다. 반영 후 이 절에 통과율 상한, 최신성, quarantine, 207940 재발 여부를 다시 기록하기 전에는 "99.99% 달성"이라고 쓰지 않는다.
+
+DART 없이 추가 해결/분류(2026-10-04 Codex):
+- `resolve_price_p0_with_marcap_listing_window_20261004.py`로 `price_p0_without_dart_resolution.csv` 4,167행을 marcap 상장 출현 구간과 대조했다. 산출: `price_p0_marcap_window_resolution_20261004.csv`, `price_p0_marcap_window_resolution_summary_20261004.json`.
+- 결과: 소수 원화 후보 4,137행 전부가 `pre_marcap_listing_history_contamination`으로 재분류됐다. 즉 현재 로컬 공식 캐시 기준으로는 "공식 원주가를 찾지 못한 행"이 아니라 **marcap 첫 출현일 이전의 상장 전/티커 신원/보정계열 과거 이력 오염 후보**다.
+- OHLC 불가능값 30행은 marcap도 같은 zero-OHLC/positive-close 구조라 `source_agrees_zero_ohlc_positive_close_policy_decision` 유지. 일반 tradable OHLCV로 쓰지 않는다.
+- 적용 판단: 4,137행은 공식 raw 추가 확보 전까지 `return_usable=0`/quarantine 또는 별도 pre-listing contamination 라벨 후보이며, 정수 가격으로 임의 복원하지 않는다.
+- 적용 후보 행 생성(2026-10-04 Codex): `build_review_apply_candidate_rows_20261004.py`가 `price_prelisting_exclusion_candidate_rows_20261004.csv` 4,137행, `price_zero_ohlc_nontradable_candidate_rows_20261004.csv` 30행을 생성했다. 이 파일은 다른 AI가 백업 후 기존 `price_history` 행을 삭제/격리하거나 canonical view에서 제외할 때 쓰는 입력 큐다. 운영 DB는 수정하지 않았다.
+- 제3자 확대 검증(2026-10-04 Codex): `crosscheck_price_history_with_marcap_cache_20261004.py`로 로컬 marcap parquet 2010~2026 전기간을 `price_history`와 연도별 전수 대조했다. 산출 `price_history_marcap_crosscheck_summary_20261004.json`, `price_history_marcap_crosscheck_mismatches_20261004.csv`(상위 200,000행 cap). 총 marcap 9,649,948행, PG window 10,211,170행, overlap 9,032,239행, diff 2,180,962행. 분류: PG extra 1,178,931, PG missing 617,709, zero-OHLC 정책 274,855, minor/rounding 62,118, split basis ratio 9,315, price value mismatch 38,034. **해석**: 이것은 가격 99.99% 달성이 아니라, marcap 기준 전체 review 큐가 아직 크다는 증거다. PG extra는 ETF/우선주/스팩/상폐/식별자 차이가 섞일 수 있으므로 바로 삭제 금지, split basis·price value mismatch부터 우선 원인 확정한다.
+- 고위험 가격 후보 축약(2026-10-04 Codex): `build_marcap_price_high_risk_candidates_20261004.py`로 위 2,180,962 diff 중 값 대체 검토 우선순위가 높은 `price_value_mismatch` 38,034행과 `split_basis_ratio_candidate` 9,315행을 합쳐 47,349행짜리 대체 후보 파일 `price_marcap_high_risk_replacement_candidate_rows_20261004.csv`를 만들었다. 전체 diff는 종목·연도·유형별 집계 `price_marcap_crosscheck_stock_aggregate_20261004.csv` 19,599행으로 축약했다. 운영 DB는 수정하지 않았다. **적용 원칙**: marcap 대체 후보는 기업행위/식별자 충돌이 아닌지 확인 후 `price_history` 백업+`data_fix_log`로 같은 `stock_code,date`만 제한 교체한다.
+- 고위험 가격 후보 재판정(2026-10-04 Codex): FDR 표본 40건(`price_marcap_high_risk_fdr_sample_20261004.csv`)은 40/40 `fdr_supports_pg`, pykrx 표본 25건(`price_marcap_high_risk_pykrx_sample_20261004.csv`)은 adjusted 25/25 `supports_pg`, unadjusted 25건은 KRX/응답 오류로 missing이었다. 따라서 위 47,349행은 **marcap 값으로 즉시 대체 금지**로 낮춘다. 새 큐 `price_marcap_high_risk_basis_review_queue_20261004.csv`는 `proposed_action=basis_review_before_any_replacement`로 표시한다. 해석: 최근 고위험 차이는 PG/FDR/pykrx adjusted 계열과 marcap 원주가 계열의 basis 차이일 가능성이 크다. 가격 정본을 raw 원주가로 둘지, 보정계열을 canonical로 둘지 먼저 결정해야 한다.
+
+아직 미점검/부분점검인 숫자 데이터:
+- **국내 가격 전체 canonical view 전수 재집계**: `price_history_quality_v`·`canonical_price_history_v` 전체 집계는 인터랙티브 감사 한도를 넘어 이번 스크립트에서 생략했다. 완료 산출물의 `price_history_quality_status_counts.csv`는 참고값이며, 야간 배치/statement_timeout 확장으로 정식 재집계가 필요하다.
+- **주가 원천별 전기간 외부 대조**: aikstockdata는 2026-10-01 하루와 최신성만 대조했다. 2010~2026 전기간 KRX 공공데이터/marcap/KIS 원주가/검증 raw 백업과의 전수 대조는 아직 완료되지 않았다.
+- **거래대금·시가총액·상장주식수**: `price_history` OHLCV 중심으로 봤고, `stock_universe.market_cap`, `shares_issued`, `stock_price_daily.market_cap`, `valuation_history`의 close_price/market_cap/PBR/PER까지 일관성 99.99% 검증은 별도 필요하다.
+- **기업행위 조정 체계**: `corporate_action_events`는 review_required=0 기록이 있으나, `price_history` raw·`canonical_price_history_v` 수정주가·수익률 usable 판정이 전기간 99.99%로 일치하는지 재검증하지 않았다.
+- **수급·투자자 금액/수량**: `price_history`의 기관/외국인/개인 순매수 금액·수량, `kiwoom_investor_daily`, `foreign_holding_daily`, 프로그램매매·대차/공매도 계열은 이번 가격 감사 범위 밖이다.
+- **재무 본문**: DART/FnGuide/Naver/aikstockdata 대조는 진행했고, `unresolved_needs_dart_or_manual` 17필드/9종목은 DART #4 키로 재조회해 PostgreSQL 변경 0필드임을 확인했다. 다만 2026H1 `earnings.json` 불일치 1,281필드, FnGuide source mix 부분 해결 83필드, DART API가 값을 반환하지 않는 37종목-연도 gap은 남아 있다. 잔여 gap은 수기 보고서 HTML/XBRL 또는 후속 재작성 공시 확인 없이는 99.99% 확정으로 올릴 수 없다.
+- **현금흐름·감가상각·CapEx 구성요소**: `financial_dep_capex_components`를 만들었지만 모든 회사의 주석 구성요소가 외부 2소스와 99.99%로 검증된 것은 아니다. FnGuide는 합계만 주므로 구성요소별 검증 공백이 남는다.
+- **수주잔고·재고자산·원가·미국 재무/가격**: 이 문서의 범위에는 포함되지만, 이번 2026-10-03 제3자 전수 검증은 국내 핵심 재무·국내 가격 중심이었다. 미국 `us_price_history`/`us_financial_data`, 수주잔고, 재고자산, 원가율, 컨센서스, ETF 구성·PDF 계열은 각각 별도 99.99% 감사가 필요하다.
+- **PIT/백테스트 가용시점**: `financial_facts_pit`와 최초값/재작성값 설계는 생겼지만, 모든 전략·스냅샷·밸류에이션이 해당 PIT 기준만 읽는지 전수 호출경로 검증은 아직 남아 있다.
 
 결론:
 1. **즉시 도입 1순위**: `kr-company-registry`로 `stock_universe`에 `corp_code`, `bizr_no`, `jurir_no`, `is_listed`, `corp_cls`, `registry_extracted_at` 검증 캐시를 만들고, DART 수집 전 ticker→corp_code 오류를 차단한다.
@@ -325,6 +392,98 @@
 4. **재무 추가 검증**: `aik_earnings_2026h1_mismatches.csv` 1,281필드부터 원인 분류한다. 특히 외국기업 통화 환산, 지배/전체 순이익, 연결/별도 혼입, 누적/3개월 혼동을 먼저 본다. 단 라이선스상 원문 대량 재배포는 금지하고 diff 요약만 남긴다.
 5. **보류/추가조사**: `FinanceData/finstate`는 실제 CSV 접근 경로를 찾아야 하며, `KoTaP`는 파일을 확보한 뒤 연간 비금융 sanity check를 수행한다.
 6. **낮은 우선순위**: `FinanceData/stock_master`는 최신성 부족 때문에 현행 식별자 기준이 아니라 상호변경/상폐 historical 참고용으로만 쓴다.
+
+#### 9-2-3. 제3자 교차검증 최신 재실행 (Codex, 2026-10-04)
+
+2026-10-04 Codex가 같은 스크립트를 운영 PostgreSQL 현재 상태 기준으로 다시 실행했다. 입력 캐시는 `/tmp/third_party_crosscheck_inputs`, `/tmp/aik_stock_json_all`, 산출은 `research_outputs/third_party_crosscheck_20261003/summary.json`이다. 테스트 `venv/bin/python -m pytest tests/test_third_party_crosscheck_20261003.py -q`는 2 passed.
+
+- `stock_universe`: PostgreSQL 2,801행, 숫자 6자리 비교군 2,715개.
+- `kr-company-registry`: 3,994행, 상장 숫자 2,693행, 매칭 2,588, PG only 127, registry only 105, 시장구분 불일치 0, 이름 불일치 47.
+- `FinanceData/stock_master`: 3,516행, 매칭 1,894, PG only 821, stock_master only 1,622, 이름 불일치 470.
+- `aikstockdata` 가격: 생성시각 2026-10-02 18:11 KST, 기준일 2026-10-01, 2,785행. 매칭 2,669, aik only 116, PG only 86, 종가 불일치 1, stale 71(최근 정지/무거래 검토 10, 상폐/티커 신원 검토 61).
+- `aikstockdata` earnings 2026H1: 원천 2,319건, 최신 code/basis 필터 1,702행, 비교 5,106필드, OK 3,604, 불일치 1,223, 결측 279. 불일치 분류는 금융업/매핑 412, OFS 기준 473, 순이익 정의 302, 외국기업 통화 23, 반올림 13.
+- `aikstockdata` 종목별 JSON 전체: JSON 확보 2,697/2,801, 재무 섹션 2,596종목, 비교 7,788필드, OK 5,925, 불일치 1,710, PG 결측 9, 외부 필드 결측 144. 불일치 분류는 금융업/매핑 641, OFS 기준 539, 순이익 정의 458, 외국기업 통화 54, 반올림 18.
+
+변화: 이전 기록의 earnings 불일치 1,281→1,223, 종목별 JSON 불일치 1,792→1,710으로 줄었다. 그래도 값 복사 금지 원칙은 유지한다. 이 산출은 **review 큐**이며, Claude는 DART/FnGuide/네이버 원문으로 원인 확정 후에만 운영 DB 반영을 결정한다.
+
+DART 없이 추가 삼각검증(2026-10-04 Codex):
+- `classify_fnguide_raw_mismatches_without_dart_20261004.py`로 FnGuide 원문 대조 불일치 2,320건을 원인 후보별로 분류했다. 산출: `fnguide_raw_mismatches_classified_20261004.csv`, `fnguide_raw_mismatch_classification_summary_20261004.json`.
+- 분류 결과: 감가상각 구성/정의 차이 966, 소규모 정정·반올림 286, 지배/전체 자본 106, 지배/전체 순이익 84, 금융업 정의 165, 분기 누적/3개월 후보 19, 현금흐름 누적/분기 후보 28, 손익 매핑/중단영업 후보 51, 재무상태표 기준/정정 후보 22, 단위 후보 3, 설명 부족 590.
+- 즉 2,320건 중 1,730건은 DART 없이도 원인 후보를 붙였고, 진짜 추가 원문 확인 필요 항목은 590건으로 축소했다. 운영값 변경은 하지 않았다.
+- `triangulate_aik_with_fnguide_raw_20261004.py`로 aikstockdata 불일치 1,710건을 FnGuide 원문과 삼각검증했다. 산출: `aik_stock_json_all_mismatches_fnguide_triangulated_20261004.csv`, `..._summary_20261004.json`. 현재 FnGuide 원문 커버리지가 193종목뿐이라 1,708건은 `fnguide_raw_missing`, 2건은 `three_way_disagree`로 분류됐다. 이 결과는 **FnGuide 원문이 더 쌓이면 같은 스크립트로 자동 재해소 가능**하다는 큐다.
+
+#### 9-2-3-1. 분류를 넘어서 확인한 정확 원인·수정 방안 (Codex, 2026-10-04)
+
+이 절은 **Claude/사용자 확정 전 자동 적용 금지**인 수정 설계다. 운영 PostgreSQL에 반영할 때는 모든 항목을 백업 테이블, `financial_fix_log`/`cashflow_fix_log`/`data_fix_log` run_id, 적용 후 재검증 산출물까지 한 세트로 남긴다. 이 기록은 다음 AI가 같은 조사를 반복하지 않도록 하기 위한 근거이며, 아래 "자동 적용 가능"은 검토 난이도 표시이지 즉시 실행 허가가 아니다.
+
+| 영역 | 정확 원인 | 확인 근거 | 수정 방안 | 자동 적용 가능성 |
+| --- | --- | --- | --- | --- |
+| 가격 `fractional_krw` 4,137행 | 공식 raw 가격 결측이 아니라, marcap 첫 출현일 이전 날짜에 `price_history`가 소수 보정가/티커 과거 이력으로 채워진 **상장 전·식별자·보정계열 오염**이다. 예: `188040`은 `price_history`에 2025-04-01~04-23 소수 가격이 있으나 marcap 첫 출현일은 2025-05-16이다. | `resolve_price_p0_with_marcap_listing_window_20261004.py`, `price_p0_marcap_window_resolution_20261004.csv`, `price_p0_marcap_window_resolution_summary_20261004.json`의 `pre_marcap_listing_history_contamination=4,137`. | 정수 원주가로 임의 복원하지 않는다. 1차 방안은 별도 `price_quality_exclusion`/canonical view 필터를 두고 해당 구간을 `pre_listing_contamination`, `return_usable=0`으로 격리한다. 만약 물리 삭제를 선택하면 적용 전 전용 백업 테이블을 만들고 `data_fix_log`에 종목·기간·marcap_first_date를 기록한 뒤 삭제한다. 적용 후 `price_accuracy_recheck_20261003.py`와 canonical 수익률 검사를 재실행한다. | 중간. 값 보정이 아니라 격리/제외라 가능하지만, 현재 `price_history`에는 `return_usable` 컬럼이 없어 view 또는 품질 테이블 설계가 먼저 필요하다. |
+| 가격 zero-OHLC/positive-close 30행 | DB 단독 오류가 아니라 marcap도 `open=high=low=0`, `close>0`, `volume=0`으로 주는 비거래·정지·특수코드 표식이다. 예: `0099X0` 2026-09-10~18. | 같은 산출물의 `source_agrees_zero_ohlc_positive_close_policy_decision=30`. | raw 행은 보존 가능하나 일반 tradable OHLCV로 쓰지 않는다. canonical 수익률·거래대금·전략 입력에서는 `return_usable=0` 또는 `non_tradable_marker`로 제외한다. `open/high/low`를 `close`로 채우는 보정은 금지한다. | 높음. 값 불일치가 아니라 사용 정책 문제다. |
+| 현금흐름 감가상각: `000020`류 분기 불일치 | `financial_dep_capex_components.dep_cf_total`은 FnGuide 원문과 맞지만, 운영 `cash_flow_data.depreciation_q`가 과거 값으로 남은 **운영 칸 미재적용/stale**이다. `000020` 2025Q3/Q4는 구성요소 테이블 `dep_cf_total` 4.706B/4.816B가 FnGuide와 일치하지만 `cash_flow_data.depreciation_q`는 5.954B/2.038B로 다르다. | PostgreSQL 읽기 전용 점검. `financial_dep_capex_components`의 `dep_source='dart_cf_statement(누적 차분)'` 또는 `quarterly_xbrl_adj_ytd_diff`와 FnGuide 원문 대조 결과. | `depreciation_q`에 한해 `financial_dep_capex_components.dep_cf_total`을 운영 칸으로 재적용한다. 조건은 동일 종목·연도·분기·CFS/OFS, `dep_cf_total` 존재, FnGuide 원문과 반올림 허용오차 내 일치, 기존 값과 불일치인 행이다. 구성요소 합계(`dep_ppe+dep_rou+amort_intangible`)를 운영 감가상각으로 쓰지 않는다. 적용 전 `cash_flow_data` 백업, 적용 후 `cashflow_fix_log`와 FnGuide 재대조 필수. | 높음. 단, 확인된 행만 제한 적용. |
+| 현금흐름 감가상각: `000040`류 레거시 불일치 | 원문 XBRL/접수번호 없이 `cash_flow_data(정의 미확인 — XBRL 대조 전)` 계열 값이 구성요소 테이블에 남아 있는 **근거 부족 레거시 값**이다. `000040` 2023~2025 CFS 연간은 FnGuide와 수십 배 차이가 나지만, 현재 확보한 XBRL 조정 태그나 rcept_no가 없다. | PostgreSQL 읽기 전용 점검. `financial_dep_capex_components.dep_source`가 정의 미확인 계열이고 XBRL 구성요소·rcept_no가 비어 있음. | FnGuide 값으로 자동 덮어쓰지 않는다. DART 키 초기화 후 보고서 HTML/XBRL 원문을 다시 받아 현금흐름표 조정 행의 회사 고유 계정명을 확인한다. 원문에서 FnGuide와 같은 조정 감가상각 행이 확인되면 parser rule 승격 → 구성요소 테이블 재구축 → 운영 칸 재적용 순서로 처리한다. 원문이 끝내 없으면 `verification_status=needs_source_review`로 남긴다. | 낮음. DART/report 원문 없이는 99.99% 확정 불가. |
+| 순이익·자본 지배/전체 불일치 | 연결(CFS)에서 DB가 전체 순이익/전체 자본을 들고 있고, FnGuide/aikstockdata는 지배주주 귀속 순이익·자본을 보는 기준 차이다. | `classify_fnguide_raw_mismatches_without_dart_20261004.py`에서 자본 106, 순이익 84건. 기존 문서 §1 기준도 순이익·자본은 지배주주 귀속으로 고정. | DART 원문 또는 로컬 DART JSON에 `ProfitLossAttributableToOwnersOfParent`, `EquityAttributableToOwnersOfParent`가 있고 `parent + nci = total` 항등식이 맞는 행만 지배 기준으로 교체한다. 항등식이 깨지거나 NCI가 없는 행은 수동 review 큐로 둔다. | 중간. 로컬 원문이 있는 행은 가능, 없는 행은 DART 재조회 필요. |
+| 금융업 매출/영업수익 불일치 | 일반 제조업식 `Revenue/Sales` 정의를 은행·증권·보험에 적용하면 FnGuide의 업종별 표시 계정과 다르다. 금융업은 "매출" 자체가 업종별 영업수익/순영업수익 정의다. | 분류 결과 `financial_sector_definition_review=165`, 기존 §9의 금융업 되돌림 기록. | 업종별 매핑 테이블을 만든다. 은행·금융지주는 이자+수수료 등 총영업수익/순영업수익 기준, 증권은 영업수익/순영업수익, 보험은 보험영업수익/영업수익 기준을 FnGuide 원문 라벨과 대조해 확정한다. 확정 전에는 비금융 공통 revenue 파서를 적용하지 않는다. | 중간. 업종 라벨 매핑 확정 후 제한 적용. |
+| 소규모 정정·반올림 286건 | 최신 FnGuide 원문과 현재 DB 값의 차이가 작아 재작성 공시, 전기 칸 정정, 억원 반올림 경계가 섞인 범주다. 원인 없이 "차이 작음"으로 닫으면 안 된다. | `minor_restatement_or_rounding_review=286`. | `vals_prev`/전기 칸 수집이 끝난 뒤 `restatement_candidate`로 승격한다. DART 최신 공시의 당기·전기·전전기 칸, FnGuide, Naver가 같은 방향이면 정정 적용한다. 단순 반올림은 값 유지+검증 상태만 갱신한다. | 낮음~중간. 전기 칸 수집 완료가 선행 조건. |
+| aikstockdata 삼각검증 대부분 미해결 | 값 원인이 불명인 것이 아니라, 현재 로컬 FnGuide 원문 커버리지가 193종목뿐이라 1,708건을 삼각검증할 원문이 없다. | `triangulate_aik_with_fnguide_raw_20261004.py` 결과 `fnguide_raw_missing=1,708`. | `aik_stock_json_all_financial_mismatches_classified.csv`의 mismatch 종목을 우선순위로 FnGuide raw 수집 큐에 넣고, 원문이 쌓일 때마다 같은 스크립트를 재실행한다. `021880` 2026Q1 CFS 순이익과 `001720` 2026Q1 CFS 순이익은 PG/aik/FnGuide 세 값이 모두 달라 `three_way_disagree`로 수동 원문 review 대상이다. | 낮음. 원문 커버리지 확장 전에는 적용 금지. |
+
+적용 후보 행 산출(2026-10-04 Codex):
+- `build_review_apply_candidate_rows_20261004.py`를 추가하고 실행했다. 요약은 `review_apply_candidate_rows_summary_20261004.json`.
+- 가격 삭제/격리 후보: `price_prelisting_exclusion_candidate_rows_20261004.csv` 4,137행. 각 행은 `target_table=price_history`, `proposed_action=exclude_or_delete_after_backup`, 현재 OHLCV, `marcap_first_date`, 적용 조건을 포함한다.
+- 가격 canonical 제외 후보: `price_zero_ohlc_nontradable_candidate_rows_20261004.csv` 30행. 각 행은 `proposed_action=mark_non_tradable_in_canonical_view`이며 raw 값은 보존하고 수익률/거래대금/전략 입력에서 제외하는 용도다.
+- 감가상각 대체 후보: `cashflow_depreciation_q_replacement_candidate_rows_20261004.csv` 22행. 각 행은 `cash_flow_id`, 현재 `depreciation_q`, 제안 `proposed_depreciation_q`, FnGuide 값, `dep_source`, `rcept_no`, `component_run_id`, 적용 조건을 포함한다. 다른 AI는 이 파일을 읽어 기존 운영값을 백업한 뒤 같은 `cash_flow_id`의 `depreciation_q`만 대체할 수 있다.
+- 재고자산 단위 대체 후보: `inventory_unit_replacement_candidate_rows_20261004.csv` 16행. 각 행은 `dart_cost_quarterly.inventory_assets_krw` 현재값, 1000배/1_1000배 보정 제안값, FnGuide 값, `source_rcept_no`, `parser_version`을 포함한다. DART 원문 excerpt 확인 후 백업+fix_log로 제한 적용한다.
+- 가격 marcap 고위험 기준 검토 큐: `price_marcap_high_risk_replacement_candidate_rows_20261004.csv` 47,349행을 만들었으나, FDR/pykrx 표본이 PG를 지지해 직접 대체 후보에서 제외한다. 후속 큐 `price_marcap_high_risk_basis_review_queue_20261004.csv` 47,349행이 정본이며, 각 행은 현재 PG OHLCV와 marcap OHLCV를 같이 담고 `basis_review_before_any_replacement`로 표시한다. `price_marcap_crosscheck_stock_aggregate_20261004.csv` 19,599행은 나머지 diff를 종목·연도·원인별로 우선순위화하기 위한 집계다.
+- 운영 DB 수정 여부: **0건**. 후보 행 생성만 완료했다.
+
+식별자 제3자 review 큐(2026-10-04 Codex):
+- `build_identifier_review_queue_20261004.py`로 `kr-company-registry`와 `FinanceData/stock_master` 대조 결과를 `identifier_review_queue_20261004.csv` 3,192행으로 합쳤다. 요약 `identifier_review_queue_summary_20261004.json`.
+- 구성: FinanceData stock_master only 1,622, FinanceData PG only 821, FinanceData 이름 불일치 470, kr-company-registry PG only 127, registry only 105, registry 이름 불일치 47.
+- 원인 축약: 우선주 외부 미커버 192, PG only 상장상태/커버리지 검토 756, registry only historical/missing universe 105, 이름변경/식별자 검토 362, 법인명 접미어/alias 111, 스팩/상호변경 26, stock_master historical/missing universe 1,622, 우선주 이름 검토 18.
+- 이 큐는 DART corp_code/ticker 수집 전 방어선이다. 단 stock_master는 historical 성격이 강해 본 테이블 자동 반영 금지, kr-company-registry는 corp_code/bizr_no/jurir_no 보강 후보로 우선한다.
+- 식별자 보강 후보(2026-10-04 Codex): `build_identifier_enrichment_candidates_20261004.py`가 `identifier_enrichment_candidates_20261004.csv` 47행을 만들었다. 단 현재 `third_party_crosscheck` 산출에는 kr-company-registry matched 전체 2,588행이 저장돼 있지 않아 이름 불일치 47행만 후보화했다. 다음 AI는 `third_party_crosscheck_20261003.py`를 수정해 `kr_company_registry_matched.csv` 전체를 저장한 뒤 corp_code/bizr_no/jurir_no 보강 후보를 2,588행 전체로 확대한다.
+- 식별자 보강 후보 확대(2026-10-04 Codex): `third_party_crosscheck_20261003.py`에 `kr_company_registry_matched.csv` 저장을 추가하고 PostgreSQL 읽기 전용 재실행을 완료했다. matched 전체 2,588행이 저장됐고, `build_identifier_enrichment_candidates_20261004.py`를 재실행해 `identifier_enrichment_candidates_20261004.csv`를 47행에서 2,588행으로 확대했다. 다음 AI는 `stock_identity_registry` 같은 별도 identity table을 먼저 만들고, `stock_universe` 직접 컬럼 추가는 소비처 이전 후 결정한다.
+
+marcap presence gap 추가 분류(2026-10-04 Codex):
+- `classify_marcap_presence_gaps_20261004.py`로 PG extra/missing stock-year 9,339행, 원 행수 합계 1,796,640행을 `stock_universe` 메타 기준으로 분류했다. 산출 `price_marcap_presence_gap_classified_20261004.csv`, `price_marcap_presence_gap_summary_20261004.{csv,json}`.
+- 결과: PG extra 상장상태/식별자 검토 1,178,928행, 일반 presence gap 348,014행, 초기 히스토리 PG missing 220,105행, 우선주 커버리지 차이 44,018행, 스팩/합병 커버리지 차이 5,575행. 이것도 자동 삭제 대상이 아니라, 가격 universe 정의와 상장상태/우선주/스팩 처리 정책을 확정하기 위한 큐다.
+
+FnGuide 미해결 추가 분해(2026-10-04 Codex):
+- `refine_unresolved_fnguide_mismatches_20261004.py`로 `unresolved_needs_source_review` 590건을 구성요소·부호·근접 기준으로 재분해했다. 산출 `fnguide_unresolved_refined_20261004.csv`, 요약 `fnguide_unresolved_refined_summary_20261004.json`.
+- 결과: CapEx 구성요소 정의 차이 158, 여전히 원문 excerpt 필요 351, CapEx 구성요소가 FnGuide와 절대금액 허용오차 내 24, 10% 이내 기준/정정 후보 51, CapEx 구성요소 없음 3, 부호 관례 후보 3.
+- 중요 정정: 처음에는 CapEx 24건을 대체 후보로 볼 수 있는지 검토했지만, 구성요소가 대부분 `cash_flow_data` 현재값에서 온 것이고 제안값이 현재값과 같아 **실제 대체 후보 0행**으로 바로잡았다. 이 24건은 값 수정이 아니라 허용오차/정의 검토 또는 검증 상태 갱신 후보다. `cashflow_capex_replacement_candidate_rows_20261004.csv`는 헤더만 남거나 0행이어야 정상이다.
+- FnGuide raw 추가 수집 시도: aik 삼각검증 미확보 상위 60종목을 `fetch_fnguide_raw_20261003.py --max-calls 720 --codes ...`로 시도해 새 원문 파일 145개를 저장했으나, rate limiter 대기가 길어 중단했다. 재실행한 `triangulate_aik_with_fnguide_raw_20261004.py` 결과는 아직 `fnguide_raw_missing=1,708`, `three_way_disagree=2`로 감소 없음. 즉 추가 파일은 필요한 endpoint/기간 조합을 아직 충분히 채우지 못했다.
+
+적용 전 dry-run 점검(2026-10-04 Codex):
+- `dry_run_apply_review_candidates_20261004.py`를 추가하고 운영 PostgreSQL을 읽기 전용으로 확인했다. 산출 `dry_run_apply_review_candidates_20261004.json`.
+- 현재 DB 기준 적용 후보: 감가상각 `depreciation_q` 22/22건 업데이트 가능, 재고자산 단위 후보 16건 중 14건 업데이트 가능·2건 대상 행 없음, price pre-listing 4,137/4,137행 제외/삭제 후보 존재, 식별자 보강 2,588행 upsert 후보.
+- 적용 설계: 감가상각은 `cash_flow_data` id 백업→`depreciation_q` 업데이트→`cashflow_fix_log`/`data_fix_log`; 재고자산은 `dart_cost_quarterly` key 백업→`inventory_assets_krw` 업데이트→`data_fix_log`; price pre-listing은 물리 삭제보다 quality exclusion/canonical filter 우선; 식별자는 `stock_identity_registry` 신규 테이블 우선.
+- 운영 DB 수정 여부: 0건. dry-run만 수행.
+
+남은 미완료 여부:
+- 이 절의 후보 행은 "수정할 수 있는 행"을 만든 것이지, 위 미완료 전체가 해결됐다는 뜻이 아니다.
+- 해결/준해결: 가격 P0 소수 4,137행은 격리/삭제 후보로 구체화, zero-OHLC 30행은 canonical 제외 후보로 구체화, 감가상각 stale 22행은 대체 후보로 구체화, 재고자산 단위 후보 16행은 대체 후보로 구체화, marcap 고위험 가격 diff 47,349행은 FDR/pykrx 표본 결과를 반영해 basis review 큐로 재분류, 식별자 차이 3,192행은 review 큐로 구체화, presence gap 1,796,640행은 우선주/스팩/초기히스토리/상장상태 후보로 추가 분류.
+- 미완료: FnGuide 원문 설명 부족 590건 중 239건은 추가 원인 후보가 붙었고 **351건은 여전히 원문 excerpt 필요**, aikstockdata 삼각검증 원문 미확보 1,708건, 세 값 모두 다른 2건, DART 전기 칸/재작성값 2016~2022 `vals_prev` 미확보, 금융업 전체 137종목 라벨 매핑 미완료, marcap 전기간 가격 diff 중 PG extra/missing/zero-OHLC/minor 2,133,613행 정책·상장상태·커버리지 review, 재고자산 기간/기준 117건, 감가상각 `000040`류 원문 부족 건은 아직 남아 있다.
+- 다음 AI는 후보 CSV를 적용 후보 입력으로 쓰되, 각 적용 전 백업·fix_log·dry-run·재대조를 반드시 수행한다.
+
+다음 AI 적용 순서:
+1. 가격은 먼저 `price_history`에 직접 컬럼을 추가할지, 별도 품질 테이블/canonical view로 격리할지 결정한다. 값 복원보다 제외/격리가 우선이다.
+2. 감가상각은 `000020`류처럼 `dep_cf_total`과 FnGuide가 이미 일치하는 행부터 dry-run SQL을 만들고, `000040`류 근거 부족 행은 DART 원문 확보 전까지 건드리지 않는다.
+3. 순이익·자본은 지배/전체 항등식이 맞는 행만 자동 후보로 두고, 금융업 매출은 업종별 라벨 매핑이 확정될 때까지 일반 파서에서 제외한다.
+4. 위 항목을 적용한 뒤 반드시 `classify_fnguide_raw_mismatches_without_dart_20261004.py`, `triangulate_aik_with_fnguide_raw_20261004.py`, 가격 재검증 스크립트를 재실행해 `FINANCIAL_STATEMENTS.md`에 새 건수를 갱신한다.
+
+### 9-2-4. XBRL 감가상각 원문 재수집·구성요소 재구축 (Codex, 2026-10-04)
+
+Claude 미완료 항목 "현금흐름표 감가상각 합계 누락분 1,316건"에 대해 Codex가 DART #4 포함 키 로테이션으로 가능한 범위를 재시도했다.
+
+- 연간 XBRL: `fetch_xbrl_depreciation_20261003.py --exit-on-quota --redo-missing-adj`를 완료. `xbrl_depreciation.jsonl` 16,825줄, 원문 zip 10,732개 확보. 누락 조정 태그 리뷰 `xbrl_missing_adj_tag_review_20261004.csv` 3,283행(+헤더).
+- 재분석 결과: 마지막 레코드 기준 조정 감가상각(`adj_dep`) 누락 3,283행(CFS 1,582 / OFS 1,701), 이 중 3,255행은 유형/사용권/무형 상각 같은 구성요소 태그가 있다. 상위 태그는 `DepreciationPropertyPlantAndEquipment`, `DepreciationRightofuseAssets`, `AmortisationIntangibleAssetsOtherThanGoodwill`, `DepreciationInvestmentProperty` 등이다.
+- 해석: 누락분이 늘어난 것은 원문 zip을 더 많이 받아서 모수가 늘었기 때문이다. 순수 현금흐름표 조정 태그(`AdjustmentsForDepreciationExpense`)가 없는 회사가 많고, 구성요소 태그만 존재한다. 따라서 이것은 단순 파서 누락이 아니라 **정의 차이**다.
+- 운영 반영 금지선: 구성요소 합계를 `cash_flow_data.depreciation` 또는 `depreciation_q`에 자동 대체하지 않는다. 특히 `AmortisedCost`류 금융상품 태그는 상각후원가이지 감가상각이 아니므로 제외해야 한다. `AdjustmentsForDepreciationAndAmortisationExpense`는 별도 D&A 후보로 보존하되, 순수 감가상각으로 쓰려면 별도 무형상각 부재와 FnGuide 일치를 확인해야 한다.
+- 구성요소 테이블: `build_dep_capex_components_20261003.py` 재구축 `dep_capex_comp_20261004_012621`, 117,508행. 현금흐름표 감가상각 행 구성 실측은 유형만 480, 기타 포함(투자부동산 등) 254, 유형+사용권 93, 주석과 구성 다름 89.
+- 분기 XBRL: `fetch_quarterly_xbrl_depreciation_20261003.py`와 `build_dep_capex_components_20261003.py`가 일일 DART 잡에 추가됐다. 2025년 대형사 30종목 시험은 90레코드 중 88레코드에 값이 있었고, 테이블에는 `quarterly_xbrl_adj_ytd_diff` 행으로만 반영된다.
+
+Claude 적용 안내: `xbrl_missing_adj_tag_review_20261004.csv`를 보고 회사 고유 현금흐름 조정 항목명만 parser rule로 승격한다. 구성요소 태그를 운영 감가상각 합계로 덮어쓰는 수정은 사용자 승인 전 금지한다.
 
 ### 9-3. 추가 개선 실험 제안
 
@@ -337,13 +496,13 @@
 7. **quarantine before rebuild** — 2016~2022 재수집 적용 후 파생 재구축 전에 무조건 `compare_db_vs_fnguide_snapshot_20261003.py`와 DART 표본 재측정을 통과해야 한다. 통과 전에는 백테스트·전략 결과를 "재무 정정 전/후 혼재"로 표시한다.
 
 ## 10. 한계 (이 문서의 수치를 읽을 때)
-- **표본 측정**: 정확도는 무작위 150종목(전체 ~2,600의 약 6%) 표본 기준이다. 99.8%는 약 ±0.1%p 오차를 가진 추정치이고, 표본에 없는 연도(2016~2018·2020·2022)와 금융업은 **측정 안 됨**이다.
-- **정답의 정의**: 표시값 = 최신 재작성값(§2-5, 2026-10-03). 단 재작성값 원문(다음 연도 보고서 전기 칸)은 수집 중이라, **현재 DB는 대부분 해당 기간 보고서 값(최초 공시 기준)** 이다 — 재작성 기간(312종목 확인)은 FnGuide·네이버와 다르게 보인다.
+- **표본 측정**: 정확도는 무작위 150종목(전체 ~2,600의 약 6%) 표본 기준에서 출발했다. 2026-10-03~04에 FnGuide/aikstockdata/가격은 전종목 또는 전체 JSON 기준 대조를 추가했지만, 2016~2018·2020·2022 전체 연도와 금융업 전체 정의는 아직 99.99% 확정 측정이 아니다.
+- **정답의 정의**: 표시값 = 최신 재작성값(§2-5, 2026-10-03). 단 재작성값 원문(다음 연도 보고서 전기 칸)은 2023+ 일부만 준비됐고, 2016~2022 `vals_prev`는 2026-10-04 현재 0건이다. 현재 DB는 상당 부분 해당 기간 보고서 값(최초 공시 기준)에 머물 수 있으며, 재작성 기간은 FnGuide·네이버와 다르게 보일 수 있다.
 - **원문이 구조화되지 않은 데이터**: 수주잔고·사업부문·원가 테이블은 사업보고서 본문 파싱값이라, 공식 정답 API가 없다. 정확도는 추정(수주잔고 90~95%)이며 무결점이 아니다.
-- **감가상각**: 연간만 XBRL로 정렬(2021~2025, 수집 진행 중). 분기 감가상각은 정의가 섞여 있어 측정 불가.
-- **재고자산**: 원문 대조 미실시.
+- **감가상각**: 연간 XBRL 원문 zip은 대량 확보했지만, 순수 현금흐름표 조정 감가상각 태그가 없는 회사가 많다. 구성요소 태그(유형·사용권·무형·투자부동산)는 `financial_dep_capex_components`에 보존하되 운영 감가상각 합계로 자동 대체하지 않는다. 분기 XBRL은 대형사 30곳 시험 성공, 일일 수집에 편입됐지만 `depreciation_q` 운영값은 아직 미변경이다.
+- **재고자산**: 2026-10-04 FnGuide 원문과 1차 대조를 했고, 일치 53.465%·DB 결측 535·불일치 141이 나왔다. 단위 오류 후보는 있으나 기간/기준 차이가 더 많아 자동 수정 금지다.
 - **파생 테이블**: 원천을 고친 뒤 재구축했지만, 그 이전에 계산된 백테스트·전략 판정 결과는 정정 전 값 기준이다.
-- **외부 의존**: DART 일일 한도(키당 ~2만 건)와 IP 차단 위험 때문에 전 기간 재수집은 며칠이 걸린다. 텔레그램 알림은 2026-10-03 정상 확인.
+- **외부 의존**: DART 일일 한도(키당 ~2만 건)와 IP 차단 위험 때문에 전 기간 재수집은 며칠이 걸린다. 2026-10-04 현재 KEY4까지 로테이터에 포함했고 launchd 00:20/04:00 잡은 `launchctl print gui/501/...`에서 등록·캘린더 트리거·last exit code 0을 확인했다. 키 리셋 뒤 백필은 재개되도록 되어 있으나, 운영값 적용은 별도 dry-run·검증·사용자/Claude 판단이 필요하다.
 
 ## 11. 변경 이력
 | 날짜 | 변경 | 승인/근거 |
@@ -360,7 +519,18 @@
 | 2026-10-03 | 보고통화 종목 원화 환산 규칙(손익=기간평균, BS·CF=기말 매매기준율) — FnGuide 실측 규칙을 그대로 채택 | 사용자 확정 원칙 '표시 정의 = FnGuide'에 따른 적용 |
 | 2026-10-03 | **감가상각 = 현금흐름표 조정 감가상각(FnGuide 표시값) + 구성요소(유형·사용권·무형 상각, 유형·무형 취득) 별도 보존·표시.** 오전의 '유형자산만'·'사용권 제외' 정의는 대체 | 사용자 제안("분리해서 관리·표시하면 되지 않나")·승인 |
 | 2026-10-03 | Codex 재검토 보강: 레거시 품질 라벨 fail-closed, 필드 단위 확정 상태 스키마화, point-in-time 재작성 테이블, FnGuide snapshot provenance, canonical 지위 재정의, **제3자 데이터·비교 검증 후보**(FinanceData/finstate, KoTaP, Accidental Order, aikstockdata, kr-company-registry, krx-fundamentals-client, kr-stock-scanner, 독립 DART 파서, FSC/data.go.kr, pykrx) 기록 | 사용자 지시("재검토나 보강", "DART/FnGuide 외 추가 검증·비교분석 소스, GitHub 한국주식 데이터") |
-| 2026-10-03 | Codex 제3자 데이터 직접 검증을 **운영 PostgreSQL 기준**으로 재실행: kr-company-registry 식별자 전수 대조, FinanceData/stock_master historical 대조, aikstockdata 가격 2026-10-01 전수 대조, `earnings.json` 기반 2026H1 재무 5,106필드 대조, **종목별 JSON을 PostgreSQL `stock_universe` 2,801개 전체 대상으로 대조**(JSON 확보 2,697개, 재무 7,788필드 비교). 재현 스크립트와 pytest 추가. 산출 `runtime/research_outputs/third_party_crosscheck_20261003/` | 사용자 지시("3자 교차검증을 모든 항목에 대해서 진행", "우리 데이터 베이스는 PostgreSQL", "너가 해보고 테스트", "전체 주식에 대해서 모두 검토") |
+| 2026-10-03 | Codex 제3자 데이터 직접 검증을 **운영 PostgreSQL 기준**으로 재실행: kr-company-registry 식별자 전수 대조, FinanceData/stock_master historical 대조, aikstockdata 가격 2026-10-01 전수 대조, `earnings.json` 기반 2026H1 재무 5,106필드 대조, **종목별 JSON을 PostgreSQL `stock_universe` 2,801개 전체 대상으로 대조**(JSON 확보 2,697개, 재무 7,788필드 비교). 종목별 JSON은 기간(`2026Q1`/`2026H1`)을 구분해 재실행하고 초기 Q1 과대 비교를 정정. 재현 스크립트와 pytest 추가. 산출 `runtime/research_outputs/third_party_crosscheck_20261003/` | 사용자 지시("3자 교차검증을 모든 항목에 대해서 진행", "우리 데이터 베이스는 PostgreSQL", "너가 해보고 테스트", "전체 주식에 대해서 모두 검토", "불일치도 계속 검토하고 원인 확인") |
+| 2026-10-03 | Codex 주가 데이터 99.99% 기준 재확인: PostgreSQL `price_history` 2,801종목·8,239,506행 읽기 전용 감사. 중복키 0, OHLC 불가능값 30행/6종목, 원화 소수 가격 후보 4,137행/16종목, 최신성 current 2,751/2,801종목(98.214923%), 내부 품질뷰 완료 산출 기준 `quarantined_basis` 4,186행·`unexplained_jump` 2,100행, `price_ingestion_quarantine` basis mismatch 8,082행/2,326종목. 결정적 내부 게이트 통과율 상한 99.949427%로 99.99% 미달. 산출 `runtime/research_outputs/price_accuracy_recheck_20261003/`, 스크립트 `runtime/scripts/review/price_accuracy_recheck_20261003.py` | 사용자 질문("주가 데이터들도 다 확인이 된거야? financial_statemenst.md를 기준으로 99.99% 정확한 데이터를 관리한다는 관점으로 재확인") |
+| 2026-10-03 | Codex DART 없이 주가 P0 추가 대조: `price_p0_without_dart_resolve_20261003.py`로 소수 원화 후보·OHLC 불가능값을 `stock_price_daily`, `naver_price_history_backfill`, `price_history_fix_backup`, marcap parquet, FDR 로컬 캐시와 재대조. 소수 원화 4,137행/16종목은 현재 로컬 raw 후보와 overlap 0이라 즉시 복구 불가, 공식 raw 추가 확보 또는 `return_usable=0` 처리 필요. OHLC 불가능값 30행/6종목은 marcap도 같은 zero-OHLC/positive-close 표식이라 정책 결정 대상. | 사용자 지시("DART 호출없이 할수 있는것은 없어?", "계속 멈추지말고, 너가 할수 있는건 계속해") |
+| 2026-10-03 | Codex OPEN DART #4 키 재검증: `DART_API_KEY4`를 설정·로테이터·보조 수집 스크립트에 반영하고 #4 키 상태 `000 정상` 확인. 9개 `unresolved_needs_dart_or_manual` 종목 2026년 재조회 결과 DART 원문과 PostgreSQL dry-run 변경 0필드. 추가로 2023년 이후 DART 미보유/미확인 38종목-연도 중 원문 전혀 없던 gap을 #4 전용으로 480보고서 재조회해 164보고서/70종목-연도 값 확보, dry-run 변경 0필드, 최초 gap 38 중 1 해소·37 잔여(`dart_key4_remaining_gap_stock_years_20261003.csv`) | 사용자 지시("4번째 다트키를 이용해서 재검증 진행해줘") |
+| 2026-10-04 | Codex 미완료 재시작 기록: 분기 XBRL 시험 30/30 성공, `fetch_quarterly_xbrl_depreciation_20261003.py` 신설·일일 DART 잡 편입, 연간 XBRL `--redo-missing-adj` 완료(`xbrl_depreciation.jsonl` 16,825줄·원문 zip 10,732개), 조정 감가상각 누락 태그 리뷰 3,283행 산출, `financial_dep_capex_components` 117,508행 재구축. `dart_cf_2016_2022.jsonl` dry-run은 운영 변경 0필드였으나 `vals_prev` 0건이라 재작성 적용 보류. `financial_facts_pit` 616,753/93,456, `financial_field_verification` 48,837필드로 재구축. FnGuide 재고자산 원문 대조, 금융업 FnGuide label 표본 조사, 제3자 교차검증 PostgreSQL 재실행 결과를 §9에 반영. `~/Library/LaunchAgents/com.stock-dashboard.numeric-recollect-{dart,fnguide}.plist` 설치 및 launchd 등록·last exit code 0 확인. 08:34 `RuntimeError: DART 전 키 한도 초과`로 오늘 DART 키 전량 소진 확인, `daily_numeric_recollect.sh`의 rc 로그가 0으로 찍히던 표기 버그 수정. | 사용자 지시("못한거 재시작", "클로드가 미완료한것도 조치", "financial_statements에 기록", "키 초기화되면 모든 백필 작업이 진행되는지 확인", "API Key를 다 사용한거야?") |
+| 2026-10-04 | Codex DART 키 없이 추가 검증: `classify_fnguide_raw_mismatches_without_dart_20261004.py`로 FnGuide 원문 불일치 2,320건 중 1,730건에 원인 후보 부여(감가상각 정의 966, 정정/반올림 286, 지배/전체 순이익·자본 190, 금융업 정의 165 등), 설명 부족 590건으로 축소. `triangulate_aik_with_fnguide_raw_20261004.py`로 aikstockdata 불일치 1,710건을 FnGuide 원문과 삼각검증했으나 원문 커버리지 부족으로 1,708건은 원문 미확보, 2건은 삼자 불일치. `resolve_price_p0_with_marcap_listing_window_20261004.py`로 가격 P0 후보 4,167행을 marcap 상장 출현 구간과 대조해 소수 원화 후보 4,137행 전부를 상장 전/티커 신원/보정계열 과거 이력 오염 후보로 재분류. 운영 DB 값은 변경하지 않음. | 사용자 지시("외부 사이트나 다른 정보를 통해 제3자 검증 가능한 것", "Dart Key없이 추가 검증과 해결 가능한 것은 처리") |
+| 2026-10-04 | Codex가 §9-2-3-1에 **분류를 넘어서 확인한 정확 원인·수정 방안**을 추가. 가격 소수값은 상장 전/식별자/보정계열 오염으로 격리 우선, zero-OHLC는 비거래 표식으로 canonical 제외, `000020`류 감가상각은 구성요소 테이블의 `dep_cf_total` 재적용 후보, `000040`류는 원문 부족으로 자동수정 금지, 순이익·자본은 지배/전체 항등식 확인 후만 적용, 금융업은 업권별 FnGuide 라벨 매핑 후 적용, 소규모 차이는 전기 칸 정정 워처로 처리하도록 기록. Claude/다음 AI가 확정 후 적용할 절차와 재검증 스크립트도 함께 기록. | 사용자 지시("분류만 하지말고 정확한 원인과 해결방법", "수정방안을 남겨두면 다른 AI가 확정 후 수정") |
+| 2026-10-04 | Codex가 실제 적용 검토용 후보 행을 생성: `price_prelisting_exclusion_candidate_rows_20261004.csv` 4,137행, `price_zero_ohlc_nontradable_candidate_rows_20261004.csv` 30행, `cashflow_depreciation_q_replacement_candidate_rows_20261004.csv` 22행, 요약 `review_apply_candidate_rows_summary_20261004.json`. 또한 `crosscheck_price_history_with_marcap_cache_20261004.py`로 marcap 2010~2026 로컬 캐시와 PostgreSQL `price_history`를 전기간 확대 대조(총 marcap 9,649,948행, overlap 9,032,239행, diff 2,180,962행; PG extra 1,178,931, PG missing 617,709, zero-OHLC 정책 274,855, minor/rounding 62,118, split basis 9,315, price mismatch 38,034). 운영 DB 값은 변경하지 않음. | 사용자 지시("너가 수정할 내용으로 행을 만들어 넣고", "다른 AI가 기존것을 삭제하고 너가 수정한 값으로 대체", "제3자 검증부분도 할수 있는 범위내에서 확대") |
+| 2026-10-04 | Codex DART 키 없이 추가 처리: `build_review_apply_candidate_rows_20261004.py`에 재고자산 단위 대체 후보를 추가해 `inventory_unit_replacement_candidate_rows_20261004.csv` 16행 생성. `build_marcap_price_high_risk_candidates_20261004.py`로 marcap diff 중 고위험 `price_value_mismatch` 38,034행 + `split_basis_ratio_candidate` 9,315행을 `price_marcap_high_risk_replacement_candidate_rows_20261004.csv` 47,349행으로 축약하고, 전체 diff를 `price_marcap_crosscheck_stock_aggregate_20261004.csv` 19,599행으로 집계. `build_identifier_review_queue_20261004.py`로 kr-company-registry/FinanceData stock_master 식별자 차이 `identifier_review_queue_20261004.csv` 3,192행 생성. 운영 DB 값은 변경하지 않음. | 사용자 지시("미결항목 중 dart key 필요 없이 가능한거 처리", "제3자 검증도 확대") |
+| 2026-10-04 | Codex가 `refine_unresolved_fnguide_mismatches_20261004.py`로 FnGuide 원문 미해결 590건을 추가 분해: CapEx 구성요소 정의 차이 158, 여전히 원문 excerpt 필요 351, CapEx 구성요소가 FnGuide와 절대금액 허용오차 내 24, 10% 이내 기준/정정 후보 51, CapEx 구성요소 없음 3, 부호 관례 후보 3. CapEx 24건은 제안값이 현재값과 같아 실제 대체 후보가 아니므로 `cashflow_capex_replacement_candidate_rows_20261004.csv`는 0행으로 정정. aik 삼각검증 미확보 상위 60종목 FnGuide raw 수집을 시도해 새 원문 파일 145개를 저장했으나 endpoint/기간 조합 부족으로 삼각검증 건수 감소는 아직 없음(`fnguide_raw_missing=1,708`). 운영 DB 값은 변경하지 않음. | 사용자 지시("남은거 계속해") |
+| 2026-10-04 | Codex 제3자 검증 추가 확대: FDR 표본 40건과 pykrx adjusted 표본 25건이 모두 PostgreSQL 가격을 지지해 marcap 고위험 47,349행을 즉시 대체 후보에서 `basis_review_before_any_replacement` 큐(`price_marcap_high_risk_basis_review_queue_20261004.csv`)로 낮춤. `classify_marcap_presence_gaps_20261004.py`로 PG extra/missing 1,796,640행을 상장상태/식별자 1,178,928, 일반 gap 348,014, 초기 히스토리 220,105, 우선주 44,018, 스팩/합병 5,575로 분류. `build_identifier_enrichment_candidates_20261004.py`로 corp_code 보강 후보 47행 생성했으나 matched 전체 2,588행 CSV 미저장 한계를 기록. 운영 DB 값은 변경하지 않음. | 사용자 지시("제3자검증도 추가", "미결항목도 계속하고 기록") |
+| 2026-10-04 | Codex 계속 처리: `third_party_crosscheck_20261003.py`에 `kr_company_registry_matched.csv` 저장을 추가하고 읽기 전용 재실행, matched 2,588행 전체 저장. `identifier_enrichment_candidates_20261004.csv`를 2,588행으로 확대. `dry_run_apply_review_candidates_20261004.py`를 추가해 현재 PostgreSQL 기준 후보 적용 가능성 확인: 감가상각 22건 update 가능, 재고자산 14건 update 가능·2건 대상 없음, price pre-listing 4,137행 제외/삭제 후보 존재, 식별자 2,588행 identity upsert 후보. 운영 DB 값은 변경하지 않음. | 사용자 지시("너가 할수 있는것 계속") |
 
 
 ## 12. 사용자와의 논의 기록 (2026-10-02~03, 모든 세션·AI가 같은 값·같은 기준으로 작업하기 위한 근거)

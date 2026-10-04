@@ -17,10 +17,33 @@ from xml.etree import ElementTree as ET  # noqa: E402
 import config  # noqa: E402
 from db_compat import connect_primary_db  # noqa: E402
 from financial_rereview_20261002 import Dart  # noqa: E402
+import dart_keys  # noqa: E402
 
 OUT = ROOT / "research_outputs" / "financial_rereview_20261002" / "quarterly_xbrl_test.json"
 RAWX = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_xbrl")
-KEY = next(k for k in config.DART_API_KEYS if k != getattr(config, "DART_API_KEY2", None))
+
+
+class Quota(Exception):
+    pass
+
+
+def dart_get_json(url, params, key):
+    if not dart_keys.allow(key):
+        raise Quota()
+    d = requests.get(url, params=dict(params, crtfc_key=key), timeout=30).json()
+    if d.get("status") == "020":
+        raise Quota()
+    return d
+
+
+def dart_get_xbrl(params, key):
+    if not dart_keys.allow(key):
+        raise Quota()
+    content = requests.get("https://opendart.fss.or.kr/api/fnlttXbrl.xml",
+                           params=dict(params, crtfc_key=key), timeout=60).content
+    if b"<status>020<" in content[:200]:
+        raise Quota()
+    return content
 
 
 def main():
@@ -32,18 +55,39 @@ def main():
               AND year=2024 AND total_assets>=2e12 AND stock_code ~ '^[0-9]{6}$' ORDER BY stock_code""").fetchall()][:30]
     conn.close()
     corp = Dart().corp_codes()
+    keys = dart_keys.ordered_keys()
+    ki = 0
     res = {}
     for code in codes:
-        lst = requests.get("https://opendart.fss.or.kr/api/list.json", params={"crtfc_key": KEY, "corp_code": corp.get(code),
-                           "bgn_de": "20250401", "end_de": "20250630", "pblntf_ty": "A"}, timeout=30).json()
-        if lst.get("status") == "020":
-            print("한도 소진 — 내일 재시도")
-            return
+        while True:
+            if ki >= len(keys):
+                print("모든 키 한도 소진 — 내일 재시도")
+                json.dump(res, open(OUT, "w"), ensure_ascii=False, indent=1)
+                return
+            key = keys[ki]
+            try:
+                lst = dart_get_json("https://opendart.fss.or.kr/api/list.json",
+                                    {"corp_code": corp.get(code), "bgn_de": "20250401", "end_de": "20250630", "pblntf_ty": "A"},
+                                    key)
+                break
+            except Quota:
+                ki += 1
+                print("키 한도 → 다음 키", flush=True)
         rc = next((x["rcept_no"] for x in lst.get("list", []) if "분기보고서" in x.get("report_nm", "")), None)
         if not rc:
             res[code] = {"status": "1분기보고서 없음"}
             continue
-        zb = requests.get("https://opendart.fss.or.kr/api/fnlttXbrl.xml", params={"crtfc_key": KEY, "rcept_no": rc, "reprt_code": "11013"}, timeout=60).content
+        while True:
+            if ki >= len(keys):
+                print("모든 키 한도 소진 — 내일 재시도")
+                json.dump(res, open(OUT, "w"), ensure_ascii=False, indent=1)
+                return
+            try:
+                zb = dart_get_xbrl({"rcept_no": rc, "reprt_code": "11013"}, keys[ki])
+                break
+            except Quota:
+                ki += 1
+                print("키 한도 → 다음 키", flush=True)
         if zb[:2] != b"PK":
             res[code] = {"status": "XBRL 없음", "rcept_no": rc}
             continue

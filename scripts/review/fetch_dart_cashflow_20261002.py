@@ -78,11 +78,13 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--codes", default="", help="쉼표 구분 종목코드만 재수집(예: 005930,000660)")
     ap.add_argument("--max-workers", type=int, default=2, help="동시 DART 키 수. 기본 2, KEY2는 제외")
+    ap.add_argument("--key4-only", action="store_true", help="DART_API_KEY4만 사용해 재조회(#4 키 검증용)")
     ap.add_argument("--repair-parent", action="store_true",
                     help="이미 받은 CFS 보고서 중 지배주주 순이익/자본이 없는 것만 개선된 추출기로 다시 받는다(뒤 줄이 앞 줄을 덮어씀)")
     ap.add_argument("--prev-only", action="store_true",
                     help="사업보고서 중 전기 칸(vals_prev)이 없는 것만 다시 받는다(재작성값 확보용, 2026-10-03)")
     ap.add_argument("--years", default="", help="예: 2016-2022 (지정 시 해당 연도 1Q·반기·3Q·사업보고서, 출력 dart_cf_<범위>.jsonl)")
+    ap.add_argument("--out-name", default="", help="출력 jsonl 파일명(기본 dart_cf_full.jsonl 또는 dart_cf_<연도범위>.jsonl)")
     a = ap.parse_args()
     global OUT, JOBS
     if a.prev_only:
@@ -91,6 +93,8 @@ def main():
         y0, y1 = (int(x) for x in a.years.split("-"))
         JOBS = [(y, q) for y in range(y0, y1 + 1) for q in ((0,) if a.prev_only else (1, 2, 3, 0))]
         OUT = OUT.with_name(f"dart_cf_{y0}_{y1}.jsonl")
+    if a.out_name:
+        OUT = OUT.with_name(a.out_name)
     conn = connect_primary_db(timeout=120, readonly=True)
     y_lo, y_hi = min(j[0] for j in JOBS), max(j[0] for j in JOBS)
     rows = conn.execute("""SELECT stock_code, MIN(CASE WHEN report_type='CFS' THEN 0 ELSE 1 END)
@@ -123,7 +127,13 @@ def main():
     print(f"대상 {len(items)}종목 × {len(JOBS)}보고서, 이미 완료 {len(done)}", flush=True)
     # 2026-10-03 사용자 지시: 키 4개를 순차적으로 모두 사용 — KEY1 → KEY3 → KEY4 → KEY2(일괄 상한, dart_keys.py).
     # 동시 스레드는 2개(초당 ~2~3건) 그대로. 스레드가 쓰던 키가 한도에 걸리면 공유 대기열의 다음 키로 넘어가 남은 일을 잇는다.
-    order = dart_keys.ordered_keys()
+    if a.key4_only:
+        order = [getattr(config, "DART_API_KEY4", None)]
+        order = [k for k in order if k]
+        if not order:
+            raise SystemExit("DART_API_KEY4 not configured")
+    else:
+        order = dart_keys.ordered_keys()
     worker_count = max(1, min(a.max_workers, 2, len(order)))
     queue = order[worker_count:]
     chunks = [items[i::worker_count] for i in range(worker_count)]

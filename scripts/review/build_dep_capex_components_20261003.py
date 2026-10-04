@@ -110,6 +110,47 @@ def main():
                 row["cf_line_basis"] = ("유형만" if abs(pp / t - 1) <= 0.02 else
                                         "유형+사용권" if ro and abs((pp + ro) / t - 1) <= 0.02 else
                                         "기타 포함(투자부동산 등)" if (pp + ro) < t else "주석과 구성 다름")
+    # 분기·반기 XBRL 주석(YTD)을 3개월 값으로 차분해 구성요소 테이블에만 저장한다.
+    # 운영 cash_flow_data.depreciation_q 는 FnGuide 원문 대조·원인분류 전까지 바꾸지 않는다.
+    qx = SRC / "quarterly_xbrl_depreciation.jsonl"
+    if qx.exists():
+        q_ytd = {}
+        for line in open(qx):
+            d = json.loads(line)
+            if d["code"] in fx:
+                continue
+            for fs, v in (d.get("vals_ytd") or {}).items():
+                q_ytd[(d["code"], d["year"], d["q"], fs)] = {
+                    "dep_ppe": v.get("dep_ppe"),
+                    "dep_rou": v.get("dep_rou"),
+                    "amort_intangible": v.get("adj_amort") if v.get("adj_amort") is not None else v.get("amort"),
+                    "dep_cf_total": v.get("adj_dep") if v.get("adj_dep") is not None else v.get("adj_dep_custom"),
+                    "rcept_no": d.get("rcept_no"),
+                    "dep_source": "quarterly_xbrl_adj_ytd_diff" if (v.get("adj_dep") is not None or v.get("adj_dep_custom") is not None) else None,
+                }
+        for (code, y, q, fs), cur in sorted(q_ytd.items()):
+            prev = {} if q == 1 else q_ytd.get((code, y, q - 1, fs))
+            if prev is None:
+                continue
+            row = rows.setdefault((code, y, q, fs), {})
+            for f in ("dep_ppe", "dep_rou", "amort_intangible", "dep_cf_total"):
+                v = cur.get(f)
+                if v is None:
+                    continue
+                pv = prev.get(f) if prev else 0
+                if pv is None or v - pv < 0:
+                    continue
+                row[f] = v - pv
+            if cur.get("rcept_no"):
+                row["rcept_no"] = cur["rcept_no"]
+            if cur.get("dep_source") and row.get("dep_cf_total") is not None:
+                row["dep_source"] = cur["dep_source"]
+            t, pp, ro = row.get("dep_cf_total"), row.get("dep_ppe"), row.get("dep_rou") or 0
+            if t and pp is not None:
+                row["ppe_rou_check"] = round((pp + ro) / t - 1, 4)
+                row["cf_line_basis"] = ("유형만" if abs(pp / t - 1) <= 0.02 else
+                                        "유형+사용권" if ro and abs((pp + ro) / t - 1) <= 0.02 else
+                                        "기타 포함(투자부동산 등)" if (pp + ro) < t else "주석과 구성 다름")
     run_id = f"dep_capex_comp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     now = datetime.now().isoformat(timespec="seconds")
     cols = ["dep_cf_total", "dep_ppe", "dep_rou", "amort_intangible", "capex_ppe", "capex_intangible", "ppe_rou_check", "cf_line_basis",

@@ -11,7 +11,7 @@
 | `AI System/codex/ceo-briefing-platform/.env` | **자동 생성** = 기준 + `runtime/env_overrides/ceo-briefing.env`(예외: `DEEPSEEK_MODEL=deepseek-flash`) |
 | `hs_trade_lab/.env`, `.env.gemini_web`, `~/.env`, `~/BrainLee_tmp/.env`, `AI System/_archive/...` | 용도가 달라 손대지 않음 |
 
-- 동기화: `scripts/ops/sync_env.py`. launchd `com.stock-dashboard.env-sync`(WatchPaths)가 기준 파일·예외 파일이 바뀌면 자동 실행(로그 `logs/env_sync.log`). 새 worktree가 생기면 수동으로 한 번 실행.
+- 동기화: `scripts/ops/sync_env.py`. launchd `com.stock-dashboard.env-sync`(WatchPaths)가 기준 파일·예외 파일이 바뀌면 자동 실행(로그 `/tmp/launchd_env_sync.log`(launchd는 외장 볼륨에 로그를 직접 못 써 /tmp 사용)). 새 worktree가 생기면 수동으로 한 번 실행.
 - 값이 바뀐 뒤에는 그 값을 쓰는 서버를 재시작해야 반영된다: 주식 백엔드 `scripts/safe_restart_backend.sh`, ceo `launchctl kickstart -k gui/$(id -u)/com.ceo-briefing.backend`.
 
 ## 2026-10-03 정리 내역
