@@ -225,6 +225,15 @@ def main() -> int:
     args = parser.parse_args()
 
     codes = eligible_filed_codes(args.year)
+    # 2026-10-05(§9-2-8 #5): 보고통화(USD·CNY 등) 종목은 원통화 그대로 저장돼 1/1,000 크기 값이 들어갔다 → 건너뛴다(환산은 convert_foreign_currency 경로)
+    try:
+        from db_compat import connect_primary_db as _cpd
+        _c = _cpd(timeout=30, readonly=True)
+        _fx = {r[0] for r in _c.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:reporting_currency'").fetchall()}
+        _c.close()
+        codes = [code for code in codes if code not in _fx]
+    except Exception:
+        codes = [code for code in codes if not code.startswith("9")]  # 조회 실패 시 외국기업 코드(9xxxxx)라도 제외
     if args.repair_core_nulls:
         nulls = core_null_codes(args.year)
         codes = [code for code in codes if code in nulls]

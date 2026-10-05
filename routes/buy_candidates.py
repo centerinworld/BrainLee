@@ -367,19 +367,21 @@ def get_buy_candidates():
     if codes:
         q_hist = f"""
             WITH ranked AS (
-                SELECT stock_code, close, volume, inst_net_buy, frn_net_buy,
+                SELECT stock_code, close, volume, inst_net_buy, frn_net_buy, date,
                        ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY date DESC) AS rn
                 FROM price_history
                 WHERE stock_code IN ({ph}) AND close > 0
             )
-            SELECT stock_code, close, volume, inst_net_buy, frn_net_buy
+            SELECT stock_code, close, volume, inst_net_buy, frn_net_buy, date
             FROM ranked
             WHERE rn <= 270
             ORDER BY stock_code, rn
         """
         for row in conn.execute(q_hist, codes).fetchall():
             sc = row[0]
-            hist_map.setdefault(sc, []).append((row[1], row[2], row[3], row[4]))
+            hist_map.setdefault(sc, []).append((row[1], row[2], row[3], row[4], str(row[5])[:10]))
+
+    code_for_sig = [None]  # 현재 계산 중인 종목 코드(보정 이벤트 조회용)
 
     def _trade_signal_from_rows(rows270: list[tuple]) -> tuple[str, str]:
         """2026-10-05: 임의 규칙(MACD 계산 오류 포함) → 모멘텀Easy·피크Easy 진입 조건(trend_rules.entry_signal), 계좌현황과 같은 추세 국면 규칙."""
@@ -389,6 +391,15 @@ def get_buy_candidates():
                 return "hold", "가격 60일 미만 — 판단 불가"
             closes = [r[0] for r in reversed(rows270)]
             vols = [r[1] or 0 for r in reversed(rows270)]
+            dates = [r[4] for r in reversed(rows270)]
+            # 2026-10-05: 계좌현황·차트시그널과 같은 무상증자·분할 보정(SIGNAL_RULES 0절) — 빠져 있어 같은 종목이 화면마다 다른 국면으로 나왔다
+            _fc = _db()
+            try:
+                _facts = _tr.action_factors(code_for_sig[0], dates, closes, _fc)
+            finally:
+                _fc.close()
+            if _facts:
+                closes = _tr.adjust_series(dates, closes, _facts)
             inst5 = sum(r[2] or 0 for r in rows270[:5])
             frn5 = sum(r[3] or 0 for r in rows270[:5])
             return _tr.entry_signal(closes, vols, inst5, frn5)
@@ -408,6 +419,7 @@ def get_buy_candidates():
         def _ref_chg(ref_d, ref_p):
             return round((curr - ref_p) / ref_p * 100, 2) if ref_d and ref_p and curr else None
 
+        code_for_sig[0] = code
         sig, reason = _trade_signal_from_rows(hist_map.get(code, []))
         result.append({
             "id": r[0], "stock_code": code, "stock_name": r[2],

@@ -371,20 +371,28 @@ def repair_equity_spikes(conn: sqlite3.Connection, run_id: str) -> dict:
 
 
 def main() -> int:
+    """2026-10-05 사용자 승인: 기본 = 집계·보고만(값 변경 없음).
+    예전엔 매일 06:20 외부 대조 없이 임계값 규칙으로 값을 NULL 처리 → DART 재적용이 다시 씀 → 다음 날 다시 NULL 하는 반복 루프
+    (FINANCIAL_STATEMENTS.md §9-2-8 #2, §5 실패 2·23 유형). 수리·백업 정리는 --apply 를 명시할 때만(사람이 dry-run 확인 후)."""
+    import sys as _sys
+    apply = "--apply" in _sys.argv
     OUT.mkdir(parents=True, exist_ok=True)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     conn = connect()
     try:
-        ensure_log(conn)
-        dropped = prune_old_backups(conn)
-        if dropped:
-            print(f"[BACKUP_PRUNE] {BACKUP_RETENTION_DAYS}일 초과 백업 {dropped}개 삭제")
         before = count_issues(conn)
-        repairs = {
-            "quarter_revenue": repair_quarter_revenue(conn, run_id),
-            "cashflow_extremes": repair_cashflow_extremes(conn, run_id),
-            "equity_spikes": repair_equity_spikes(conn, run_id),
-        }
+        repairs = {"mode": "report_only"}
+        if apply:
+            ensure_log(conn)
+            dropped = prune_old_backups(conn)
+            if dropped:
+                print(f"[BACKUP_PRUNE] {BACKUP_RETENTION_DAYS}일 초과 백업 {dropped}개 삭제")
+            repairs = {
+                "mode": "apply",
+                "quarter_revenue": repair_quarter_revenue(conn, run_id),
+                "cashflow_extremes": repair_cashflow_extremes(conn, run_id),
+                "equity_spikes": repair_equity_spikes(conn, run_id),
+            }
         after = count_issues(conn)
         conn.commit()
     except Exception:

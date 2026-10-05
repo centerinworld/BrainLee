@@ -202,6 +202,18 @@ def main():
     fin_changes = [c for c in fin_changes if ("financial_data", c[0], c[6]) not in protected]
     cf_changes = [c for c in cf_changes if ("cash_flow_data", c[0], c[6]) not in protected]
     print(f"보호 칸(재작성값·원화 환산) 제외: {n0 - len(fin_changes) - len(cf_changes)}필드")
+    # 2026-10-05 안전장치(§9-2-8 #1, §5 실패 15 재발): DART 원문 자체가 단위를 잘못 공시한 회사(천원·백만원 값을 원으로)가 있어
+    # 정확히 1,000배·100만 배로 바뀌는 칸은 적용 거부, 단위 오류로 판정·복원된 종목(fs_quirk:unit_scale_fixed / dart_unit_error)은 건너뜀.
+    def _scale_jump(old, new):
+        if not old or not new:
+            return False
+        r = abs(new / old)
+        return any(abs(r / k - 1) < 0.01 for k in (1e3, 1e6, 1e-3, 1e-6))
+    unit_codes = {r_[0] for r_ in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key IN ('fs_quirk:unit_scale_fixed','fs_quirk:dart_unit_error')").fetchall()}
+    n1 = len(fin_changes) + len(cf_changes)
+    fin_changes = [c for c in fin_changes if not _scale_jump(c[7], c[8]) and c[1] not in unit_codes]
+    cf_changes = [c for c in cf_changes if not _scale_jump(c[7], c[8]) and c[1] not in unit_codes]
+    print(f"단위 배율 급변(1,000배·100만 배)·단위 오류 종목 제외: {n1 - len(fin_changes) - len(cf_changes)}필드")
     if a.quarterly_only:  # 2026-10-04: 운영 수집기가 분기 신규분을 전체 기준으로 넣은 드리프트만 바로잡을 때 — 연간은 외부 확인 절차로만
         fin_changes = [c for c in fin_changes if not (c[4] or c[3] == 0)]
         cf_changes = [c for c in cf_changes if not (c[4] or c[3] == 0)]

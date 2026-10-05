@@ -509,7 +509,7 @@ class CollectionScheduler:
             ("BigQuery동기화", self._loop_bigquery_sync),         # ★ 매일 23:30 BigQuery 전체 운영테이블 동기화 → 텐버거 BQ 분석
             ("BQ아침알림", self._loop_bq_morning_alert),          # ★ 매일 07:30 3배 패턴 아침 알림
             ("컨센서스수집",   self._loop_consensus),             # ★ 매일 04:00 한경 컨센서스 증분 수집
-            ("재무무결성일일", self._loop_financial_integrity_daily), # ★ 매일 06:20 재무 이상값 수리 + 무결성 리포트
+            ("재무무결성일일", self._loop_financial_integrity_daily), # ★ 매일 06:20 재무 이상값 집계·무결성 리포트(2026-10-05~ 보고만, 값 변경 없음)
             ("재무무결점월간", self._loop_financial_integrity_monthly),  # ★ 매월 1일 05:00 재무 무결점 검사
             ("재무무결점분기", self._loop_financial_integrity_quarterly), # ★ 분기 공시마감 1주 후 자동 보완
             ("유니버스종가동기화", self._loop_universe_price_sync),
@@ -4403,7 +4403,7 @@ class CollectionScheduler:
         logger.info("[재무무결성일일] 루프 종료")
 
     def _job_financial_integrity_daily(self) -> None:
-        """가벼운 재무 품질 수리 후 data_integrity_check 리포트 저장."""
+        """재무 품질 이상 집계(보고만 — 2026-10-05부터 수리 안 함, §9-2-8 #2 반복 루프 차단) 후 data_integrity_check 리포트 저장."""
         try:
             repair = subprocess.run(
                 [sys.executable, "scripts/ops/repair_integrity_findings_20260727.py"],

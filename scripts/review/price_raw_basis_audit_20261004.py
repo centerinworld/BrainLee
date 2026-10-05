@@ -6,6 +6,7 @@
 이 스크립트는 PG 모든 행을 기준값과 대조한다.
   기준 1(우선): stock_price_daily(공공데이터 원주가, 2020~)
   기준 2: marcap parquet(KRX 일별, 2010~). 기준 1이 있는 날은 marcap=공식 여부도 함께 집계(marcap 신뢰도 측정)
+2026-10-05 추가: 독립 소스 수별 일치율(공식·marcap = KRX 계열 1개, KIS = 별개), 시가·고가·저가 공식 대조, 보통주 소수점 가격 행.
 판정(종가 기준, 허용 1원): 일치 / 불일치(배율 r=PG/기준이 정수배·역수 정수배면 '기업행위 배율', 아니면 '값 다름') / 기준 없음
 산출: research_outputs/price_raw_basis_audit_20261004/{summary.json, mismatch_rows.csv}
 """
@@ -42,7 +43,8 @@ def main():
         "SELECT stock_code, date::text, open, high, low, close, volume FROM price_history WHERE stock_code ~ '^[0-9A-Z]{6}$'").fetchall()],
         columns=["code", "date", "open", "high", "low", "close", "volume"])
     off = pd.DataFrame([tuple(r) for r in conn.execute(
-        "SELECT stock_code, bas_dt, close_price, volume FROM stock_price_daily").fetchall()], columns=["code", "bas_dt", "off_close", "off_vol"])
+        "SELECT stock_code, bas_dt, close_price, volume, open_price, high_price, low_price FROM stock_price_daily").fetchall()],
+        columns=["code", "bas_dt", "off_close", "off_vol", "off_open", "off_high", "off_low"])
     conn.close()
     off["date"] = pd.to_datetime(off.bas_dt, format="%Y%m%d").dt.strftime("%Y-%m-%d")
     off = off.drop(columns="bas_dt").drop_duplicates(["code", "date"])
@@ -101,7 +103,27 @@ def main():
         st[f"불일치[{s}] {k}"] = int(n)
     st["불일치 종목 수"] = int(bad.code.nunique())
     st["기준 대비 일치율(%)"] = round(ok.sum() / has.sum() * 100, 4)
-    bad.sort_values(["code", "date"]).to_csv(OUT / "mismatch_rows.csv", index=False)
+    bad.drop(columns=["off_open", "off_high", "off_low"], errors="ignore").sort_values(["code", "date"]).to_csv(OUT / "mismatch_rows.csv", index=False)
+    # 2026-10-05(§9-2-8 #6): ① 독립 소스 수별 집계 — 공식(공공데이터·KRX Open API)과 marcap은 모두 KRX 원천이라 독립 1개, KIS만 별개
+    krx = (o_ok | m_ok)
+    indep = pd.Series("기준 없음", index=m.index)
+    indep[has & krx & ~k_ok] = "독립 1(KRX 계열만)"
+    indep[has & ~krx & k_ok] = "독립 1(KIS만)"
+    indep[has & krx & k_ok] = "독립 2(KRX 계열+KIS)"
+    for g, sub in m[has].groupby(indep[has]):
+        okg = ((sub.close - sub.ref).abs() <= 1).sum()
+        st[f"[독립 소스] {g}: 행"] = int(len(sub))
+        st[f"[독립 소스] {g}: 일치율(%)"] = round(okg / len(sub) * 100, 4)
+    # ② 시가·고가·저가 대조(공식값이 있는 행, 1원 허용) + 주식의 소수점 가격
+    oh = m[o_ok & m.off_open.notna() & (m.off_open > 0)]
+    for f in ("open", "high", "low"):
+        diff = (oh[f] - oh[f"off_{f}"]).abs() > 1
+        st[f"[OHLC] {f} 공식 대조 {len(oh):,}행 중 불일치"] = int(diff.sum())
+    frac = m[(m.code.str.match(r"^\d{5}0$")) & ((m.open % 1 != 0) | (m.high % 1 != 0) | (m.low % 1 != 0) | (m.close % 1 != 0))]
+    st["[OHLC] 보통주 소수점 가격 행"] = int(len(frac))
+    oh_bad = oh[((oh.open - oh.off_open).abs() > 1) | ((oh.high - oh.off_high).abs() > 1) | ((oh.low - oh.off_low).abs() > 1)]
+    oh_bad[["code", "date", "open", "high", "low", "close", "off_open", "off_high", "off_low", "off_close"]].to_csv(OUT / "ohlc_mismatch_rows.csv", index=False)
+    frac[["code", "date", "open", "high", "low", "close"]].to_csv(OUT / "fractional_stock_rows.csv", index=False)
     by_year = bad.groupby(bad.date.str[:4]).size().to_dict()
     json.dump({"stats": dict(st), "mismatch_by_year": by_year}, open(OUT / "summary.json", "w"), ensure_ascii=False, indent=1)
     for k, v in st.items():

@@ -48,6 +48,7 @@ case "$1" in
     step $PY $R/price_raw_basis_audit_20261004.py                            # 가격 원주가 3소스(공식·marcap·KIS) 전수 감사(읽기 전용) → price_raw_basis_audit_20261004/summary.json
     step $PY $R/apply_price_kis_tiebreak_20261004.py --etf-adjusted --daily --apply   # ETF 배당 조정값 → KIS 원주가(조정 비율 0.75~1.0·OHLC 정합·감사 6시간 이내만, 2026-10-05 매일 자동 승인)
     step $PY $R/verify_backlog_identity_20261004.py                          # 수주잔고 원문 항등식 측정(읽기 전용)
+    step $PY scripts/ops/check_financial_anomalies_daily.py                   # 재무 이상값 감시(보고만): 단위 300배·미래 기간·연결/별도 1,000배 → data_anomaly_daily
     step $PY $R/build_field_verification_20261003.py                         # 현행 기준 필드 확정 상태(financial_field_verification) — 화면 품질 등급 근거
     ;;
   *) echo "usage: $0 dart|fnguide"; exit 2 ;;

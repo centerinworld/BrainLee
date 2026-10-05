@@ -13,7 +13,7 @@ DART API 표기와의 차이: DART `bsns_year`는 **기간이 끝나는 달력 �
 import threading
 import time
 
-_CACHE = {"at": 0.0, "map": {}}
+_CACHE = {"at": 0.0, "map": {}, "reit": set()}
 _LOCK = threading.Lock()
 
 
@@ -28,11 +28,19 @@ def fiscal_month_map(conn=None) -> dict:
         try:
             rows = conn.execute("SELECT stock_code, config_value FROM stock_collection_config WHERE config_key='fs_quirk:fiscal_month'").fetchall()
             _CACHE["map"] = {r[0]: int(r[1]) for r in rows if str(r[1]).isdigit()}
+            # 2026-10-05: 리츠(6개월 결산)는 분기 개념이 달라 회계 키로 바꾸지 않는다(§9-2-8 #3 — 11종목이 잘못 재배치돼 미래 기간 행 발생)
+            _CACHE["reit"] = {r[0] for r in conn.execute(
+                "SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:fiscal_period' AND config_value='REIT_6M'").fetchall()}
             _CACHE["at"] = time.time()
         finally:
             if own:
                 conn.close()
         return _CACHE["map"]
+
+
+def is_reit(stock_code: str, conn=None) -> bool:
+    fiscal_month_map(conn)
+    return stock_code in _CACHE["reit"]
 
 
 def fiscal_month(stock_code: str, conn=None) -> int:
@@ -43,7 +51,7 @@ def to_fiscal(stock_code: str, bsns_year: int, quarter: int, is_annual: bool = F
     """DART 표기(bsns_year=기간 종료 달력 연도, quarter=1·2·3 보고서 위치) → 회계 기준 (year, quarter).
     연간·4분기는 기간 종료 월이 결산월이라 연도가 그대로다."""
     f = fiscal_month(stock_code, conn)
-    if f == 12 or is_annual or quarter not in (1, 2, 3):
+    if f == 12 or is_annual or quarter not in (1, 2, 3) or is_reit(stock_code, conn):
         return int(bsns_year), int(quarter)
     end_month = (f + 3 * quarter - 1) % 12 + 1
     return (int(bsns_year) + 1 if end_month > f else int(bsns_year)), int(quarter)

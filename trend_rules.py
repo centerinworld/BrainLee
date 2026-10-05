@@ -136,6 +136,8 @@ def exit_signal(closes_asc, dates_asc, avg_price, bought_at=None, regime=None):
         out.update(status="hold", label="보유", sell_price=None, reason=stop_note + f"{t['label']} — {trend_txt}")
         return out
     name, line = max(lines.items(), key=lambda kv: kv[1])
+    if out.get("peak_price"):  # 피크Easy −25%는 참고 기준선으로만 표시(판정에는 모멘텀Easy −20%) — SIGNAL_RULES 5절 3번
+        out["lines"]["(참고) 피크Easy 추적손절가(고점×0.75)"] = round(out["peak_price"] * (1 + TRAIL_PEAK))
     out["sell_price"] = round(line)
     gap = (cur / line - 1) * 100
     if cur < line:
