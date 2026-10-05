@@ -18,6 +18,7 @@
 
 - **재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터를 판정·수집·수정하기 전에 반드시 [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 를 먼저 읽고 그 기준대로만 작업한다.** 정답 소스·정의·판정 규칙·필수 절차·실패 사례·현재 상태·한계가 모두 그 파일에 있다(이 CLAUDE.md의 관련 규칙·이력은 2026-10-03 그 파일 부록 A로 이관).
 - 기준(FnGuide vs DART, 지배 vs 전체 등)은 사용자 승인 없이 바꾸지 않는다. 숫자 데이터 작업 기록은 그 파일 §7에 남긴다.
+- **매매 신호(계좌현황 추세추종·매도시그널, 차트시그널, 매수후보 진입)는 [docs/SIGNAL_RULES.md](docs/SIGNAL_RULES.md)가 정본** — 코드는 `trend_rules.py` 한 곳. 다른 AI가 이어받을 현황은 docs/FINANCIAL_STATEMENTS.md §9-2-7.
 
 ### 서버 재시작 (필수 — 코드 수정 후 반드시 이 방법으로만)
 
@@ -705,3 +706,4 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 2026-10-05(Claude 비12월 결산·수주잔고·Codex 검증 검토) 비12월 결산 기간 키를 회계연도(결산월 연도)+회계분기로 통일(`fiscal_period.py`, 저장 경로 전부 적용, 재배치 1,222행). 수주잔고는 원문 항등식(수주총액−기납품=잔고)으로 판정 가능 7,408행 100%(정정 773행·order_backlog 동기화, 매일 측정). Codex 제3자 검증 항목별 검토는 docs/FINANCIAL_STATEMENTS.md §9-2-6, 기준은 §2-7·§2-4-1.
 2026-10-05(Claude 신호·신규상장·매출구성) 추세추종 공통 판정 `trend_rules.py`(모멘텀Easy MA5<MA20×0.96·피크Easy MA20<MA60·손절 -8%·추적 -20%, 무상증자 원주가 급변 보정)로 계좌현황 추세추종/매도시그널(`routes/portfolio.py`)과 차트시그널 종합 판정(`routes/extra_signals.py`) 통일 — 추세 유지 중 밸류만으로 매도 신호 금지. 신규 상장 매일 편입·상장 초기 가격 KIS 채움(`scripts/ops/sync_new_listings.py`, 예전엔 월 1회). 국내/해외 매출 `revenue_geography`(XBRL 지역 주석)+제품별 매출을 종목 페이지에 표시(`/api/dashboard/revenue-mix/{code}`, 묶음 `revenue_mix`).
 2026-10-05(Claude 매도 기준가·사업보고서 지표 2021~) 계좌현황 매도시그널을 보유/반등 관찰/매도 + 매도 기준가(`trend_rules.exit_signal`)로 재설계. 사업보고서 본문 원문 수집(`fetch_dart_business_docs_20261005.py`)·파서(`parse_business_docs_20261005.py`: 연구개발비·가동률·원재료 가격·내수/수출·비용 성격·제품별 2021~22)·추가 계정(`build_extra_accounts_20261005.py`: 매출채권·차입금·사채·금융원가·이자)·배당 수집기 대상 전 종목화, 종목 페이지 '사업보고서 지표' 카드. 검증 기준 docs/FINANCIAL_STATEMENTS.md §8-0-0.
+2026-10-05(Claude Stock Lab 전략 센터 중복 제거) "3배 라벨 연구 요약"·"휴리스틱 vs ML 상위 추천 품질" 등 연구 카드가 전략 센터 모든 페이지에 반복되던 문제 수정 — 전용 메뉴 `strategy_hub_research`(3배 후보 연구)로 분리. 시장 국면·검증 배너는 성과 매트릭스 전용, 선택 전략 요약은 추천 종목 화면 전용, 왼쪽 메뉴와 중복이던 페이지 내부 탭 버튼과 국면 배너와 중복이던 "현재 국면 전략 우선순위" 카드 삭제, 백테스트 메뉴는 실행 목록 기본 화면. V-SECTOR 설명 패널의 미정의 변수(`strategyAudit`) 크래시도 수정.

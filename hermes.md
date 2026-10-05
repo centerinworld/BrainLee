@@ -1,6 +1,6 @@
 > **⛔ 최우선 원칙 0: DART 파싱값을 100% 신뢰하지 않는다 — DART 값은 원본 후보일 뿐, FnGuide(필수)·네이버(보조)와 연결·별도를 나눠 값 대조로 일치해야 확정. 불일치·반복 차이는 먼저 우리 파싱 오류를 의심하고 종목 특징(stock_collection_config fs_quirk:*)으로 기록. 목표 99.99%.**
 >
-> **필수(2026-10-03)**: 재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터는 [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md)가 유일한 정본이다. 판정·수정 전 반드시 읽고, **숫자 데이터 작업 기록은 이 파일이 아니라 그 파일 §7에** 남긴다(이 파일의 관련 절은 그 파일 부록 B로 이관됨). 이 파일은 전략·백테스트·인프라 작업 로그용.
+> **필수(2026-10-03)**: 재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터는 [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md)가 유일한 정본이다. 판정·수정 전 반드시 읽고, **숫자 데이터 작업 기록은 이 파일이 아니라 그 파일 §7에** 남긴다(이 파일의 관련 절은 그 파일 부록 B로 이관됨). 이 파일은 전략·백테스트·인프라 작업 로그용. **매매 신호 규칙 정본은 [docs/SIGNAL_RULES.md](docs/SIGNAL_RULES.md)(`trend_rules.py`), 현재 진행·인수인계는 FINANCIAL_STATEMENTS.md §9-2-7(2026-10-05).**
 
 # Stock Data Integrity / 다중 AI 작업 현황 (hermes.md)
 

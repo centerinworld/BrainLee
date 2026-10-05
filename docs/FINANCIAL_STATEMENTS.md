@@ -199,6 +199,11 @@
 | 2026-10-03 13:00 | Claude | **자동 수집 재구성**: DART(00:20)·FnGuide 원문(04:00) launchd 2개(재부팅 유지, 한도 소진 시 종료 후 다음 날 재개), 기존 nohup 루프 종료. FnGuide 원문 저장 수집기·원문 대조기 신설. **외국기업 16종목 원화 환산 적용**(`fx_krw_20261003_131733`, 9,720필드). 감가상각 FnGuide 정의 실측(조정값 = FnGuide) — 변경은 승인 대기. 파생 재구축(D&A 반영) | 환산 후 FnGuide 연간 자산·부채 일치 100% |
 | 2026-10-03 13:40 | Claude | Codex 의견 반영: 화면 품질 등급 fail-closed(main.py data-quality, 현행 기준 테이블 우선), 필드 단위 확정 상태 테이블 `financial_field_verification`, 시점 사실 테이블 `financial_facts_pit` 신설·일일 자동 갱신 | 확정 93.2%(41,339필드, FnGuide 실제 값 기준) |
 | 2026-10-03 13:50 | Claude | **감가상각·CapEx 구성요소 분리**(사용자 제안·승인): 운영 감가상각=현금흐름표 조정값(FnGuide 기준, `xbrl_dep_apply_20261003_134044` 738칸), 구성요소 테이블 `financial_dep_capex_components`(110,931행)·종목 화면 내역 행, DART 수집기에 무형자산 취득 추가, XBRL 수집기 원문 zip 저장·회사 고유 항목 기록·조정값 누락분 재수집(`--redo-missing-adj`, 매일 자동) | 조정값 미수집 1,316건은 재수집 대기 |
+| 2026-10-04 | Claude | 가격 원주가 3소스 감사·복원(주식 53,556·ETF 39,258행), 상장 전 오염 4,137행 삭제(승인), Codex 제3자 검증 재판정(실패 24·25), 비12월 결산 회계 키 재배치 1,222행(사고·되돌림 = 실패 26). §9-2-4·§9-2-5 |
+| 2026-10-05 새벽 | Claude | 수주잔고 원문 항등식 정정 773행(판정 가능 7,408행 100%, `backlog_identity_20261005_020226`)·order_backlog 562행 동기화. §2-4-1 |
+| 2026-10-05 오전 | Claude | 비12월 키 충돌 해소(이동 307·중복 삭제 12, `fiscal_conflict_20261005_090530`; 사슬 머리 10건 `..._091942`, 보류 2행), 확정 925→1,044칸. ETF 원주가 첫 자동 반영 133,367행(`price_kis_tiebreak_20261005_090624`, 이후 매일). 코넥스 수집 제외(사용자 결정). §2-7·§9-2-5 |
+| 2026-10-05 | Claude | 신규 상장 매일 편입·상장 초기 가격 KIS 채움(`new_listing_sync_20261005_092143`, 브릴스 편입·54행). 국내/해외 매출 XBRL(`revenue_geography`). 사업보고서 본문 원문 수집(2021~)·파서(연구개발비·가동률·원재료·내수/수출·비용 성격·영업부문·제품별 2021~22), 추가 계정(매출채권·차입금·이자, FnGuide 대조), 배당 수집 대상 전 종목화. 공용 표 파서 TE/TU 셀 누락 수정. §8-0-0 |
+| 2026-10-05 | Claude | **공식 주가 공백 발견**(stock_price_daily 2021-02~2026-08 1,280일·2010~2019 없음) → KRX Open API 백필 시작, 파생지수·선물 신규 수집. §9-2-5 |
 
 상세 수치·run_id·백업 테이블: [FINANCIAL_REREVIEW_20261002.md](FINANCIAL_REREVIEW_20261002.md). 이관된 과거 원문: 부록 A(CLAUDE.md), 부록 B(hermes.md).
 
@@ -634,6 +639,29 @@ Claude 적용 안내: `xbrl_missing_adj_tag_review_20261004.csv`를 보고 회�
 5. **restatement watcher** — 다음 연도 사업보고서 전기 칸이 기존 표시값과 다르면 자동으로 `restatement_candidate`에 올리고, 본 테이블 적용 전 FnGuide·Naver와 대조한다.
 6. ✅ (2026-10-03 Claude, §2-6: 16종목 환산 완료·보류 4종목) **currency conversion audit** — 외국기업 19종목은 FnGuide 표시값을 역산해 평균환율/기말환율/원문 통화 여부를 분류하고, `reporting_currency`, `display_currency`, `fx_basis`를 필수 저장한다.
 7. **quarantine before rebuild** — 2016~2022 재수집 적용 후 파생 재구축 전에 무조건 `compare_db_vs_fnguide_snapshot_20261003.py`와 DART 표본 재측정을 통과해야 한다. 통과 전에는 백테스트·전략 결과를 "재무 정정 전/후 혼재"로 표시한다.
+
+### 9-2-7. 인수인계 — 2026-10-05 Claude 작업 현황 (다른 AI는 여기부터 읽을 것)
+**매매 신호 규칙은 이 문서가 아니라 [SIGNAL_RULES.md](SIGNAL_RULES.md)**(계좌현황 추세추종·매도시그널, 차트시그널 종합 판정, 매수후보 진입 — 공통 모듈 `trend_rules.py`).
+
+A. 진행 중(자동, 사람 개입 불필요 — 매일 `scripts/review/daily_numeric_recollect.sh` dart 00:20 / fnguide 04:00)
+| 작업 | 스크립트 | 상태(10-05 10시) | 끝나면 |
+|---|---|---|---|
+| 사업보고서 본문 원문 2021~22 → 2023~25 | `fetch_dart_business_docs_20261005.py` | 2021 1,953·2022 1,999건, 2023~25 표본 5건 | 약 7,800건 남음(1~2일 밤) → `parse_business_docs_20261005.py`가 매일 재파싱 |
+| 2021~22 연간 전체 계정 원문 | `fetch_dart_cashflow_20261002.py --years 2021-2022 --prev-only` | 1,110~1,168종목 | 매출채권·차입금·이자(`build_extra_accounts_20261005.py`)와 비용 성격 합계 대조(no_is → ok/불일치) |
+| 배당 2021~25 | `scripts/collect_dart_dividends.py` | 2021·22 완료, 23~25 진행 | dart_dividends 전 종목 |
+| KRX 공식 주가 백필(2010~) + 파생지수·선물 | `fetch_krx_openapi_20261005.py` | 3,744일 중 진행 | **가격 감사(`price_raw_basis_audit_20261004.py`)가 2010~2025를 진짜 3소스로 재판정 — 새 불일치가 실제 남은 오류. 재측정 후 §9-2-5 수치 갱신 필요** |
+| ETF 원주가 반영 | `apply_price_kis_tiebreak_20261004.py --etf-adjusted --daily --apply` | 매일 60종목, 약 3주 | ETF 가격 전체 1회 대조 |
+| FnGuide 원문 누적 | `fetch_fnguide_raw_20261003.py` | 288종목 | 차입금 등 dart_only → confirmed/mismatch |
+
+B. 남은 판단·작업(우선순위)
+1. KRX 백필 완료 후 가격 감사 재측정 — 2021~2025 구간 첫 3소스 판정 결과를 값 대조로 검토(공식만 다른 경우 공식 오류 가능, 3,235행 사례).
+2. 사업보고서 파서 불일치 분류: 내수/수출 revenue_mismatch·identity_fail, 연구개발비 ratio_mismatch, 비용 성격 total_mismatch, 영업부문 sum/revenue_mismatch(대부분 부문 표가 아닌 표를 잡은 경우 — fail-closed로 화면 미표시).
+3. 매출채권 FnGuide 정의(회사별 계정 조합) 학습 외 연도 일치 74% — 주석 기반 정의 확인 필요. 장기차입금 85%(FnGuide 하위 행 정의 차이).
+4. 제품별 매출 2023+ 기존 행은 옛 파서(TD/TH만) 결과 — 캐시 원문으로 재파싱해 비교 후 교체 검토.
+5. 감가상각(25.7%)·CapEx(83.5%) 정의 규칙화, 재고자산 DART 재무상태표 교체(§9-2-4 B).
+6. 비12월 결산 보류 2행(001720·950210, 여러 기간과 맞는 모호 행).
+
+C. 하지 말 것: 이 표의 스크립트를 `--apply` 없이 판단하거나, dart_only(미확정) 값을 확정으로 표시하거나, `definition_fit`(FnGuide로 조합을 맞춘 연도)을 검증 일치로 세지 말 것. 가격 감사 수치 '100%'는 2021~2025 구간이 marcap 1~2소스 기준이었음(정정됨).
 
 ## 10. 한계 (이 문서의 수치를 읽을 때)
 - **표본 측정**: 정확도는 무작위 150종목(전체 ~2,600의 약 6%) 표본 기준에서 출발했다. 2026-10-03~04에 FnGuide/aikstockdata/가격은 전종목 또는 전체 JSON 기준 대조를 추가했지만, 2016~2018·2020·2022 전체 연도와 금융업 전체 정의는 아직 99.99% 확정 측정이 아니다.
