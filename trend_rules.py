@@ -76,10 +76,8 @@ def exit_signal(closes_asc, dates_asc, avg_price, bought_at=None, regime=None):
     """매도 기준가 판정(2026-10-05 재설계 — 사용자: "'주의'는 이상하다, 반등 중인데 매도라 하지 말고 구체적으로").
 
     상태(status) 3가지와 '매도 기준가'(이 가격 아래로 내려가면 규칙상 매도)를 함께 낸다.
-      hold     보유 — 매도 기준가 = 다음 중 가장 높은(가까운) 가격
-                 · 추세 이탈선  = 20일선 × 0.96 (모멘텀Easy: 5일선이 이 아래로 내려가면 매도)
-                 · 추적손절가  = 고점 × 0.80 (이익 +5% 이후, 모멘텀Easy -20%)
-                 · 손절가      = 평단 × 0.92 (손실 -8% 이내일 때만 — 이미 넘었으면 추세선만 적용)
+      hold     보유 — 매도 기준가(가격) = 추적손절가(고점×0.80, 이익 +5% 이후)와 손절가(평단×0.92, 손실 -8% 이내일 때만) 중 높은 값.
+                 추세 이탈은 가격이 아니라 '5일선 < 20일선×0.96'(모멘텀Easy) 조건으로 판정(2026-10-05 수정 — 현재가 비교는 원 전략보다 민감했음).
       rebound  반등 관찰 — 20일선 < 60일선이지만 현재가가 20일선 위. 매도 기준가 = 최근 20거래일 종가 저점
                  (저점을 다시 깨면 반등 실패 → 매도), 추세 전환 확인 = 20일선이 60일선 위로.
       sell     매도 — 현재가가 매도 기준가 아래, 또는 추세 약화(5일선 < 20일선×0.96)·하락 추세(현재가 < 20일선 < 60일선).
@@ -96,7 +94,9 @@ def exit_signal(closes_asc, dates_asc, avg_price, bought_at=None, regime=None):
         out.update(label="판단 불가", reason=t.get("reason"))
         return out
     ma20, ma60 = t["ma20"], t["ma60"]
-    lines = {"추세 이탈선(20일선×0.96)": ma20 * MA_EXIT_BUFFER}
+    ma5 = t["ma5"]
+    trend_line = ma20 * MA_EXIT_BUFFER  # 원 전략(모멘텀Easy): '5일선'이 이 아래로 가면 매도 — 현재가 비교 아님(2026-10-05 수정)
+    lines = {}
     past_stop = pnl <= STOP
     stop_note = f"평단 대비 {pnl * 100:.1f}% — 손절가(평단×0.92={avg_price * 0.92:,.0f}원) 이미 하회. 지금부터는 추세 기준으로 판단. " if past_stop else ""
     if reg in ("weakening", "down"):
@@ -130,14 +130,18 @@ def exit_signal(closes_asc, dates_asc, avg_price, bought_at=None, regime=None):
         out.update(peak_price=peak, peak_date=peak_date, peak_basis=basis, drawdown_from_peak_pct=round((cur / peak - 1) * 100, 2))
     elif not past_stop:
         lines["손절가(평단×0.92)"] = avg_price * (1 + STOP)
+    trend_txt = f"추세 이탈 조건: 5일선 {ma5:,.0f}이 {trend_line:,.0f}(20일선×0.96) 아래로 내려가면 매도"
+    out["lines"] = {**{k: round(v) for k, v in lines.items()}, "추세 이탈 기준(5일선 비교)": round(trend_line)}
+    if not lines:  # 손절가 이미 하회 + 이익 +5% 이하 → 가격 기준가 없음, 추세 조건만
+        out.update(status="hold", label="보유", sell_price=None, reason=stop_note + f"{t['label']} — {trend_txt}")
+        return out
     name, line = max(lines.items(), key=lambda kv: kv[1])
-    out["lines"] = {k: round(v) for k, v in lines.items()}
     out["sell_price"] = round(line)
     gap = (cur / line - 1) * 100
     if cur < line:
         out.update(status="sell", label="매도(기준가 이탈)", reason=stop_note + f"현재가가 {name} {line:,.0f}원 아래")
     else:
-        out.update(status="hold", label="보유", reason=stop_note + f"{t['label']} — 매도 기준가 {line:,.0f}원({name}, 현재가 대비 {-gap:.1f}% 아래)")
+        out.update(status="hold", label="보유", reason=stop_note + f"{t['label']} — 매도 기준가 {line:,.0f}원({name}, 현재가 대비 {-gap:.1f}% 아래). {trend_txt}")
     return out
 
 
@@ -197,7 +201,8 @@ def entry_signal(closes_asc, vols_asc, inst5=0.0, frn5=0.0):
     hi52 = max(c[-252:])
     v = [float(x or 0) for x in vols_asc]
     vol_ok = len(v) >= 20 and sum(v[-5:]) / 5 > (sum(v[-20:]) / 20) * 1.3
-    if cur >= hi52 * 0.995 and cur > ma20 and vol_ok:
+    full_year = len(c) >= 252  # 원 전략은 252거래일 이상 이력만 — 신규 상장의 짧은 이력 '신고가'는 피크Easy 진입 제외
+    if full_year and cur >= hi52 * 0.995 and cur > ma20 and vol_ok:
         return "strong_buy", "피크Easy 진입 조건 충족: 52주 신고가권 + 20일선>60일선 + 거래량 재증가(5일 평균 > 20일 평균×1.3)"
     if ma5 > ma20 and cur >= ma20 * 0.97 and (inst5 > 0 or frn5 > 0):
         return "buy", "모멘텀Easy 진입 조건 충족: 5일선 > 20일선, 현재가 ≥ 20일선×0.97, 기관 또는 외국인 5일 순매수"
@@ -206,6 +211,8 @@ def entry_signal(closes_asc, vols_asc, inst5=0.0, frn5=0.0):
         miss.append("5일선 ≤ 20일선")
     if not (inst5 > 0 or frn5 > 0):
         miss.append("기관·외국인 5일 순매도")
-    if cur < hi52 * 0.995:
+    if not full_year:
+        miss.append(f"이력 {len(c)}일(피크Easy는 252일 이상)")
+    elif cur < hi52 * 0.995:
         miss.append(f"52주 고점 대비 {(cur / hi52 - 1) * 100:.0f}%")
     return "hold", f"{t['label']} — 진입 조건 미충족({', '.join(miss)})"
