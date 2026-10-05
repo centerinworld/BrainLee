@@ -152,16 +152,15 @@ def upsert_row(cur, stock_code: str, row: dict) -> None:
 
 def collect_year(conn, year: int, api_key_idx: int = 0) -> dict:
     cur = conn.cursor()
-    # corp_code 목록: dart_report_items_quarterly에서 stock_code↔corp_code 매핑
-    cur.execute("""
-        SELECT DISTINCT stock_code, corp_code
-        FROM dart_report_items_quarterly
-        WHERE stock_code ~ '^[0-9]{6}$'
-          AND corp_code IS NOT NULL
-        LIMIT 5000
-    """)
-    rows = cur.fetchall()
-    corp_map = {r[1]: r[0] for r in rows}  # corp_code → stock_code
+    # 2026-10-05: 예전엔 dart_report_items_quarterly(일부 종목)에서 corp_code를 가져와 224종목만 수집됐다
+    # → 코스피·코스닥 보통주 전체를 DART CORPCODE 맵으로 매핑(fetch_dart_business_docs_20261005.corp_map 재사용).
+    sys.path.insert(0, str(ROOT / "scripts" / "review"))
+    from fetch_dart_business_docs_20261005 import corp_map as _corp_map
+    cmap = _corp_map(conn)
+    codes = [r[0] for r in conn.execute("SELECT stock_code FROM stock_universe WHERE market IN ('KOSPI','KOSDAQ') AND stock_code ~ '^[0-9]{5}0$'").fetchall()]
+    corp_map = {cmap[c]: c for c in codes if cmap.get(c)}  # corp_code → stock_code
+    done = {r[0] for r in conn.execute("SELECT stock_code FROM dart_dividends WHERE fiscal_year=? AND reprt_code='11011'", (year,)).fetchall()}
+    corp_map = {k: v for k, v in corp_map.items() if v not in done}
 
     print(f"[{year}] {len(corp_map)}개 회사 대상")
     inserted = 0

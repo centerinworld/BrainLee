@@ -128,7 +128,48 @@ def get_revenue_mix(code: str):
             products = [{"category": r[0], "product": r[1], "revenue": r[2], "pct": r[3]} for r in map(tuple, conn.execute(
                 "SELECT category, product_name, revenue_krw, revenue_pct FROM company_product_mix WHERE stock_code=? AND year=? ORDER BY revenue_pct DESC NULLS LAST",
                 (code, y)).fetchall())]
+        # 2021~2022(또는 XBRL 지역 주석이 없는 연도): 사업보고서 표의 내수/수출(합계·매출 일치 확인분)
+        have_y = {g["year"] for g in geo}
+        for r in map(tuple, conn.execute(
+                """SELECT fiscal_year, source, domestic_krw, export_krw, total_krw, export_pct, matched_basis FROM biz_sales_domestic_export
+                   WHERE stock_code=? AND check_status='ok' ORDER BY fiscal_year DESC""", (code,)).fetchall()):
+            if r[0] not in have_y and len(geo) < 5:
+                geo.append({"year": r[0], "report_type": r[6], "total": r[4], "domestic": r[2], "overseas": r[3], "overseas_pct": r[5],
+                            "regions": {"내수": r[2], "수출": r[3]}, "status": "doc_" + r[1]})
+                have_y.add(r[0])
+        geo.sort(key=lambda g: -g["year"])
+        def q(sql, *a):
+            try:
+                return [tuple(r) for r in conn.execute(sql, a).fetchall()]
+            except Exception:
+                return []
+        rd = [{"year": r[0], "rd_krw": r[1], "ratio_pct": r[2], "status": r[3]} for r in q(
+            "SELECT fiscal_year, rd_total_krw, rd_ratio_pct, check_status FROM biz_rd_expense WHERE stock_code=? ORDER BY fiscal_year DESC LIMIT 5", code)]
+        cap_y = q("SELECT MAX(fiscal_year) FROM biz_capacity WHERE stock_code=? AND utilization_pct IS NOT NULL", code)
+        capacity = [{"item": r[0], "capacity": r[1], "production": r[2], "util_pct": r[3], "unit": r[4], "status": r[5]} for r in q(
+            "SELECT item, capacity, production, utilization_pct, unit, check_status FROM biz_capacity WHERE stock_code=? AND fiscal_year=? AND utilization_pct IS NOT NULL ORDER BY item",
+            code, cap_y[0][0])] if cap_y and cap_y[0][0] else []
+        raw_y = q("SELECT MAX(fiscal_year) FROM biz_raw_material_price WHERE stock_code=?", code)
+        raw = []
+        if raw_y and raw_y[0][0]:
+            prev = {r[0]: r[1] for r in q("SELECT item, price FROM biz_raw_material_price WHERE stock_code=? AND fiscal_year=?", code, raw_y[0][0] - 1)}
+            raw = [{"item": r[0], "price": r[1], "prior": prev.get(r[0]), "unit": r[2]} for r in q(
+                "SELECT item, price, unit FROM biz_raw_material_price WHERE stock_code=? AND fiscal_year=? ORDER BY item", code, raw_y[0][0])]
+        cn_y = q("SELECT MAX(fiscal_year) FROM biz_cost_nature WHERE stock_code=? AND check_status IN ('ok','no_is')", code)
+        cost = [{"category": r[0], "amount": r[1], "total": r[2], "status": r[3]} for r in q(
+            "SELECT category, amount_krw, total_krw, check_status FROM biz_cost_nature WHERE stock_code=? AND fiscal_year=? AND check_status IN ('ok','no_is') ORDER BY amount_krw DESC",
+            code, cn_y[0][0])] if cn_y and cn_y[0][0] else []
+        extra = {}
+        for r in q("""SELECT fiscal_year, report_type, field, value_krw, status FROM financial_extra_accounts WHERE stock_code=? AND status IN ('confirmed','dart_only','definition_fit')
+                      ORDER BY fiscal_year DESC, CASE report_type WHEN 'CFS' THEN 0 ELSE 1 END""", code):
+            extra.setdefault(r[0], {}).setdefault(r[2], {"value": r[3], "status": r[4], "report_type": r[1]})
+        extra_list = [{"year": y_, **{k: v for k, v in d.items()}} for y_, d in sorted(extra.items(), reverse=True)[:3]]
+        div = [{"year": r[0], "dps": r[1], "total_bn": r[2], "yield_pct": r[3], "payout_pct": r[4]} for r in q(
+            "SELECT fiscal_year, dps_krw, total_cash_div_bn, div_yield_pct, div_payout_pct FROM dart_dividends WHERE stock_code=? AND reprt_code='11011' AND fiscal_year>=2021 ORDER BY fiscal_year DESC", code)]
         return {"ok": True, "geography": geo, "product_mix_year": y, "product_mix": products,
-                "note": "국내/해외 = DART XBRL 주석 '지역에 대한 정보'(지역 합계 = 전체 매출 확인분만). 제품별 = 사업보고서 '매출 및 수주상황'."}
+                "rd": rd, "capacity_year": cap_y[0][0] if cap_y else None, "capacity": capacity,
+                "raw_material_year": raw_y[0][0] if raw_y else None, "raw_material": raw,
+                "cost_nature_year": cn_y[0][0] if cn_y else None, "cost_nature": cost, "extra_accounts": extra_list, "dividends": div,
+                "note": "국내/해외 = XBRL '지역에 대한 정보'(2023~) 또는 사업보고서 매출실적·지역별 매출 표(2021~22), 합계 = 전체 매출 확인분만. 제품별 = 사업보고서 '매출 및 수주상황'. 연구개발비·가동률·원재료·원가 = 사업보고서 본문, 차입금 등 = DART 재무제표(확정 = FnGuide 일치)."}
     finally:
         conn.close()

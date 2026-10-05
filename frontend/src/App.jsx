@@ -16038,10 +16038,10 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
         <InvestmentDecisionTaskPanel stockCode={selectedStock} active={activeTab === 'analysis'} />
 
         {/* ── 매출 구성: 국내/해외(XBRL 지역 주석, 합계 확인분) · 제품/부문별(사업보고서) — 2026-10-05 ── */}
-        {isKrStockCode(selectedStock) && revenueMix && ((revenueMix.geography||[]).length > 0 || (revenueMix.product_mix||[]).length > 0) && (
+        {isKrStockCode(selectedStock) && revenueMix && (
           <section className="glass-panel">
             <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)', fontSize:'0.8rem', fontWeight:700, color:'var(--text)' }}>
-              🌏 매출 구성 — 국내/해외 · 제품별
+              📑 사업보고서 지표 — 매출 구성·연구개발·가동률·비용·차입금·배당
             </div>
             <div style={{ padding:'0.7rem 1rem', display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1rem' }}>
               <div>
@@ -16084,6 +16084,25 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
                 ))}
               </div>
             </div>
+            {(() => {
+              const m = revenueMix; const eok = v => v == null ? '-' : (Math.abs(v) >= 1e12 ? (v/1e12).toFixed(1)+'조' : Math.round(v/1e8).toLocaleString()+'억');
+              const badge = st => st === 'confirmed' || st === 'ok' ? <span style={{color:'#15803d'}}>✓</span> : <span style={{color:'#b45309'}} title="외부(FnGuide) 대조 전 또는 불일치 — DART 원문 값">미확정</span>;
+              const card = (title, body) => (
+                <div style={{ border:'1px solid var(--line)', borderRadius:'8px', padding:'0.5rem 0.6rem' }}>
+                  <div style={{ fontSize:'0.7rem', fontWeight:700, marginBottom:'0.3rem' }}>{title}</div>
+                  <div style={{ fontSize:'0.64rem', lineHeight:1.5 }}>{body}</div>
+                </div>);
+              const xa = (m.extra_accounts||[])[0];
+              const LBL = {short_borrowings:'단기차입금', long_borrowings:'장기차입금', bonds:'사채', trade_other_receivables:'매출채권 등', finance_costs:'금융원가', interest_expense:'이자비용', interest_paid:'이자 지급'};
+              const cards = [];
+              if ((m.rd||[]).length) cards.push(card('🔬 연구개발비', (m.rd||[]).slice(0,4).map(r => <div key={r.year}>{r.year}년 {eok(r.rd_krw)} · 매출 대비 {r.ratio_pct != null ? r.ratio_pct+'%' : '-'} {badge(r.status)}</div>)));
+              if ((m.capacity||[]).length) cards.push(card(`🏭 가동률 (${m.capacity_year}년)`, m.capacity.slice(0,6).map((r,i) => <div key={i}>{r.item} {r.util_pct}% {badge(r.status)}</div>)));
+              if ((m.cost_nature||[]).length) cards.push(card(`🧾 비용 구성 (${m.cost_nature_year}년)`, m.cost_nature.map((r,i) => <div key={i}>{r.category} {r.total ? (r.amount/r.total*100).toFixed(1) : '-'}% ({eok(r.amount)}) {i===0 ? badge(r.status) : null}</div>)));
+              if (xa) cards.push(card(`🏦 차입금·채권·이자 (${xa.year}년)`, Object.entries(LBL).filter(([k]) => xa[k]).map(([k,l]) => <div key={k}>{l} {eok(xa[k].value)} {badge(xa[k].status)}</div>)));
+              if ((m.dividends||[]).length) cards.push(card('💰 배당', m.dividends.slice(0,5).map(r => <div key={r.year}>{r.year}년 주당 {r.dps != null ? Number(r.dps).toLocaleString()+'원' : '-'} · 배당성향 {r.payout_pct != null ? r.payout_pct+'%' : '-'} · 수익률 {r.yield_pct != null ? r.yield_pct+'%' : '-'}</div>)));
+              if ((m.raw_material||[]).length) cards.push(card(`⚙️ 주요 원재료 가격 (${m.raw_material_year}년)`, m.raw_material.slice(0,6).map((r,i) => <div key={i}>{r.item}: {r.price != null ? Number(r.price).toLocaleString() : '-'}{r.unit ? ' '+r.unit : ''}{r.prior != null && r.prior ? ` (전년 대비 ${((r.price/r.prior-1)*100).toFixed(1)}%)` : ''}</div>)));
+              return cards.length ? <div style={{ padding:'0 1rem 0.7rem', display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'0.6rem' }}>{cards}</div> : null;
+            })()}
             <div style={{ padding:'0 1rem 0.6rem', fontSize:'0.6rem', color:'var(--text-secondary)' }}>{revenueMix.note}</div>
           </section>
         )}

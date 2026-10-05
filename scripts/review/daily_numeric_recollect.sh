@@ -19,6 +19,9 @@ step() {
 
 case "$1" in
   dart)
+    step $PY $R/fetch_dart_business_docs_20261005.py --years 2021,2022 --exit-on-quota   # 사업보고서 본문 원문 — XBRL 주석 없는 2021~22 우선(사용자 지시 2026-10-05)
+    step $PY $R/fetch_dart_cashflow_20261002.py --years 2021-2022 --prev-only   # 2021~22 연간 전체 계정 원문(매출채권·차입금·이자·매출원가 대조용)
+    step $PY scripts/collect_dart_dividends.py --year 2021 --year 2022 --year 2023 --year 2024 --year 2025   # 배당 2021~(이미 받은 종목·연도 건너뜀)
     step $PY $R/test_quarterly_xbrl_20261003.py                              # 1회: 대형사 분기 주석 XBRL 시험(결과 있으면 건너뜀)
     step $PY $R/fetch_dart_cashflow_20261002.py --repair-parent              # 2023+ 지배주주 보완
     step $PY $R/fetch_dart_cashflow_20261002.py --prev-only                  # 2023+ 재작성값(전기 칸)
@@ -30,6 +33,9 @@ case "$1" in
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022 --prev-only
     step $PY $R/fetch_dart_cashflow_20261002.py --refetch-raw                # 2023+ 원문 계정 행 보충(재고자산·CapEx 세부 재파싱용, 낮은 우선순위)
     step $PY $R/build_geo_revenue_xbrl_20261005.py                          # 국내/해외 매출(XBRL 지역 주석, 합계 항등식 확인) → revenue_geography
+    step $PY $R/fetch_dart_business_docs_20261005.py --exit-on-quota         # 사업보고서 본문 원문 2023~(남은 한도)
+    step $PY $R/parse_business_docs_20261005.py                               # 연구개발비·가동률·원재료 가격·내수/수출·원가 성격·제품별 매출(2021~22)
+    step $PY $R/build_extra_accounts_20261005.py                              # 매출채권·차입금·사채·금융원가·이자(FnGuide 대조)
     step $PY $R/build_dep_capex_components_20261003.py                       # 감가상각·CapEx 구성요소 테이블
     step $PY $R/build_financial_pit_20261003.py                              # 시점(PIT) 사실 테이블: 최초 공시값·재작성값 이력
     ;;

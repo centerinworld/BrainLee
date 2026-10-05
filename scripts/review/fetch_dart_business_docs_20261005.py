@@ -56,12 +56,6 @@ class Keys:
 
 
 def corp_map(conn):
-    try:
-        rows = conn.execute("SELECT stock_code, corp_code FROM dart_corp_code_map").fetchall()
-        if rows:
-            return {r[0]: r[1] for r in map(tuple, rows)}
-    except Exception:
-        pass
     sys.path.insert(0, str(ROOT / "collectors"))
     from dart_product_mix_collector import load_corp_map
     codes = [r[0] for r in conn.execute("SELECT stock_code FROM stock_universe WHERE market IN ('KOSPI','KOSDAQ')").fetchall()]
