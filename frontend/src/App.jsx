@@ -14378,11 +14378,13 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
 
     // ── 국내종목 상세 보조 데이터 번들 조회 (12개 API → 1회 호출) ─────────────
     const [chartSignals, setChartSignals] = React.useState(null);
+    const [revenueMix, setRevenueMix] = React.useState(null);  // 2026-10-05 국내/해외·제품별 매출 구성
     React.useEffect(() => {
       if (activeTab !== 'analysis') return;
       if (!selectedStock || !isKrStockCode(selectedStock)) {
         setCorporateActions([]);
         setChartSignals(null);
+        setRevenueMix(null);
         setStockQualitySignals(null);
         setStockExtra(null);
         setStockChData(null);
@@ -14407,6 +14409,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
           if (selectedStock !== snap || !bundle) return;
           setCorporateActions(Array.isArray(bundle.corporate_actions?.events) ? bundle.corporate_actions.events : []);
           setChartSignals(bundle.chart_signals?.ok ? bundle.chart_signals : null);
+          setRevenueMix(bundle.revenue_mix?.ok ? bundle.revenue_mix : null);
           setStockQualitySignals(bundle.stock_quality_signals ?? null);
           setStockExtra(bundle.stock_extra ?? null);
           setStockChData(bundle.ch_data ?? null);
@@ -16033,6 +16036,57 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
 
         <StockDecisionEvidencePanel stockCode={selectedStock} active={activeTab === 'analysis'} />
         <InvestmentDecisionTaskPanel stockCode={selectedStock} active={activeTab === 'analysis'} />
+
+        {/* ── 매출 구성: 국내/해외(XBRL 지역 주석, 합계 확인분) · 제품/부문별(사업보고서) — 2026-10-05 ── */}
+        {isKrStockCode(selectedStock) && revenueMix && ((revenueMix.geography||[]).length > 0 || (revenueMix.product_mix||[]).length > 0) && (
+          <section className="glass-panel">
+            <div style={{ padding:'0.6rem 1rem', borderBottom:'1px solid var(--glass-border)', fontSize:'0.8rem', fontWeight:700, color:'var(--text)' }}>
+              🌏 매출 구성 — 국내/해외 · 제품별
+            </div>
+            <div style={{ padding:'0.7rem 1rem', display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1rem' }}>
+              <div>
+                <div style={{ fontSize:'0.72rem', fontWeight:700, marginBottom:'0.4rem' }}>국내 / 해외 매출</div>
+                {(revenueMix.geography||[]).length === 0 ? (
+                  <div style={{ fontSize:'0.7rem', color:'var(--text-secondary)' }}>XBRL 지역 주석 미공시(사업보고서 표 추출 예정)</div>
+                ) : (revenueMix.geography||[]).map(g => {
+                  const dom = g.total ? g.domestic / g.total * 100 : null;
+                  return (
+                    <div key={g.year} style={{ marginBottom:'0.45rem' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.68rem' }}>
+                        <span>{g.year}년 {g.report_type === 'OFS' ? '(별도)' : ''}</span>
+                        <span>국내 {dom != null ? dom.toFixed(1) : '-'}% · 해외 {g.overseas_pct != null ? Number(g.overseas_pct).toFixed(1) : '-'}%</span>
+                      </div>
+                      <div style={{ display:'flex', height:'10px', borderRadius:'5px', overflow:'hidden', background:'var(--line)' }}>
+                        <div style={{ width:`${dom||0}%`, background:'#1a73e8' }} />
+                        <div style={{ width:`${g.overseas_pct||0}%`, background:'#f59e0b' }} />
+                      </div>
+                      <div style={{ fontSize:'0.6rem', color:'var(--text-secondary)', marginTop:'2px' }}>
+                        {Object.entries(g.regions||{}).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v]) => `${k} ${g.total ? (v/g.total*100).toFixed(1) : '-'}%`).join(' · ')}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div>
+                <div style={{ fontSize:'0.72rem', fontWeight:700, marginBottom:'0.4rem' }}>제품·부문별 매출 {revenueMix.product_mix_year ? `(${revenueMix.product_mix_year}년)` : ''}</div>
+                {(revenueMix.product_mix||[]).length === 0 ? (
+                  <div style={{ fontSize:'0.7rem', color:'var(--text-secondary)' }}>사업보고서 제품별 매출 미수집</div>
+                ) : (revenueMix.product_mix||[]).slice(0,8).map((p, idx) => (
+                  <div key={idx} style={{ marginBottom:'0.3rem' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.66rem', gap:'0.5rem' }}>
+                      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={p.product}>{p.category || p.product}</span>
+                      <span>{p.pct != null ? Number(p.pct).toFixed(1) + '%' : '-'}</span>
+                    </div>
+                    <div style={{ height:'6px', borderRadius:'3px', background:'var(--line)' }}>
+                      <div style={{ width:`${Math.min(100, p.pct||0)}%`, height:'100%', borderRadius:'3px', background:'#10b981' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding:'0 1rem 0.6rem', fontSize:'0.6rem', color:'var(--text-secondary)' }}>{revenueMix.note}</div>
+          </section>
+        )}
 
         {/* ── DART 공시 정보 ────────────────────────────────────── */}
         {isKrStockCode(selectedStock) && (

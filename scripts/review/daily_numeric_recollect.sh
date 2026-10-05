@@ -3,7 +3,7 @@
 # launchd com.stock-dashboard.numeric-recollect 가 호출한다(재부팅에도 유지).
 #   dart    (00:20) : DART 키1→키3→키4→키2 순차 사용(KEY2는 일괄 상한으로 공시 몫 보호). 각 단계는 한도 소진 시 스스로 종료 → 다음 날 이어서.
 #   fnguide (04:00) : FnGuide wcomp 원문 저장(연결·별도·연간·분기). 일 1,500 공유 한도 중 기존 스윕(03:15) 이후 잔여 사용.
-# 수집·대조만 한다(재무 운영 테이블 미변경, 검증 상태 테이블만 갱신). 값 적용은 사람이 dry-run 확인 후 별도 실행.
+# 수집·대조가 기본. 예외(사용자 승인 2026-10-05): ETF 원주가 반영·신규 상장 편입은 안전장치 포함 자동 적용.
 cd /Volumes/Realtek_NVME/stock_dashboard/runtime || exit 1
 export PYTHONPATH=runtime_pg_bootstrap:.
 LOG=research_outputs/financial_rereview_20261002/daily_numeric_recollect.log
@@ -29,12 +29,14 @@ case "$1" in
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022 --repair-parent
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022 --prev-only
     step $PY $R/fetch_dart_cashflow_20261002.py --refetch-raw                # 2023+ 원문 계정 행 보충(재고자산·CapEx 세부 재파싱용, 낮은 우선순위)
+    step $PY $R/build_geo_revenue_xbrl_20261005.py                          # 국내/해외 매출(XBRL 지역 주석, 합계 항등식 확인) → revenue_geography
     step $PY $R/build_dep_capex_components_20261003.py                       # 감가상각·CapEx 구성요소 테이블
     step $PY $R/build_financial_pit_20261003.py                              # 시점(PIT) 사실 테이블: 최초 공시값·재작성값 이력
     ;;
   fnguide)
     step $PY $R/fetch_fnguide_raw_20261003.py --max-calls 1000 --stale-days 30   # 스윕(03:15) 450건과 합쳐 일 1,500건 이내(한도 카운터가 프로세스별이라 명시적으로 나눔)
     step $PY $R/compare_db_vs_fnguide_raw_20261003.py                        # 원문 ↔ DB 대조(읽기 전용) → fnguide_raw_compare_*.json/csv
+    step $PY scripts/ops/sync_new_listings.py --apply                         # 신규 상장 매일 편입(마스터) + 상장일~가격 첫 날 KIS 원주가 채움(2026-10-05, 예전엔 월 1회 편입)
     step $PY $R/fetch_kis_raw_daily_20261004.py --etf-all --max-codes 60       # ETF·ETN 원주가(KIS) 원문 — 하루 60종목(~1시간), 가격 대조 근거
     step $PY $R/price_raw_basis_audit_20261004.py                            # 가격 원주가 3소스(공식·marcap·KIS) 전수 감사(읽기 전용) → price_raw_basis_audit_20261004/summary.json
     step $PY $R/apply_price_kis_tiebreak_20261004.py --etf-adjusted --daily --apply   # ETF 배당 조정값 → KIS 원주가(조정 비율 0.75~1.0·OHLC 정합·감사 6시간 이내만, 2026-10-05 매일 자동 승인)
