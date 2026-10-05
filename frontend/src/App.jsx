@@ -7781,13 +7781,13 @@ const _signalFrontCache = {};
       setEditId(null); setEditForm({}); load();
     };
 
-    const SIG = {
-      strong_buy:  {emoji:'🟢', label:'강매수',  color:'#15803d', bg:'rgba(22,163,74,0.15)'},
-      buy:         {emoji:'🟢', label:'매수',    color:'#15803d', bg:'rgba(22,163,74,0.08)'},
+    const SIG = {  // 2026-10-05: 모멘텀Easy·피크Easy 진입 조건(trend_rules.entry_signal)
+      strong_buy:  {emoji:'🟢', label:'피크Easy 진입',  color:'#15803d', bg:'rgba(22,163,74,0.15)'},
+      buy:         {emoji:'🟢', label:'모멘텀Easy 진입', color:'#15803d', bg:'rgba(22,163,74,0.08)'},
       hold:        {emoji:'🟡', label:'대기',    color:'#b45309', bg:'rgba(217,119,6,0.1)'},
-      caution:     {emoji:'🟠', label:'주의',    color:'#c2410c', bg:'rgba(234,88,12,0.12)'},
-      sell:        {emoji:'🔴', label:'진입불가', color:'#dc2626', bg:'rgba(220,38,38,0.1)'},
-      strong_sell: {emoji:'🔴', label:'강진입불가',color:'#dc2626',bg:'rgba(220,38,38,0.15)'},
+      caution:     {emoji:'🟠', label:'반등 대기', color:'#c2410c', bg:'rgba(234,88,12,0.12)'},
+      sell:        {emoji:'🔴', label:'진입불가(추세 약화)', color:'#dc2626', bg:'rgba(220,38,38,0.1)'},
+      strong_sell: {emoji:'🔴', label:'진입불가(하락 추세)',color:'#dc2626',bg:'rgba(220,38,38,0.15)'},
     };
 
     const fp = (v) => v ? Math.round(v).toLocaleString('ko-KR') : '-';
@@ -8329,6 +8329,15 @@ const _signalFrontCache = {};
           <span style={{fontSize:'0.68rem',color:'rgba(15,23,42,0.88)',marginLeft:'auto'}}>
             더블클릭 → 목표가/기준일/기준가 수정
           </span>
+          <div style={{flexBasis:'100%',fontSize:'0.64rem',color:'var(--text-muted)',lineHeight:1.7,marginTop:'0.3rem'}}>
+            <b>진입 기준</b>(백테스트 채택 전략의 진입 조건, 기계적 신호 — 투자 자문 아님) ·
+            <b> 피크Easy 진입</b>: 52주 신고가권(고점×0.995 이상) + 20일선 &gt; 60일선 + 현재가 &gt; 20일선 + 거래량 재증가(5일 평균 &gt; 20일 평균×1.3) ·
+            <b> 모멘텀Easy 진입</b>: 5일선 &gt; 20일선 + 현재가 ≥ 20일선×0.97 + 기관 또는 외국인 5일 순매수 ·
+            <b> 대기</b>: 상승 추세지만 위 조건 미충족(부족한 조건 표시) ·
+            <b> 반등 대기</b>: 20일선 &lt; 60일선인데 현재가가 20일선 위 — 골든크로스 전까지 대기 ·
+            <b> 진입불가</b>: 추세 약화(5일선 &lt; 20일선×0.96) 또는 하락 추세(현재가 &lt; 20일선 &lt; 60일선).
+            원 전략의 '주도 섹터 상위'·'KOSPI 대비 상대강도' 조건은 이 화면에서 확인하지 않습니다.
+          </div>
         </div>
       </div>
     );
@@ -9300,88 +9309,50 @@ const _signalFrontCache = {};
                   </tbody>
                 </table>
 
-                {/* ── 판단 로직 설명 ── */}
-                <div style={{marginTop:'1.5rem',padding:'1.2rem',borderRadius:'10px',
-                  background:'rgba(15,23,42,0.03)',border:'1px solid rgba(15,23,42,0.2)'}}>
-                  <div style={{fontSize:'0.78rem',fontWeight:700,color:'rgba(15,23,42,0.88)',
-                    marginBottom:'1rem',display:'flex',alignItems:'center',gap:'0.4rem'}}>
-                    🧠 AI 전문가 판단 기준 (추세 × 가치 4분면)
+                {/* ── 판단 기준 설명 (2026-10-05 재작성 — trend_rules.py, 모멘텀Easy·피크Easy 규칙) ── */}
+                <div style={{marginTop:'1.5rem',padding:'1.1rem',borderRadius:'10px',background:'var(--surface)',border:'1px solid var(--line)'}}>
+                  <div style={{fontSize:'0.8rem',fontWeight:700,marginBottom:'0.4rem'}}>📏 신호 판단 기준</div>
+                  <div style={{fontSize:'0.66rem',color:'var(--text-muted)',marginBottom:'0.9rem',lineHeight:1.6}}>
+                    두 열 모두 백테스트로 고른 모멘텀Easy·피크Easy 매도 규칙을 그대로 적용한 <b>기계적 신호</b>입니다(투자 자문 아님).
+                    원칙: <b>추세가 살아 있는 동안에는 PER·PBR·ROE 같은 가치 지표만으로 매도하지 않는다</b> — 매도는 추세 이탈·추적손절·기준가 이탈에서만.
+                    무상증자·액면분할로 생긴 가격 급변은 보정한 뒤 계산합니다.
                   </div>
-
-                  {/* 4분면 매트릭스 */}
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'1rem'}}>
-                    {[
-                      {sig:'💚 추가매수', cond:'추세정배열 + 저평가',
-                       desc:'이동평균 정배열(현재가>MA5>MA20>MA60)이며 PBR·PER 기준 저평가 상태. 기술적 추세와 내재가치가 모두 지지. 분할 추가매수 유효.',
-                       bg:'rgba(22,163,74,0.08)',border:'rgba(22,163,74,0.25)'},
-                      {sig:'🟡 보유유지', cond:'추세양호 + 적정가치',
-                       desc:'추세는 유지되나 가치평가가 적정 수준. 신규 매수보다 기존 보유 유지가 적합. 손절선 이탈 시 매도로 전환.',
-                       bg:'rgba(217,119,6,0.08)',border:'rgba(217,119,6,0.25)'},
-                      {sig:'🔵 홀딩유지', cond:'추세이탈 + 저평가',
-                       desc:'단기 추세가 무너졌으나 PBR/PER 기준 내재가치가 충분. 손실이 크지 않다면 추세 회복을 기다리는 홀딩 전략이 유리. 추가 매수는 분할로.',
-                       bg:'rgba(37,99,235,0.08)',border:'rgba(37,99,235,0.25)'},
-                      {sig:'🔴 진매도', cond:'추세역배열 + 고평가',
-                       desc:'이동평균 역배열이면서 PBR·PER 기준 고평가. 추세와 가치 모두 하락 압력. 수익 중이라면 익절, 손실 중이라면 손절 집행 검토.',
-                       bg:'rgba(220,38,38,0.08)',border:'rgba(220,38,38,0.25)'},
-                    ].map(item=>(
-                      <div key={item.sig} style={{padding:'0.75rem',borderRadius:'8px',
-                        background:item.bg,border:`1px solid ${item.border}`}}>
-                        <div style={{display:'flex',alignItems:'center',gap:'0.4rem',marginBottom:'0.3rem'}}>
-                          <span style={{fontSize:'0.78rem',fontWeight:700}}>{item.sig}</span>
-                          <span style={{fontSize:'0.65rem',color:'rgba(15,23,42,0.88)',padding:'0 5px',
-                            borderRadius:'3px',background:'rgba(15,23,42,0.06)'}}>{item.cond}</span>
-                        </div>
-                        <p style={{fontSize:'0.68rem',color:'rgba(15,23,42,0.88)',lineHeight:1.5,margin:0}}>
-                          {item.desc}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* 점수 계산 기준 */}
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.8rem',marginBottom:'0.8rem'}}>
-                    <div style={{padding:'0.7rem',borderRadius:'8px',background:'rgba(15,23,42,0.03)',
-                      border:'1px solid rgba(15,23,42,0.2)'}}>
-                      <div style={{fontSize:'0.7rem',fontWeight:700,color:'rgba(15,23,42,0.88)',marginBottom:'0.4rem'}}>
-                        📈 추세 점수 계산 (추세 스코어)
-                      </div>
-                      <div style={{fontSize:'0.65rem',color:'rgba(15,23,42,0.88)',lineHeight:1.8}}>
-                        <div><span style={{color:'#15803d'}}>+4</span> 완전정배열 (현재가 &gt; MA5 &gt; MA20 &gt; MA60 &gt; MA120)</div>
-                        <div><span style={{color:'#15803d'}}>+3</span> 정배열 (현재가 &gt; MA5 &gt; MA20 &gt; MA60)</div>
-                        <div><span style={{color:'#15803d'}}>+2</span> 중기 정배열 (현재가 &gt; MA20 &gt; MA60)</div>
-                        <div><span style={{color:'#15803d'}}>+1</span> 단기 우위 (현재가 &gt; MA20)</div>
-                        <div><span style={{color:'#c2410c'}}> 0</span> 중립 (혼재)</div>
-                        <div><span style={{color:'#dc2626'}}>-1</span> MA20 이탈</div>
-                        <div><span style={{color:'#dc2626'}}>-2</span> 중기 역배열 (현재가 &lt; MA20 &lt; MA60)</div>
-                        <div><span style={{color:'#dc2626'}}>-3</span> 역배열 (현재가 &lt; MA5 &lt; MA20 &lt; MA60)</div>
-                        <div><span style={{color:'#dc2626'}}>-4</span> 완전역배열</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:'0.8rem'}}>
+                    <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid var(--line)'}}>
+                      <div style={{fontSize:'0.72rem',fontWeight:700,marginBottom:'0.4rem'}}>① 추세추종 신호 — 지금 추세가 어떤 국면인가</div>
+                      <table style={{width:'100%',fontSize:'0.64rem',lineHeight:1.5}}><tbody>
+                        {[
+                          ['💚 추가매수','상승 추세 + 가치 점수 3 이상','현재가 ≥ 20일선, 20일선 ≥ 60일선, 5일선 ≥ 20일선×0.96'],
+                          ['🟡 보유유지','상승 추세(가치 무관) 또는 상승 추세 속 조정','조정 = 20일선 ≥ 60일선 유지 중 현재가만 20일선 아래 → 매도 조건 아님'],
+                          ['🟠 반등시도','하락 추세 속 반등','20일선 < 60일선이지만 현재가가 20일선 위. 20일선이 60일선을 넘어서야(골든크로스) 상승 전환 확인'],
+                          ['🔴 추세약화','상승 추세가 꺾이기 시작','5일선이 20일선×0.96 아래(모멘텀Easy 매도 조건)'],
+                          ['🔴 하락추세','추세 이탈','20일선 < 60일선이고 현재가도 20일선 아래(피크Easy 매도 조건)'],
+                        ].map(([a,b,c]) => <tr key={a}><td style={{whiteSpace:'nowrap',fontWeight:700,verticalAlign:'top',paddingRight:'0.5rem'}}>{a}</td><td style={{verticalAlign:'top'}}><b>{b}</b><br/><span style={{color:'var(--text-muted)'}}>{c}</span></td></tr>)}
+                      </tbody></table>
+                      <div style={{fontSize:'0.62rem',color:'var(--text-muted)',marginTop:'0.4rem',lineHeight:1.6}}>
+                        작은 배지 <b>추±N</b> = 이동평균 정배열 정도(+4 완전정배열 … −4 완전역배열, 참고용) · <b>가±N</b> = 가치 점수(PBR·PER·ROE·ROA 합산, 3 이상이면 상승 추세에서 '추가매수'로만 쓰고 매도 판단에는 쓰지 않음).
                       </div>
                     </div>
-                    <div style={{padding:'0.7rem',borderRadius:'8px',background:'rgba(15,23,42,0.03)',
-                      border:'1px solid rgba(15,23,42,0.2)'}}>
-                      <div style={{fontSize:'0.7rem',fontWeight:700,color:'rgba(15,23,42,0.88)',marginBottom:'0.4rem'}}>
-                        💎 가치 점수 계산 (가치 스코어)
-                      </div>
-                      <div style={{fontSize:'0.65rem',color:'rgba(15,23,42,0.88)',lineHeight:1.8}}>
-                        <div><b style={{color:'rgba(15,23,42,0.88)'}}>PBR</b>: ≤0.5 <span style={{color:'#15803d'}}>+4</span> / ≤1.0 <span style={{color:'#15803d'}}>+3</span> / ≤2.0 <span style={{color:'#15803d'}}>+1</span> / ≤4.0 <span style={{color:'#dc2626'}}>-1</span> / &gt;4 <span style={{color:'#dc2626'}}>-2</span></div>
-                        <div><b style={{color:'rgba(15,23,42,0.88)'}}>PER</b>: ≤6 <span style={{color:'#15803d'}}>+4</span> / ≤12 <span style={{color:'#15803d'}}>+3</span> / ≤20 <span style={{color:'#15803d'}}>+1</span> / ≤35 <span style={{color:'#dc2626'}}>-1</span> / &gt;35 <span style={{color:'#dc2626'}}>-2</span></div>
-                        <div><b style={{color:'rgba(15,23,42,0.88)'}}>ROE</b>: ≥25% <span style={{color:'#15803d'}}>+3</span> / ≥15% <span style={{color:'#15803d'}}>+2</span> / ≥8% <span style={{color:'#15803d'}}>+1</span> / &lt;0% <span style={{color:'#dc2626'}}>-2</span></div>
-                        <div><b style={{color:'rgba(15,23,42,0.88)'}}>ROA</b>: ≥10% <span style={{color:'#15803d'}}>+1</span> / &lt;0% <span style={{color:'#dc2626'}}>-1</span></div>
-                        <div style={{marginTop:'0.3rem',color:'rgba(15,23,42,0.88)'}}>
-                          ※ 바이오·신성장 종목은 PER 없음 → 가치데이터없음 처리, 추세만으로 판단
-                        </div>
+                    <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid var(--line)'}}>
+                      <div style={{fontSize:'0.72rem',fontWeight:700,marginBottom:'0.4rem'}}>② 매도시그널(기준가) — 어디까지 내려가면 파는가</div>
+                      <table style={{width:'100%',fontSize:'0.64rem',lineHeight:1.5}}><tbody>
+                        {[
+                          ['🟢 보유','상승 추세. 아래 기준선 중 현재가에 가장 가까운(높은) 값이 매도 기준가',
+                           '· 추세 이탈선 = 20일선 × 0.96\n· 추적손절가 = 고점 × 0.80 (매수가 대비 +5% 이상일 때부터, 고점은 매수일 이후 — 매수일이 없으면 현재 상승 추세 시작 이후)\n· 손절가 = 평단 × 0.92 (손실이 −8% 이내일 때만)'],
+                          ['🔵 반등 관찰','하락 추세 속 반등. 매도 기준가 = 최근 20거래일 종가 저점',
+                           '저점을 다시 깨면 반등 실패 → 매도. 20일선이 60일선 위로 올라서면 상승 추세 전환(보유로 바뀜)'],
+                          ['⛔ 매도','현재가가 매도 기준가 아래, 또는 추세 약화·하락 추세',
+                           '사유가 함께 표시됩니다(기준가 이탈 / 추세 이탈 / 하락 추세 / 반등 실패)'],
+                        ].map(([a,b,c]) => <tr key={a}><td style={{whiteSpace:'nowrap',fontWeight:700,verticalAlign:'top',paddingRight:'0.5rem'}}>{a}</td><td style={{verticalAlign:'top'}}><b>{b}</b><br/><span style={{color:'var(--text-muted)',whiteSpace:'pre-line'}}>{c}</span></td></tr>)}
+                      </tbody></table>
+                      <div style={{fontSize:'0.62rem',color:'var(--text-muted)',marginTop:'0.4rem',lineHeight:1.6}}>
+                        평단 대비 −8%를 이미 넘긴 종목은 '손절가 이미 하회'로 안내만 하고, 판단은 지금부터의 추세로 합니다(지나간 손절가로 반등 중에 매도 표시하지 않음).
+                        칸에 마우스를 올리면 근거와 모든 기준선 가격이 보입니다.
                       </div>
                     </div>
                   </div>
-
-                  {/* 보조 지표 */}
-                  <div style={{padding:'0.6rem 0.8rem',borderRadius:'7px',background:'rgba(15,23,42,0.02)',
-                    border:'1px solid rgba(15,23,42,0.2)',fontSize:'0.65rem',color:'rgba(15,23,42,0.88)',lineHeight:1.8}}>
-                    <span style={{color:'rgba(15,23,42,0.88)',fontWeight:600}}>보조 지표 |</span>
-                    &nbsp; <b>5일수급</b>: 최근 5거래일 외국인·기관 순매수 합계(억원, KIS amt 기준)
-                    &nbsp;·&nbsp; <b>대차잔고</b>: 당일·5일평균·10일평균 차입잔고(주) — 증가(▲) = 공매도 세력 유입 주의
-                    &nbsp;·&nbsp; <b>손절기준</b>: ATR(14) × 2 이하 하락 or 손익 -10% 도달
-                    &nbsp;·&nbsp; <b>익절고려</b>: 추세양호하나 PBR/PER 고평가 구간 진입 시 또는 수익률 +20% 이상에서 추세 약화
+                  <div style={{marginTop:'0.7rem',fontSize:'0.62rem',color:'var(--text-muted)',lineHeight:1.7}}>
+                    <b>보조 지표</b> · 5일수급: 최근 5거래일 외국인·기관 순매수(억원) · 대차잔고: 당일·5일·10일 평균 차입잔고, 증가(▲)는 공매도 부담 확대
                   </div>
                 </div>
               </section>
@@ -16023,7 +15994,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
                   {chartSignals.score.verdict}
                 </span>
                 <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)' }}>
-                  단기 타이밍: 반등 {chartSignals.score.bottom}/{chartSignals.score.max} · 하락 {chartSignals.score.top}/{chartSignals.score.max}
+                  단기 타이밍(단기추세·주봉·캔들): 상승 신호 {chartSignals.score.bottom}/{chartSignals.score.max} · 하락 신호 {chartSignals.score.top}/{chartSignals.score.max}
                 </span>
                 <span style={{ fontSize:'0.64rem', color:'var(--text-secondary)', flexBasis:'100%' }}>
                   {chartSignals.score.note}
@@ -16071,10 +16042,11 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
                 <div style={{ fontSize:'0.72rem', fontWeight:700, marginBottom:'0.4rem' }}>제품·부문별 매출 {revenueMix.product_mix_year ? `(${revenueMix.product_mix_year}년)` : ''}</div>
                 {(revenueMix.product_mix||[]).length === 0 ? (
                   <div style={{ fontSize:'0.7rem', color:'var(--text-secondary)' }}>사업보고서 제품별 매출 미수집</div>
-                ) : (revenueMix.product_mix||[]).slice(0,8).map((p, idx) => (
+                ) : (() => { const pm = (revenueMix.product_mix||[]).filter(p => (p.pct||0) >= 0.05); const cnt = {}; pm.forEach(p => { cnt[p.category] = (cnt[p.category]||0)+1; });
+                    return pm.slice(0,8).map(p => ({...p, _label: (!p.category || cnt[p.category] > 1) ? [p.category, p.product].filter(Boolean).join(' · ') : p.category})); })().map((p, idx) => (
                   <div key={idx} style={{ marginBottom:'0.3rem' }}>
                     <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.66rem', gap:'0.5rem' }}>
-                      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={p.product}>{p.category || p.product}</span>
+                      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={[p.category, p.product].filter(Boolean).join(' · ')}>{p._label}</span>
                       <span>{p.pct != null ? Number(p.pct).toFixed(1) + '%' : '-'}</span>
                     </div>
                     <div style={{ height:'6px', borderRadius:'3px', background:'var(--line)' }}>

@@ -991,18 +991,20 @@ def get_chart_signals(code: str):
 
     trend_items = [
         {"state": "up" if short_up else "down", "label": "단기 (5·10일선)",
-         "statement": "단기 반등이 진행 중이다 (5일선 > 10일선)" if short_up else "단기 조정이 진행 중이다 (5일선 < 10일선)"},
+         "statement": ("단기 상승 흐름이다 (5일선 > 10일선)" if _th.get("regime") in ("up", "pullback") else "단기 반등이 진행 중이다 (5일선 > 10일선)") if short_up else "단기 조정이 진행 중이다 (5일선 < 10일선)"},
         {"state": "up" if aligned_up else ("down" if aligned_down else "flat"), "label": "중기 (20·60·120일선)",
-         "statement": ("이평선 정배열 — 중장기 상승 구조다" if aligned_up else
-                       "이평선 역배열 — 중장기 하락 구조다" if aligned_down else
-                       "이평선 혼조 — 방향 탐색 구간이다")},
+         "statement": ("20·60·120일선 정배열 — 중장기 상승 구조다" if aligned_up else
+                       "20·60·120일선 역배열 — 중장기 하락 구조다" if aligned_down else
+                       ("20일선 > 60일선이지만 120일선이 아직 위에 있다 — 상승 전환 초기(120일선까지 정배열 전)" if (ma20 and ma60 and ma20 > ma60) else
+                        "20일선 < 60일선이지만 120일선은 아래 — 하락 전환 초기" if (ma20 and ma60 and ma120 and ma20 < ma60 and ma60 > ma120) else
+                        "이평선 혼조 — 방향 탐색 구간이다"))},
         {"state": ("up" if cross and cross["type"] == "golden" else "down" if cross else "flat"),
          "label": "골든/데드크로스",
          "statement": (f"⚡ 골든크로스가 {cross['days_ago']}일 전 발생했다 (20일선이 60일선 상향 돌파)" if cross and cross["type"] == "golden" else
                        f"☠ 데드크로스가 {cross['days_ago']}일 전 발생했다 (20일선이 60일선 하향 이탈)" if cross else
                        "최근 20일 내 교차 없음")},
         {"state": "up" if wk_higher_low else ("down" if wk_lower_high else "flat"), "label": "주봉 (큰 흐름)",
-         "statement": ("주 단위 저점이 높아지고 있다 — 바닥 다지기" if wk_higher_low else
+         "statement": (("주 단위 저점이 높아지고 있다 — 상승 구조 유지" if _th.get("regime") in ("up", "pullback") else "주 단위 저점이 높아지고 있다 — 바닥 다지기") if wk_higher_low else
                        "주 단위 고점이 낮아지고 있다 — 상단 무거움" if wk_lower_high else "주봉상 뚜렷한 구조 없음")},
         {"state": "up" if mo_up else ("down" if mo_down else "flat"), "label": "월봉 (장기 흐름)",
          "statement": ("월 단위로 저점 상승/반등 중이다" if mo_up else
@@ -1117,7 +1119,7 @@ def get_chart_signals(code: str):
                        f"최근 20거래일 고점 {round(resistance_20d):,}원 아래 ({(curr-resistance_20d)/resistance_20d*100:.1f}%) — 돌파 시 추세 가속 가능")
          } if resistance_20d else None,
         {"state": "up" if candle_bull else ("down" if candle_bear else "flat"), "label": "캔들 패턴 (최근 3일)",
-         "statement": ("망치형/상승장악형 출현 — 바닥권 매수세 유입 신호다" if candle_bull else
+         "statement": (("망치형/상승장악형 출현 — 매수세 유입 신호다" if _th.get("regime") in ("up", "pullback") else "망치형/상승장악형 출현 — 바닥권 매수세 유입 신호다") if candle_bull else
                        "유성형/하락장악형 출현 — 고점권 매도세 출현 신호다" if candle_bear else "특이 반전 패턴 없음")},
         {"state": "down" if pos_52w >= 80 else ("up" if pos_52w <= 25 else "flat"), "label": "52주 위치",
          "statement": f"52주 고점 대비 {from_high_pct:.1f}% · 저점 대비 +{from_low_pct:.1f}% (구간 내 {pos_52w:.0f}% 지점)"},
@@ -1131,7 +1133,7 @@ def get_chart_signals(code: str):
     # 이제 큰 판정 = 추세 국면(trend_rules — 모멘텀Easy·피크Easy 매도 규칙, 계좌현황과 동일), 3요소는 단기 타이밍 보조.
     import trend_rules as _tr
     _t = _tr.assess_trend(closes)
-    _timing = ("단기 반등 신호 우세" if bottom_core3 >= 2 and bottom_core3 > top_core3 else
+    _timing = ("단기 상승 신호 우세" if bottom_core3 >= 2 and bottom_core3 > top_core3 else
                "단기 하락 신호 우세" if top_core3 >= 2 and top_core3 > bottom_core3 else "단기 신호 혼재")
     _reg = _t.get("regime")
     if _reg == "up":

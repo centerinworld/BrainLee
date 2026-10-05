@@ -382,58 +382,16 @@ def get_buy_candidates():
             hist_map.setdefault(sc, []).append((row[1], row[2], row[3], row[4]))
 
     def _trade_signal_from_rows(rows270: list[tuple]) -> tuple[str, str]:
+        """2026-10-05: 임의 규칙(MACD 계산 오류 포함) → 모멘텀Easy·피크Easy 진입 조건(trend_rules.entry_signal), 계좌현황과 같은 추세 국면 규칙."""
         try:
-            if len(rows270) < 30:
-                return "hold", ""
-            closes = [r[0] for r in rows270]
-            vols   = [r[1] or 0 for r in rows270]
-            inst5  = sum(r[2] or 0 for r in rows270[:5])
-            frn5   = sum(r[3] or 0 for r in rows270[:5])
-            c      = closes[0]
-
-            def _ma(n): return sum(closes[:n]) / n if len(closes) >= n else closes[0]
-            ma5, ma20, ma60 = _ma(5), _ma(20), _ma(60)
-            ma200 = _ma(200)
-            high52 = max(closes[:252] if len(closes) >= 252 else closes)
-            from_h = (c - high52) / high52 * 100
-            avg_vol = sum(vols[1:21]) / 20 if len(vols) >= 21 else 1
-
-            align_up = c > ma5 > ma20 > ma60
-            align_down = c < ma5 < ma20 < ma60
-            supply_pos = inst5 > 0 and frn5 > 0
-            vol_surge = vols[0] > avg_vol * 1.8
-
-            g = []; l = []
-            for i in range(1, min(15, len(closes))):
-                d = closes[i - 1] - closes[i]
-                (g if d > 0 else l).append(abs(d))
-                (l if d > 0 else g).append(0)
-            ag = sum(g) / len(g) if g else 0
-            al = sum(l) / len(l) if l else 1
-            rsi = round(100 - 100 / (1 + ag / al)) if al else 50
-
-            def _ema(data, n):
-                k = 2 / (n + 1); e = data[0]
-                for v in data[1:]: e = v * k + e * (1 - k)
-                return e
-            ca = list(reversed(closes))
-            macd_v = (_ema(ca[-12:], 12) - _ema(ca[-26:], 26)) if len(ca) >= 26 else 0
-
-            if align_down and c < ma200:
-                return "strong_sell", f"역배열+MA200아래 [RSI:{rsi}]"
-            if c < ma20 and rsi < 45:
-                return "sell", f"MA20이탈+RSI{rsi} [RSI:{rsi}]"
-            if align_up and c > ma200 and 50 <= rsi <= 70 and supply_pos and vol_surge:
-                return "strong_buy", f"완전정배열+RSI{rsi}+수급+거래급증 [RSI:{rsi}]"
-            if align_up and from_h >= -10 and supply_pos and c > ma200:
-                return "strong_buy", f"신고가근접({from_h:.0f}%)+정배열 [RSI:{rsi}]"
-            if align_up and rsi >= 50 and macd_v > 0:
-                return "buy", f"정배열+RSI{rsi}+MACD양전환 [RSI:{rsi}]"
-            if c > ma20 > ma60 and supply_pos:
-                return "buy", f"MA정배열+수급양호 [RSI:{rsi}]"
-            if c > ma20:
-                return "hold", f"MA20위 관망 [RSI:{rsi}]"
-            return "caution", f"MA20아래 [RSI:{rsi}]"
+            import trend_rules as _tr
+            if len(rows270) < 60:
+                return "hold", "가격 60일 미만 — 판단 불가"
+            closes = [r[0] for r in reversed(rows270)]
+            vols = [r[1] or 0 for r in reversed(rows270)]
+            inst5 = sum(r[2] or 0 for r in rows270[:5])
+            frn5 = sum(r[3] or 0 for r in rows270[:5])
+            return _tr.entry_signal(closes, vols, inst5, frn5)
         except Exception:
             return "hold", ""
 

@@ -176,3 +176,36 @@ def adjust_series(dates_asc, series_asc, factors):
             if s[k] is not None:
                 s[k] *= f
     return s
+
+
+def entry_signal(closes_asc, vols_asc, inst5=0.0, frn5=0.0):
+    """매수후보 진입 판단(2026-10-05) — 모멘텀Easy(se_momentum)·피크Easy(peak_easy) 진입 조건, 매도와 같은 추세 국면 규칙.
+    주도 섹터 순위·KOSPI 대비 상대강도 조건은 이 화면에 데이터가 없어 제외(설명에 명시).
+    반환 (신호, 사유): strong_buy 피크Easy 충족 / buy 모멘텀Easy 충족 / hold 상승 추세·조건 미충족 / caution 하락 추세 속 반등 / sell 추세 약화 / strong_sell 하락 추세."""
+    c = [float(x) for x in closes_asc]
+    t = assess_trend(c)
+    reg = t.get("regime")
+    if reg == "unknown":
+        return "hold", "가격 60일 미만 — 판단 불가"
+    if reg == "down":
+        return "strong_sell", "하락 추세(20일선 < 60일선, 현재가 < 20일선) — 진입 불가"
+    if reg == "weakening":
+        return "sell", "추세 약화(5일선 < 20일선×0.96) — 진입 불가"
+    if reg == "rebound":
+        return "caution", f"하락 추세 속 반등 — 20일선 {t['ma20']:,.0f}이 60일선 {t['ma60']:,.0f} 위로 올라설 때까지 대기"
+    cur, ma5, ma20 = c[-1], t["ma5"], t["ma20"]
+    hi52 = max(c[-252:])
+    v = [float(x or 0) for x in vols_asc]
+    vol_ok = len(v) >= 20 and sum(v[-5:]) / 5 > (sum(v[-20:]) / 20) * 1.3
+    if cur >= hi52 * 0.995 and cur > ma20 and vol_ok:
+        return "strong_buy", "피크Easy 진입 조건 충족: 52주 신고가권 + 20일선>60일선 + 거래량 재증가(5일 평균 > 20일 평균×1.3)"
+    if ma5 > ma20 and cur >= ma20 * 0.97 and (inst5 > 0 or frn5 > 0):
+        return "buy", "모멘텀Easy 진입 조건 충족: 5일선 > 20일선, 현재가 ≥ 20일선×0.97, 기관 또는 외국인 5일 순매수"
+    miss = []
+    if not ma5 > ma20:
+        miss.append("5일선 ≤ 20일선")
+    if not (inst5 > 0 or frn5 > 0):
+        miss.append("기관·외국인 5일 순매도")
+    if cur < hi52 * 0.995:
+        miss.append(f"52주 고점 대비 {(cur / hi52 - 1) * 100:.0f}%")
+    return "hold", f"{t['label']} — 진입 조건 미충족({', '.join(miss)})"
