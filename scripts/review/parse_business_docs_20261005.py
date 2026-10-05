@@ -6,6 +6,7 @@
   biz_capacity              생산능력·생산실적·가동률(품목별)   검증: 생산실적 ÷ 생산능력 ≈ 공시 가동률(같은 품목이 양쪽 표에 있을 때)
   biz_raw_material_price    주요 원재료 가격(품목별, 단위)    검증: 이 보고서의 전기 값 = 전년 보고서 당기 값
   biz_sales_domestic_export 내수/수출 매출(매출실적 표 또는 '지역별 매출' 표)  검증: 내수+수출 = 합계(0.5%), 합계 ≈ 연간 매출(연결 또는 별도, 1%)
+  biz_segment               영업부문별 매출·영업이익(주석)  검증: 부문 합(조정 포함) = 합계(1%), 합계 = 연간 매출(같은 구분, 1%)
   company_product_mix       2021~2022 제품별 매출(기존 2023+ 수집기 extract_product_mix 재사용, 기존 연도 행은 건드리지 않음)
 검증 실패 행도 저장하되 check_status 로 구분 — 화면은 ok 만 쓴다(fail-closed, 원칙 0).
 """
@@ -37,6 +38,9 @@ DDL = [
     """CREATE TABLE IF NOT EXISTS biz_cost_nature (stock_code TEXT, fiscal_year INTEGER, report_type TEXT, category TEXT, amount_krw DOUBLE PRECISION,
        items_json TEXT, total_krw DOUBLE PRECISION, is_cost_krw DOUBLE PRECISION, check_status TEXT, rcept_no TEXT, run_id TEXT,
        PRIMARY KEY (stock_code, fiscal_year, report_type, category))""",
+    """CREATE TABLE IF NOT EXISTS biz_segment (stock_code TEXT, fiscal_year INTEGER, report_type TEXT, segment TEXT, revenue_krw DOUBLE PRECISION,
+       op_profit_krw DOUBLE PRECISION, revenue_pct DOUBLE PRECISION, total_krw DOUBLE PRECISION, revenue_ref_krw DOUBLE PRECISION, layout TEXT,
+       check_status TEXT, rcept_no TEXT, run_id TEXT, PRIMARY KEY (stock_code, fiscal_year, report_type, segment))""",
     """CREATE TABLE IF NOT EXISTS biz_sales_domestic_export (stock_code TEXT, fiscal_year INTEGER, source TEXT, domestic_krw DOUBLE PRECISION,
        export_krw DOUBLE PRECISION, total_krw DOUBLE PRECISION, export_pct DOUBLE PRECISION, matched_basis TEXT, check_status TEXT, rcept_no TEXT, run_id TEXT,
        PRIMARY KEY (stock_code, fiscal_year, source))""",
@@ -61,11 +65,19 @@ def unit_of(text):
     return None, None
 
 
+NOTE_END = {"연결재무제표 주석": r"<TITLE[^>]*>\s*\d+\.\s*재무제표\s*</TITLE>", "재무제표 주석": r"<TITLE[^>]*>\s*\d+\.\s*배당"}
+
+
 def section(x, title_kw, next_kw=None):
-    m = re.search(r"<TITLE[^>]*>\s*[\dIVX.\s]*" + title_kw, x)
+    """목차 제목으로 섹션 추출. 2026-10-05: 2023년 이후 원문은 주석마다 'N. 제목 (연결)' TITLE이 붙어 주석 섹션이 첫 주석에서 끊겼다
+    → 주석 섹션은 다음 대목차(4. 재무제표 / 6. 배당)까지."""
+    m = re.search(r"<TITLE[^>]*>\s*[\dIVX.\s]*" + title_kw + r"\s*</TITLE>", x) or re.search(r"<TITLE[^>]*>\s*[\dIVX.\s]*" + title_kw, x)
     if not m:
         return ""
     rest = x[m.end():]
+    if title_kw in NOTE_END:
+        n = re.search(NOTE_END[title_kw], rest)
+        return rest[: n.start()] if n else rest[:3000000]
     n = re.search(r"<TITLE[^>]*>\s*(?:\d+\.|[IVX]+\.)", rest)
     return rest[: n.start()] if n else rest[:400000]
 
@@ -73,7 +85,7 @@ def section(x, title_kw, next_kw=None):
 def tables_with_unit(sec):
     out, pos = [], 0
     for m in re.finditer(r"<TABLE.*?</TABLE>", sec, re.S):
-        grid = parse_html_table_grid(m.group())
+        grid = [r for r in parse_html_table_grid(m.group()) if r]
         before = sec[max(0, m.start() - 1500): m.start()]
         u = unit_of(re.sub(r"<[^>]+>", " ", before + " ".join(" ".join(r) for r in grid[:1])))
         out.append((grid, u, re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", before[-400:])))))
@@ -291,6 +303,109 @@ def parse_cost_nature(x):
     return None
 
 
+SEG_REV = [r"^외부(고객)?(으로부터의)?(매출|수익)", r"^(매출액|매출|영업수익|순매출액?|수익)$", r"^(총)?매출액?(합계)?$", r"매출"]
+SEG_OP = r"^(영업(이익|손익|손실)|부문(이익|손익))"
+SEG_SKIP = r"^(계|합계|총계|소계|연결|조정|중요한조정|조정사항|내부거래|연결조정|제거|부문간|기타조정|연결실체|전체|합\(|계\()"
+SEG_TOTAL = r"^(계|합계|총계|연결|전체)|기업전체|총계합계|부문합계후|합계$"
+SEG_SUB = r"^(소계|부문계|보고부문(합계|계)|보고부문소계|영업부문(합계|계)|합계\(보고)"   # 소계 — 부문 합에 이미 포함, 저장하지 않음
+SEG_BAD = (r"^(당기|전기|당기말|전기말|당분기|전분기|고객|거래처|[A-Z가-힣]사$|\d{4}|국내|해외|내수|수출|대한민국|한국|아시아|미국|미주|북미|유럽|중국|아프리카|중남미|일본)"
+           r"|총수익|원가|판매비|총비용|영업이익|영업손익|영업자산|영업부채|장부금액|기초금액|대손|전사합계|외부거래|외부고객|부문간")  # 부문 표가 아닌 표(기간·고객·지역)
+
+
+def _is_num_cell(c):
+    return num(c) is not None and re.fullmatch(r"[\s\d,.()△▲\-−%]+", c or "") is not None
+
+
+def parse_segments(x):
+    """영업부문 주석. 반환 (구분, 배치, [(부문, 매출, 영업이익)], 합계 또는 None) / 단일 부문이면 (구분, 'single', [], None)."""
+    for title, fs in (("연결재무제표 주석", "CFS"), ("재무제표 주석", "OFS")):
+        sec = section(x, title)
+        if not sec:
+            continue
+        txt = re.sub(r"<[^>]+>", " ", sec)
+        for m in re.finditer(r"\d{1,2}\s*\.\s*(?:\(?영업\)?\s*)?부문(?:\s*별)?(?:\s*(?:정보|공시))?", sec):
+            look = re.sub(r"<[^>]+>", " ", sec[m.start(): m.start() + 20000])
+            if not re.search(r"보고부문|영업부문|최고\s*영업\s*의사\s*결정|단일", look):
+                continue
+            if re.search(r"단일\s*(의\s*)?(영업|보고)?\s*부문", look[:1500]):
+                return fs, "single", [], None
+            sub = sec[m.start(): m.start() + 60000]
+            for grid, (u, _), _ in tables_with_unit(sub)[:8]:
+                if u is None or len(grid) < 2:
+                    continue
+                # 배치 A: 행 = 지표(매출액·영업이익), 열 = 부문
+                lab = [re.sub(r"\s+", "", r[0]) for r in grid]
+                rev_i = next((i for pat in SEG_REV for i, l in enumerate(lab) if re.search(pat, l)), None)
+                if rev_i is not None and rev_i > 0:
+                    # 2023~ 원문은 머리글이 여러 줄(기업 전체 총계 / 영업부문 / 부문명) — 부문명이 가장 다양한 줄을 쓴다
+                    cands = [r for r in grid[:rev_i] if len({c for c in r[1:] if c and not _is_num_cell(c)}) >= 2]
+                    hdr = max(cands, key=lambda r: len({c for c in r[1:] if c})) if cands else None
+                    if hdr:
+                        op_i = next((i for i, l in enumerate(lab) if re.search(SEG_OP, l)), None)
+                        segs, total = [], None
+                        for j in range(1, min(len(hdr), len(grid[rev_i]))):
+                            name = re.sub(r"\s+", " ", hdr[j]).strip()
+                            if not name or name == hdr[j - 1] and j > 1 and name == re.sub(r"\s+", " ", hdr[j - 1]).strip():
+                                continue
+                            v = num(grid[rev_i][j])
+                            if v is None:
+                                continue
+                            opv = num(grid[op_i][j]) if op_i is not None and j < len(grid[op_i]) else None
+                            if re.match(SEG_SUB, re.sub(r"\s+", "", name)):
+                                continue
+                            if re.search(SEG_TOTAL, re.sub(r"\s+", "", name)) or re.match(SEG_SKIP, re.sub(r"\s+", "", name)):
+                                if re.search(SEG_TOTAL, re.sub(r"\s+", "", name)):
+                                    total = v * u
+                                else:
+                                    segs.append(("[조정] " + name, v * u, opv * u if opv is not None else None))
+                                continue
+                            segs.append((name, v * u, opv * u if opv is not None else None))
+                        real = [s_ for s_ in segs if not s_[0].startswith("[조정]")]
+                        if len(real) >= 2 and not any(re.search(SEG_BAD, re.sub(r"\s+", "", s_[0])) for s_ in real):
+                            return fs, "cols", segs, total
+                # 배치 B: 행 = 부문, 열 = 매출액(첫 번째 = 당기)
+                hdr_rows = grid[:3]
+                col = None
+                for pat in SEG_REV:
+                    for r in hdr_rows:
+                        col = next((j for j, c in enumerate(r) if j > 0 and re.search(pat, re.sub(r"\s+", "", c))), None)
+                        if col is not None:
+                            break
+                    if col is not None:
+                        break
+                if col is None:
+                    continue
+                opcol = next((j for r in hdr_rows for j, c in enumerate(r) if j > 0 and re.search(SEG_OP, re.sub(r"\s+", "", c))), None)
+                segs, total = [], None
+                for r in grid:
+                    name = re.sub(r"\s+", " ", r[0]).strip()
+                    if col >= len(r) or not _is_num_cell(r[col]):
+                        continue
+                    v = num(r[col]) * u
+                    opv = num(r[opcol]) * u if opcol is not None and opcol < len(r) and num(r[opcol]) is not None else None
+                    key = re.sub(r"\s+", "", name)
+                    if re.match(SEG_SUB, key):
+                        continue
+                    if re.search(SEG_TOTAL, key):
+                        total = v
+                        break
+                    segs.append((("[조정] " + name) if re.match(SEG_SKIP, key) else name, v, opv))
+                real = [s_ for s_ in segs if not s_[0].startswith("[조정]")]
+                if len(real) >= 2 and not any(re.search(SEG_BAD, re.sub(r"\s+", "", s_[0])) for s_ in real):
+                    return fs, "rows", segs, total
+            break
+    return None
+
+
+def safe(fn, x, st):
+    """문서 하나의 표 형식 문제로 전체 실행이 멈추지 않게 — 실패는 집계만."""
+    try:
+        return fn(x)
+    except Exception:
+        st[f"파싱 예외 {fn.__name__}"] += 1
+        return None
+
+
 def main():
     conn = connect_primary_db(timeout=900)
     for d in DDL:
@@ -328,7 +443,7 @@ def main():
             k = (p.parent.name, int(m.group(1)))
             if k not in latest or m.group(2) > latest[k][1]:
                 latest[k] = (f, m.group(2))
-    rd_rows, cap_rows, raw_rows, de_rows, mix_rows, cost_rows = [], [], [], [], [], []
+    rd_rows, cap_rows, raw_rows, de_rows, mix_rows, cost_rows, seg_rows = [], [], [], [], [], [], []
     for (code, fy), (f, rc) in sorted(latest.items()):
         try:
             x = load(f)
@@ -336,7 +451,7 @@ def main():
             st["원문 읽기 실패"] += 1
             continue
         rv = rev.get((code, fy), {})
-        r = parse_rd(x)
+        r = safe(parse_rd, x, st)
         if r:
             tot, ratio = r
             comp = {fs: tot / v * 100 for fs, v in rv.items()}
@@ -344,23 +459,46 @@ def main():
             status = "ok" if ok else ("no_ratio" if ratio is None else "ratio_mismatch")
             st[f"연구개발비 {status}"] += 1
             rd_rows.append((code, fy, tot, ratio, min(comp.values(), key=lambda c: abs(c - (ratio or c))) if comp else None, status, rc, run_id))
-        for item, d in parse_capacity(x).items():
+        for item, d in (safe(parse_capacity, x, st) or {}).items():
             cp, pr, ut = d.get("cap"), d.get("prod"), d.get("util")
             status = "ok" if (cp and pr and ut is not None and abs(pr / cp * 100 - ut) <= 2) else ("unverified" if ut is not None or cp or pr else None)
             if status:
                 st[f"가동률 {status}"] += 1
                 cap_rows.append((code, fy, item[:200], cp, pr, ut, d.get("unit"), status, rc, run_id))
-        for item, (v, p, un) in parse_raw_material_price(x).items():
+        for item, (v, p, un) in (safe(parse_raw_material_price, x, st) or {}).items():
             raw_rows.append((code, fy, item[:200], v, p, un, "unverified", rc, run_id))
             st["원재료 가격"] += 1
-        for src, dom, exp, tot in parse_dom_exp(x):
+        for src, dom, exp, tot in (safe(parse_dom_exp, x, st) or []):
             total = tot or (dom + exp)
             ident = tot is None or abs(dom + exp - tot) <= abs(tot) * 0.005
             basis = next((fs for fs, v in rv.items() if abs(total - v) <= abs(v) * 0.01), None)
             status = "ok" if ident and basis else ("identity_fail" if not ident else "revenue_mismatch")
             st[f"내수/수출 {status}"] += 1
             de_rows.append((code, fy, src, dom, exp, total, exp / total * 100 if total else None, basis, status, rc, run_id))
-        cn = parse_cost_nature(x)
+        sg = safe(parse_segments, x, st)
+        if sg:
+            fs, layout, segs, total = sg
+            ref = rv.get(fs) or rv.get("CFS")
+            if layout == "single":
+                st["부문 single"] += 1
+                seg_rows.append((code, fy, fs, "단일 부문", ref, None, 100.0, ref, ref, "single", "single_segment", rc, run_id))
+            else:
+                ssum = sum(v for _, v, _ in segs)
+                tot = total or ssum
+                ok_sum = abs(ssum - tot) <= abs(tot) * 0.01
+                ok_ref = ref is not None and abs(tot - ref) <= abs(ref) * 0.01
+                has_adj = any(n.startswith("[조정]") for n, _, _ in segs)
+                if ok_sum and ok_ref:
+                    stt = "ok"
+                elif ok_ref and not has_adj and total and ssum > total:
+                    stt = "ok_gross"  # 표 합계 = 연결 매출, 부문 매출은 부문 간 내부거래 포함(삼성전자처럼 조정 열 미공시)
+                else:
+                    stt = "sum_mismatch" if not ok_sum else ("no_revenue" if ref is None else "revenue_mismatch")
+                st[f"부문 {stt}"] += 1
+                base = ssum if stt == "ok_gross" else tot  # 내부거래 포함 부문 매출은 부문 합계 대비 비중(연결 매출 대비면 100% 초과)
+                for name, v, opv in segs:
+                    seg_rows.append((code, fy, fs, name[:200], v, opv, v / base * 100 if base else None, tot, ref, layout, stt, rc, run_id))
+        cn = safe(parse_cost_nature, x, st)
         if cn:
             fs, cats, items, total = cn
             ic = is_cost(code, fy, fs)
@@ -378,7 +516,7 @@ def main():
                 for q in recs:
                     mix_rows.append((code, fy, q["category"], q["product_name"], q["revenue"] * mul, round(q["revenue"] * mul / tot * 100, 2), rc, "dart_doc_cache"))
                 st["제품별 매출(2021~22)"] += 1
-    for t in ("biz_rd_expense", "biz_capacity", "biz_raw_material_price", "biz_sales_domestic_export", "biz_cost_nature"):
+    for t in ("biz_rd_expense", "biz_capacity", "biz_raw_material_price", "biz_sales_domestic_export", "biz_cost_nature", "biz_segment"):
         conn.execute(f"DELETE FROM {t}")
     def ins(t, cols, rows):
         rows = list({tuple(r[:k]): r for r in rows for k in [cols]}.values())
@@ -390,6 +528,7 @@ def main():
     ins("biz_raw_material_price", 3, raw_rows)
     ins("biz_sales_domestic_export", 3, de_rows)
     ins("biz_cost_nature", 4, cost_rows)
+    ins("biz_segment", 4, seg_rows)
     if mix_rows:
         conn.executemany("""INSERT INTO company_product_mix(stock_code, year, category, product_name, revenue_krw, revenue_pct, rcept_no, source)
                             VALUES (?,?,?,?,?,?,?,?)""", mix_rows)

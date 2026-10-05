@@ -16095,6 +16095,9 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
               const xa = (m.extra_accounts||[])[0];
               const LBL = {short_borrowings:'단기차입금', long_borrowings:'장기차입금', bonds:'사채', trade_other_receivables:'매출채권 등', finance_costs:'금융원가', interest_expense:'이자비용', interest_paid:'이자 지급'};
               const cards = [];
+              if ((m.segments||[]).length) cards.push(card(`🏢 영업부문 (${m.segment_year}년${m.segments[0]?.status === 'ok_gross' ? ', 부문 간 거래 포함' : ''})`,
+                m.segments[0]?.status === 'single_segment' ? <div>단일 부문 (매출 {eok(m.segments[0].revenue)})</div> :
+                m.segments.slice(0,7).map((r,i) => <div key={i}>{r.segment} {r.pct != null ? r.pct.toFixed(1)+'%' : ''} ({eok(r.revenue)}{r.op_profit != null ? ', 영업이익 '+eok(r.op_profit) : ''})</div>)));
               if ((m.rd||[]).length) cards.push(card('🔬 연구개발비', (m.rd||[]).slice(0,4).map(r => <div key={r.year}>{r.year}년 {eok(r.rd_krw)} · 매출 대비 {r.ratio_pct != null ? r.ratio_pct+'%' : '-'} {badge(r.status)}</div>)));
               if ((m.capacity||[]).length) cards.push(card(`🏭 가동률 (${m.capacity_year}년)`, m.capacity.slice(0,6).map((r,i) => <div key={i}>{r.item} {r.util_pct}% {badge(r.status)}</div>)));
               if ((m.cost_nature||[]).length) cards.push(card(`🧾 비용 구성 (${m.cost_nature_year}년)`, m.cost_nature.map((r,i) => <div key={i}>{r.category} {r.total ? (r.amount/r.total*100).toFixed(1) : '-'}% ({eok(r.amount)}) {i===0 ? badge(r.status) : null}</div>)));

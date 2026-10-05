@@ -166,7 +166,15 @@ def get_revenue_mix(code: str):
         extra_list = [{"year": y_, **{k: v for k, v in d.items()}} for y_, d in sorted(extra.items(), reverse=True)[:3]]
         div = [{"year": r[0], "dps": r[1], "total_bn": r[2], "yield_pct": r[3], "payout_pct": r[4]} for r in q(
             "SELECT fiscal_year, dps_krw, total_cash_div_bn, div_yield_pct, div_payout_pct FROM dart_dividends WHERE stock_code=? AND reprt_code='11011' AND fiscal_year>=2021 ORDER BY fiscal_year DESC", code)]
+        seg_y = q("SELECT MAX(fiscal_year) FROM biz_segment WHERE stock_code=? AND check_status IN ('ok','ok_gross','single_segment')", code)
+        segments = []
+        if seg_y and seg_y[0][0]:
+            segments = [{"segment": r[0], "revenue": r[1], "op_profit": r[2], "pct": r[3], "status": r[4], "report_type": r[5]} for r in q(
+                """SELECT segment, revenue_krw, op_profit_krw, revenue_pct, check_status, report_type FROM biz_segment
+                   WHERE stock_code=? AND fiscal_year=? AND check_status IN ('ok','ok_gross','single_segment')
+                   ORDER BY CASE WHEN segment LIKE '[조정]%%' THEN 1 ELSE 0 END, revenue_krw DESC""", code, seg_y[0][0])]
         return {"ok": True, "geography": geo, "product_mix_year": y, "product_mix": products,
+                "segment_year": seg_y[0][0] if seg_y else None, "segments": segments,
                 "rd": rd, "capacity_year": cap_y[0][0] if cap_y else None, "capacity": capacity,
                 "raw_material_year": raw_y[0][0] if raw_y else None, "raw_material": raw,
                 "cost_nature_year": cn_y[0][0] if cn_y else None, "cost_nature": cost, "extra_accounts": extra_list, "dividends": div,

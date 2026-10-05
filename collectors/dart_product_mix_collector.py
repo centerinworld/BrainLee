@@ -208,7 +208,9 @@ def parse_html_table_grid(table_html: str) -> list[list[str]]:
     pending: dict[int, list] = {}  # col_idx -> [remaining_rows, text]
     max_cols = 0
     for row_html in rows_raw:
-        cells = re.findall(r"<T[DH]\b([^>]*)>(.*?)</T[DH]>", row_html, re.S | re.I)
+        # 2026-10-05: DART 원문은 <TE>(값)·<TU>(단위) 셀도 쓴다 — TD/TH만 읽어 2023년 이후 XBRL형 주석 표의 값이 전부 빠졌다
+        cells = re.findall(r"<(T[DHEU])\b([^>]*)>(.*?)</\1>", row_html, re.S | re.I)
+        cells = [(a, t) for _, a, t in cells]
         row: dict[int, str] = {}
         col = 0
 
