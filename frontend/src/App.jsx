@@ -9033,7 +9033,7 @@ const _signalFrontCache = {};
                   <thead><tr>
                     <th style={{minWidth:'90px'}}>종목명</th>
                     <th style={{textAlign:'center',minWidth:'70px'}} title="모멘텀Easy(MA5<MA20×0.96)·피크Easy(MA20<MA60) 추세 이탈에서만 매도. 밸류에이션만으로는 매도하지 않음">추세추종 신호</th>
-                    <th style={{textAlign:'center',minWidth:'90px'}} title="모멘텀Easy·피크Easy 매도 규칙: 손절 -8%(상승 추세 회복 중이면 주의) · 이익 +5% 이후 고점 대비 -20% 추적손절">매도시그널(트레일)</th>
+                    <th style={{textAlign:'center',minWidth:'90px'}} title="보유=매도 기준가(추세 이탈선 20일선×0.96·추적손절 고점×0.8·손절 평단×0.92 중 가장 가까운 값) 아래로 내려가면 매도 / 반등 관찰=하락 추세 속 반등, 최근 20일 저점을 깨면 매도 / 매도=이미 기준 이탈. 마우스를 올리면 근거와 기준선 전체 표시">매도시그널(기준가)</th>
                     <th style={{textAlign:'right',minWidth:'105px',borderLeft:'1px solid rgba(15,23,42,0.2)'}}>주가(%)</th>
                     <th style={{textAlign:'right',minWidth:'105px'}}>매입가(%)</th>
                     <th style={{textAlign:'right',minWidth:'55px'}}>수량</th>
@@ -9161,25 +9161,25 @@ const _signalFrontCache = {};
                           {(() => {
                             const tr = h.trail_signal;
                             if(!tr) return <span style={{color:'rgba(15,23,42,0.88)',fontSize:'0.7rem'}}>-</span>;
+                            // 2026-10-05 재설계: 보유 / 반등 관찰 / 매도 + 매도 기준가(이 가격 아래로 내려가면 규칙상 매도) — trend_rules.exit_signal
                             const cfg = {
-                              'sell':  {emoji:'⛔', label:'매도', color:'#dc2626', bg:'rgba(220,38,38,0.2)'},
-                              'watch': {emoji:'🟠', label:'주의', color:'#c2410c', bg:'rgba(234,88,12,0.12)'},
-                              'hold':  {emoji:'🟢', label:'유지', color:'#15803d', bg:'rgba(22,163,74,0.1)'},
-                            }[tr.status] || {emoji:'⚪', label:'-', color:'#1e293b', bg:'transparent'};
+                              'sell':    {emoji:'⛔', color:'#dc2626', bg:'rgba(220,38,38,0.16)'},
+                              'rebound': {emoji:'🔵', color:'#1d4ed8', bg:'rgba(37,99,235,0.12)'},
+                              'hold':    {emoji:'🟢', color:'#15803d', bg:'rgba(22,163,74,0.1)'},
+                            }[tr.status] || {emoji:'⚪', color:'#1e293b', bg:'transparent'};
                             const tip = [
                               tr.reason || '',
-                              tr.peak_price ? `고점: ${tr.peak_date} ${Number(tr.peak_price).toLocaleString()}원` : '',
-                              tr.drawdown_from_peak_pct != null ? `고점대비 ${tr.drawdown_from_peak_pct}%` : '',
-                              tr.peak_basis || '',
-                            ].filter(Boolean).join(' / ');
+                              ...Object.entries(tr.lines || {}).map(([k,v]) => `${k}: ${Number(v).toLocaleString()}원`),
+                              tr.peak_price ? `고점(${tr.peak_basis||''}): ${tr.peak_date} ${Number(tr.peak_price).toLocaleString()}원 (현재 ${tr.drawdown_from_peak_pct}%)` : '',
+                            ].filter(Boolean).join('\n');
                             return (
                               <div title={tip} style={{display:'flex',flexDirection:'column',alignItems:'center',
                                 padding:'3px 5px',borderRadius:'6px',background:cfg.bg,cursor:'help',gap:'2px'}}>
                                 <span style={{fontSize:'0.88rem',lineHeight:1}}>{cfg.emoji}</span>
-                                <span style={{fontSize:'0.62rem',color:cfg.color,fontWeight:700}}>{cfg.label}</span>
-                                {tr.drawdown_from_peak_pct != null && (
-                                  <span style={{fontSize:'0.5rem',color:'rgba(15,23,42,0.88)'}}>
-                                    고점대비{tr.drawdown_from_peak_pct}%
+                                <span style={{fontSize:'0.62rem',color:cfg.color,fontWeight:700}}>{tr.label || '-'}</span>
+                                {tr.sell_price != null && (
+                                  <span style={{fontSize:'0.55rem',color:'rgba(15,23,42,0.88)',whiteSpace:'nowrap'}}>
+                                    {tr.status === 'sell' ? '기준가 ' : '매도 기준가 '}{Number(tr.sell_price).toLocaleString()}
                                   </span>
                                 )}
                               </div>

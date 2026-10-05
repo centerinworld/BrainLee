@@ -73,39 +73,71 @@ def trend_start_index(closes_asc, lookback=252):
 
 
 def exit_signal(closes_asc, dates_asc, avg_price, bought_at=None, regime=None):
-    """가격 기반 매도 규칙(손절·추적손절). regime(assess_trend 결과)이 up/pullback 이면 손절 기준을 넘었어도
-    '추세 회복 중 — 추세 이탈 시 매도'(watch)로 낮춘다: 이미 -8%를 넘긴 채 보유 중인 종목을 상승 추세 한가운데서
-    손절하라고 하지 않는다(사용자 원칙 '진짜 추세가 전환해야 매도'). 반환 dict(status sell|watch|hold, reason, peak_price, peak_date, drawdown_from_peak_pct, peak_basis)."""
+    """매도 기준가 판정(2026-10-05 재설계 — 사용자: "'주의'는 이상하다, 반등 중인데 매도라 하지 말고 구체적으로").
+
+    상태(status) 3가지와 '매도 기준가'(이 가격 아래로 내려가면 규칙상 매도)를 함께 낸다.
+      hold     보유 — 매도 기준가 = 다음 중 가장 높은(가까운) 가격
+                 · 추세 이탈선  = 20일선 × 0.96 (모멘텀Easy: 5일선이 이 아래로 내려가면 매도)
+                 · 추적손절가  = 고점 × 0.80 (이익 +5% 이후, 모멘텀Easy -20%)
+                 · 손절가      = 평단 × 0.92 (손실 -8% 이내일 때만 — 이미 넘었으면 추세선만 적용)
+      rebound  반등 관찰 — 20일선 < 60일선이지만 현재가가 20일선 위. 매도 기준가 = 최근 20거래일 종가 저점
+                 (저점을 다시 깨면 반등 실패 → 매도), 추세 전환 확인 = 20일선이 60일선 위로.
+      sell     매도 — 현재가가 매도 기준가 아래, 또는 추세 약화(5일선 < 20일선×0.96)·하락 추세(현재가 < 20일선 < 60일선).
+    평단 대비 손실이 -8%를 넘은 종목은 '손절가 이미 하회'를 설명에 쓰되, 판정은 지금부터의 추세로 한다(지나간 손절가로 반등 중 매도 표시 안 함).
+    고점 대비 하락률은 추적손절이 작동하는 경우(상승 추세 + 이익 +5%)에만 낸다(큐리오시스 1년 고점 대비 -77% 표시 오류 수정)."""
     c = [float(x) for x in closes_asc]
     cur = c[-1]
+    t = assess_trend(c)
+    reg = t.get("regime")
     pnl = cur / avg_price - 1 if avg_price else 0.0
-    if bought_at:
-        start = next((k for k, d in enumerate(dates_asc) if str(d)[:10] >= str(bought_at)[:10]), len(c) - 1)
-        basis = "매수일 이후 고점"
+    out = {"status": "hold", "label": "보유", "reason": "", "sell_price": None, "lines": {}, "pnl_pct": round(pnl * 100, 2),
+           "peak_price": None, "peak_date": None, "drawdown_from_peak_pct": None, "peak_basis": None, "regime": reg}
+    if reg == "unknown":
+        out.update(label="판단 불가", reason=t.get("reason"))
+        return out
+    ma20, ma60 = t["ma20"], t["ma60"]
+    lines = {"추세 이탈선(20일선×0.96)": ma20 * MA_EXIT_BUFFER}
+    past_stop = pnl <= STOP
+    stop_note = f"평단 대비 {pnl * 100:.1f}% — 손절가(평단×0.92={avg_price * 0.92:,.0f}원) 이미 하회. 지금부터는 추세 기준으로 판단. " if past_stop else ""
+    if reg in ("weakening", "down"):
+        out.update(status="sell", label="매도(추세 이탈)" if reg == "weakening" else "매도(하락 추세)",
+                   reason=stop_note + t["reason"], sell_price=None, lines={k: round(v) for k, v in lines.items()})
+        return out
+    if reg == "rebound":
+        sup = min(c[-21:-1]) if len(c) > 21 else min(c[:-1])
+        lines = {"최근 20일 종가 저점": sup, "추세 전환 확인(60일선)": ma60}
+        if cur < sup:
+            out.update(status="sell", label="매도(반등 실패)", sell_price=round(sup),
+                       reason=stop_note + f"하락 추세 속 반등이 최근 20일 저점 {sup:,.0f}원을 깼다")
+        else:
+            out.update(status="rebound", label="반등 관찰", sell_price=round(sup),
+                       reason=stop_note + f"20일선 {ma20:,.0f} < 60일선 {ma60:,.0f}(하락 추세), 현재가는 20일선 위. "
+                                          f"{sup:,.0f}원(최근 20일 저점) 아래로 내려가면 반등 실패 → 매도, 20일선이 60일선 위로 올라서면 상승 추세 전환")
+        out["lines"] = {k: round(v) for k, v in lines.items()}
+        return out
+    # up / pullback
+    if pnl > TRAIL_ARM:
+        if bought_at:
+            start = next((k for k, d in enumerate(dates_asc) if str(d)[:10] >= str(bought_at)[:10]), len(c) - 1)
+            basis = "매수일 이후 고점"
+        else:
+            start = trend_start_index(c)
+            basis = "현재 상승 추세 시작(20일선>60일선 교차) 이후 고점 — 매수일 미기록"
+        seg = c[start:] or [cur]
+        k = max(range(len(seg)), key=lambda j: seg[j])
+        peak, peak_date = seg[k], str(dates_asc[start + k])[:10]
+        lines["추적손절가(고점×0.80)"] = peak * (1 + TRAIL_MOMENTUM)
+        out.update(peak_price=peak, peak_date=peak_date, peak_basis=basis, drawdown_from_peak_pct=round((cur / peak - 1) * 100, 2))
+    elif not past_stop:
+        lines["손절가(평단×0.92)"] = avg_price * (1 + STOP)
+    name, line = max(lines.items(), key=lambda kv: kv[1])
+    out["lines"] = {k: round(v) for k, v in lines.items()}
+    out["sell_price"] = round(line)
+    gap = (cur / line - 1) * 100
+    if cur < line:
+        out.update(status="sell", label="매도(기준가 이탈)", reason=stop_note + f"현재가가 {name} {line:,.0f}원 아래")
     else:
-        start = trend_start_index(c)
-        basis = "매수일 미기록 — 현재 상승 추세 시작(MA20>MA60 교차) 이후 고점"
-    seg = c[start:] or [cur]
-    k = max(range(len(seg)), key=lambda j: seg[j])
-    peak, peak_date = seg[k], str(dates_asc[start + k])[:10]
-    dd = cur / peak - 1 if peak else 0.0
-    out = {"status": "hold", "reason": "", "peak_price": peak, "peak_date": peak_date,
-           "drawdown_from_peak_pct": round(dd * 100, 2), "peak_basis": basis, "pnl_pct": round(pnl * 100, 2)}
-    if pnl <= STOP and regime in ("up", "pullback"):
-        out.update(status="watch", reason=f"손절 기준(-8%) 초과 상태({pnl * 100:.1f}%)지만 상승 추세 회복 중 — 추세 이탈(MA5<MA20×0.96 또는 MA20<MA60) 시 매도")
-    elif pnl <= STOP:
-        out.update(status="sell", reason=f"손절 기준 초과(매수가 대비 {pnl * 100:.1f}% ≤ -8%, 모멘텀·피크Easy 공통)")
-    elif regime in ("weakening", "down", "rebound"):
-        # 상승 추세가 아니면 '추세 시작 이후 고점'이 없어 추적손절이 의미 없다(예전엔 5개월 전 고점 대비 -36%로 매도 표시).
-        out.update(status="watch", reason="상승 추세 아님 — 추적손절 대상 구간 없음, 매도 여부는 추세추종 신호(추세 이탈 조건)로 판단")
-    elif pnl > TRAIL_ARM and dd <= TRAIL_MOMENTUM:
-        out.update(status="sell", reason=f"추적손절 발동(고점 {peak_date} {peak:,.0f}원 대비 {dd * 100:.1f}% ≤ -20%, 모멘텀Easy"
-                                         + (" · 피크Easy -25%도 도달)" if dd <= TRAIL_PEAK else ")"))
-    elif pnl > TRAIL_ARM and dd <= -0.10:
-        out.update(status="watch", reason=f"고점 대비 {dd * 100:.1f}% — 추적손절(-20%) 접근")
-    else:
-        out["reason"] = (f"추적손절 대기(이익 {pnl * 100:.1f}%, 고점 대비 {dd * 100:.1f}%)" if pnl > TRAIL_ARM
-                         else f"손절 기준(-8%) 안쪽(매수가 대비 {pnl * 100:.1f}%)")
+        out.update(status="hold", label="보유", reason=stop_note + f"{t['label']} — 매도 기준가 {line:,.0f}원({name}, 현재가 대비 {-gap:.1f}% 아래)")
     return out
 
 
