@@ -42,6 +42,7 @@ case "$1" in
   fnguide)
     step $PY $R/fetch_fnguide_raw_20261003.py --max-calls 1000 --stale-days 30   # 스윕(03:15) 450건과 합쳐 일 1,500건 이내(한도 카운터가 프로세스별이라 명시적으로 나눔)
     step $PY $R/compare_db_vs_fnguide_raw_20261003.py                        # 원문 ↔ DB 대조(읽기 전용) → fnguide_raw_compare_*.json/csv
+    step $PY $R/fetch_krx_openapi_20261005.py --kind all --max-calls 8000      # KRX Open API: 공식 주가 빈 날짜(2010~) + 파생지수·선물 이어 받기(2026-10-05)
     step $PY scripts/ops/sync_new_listings.py --apply                         # 신규 상장 매일 편입(마스터) + 상장일~가격 첫 날 KIS 원주가 채움(2026-10-05, 예전엔 월 1회 편입)
     step $PY $R/fetch_kis_raw_daily_20261004.py --etf-all --max-codes 60       # ETF·ETN 원주가(KIS) 원문 — 하루 60종목(~1시간), 가격 대조 근거
     step $PY $R/price_raw_basis_audit_20261004.py                            # 가격 원주가 3소스(공식·marcap·KIS) 전수 감사(읽기 전용) → price_raw_basis_audit_20261004/summary.json
