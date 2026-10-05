@@ -56,6 +56,7 @@ def run_backtest_se_momentum(
     chart_confluence: bool = False,  # 공통모듈 옵션 (기본 off — SE 로직 자체가 추세 진입)
     require_earnings_accel: bool = True,  # 2026-07-22 채택: 6기간 검증 avg6 +3.6%→+22.4%(4/6기간 대폭개선,
                                           # 최근/AI랠리 2개 기간만 악화) — 스탁이지 실제 정의(실적가속) 반영
+    exit_mode: str = "original",     # 2026-10-05: "portfolio_rules" = 계좌현황 매도 규칙(docs/SIGNAL_RULES.md 5절 조합) 검증용
     sector_lookback_days: int = 20,  # 2026-07-22 실험: 스탁이지 실제 sector_rs API(로그인불필요) 스냅샷과
                                       # 대조한 결과 우리 ret20 섹터랭킹 TOP10 겹침 1/10뿐 — 252일이 6/10으로 최유사
     run_name: str = None,
@@ -94,7 +95,7 @@ def run_backtest_se_momentum(
          "ma_exit_buffer": ma_exit_buffer, "trail": trail, "min_sector_ret20": min_sector_ret20,
          "basket_per_sector": basket_per_sector, "min_mktcap_억": min_mktcap_억,
          "asof_mktcap": asof_mktcap, "chart_confluence": chart_confluence,
-         "require_earnings_accel": require_earnings_accel,
+         "require_earnings_accel": require_earnings_accel, "exit_mode": exit_mode,
          "per_stock": per_stock, "max_positions": max_positions,
          "start": start_date, "end": end_date},
         signal_timing="close_D", execution_timing="next_open",
@@ -430,6 +431,22 @@ def run_backtest_se_momentum(
                 sec = se_sector.get(code)
                 rk, sec_avg = sec_rank.get(sec, (999, -999.0))
                 reason = None
+                if exit_mode == "portfolio_rules":
+                    # 계좌현황 매도 규칙(trend_rules): 손절·추적손절 + 추세 약화/하락 추세 + 반등 중 20일 저점 이탈. 섹터 이탈 없음.
+                    import trend_rules as _tr
+                    _t = _tr.assess_trend(c[max(0, i - 119):i + 1])
+                    _reg = _t.get("regime")
+                    if ret < stop:
+                        reason = 'stop'
+                    elif trail is not None and ret > 0.05 and (curr - peak) / peak < trail:
+                        reason = 'trail'
+                    elif _reg in ("weakening", "down"):
+                        reason = 'trend_exit'
+                    elif _reg == "rebound" and i >= 20 and curr < min(c[i - 20:i]):
+                        reason = 'rebound_fail'
+                    if reason:
+                        pending_sells[code] = reason
+                    continue
                 if ret < stop:
                     reason = 'stop'
                 elif trail is not None and ret > 0.05 and (curr - peak) / peak < trail:
