@@ -59,6 +59,11 @@ def match(rev, op, cands):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--resolve-orphan-heads", action="store_true",
+                    help="2026-10-05 Claude 판단(사용자 위임): 사슬 머리를 막는 '근거 없음' 점유 행 삭제. 실측 10건 전부 원인 확인 — "
+                         "별도(OFS) 값이 연결 칸에 들어간 4건(001080·002630×2·050860, DART OFS 같은 기간과 일치), "
+                         "달력 분기 표기 행이 다른 기간 칸에 들어간 6건(6월 결산 5종목 네이버 2026 2분기=회계 4분기, 9월 결산 084440 FnGuide 2026 1분기=회계 2분기). "
+                         "'모호'(여러 기간과 맞음) 점유 행은 계속 보류")
     a = ap.parse_args()
     conn = connect_primary_db(timeout=900, readonly=not a.apply)
     fmap = fp.fiscal_month_map(conn)
@@ -130,6 +135,8 @@ def main():
                     deletes.add(rid); del moves[rid]; st["이동 행 = 같은 기간 중복 → 삭제"] += 1
             elif ot is None and b == "F":
                 deletes.add(occ); st["점유 행(근거 없음) 삭제·FnGuide 확인 행 이동"] += 1
+            elif ob == "근거 없음" and b == "D" and a.resolve_orphan_heads:
+                deletes.add(occ); st["점유 행(근거 없음: 구분 혼입·달력 표기) 삭제·DART 기간 행 이동"] += 1
             else:
                 held.append((rid, code, fs, s, t, b, occ, ob)); del moves[rid]; st["보류(DART 단독 또는 모호)"] += 1
             changed = True

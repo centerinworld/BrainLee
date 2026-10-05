@@ -340,6 +340,7 @@ def get_portfolio(db: Session = Depends(get_db)):
     _latest_prev_map = {}
     _supply_rows_map = {}
     _history_rows_map = {}
+    _history_dates_map = {}
     _valuation_map = {}
     _short_rows_map = {}
     _short_rank_code_map = {}
@@ -374,6 +375,7 @@ def get_portfolio(db: Session = Depends(get_db)):
                     (r["close"], r["volume"], r["inst_net_buy"], r["frn_net_buy"],
                      r["inst_net_buy_amt"], r["frn_net_buy_amt"])
                 )
+                _history_dates_map.setdefault(sc, []).append(str(r["date"])[:10])
                 slot = _latest_prev_map.setdefault(sc, {"latest": None, "prev": None})
                 if r["rn"] == 1:
                     slot["latest"] = {"close": r["close"], "date": r["date"]}
@@ -554,6 +556,7 @@ def get_portfolio(db: Session = Depends(get_db)):
         #   손절선 도달    →  손절 (최우선)
         trade_signal  = "hold"
         trade_reason  = ""
+        _exit_closes_dates = None  # 종목마다 초기화(이전 종목 값이 남지 않게)
         trend_score   = 0
         val_score     = 0
         val_detail    = []
@@ -577,7 +580,6 @@ def get_portfolio(db: Session = Depends(get_db)):
                 # ATR(14) 기반 손절선
                 trs  = [abs(closes[i] - closes[i+1]) for i in range(min(14, len(closes)-1))]
                 atr  = sum(trs) / len(trs) if trs else curr * 0.02
-                stop_line = curr - 2 * atr
 
                 # RSI(14)
                 gains, losses = [], []
@@ -629,7 +631,6 @@ def get_portfolio(db: Session = Depends(get_db)):
                 else:
                     trend_score = 0;  trend_detail.append("중립")
 
-                if macd_v > 0: trend_detail.append(f"MACD+")
                 trend_detail.append(f"RSI{rsi}")
                 trend_detail.append(f"고점대비{from_high:.0f}%")
 
@@ -668,55 +669,48 @@ def get_portfolio(db: Session = Depends(get_db)):
                 # 가치 정보 없으면(바이오 등 PER 없는 경우) 점수 0 취급
                 has_value_data = (pbr is not None or per is not None or roe is not None)
 
-                # ── 4분면 판단 ──────────────────────────────────────
-                reasons = []
-                if pnl <= -10 or curr < stop_line:
-                    trade_signal = "cut_loss"
-                    reasons.append(f"손절선 도달 ({pnl:.1f}%)")
-                elif not has_value_data:
-                    # 가치 데이터 없음 → 추세만으로 판단
-                    if trend_score >= 3:
-                        trade_signal = "add_buy"; reasons.append("추세강세(가치데이터없음)")
-                    elif trend_score <= -2 and pnl < -3:
-                        trade_signal = "real_sell"; reasons.append(f"역배열+손실({pnl:.1f}%)")
-                    elif trend_score < 0:
-                        trade_signal = "caution"; reasons.append("추세이탈-관망")
-                    elif trend_score >= 1:
-                        trade_signal = "hold";    reasons.append("추세유지-보유")
+                # ── 추세추종 판단 (2026-10-05 재설계, trend_rules.py — 모멘텀Easy·피크Easy 매도 규칙) ──
+                # 이전 4분면(추세×가치)은 추세가 살아 있어도 PER·ROE가 나쁘면 '익절고려'를 냈고(에이엘티 사례),
+                # ATR 손절선을 현재가에서 빼서 계산해 절대 발동하지 않았다. 이제 매도는 추세 이탈에서만,
+                # 가치 점수는 '추가매수' 판단과 참고 표시에만 쓴다.
+                import trend_rules as _tr
+                _closes_asc = list(reversed(closes))
+                _dates_asc = list(reversed(_history_dates_map.get(sc_q, [])))
+                _today = _date_cls.today().isoformat()
+                if current_price and _dates_asc:
+                    if _dates_asc[-1] == _today:
+                        _closes_asc[-1] = float(current_price)
+                    elif _dates_asc[-1] < _today:
+                        _closes_asc.append(float(current_price)); _dates_asc.append(_today)
+                try:  # 무상증자·분할 원주가 급변 보정(trend_rules.action_factors — 실제 가격 비율로 검증된 이벤트만)
+                    _cconn = connect_stock_db()
+                    _facts = _tr.action_factors(sc_q, _dates_asc, _closes_asc, _cconn)
+                    _cconn.close()
+                    if _facts:
+                        _closes_asc = _tr.adjust_series(_dates_asc, _closes_asc, _facts)
+                except Exception:
+                    pass
+                _trend = _tr.assess_trend(_closes_asc)
+                _regime = _trend.get("regime")
+                reasons = [f"{_trend.get('label')}: {_trend.get('reason')}"]
+                if _regime == "up":
+                    if has_value_data and val_score >= 3:
+                        trade_signal = "add_buy"; reasons.append("가치 양호 → 추가매수 가능")
                     else:
-                        trade_signal = "caution"; reasons.append("중립-관망")
-                elif trend_score >= 2 and val_score >= 3:
-                    trade_signal = "add_buy"
-                    reasons.append(f"✅ 추세정배열+저평가 → 추가매수 유효")
-                elif trend_score >= 2 and val_score >= 0:
+                        trade_signal = "hold"
+                        if has_value_data and val_score < 0:
+                            reasons.append(f"밸류 부담({','.join(val_detail[:2])}) — 참고만, 추세 유지 중엔 매도 사유 아님")
+                elif _regime == "pullback":
                     trade_signal = "hold"
-                    reasons.append(f"추세양호+적정가치 → 보유유지")
-                elif trend_score >= 2 and val_score < 0:
-                    trade_signal = "take_profit"
-                    reasons.append(f"추세OK BUT 고평가({','.join(val_detail[:2])}) → 익절고려")
-                elif trend_score <= -2 and val_score >= 3:
-                    trade_signal = "hold_value"
-                    reasons.append(f"⚠️ 추세역배열 BUT 저평가({','.join(val_detail[:2])}) → 홀딩유지")
-                elif trend_score < 0 and val_score >= 2:
-                    trade_signal = "hold_value"
-                    reasons.append(f"추세약세 BUT 가치지지({','.join(val_detail[:2])}) → 홀딩")
-                elif trend_score <= -2 and val_score <= -1:
-                    trade_signal = "real_sell"
-                    reasons.append(f"🚨 역배열+고평가({','.join(val_detail[:2])}) → 진매도 검토")
-                elif trend_score < 0 and val_score < 0:
-                    trade_signal = "real_sell"
-                    reasons.append(f"추세이탈+고평가 → 매도 검토")
-                elif trend_score == 0 and val_score >= 2:
-                    trade_signal = "hold"
-                    reasons.append(f"중립추세+가치양호 → 보유")
-                elif trend_score == 0 and val_score < 0:
+                elif _regime == "weakening":
+                    trade_signal = "sell"
+                elif _regime == "rebound":
                     trade_signal = "caution"
-                    reasons.append(f"중립추세+고평가 → 관망")
-                elif pnl > 20 and trend_score < 1:
-                    trade_signal = "take_profit"
-                    reasons.append(f"고수익({pnl:.0f}%)+추세약화 → 익절고려")
+                elif _regime == "down":
+                    trade_signal = "real_sell"
                 else:
-                    trade_signal = "hold"; reasons.append(f"보유관찰({pnl:.1f}%)")
+                    trade_signal = "hold"
+                _exit_closes_dates = (_closes_asc, _dates_asc, _regime)
 
                 # 수급·대차 보조 정보 추가
                 if supply_pos:  reasons.append("외인·기관동반매수")
@@ -726,8 +720,7 @@ def get_portfolio(db: Session = Depends(get_db)):
 
                 trade_reason = (
                     " | ".join(reasons)
-                    + f"  [추세:{trend_score:+d}/가치:{val_score:+d}]"
-                    + f"  RSI:{rsi}  손절:{stop_line:,.0f}"
+                    + f"  [정배열점수:{trend_score:+d}/가치:{val_score:+d}]  RSI:{rsi}"
                 )
         except Exception as _e:
             logger.debug(f"[포트폴리오신호] {sc}: {_e}")
@@ -740,43 +733,15 @@ def get_portfolio(db: Session = Depends(get_db)):
         # 고점을 추적해 동일 규칙을 실제 보유종목에 적용 — 4분면 신호와 별도의 독립 지표.
         trail_signal = {"status": "hold", "reason": "", "peak_price": None, "peak_date": None,
                         "drawdown_from_peak_pct": None, "peak_basis": None}
+        # 2026-10-05: 모멘텀Easy·피크Easy 매도 규칙으로 교체(trend_rules.exit_signal) — 손절 -8%(상승 추세 회복 중이면 '주의'),
+        # 이익 +5% 이후 고점 대비 -20% 추적손절. 매수일이 없으면 현재 상승 추세 시작(MA20>MA60 교차) 이후 고점 기준.
         try:
-            bought_at_str = m.get("bought_at")
-            peak_basis = "매수일"
-            if not bought_at_str:
-                # 매수일 미기록 종목(portfolio.bought_at NULL) 다수 발견(2026-07-21) — 완전
-                # 생략 대신 최근 252거래일(전략센터 max_hold 관례와 동일) 고점으로 근사.
-                since_bought = (_date_cls.today() - _timedelta(days=365)).isoformat()
-                peak_basis = "매수일 미기록 — 최근 1년 고점 근사"
-            else:
-                since_bought = str(bought_at_str)[:10]
-            if current_price:
-                conn_t = connect_stock_db(row_factory=_sl.Row)
-                peak_row = conn_t.execute(
-                    "SELECT date, close FROM price_history WHERE stock_code=? AND date>=? "
-                    "AND close>0 ORDER BY close DESC LIMIT 1",
-                    (sc, since_bought),
-                ).fetchone()
-                conn_t.close()
-                if peak_row:
-                    peak_price, peak_date = peak_row[1], peak_row[0]
-                    trail_signal["peak_price"] = peak_price
-                    trail_signal["peak_date"] = peak_date
-                    trail_signal["peak_basis"] = peak_basis
-                    if peak_price and peak_price > 0:
-                        dd_pct = round((current_price - peak_price) / peak_price * 100, 2)
-                        trail_signal["drawdown_from_peak_pct"] = dd_pct
-                        if profit_pct <= -20:
-                            trail_signal["status"] = "sell"
-                            trail_signal["reason"] = f"손절선 도달(매수가 대비 {profit_pct:.1f}%)"
-                        elif profit_pct > 0 and dd_pct <= -30:
-                            trail_signal["status"] = "sell"
-                            trail_signal["reason"] = f"추적손절 발동(고점 {peak_date} {peak_price:,.0f}원 대비 {dd_pct:.1f}%)"
-                        elif profit_pct > 0 and dd_pct <= -20:
-                            trail_signal["status"] = "watch"
-                            trail_signal["reason"] = f"고점대비 {dd_pct:.1f}% 하락 — 추적손절(-30%) 근접 주의"
+            import trend_rules as _tr
+            _ecd = _exit_closes_dates
+            if _ecd and avg_price and _ecd[0]:
+                trail_signal = _tr.exit_signal(_ecd[0], _ecd[1], float(avg_price), m.get("bought_at"), _ecd[2])
         except Exception as _e:
-            logger.debug(f"[트레일링스탑신호] {sc}: {_e}")
+            logger.debug(f"[매도시그널] {sc}: {_e}")
 
         result.append({
             "stock_code":    m["stock_code"],

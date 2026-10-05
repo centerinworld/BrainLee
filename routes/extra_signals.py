@@ -886,6 +886,21 @@ def get_chart_signals(code: str):
     highs  = [float(r[3]) for r in rows]
     lows   = [float(r[4]) for r in rows]
     vols   = [float(r[5]) for r in rows]
+    # 2026-10-05: 원주가 기업행위 급변 보정(trend_rules.action_factors — 실제 가격 비율로 검증된 무상증자·분할만)
+    try:
+        import trend_rules as _trf
+        _fc = _main_conn()
+        try:
+            _facts = _trf.action_factors(code, dates, closes, _fc)
+        finally:
+            _fc.close()
+        if _facts:
+            closes = _trf.adjust_series(dates, closes, _facts)
+            opens = _trf.adjust_series(dates, opens, _facts)
+            highs = _trf.adjust_series(dates, highs, _facts)
+            lows = _trf.adjust_series(dates, lows, _facts)
+    except Exception:
+        pass
     frn_amt  = [float(r[6]) for r in rows]   # 백만원
     inst_amt = [float(r[7]) for r in rows]   # 백만원
     i = len(closes) - 1
@@ -961,21 +976,18 @@ def get_chart_signals(code: str):
                                or chart["mo_close"][n_mo-1] > chart["mo_close"][n_mo-2]))
     mo_down = bool(n_mo >= 4 and chart["mo_close"][n_mo-1] < chart["mo_close"][n_mo-2])
 
-    # 추세 헤드라인 (중기 기준 우선 — 실전에서 매매 판단의 축)
-    if aligned_up and curr > (ma20 or 0):
-        trend_headline, trend_state = "상승 추세 진행 중이다", "up"
-    elif aligned_up and st20 and st20["state"] in ("breakdown", "below"):
-        trend_headline, trend_state = "상승 추세였으나 단기 이탈했다 (조정 진입)", "warn"
-    elif aligned_down and curr < (ma20 or 1e18):
-        trend_headline, trend_state = "하락 추세가 지속되고 있다", "down"
-    elif aligned_down and st20 and st20["state"] in ("breakout", "above"):
-        trend_headline, trend_state = "하락 추세에서 탈출을 시도 중이다", "warn"
-    elif cross and cross["type"] == "golden":
-        trend_headline, trend_state = f"골든크로스 발생({cross['days_ago']}일 전) — 상승 전환 시도 중이다", "up"
-    elif cross and cross["type"] == "dead":
-        trend_headline, trend_state = f"데드크로스 발생({cross['days_ago']}일 전) — 하락 전환 위험이 있다", "down"
-    else:
-        trend_headline, trend_state = "뚜렷한 추세 없이 횡보 중이다", "flat"
+    # 추세 헤드라인 — 2026-10-05: 종합 판정과 같은 추세 국면(trend_rules)으로 통일. 예전엔 MA20>MA60>MA120 완전 정배열을
+    # 요구해 20일 +55% 오른 에이엘티를 '횡보'로 표시했다(120일선이 늦게 따라옴). 최근 교차는 꼬리말로 덧붙인다.
+    import trend_rules as _trh
+    _th = _trh.assess_trend(closes)
+    _hmap = {"up": ("상승 추세 진행 중이다 (현재가 ≥ 20일선 ≥ 60일선)", "up"),
+             "pullback": ("상승 추세 속 조정 중이다 (20일선 ≥ 60일선 유지, 현재가는 20일선 아래)", "warn"),
+             "weakening": ("상승 추세가 약해지고 있다 (5일선이 20일선 아래로 4% 이상 이탈)", "warn"),
+             "rebound": ("하락 추세에서 반등을 시도 중이다 (20일선 < 60일선, 현재가는 20일선 위)", "warn"),
+             "down": ("하락 추세가 지속되고 있다 (20일선 < 60일선)", "down")}
+    trend_headline, trend_state = _hmap.get(_th.get("regime"), ("판단 불가 (가격 60일 미만)", "flat"))
+    if cross:
+        trend_headline += f" · {'골든' if cross['type'] == 'golden' else '데드'}크로스 {cross['days_ago']}일 전"
 
     trend_items = [
         {"state": "up" if short_up else "down", "label": "단기 (5·10일선)",
@@ -1114,12 +1126,26 @@ def get_chart_signals(code: str):
     # ══ ④ 종합 점수 (각 지표 이해 후 마지막에) ══════════════
     bottom_core3 = sum([short_up, wk_higher_low, candle_bull])
     top_core3    = sum([not short_up and bool(ma5 and ma10), wk_lower_high, candle_bear])
-    if bottom_core3 >= 2 and bottom_core3 > top_core3:
-        verdict, verdict_color = "🟢 바닥/반등 신호 우세", "green"
-    elif top_core3 >= 2 and top_core3 > bottom_core3:
-        verdict, verdict_color = "🔴 고점/하락 신호 우세", "red"
+    # 2026-10-05 재설계(사용자: "세부는 맞는데 큰 판정이 틀리다"): 예전 종합 판정은 단기 반전 3요소만 세어
+    # 52주 신고가 상승 추세 종목에도 '바닥/반등 우세', 하락 추세 속 하루 반등에도 초록을 냈다.
+    # 이제 큰 판정 = 추세 국면(trend_rules — 모멘텀Easy·피크Easy 매도 규칙, 계좌현황과 동일), 3요소는 단기 타이밍 보조.
+    import trend_rules as _tr
+    _t = _tr.assess_trend(closes)
+    _timing = ("단기 반등 신호 우세" if bottom_core3 >= 2 and bottom_core3 > top_core3 else
+               "단기 하락 신호 우세" if top_core3 >= 2 and top_core3 > bottom_core3 else "단기 신호 혼재")
+    _reg = _t.get("regime")
+    if _reg == "up":
+        verdict, verdict_color = "🟢 상승 추세 — 매도 조건 없음", "green"
+    elif _reg == "pullback":
+        verdict, verdict_color = "🟡 상승 추세 속 조정 — 추세 유효", "yellow"
+    elif _reg == "weakening":
+        verdict, verdict_color = "🟠 추세 약화 — 모멘텀Easy 매도 조건", "red"
+    elif _reg == "rebound":
+        verdict, verdict_color = "🟡 하락 추세 속 반등 시도 — 전환 미확인", "yellow"
+    elif _reg == "down":
+        verdict, verdict_color = "🔴 하락 추세 — 피크Easy 매도 조건", "red"
     else:
-        verdict, verdict_color = "🟡 중립 (신호 혼재/부족)", "yellow"
+        verdict, verdict_color = "⚪ 판단 불가(가격 60일 미만)", "yellow"
 
     return {
         "ok": True, "base_date": dates[i], "close": curr,
@@ -1138,7 +1164,8 @@ def get_chart_signals(code: str):
         "score": {
             "bottom": bottom_core3, "top": top_core3, "max": 3,
             "verdict": verdict, "verdict_color": verdict_color,
-            "note": "종합 판정은 백테스트로 검증된 3요소(단기추세·주봉구조·캔들패턴) 2/3 합의 기준. "
-                    "위 각 섹션의 개별 신호를 먼저 이해한 뒤 참고용으로 활용하세요.",
+            "regime": _reg, "regime_reason": _t.get("reason"), "timing": _timing,
+            "note": f"큰 판정 = 추세 국면({_t.get('reason')}). 매도 기준은 모멘텀Easy(MA5<MA20×0.96)·피크Easy(MA20<MA60)와 같고 계좌현황 신호와 일치. "
+                    f"단기 타이밍(단기추세·주봉구조·캔들 3요소): {_timing}.",
         },
     }

@@ -9032,8 +9032,8 @@ const _signalFrontCache = {};
                 <table className="premium-table" style={{width:'100%'}}>
                   <thead><tr>
                     <th style={{minWidth:'90px'}}>종목명</th>
-                    <th style={{textAlign:'center',minWidth:'70px'}}>추세추종 신호</th>
-                    <th style={{textAlign:'center',minWidth:'90px'}} title="검증된 트레일링스탑(-30%, 이익권 한정) + 손절(-20%) 로직 — V-GC/V-SECTOR/V-MEGATREND 백테스트 채택 기준과 동일">매도시그널(트레일)</th>
+                    <th style={{textAlign:'center',minWidth:'70px'}} title="모멘텀Easy(MA5<MA20×0.96)·피크Easy(MA20<MA60) 추세 이탈에서만 매도. 밸류에이션만으로는 매도하지 않음">추세추종 신호</th>
+                    <th style={{textAlign:'center',minWidth:'90px'}} title="모멘텀Easy·피크Easy 매도 규칙: 손절 -8%(상승 추세 회복 중이면 주의) · 이익 +5% 이후 고점 대비 -20% 추적손절">매도시그널(트레일)</th>
                     <th style={{textAlign:'right',minWidth:'105px',borderLeft:'1px solid rgba(15,23,42,0.2)'}}>주가(%)</th>
                     <th style={{textAlign:'right',minWidth:'105px'}}>매입가(%)</th>
                     <th style={{textAlign:'right',minWidth:'55px'}}>수량</th>
@@ -9127,9 +9127,9 @@ const _signalFrontCache = {};
                               'hold':        {emoji:'🟡', label:'보유유지', color:'#b45309', bg:'rgba(217,119,6,0.1)'},
                               'hold_value':  {emoji:'🔵', label:'홀딩유지', color:'#2563eb', bg:'rgba(37,99,235,0.13)'},
                               'take_profit': {emoji:'🟠', label:'익절고려', color:'#c2410c', bg:'rgba(234,88,12,0.14)'},
-                              'caution':     {emoji:'🟠', label:'관망',    color:'#c2410c', bg:'rgba(234,88,12,0.1)'},
-                              'real_sell':   {emoji:'🔴', label:'진매도',  color:'#dc2626', bg:'rgba(220,38,38,0.18)'},
-                              'sell':        {emoji:'🔴', label:'매도검토',color:'#dc2626', bg:'rgba(220,38,38,0.14)'},
+                              'caution':     {emoji:'🟠', label:'반등시도', color:'#c2410c', bg:'rgba(234,88,12,0.1)'},
+                              'real_sell':   {emoji:'🔴', label:'하락추세',  color:'#dc2626', bg:'rgba(220,38,38,0.18)'},
+                              'sell':        {emoji:'🔴', label:'추세약화',color:'#dc2626', bg:'rgba(220,38,38,0.14)'},
                               'cut_loss':    {emoji:'⛔', label:'손절',    color:'#dc2626', bg:'rgba(220,38,38,0.22)'},
                               'strong_sell': {emoji:'⛔', label:'손절',    color:'#dc2626', bg:'rgba(220,38,38,0.22)'},
                             }[sig] || {emoji:'⚪', label:'중립', color:'#1e293b', bg:'transparent'};
@@ -16020,7 +16020,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
                   {chartSignals.score.verdict}
                 </span>
                 <span style={{ fontSize:'0.7rem', color:'var(--text-secondary)' }}>
-                  바닥 신호 {chartSignals.score.bottom}/{chartSignals.score.max} · 고점 신호 {chartSignals.score.top}/{chartSignals.score.max}
+                  단기 타이밍: 반등 {chartSignals.score.bottom}/{chartSignals.score.max} · 하락 {chartSignals.score.top}/{chartSignals.score.max}
                 </span>
                 <span style={{ fontSize:'0.64rem', color:'var(--text-secondary)', flexBasis:'100%' }}>
                   {chartSignals.score.note}
