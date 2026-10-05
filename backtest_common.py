@@ -241,7 +241,12 @@ def _data_revision_extras(conn) -> dict:
     return {
         "fin_disclosure_dates": one("SELECT COUNT(*), MAX(avail_date) FROM fin_disclosure_dates"),
         "data_fix_log": one("SELECT COUNT(*), MAX(id) FROM data_fix_log"),
-        "financial_facts_pit": one("SELECT COUNT(*) FROM financial_facts_pit")  # run_id는 매일 바뀌어 해시가 흔들리므로 행수만,
+        "financial_facts_pit": one("SELECT COUNT(*) FROM financial_facts_pit"),  # run_id는 매일 바뀌어 해시가 흔들리므로 행수만
+        # D11: 단위 오기 의심 행은 공개일 게이팅 재무 로더에서 입력 제외(DB 값 불변) — 제외 대상 기간 수를 지문에 남김
+        "unit_error_excluded_periods": one(
+            "SELECT COUNT(DISTINCT stock_code), SUM(LENGTH(config_value) - LENGTH(REPLACE(config_value, 'CFS', '')) "
+            "+ LENGTH(config_value) - LENGTH(REPLACE(config_value, 'OFS', ''))) / 3 "
+            "FROM stock_collection_config WHERE config_key='fs_quirk:dart_unit_error'"),
     }
 
 
@@ -2587,7 +2592,7 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
                 d.stock_code = f.stock_code AND d.year = f.year
                 AND d.quarter = CASE WHEN f.is_annual=1 THEN 4 ELSE f.quarter END
                 AND d.is_annual = CASE WHEN f.is_annual=1 THEN 1 ELSE 0 END
-            WHERE (f.is_annual=0 AND f.quarter BETWEEN 1 AND 4) OR (f.is_annual=1)
+            WHERE NOT EXISTS (SELECT 1 FROM stock_collection_config q WHERE q.stock_code=f.stock_code AND q.config_key='fs_quirk:dart_unit_error' AND q.config_value LIKE '%' || (CASE WHEN f.is_annual=1 THEN CAST(f.year AS TEXT) || 'Y' ELSE CAST(f.year AS TEXT) || 'Q' || CAST(f.quarter AS TEXT) END) || f.report_type || '%') AND ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 4) OR (f.is_annual=1))
             ORDER BY f.stock_code, f.year, f.quarter
         """).fetchall():
             fin_all.setdefault(r[0], []).append(r[1:])
@@ -3070,7 +3075,7 @@ def _run_generic_backtest(version: str, signal_fn,
                 d.stock_code = f.stock_code AND d.year = f.year
                 AND d.quarter = CASE WHEN f.is_annual=1 THEN 4 ELSE f.quarter END
                 AND d.is_annual = CASE WHEN f.is_annual=1 THEN 1 ELSE 0 END
-            WHERE ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 4)
+            WHERE NOT EXISTS (SELECT 1 FROM stock_collection_config q WHERE q.stock_code=f.stock_code AND q.config_key='fs_quirk:dart_unit_error' AND q.config_value LIKE '%' || (CASE WHEN f.is_annual=1 THEN CAST(f.year AS TEXT) || 'Y' ELSE CAST(f.year AS TEXT) || 'Q' || CAST(f.quarter AS TEXT) END) || f.report_type || '%') AND ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 4)
                OR (f.is_annual=1))
               AND f.report_type IN ('CFS','')
               {_financial_asof_clause}

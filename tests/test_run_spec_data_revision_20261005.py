@@ -31,8 +31,34 @@ class TestDataRevisionExtras(unittest.TestCase):
     def test_missing_table_is_none_not_error(self):
         c = sqlite3.connect(":memory:")
         out = bc._data_revision_extras(c)
-        self.assertEqual(set(out), {"fin_disclosure_dates", "data_fix_log", "financial_facts_pit"})
+        self.assertEqual(set(out), {"fin_disclosure_dates", "data_fix_log", "financial_facts_pit", "unit_error_excluded_periods"})
         self.assertTrue(all(v is None for v in out.values()))
+
+
+class TestUnitErrorExclusion(unittest.TestCase):
+    """D11: 공개일 게이팅 재무 로더 13곳은 fs_quirk:dart_unit_error 기간을 입력에서 뺀다."""
+
+    def test_exclusion_clause_present_in_all_gated_loaders(self):
+        files = ["backtest_common.py"] + [
+            "backtest_strategies/%s.py" % n for n in
+            "base composite earnings_conviction megatrend meta_v2 peak_easy recovery regime_adaptive se_momentum turnaround v8".split()]
+        total = 0
+        for rel in files:
+            total += (ROOT / rel).read_text(encoding="utf-8").count("q.config_key='fs_quirk:dart_unit_error'")
+        self.assertEqual(total, 13)
+
+    def test_exclusion_sql_filters_period_rows(self):
+        c = sqlite3.connect(":memory:")
+        c.execute("CREATE TABLE financial_data (stock_code TEXT, year INT, quarter INT, is_annual INT, report_type TEXT)")
+        c.execute("CREATE TABLE stock_collection_config (stock_code TEXT, config_key TEXT, config_value TEXT)")
+        c.executemany("INSERT INTO financial_data VALUES (?,?,?,?,?)", [
+            ("A", 2024, 1, 0, "CFS"), ("A", 2024, 2, 0, "CFS"), ("A", 2020, 4, 1, "OFS"), ("B", 2024, 1, 0, "CFS")])
+        c.execute("INSERT INTO stock_collection_config VALUES ('A','fs_quirk:dart_unit_error','... 2024Q1CFS,2020YOFS')")
+        src = (ROOT / "backtest_strategies/v8.py").read_text(encoding="utf-8")
+        start = src.index("NOT EXISTS (SELECT 1 FROM stock_collection_config q")
+        clause = src[start:src.index(" AND ((f.is_annual", start)]
+        rows = c.execute("SELECT stock_code, year, quarter FROM financial_data f WHERE " + clause).fetchall()
+        self.assertEqual(sorted(rows), [("A", 2024, 2), ("B", 2024, 1)])
 
 
 if __name__ == "__main__":

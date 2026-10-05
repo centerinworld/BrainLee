@@ -212,7 +212,7 @@ def run_backtest_peak_easy(
                 FROM financial_data f
                 LEFT JOIN fin_disclosure_dates d ON
                     d.stock_code=f.stock_code AND d.year=f.year AND d.quarter=f.quarter AND d.is_annual<1
-                WHERE f.is_annual=0 AND f.quarter BETWEEN 1 AND 4
+                WHERE NOT EXISTS (SELECT 1 FROM stock_collection_config q WHERE q.stock_code=f.stock_code AND q.config_key='fs_quirk:dart_unit_error' AND q.config_value LIKE '%' || (CASE WHEN f.is_annual=1 THEN CAST(f.year AS TEXT) || 'Y' ELSE CAST(f.year AS TEXT) || 'Q' || CAST(f.quarter AS TEXT) END) || f.report_type || '%') AND f.is_annual=0 AND f.quarter BETWEEN 1 AND 4
                   AND f.stock_code IN ({})
                 ORDER BY f.stock_code, f.year, f.quarter,
                          CASE f.report_type WHEN 'CFS' THEN 0 ELSE 1 END

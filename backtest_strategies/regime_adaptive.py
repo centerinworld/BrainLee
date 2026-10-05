@@ -126,7 +126,7 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
                 d.stock_code = f.stock_code AND d.year = f.year
                 AND d.quarter = CASE WHEN f.is_annual=1 THEN 4 ELSE f.quarter END
                 AND d.is_annual = CASE WHEN f.is_annual=1 THEN 1 ELSE 0 END
-            WHERE ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 4)
+            WHERE NOT EXISTS (SELECT 1 FROM stock_collection_config q WHERE q.stock_code=f.stock_code AND q.config_key='fs_quirk:dart_unit_error' AND q.config_value LIKE '%' || (CASE WHEN f.is_annual=1 THEN CAST(f.year AS TEXT) || 'Y' ELSE CAST(f.year AS TEXT) || 'Q' || CAST(f.quarter AS TEXT) END) || f.report_type || '%') AND ((f.is_annual=0 AND f.quarter BETWEEN 1 AND 4)
                OR (f.is_annual=1))
               AND f.report_type IN ('CFS','')
               {"AND f.updated_at <= ?" if data_asof_ts else ""}
