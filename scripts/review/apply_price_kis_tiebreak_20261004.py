@@ -33,7 +33,16 @@ def main():
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--etf-adjusted", action="store_true",
                     help="ETF 정수 행 중 PG가 배당 조정 수정주가(FDR 계열)인 것 → KIS 원주가로. 근거: KIS 수정모드(ADJ=0)≈PG·FDR, 원주가모드(ADJ=1)만 다름(2026-10-04 표본 확인)")
+    ap.add_argument("--daily", action="store_true",
+                    help="매일 자동 실행(2026-10-05 사용자 승인): 감사 결과가 6시간 이내일 때만, 반영 행이 --max-rows 를 넘으면 반영하지 않고 종료")
+    ap.add_argument("--max-rows", type=int, default=200000)
     a = ap.parse_args()
+    if a.daily:
+        import time
+        age_h = (time.time() - (D / "mismatch_rows.csv").stat().st_mtime) / 3600
+        if age_h > 6:
+            print(f"감사 결과가 {age_h:.1f}시간 전 것 → 반영 안 함(오늘 감사가 실패한 것으로 판단)")
+            return
     m = pd.read_csv(D / "mismatch_rows.csv", dtype={"code": str})
     f = pd.read_csv(D / "fractional_rows_classified.csv", dtype={"code": str})
     etf = f[f.cls == "marcap에 종목 없음"][["code", "date"]].assign(kind="etf")
@@ -95,6 +104,9 @@ def main():
     pd.DataFrame(keep_pg, columns=["code", "date", "pg", "official", "marcap", "kis"]).to_csv(D / "kis_confirms_pg.csv", index=False)
     pd.DataFrame(plan, columns=["code", "date", "o_o", "o_h", "o_l", "o_c", "o_v", "n_o", "n_h", "n_l", "n_c", "n_v", "kind"]).to_csv(D / "kis_tiebreak_plan.csv", index=False)
     if not a.apply or not plan:
+        return
+    if a.daily and len(plan) > a.max_rows:
+        print(f"반영 대상 {len(plan):,}행 > 상한 {a.max_rows:,} → 이상 징후로 보고 반영 안 함(수동 검토)")
         return
     run_id = f"price_kis_tiebreak_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     now = datetime.now().isoformat(timespec="seconds")

@@ -37,6 +37,7 @@ case "$1" in
     step $PY $R/compare_db_vs_fnguide_raw_20261003.py                        # 원문 ↔ DB 대조(읽기 전용) → fnguide_raw_compare_*.json/csv
     step $PY $R/fetch_kis_raw_daily_20261004.py --etf-all --max-codes 60       # ETF·ETN 원주가(KIS) 원문 — 하루 60종목(~1시간), 가격 대조 근거
     step $PY $R/price_raw_basis_audit_20261004.py                            # 가격 원주가 3소스(공식·marcap·KIS) 전수 감사(읽기 전용) → price_raw_basis_audit_20261004/summary.json
+    step $PY $R/apply_price_kis_tiebreak_20261004.py --etf-adjusted --daily --apply   # ETF 배당 조정값 → KIS 원주가(조정 비율 0.75~1.0·OHLC 정합·감사 6시간 이내만, 2026-10-05 매일 자동 승인)
     step $PY $R/verify_backlog_identity_20261004.py                          # 수주잔고 원문 항등식 측정(읽기 전용)
     step $PY $R/build_field_verification_20261003.py                         # 현행 기준 필드 확정 상태(financial_field_verification) — 화면 품질 등급 근거
     ;;
