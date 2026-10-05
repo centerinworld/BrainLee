@@ -121,7 +121,7 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                       WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                       WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                       WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                      ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                      ELSE COALESCE((SELECT a.avail_date FROM fin_disclosure_dates a WHERE a.stock_code=f.stock_code AND a.year=f.year AND a.quarter=4 AND a.is_annual=1), printf('%d-03-31', f.year+1)) END) as avail_date,
                f.id, f.report_type
         FROM financial_data f
         LEFT JOIN fin_disclosure_dates d ON

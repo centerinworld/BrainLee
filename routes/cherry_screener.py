@@ -64,7 +64,7 @@ def _avail_date(year: int, quarter: int) -> str:
         return f"{year}-08-15"
     if quarter == 3:
         return f"{year}-11-15"
-    return f"{year + 1}-02-15"
+    return f"{year + 1}-03-31" # 4분기 단독값=연간−(1~3Q) → 사업보고서 법정기한(Stock_Strategy S16)
 
 
 def _pearson(xs: list[float], ys: list[float]) -> float | None:

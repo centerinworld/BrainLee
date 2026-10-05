@@ -794,11 +794,13 @@ def run_backtest_sector(
                                       AND (CASE WHEN quarter=1 THEN printf('%d-05-15', year)
                                                 WHEN quarter=2 THEN printf('%d-08-15', year)
                                                 WHEN quarter=3 THEN printf('%d-11-15', year)
-                                                ELSE printf('%d-02-15', year+1) END) <= ?
+                                                ELSE COALESCE((SELECT a.avail_date FROM fin_disclosure_dates a WHERE a.stock_code=?
+                                                              AND a.year=financial_data.year AND a.quarter=4 AND a.is_annual=1),
+                                                             printf('%d-03-31', year+1)) END) <= ?
                                 ) dedup
                                 WHERE rt_rn = 1
                                 ORDER BY year DESC, quarter DESC LIMIT 4
-                            """, (c, as_of)).fetchall()
+                            """, (c, c, as_of)).fetchall()
                             if (len(ni_rows) >= 2 and float(ni_rows[0][0] or 0) > 0
                                     and any(float(x[0] or 0) < 0 for x in ni_rows[1:])):
                                 sel_score += pick_ta_bonus

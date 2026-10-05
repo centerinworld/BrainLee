@@ -222,7 +222,7 @@ def run_backtest_turnaround(
                           WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                           WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                           WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                          ELSE printf('%d-02-15', f.year+1) END
+                          ELSE COALESCE((SELECT a.avail_date FROM fin_disclosure_dates a WHERE a.stock_code=f.stock_code AND a.year=f.year AND a.quarter=4 AND a.is_annual=1), printf('%d-03-31', f.year+1)) END
                    ) as avail_date,
                    f.id, f.report_type, f.created_at, f.updated_at
             FROM financial_data f

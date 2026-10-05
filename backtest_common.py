@@ -224,6 +224,27 @@ def init_backtest_db():
 _GIT_COMMIT_CACHE = None
 
 
+def _data_revision_extras(conn) -> dict:
+    """run_hash에 넣는 데이터 정정 이력 지문(Stock_Strategy P0-7).
+
+    run_registry.source_snapshot()은 가격 합계·재무 행수/최종수정시각만 본다. 거기에 안 잡히는
+    '공시일 표(fin_disclosure_dates)'·'정정 로그(data_fix_log)'·'시점 사실 표(financial_facts_pit)'의
+    버전을 함께 남겨, 같은 코드라도 이 입력이 바뀐 run은 다른 해시가 되게 한다.
+    조회 실패(테이블 없음 등)는 해당 항목만 None으로 둔다.
+    """
+    def one(sql):
+        try:
+            row = conn.execute(sql).fetchone()
+            return [None if v is None else str(v) for v in row] if row else None
+        except Exception:
+            return None
+    return {
+        "fin_disclosure_dates": one("SELECT COUNT(*), MAX(avail_date) FROM fin_disclosure_dates"),
+        "data_fix_log": one("SELECT COUNT(*), MAX(id) FROM data_fix_log"),
+        "financial_facts_pit": one("SELECT COUNT(*) FROM financial_facts_pit")  # run_id는 매일 바뀌어 해시가 흔들리므로 행수만,
+    }
+
+
 def _record_run_spec(run_id: str, strategy: str, engine_version: str,
                      params: dict, signal_timing: str = "close_D",
                      execution_timing: str = "same_close",
@@ -251,6 +272,7 @@ def _record_run_spec(run_id: str, strategy: str, engine_version: str,
             start_date=str(params.get("start") or "")[:10] or None,
             end_date=str(params.get("end") or "")[:10] or None,
         )
+        canonical_params["_data_revision_extras"] = _data_revision_extras(c)
         from pathlib import Path as _Path
         root = _Path(__file__).resolve().parent
         # backtest.py만 기록하면 공통 엔진이나 실제 전략 파일을 수정해도 같은 run hash가
@@ -557,6 +579,8 @@ def _release_date_with_basis(year: int, quarter: int, is_annual: bool,
         key = (stock_code, year, 4 if is_annual else quarter, 1 if is_annual else 0)
         if key in _DISC_DATES:
             return _DISC_DATES[key], "actual_disclosure"
+        if not is_annual and quarter == 4 and (stock_code, year, 4, 1) in _DISC_DATES:
+            return _DISC_DATES[(stock_code, year, 4, 1)], "actual_disclosure"
     return _release_date(year, quarter, is_annual, None), "statutory_estimate"
 
 
@@ -1078,14 +1102,18 @@ def _release_date(year: int, quarter: int, is_annual: bool, stock_code: str = No
         key = (stock_code, year, q_key, ia)
         if key in _DISC_DATES:
             return _DISC_DATES[key]
+        # 4분기 단독 값 = 연간 − (1~3분기)라 사업보고서 공시 뒤에야 알 수 있다(Stock_Strategy S16).
+        if not is_annual and quarter == 4:
+            annual = _DISC_DATES.get((stock_code, year, 4, 1))
+            if annual:
+                return annual
     # formula fallback
-    if is_annual:
+    if is_annual or quarter == 4:
         return f"{year + 1}-03-31"
     release_map = {
         1: f"{year}-05-15",
         2: f"{year}-08-15",
         3: f"{year}-11-15",
-        4: f"{year + 1}-02-15",
     }
     return release_map.get(quarter, f"{year}-12-31")
 
@@ -2552,7 +2580,7 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
                           WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                           WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                           WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                          ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                          ELSE COALESCE((SELECT a.avail_date FROM fin_disclosure_dates a WHERE a.stock_code=f.stock_code AND a.year=f.year AND a.quarter=4 AND a.is_annual=1), printf('%d-03-31', f.year+1)) END) as avail_date,
                    f.id, f.report_type
             FROM financial_data f
             LEFT JOIN fin_disclosure_dates d ON
@@ -3036,7 +3064,7 @@ def _run_generic_backtest(version: str, signal_fn,
                           WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                           WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                           WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                          ELSE printf('%d-02-15', f.year+1) END) as avail_date
+                          ELSE COALESCE((SELECT a.avail_date FROM fin_disclosure_dates a WHERE a.stock_code=f.stock_code AND a.year=f.year AND a.quarter=4 AND a.is_annual=1), printf('%d-03-31', f.year+1)) END) as avail_date
             FROM financial_data f
             LEFT JOIN fin_disclosure_dates d ON
                 d.stock_code = f.stock_code AND d.year = f.year

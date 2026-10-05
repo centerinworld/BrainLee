@@ -185,7 +185,7 @@ def run_backtest_earnings_conviction(
                          CASE WHEN f.quarter=1 THEN printf('%d-05-15', f.year)
                               WHEN f.quarter=2 THEN printf('%d-08-15', f.year)
                               WHEN f.quarter=3 THEN printf('%d-11-15', f.year)
-                              ELSE printf('%d-02-15', f.year+1) END) as avail_date,
+                              ELSE COALESCE((SELECT a.avail_date FROM fin_disclosure_dates a WHERE a.stock_code=f.stock_code AND a.year=f.year AND a.quarter=4 AND a.is_annual=1), printf('%d-03-31', f.year+1)) END) as avail_date,
                        f.id, CASE WHEN d.avail_date IS NULL THEN 0 ELSE 1 END AS actual_disclosure,
                        f.created_at, f.updated_at
                 FROM financial_data f

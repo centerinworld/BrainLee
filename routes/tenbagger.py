@@ -5653,7 +5653,7 @@ def _ta_avail_date(year: int, quarter: int) -> str:
     if quarter == 1: return f"{year}-05-15"
     if quarter == 2: return f"{year}-08-15"
     if quarter == 3: return f"{year}-11-15"
-    return f"{year+1}-02-15"
+    return f"{year+1}-03-31" # 4분기 단독값=연간−(1~3Q) → 사업보고서 법정기한(Stock_Strategy S16)
 
 
 def _compute_turnaround_watch(min_mktcap: float = 300.0) -> dict:
