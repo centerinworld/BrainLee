@@ -24,7 +24,7 @@ from db_utils import connect_stock_db  # noqa: E402
 from scripts.rerun_all_after_audit_rebuild import _all_selected_specs  # noqa: E402
 from scripts.rerun_selected_after_price_repair import _price_integrity  # noqa: E402
 
-OUT = ROOT / "research_outputs" / "v12_selection_order_20261006.json"
+OUT = ROOT / "research_outputs" / ("v12_selection_order_20261006" + (sys.argv[1] if len(sys.argv) > 1 else "") + ".json")
 TAG = "d13_v12"
 
 

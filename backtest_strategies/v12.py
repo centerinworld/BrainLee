@@ -8,6 +8,7 @@ import math
 import re
 import logging
 import bisect
+import random
 from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
@@ -20,12 +21,18 @@ from backtest_common import (
     _record_run_spec,
     _register_execution_artifacts,
     _final_liquidation_quote_for_code,
+    _load_jump_aligned_corp_factors,
+    _rebase_positions_for_corp_actions,
     _rsi,
     _save_result,
     init_backtest_db,
     logger,
     sqlite3,
 )
+
+# 2026-10-06 진단: 마지막 실행의 날짜별 (후보 수, 빈 자리 수) — 선택 순서가 결과를 좌우하는 빈도 측정용(docs/Stock_Strategy.md S27)
+LAST_SELECTION_STATS: list = []
+
 
 def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                       per_stock, max_positions, stop_loss, stop_loss_pct,
@@ -38,6 +45,7 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
     섹터 alpha = 해당 섹터 평균 3개월 수익률 - KOSPI 3개월 수익률
     종목은 섹터 alpha > 0 이고 자체 RS도 양수인 경우만 매수.
     """
+    LAST_SELECTION_STATS.clear()
     # KOSPI 로드
     kospi_rows = conn.execute("""
         SELECT date, close FROM price_history
@@ -107,6 +115,11 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
     # 날짜→인덱스 맵
     date_idx = {sc: {dt: idx for idx, dt in enumerate(d['dates'])}
                 for sc, d in stock_data.items()}
+    # 2026-10-06(docs/Stock_Strategy.md S28): 원주가(price_history)는 무상증자·액면분할일에 가격이 끊긴다.
+    # 확정 기업행위(가격 단절이 실제 관측된 날의 확정 계수만)로 보유 포지션을 재기준해 가짜 손절·가짜 손실을 막는다
+    # (golden_cross·sector 등 8개 전략과 같은 방식). 계수 미확정(예: 인적분할 077500)은 D12 결정 대상이라 그대로.
+    _ca_factors = _load_jump_aligned_corp_factors(conn, list(stock_data.keys()))
+    _ca_prev_day = None
 
     positions = {}
     trades    = []
@@ -181,6 +194,8 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
     v12_pending_buys: list = []
 
     for day in sim_dates:
+        _rebase_positions_for_corp_actions(_ca_factors, positions, _ca_prev_day, day, ('entry_price', 'peak_price'), 'qty')
+        _ca_prev_day = day
         # ── strict_exec: 전일 신호 → 오늘 시가 체결 (Codex 계약) ──
         if strict_exec:
             _still = []
@@ -352,8 +367,15 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                 _score = (stock_3m - sec_info['avg_ret']) if stock_3m is not None else float('-inf')
                 _v12_cands.append((_score, sc, curr))
 
+            _free = max_positions - len(positions) - len(v12_pending_buys)
+            if _v12_cands:
+                LAST_SELECTION_STATS.append((day, len(_v12_cands), max(_free, 0)))
             if selection_order == "score":
                 _v12_cands.sort(key=lambda x: (-x[0], x[1]))
+            elif selection_order.startswith("random:"):
+                # 비교용: 같은 seed·같은 날이면 같은 순서(재현 가능한 무작위) — 점수 순이 우연보다 나은지 검정
+                _v12_cands.sort(key=lambda x: x[1])
+                random.Random(f"{selection_order}:{day}").shuffle(_v12_cands)
             else:
                 _v12_cands.sort(key=lambda x: x[1])
             for _score, sc, curr in _v12_cands:
@@ -482,7 +504,7 @@ def run_backtest_v12(start_date: str, end_date: str,
         conn.execute("UPDATE backtest_runs SET status='running' WHERE run_id=?", (run_id,))
         conn.commit()
 
-    _record_run_spec(run_id, "v12", f"v12_v3_select_{selection_order}_20261006", _v12_params,
+    _record_run_spec(run_id, "v12", f"v12_v4_select_{selection_order}_carebase_20261006", _v12_params,
                      signal_timing="close_D", execution_timing="next_open",
                      market_cap_mode=("asof_approx" if asof_mktcap else "current"),
                      allocation_rule="fixed_slot",
