@@ -240,7 +240,13 @@ def _data_revision_extras(conn) -> dict:
             return None
     return {
         "fin_disclosure_dates": one("SELECT COUNT(*), MAX(avail_date) FROM fin_disclosure_dates"),
-        "data_fix_log": one("SELECT COUNT(*), MAX(id) FROM data_fix_log"),
+        # 2026-10-06: 백테스트 입력과 무관한 정정(macro_window_* 지수·환율 창 보정이 하루 수십 건,
+        # contract_audit 등)까지 세면 같은 코드·같은 데이터도 매일 다른 해시가 돼 재현 확인이 깨진다
+        # → 가격·재무·기업행위·종목 마스터를 바꾼 정정만 센다(docs/Stock_Strategy.md §9 2026-10-06).
+        "data_fix_log": one(
+            "SELECT COUNT(*), MAX(id) FROM data_fix_log WHERE COALESCE(run_id,'') NOT LIKE 'macro_window_%' AND ("
+            "table_name LIKE '%price_history%' OR table_name LIKE '%financial_data%' OR table_name LIKE '%cash_flow_data%' "
+            "OR table_name LIKE '%corporate_action%' OR table_name LIKE '%security_%' OR table_name LIKE '%stock_universe%')"),
         "financial_facts_pit": one("SELECT COUNT(*) FROM financial_facts_pit"),  # run_id는 매일 바뀌어 해시가 흔들리므로 행수만
         # D11: 단위 오기 의심 행은 공개일 게이팅 재무 로더에서 입력 제외(DB 값 불변) — 제외 대상 기간 수를 지문에 남김
         "unit_error_excluded_periods": one(

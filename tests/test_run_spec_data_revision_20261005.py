@@ -14,14 +14,22 @@ class TestDataRevisionExtras(unittest.TestCase):
     def _conn(self):
         c = sqlite3.connect(":memory:")
         c.execute("CREATE TABLE fin_disclosure_dates (stock_code TEXT, avail_date TEXT)")
-        c.execute("CREATE TABLE data_fix_log (id INTEGER PRIMARY KEY, run_id TEXT)")
+        c.execute("CREATE TABLE data_fix_log (id INTEGER PRIMARY KEY, run_id TEXT, table_name TEXT)")
         c.execute("CREATE TABLE financial_facts_pit (run_id TEXT)")
         return c
+
+    def test_unrelated_fix_log_rows_do_not_change_hash(self):
+        """2026-10-06: 지수·환율 창 보정(macro_window_*)·계약 감사 기록은 백테스트 입력이 아니므로 지문 불변."""
+        c = self._conn()
+        a = bc._data_revision_extras(c)
+        c.execute("INSERT INTO data_fix_log(run_id, table_name) VALUES ('macro_window_^VIX_20261006_000000', 'price_history')")
+        c.execute("INSERT INTO data_fix_log(run_id, table_name) VALUES ('contract_audit_20261006_071007', 'data_contract_check_log')")
+        self.assertEqual(a, bc._data_revision_extras(c))
 
     def test_changes_when_inputs_change(self):
         c = self._conn()
         a = bc._data_revision_extras(c)
-        c.execute("INSERT INTO data_fix_log(run_id) VALUES ('fix1')")
+        c.execute("INSERT INTO data_fix_log(run_id, table_name) VALUES ('price_raw_restore_x', 'price_history')")
         b = bc._data_revision_extras(c)
         self.assertNotEqual(a, b)
         self.assertEqual(b, bc._data_revision_extras(c))  # 같은 상태 = 같은 값
