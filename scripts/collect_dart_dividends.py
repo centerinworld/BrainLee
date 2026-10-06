@@ -161,6 +161,13 @@ def collect_year(conn, year: int, api_key_idx: int = 0) -> dict:
     corp_map = {cmap[c]: c for c in codes if cmap.get(c)}  # corp_code → stock_code
     done = {r[0] for r in conn.execute("SELECT stock_code FROM dart_dividends WHERE fiscal_year=? AND reprt_code='11011'", (year,)).fetchall()}
     corp_map = {k: v for k, v in corp_map.items() if v not in done}
+    # 2026-10-06: 무배당(조회했지만 주당 배당 없음)으로 확인한 종목·연도는 다시 조회하지 않는다 — 매일 밤 연도당 ~1,400건 낭비하던 것
+    checked_p = ROOT / "data" / "dart_dividend_checked.json"
+    try:
+        checked = set(json.loads(checked_p.read_text()).get(str(year), []))
+    except Exception:
+        checked = set()
+    corp_map = {k: v for k, v in corp_map.items() if v not in checked}
 
     print(f"[{year}] {len(corp_map)}개 회사 대상")
     inserted = 0
@@ -179,11 +186,14 @@ def collect_year(conn, year: int, api_key_idx: int = 0) -> dict:
             errors += 1
         elif len(items) == 0:
             skipped += 1
+            checked.add(stock_code)
         else:
             row = parse_items(items, corp_code, str(year))
             if row and (row.get("dps_krw") is not None or row.get("total_cash_div_bn") is not None):
                 upsert_row(cur, stock_code, row)
                 inserted += 1
+            else:
+                checked.add(stock_code)
 
         if (i + 1) % 100 == 0:
             conn.commit()
@@ -192,6 +202,13 @@ def collect_year(conn, year: int, api_key_idx: int = 0) -> dict:
         time.sleep(RATE_LIMIT_DELAY)
 
     conn.commit()
+    try:
+        allc = json.loads(checked_p.read_text()) if checked_p.exists() else {}
+    except Exception:
+        allc = {}
+    allc[str(year)] = sorted(checked)
+    checked_p.parent.mkdir(parents=True, exist_ok=True)
+    checked_p.write_text(json.dumps(allc))
     return {"year": year, "total": len(corp_map), "inserted": inserted,
             "skipped": skipped, "errors": errors}
 

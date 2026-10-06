@@ -433,6 +433,8 @@ def main():
                     tot += abs(float(v)); got = True
         return tot if got else None
     have_mix = {(r[0], r[1]) for r in map(tuple, conn.execute("SELECT DISTINCT stock_code, year FROM company_product_mix").fetchall())}
+    conn.commit()
+    conn.close()  # 2026-10-06: 원문 수천 건 파싱(15분+) 동안 트랜잭션을 열어 두면 idle-in-transaction 시간 초과로 끊긴다 → 저장 때 다시 연결
     run_id = f"biz_docs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     st = collections.Counter()
     latest = {}
@@ -516,6 +518,7 @@ def main():
                 for q in recs:
                     mix_rows.append((code, fy, q["category"], q["product_name"], q["revenue"] * mul, round(q["revenue"] * mul / tot * 100, 2), rc, "dart_doc_cache"))
                 st["제품별 매출(2021~22)"] += 1
+    conn = connect_primary_db(timeout=900)
     for t in ("biz_rd_expense", "biz_capacity", "biz_raw_material_price", "biz_sales_domestic_export", "biz_cost_nature", "biz_segment"):
         conn.execute(f"DELETE FROM {t}")
     def ins(t, cols, rows):
