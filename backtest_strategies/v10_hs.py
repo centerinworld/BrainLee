@@ -29,6 +29,8 @@ def run_backtest_v10_hs(start_date: str, end_date: str,
                         hs_yoy_min: float = 10.0,
                         run_name: str = None, run_id: str = None) -> str:
     """
+    [알려진 한계 2026-10-07] 이 전략이 쓰는 `_run_generic_backtest_with_sc`는 가격 이상 종목을 기간 전체에서 통째로 제외한다(미래 정보 선택 편향, REVIEW_PLAN §10-1) — 조정 모드(시점별 차단)가 아직 없다. 성과 해석 시 주의.
+   
     V10 이익폭발 + HS 수출 YoY ≥ 10% 필터.
     HS 데이터가 있는 종목(285개)에서만 매수.
     기존 V10과 비교해 HS 조건이 수익률을 실제로 개선하는지 검증.

@@ -728,3 +728,4 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 2026-10-06(Claude Stock_Strategy W1, D12 ② 승인) 조정 가격 공용 로더 `backtest_common.load_adjusted_prices` 신설(확정 계수로 후진 조정, 계수 미확정 단절은 breaks·excluded_ranges로 반환). 아직 어떤 엔진도 사용하지 않음(W2~W3 대기). 테스트 tests/test_adjusted_prices_20261006.py.
 2026-10-06(Claude Stock_Strategy W1 보강) 조정 가격 로더 단절 기준을 가격제한폭 초과(거래정지 재개 제외)로 바꾸고 quarantined_basis 제외, 청산용 last_day_before_break·run 지문(계수·단절 감사 버전) 추가. 2015년 이후 단절 종목 841·제외 종목-연 1,524. W2는 아직.
 2026-10-07(Claude Stock_Strategy W2) 공용 일반 엔진(_run_generic_backtest)에 조정 가격 옵션(adjusted_prices, 기본 꺼짐) 통합 — 일반 엔진 7개 전략 6구간에서 기준선과 거래 목록 동일(영향 0), 단절 전 청산·제외 구간 로직은 자체 루프 전략(W3)에서 실제 시험 필요. 공백≥60일 단절·내용 해시 지문(§7-2 A·B). 상세 docs/Stock_Strategy.md §9.
+2026-10-07(Claude Stock_Strategy W2 최종) 일반 엔진 8개 전략 6구간 기존 vs 조정 비교 완료(미래 정보 편향 제거+기업행위 조정 효과, 우열 판단 금지, 생존편향 별도). 유효 39쌍 중 거래 목록 변화 27구간, 구간별 ±수십pp. 상세 docs/Stock_Strategy.md §9.

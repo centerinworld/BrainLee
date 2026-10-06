@@ -52,6 +52,8 @@ def run_backtest_v1_dart(start_date: str, end_date: str,
                          dart_min_signal: int = 2,
                          run_name: str = None, run_id: str = None) -> str:
     """
+    [알려진 한계 2026-10-07] 이 전략이 쓰는 `_run_generic_backtest_with_sc`는 가격 이상 종목을 기간 전체에서 통째로 제외한다(미래 정보 선택 편향, REVIEW_PLAN §10-1) — 조정 모드(시점별 차단)가 아직 없다. 성과 해석 시 주의.
+   
     V1 트렌드 + DART 수주공시 ★2 이상 (최근 90일) 필터.
     DART 5년치 데이터 기반 — 수주공시가 추세추종 매수에 유효한지 검증.
     """
