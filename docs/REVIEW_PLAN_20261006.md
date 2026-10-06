@@ -540,3 +540,14 @@
 | 5. C2 10/2 910행 | 2번에서 함께 처리 |
 | 추가 확인 | 10/2 price_history 2,772행 중 공식 주가(stock_price_daily, ETF 포함 2,871종목)와 대조 안 되는 행 20개 = 전부 지수·환율·선물(정상). ETF·주식에 잠정 값 잔존 없음 |
 | 실패 사례 | FINANCIAL §5 실패 27 추가 — '같은 계열 소스 일치'는 독립 확인이 아님 |
+
+### 16-5. 15-4 이어서 (2026-10-07, Claude)
+| 15-4 | 결과 |
+|---|---|
+| 1. A9 배포 | 대기 — 다른 세션 미커밋 프런트(App.jsx·Root.jsx·StockLlmView·modules.js·BacktestView·Screener·StrategyHub)와 main.py·routes/signals.py가 아직 남아 있음 |
+| 2. A6 | 대기 — CFS 전용 조회 77곳 교체(Lab 세션과 조정) 후 FnGuide 20종목 표본 확인(§16-3, §2-8 기록) → `--apply` |
+| 3. N1/W3, C8 ② | Lab 세션 |
+| 4. 900250 2015Q4 | ECOS 2015년 원/위안 없음(731Y001 0000053 = 2016-01-04부터, API `INFO-200`) → §16-3대로 백업(`financial_data_backup_unit_20261005`) 후 값 9칸 NULL, `financial_fix_log`·`data_fix_log` run `fx_null_900250_2015_20261006_213451`. 원래 값도 자본 −1·부채=자산+1·ROE −146억으로 깨진 행이었음. 이상값 감시 새 항목 0 |
+| 5. 10-16 ETF 소수점 6행·C3 ① | 날짜·DART 키 대기 |
+| 부수 수정 | `check_financial_anomalies_daily.py`가 그날 `data_anomaly_daily`를 전부 지워 가격 감시(pg_close_vs_krx) 행까지 삭제하던 문제 → 자기 검사 3종만 삭제 |
+| 미반영 | 스케줄러 `--days 7`은 백엔드 재시작 후 적용 — 다른 세션 미커밋 main.py·routes/signals.py가 함께 올라가므로 재시작 보류(그 세션 정리 뒤 `scripts/safe_restart_backend.sh`) |

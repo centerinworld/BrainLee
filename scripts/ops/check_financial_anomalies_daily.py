@@ -54,7 +54,8 @@ def main():
         code, y, q, ratio = tuple(r)
         if any(abs(ratio / k - 1) < 0.01 for k in (1e3, 1e6, 1e-3, 1e-6)):
             found.append(("cfs_ofs_1000x", code, y, q, "CFS/OFS", f"연결/별도 = {ratio:.4g}", int(code in known)))
-    conn.execute("DELETE FROM data_anomaly_daily WHERE check_date=?", (today,))
+    # 자기 검사 항목만 지운다 — 같은 표를 쓰는 가격 감시(pg_close_vs_krx) 행 보존(2026-10-07)
+    conn.execute("DELETE FROM data_anomaly_daily WHERE check_date=? AND check_name IN ('scale_outlier','future_period','cfs_ofs_1000x')", (today,))
     rows = list({x[:5]: x for x in found}.values())
     if rows:
         conn.executemany("INSERT INTO data_anomaly_daily VALUES (?,?,?,?,?,?,?,?)", [(today,) + x for x in rows])
