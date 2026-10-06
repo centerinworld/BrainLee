@@ -248,6 +248,15 @@ def _data_revision_extras(conn) -> dict:
             "table_name LIKE '%price_history%' OR table_name LIKE '%financial_data%' OR table_name LIKE '%cash_flow_data%' "
             "OR table_name LIKE '%corporate_action%' OR table_name LIKE '%security_%' OR table_name LIKE '%stock_universe%')"),
         "financial_facts_pit": one("SELECT COUNT(*) FROM financial_facts_pit"),  # run_id는 매일 바뀌어 해시가 흔들리므로 행수만
+        # 조정 가격 로더 입력(Stock_Strategy §6-2 #5): 확정 계수 표와 단절 감사 표 — 매일 바뀐다
+        "corporate_action_factors": one(
+            "SELECT COUNT(*), MAX(updated_at) FROM corporate_action_events "
+            "WHERE adjustment_status='factor_confirmed' AND backward_price_factor IS NOT NULL"),
+        "price_jump_audit": one("SELECT COUNT(*), MAX(audited_at) FROM price_jump_audit"),
+        "price_jump_audit_by_class": one(
+            "SELECT COUNT(DISTINCT classification), SUM(CASE WHEN classification IN "
+            "('corporate_action_pending_confirmation','unresolved_active_common',"
+            "'corporate_action_or_delisting_nearby','corporate_action_share_count_evidence') THEN 1 ELSE 0 END) FROM price_jump_audit"),
         # D11: 단위 오기 의심 행은 공개일 게이팅 재무 로더에서 입력 제외(DB 값 불변) — 제외 대상 기간 수를 지문에 남김
         "unit_error_excluded_periods": one(
             "SELECT COUNT(DISTINCT stock_code), SUM(LENGTH(config_value) - LENGTH(REPLACE(config_value, 'CFS', '')) "
@@ -1020,11 +1029,43 @@ def _load_jump_aligned_corp_factors(conn, stock_codes: list) -> dict:
 
 
 # Stock_Strategy W1(REVIEW_PLAN §1-4, D12 ② 사용자 승인): 계수를 알 수 없는 가격 단절의 분류.
+# `quarantined_basis`는 '구조 안전 점검' 표시일 뿐 단절이 아니다(§6-2 #1: 4,311건 중 4,303건 ±15% 이내) — 제외.
+# 그 밖의 단절(분류 무관)은 아래 가격제한폭 규칙이 잡는다(§6-2 #2·#3).
 UNRESOLVED_BREAK_CLASSES = (
-    "corporate_action_pending_confirmation", "quarantined_basis", "unresolved_active_common",
+    "corporate_action_pending_confirmation", "unresolved_active_common",
     "corporate_action_or_delisting_nearby", "corporate_action_share_count_evidence",
 )
 INDICATOR_MAX_WINDOW = 252   # 신호 지표(52주 고점 등)의 최대 창(거래일)
+
+
+PRICE_LIMIT_CHANGE_DATE = "2015-06-15"   # 이전 ±15%, 이후 ±30%
+HALT_GAP_CALENDAR_DAYS = 7                # 직전 행과 이만큼 이상 떨어지면 거래정지 후 재개로 본다(재개일 기준가 재평가 = 실제 손익)
+
+
+def _price_limit(day: str) -> float:
+    return 0.15 if day < PRICE_LIMIT_CHANGE_DATE else 0.30
+
+
+def _limit_breaks(dates: list, adj_close: list) -> list:
+    """조정 후 직전 거래일 대비 변동이 그날 가격제한폭(+반올림 여유 0.5%)을 넘는 날 — 시장 움직임으로 불가능한 단절.
+    직전 행과 `HALT_GAP_CALENDAR_DAYS`일 이상 떨어진 날(거래정지 뒤 재개)은 제외한다."""
+    from datetime import date as _d
+    out = []
+    for k in range(1, len(dates)):
+        if adj_close[k - 1] <= 0:
+            continue
+        r = adj_close[k] / adj_close[k - 1]
+        lim = _price_limit(dates[k])
+        if 1 - lim - 0.005 <= r <= 1 + lim + 0.005:
+            continue
+        try:
+            gap = (_d.fromisoformat(dates[k]) - _d.fromisoformat(dates[k - 1])).days
+        except ValueError:
+            gap = 0
+        if gap >= HALT_GAP_CALENDAR_DAYS:
+            continue
+        out.append(dates[k])
+    return out
 
 
 def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
@@ -1078,7 +1119,10 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
                 for key in ("open", "high", "low", "close"):
                     e[key][k] *= f
                 e["volume"][k] /= f
-        e["breaks"] = sorted(breaks.get(code, ()))
+        # 계수로 설명되지 않는 제한폭 초과 단절(분류 무관) — 조정 후 시계열에서 직접 찾는다
+        found = set(_limit_breaks(ds, e["close"]))
+        e["unexplained_limit_breaks"] = sorted(found)
+        e["breaks"] = sorted(set(breaks.get(code, ())) | found)
         ranges = []
         for b in e["breaks"]:
             if not ds or b < ds[0]:
@@ -1090,6 +1134,16 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
             ranges.append((ds[first], ds[last]))
         e["excluded_ranges"] = ranges
     return out
+
+
+def last_day_before_break(entry: dict, hold_from: str, day: str):
+    """(hold_from, day] 안에 단절이 있으면 첫 단절 직전 마지막 거래일, 없으면 None — 보유 포지션을 그 날 종가로 청산 처리한다(D12 ②)."""
+    ds = entry["dates"]
+    for b in entry.get("breaks", ()):
+        if hold_from < b <= day:
+            prev = [d for d in ds if d < b]
+            return prev[-1] if prev else None
+    return None
 
 
 def is_excluded_day(entry: dict, day: str) -> bool:

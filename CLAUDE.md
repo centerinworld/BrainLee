@@ -726,3 +726,4 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 2026-10-06 오후(Claude) OPEN_ITEMS C 처리: 시가·고가·저가 정정, 제품별 매출 2021~25 재파싱(`scripts/review/reparse_product_mix_20261006.py`), 미분류 필드 3자 분류(`classify_unclassified_fields_20261006.py`), 외부 확인 재작성값 매일 자동 반영, 퀀트지표 외국인 보유 키움 대체, 조합 백테스트 6기간(우위 없음 — docs/SIGNAL_RULES.md §5).
 2026-10-06(Claude) docs/REVIEW_PLAN_20261006.md §3 문서 정리 반영(정정 표시·상태 통일·OPEN_ITEMS 링크·§9 가격 한계 1행). W1~W8 실행은 D12 등 사용자 결정 대기.
 2026-10-06(Claude Stock_Strategy W1, D12 ② 승인) 조정 가격 공용 로더 `backtest_common.load_adjusted_prices` 신설(확정 계수로 후진 조정, 계수 미확정 단절은 breaks·excluded_ranges로 반환). 아직 어떤 엔진도 사용하지 않음(W2~W3 대기). 테스트 tests/test_adjusted_prices_20261006.py.
+2026-10-06(Claude Stock_Strategy W1 보강) 조정 가격 로더 단절 기준을 가격제한폭 초과(거래정지 재개 제외)로 바꾸고 quarantined_basis 제외, 청산용 last_day_before_break·run 지문(계수·단절 감사 버전) 추가. 2015년 이후 단절 종목 841·제외 종목-연 1,524. W2는 아직.

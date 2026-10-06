@@ -39,7 +39,8 @@ class TestDataRevisionExtras(unittest.TestCase):
     def test_missing_table_is_none_not_error(self):
         c = sqlite3.connect(":memory:")
         out = bc._data_revision_extras(c)
-        self.assertEqual(set(out), {"fin_disclosure_dates", "data_fix_log", "financial_facts_pit", "unit_error_excluded_periods"})
+        self.assertEqual(set(out), {"fin_disclosure_dates", "data_fix_log", "financial_facts_pit", "unit_error_excluded_periods",
+                                    "corporate_action_factors", "price_jump_audit", "price_jump_audit_by_class"})
         self.assertTrue(all(v is None for v in out.values()))
 
 

@@ -58,5 +58,39 @@ class TestAdjustedPrices(unittest.TestCase):
         self.assertEqual(e["excluded_ranges"], [])
 
 
+    def test_quarantined_basis_is_not_a_break(self):
+        c = _db([(d, 1000.0) for d in DAYS], audit=[("A", DAYS[4], 1.0, "quarantined_basis")])
+        e = bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertEqual(e["breaks"], [])
+
+    def test_limit_exceeding_unexplained_move_is_break_regardless_of_class(self):
+        prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 500.0) for d in DAYS[5:]]   # -50% > 30% 한도, 감사 분류 없음
+        c = _db(prices)
+        e = bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertEqual(e["unexplained_limit_breaks"], [DAYS[5]])
+
+    def test_move_within_limit_is_market_move(self):
+        prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 750.0) for d in DAYS[5:]]   # -25% ≤ 30%
+        c = _db(prices)
+        self.assertEqual(bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]["breaks"], [])
+
+    def test_halt_resumption_is_not_a_break(self):
+        c = _db([("2024-01-02", 1000.0), ("2024-01-15", 400.0), ("2024-01-16", 400.0)])   # 13일 공백 후 재개
+        self.assertEqual(bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]["breaks"], [])
+
+    def test_confirmed_factor_explains_limit_move(self):
+        prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 500.0) for d in DAYS[5:]]
+        c = _db(prices, audit=[("A", DAYS[5], 0.5, "confirmed_corporate_action")],
+                events=[("A", DAYS[5], "bonus_issue", "factor_confirmed", 0.5)])
+        e = bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertEqual(e["breaks"], [])
+
+    def test_last_day_before_break(self):
+        prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 500.0) for d in DAYS[5:]]
+        e = bc.load_adjusted_prices(_db(prices), ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertEqual(bc.last_day_before_break(e, DAYS[2], DAYS[7]), DAYS[4])
+        self.assertIsNone(bc.last_day_before_break(e, DAYS[5], DAYS[7]))   # 이미 단절 뒤에 진입
+
+
 if __name__ == "__main__":
     unittest.main()
