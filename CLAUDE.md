@@ -18,6 +18,7 @@
 
 - **재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터를 판정·수집·수정하기 전에 반드시 [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 를 먼저 읽고 그 기준대로만 작업한다.** 정답 소스·정의·판정 규칙·필수 절차·실패 사례·현재 상태·한계가 모두 그 파일에 있다(이 CLAUDE.md의 관련 규칙·이력은 2026-10-03 그 파일 부록 A로 이관).
 - 기준(FnGuide vs DART, 지배 vs 전체 등)은 사용자 승인 없이 바꾸지 않는다. 숫자 데이터 작업 기록은 그 파일 §7에 남긴다.
+- **미완료 항목 통합 목록(사용자 결정 필요·남은 작업·해결된 낡은 항목): [docs/OPEN_ITEMS.md](docs/OPEN_ITEMS.md)** — 작업을 끝내면 원문과 이 목록을 함께 고친다.
 - **매매 신호(계좌현황 추세추종·매도시그널, 차트시그널, 매수후보 진입)는 [docs/SIGNAL_RULES.md](docs/SIGNAL_RULES.md)가 정본** — 코드는 `trend_rules.py` 한 곳. 다른 AI가 이어받을 현황은 docs/FINANCIAL_STATEMENTS.md §9-2-7.
 
 ### 서버 재시작 (필수 — 코드 수정 후 반드시 이 방법으로만)
@@ -489,8 +490,8 @@ same_sector_codes = {r["stock_code"] for r in mc.execute(
 | TWSE(대만) 외국인 순매수 수집 | ❌ 접속 차단(2026-09-08 확인) | `/rwd/`·`/exchangeReport/` 등 데이터 경로가 이 Mac 네트워크에서 WAF 307("FOR SECURITY REASONS")로 전부 차단됨(루트 도메인은 200으로 정상 — 데이터 경로만 선별 차단). Referer/User-Agent 조정, Playwright 풀브라우저 모두 동일하게 막힘 — IP/지역 기반 차단으로 추정. 대체 소스 없이는 `TW_FOREIGN_FLOW_USD` 수집 불가(`collectors/asia_foreign_flow_collector.py`의 `collect_tw_foreign_flow`는 코드는 있으나 상시 0건). 우회 시도(프록시/스푸핑)는 정책상 하지 않음. |
 | 중국 북향자금(HKEX Stock Connect) 순매수 수집 | ⚠️ 미구현 | 사이트 자체는 접근 가능하나(hkex.com.hk 200) Historical-Daily 통계표가 JS로 동적 렌더링됨 — Playwright로 네트워크 캡처해 찾은 `/eng/csm/DailyStat/data_tab_daily_YYYYMMDDe.js`는 Turnover(거래대금)만 있고 실제 순매수(Net Buy/Sell) 필드가 없어 사용 불가. 실제 net flow가 나오는 엔드포인트는 날짜검색 인터랙션 뒤에 있는 것으로 추정되나 미확인 — 후속 조사 필요, `CN_NORTHBOUND_FLOW_USD` 현재 0건. |
 | 공공데이터포털 투자자API | ❌ 404 | getStocInvtTrdnInfo 서비스 폐지 |
-| foreign_holding_daily | ⚠️ 2026-06-08 이후 정지 | 107,764행 존재하나 MAX(bas_dt)=20260608(2026-09-24 실측). 외국인 지분율 최신값은 `kiwoom_foreign_flow`(9/23까지 정상) 사용 |
-| **crontab 잡 전체** | ❌ 2026-08-29경~ 중단 | macOS TCC가 cron의 외장 볼륨 쓰기를 거부(`/var/mail/brainlee`: `Operation not permitted`) → quant_indicators·HS daily_refresh·telegram·ETF 재시도·cron_3am 등 미실행. 사용자 조치: 전체 디스크 접근 권한에 `/usr/sbin/cron` 추가 또는 LaunchAgent 이전. 상세 [docs/SYSTEM_REVIEW_20260924.md](docs/SYSTEM_REVIEW_20260924.md) |
+| foreign_holding_daily | ⚠️ 2026-09-23 이후 정지(2026-10-06 실측) | 이전 기록의 '06-08 정지'는 낡음. 외국인 지분율 최신값은 `kiwoom_foreign_flow`(9/23까지 정상) 사용 |
+| ~~**crontab 잡 전체**~~ | ✅ 해결(2026-09-24 — 아래 해결 행) | macOS TCC가 cron의 외장 볼륨 쓰기를 거부(`/var/mail/brainlee`: `Operation not permitted`) → quant_indicators·HS daily_refresh·telegram·ETF 재시도·cron_3am 등 미실행. 사용자 조치: 전체 디스크 접근 권한에 `/usr/sbin/cron` 추가 또는 LaunchAgent 이전. 상세 [docs/SYSTEM_REVIEW_20260924.md](docs/SYSTEM_REVIEW_20260924.md) |
 
 ### 키움 REST API 확인된 엔드포인트 (URI: /api/dostk/stkinfo, Bearer 토큰)
 | API-ID | 설명 | 필수 파라미터 |
@@ -710,3 +711,14 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 2026-10-05 오후(Claude 외부 검토 반영) 매도시그널 추세 이탈을 현재가 비교 → 원 전략대로 5일선 비교, 피크Easy 진입 252일 이력 조건, SIGNAL_RULES.md에 '원 전략과 다른 점'(이 조합은 백테스트 안 함) 명시. 인수인계 §9-2-7에 §9-2-8 결함(1,000배 오류·06:20 반복 루프·리츠·외화) 우선 배치, KRX 주가 백필 완료 반영. 루트 CLAUDE.md·AGENTS.md(신설)·세션 훅에 진입 경로 추가(루트 훅의 옛 App.jsx 경로 수정).
 2026-10-05(Claude Stock Lab 전략 재검토 문서) 여러 AI 공동 검토용 [docs/Stock_Strategy.md](docs/Stock_Strategy.md) 신설 — Lab 구조 지도, 발견 15건(S01~S15: 후보 풀 무제한/백테스트 선택 규칙 불일치, 가치 스크리너 OR 조건 850종목, 어댑터 없는 전략 13개 등), Phase 0~5 개선 순서, 전략 인벤토리, 사용자 결정 대기 D1~D6. 코드 변경 없음.
 2026-10-05 밤(Claude 2차 검토 반영) 06:20 `재무무결성일일` 보고 전용(값 변경 안 함, 사용자 승인), 단위 오류 복원·재적용 1,000배 거부, 리츠 키 원상 복구·`fiscal_period.is_reit`, 외화 2026Q2 원통화 정리·반기 백필 외화 제외, 매일 이상값 감시 `scripts/ops/check_financial_anomalies_daily.py`(→`data_anomaly_daily`), 매수후보 무상증자 보정, `tests/test_trend_rules.py`, 백테스트 `se_momentum(exit_mode=)` 옵션, 가격 감사 독립 소스·OHLC. 상세 docs/FINANCIAL_STATEMENTS.md §7·§9-2-7.
+2026-10-05(Claude Stock_Strategy P0-5) 4분기 단독 재무의 공개일 폴백을 익년 2/15 → 연간 실제 공시일(없으면 익년 3/31)로 변경(`backtest_common._release_date`, 전략 SQL 14곳, `routes/tenbagger.py`·`cherry_screener.py`) — 미래 참조(S16) 제거, 4분기 35,808행 중 35,806행의 공개일이 늦어짐. 백테스트 재실행 전이라 성과 영향 미측정, 회귀 테스트 `tests/test_q4_release_date_20261005.py`. 상세 docs/Stock_Strategy.md.
+2026-10-05(Claude Stock_Strategy P0-6/P0-7) 백테스트 run 해시에 공시일 표·정정 로그·PIT 표 버전(`_data_revision_extras`) 추가. 코드·데이터 지문은 이미 있었음(S19 정정). PIT 재무 로더(P0-6)는 PIT 표에 EPS/BPS/ROE·분기 단독값이 없고 순이익·자본 기준 일치율이 60~76%라 구현 보류 — 선행 조건은 docs/Stock_Strategy.md.
+2026-10-05(Claude Stock_Strategy P0-3) Screener "Logic v1 — 전체 577종목"은 서버 캐시가 비었을 때 브라우저가 점수 하한·추세 필수·하락장 차단 없이 가치/추세/재무를 2개 이상 겹치게 한 대체 계산이었음(같은 데이터로 577 재현). 대체 계산 삭제, `get_combo_candidates`가 캐시 없을 때 사전계산 시작, `GET /api/signals/combo-status`(단계별 개수) 추가. 서버 정식 콤보는 0종목이며 재무 1,210·가치 850 통과(변별력 문제)·추세 4는 별도 과제(docs/Stock_Strategy.md S25·S26).
+2026-10-05(Claude Stock_Strategy P0-2) 매트릭스 거래 0건 구간은 v12·v8·v4의 21.12~22.10으로, KOSPI>MA120 시장 필터가 그 구간 225일 중 0일 통과한 정상 동작(결함 아님). 필터 유무가 전략 평균 수익률 비교에 섞이므로 공통 지표에 현금 보유 비율 필요(docs/Stock_Strategy.md S08·S09).
+2026-10-05(Claude Stock_Strategy P0-4 부분) docs/Stock_Strategy.md §6-2에 전략 27개 설명·손절/익절·시총·월한도를 코드에서 추출해 정리. 발견: 백테스트 가치 조건(Graham 25%+ OR PBR<0.7&PER<10)이 화면 가치 스크리너(15%+ OR PBR<1&PER<15)보다 훨씬 엄격 — 같은 이름의 두 규칙.
+2026-10-05(Claude Stock_Strategy 잔여 처리) P0-5·P0-7 커밋(e3d76b7), D11: 공개일 게이팅 재무 로더 13곳이 `fs_quirk:dart_unit_error` 기간 34행을 입력에서 제외(fe897d5, DB 값 불변). 추세 스크리너가 적은 이유는 계산 오류가 아니라 '당일 거래량 2배' 단일 조건(월말 34시점 중앙값 RSI 통과 50→최종 10, S26). `scripts/rerun_post_fix_compare_20261005.py`로 전 전략 비교 재실행(선택 안 함, 결과 research_outputs/post_fix_20261005_rerun.json, 이전 매트릭스 matrix_pre_data_fix_20261004.json). P0-9 Codex 수락 검증 의뢰서는 docs/Stock_Strategy.md §9.
+2026-10-06(Claude Stock_Strategy P0-8a) 전 전략 6구간 비교 재실행 완료(선택·화면 교체 없음). 가격·재무 무관 전략 4개는 동일, v12(paper_core)는 평균 23.3→16.2·최악 −1.5→−22.7, 평균 상승분 상당수는 데이터 정정 효과(4개 전략 분리). 8개 전략은 실행 직후 가격 무결성 게이트 실패(원인 미규명). 상세 docs/Stock_Strategy.md §9.
+2026-10-06(Claude Stock_Strategy) 가격 무결성 게이트 실패 8개 전략은 실제 보유구간 오염 이벤트 때문. v12 22.11~23.10 −47pp는 077500 분할(2023-10-23) 가격 미조정 −64% 가짜 손실로 추정(D12, docs/Stock_Strategy.md §9).
+2026-10-06(Claude Stock_Strategy S27) v12 22.11~23.10 −47pp는 데이터·코드가 아니라 선착순 매수 선택이 `ORDER BY` 없는 `stock_universe` 조회(물리 순서) 순서를 따라 결과가 바뀐 것 — 결정 D13 대기. run 지문의 `data_fix_log`에서 지수·환율 보정 등 무관 기록 제외, 비교 재실행 스크립트가 이전 결과를 지우지 않게 수정·v12 결과 복구. 상세 docs/Stock_Strategy.md §9.
+2026-10-06(Claude Stock_Strategy D13 점수 순, 사용자 결정) v12 매수 후보를 조건 통과 종목 전체에서 개별 RS(종목 3개월−섹터 평균) 순·동점 종목코드로 선택, 종목 조회 ORDER BY 추가(`selection_order`, 기본 score). 2회 실행 동일 확인, 선택 순서만으로 구간 수익률 최대 24.9pp 차이 — 결과·원장 research_outputs/v12_selection_order_20261006.json·signal_experiment_ledger. 상세 docs/Stock_Strategy.md §9.
+2026-10-06(Claude) 야간 작업 확인·후속: 사업보고서 파서 idle-in-transaction 실패 수정·재실행(원문 12,024건), 배당 무배당 재조회 건너뛰기, 4분기 재계산 5칸. 흩어진 미완료를 [docs/OPEN_ITEMS.md](docs/OPEN_ITEMS.md)로 통합(사용자 결정 필요 A·남은 작업 C·해결됐는데 남아 있던 E), CLAUDE.md·hermes.md 낡은 항목 표시.

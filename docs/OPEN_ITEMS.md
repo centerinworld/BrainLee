@@ -1,0 +1,49 @@
+# 미완료 항목 통합 목록 (모든 AI 공통 — 2026-10-06 작성, Claude)
+
+> 흩어져 있던 미완료를 한곳에 모은 **색인**이다. 각 항목의 상세는 원문 위치(링크)에 있고, 처리하면 **원문과 이 표를 함께** 고친다.
+> 원문: [CLAUDE.md](../CLAUDE.md) §9 알려진 이슈 · [hermes.md](../hermes.md) · [Stock_Strategy.md](Stock_Strategy.md)(다른 세션이 작성·수정 중인 Lab 전략 검토서 — §5·§8) · [FINANCIAL_STATEMENTS.md](FINANCIAL_STATEMENTS.md) §9-2-7(숫자 데이터 인수인계)·§9-2-8.
+> 상태 확인 = 2026-10-06 13시 DB·코드 직접 조회. '해결됐는데 원문에 미완으로 남은 것'은 E절.
+
+## A. 사용자 결정 필요
+| # | 항목 | 원문 | 비고 |
+|---|---|---|---|
+| A1 | 후보 상위 N개 제한(D1), retired 전략 기본 숨김(D2), 1순위 평가지표 변경(D3), 어댑터 없는 전략 13개 구분 기준(D4), 종목 발굴 메뉴 통합(D5), 파일명(D6) | Stock_Strategy §8 | Lab 화면·전략 평가 |
+| A2 | 병합계좌 매도 소유권 기본값(D7), 4분기 공개일 기준(D8), 이전 매트릭스 표시(D9), 화면 가치 스크리너 규칙 통일(D10, 권장 = 맞춤) | Stock_Strategy §8 | 백테스트 결과에 직접 영향 |
+| A3 | 1,000배 이탈 잔여 행(외부 확인 불가) 처리(D11) — 숫자 문서 쪽 상태: FnGuide 표시 기간 밖 34행·11종목 보류, 원인 = DART 원문 자체 1,000배 공시 | Stock_Strategy §8 D11 · FINANCIAL §9-2-7 0-a | 권장안: 백테스트 입력에서만 제외 |
+| A4 | 분할·재상장 종목 가격 미조정 처리(D12, 예 077500 2023-10-23) | Stock_Strategy §8 | |
+| A5 | 2026-10-02 KRX Open API ≠ KIS·네이버·PG 2,115행 — 통합시세(NXT)와 KRX 단독 중 어느 쪽을 정본으로 할지 | FINANCIAL §9-2-5·§9-2-7 0-f | 확인 전까지 판정 보류 |
+| A6 | 연결/별도 표기 기준(2026Q2 연결 결측 453종목 중 425종목은 별도만 — FnGuide 경로가 별도 값을 '연결'로 저장한 것으로 보임) | FINANCIAL §9-2-7 0-e | |
+| A7 | Cloudflare Access 앱이 관리자 이메일만 허용 → 친구 접근 차단(제거/조정), CEO 플랫폼 관리자 확인이 `role=admin` 쿼리뿐(보안) | CLAUDE.md 2026-09-26 항목 | 운영·보안 설정 |
+| A8 | 텔레그램 관심도 수집 재개 여부(사용자 지시로 보류 중, 대안 검토) | CLAUDE.md 2026-09-27 | |
+| A9 | 화면 배포: 다른 세션의 미커밋 프런트 변경(전략센터 등)이 있어 계좌현황 설명 문구 수정분이 아직 미배포 | 이 대화 기록 | 그 세션 정리 후 `scripts/deploy_frontend.sh` |
+
+## B. 진행 중(자동 — 사람 개입 불필요)
+FINANCIAL §9-2-7 A 표: 사업보고서 원문 2023~25(10-06 밤 7,529건 수신·파싱 완료 12,024건, 남은 분량 매일), 2021~22 계정 원문, ETF 원주가(매일 60종목, 약 3주), FnGuide 원문 누적(371종목), KRX 파생·선물(완료) · 매일 이상값 감시 `data_anomaly_daily`.
+
+## C. 데이터 결함·남은 작업 (판단 불필요, 순서대로)
+| # | 항목 | 원문 | 현재(10-06) |
+|---|---|---|---|
+| C1 | 가격 점프 검토 대기: `externally_confirmed_price_jump_review` 1,523 · `corporate_action_pending_confirmation` 526 · `raw_source_confirmed_jump_review` 288 · `inactive_or_noncommon_review` 524 | hermes 09-25 C절(당시 '미해결 146') | 분류명이 바뀌어 수가 다름 — 재분류 필요 |
+| C1-2 | ETF 원주가 반영 보류 14,615행(조정 비율 0.75~1.0 밖 — 레버리지·인버스·분할 ETF로 보임, `apply_price_kis_tiebreak --etf-adjusted`가 매일 보류) | FINANCIAL §9-2-5 | 재감사 10-06: KIS만 기준 95.96% |
+| C2 | 시가·고가·저가 공식값 불일치 3~4천 행, 보통주 소수점 가격 6행 원인 분류 | FINANCIAL §9-2-5 | |
+| C3 | 필드 검증 '미분류' 원인 조사: 손익·재무상태 638·현금흐름 492·CapEx 449칸, 감가상각 1,555칸(XBRL 조정값 미수집) | FINANCIAL §8-0 | 필드 검증 `field_verif_20261006_071310` |
+| C4 | 외화 종목 환산 보류 900120(CNY)·950210(USD)·900290(통화 '?')·950170(JPY) — 이상값 감시 '새 항목'으로 매일 잡힘 | FINANCIAL §2-6 | `convert_foreign_currency_20261003.py` HOLD |
+| C5 | 매출채권 FnGuide 정의 일치 74%, 장기차입금 85% — 정의 확인 | FINANCIAL §8-0-0 | |
+| C6 | 제품별 매출 2023+ 기존 행 재파싱(옛 표 파서가 TE 셀 누락) | FINANCIAL §9-2-7 B4 | |
+| C7 | 비12월 결산 보류 2행(001720·950210) | FINANCIAL §2-7 | |
+| C8 | 조합 백테스트(계좌현황 매도 규칙) 다기간 검증 — 1기간만 실시 | SIGNAL_RULES §5 | |
+| C9 | `foreign_holding_daily` 2026-09-23 이후 정지(최신 지분율은 `kiwoom_foreign_flow` 10-02까지 정상) | CLAUDE.md §9 | 원문의 '06-08 정지'는 낡음 |
+| C10 | 대만 외국인 수급(접속 차단), 중국 북향자금(미구현), PMI·중국 수출(미연결) | CLAUDE.md §9 | 대체 소스 필요 |
+| C11 | Lab 전략: S16 4분기 미래 참조 수정 후 재실행, S18 재작성값 PIT 로더(선행 조건 미충족), S22 매도 소유권 | Stock_Strategy §5 | 다른 세션 진행 중 |
+
+## D. 숫자 데이터 인수인계
+[FINANCIAL_STATEMENTS.md §9-2-7](FINANCIAL_STATEMENTS.md) B(0-a~0-f, 1~6)·§9-2-8. 위 A3·A5·A6·C2~C7과 겹친다.
+
+## E. 해결됐는데 원문에 '미완'으로 남아 있던 것 (10-06 확인 → 원문에 표시함)
+| 원문 | 원래 기록 | 확인 결과 |
+|---|---|---|
+| CLAUDE.md §9 'crontab 잡 전체 ❌' | cron TCC 차단 | 해결(2026-09-24, 같은 표 아래 해결 행 있음) |
+| CLAUDE.md 2026-09-29 | 대차·프로그램매매 정지, 키움 IP 재등록 필요 | `program_trading_daily` 10-02·`short_sell_daily` 10-01까지 수집, 키움 IP 확인 10-01 정상 |
+| CLAUDE.md 2026-09-29 | `live_signal_registry` 8/14에 멈춤 | 10-02까지 신규 등록 |
+| hermes.md 09-25 | 월간피처스냅샷 잡 등록 대기 / 피처 스냅샷 생성기 없음 | `scheduler.py` `월간피처스냅샷` 등록, 스냅샷 10-02까지 |
+| hermes.md 09-22 | PIT 프로비넌스 인프라 보류 | `financial_facts_pit`(최초 공시값·재작성값·available_at) 매일 재구축 — 단 S18의 정확한 PIT 로더는 미완(C11) |

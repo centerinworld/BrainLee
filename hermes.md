@@ -1,6 +1,6 @@
 > **⛔ 최우선 원칙 0: DART 파싱값을 100% 신뢰하지 않는다 — DART 값은 원본 후보일 뿐, FnGuide(필수)·네이버(보조)와 연결·별도를 나눠 값 대조로 일치해야 확정. 불일치·반복 차이는 먼저 우리 파싱 오류를 의심하고 종목 특징(stock_collection_config fs_quirk:*)으로 기록. 목표 99.99%.**
 >
-> **필수(2026-10-03)**: 재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터는 [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md)가 유일한 정본이다. 판정·수정 전 반드시 읽고, **숫자 데이터 작업 기록은 이 파일이 아니라 그 파일 §7에** 남긴다(이 파일의 관련 절은 그 파일 부록 B로 이관됨). 이 파일은 전략·백테스트·인프라 작업 로그용. **매매 신호 규칙 정본은 [docs/SIGNAL_RULES.md](docs/SIGNAL_RULES.md)(`trend_rules.py`), 현재 진행·인수인계는 FINANCIAL_STATEMENTS.md §9-2-7(2026-10-05).**
+> **필수(2026-10-03)**: 재무제표·주가·현금흐름·수주잔고·재고자산·감가상각 등 숫자 데이터는 [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md)가 유일한 정본이다. 판정·수정 전 반드시 읽고, **숫자 데이터 작업 기록은 이 파일이 아니라 그 파일 §7에** 남긴다(이 파일의 관련 절은 그 파일 부록 B로 이관됨). 이 파일은 전략·백테스트·인프라 작업 로그용. **미완료 통합 목록: [docs/OPEN_ITEMS.md](docs/OPEN_ITEMS.md).** **매매 신호 규칙 정본은 [docs/SIGNAL_RULES.md](docs/SIGNAL_RULES.md)(`trend_rules.py`), 현재 진행·인수인계는 FINANCIAL_STATEMENTS.md §9-2-7(2026-10-05).**
 
 # Stock Data Integrity / 다중 AI 작업 현황 (hermes.md)
 
@@ -34,7 +34,7 @@
 - Minervini 가상매매 자동연결 완료 + 전략센터 governance 시스템 전역 버그 발견·수정 + marcap 신규 도구 추가 (Claude, 202
 - data_availability 8개 전략 실사 완료 (Claude, 2026-09-22)
 - survivorship_integrity 조사 → 공용 엔진의 "부도 가정" 버그 발견·수정 (Claude, 2026-09-22)
-- PIT 프로비넌스 인프라 — 설계만 완료, 구현은 보류 (Claude, 2026-09-22)
+- PIT 프로비넌스 인프라 — 설계만 완료, 구현은 보류 (Claude, 2026-09-22) → **2026-10-06 확인: `financial_facts_pit` 매일 재구축으로 일부 해소, 정확한 PIT 로더는 미완(docs/OPEN_ITEMS.md C11)**
 - 다중 AI 작업 재검증 및 추가 수정 (Codex, 2026-09-22)
 - golden_cross 룩어헤드 편향 버그 발견·수정·재실행 완료 (Claude, 2026-09-22)
 
@@ -68,7 +68,7 @@
 - 수급 공백(2026-09-14~18): 다른 세션이 14:01에 `scripts/backfill_supply_from_kiwoom_20260924.py`로 금액 컬럼(*_net_buy_amt) 11,488행을 이미 백필함(검증 완료 확인). 남은 것은 **수량 컬럼**(inst/frn/ind_net_buy) ~2,335종목×5일 NULL —
   kiwoom_investor_daily에는 수량 컬럼이 없어 같은 방식으로 못 채움, KRX OpenAPI(collect_krx_investors.py)는 HTML 오류 페이지 반환(서비스/권한 문제)이라 사용 불가. 중복 작업 피해 미조치.
   (수집기 collect_krx_investors.py는 '오늘' 날짜만 처리하고, 가격행이 없으면 close=0 플레이스홀더를 INSERT하는데 write guard(close<=0 차단)에 걸림 - 기존 충돌, 미수정.)
-- 미완: 피처 스냅샷(strategy_feature_snapshot[_pit_v2], 각 07-24/08-11에서 정지) 생성기가 저장소에 없음 → 재생성 스크립트 신규 작성 필요.
+- ~~미완: 피처 스냅샷 생성기 없음~~ → 해결(월간피처스냅샷 잡, 스냅샷 2026-10-02까지 — 2026-10-06 확인).
 
 ## Python 3.12 전환 준비·검증 (Claude, 2026-09-25) — ✅ 운영 전환 완료 (2026-09-25 22:51 `venv → .venvs/py312b`)
 - 설치: Homebrew python@3.12.14(`/opt/homebrew/opt/python@3.12/bin/python3.12`). 새 venv `runtime/.venvs/py312`(numpy 2.2.6, pandas 2.3.3, pykrx 1.2.9, 운영 115패키지 = 3.11 freeze 기준; `.venvs/freeze_py311_20260924.txt`, `.venvs/requirements-py312-candidate.txt`, `.venvs/requirements-core.lock`).
@@ -148,7 +148,7 @@
 
 - (2026-09-25) aqr 재백테스트 완료: 구→신 수익률 +98→+55, -30→-20, -9.5→-1.7, +31→+5, +13→+20, +6.7→+9.1 (look-ahead PER 제거). 월간 스냅샷 스크립트 검증 완료, 스케줄러 등록·P0-2(valuation_history TTM)만 남음.
 
-- (2026-09-25) P0-2 완료: valuation_history.per_ttm/ttm_net_income 추가(중앙값 PER 약 10~12배, 삼성 9~15배로 안정). 남은 항목: 스케줄러에 월간피처스냅샷 등록(편집 권한 대기).
+- (2026-09-25) P0-2 완료: valuation_history.per_ttm/ttm_net_income 추가(중앙값 PER 약 10~12배, 삼성 9~15배로 안정). 남은 항목: ~~스케줄러에 월간피처스냅샷 등록(편집 권한 대기)~~ → 등록됨(2026-10-06 확인).
 
 - (2026-09-25) 계획 A 1차 구현: 팩터 검증 탭 + /api/research/* 라우터(읽기 전용). 빌드·API 단위 확인 완료, 브라우저 렌더 확인은 재시작 후 필요. 남음: QuantStats 열(성과 매트릭스), 가격 무결성 카드, 종목 상세 기업행위 마커.
 
