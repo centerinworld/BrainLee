@@ -513,7 +513,7 @@ URI: /api/dostk/frgnistt
 | **crontab 전 잡 실행 불가(macOS TCC)** | ✅ 해결(2026-09-24, 사용자가 `/usr/sbin/cron`에 전체 디스크 접근 권한 부여) | 2026-08-28~09-24 모든 cron 잡이 `Operation not permitted`(외장볼륨 쓰기 거부, `/var/mail/brainlee`)로 실행 안 됨. 권한 부여 후 테스트 잡으로 쓰기 성공 확인, 퀀트지표 weekly/monthly는 수동 캐치업. **재발 시 점검**: `/var/mail/brainlee` 의 `Operation not permitted`, 로그 파일 mtime. macOS 업데이트 후 권한이 초기화될 수 있음 |
 | **가상매매 공통 하드스탑 미실행(2026-07-23~09-24)** | ✅ 수정(2026-09-24) | `_auto_hardstop_all_strategies`(전 전략 -10% 손절)가 V18 추천 빌드 안에서만 호출됐는데 V14/V18 장중 루프가 7/23 삭제되며 스케줄러에서 한 번도 안 돌았음(value -24~-45% 방치·HDC -10.5% 미청산 확인). 전용 루프 `가상매매공통손절`(장중 5분) 신설 + 본전스톱 추가. **재발방지**: 안전장치 함수는 다른 기능의 부산물 호출에 얹지 말고 독립 스케줄 잡으로 둘 것 |
 | **삭제한 포트폴리오 행이 SQLite에서 부활** | ✅ 수정(2026-10-02) | 06:10 `PostgreSQL커트오버검증`이 PG 행수<SQLite 행수를 "뒤처짐"으로 보고 `sync_sqlite_bridge_delta.py`로 SQLite 스냅샷을 upsert → 09-29 사용자가 지운 49행이 원래 id로 되살아나 보유수량 이중 합산(172670 95,182주). `verify_postgres_cutover.POSTGRES_USER_MANAGED_TABLES`(portfolio/portfolio_tx/watchlist/buy_candidates)는 판정 제외 + 브리지도 거부. **사용자 관리 테이블을 새로 만들면 이 집합에 추가할 것.** |
-
+| **백테스트 가격 = 원주가, 기업행위 보정은 전략별(공용 엔진은 없음)** | ⚠️ 알려진 한계(2026-10-06) | 신호는 끊긴 원주가로 계산되고, 보정(진입가 보정·보유 재기준)은 14개 전략에만 있다. 공용 일반 엔진 9개 등은 무상증자·분할 가짜 손실 가능. 수정 계획: docs/REVIEW_PLAN_20261006.md §1·§4 W1~W3, docs/Stock_Strategy.md S28 |
 ---
 
 > 📦 숫자 데이터 관련 이슈 12행 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 A
@@ -724,3 +724,4 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 2026-10-06(Claude) 야간 작업 확인·후속: 사업보고서 파서 idle-in-transaction 실패 수정·재실행(원문 12,024건), 배당 무배당 재조회 건너뛰기, 4분기 재계산 5칸. 흩어진 미완료를 [docs/OPEN_ITEMS.md](docs/OPEN_ITEMS.md)로 통합(사용자 결정 필요 A·남은 작업 C·해결됐는데 남아 있던 E), CLAUDE.md·hermes.md 낡은 항목 표시.
 2026-10-06(Claude Stock_Strategy v12 재점검) 매수 기회일의 62~86%에서 조건 통과 종목(중앙 4~7)이 빈 자리(중앙 1~2)보다 많고, 점수(RS) 순은 무작위 순서 12개 대비 8~67 백분위로 선별력 없음. v12에 확정 기업행위 포지션 재기준 추가(무상증자 가짜 손실 제거, S28 — 일반 엔진 등 13개 전략은 미적용). 개선 가설 H1~H6·평가 기준은 docs/Stock_Strategy.md §9.
 2026-10-06 오후(Claude) OPEN_ITEMS C 처리: 시가·고가·저가 정정, 제품별 매출 2021~25 재파싱(`scripts/review/reparse_product_mix_20261006.py`), 미분류 필드 3자 분류(`classify_unclassified_fields_20261006.py`), 외부 확인 재작성값 매일 자동 반영, 퀀트지표 외국인 보유 키움 대체, 조합 백테스트 6기간(우위 없음 — docs/SIGNAL_RULES.md §5).
+2026-10-06(Claude) docs/REVIEW_PLAN_20261006.md §3 문서 정리 반영(정정 표시·상태 통일·OPEN_ITEMS 링크·§9 가격 한계 1행). W1~W8 실행은 D12 등 사용자 결정 대기.

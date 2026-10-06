@@ -595,7 +595,7 @@ avg: +22.8% / positive: 3/6 / worst: -8.2%
 
 임계값 7% → 전 기간 초과.
 
-**원인 분석**: 배제 이유는 `confirmed_corporate_action`·`corporate_action_pending_confirmation`·`quarantined_basis` 등 기업행위·가격 미검증 backlog. preferred share 필터(~100종목, 4%)를 추가해도 최선 시나리오가 12.7%로 여전히 초과 → preferred 필터는 universe_integrity와 무관.
+**원인 분석**(→ 09-30 정정: 우선주 필터와 무관, 기업행위 backlog가 원인): 배제 이유는 `confirmed_corporate_action`·`corporate_action_pending_confirmation`·`quarantined_basis` 등 기업행위·가격 미검증 backlog. preferred share 필터(~100종목, 4%)를 추가해도 최선 시나리오가 12.7%로 여전히 초과 → preferred 필터는 universe_integrity와 무관.
 
 **Governance 판정**: `retired` — positive 3/6으로 4/6 기준 미달(+avg, 검증 상태 모두 미달).
 
@@ -626,7 +626,7 @@ avg: +22.8% / positive: 3/6 / worst: -8.2%
 ## 수주잔고 커버리지 확인 (Claude, 2026-09-30)
 > 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
-## 재무 데이터 완결 선언 (2026-09-30)
+## (무효 — FINANCIAL §5 실패 1·2) 재무 데이터 완결 선언 (2026-09-30)
 > 📦 숫자 데이터 기록 → 이관: [docs/FINANCIAL_STATEMENTS.md](docs/FINANCIAL_STATEMENTS.md) 부록 B
 
 ## 전략센터·Minervini 개선 방향 재정리 (Codex, 2026-09-30)
