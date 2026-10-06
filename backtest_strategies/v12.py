@@ -31,7 +31,8 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                       per_stock, max_positions, stop_loss, stop_loss_pct,
                       take_profit_pct,
                       strict_exec: bool = True,
-                      asof_mktcap: bool = True):
+                      asof_mktcap: bool = True,
+                      selection_order: str = "score"):
     """
     V12는 섹터별 상대강도를 계산해야 해서 별도 함수로 구현.
     섹터 alpha = 해당 섹터 평균 3개월 수익률 - KOSPI 3개월 수익률
@@ -62,7 +63,9 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
         FROM stock_universe
         WHERE LENGTH(stock_code)=6 AND stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
           AND sector_large NOT IN ('기타','벤처기업부','신성장기업부','우선주','리츠','ETF','ETN','','스팩')
-    """ + ("" if asof_mktcap else " AND market_cap >= 2000")
+    """ + ("" if asof_mktcap else " AND market_cap >= 2000") + " ORDER BY stock_code"
+    # 2026-10-06 S27: ORDER BY가 없으면 테이블 물리 순서(행 갱신·autovacuum마다 바뀜)가 종목 반복 순서가 되어
+    # 같은 코드·같은 데이터로도 선착순 매수 결과가 달라졌다(docs/Stock_Strategy.md S27·D13).
     for sc, sec in conn.execute(_sector_universe_sql).fetchall():
         if sec and sec not in ('기타', '벤처기업부', '신성장기업부'):
             sector_map[sc] = sec
@@ -276,10 +279,12 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
         # 매수 스캔
         if len(positions) < max_positions:
             hot_sectors = _get_hot_sectors(day)
+            # 2026-10-06 D13(사용자 결정: 점수 순): 조건 통과 종목을 모두 모은 뒤 점수 순으로 남은 자리를 채운다.
+            # 점수 = 개별 RS(종목 3개월 수익률 − 소속 섹터 평균 3개월 수익률), 같으면 종목코드 순.
+            # selection_order="code"는 비교용(종목코드 순 선착순).
+            _v12_cands = []
 
             for sc, sd in stock_data.items():
-                if len(positions) >= max_positions:
-                    break
                 if sc in positions:
                     continue
                 sec = sector_map.get(sc, '기타')
@@ -312,6 +317,7 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
 
                 # 개별 종목 RS: 섹터 평균 아웃퍼폼 (KOSPI보다 엄격)
                 p63_back = p[i - 63] if i >= 63 else None
+                stock_3m = None
                 if p63_back and p63_back > 0:
                     stock_3m = (curr - p63_back) / p63_back * 100
                     # 섹터 평균보다 낮거나 KOSPI보다 낮으면 탈락
@@ -343,6 +349,16 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                 if not vol_win or vols[i] < sum(vol_win) / len(vol_win) * 1.2:
                     continue
 
+                _score = (stock_3m - sec_info['avg_ret']) if stock_3m is not None else float('-inf')
+                _v12_cands.append((_score, sc, curr))
+
+            if selection_order == "score":
+                _v12_cands.sort(key=lambda x: (-x[0], x[1]))
+            else:
+                _v12_cands.sort(key=lambda x: x[1])
+            for _score, sc, curr in _v12_cands:
+                if len(positions) >= max_positions:
+                    break
                 if strict_exec:
                     if sc not in v12_pending_buys and \
                        len(positions) + len(v12_pending_buys) < max_positions:
@@ -443,6 +459,7 @@ def run_backtest_v12(start_date: str, end_date: str,
                      max_positions: int = 10,
                      asof_mktcap: bool = False,  # 2026-07-17 as-of 재검증: current 대비 악화로 기각 → False 유지 (signal_experiment_ledger: v12/sector_precondition)
                      take_profit_pct: float = 0.25,  # 2026-08-09 파라미터화(텐버거 population 캡처 실험용), 기본값 기존과 동일
+                     selection_order: str = "score",  # 2026-10-06 D13: "score"(개별 RS 순, 사용자 결정) | "code"(비교용)
                      run_name: str = None, run_id: str = None) -> str:
     """V12는 섹터 계산이 필요하므로 별도 흐름."""
     init_backtest_db()
@@ -450,6 +467,7 @@ def run_backtest_v12(start_date: str, end_date: str,
     _v12_params = {"per_stock": per_stock, "max_positions": max_positions,
                    "stop_loss": -0.07, "take_profit_pct": take_profit_pct,
                    "strict_exec": True, "asof_mktcap": asof_mktcap,
+                   "selection_order": selection_order,
                    "start": start_date, "end": end_date}
     if run_id is None:
         run_id = str(uuid.uuid4())[:8]
@@ -464,7 +482,7 @@ def run_backtest_v12(start_date: str, end_date: str,
         conn.execute("UPDATE backtest_runs SET status='running' WHERE run_id=?", (run_id,))
         conn.commit()
 
-    _record_run_spec(run_id, "v12", "v12_v2_strict_20260714", _v12_params,
+    _record_run_spec(run_id, "v12", f"v12_v3_select_{selection_order}_20261006", _v12_params,
                      signal_timing="close_D", execution_timing="next_open",
                      market_cap_mode=("asof_approx" if asof_mktcap else "current"),
                      allocation_rule="fixed_slot",
@@ -483,6 +501,7 @@ def run_backtest_v12(start_date: str, end_date: str,
             per_stock, max_positions,
             stop_loss=-0.07, stop_loss_pct=-0.07, take_profit_pct=take_profit_pct,
             asof_mktcap=asof_mktcap,
+            selection_order=selection_order,
         )
 
         # 종목명 매핑
