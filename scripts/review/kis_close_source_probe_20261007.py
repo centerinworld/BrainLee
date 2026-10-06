@@ -78,6 +78,30 @@ def compare():
             table.append(ent)
             lines.append(f"| {r['at']} | {code} | {off[0]}/{off[1]} | {cell(row['daily_J'])} | {cell(row['daily_NX'])} | {cell(row['daily_UN'])} | "
                          f"{(row.get('price_J') or {}).get('stck_prpr')}/{(row.get('price_J') or {}).get('acml_vol')} |")
+    # 판정 기준(REVIEW_PLAN §21-2 3번, 관측 전에 정함): 거래일별로 J 일봉 종가 vs KRX 공식 종가
+    #   ① 15:45 = 공식이고 18:10·20:30 중 하나라도 다름 → 'KRX 시간외 단일가 반영' 확정 → 수집 시각 15:45~16:00 또는 정규장 종가 필드
+    #   ② 15:45도 다름 → KIS 당일 봉은 다음 날까지 잠정 → 잠정 표시 + KRX 교체 유지
+    verdict = {}
+    for e in table:
+        hhmm = e["at"][11:16]
+        slot = "15:45" if "15:40" <= hhmm < "16:00" else "18:10" if "18:05" <= hhmm < "18:30" else "20:30" if "20:25" <= hhmm < "20:50" else None
+        if not slot or e["krx"][0] is None or not (e.get("J") or {}).get("close"):
+            continue
+        v = verdict.setdefault(e["at"][:10], {}).setdefault(slot, [0, 0])
+        v[0] += 1
+        v[1] += int(abs(float(e["J"]["close"]) - float(e["krx"][0])) <= 0.5)
+    lines.append("")
+    lines.append("판정(§21-2 3번): 날짜별 시각 = [비교 종목 수, J 종가 = KRX 공식 수]")
+    for day, v in sorted(verdict.items()):
+        early = v.get("15:45")
+        late_diff = any(x[1] < x[0] for k2, x in v.items() if k2 != "15:45")
+        if early and early[1] == early[0] and late_diff:
+            res = "① 시간외 단일가 반영 확정 — 수집 시각 15:45~16:00 또는 정규장 종가 필드"
+        elif early and early[1] < early[0]:
+            res = "② 15:45도 다름 — 잠정 표시 + KRX 교체 유지"
+        else:
+            res = "판정 불가(관측 부족 또는 시각 간 차이 없음)"
+        lines.append(f"- {day}: {v} → {res}")
     (OUT / "compare.json").write_text(json.dumps(table, ensure_ascii=False, indent=1, default=str))
     (OUT / "compare.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
