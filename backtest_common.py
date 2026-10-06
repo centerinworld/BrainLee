@@ -1052,6 +1052,7 @@ def _price_limit(day: str) -> float:
 IDENTITY_GAP_CALENDAR_DAYS = 60           # 이만큼 이상 공백이면 같은 종목코드를 다른 회사가 다시 쓴 것일 수 있어 무조건 단절(§7-2 A)
 
 
+QUALITY_DAY_CLASSES = ("quarantined_basis", "coverage_gap", "coverage_gap_reviewed", "non_equity_symbol")   # 그날 하루만 진입 금지
 PRICE_RELATED_EVENT_TYPES = (
     "bonus_issue", "stock_split", "reverse_split", "stock_merge_or_reduction", "capital_reduction",
     "reduction_or_cancellation", "company_split", "merger", "share_exchange", "stock_split_and_merger",
@@ -3340,8 +3341,11 @@ def _run_generic_backtest(version: str, signal_fn,
             excluded = set()
             price_issues = research_price_issues(conn, stock_codes, warmup_start, end_date,
                                                  allow_confirmed_corporate_actions=True)
+            # 1년 차단은 로더가 찾은 실제 단절(breaks)에만 건다. 감사 표의 나머지 사건은: 품질 표시(그날 가격을 신뢰하기
+            # 어려움)면 그날 하루만 진입 금지, 제한폭 이내 급등락 등 실제 시장 움직임은 막지 않는다(REVIEW_PLAN §11-2).
             for _ic, _id, _icls in price_issues:
-                issue_dates.setdefault(str(_ic), []).append(str(_id)[:10])
+                if _icls in QUALITY_DAY_CLASSES:
+                    issue_dates.setdefault(str(_ic), []).append(str(_id)[:10])
         else:
             excluded = assert_research_prices(conn, stock_codes, warmup_start, end_date, exclude=True)
             if excluded:
@@ -3417,16 +3421,12 @@ def _run_generic_backtest(version: str, signal_fn,
         adj_stats = {'enabled': bool(_use_adjusted), 'candidate_skips_excluded': 0, 'break_liquidations': 0,
                      'stocks_with_breaks': 0, 'stocks_adjusted': 0, 'misaligned_skipped': 0,
                      'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0, 'zero_volume_skipped_buys': 0,
-                     'share_unknown_breaks': 0, 'candidate_skips_price_issue': 0, 'price_issue_events': len(price_issues),
-                     'stocks_with_price_issue': len(issue_dates)}
+                     'share_unknown_breaks': 0, 'candidate_skips_quality_day': 0, 'price_issue_events': len(price_issues),
+                     'quality_day_blocks': sum(len(v) for v in issue_dates.values()), 'break_excluded_stock_days': 0}
         if _use_adjusted and issue_dates:
             for sc, sd in stock_data.items():
                 if sc in issue_dates:
-                    _blk = set()
-                    for _day in issue_dates[sc]:
-                        _k = bisect.bisect_left(sd['dates'], _day)
-                        _blk.update(sd['dates'][_k:_k + adjusted_window])
-                    sd['entry_blocked'] = _blk
+                    sd['entry_blocked'] = set(issue_dates[sc])   # 품질 표시가 붙은 그날만
         if _use_adjusted and stock_data:
             _ap = load_adjusted_prices(conn, list(stock_data.keys()), warmup_start, end_date, window=adjusted_window)
             for sc, sd in stock_data.items():
@@ -3443,6 +3443,7 @@ def _run_generic_backtest(version: str, signal_fn,
                 sd['adj_factor'] = f
                 sd['breaks'] = e['breaks']; sd['excluded_ranges'] = e['excluded_ranges']; sd['break_disclosed'] = e.get('break_disclosed', {})
                 adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
+                adj_stats['break_excluded_stock_days'] += sum(1 for _d in sd['dates'] for _a, _b in e['excluded_ranges'] if _a <= _d <= _b and _d >= start_date)
                 # 주당 재무(EPS·BPS)는 그 시점 주식 수 기준이라 조정 가격과 같은 단위로 맞춘다 —
                 # 공시일(avail) 시점의 조정 계수를 곱한다(PER·PBR = 조정가 ÷ 조정 주당값 = 경제적 값). 안 맞추면 가치 신호가 깨진다.
                 if sd.get('fins') and any(x != 1.0 for x in f):
@@ -3812,7 +3813,7 @@ def _run_generic_backtest(version: str, signal_fn,
                             adj_stats['candidate_skips_excluded'] += 1
                             continue
                         if _use_adjusted and day in sd.get('entry_blocked', ()):
-                            adj_stats['candidate_skips_price_issue'] += 1
+                            adj_stats['candidate_skips_quality_day'] += 1
                             continue
                         # 바닥 컨플루언스 게이트 (2026-07-18 공통 모듈)
                         if chart_confluence and _chart_bottom_confluence(
@@ -3851,7 +3852,7 @@ def _run_generic_backtest(version: str, signal_fn,
                             adj_stats['candidate_skips_excluded'] += 1
                             continue
                         if _use_adjusted and day in sd.get('entry_blocked', ()):
-                            adj_stats['candidate_skips_price_issue'] += 1
+                            adj_stats['candidate_skips_quality_day'] += 1
                             continue
                         # 바닥 컨플루언스 게이트 (2026-07-18 공통 모듈)
                         if chart_confluence and _chart_bottom_confluence(
@@ -4000,7 +4001,7 @@ def _run_generic_backtest(version: str, signal_fn,
                     _register_universe_integrity_artifact(
                         run_id, universe_candidate_count, set(issue_dates), warmup_start, end_date,
                         temporal_masking=True, issue_event_count=len(price_issues),
-                        blocked_stock_days=sum(len(sd_.get('entry_blocked', ())) for sd_ in stock_data.values()),
+                        blocked_stock_days=adj_stats['quality_day_blocks'] + adj_stats['break_excluded_stock_days'],
                     )
                 else:
                     _register_universe_integrity_artifact(

@@ -71,3 +71,22 @@ class TestEngineBreakHandling(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(_HAS_DB, "PostgreSQL 접속 불가")
+class TestQualityDayBlocks(unittest.TestCase):
+    """REVIEW_PLAN §11-2: 1년 차단은 실제 단절에만. 품질 표시는 그날 하루, 제한폭 이내 급등락은 차단하지 않는다."""
+
+    def test_quarantined_day_blocks_only_that_day(self):
+        # 054180 2024-12-20 quarantined_basis(비율 1.0): 그날 신호는 빠지고 다음 거래일 신호는 매수로 이어진다
+        trades, summary = _run("054180", {"2024-12-20", "2024-12-23"}, "2024-11-01", "2025-03-31")
+        self.assertRegex(summary, r'"candidate_skips_quality_day": [1-9]')
+        self.assertEqual(len(trades), 1, trades)
+        self.assertGreater(trades[0]["entry_date"], "2024-12-23")                    # 12-23 신호 → 다음 거래일 체결
+        self.assertNotRegex(summary, r'"candidate_skips_excluded": [1-9]')           # 1년 제외 구간은 만들어지지 않았다
+
+    def test_within_limit_confirmed_jump_class_is_not_blocking(self):
+        # 제한폭 이내의 '외부 확인 급변'은 실제 시장 움직임 — 품질 하루 차단 목록에도 1년 제외에도 없다
+        self.assertNotIn("externally_confirmed_price_jump_review", bc.QUALITY_DAY_CLASSES)
+        self.assertNotIn("externally_confirmed_price_jump_review", bc.UNRESOLVED_BREAK_CLASSES)
+        self.assertNotIn("quarantined_basis", bc.UNRESOLVED_BREAK_CLASSES)

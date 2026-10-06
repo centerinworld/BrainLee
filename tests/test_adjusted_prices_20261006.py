@@ -102,6 +102,14 @@ class TestAdjustedPrices(unittest.TestCase):
         e = bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]
         self.assertEqual(e["breaks"], [])
 
+    def test_limit_up_day_is_not_a_break_and_next_day_is_free(self):
+        # 상한가(+29%, 제한폭 이내) — 감사 분류가 '외부 확인 급변'이어도 단절·제외 구간이 아니다
+        prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 1290.0) for d in DAYS[5:]]
+        c = _db(prices, audit=[("A", DAYS[5], 1.29, "externally_confirmed_price_jump_review")])
+        e = bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertEqual(e["breaks"], [])
+        self.assertFalse(bc.is_excluded_day(e, DAYS[6]))
+
     def test_last_day_before_break(self):
         prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 500.0) for d in DAYS[5:]]
         e = bc.load_adjusted_prices(_db(prices), ["A"], "2024-01-01", "2024-02-01")["A"]
