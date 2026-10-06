@@ -13,7 +13,7 @@ def _db(prices, audit=(), events=()):
     c = sqlite3.connect(":memory:")
     c.execute("CREATE TABLE price_history (stock_code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL)")
     c.execute("CREATE TABLE price_jump_audit (stock_code TEXT, event_date TEXT, price_ratio REAL, classification TEXT, return_usable INT)")
-    c.execute("CREATE TABLE corporate_action_events (stock_code TEXT, event_date TEXT, event_type TEXT, adjustment_status TEXT, backward_price_factor REAL, evidence_rcept_no TEXT)")
+    c.execute("CREATE TABLE corporate_action_events (stock_code TEXT, event_date TEXT, event_type TEXT, adjustment_status TEXT, backward_price_factor REAL, evidence_rcept_no TEXT, evidence_report_name TEXT)")
     c.executemany("INSERT INTO price_history VALUES ('A',?,?,?,?,?,?)", [(d, p, p, p, p, 1000.0) for d, p in prices])
     c.executemany("INSERT INTO price_jump_audit VALUES (?,?,?,?,0)", audit)
     c.executemany("INSERT INTO corporate_action_events (stock_code,event_date,event_type,adjustment_status,backward_price_factor,evidence_rcept_no) VALUES (?,?,?,?,?,?)",
@@ -109,6 +109,18 @@ class TestAdjustedPrices(unittest.TestCase):
         e = bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]
         self.assertEqual(e["breaks"], [])
         self.assertFalse(bc.is_excluded_day(e, DAYS[6]))
+
+    def test_last_tradable_day_skips_halt_and_requires_prior_disclosure(self):
+        days = [("2024-01-%02d" % d) for d in range(2, 12)]
+        # 01-02~01-05 거래, 01-08~01-10 정지(거래량 0), 01-11 단절(재개)
+        vols = [10, 10, 10, 10, 0, 0, 0, 0, 0, 10]
+        prices = [(d, 1000.0) for d in days[:9]] + [(days[9], 500.0)]
+        c = _db(prices)
+        c.execute("DELETE FROM price_history"); c.executemany("INSERT INTO price_history VALUES ('A',?,?,?,?,?,?)", [(d, p, p, p, p, v) for (d, p), v in zip(prices, vols)])
+        e = bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertEqual(bc.last_tradable_day_before_break(e, "2024-01-03", days[9]), days[3])     # 공시 후, 정지 전 마지막 거래일
+        self.assertIsNone(bc.last_tradable_day_before_break(e, "2024-01-09", days[9]))            # 정지 후 공시 → 팔 수 없음(평가 불가)
+        self.assertIsNone(bc.last_tradable_day_before_break(e, None, days[9]))                    # 공시 근거 없음
 
     def test_last_day_before_break(self):
         prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 500.0) for d in DAYS[5:]]

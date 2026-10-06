@@ -1124,6 +1124,7 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
     breaks: dict = {}
     status: dict = {}
     disclosed: dict = {}   # (code, event_date) → 최초 공시(접수) 일자
+    split_filings: dict = {}   # code → [(사건일, 접수일)] — 분할·합병 보고서
     share_iv: dict = {}    # code → [(from, to, shares)]
     for i in range(0, len(codes), 500):
         chunk = codes[i:i + 500]
@@ -1138,10 +1139,13 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
             f"AND event_type='company_split'", tuple(chunk)).fetchall():
             breaks.setdefault(str(code), set()).add(str(ed)[:10])
         _et = ",".join("?" * len(PRICE_RELATED_EVENT_TYPES))
-        for code, d1, rc in conn.execute(
-            f"SELECT stock_code, event_date, evidence_rcept_no FROM corporate_action_events WHERE stock_code IN ({ph}) "
+        for code, d1, rc, rn in conn.execute(
+            f"SELECT stock_code, event_date, evidence_rcept_no, evidence_report_name FROM corporate_action_events WHERE stock_code IN ({ph}) "
             f"AND event_type IN ({_et})", tuple(chunk) + tuple(PRICE_RELATED_EVENT_TYPES)).fetchall():
             status.setdefault(str(code), set()).add(str(d1)[:10])
+            if rc and rn and ("분할" in str(rn) or "합병" in str(rn)) and len(str(rc)) >= 8 and str(rc)[:8].isdigit():
+                # 회사분할·합병은 결정 공시(접수)가 사건일보다 훨씬 앞서 나오고, 같은 건이 다른 사건일·유형으로 기록되기도 한다 — 종목별로 모아 둔다
+                split_filings.setdefault(str(code), []).append((str(d1)[:10], str(rc)[:4] + "-" + str(rc)[4:6] + "-" + str(rc)[6:8]))
             if rc and len(str(rc)) >= 8 and str(rc)[:8].isdigit():
                 rc8 = str(rc)[:4] + "-" + str(rc)[4:6] + "-" + str(rc)[6:8]
                 cur_d = disclosed.setdefault((str(code), str(d1)[:10]), rc8)
@@ -1198,6 +1202,14 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
         e["share_unknown_breaks"] = _lb_stats.get("share_unknown_breaks", 0)
         e["unexplained_limit_breaks"] = sorted(found)
         e["break_disclosed"] = {b_: disclosed.get((code, b_)) for b_ in sorted(set(breaks.get(code, ())) | found)}
+        from datetime import date as _dd, timedelta as _td
+        for b_ in e["break_disclosed"]:
+            cands = [r_ for d_, r_ in split_filings.get(code, ())
+                     if (_dd.fromisoformat(b_) - _td(days=365)).isoformat() <= d_ <= b_]
+            if cands:
+                first = min(cands)
+                cur = e["break_disclosed"][b_]
+                e["break_disclosed"][b_] = first if cur is None or first < cur else cur
         e["breaks"] = sorted(set(breaks.get(code, ())) | found)
         ranges = []
         for b in e["breaks"]:
@@ -1220,6 +1232,30 @@ def last_day_before_break(entry: dict, hold_from: str, day: str):
             prev = [d for d in ds if d < b]
             return prev[-1] if prev else None
     return None
+
+
+def last_tradable_day_before_break(entry: dict, disclosure_date, break_date: str):
+    """단절(`break_date`) 이전의 '거래량 > 0인 마지막 날'. 단절 직전이 거래정지 구간이면 정지 전 마지막 거래 가능일을 돌려준다
+    (정지 중에는 팔 수 없다 — REVIEW_PLAN §18-2). 공시가 없거나 그 날보다 늦으면(사전에 알 수 없었음) None."""
+    ds, vol = entry["dates"], (entry.get("volume") if entry.get("volume") is not None else entry["volumes"])
+    k = bisect.bisect_left(ds, break_date) - 1
+    while k >= 0 and not (vol[k] and vol[k] > 0):
+        k -= 1
+    if k < 0:
+        return None
+    day = ds[k]
+    if not disclosure_date or disclosure_date > day:
+        return None
+    return day
+
+
+def last_tradable_index_before(entry: dict, i: int):
+    """인덱스 i 이전(미포함)에서 거래량 > 0인 마지막 인덱스(없으면 None)."""
+    vol = entry.get("volume") if entry.get("volume") is not None else entry["volumes"]
+    k = i - 1
+    while k >= 0 and not (vol[k] and vol[k] > 0):
+        k -= 1
+    return k if k >= 0 else None
 
 
 def is_excluded_day(entry: dict, day: str) -> bool:
@@ -3659,7 +3695,11 @@ def _run_generic_backtest(version: str, signal_fn,
                     sd = stock_data[sc]
                     i = date_idx.get(sc, {}).get(day)
                     if i is not None and i > 0 and day in sd.get('breaks', ()):
-                        _close_at(sc, pos, sd, i, sd['prices'][i - 1], '단절 당일 청산(공시 근거 없음)', day)
+                        _k = last_tradable_index_before(sd, i)
+                        _k = i - 1 if _k is None else _k
+                        _close_at(sc, pos, sd, i, sd['prices'][_k], '단절 당일 청산(공시 근거 없음·평가 불가)', day)
+                        trades[-1]['evaluation'] = 'unevaluable_break'     # 별도 집계: 손익은 정지 직전 거래 가능일 종가 기준
+                        trades[-1]['basis_date'] = sd['dates'][_k]
                         adj_stats['break_day_liquidations'] += 1
 
             # ── Phase A: 전일 매도 신호 → 오늘 시가/종가 집행 ────────
@@ -3760,14 +3800,16 @@ def _run_generic_backtest(version: str, signal_fn,
                     continue
                 i  = im[day]
                 sd = stock_data[sc]
-                # 다음 거래일이 단절이고 그 사건이 오늘까지 공시돼 있으면 오늘 종가로 사전 청산(D12 ②).
+                # 단절이 다가오고 그 사건이 공시돼 있으며 오늘이 단절 전 '거래 가능한 마지막 날'이면 오늘 종가로 사전 청산(D12 ②, §18-2).
                 # 공시 근거가 없으면 사전 청산하지 않는다 — 내일 일을 오늘 아는 미래 참조(REVIEW_PLAN §8-1 #3).
-                if _use_adjusted and sd.get('breaks') and i + 1 < len(sd['dates']):
-                    _nb = sd['dates'][i + 1]
-                    if _nb in sd['breaks'] and (sd.get('break_disclosed') or {}).get(_nb) and sd['break_disclosed'][_nb] <= day:
-                        _close_at(sc, pos, sd, i, sd['prices'][i], '단절 전 청산(D12, 공시 후)', day)
-                        adj_stats['break_liquidations'] += 1
-                        continue
+                if _use_adjusted and sd.get('breaks'):
+                    _bi = bisect.bisect_right(sd['breaks'], day)
+                    if _bi < len(sd['breaks']):
+                        _nb = sd['breaks'][_bi]
+                        if last_tradable_day_before_break(sd, (sd.get('break_disclosed') or {}).get(_nb), _nb) == day:
+                            _close_at(sc, pos, sd, i, sd['prices'][i], '단절 전 청산(D12, 공시 후)', day)
+                            adj_stats['break_liquidations'] += 1
+                            continue
                 if sc in _ps_g:
                     continue
                 reason = _check_sell_generic(i, sd['prices'], pos, sd=sd)

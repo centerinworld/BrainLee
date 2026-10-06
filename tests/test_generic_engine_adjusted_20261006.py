@@ -49,7 +49,8 @@ class TestEngineBreakHandling(unittest.TestCase):
         self.assertEqual(len(trades), 1, trades)
         t = trades[0]
         self.assertEqual(t["exit_reason"].split(" ")[0], "단절", t)
-        self.assertLess(t["exit_date"], "2023-10-23")
+        # 077500은 2023-09-26~10-20 거래정지(거래량 0) — 청산은 정지 전 마지막 거래 가능일(09-25)이어야 한다(§18-2)
+        self.assertEqual(t["exit_date"], "2023-09-25", t)
         self.assertGreater(t["profit_pct"], -30.0)   # 가짜 −64% 손실이 아니다
 
     def test_no_entry_inside_excluded_range(self):

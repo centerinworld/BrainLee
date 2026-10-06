@@ -27,6 +27,8 @@ from backtest_common import (
     _rsi,
     _save_result,
     is_excluded_day,
+    last_tradable_day_before_break,
+    last_tradable_index_before,
     load_adjusted_prices,
     init_backtest_db,
     logger,
@@ -240,7 +242,11 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                 sd = stock_data[sc]
                 i = date_idx.get(sc, {}).get(day)
                 if i is not None and i > 0 and day in sd.get('breaks', ()):
-                    _v12_close_at(sc, pos, sd, i, sd['prices'][i - 1], '단절 당일 청산(공시 근거 없음)', day)
+                    _k = last_tradable_index_before(sd, i)
+                    _k = i - 1 if _k is None else _k
+                    _v12_close_at(sc, pos, sd, i, sd['prices'][_k], '단절 당일 청산(공시 근거 없음·평가 불가)', day)
+                    trades[-1]['evaluation'] = 'unevaluable_break'
+                    trades[-1]['basis_date'] = sd['dates'][_k]
                     adj_stats['break_day_liquidations'] += 1
         else:
             _rebase_positions_for_corp_actions(_ca_factors, positions, _ca_prev_day, day, ('entry_price', 'peak_price'), 'qty')
@@ -326,12 +332,14 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                 continue
             i  = idx_map[day]
             sd = stock_data[sc]
-            if adjusted_prices and sd.get('breaks') and i + 1 < len(sd['dates']):
-                _nb = sd['dates'][i + 1]
-                if _nb in sd['breaks'] and (sd.get('break_disclosed') or {}).get(_nb) and sd['break_disclosed'][_nb] <= day:
-                    _v12_close_at(sc, pos, sd, i, sd['prices'][i], '단절 전 청산(D12, 공시 후)', day)
-                    adj_stats['break_liquidations'] += 1
-                    continue
+            if adjusted_prices and sd.get('breaks'):
+                _bi = bisect.bisect_right(sd['breaks'], day)
+                if _bi < len(sd['breaks']):
+                    _nb = sd['breaks'][_bi]
+                    if last_tradable_day_before_break(sd, (sd.get('break_disclosed') or {}).get(_nb), _nb) == day:
+                        _v12_close_at(sc, pos, sd, i, sd['prices'][i], '단절 전 청산(D12, 공시 후)', day)
+                        adj_stats['break_liquidations'] += 1
+                        continue
             sec      = sector_map.get(sc, '기타')
             s_info   = _hot_sec.get(sec, {})
             reason = _check_sell_v12(i, sd['prices'], pos, stop_loss, stop_loss_pct, take_profit_pct,
