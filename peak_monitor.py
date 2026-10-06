@@ -404,7 +404,11 @@ def api_post(path: str, data: dict) -> dict | None:
     try:
         timeout = API_TIMEOUT_UPDATE if path == "/api/trend/update" else API_TIMEOUT_DEFAULT
         r = httpx.post(f"{BASE_API}{path}", json=data, timeout=timeout)
-        return r.json() if r.is_success else None
+        if not r.is_success:
+            # 2026-10-07: 거부 사유(409 = 가상매매 가드: shadow·노출 한도 등)를 남긴다 — 예전엔 'DB 저장 실패'로만 보였다
+            logger.warning(f"[API POST] {path} HTTP {r.status_code}: {r.text[:200]}")
+            return None
+        return r.json()
     except Exception as e:
         logger.error(f"[API POST] {path}: {e}")
         return None
@@ -453,13 +457,28 @@ def run_once(session: StockeasySession, strategy: str) -> None:
     today_str     = date.today().isoformat()
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
-    # ── 페이지 취득 ──────────────────────────────────────────
-    html = session.get_strategy_page(strategy)
-    if not html:
-        logger.warning(f"[{strategy_name}] 페이지 취득 실패")
-        return
-
-    data          = parse_strategy_page(html)
+    # ── 보유·이탈 취득 ────────────────────────────────────────
+    # 2026-10-07: 스탁이지 페이지 표 열 구성이 9월 초 바뀌어 HTML 파서가 열을 잘못 읽음(편입일 '26.10.02'를
+    # 보유일 261002일로, 편입일 자리에 가격) → 모든 편입이 '복구편입'으로 오판. 로그인 실패·응답 지연도 잦음.
+    # 정형 API(stockeasy_analyzer.fetch_strategy_api — 앱 토큰, 로그인 불필요)를 먼저 쓰고 실패할 때만 HTML.
+    # 상세 docs/Stock_Strategy.md S29.
+    data = None
+    try:
+        from stockeasy_analyzer import fetch_strategy_api
+        data = fetch_strategy_api(strategy)
+        if data is not None:
+            logger.info(f"[{strategy_name}] 스탁이지 API 보유={len(data.get('holdings') or [])} 이탈={len(data.get('exits') or [])}")
+    except Exception as e:
+        logger.warning(f"[{strategy_name}] 스탁이지 API 오류 — HTML로 대체: {e}")
+        data = None
+    if data is None:
+        html = session.get_strategy_page(strategy)
+        if not html:
+            logger.warning(f"[{strategy_name}] 페이지 취득 실패")
+            return
+        data = parse_strategy_page(html)
+    data.setdefault("holdings", [])
+    data.setdefault("exits", [])
     site_holdings = data["holdings"]
     site_exits    = data["exits"]
 
