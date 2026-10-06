@@ -1052,11 +1052,22 @@ def _price_limit(day: str) -> float:
 IDENTITY_GAP_CALENDAR_DAYS = 60           # 이만큼 이상 공백이면 같은 종목코드를 다른 회사가 다시 쓴 것일 수 있어 무조건 단절(§7-2 A)
 
 
-def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = ()) -> list:
+PRICE_RELATED_EVENT_TYPES = (
+    "bonus_issue", "stock_split", "reverse_split", "stock_merge_or_reduction", "capital_reduction",
+    "reduction_or_cancellation", "company_split", "merger", "share_exchange", "stock_split_and_merger",
+)
+SHARE_CHANGE_TOLERANCE = 0.05   # 상장주식 수가 이만큼 넘게 바뀌면 기업행위성(가격 단절의 원인)으로 본다
+
+
+def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = (), volumes: list = None,
+                  shares_at=None) -> list:
     """조정 후 직전 거래일 대비 변동이 그날 가격제한폭(+반올림 여유 0.5%)을 넘는 날 — 시장 움직임으로 불가능한 단절.
 
-    직전 행과의 공백(달력일): <7일 → 제한폭 규칙 그대로 / 7~59일 → 그 사이에 기업행위·상장 구분 변경(`status_changes` 날짜)이
-    있으면 단절, 없으면 거래정지 뒤 재개(재개일 기준가 재평가 = 실제 손익)로 보아 단절 아님 / ≥60일 → 신원 변경 가능성으로 무조건 단절.
+    (가) 기업행위성 = 단절로 본다: 정지 없이 한도 초과 / 정지(직전 거래량 0 또는 7일 이상 공백) 뒤라도 상장주식 수가 바뀜 /
+        공백 ≥365일(같은 코드를 다른 회사가 쓴 경우) / 공백 7~59일에 가격 관련 기업행위·상장 구분 변경.
+    (나) 실제 가격 변동 = 단절 아님(재개일 가격으로 실제 손익, REVIEW_PLAN §8-1 #2): 정지 뒤(직전 거래량 0 또는 7일 이상 공백)
+        한도를 넘었지만 상장주식 수가 안 바뀜.
+    `shares_at(date)->float|None`(그 날의 상장주식 수), `volumes`(raw 거래량)가 없으면 정지 판단은 공백 일수만 쓴다.
     """
     from datetime import date as _d
     out = []
@@ -1067,15 +1078,25 @@ def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = ()) -> l
             gap = (_d.fromisoformat(dates[k]) - _d.fromisoformat(dates[k - 1])).days
         except ValueError:
             gap = 0
+        halted = gap >= HALT_GAP_CALENDAR_DAYS or (volumes is not None and (volumes[k - 1] or 0) <= 0)
+        changed = None
+        if shares_at is not None:
+            s0, s1 = shares_at(dates[k - 1]), shares_at(dates[k])
+            changed = None if not s0 or not s1 else abs(s1 / s0 - 1) > SHARE_CHANGE_TOLERANCE
         if gap >= IDENTITY_GAP_CALENDAR_DAYS:
-            out.append(dates[k])
+            if gap >= 365 or changed is not False:
+                out.append(dates[k])
             continue
         r = adj_close[k] / adj_close[k - 1]
         lim = _price_limit(dates[k])
         if 1 - lim - 0.005 <= r <= 1 + lim + 0.005:
             continue
-        if gap >= HALT_GAP_CALENDAR_DAYS and not any(dates[k - 1] < d <= dates[k] for d in status_changes):
-            continue
+        if halted:
+            if changed is True or any(dates[k - 1] < d <= dates[k] for d in status_changes):
+                out.append(dates[k])
+            elif changed is None and shares_at is not None:
+                out.append(dates[k])        # 주식 수를 알 수 없으면 가짜 손익을 피하려고 단절 처리
+            continue                        # 정지 뒤 주식 수 불변 → 실제 손익
         out.append(dates[k])
     return out
 
@@ -1099,6 +1120,8 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
     factors = _load_jump_aligned_corp_factors(conn, codes)
     breaks: dict = {}
     status: dict = {}
+    disclosed: dict = {}   # (code, event_date) → 최초 공시(접수) 일자
+    share_iv: dict = {}    # code → [(from, to, shares)]
     for i in range(0, len(codes), 500):
         chunk = codes[i:i + 500]
         ph = ",".join("?" * len(chunk))
@@ -1111,9 +1134,23 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
             f"SELECT stock_code, event_date FROM corporate_action_events WHERE stock_code IN ({ph}) "
             f"AND event_type='company_split'", tuple(chunk)).fetchall():
             breaks.setdefault(str(code), set()).add(str(ed)[:10])
-        for code, d1 in conn.execute(
-            f"SELECT stock_code, event_date FROM corporate_action_events WHERE stock_code IN ({ph})", tuple(chunk)).fetchall():
+        _et = ",".join("?" * len(PRICE_RELATED_EVENT_TYPES))
+        for code, d1, rc in conn.execute(
+            f"SELECT stock_code, event_date, evidence_rcept_no FROM corporate_action_events WHERE stock_code IN ({ph}) "
+            f"AND event_type IN ({_et})", tuple(chunk) + tuple(PRICE_RELATED_EVENT_TYPES)).fetchall():
             status.setdefault(str(code), set()).add(str(d1)[:10])
+            if rc and len(str(rc)) >= 8 and str(rc)[:8].isdigit():
+                rc8 = str(rc)[:4] + "-" + str(rc)[4:6] + "-" + str(rc)[6:8]
+                cur_d = disclosed.setdefault((str(code), str(d1)[:10]), rc8)
+                if rc8 < cur_d:
+                    disclosed[(str(code), str(d1)[:10])] = rc8
+        try:
+            for code, d1, d2, sh in conn.execute(
+                f"SELECT stock_code, effective_from, effective_to, shares_issued FROM security_share_history "
+                f"WHERE stock_code IN ({ph}) ORDER BY stock_code, effective_from", tuple(chunk)).fetchall():
+                share_iv.setdefault(str(code), []).append((str(d1)[:10], str(d2)[:10] if d2 else None, float(sh or 0)))
+        except Exception:
+            pass
         try:
             for code, d1, d2 in conn.execute(
                 f"SELECT stock_code, effective_from, effective_to FROM security_master_history WHERE stock_code IN ({ph})",
@@ -1145,8 +1182,17 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
                     e[key][k] *= f
                 e["volume"][k] /= f
         # 계수로 설명되지 않는 제한폭 초과 단절(분류 무관) — 조정 후 시계열에서 직접 찾는다
-        found = set(_limit_breaks(ds, e["close"], tuple(sorted(status.get(code, ())))))
+        _iv = share_iv.get(code, [])
+
+        def _shares_at(day, _iv=_iv):
+            for f_, t_, sh_ in reversed(_iv):
+                if f_ <= day and (t_ is None or day < t_):
+                    return sh_ or None
+            return None
+        found = set(_limit_breaks(ds, e["close"], tuple(sorted(status.get(code, ()))),
+                                  volumes=e["volume"], shares_at=_shares_at if _iv else None))
         e["unexplained_limit_breaks"] = sorted(found)
+        e["break_disclosed"] = {b_: disclosed.get((code, b_)) for b_ in sorted(set(breaks.get(code, ())) | found)}
         e["breaks"] = sorted(set(breaks.get(code, ())) | found)
         ranges = []
         for b in e["breaks"]:
@@ -3353,7 +3399,8 @@ def _run_generic_backtest(version: str, signal_fn,
         # 신호·손익은 조정 시계열, 체결 기록은 원주가(raw_*). 계수 미확정 단절 뒤 구간은 신규 진입 금지,
         # 보유 중 단절이 오면 그 전 거래일 종가로 청산한다.
         adj_stats = {'enabled': bool(_use_adjusted), 'candidate_skips_excluded': 0, 'break_liquidations': 0,
-                     'stocks_with_breaks': 0, 'stocks_adjusted': 0, 'misaligned_skipped': 0}
+                     'stocks_with_breaks': 0, 'stocks_adjusted': 0, 'misaligned_skipped': 0,
+                     'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0, 'zero_volume_skipped_buys': 0}
         if _use_adjusted and stock_data:
             _ap = load_adjusted_prices(conn, list(stock_data.keys()), warmup_start, end_date, window=adjusted_window)
             for sc, sd in stock_data.items():
@@ -3368,7 +3415,7 @@ def _run_generic_backtest(version: str, signal_fn,
                 sd['prices'] = e['close']; sd['highs'] = e['high']; sd['lows'] = e['low']; sd['volumes'] = e['volume']
                 sd['opens'] = [0.0 if ro == 0 else eo for ro, eo in zip(sd['raw_opens'], e['open'])]
                 sd['adj_factor'] = f
-                sd['breaks'] = e['breaks']; sd['excluded_ranges'] = e['excluded_ranges']
+                sd['breaks'] = e['breaks']; sd['excluded_ranges'] = e['excluded_ranges']; sd['break_disclosed'] = e.get('break_disclosed', {})
                 # 주당 재무(EPS·BPS)는 그 시점 주식 수 기준이라 조정 가격과 같은 단위로 맞춘다 —
                 # 공시일(avail) 시점의 조정 계수를 곱한다(PER·PBR = 조정가 ÷ 조정 주당값 = 경제적 값). 안 맞추면 가치 신호가 깨진다.
                 if sd.get('fins') and any(x != 1.0 for x in f):
@@ -3562,7 +3609,30 @@ def _run_generic_backtest(version: str, signal_fn,
             # 1억원/1천만원 단위로 시작하고, 평가자산 1.1억원부터 11번째 슬롯을 허용한다.
             return max(1, int(_marked_equity(day) // per_stock))
 
+        def _close_at(sc, pos, sd, i, price, reason, day_):
+            """보유 종목을 조정 단위 `price`로 즉시 청산(단절 처리용). 현금·거래 기록 갱신."""
+            nonlocal cash
+            net_amt, net_pct = _net_profit(pos['entry_price'], price, pos['qty'], pos.get('mkt_cap_억', sd.get('mkt_cap_억', 500)))
+            _f = sd['adj_factor'][i]
+            trades.append({'stock_code': sc, 'entry_date': pos['entry_date'], 'exit_date': day_,
+                           'entry_price': pos['entry_price'], 'exit_price': price, 'qty': pos['qty'],
+                           'profit_pct': net_pct, 'profit_amt': net_amt, 'exit_reason': reason,
+                           'exit_price_raw': round(price / _f, 4) if _f else price,
+                           'entry_price_raw': pos.get('entry_price_raw'), 'qty_raw': pos.get('qty_raw')})
+            cash += pos.get('cost', pos['entry_price'] * pos['qty']) + net_amt
+            del positions[sc]
+            _ps_g.pop(sc, None)
+
         for day in sim_dates:
+
+            # ── 단절 당일: 공시 근거 없이 보유 중이던 종목은 직전 거래일 종가로 청산 처리(가짜 손익 방지, D12 ②) ──
+            if _use_adjusted:
+                for sc, pos in list(positions.items()):
+                    sd = stock_data[sc]
+                    i = date_idx.get(sc, {}).get(day)
+                    if i is not None and i > 0 and day in sd.get('breaks', ()):
+                        _close_at(sc, pos, sd, i, sd['prices'][i - 1], '단절 당일 청산(공시 근거 없음)', day)
+                        adj_stats['break_day_liquidations'] += 1
 
             # ── Phase A: 전일 매도 신호 → 오늘 시가/종가 집행 ────────
             to_remove = []
@@ -3576,6 +3646,9 @@ def _run_generic_backtest(version: str, signal_fn,
                 if day not in im:
                     continue
                 i   = im[day]
+                if _use_adjusted and (sd['volumes'][i] or 0) <= 0:
+                    adj_stats['zero_volume_deferred_sells'] += 1   # 거래 불가능한 날 — 매도 주문은 다음 거래일로 이월
+                    continue
                 op  = sd['opens'][i] if i < len(sd.get('opens', [])) else 0.0
                 curr = op if op > 0 else sd['prices'][i]
                 net_amt, net_pct = _net_profit(
@@ -3617,6 +3690,9 @@ def _run_generic_backtest(version: str, signal_fn,
                 if monthly_buys.get(month_key, 0) >= max_new_per_month:
                     continue
                 i  = im[day]
+                if _use_adjusted and (sd['volumes'][i] or 0) <= 0:
+                    adj_stats['zero_volume_skipped_buys'] += 1
+                    continue
                 op = sd['opens'][i] if i < len(sd.get('opens', [])) else 0.0
                 curr = op if op > 0 else sd['prices'][i]
                 _eff_per_stock = per_stock * vol_scale.get(day, 1.0) if vol_scale_gate else per_stock
@@ -3656,22 +3732,14 @@ def _run_generic_backtest(version: str, signal_fn,
                     continue
                 i  = im[day]
                 sd = stock_data[sc]
-                # 단절(계수 미확정 기업행위·제한폭 초과) 직전 거래일 종가로 청산 — D12 ②, 가짜 손익 방지
-                if _use_adjusted and sd.get('breaks') and i + 1 < len(sd['dates']) and sd['dates'][i + 1] in sd['breaks']:
-                    _cl = sd['prices'][i]
-                    net_amt, net_pct = _net_profit(pos['entry_price'], _cl, pos['qty'], pos.get('mkt_cap_억', sd.get('mkt_cap_억', 500)))
-                    _f = sd['adj_factor'][i]
-                    trades.append({'stock_code': sc, 'entry_date': pos['entry_date'], 'exit_date': day,
-                                   'entry_price': pos['entry_price'], 'exit_price': _cl, 'qty': pos['qty'],
-                                   'profit_pct': net_pct, 'profit_amt': net_amt,
-                                   'exit_reason': '단절 전 청산(D12)',
-                                   'exit_price_raw': round(_cl / _f, 4) if _f else _cl,
-                                   'entry_price_raw': pos.get('entry_price_raw'), 'qty_raw': pos.get('qty_raw')})
-                    cash += pos.get('cost', pos['entry_price'] * pos['qty']) + net_amt
-                    del positions[sc]
-                    _ps_g.pop(sc, None)
-                    adj_stats['break_liquidations'] += 1
-                    continue
+                # 다음 거래일이 단절이고 그 사건이 오늘까지 공시돼 있으면 오늘 종가로 사전 청산(D12 ②).
+                # 공시 근거가 없으면 사전 청산하지 않는다 — 내일 일을 오늘 아는 미래 참조(REVIEW_PLAN §8-1 #3).
+                if _use_adjusted and sd.get('breaks') and i + 1 < len(sd['dates']):
+                    _nb = sd['dates'][i + 1]
+                    if _nb in sd['breaks'] and (sd.get('break_disclosed') or {}).get(_nb) and sd['break_disclosed'][_nb] <= day:
+                        _close_at(sc, pos, sd, i, sd['prices'][i], '단절 전 청산(D12, 공시 후)', day)
+                        adj_stats['break_liquidations'] += 1
+                        continue
                 if sc in _ps_g:
                     continue
                 reason = _check_sell_generic(i, sd['prices'], pos, sd=sd)
@@ -3828,7 +3896,7 @@ def _run_generic_backtest(version: str, signal_fn,
             f"총 거래: {metrics['total_trades']}건  승률: {metrics['win_rate']}%  "
             f"CAGR: {metrics['cagr']}%  MDD: {metrics['max_drawdown_pct']}%  샤프: {metrics['sharpe']}\n"
             f"매도사유: " + " / ".join(f"{k} {v}건" for k, v in sorted(exit_reasons.items()))
-            + (f"\n조정가격(W2): {json.dumps(adj_stats, ensure_ascii=False)}" if _use_adjusted else "")
+            + (f"\n조정가격(W2): {json.dumps(adj_stats, ensure_ascii=False)}" + ("\n⚠ 가격 정렬 불일치 종목은 조정 없이 계산됨" if adj_stats['misaligned_skipped'] else "") if _use_adjusted else "")
         )
         result = {
             **metrics,

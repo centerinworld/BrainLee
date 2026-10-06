@@ -18,7 +18,8 @@ from scripts.rerun_all_after_audit_rebuild import _all_selected_specs  # noqa: E
 from scripts.rerun_selected_after_price_repair import FUNCTIONS, _price_integrity  # noqa: E402
 
 OUT = ROOT / "research_outputs" / "w2_generic_compare_20261006.json"
-GENERIC = ["v_trend", "v1_value", "v2", "v5", "v10", "v11", "vbr"]
+GENERIC = ["v_trend", "v1_value", "v2", "v5", "v10", "v11", "vbr", "minervini"]
+FUNCTIONS = dict(FUNCTIONS, minervini="run_backtest_minervini_trend_template")
 
 
 def run_one(strategy, spec, mode):
@@ -46,12 +47,17 @@ def run_one(strategy, spec, mode):
         gate = {"passed": ok, "contaminated": len(det["contaminated_events"])}
     except Exception as e:  # noqa
         gate = {"error": str(e)[:80]}
+    c = connect_stock_db(readonly=True)
+    sp = c.execute("SELECT run_hash, parameter_json FROM backtest_run_specs WHERE run_id=?", (run_id,)).fetchone()
+    c.close()
+    pj = json.loads(sp[1]) if sp and sp[1] else {}
+    data_fp = {"source_snapshot": (pj.get("_source_snapshot") or {}).get("fingerprint"), "extras": pj.get("_data_revision_extras")}
     stats = None
     for line in (r[4] or "").split("\n"):
         if line.startswith("조정가격(W2):"):
             stats = json.loads(line.split(":", 1)[1])
-    return {"run_id": run_id, "ret": r[0], "mdd": r[1], "trades": r[2], "status": r[5], "trade_sig": sig, "gate": gate,
-            "break_exits": sum(1 for t in trades if t.get("exit_reason", "").startswith("단절 전 청산")), "adj_stats": stats,
+    return {"run_hash": sp[0] if sp else None, "data_fp": data_fp, "run_id": run_id, "ret": r[0], "mdd": r[1], "trades": r[2], "status": r[5], "trade_sig": sig, "gate": gate,
+            "break_exits": sum(1 for t in trades if t.get("exit_reason", "").startswith("단절 전 청산")), "adj_stats": stats, "pair_valid": None,
             "keys": sorted((t["stock_code"], t["entry_date"]) for t in trades)}
 
 
@@ -79,6 +85,13 @@ def main():
             again = run_one(strategy, s, "adjusted_repeat")
             res["repeat_check"] = {"strategy": strategy, "label": s["label"], "same": again["trade_sig"] == res["strategies"][strategy]["adjusted"][s["label"]]["trade_sig"]}
     bc.ADJUSTED_PRICES_DEFAULT = False
+    # 기준선·조정 쌍의 데이터 지문이 다르면 그 쌍은 무효(데이터가 도중에 갱신된 것)
+    for strategy, v in res["strategies"].items():
+        for lab, b in v.get("baseline", {}).items():
+            a_ = v.get("adjusted", {}).get(lab)
+            if a_:
+                ok = b["data_fp"] == a_["data_fp"]
+                b["pair_valid"] = a_["pair_valid"] = ok
     res["session_finished"] = datetime.now().isoformat(timespec="seconds")
     OUT.write_text(json.dumps(res, ensure_ascii=False, indent=1))
 

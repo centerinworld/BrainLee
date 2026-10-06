@@ -13,10 +13,11 @@ def _db(prices, audit=(), events=()):
     c = sqlite3.connect(":memory:")
     c.execute("CREATE TABLE price_history (stock_code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL)")
     c.execute("CREATE TABLE price_jump_audit (stock_code TEXT, event_date TEXT, price_ratio REAL, classification TEXT, return_usable INT)")
-    c.execute("CREATE TABLE corporate_action_events (stock_code TEXT, event_date TEXT, event_type TEXT, adjustment_status TEXT, backward_price_factor REAL)")
+    c.execute("CREATE TABLE corporate_action_events (stock_code TEXT, event_date TEXT, event_type TEXT, adjustment_status TEXT, backward_price_factor REAL, evidence_rcept_no TEXT)")
     c.executemany("INSERT INTO price_history VALUES ('A',?,?,?,?,?,?)", [(d, p, p, p, p, 1000.0) for d, p in prices])
     c.executemany("INSERT INTO price_jump_audit VALUES (?,?,?,?,0)", audit)
-    c.executemany("INSERT INTO corporate_action_events VALUES (?,?,?,?,?)", events)
+    c.executemany("INSERT INTO corporate_action_events (stock_code,event_date,event_type,adjustment_status,backward_price_factor,evidence_rcept_no) VALUES (?,?,?,?,?,?)",
+                  [tuple(e) + (None,) * (6 - len(e)) for e in events])
     return c
 
 
@@ -79,6 +80,16 @@ class TestAdjustedPrices(unittest.TestCase):
         self.assertEqual(bc._limit_breaks(["2024-01-02", "2024-04-15"], [1000.0, 1010.0]), ["2024-04-15"])
         self.assertEqual(bc._limit_breaks(["2024-01-02", "2024-01-20"], [1000.0, 400.0]), [])
         self.assertEqual(bc._limit_breaks(["2024-01-02", "2024-01-20"], [1000.0, 400.0], ("2024-01-10",)), ["2024-01-20"])
+
+    def test_halt_then_limit_move_real_loss_vs_corporate_action(self):
+        d = ["2024-01-02", "2024-01-03", "2024-01-04"]
+        px, vol = [1000.0, 1000.0, 500.0], [10.0, 0.0, 5.0]       # 정지(거래량 0) 뒤 −50%
+        same = lambda day: 1000.0                                  # 상장주식 수 불변 → 실제 손실
+        changed = lambda day: 1000.0 if day < "2024-01-04" else 2000.0   # 주식 수 2배 → 기업행위성
+        self.assertEqual(bc._limit_breaks(d, px, volumes=vol, shares_at=same), [])
+        self.assertEqual(bc._limit_breaks(d, px, volumes=vol, shares_at=changed), ["2024-01-04"])
+        # 정지 없이 한도 초과는 주식 수와 무관하게 단절
+        self.assertEqual(bc._limit_breaks(d, px, volumes=[10.0, 10.0, 5.0], shares_at=same), ["2024-01-04"])
 
     def test_halt_resumption_is_not_a_break(self):
         c = _db([("2024-01-02", 1000.0), ("2024-01-15", 400.0), ("2024-01-16", 400.0)])   # 13일 공백 후 재개
