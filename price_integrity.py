@@ -529,6 +529,34 @@ END $$;
 """
 
 
+PROVISIONAL_MARK_SQL = """
+CREATE OR REPLACE FUNCTION mark_same_day_price_provisional() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ INSERT INTO price_provisional_rows(stock_code,date,source,close,written_at)
+ VALUES (NEW.stock_code, substr(NEW.date,1,10), 'db_trigger:'||COALESCE(NULLIF(current_setting('application_name',true),''),'unknown'),
+         NEW.close, to_char(now(),'YYYY-MM-DD"T"HH24:MI:SS'))
+ ON CONFLICT(stock_code,date) DO UPDATE SET close=EXCLUDED.close, written_at=EXCLUDED.written_at;
+ RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS price_history_mark_provisional ON price_history;
+CREATE TRIGGER price_history_mark_provisional AFTER INSERT OR UPDATE OF open,high,low,close,volume ON price_history
+ FOR EACH ROW WHEN (substr(NEW.date,1,10) = CURRENT_DATE::text AND NEW.stock_code ~ '^[0-9A-Z]{6}$')
+ EXECUTE FUNCTION mark_same_day_price_provisional();
+"""
+
+
+def install_provisional_marker(conn):
+    """당일(DB 시간대 Asia/Seoul) 주식·ETF 행 쓰기를 경로와 무관하게 잠정 표시(2026-10-07, REVIEW_PLAN §19-2 3번).
+
+    보호 트리거는 당일 행 쓰기를 무조건 통과시키므로(아래 guard 518행 부근) 게이트를 안 거치는 수집기·서버 안 옛 코드가 쓴
+    당일 값도 잠정이다. 이 AFTER 트리거가 모든 쓰기 경로에서 price_provisional_rows 를 채운다(교체는 check_price_vs_krx_daily.py).
+    """
+    if not hasattr(conn, '_connection'):
+        return
+    native_script(conn, TABLES)
+    native_script(conn, PROVISIONAL_MARK_SQL)
+
+
 def install_write_guard(conn):
     """Block legacy historical writers that bypass the validated ingestion path.
 
@@ -544,3 +572,4 @@ DROP TRIGGER IF EXISTS price_history_basis_write_guard ON price_history;
 CREATE TRIGGER price_history_basis_write_guard BEFORE INSERT OR UPDATE OF open,high,low,close,volume
  ON price_history FOR EACH ROW EXECUTE FUNCTION guard_historical_price_write();
 """)
+    install_provisional_marker(conn)

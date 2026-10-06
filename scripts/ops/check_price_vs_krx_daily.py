@@ -77,8 +77,21 @@ def main():
         print("잠정 행 → KRX 공식값 (교체, 표시 해제):", json.dumps(rep, ensure_ascii=False))
     pending = [tuple(r) for r in conn.execute("SELECT date, COUNT(*) FROM price_provisional_rows GROUP BY 1 ORDER BY 1").fetchall()]
     print("KRX 확정 대기 잠정 행:", pending)
+    # 2026-10-07(REVIEW_PLAN §19-2 2번): KRX 수신이 멈추면 표시 행이 쌓이고 감사 기준에서 조용히 빠진다 → 2거래일 넘게 남으면 알림
+    recent = [r[0] for r in conn.execute("SELECT DISTINCT date FROM price_history WHERE stock_code='005930' ORDER BY date DESC LIMIT 3").fetchall()]
+    stale = [] if len(recent) < 3 else [(d, n) for d, n in pending if d < str(recent[-1])[:10]]
+    if stale:
+        print("⚠ 2거래일 넘게 남은 잠정 행:", stale)
+        try:
+            import notifier
+            notifier.send("⚠ KRX 공식값으로 확정되지 않은 잠정 가격 행이 2거래일 넘게 남음: " + ", ".join(f"{d} {n}행" for d, n in stale)
+                          + " — KRX Open API 수신(fetch_krx_openapi) 확인, REVIEW_PLAN §19-2", key=f"prov_stale_{date.today().isoformat()}")
+        except Exception as e:
+            print("알림 실패:", e)
     res = {}
     rows = []
+    for d, n in stale:
+        rows.append((date.today().isoformat(), "pg_close_vs_krx", "*", int(d[:4]), 0, "-", f"{d} 잠정 표시 {n}행 2거래일 초과(KRX 미수신)", 0))
     for d in days:
         iso = f"{d[:4]}-{d[4:6]}-{d[6:]}"
         n, bad = conn.execute("""SELECT COUNT(*), SUM(CASE WHEN abs(p.close - s.close_price) > 1 THEN 1 ELSE 0 END)

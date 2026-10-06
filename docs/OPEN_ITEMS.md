@@ -55,6 +55,9 @@ FINANCIAL §9-2-7 A 표: 사업보고서 원문 2023~25(10-06 밤 7,529건 수�
 | C1 | 종료(수익률에서 이미 제외) |
 | C2 | 10/2 910행 = A5 정정으로 KRX 값 반영 완료 · ETF 소수점 6행 = 10일 뒤(10-16) 남아 있는지 확인 |
 | A5 후속 | 10/5·10/6 대조: **10/5는 대체공휴일(개천절)이라 주식 행 없음**(지수·해외 16행만). 10/6은 KRX 자료 대기 — 2,750행이 잠정 표시(`price_provisional_rows`)돼 KRX 수신 다음 날 `check_price_vs_krx_daily.py`가 자동 교체. 결과(교체 건수·잔여 불일치 0 여부)를 이 줄에 기록할 것 |
+| A5 후속 ② | **원인 확정(10-08)**: `kis_close_source_probe_20261007.py --compare`로 10-07 관측 3회(15:45·18:10·20:30, `J`·`NX`·`UN`)를 KRX 공식 종가와 대조 → 결과로 ① 수집 시각 변경 ② 다른 필드 ③ 잠정 표시 유지 중 선택, FINANCIAL 실패 27 원인 문구 확정. 끝나면 launchd `com.stock-dashboard.kis-close-probe` 해제(`launchctl bootout gui/$(id -u)/com.stock-dashboard.kis-close-probe`, plist 삭제) |
+| A5 후속 ③ | 화면 '잠정(KRX 확정 전)' 표시 — 종목 페이지·전략 후보 당일 가격 옆, `price_provisional_rows` 기준. A9 배포 때 함께 |
+| A5 후속 ④ | 백엔드 재시작 후 다음 거래일: `price_provisional_rows` 그날 행 수 ≈ 그날 종목 수(약 2,750) 확인. (DB 트리거가 서버 안 옛 코드 경로도 표시하므로 재시작 전에도 표시는 붙음) |
 | C3 ③ | 재작성 49칸 중 38칸은 `restated_annual_20261006_134655`에 포함, 11칸은 DB가 이미 재작성값과 같고 FnGuide 억 단위 반올림(0.5~0.7%)만 남음 → 종료 |
 | C3 ④ | DB 오류 미적용 8칸 중 7칸 이미 원문과 일치, 032680 capex 1칸은 D11(단위 의심 종목) 보류 |
 | C3 ① | DART 키 갱신 후 별도(OFS) 원문 추가 수집 → 분류 재실행 |

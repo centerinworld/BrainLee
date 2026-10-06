@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+ <key>Label</key><string>com.stock-dashboard.kis-close-probe</string>
+ <key>ProgramArguments</key><array>
+  <string>/bin/zsh</string><string>-c</string>
+  <string>cd /Volumes/Realtek_NVME/stock_dashboard/runtime &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a &amp;&amp; PYTHONPATH=runtime_pg_bootstrap:. venv/bin/python scripts/review/kis_close_source_probe_20261007.py --until 20261008 &gt;&gt; logs/kis_close_probe_20261007.log 2&gt;&amp;1</string>
+ </array>
+ <key>StartCalendarInterval</key><array>
+  <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>45</integer></dict>
+  <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>10</integer></dict>
+  <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+ </array>
+</dict></plist>

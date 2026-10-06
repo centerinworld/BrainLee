@@ -62,7 +62,9 @@ def main():
     off = {}
     plan = []
     for code, ld, first in gaps:
-        end = (datetime.strptime(first, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d") if first else date.today().isoformat()
+        # 2026-10-07(REVIEW_PLAN §19-2 3번): 당일 봉은 잠정(게이트를 안 거쳐 잠정 표시도 없음) → 어제까지만. 당일은 KIS 일일 수집이 게이트로 씀
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        end = min((datetime.strptime(first, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d") if first else yesterday, yesterday)
         if end < ld:
             continue
         kis = asyncio.run(_kis_rows(code, ld, end))
