@@ -24,7 +24,6 @@ from db_compat import connect_primary_db  # noqa: E402
 OUT = ROOT / "research_outputs" / "price_raw_basis_audit_20261004"
 MARCAP = ROOT / "data_cache" / "marcap"
 KRAW = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/kis_raw_daily")
-KRX_SUSPECT_DATES = {"2026-10-02"}  # 공식(KRX Open API) 값을 기준에서 뺄 날짜 — 근거 FINANCIAL_STATEMENTS.md §9-2-5
 
 
 def ratio_kind(r):
@@ -48,8 +47,7 @@ def main():
         columns=["code", "bas_dt", "off_close", "off_vol", "off_open", "off_high", "off_low"])
     conn.close()
     off["date"] = pd.to_datetime(off.bas_dt, format="%Y%m%d").dt.strftime("%Y-%m-%d")
-    # 2026-10-07 결정 A5(REVIEW_PLAN §13): KRX Open API 2026-10-02 값은 PG·KIS·네이버 3소스와 종가만 다름(재수신해도 동일) → KRX 측 자료 의심, 기준에서 제외
-    off = off[~off.date.isin(KRX_SUSPECT_DATES)]
+    # (2026-10-07 A5 철회 — REVIEW_PLAN §16-1: 10-02는 KRX 값이 공식 종가이고 PG가 장후 통합 현재가로 틀렸다. 제외 규칙 삭제)
     off = off.drop(columns="bas_dt").drop_duplicates(["code", "date"])
     mc = pd.concat([pd.read_parquet(p, columns=["Code", "Date", "Close", "Volume"]) for p in sorted(MARCAP.glob("marcap-*.parquet"))])
     mc = mc.rename(columns={"Code": "code", "Close": "mc_close", "Volume": "mc_vol"})

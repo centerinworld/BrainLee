@@ -1470,7 +1470,9 @@ class CollectionScheduler:
             py = "/Volumes/Realtek_NVME/stock_dashboard/runtime/venv/bin/python"
             if not os.path.exists(py):
                 py = sys.executable
-            cmd = [py, "collect_kis_ohlcv.py", "--days", "1"]
+            # 2026-10-07(FINANCIAL §5 실패 27): --days 1(달력 어제~오늘)은 주말·연휴 뒤 직전 거래일 잠정 값을 다시 받지 못함
+            # → 최근 7일을 다시 받아 확정 값으로 덮음(종목당 호출 1회로 같음, 정정 허용 기간 PROVISIONAL_DAYS=7과 일치)
+            cmd = [py, "collect_kis_ohlcv.py", "--days", "7"]
             logger.info(f"[KIS일별] {' '.join(cmd)} 시작")
             proc = subprocess.run(
                 cmd,
