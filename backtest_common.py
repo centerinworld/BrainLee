@@ -1019,6 +1019,84 @@ def _load_jump_aligned_corp_factors(conn, stock_codes: list) -> dict:
     return out
 
 
+# Stock_Strategy W1(REVIEW_PLAN §1-4, D12 ② 사용자 승인): 계수를 알 수 없는 가격 단절의 분류.
+UNRESOLVED_BREAK_CLASSES = (
+    "corporate_action_pending_confirmation", "quarantined_basis", "unresolved_active_common",
+    "corporate_action_or_delisting_nearby", "corporate_action_share_count_evidence",
+)
+INDICATOR_MAX_WINDOW = 252   # 신호 지표(52주 고점 등)의 최대 창(거래일)
+
+
+def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
+                         excluded_classes: tuple = UNRESOLVED_BREAK_CLASSES,
+                         window: int = INDICATOR_MAX_WINDOW) -> dict:
+    """원주가를 확정 기업행위 계수로 후진 조정한 일봉 + 계수 미확정 단절 구간 — 신호와 손익이 같은 시계열을 쓰게 한다.
+
+    반환 {code: {dates, open, high, low, close, volume, raw_close, adj_factor, breaks, excluded_ranges}}
+      - 조정: 사건일 **이전** 가격 × 계수(가격 단절이 실제 관측된 확정 계수만 — `_load_jump_aligned_corp_factors`,
+        이중 조정 방지), 거래량 ÷ 계수. `raw_close`는 체결 기록용 원주가.
+      - 계수를 모르는 단절(`excluded_classes` 분류 또는 `corporate_action_events`의 company_split)은 조정하지 않고
+        `breaks`(사건일)와 `excluded_ranges`([사건일, 사건 후 `window` 거래일])로 돌려준다 — 그 구간은 신호 계산·신규 진입 제외,
+        단절을 가로질러 보유 중이던 포지션은 사건 전 마지막 거래일 종가로 청산 처리해야 한다(근거 없는 계수를 만들지 않는다, 원칙 0).
+    """
+    codes = sorted(set(stock_codes))
+    out: dict = {}
+    if not codes:
+        return out
+    factors = _load_jump_aligned_corp_factors(conn, codes)
+    breaks: dict = {}
+    for i in range(0, len(codes), 500):
+        chunk = codes[i:i + 500]
+        ph = ",".join("?" * len(chunk))
+        cls_ph = ",".join("?" * len(excluded_classes))
+        for code, ed in conn.execute(
+            f"SELECT stock_code, event_date FROM price_jump_audit WHERE stock_code IN ({ph}) "
+            f"AND classification IN ({cls_ph})", tuple(chunk) + tuple(excluded_classes)).fetchall():
+            breaks.setdefault(str(code), set()).add(str(ed)[:10])
+        for code, ed in conn.execute(
+            f"SELECT stock_code, event_date FROM corporate_action_events WHERE stock_code IN ({ph}) "
+            f"AND event_type='company_split'", tuple(chunk)).fetchall():
+            breaks.setdefault(str(code), set()).add(str(ed)[:10])
+        rows = conn.execute(
+            f"SELECT stock_code, date, open, high, low, close, volume FROM price_history "
+            f"WHERE stock_code IN ({ph}) AND date>=? AND date<=? AND close>0 ORDER BY stock_code, date",
+            tuple(chunk) + (start, end)).fetchall()
+        for code, d, o_, h_, l_, c_, v_ in rows:
+            e = out.setdefault(str(code), {"dates": [], "open": [], "high": [], "low": [], "close": [],
+                                           "volume": [], "raw_close": [], "adj_factor": []})
+            e["dates"].append(str(d)[:10]); e["raw_close"].append(float(c_))
+            c_f = float(c_); e["open"].append(float(o_ or c_f)); e["high"].append(float(h_ or c_f))
+            e["low"].append(float(l_ or c_f)); e["close"].append(c_f); e["volume"].append(float(v_ or 0))
+            e["adj_factor"].append(1.0)
+    for code, e in out.items():
+        ds = e["dates"]
+        for edate, f in factors.get(code, []):
+            for k, d in enumerate(ds):
+                if d >= edate:
+                    break
+                e["adj_factor"][k] *= f
+                for key in ("open", "high", "low", "close"):
+                    e[key][k] *= f
+                e["volume"][k] /= f
+        e["breaks"] = sorted(breaks.get(code, ()))
+        ranges = []
+        for b in e["breaks"]:
+            if not ds or b < ds[0]:
+                continue   # 조회 구간 이전 사건은 이 구간 신호에 영향 없음
+            first = next((k for k, d in enumerate(ds) if d >= b), None)
+            if first is None:
+                continue
+            last = min(first + window, len(ds) - 1)
+            ranges.append((ds[first], ds[last]))
+        e["excluded_ranges"] = ranges
+    return out
+
+
+def is_excluded_day(entry: dict, day: str) -> bool:
+    """`load_adjusted_prices` 항목에서 day가 계수 미확정 단절의 제외 구간인지."""
+    return any(a <= day <= b for a, b in entry.get("excluded_ranges", ()))
+
+
 def _rebase_positions_for_corp_actions(factors: dict, positions: dict, prev_day, day: str,
                                        price_keys: tuple, qty_key: str = None) -> None:
     """(prev_day, day]에 확정 기업행위가 있는 보유 포지션을 새 주식 기준으로 옮긴다.
