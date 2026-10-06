@@ -250,13 +250,13 @@ def _data_revision_extras(conn) -> dict:
         "financial_facts_pit": one("SELECT COUNT(*) FROM financial_facts_pit"),  # run_id는 매일 바뀌어 해시가 흔들리므로 행수만
         # 조정 가격 로더 입력(Stock_Strategy §6-2 #5): 확정 계수 표와 단절 감사 표 — 매일 바뀐다
         "corporate_action_factors": one(
-            "SELECT COUNT(*), MAX(updated_at) FROM corporate_action_events "
+            "SELECT COUNT(*), MD5(STRING_AGG(stock_code || event_date || CAST(backward_price_factor AS TEXT), ',' "
+            "ORDER BY stock_code, event_date, backward_price_factor)) FROM corporate_action_events "
             "WHERE adjustment_status='factor_confirmed' AND backward_price_factor IS NOT NULL"),
-        "price_jump_audit": one("SELECT COUNT(*), MAX(audited_at) FROM price_jump_audit"),
-        "price_jump_audit_by_class": one(
-            "SELECT COUNT(DISTINCT classification), SUM(CASE WHEN classification IN "
-            "('corporate_action_pending_confirmation','unresolved_active_common',"
-            "'corporate_action_or_delisting_nearby','corporate_action_share_count_evidence') THEN 1 ELSE 0 END) FROM price_jump_audit"),
+        # 단절 감사 표는 매일 전량 재구축되므로 시각이 아니라 (종목·사건일·분류) 내용 해시를 넣는다
+        "price_jump_audit": one(
+            "SELECT COUNT(*), MD5(STRING_AGG(stock_code || event_date || classification, ',' "
+            "ORDER BY stock_code, event_date, classification)) FROM price_jump_audit"),
         # D11: 단위 오기 의심 행은 공개일 게이팅 재무 로더에서 입력 제외(DB 값 불변) — 제외 대상 기간 수를 지문에 남김
         "unit_error_excluded_periods": one(
             "SELECT COUNT(DISTINCT stock_code), SUM(LENGTH(config_value) - LENGTH(REPLACE(config_value, 'CFS', '')) "
@@ -1046,23 +1046,32 @@ def _price_limit(day: str) -> float:
     return 0.15 if day < PRICE_LIMIT_CHANGE_DATE else 0.30
 
 
-def _limit_breaks(dates: list, adj_close: list) -> list:
+IDENTITY_GAP_CALENDAR_DAYS = 60           # 이만큼 이상 공백이면 같은 종목코드를 다른 회사가 다시 쓴 것일 수 있어 무조건 단절(§7-2 A)
+
+
+def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = ()) -> list:
     """조정 후 직전 거래일 대비 변동이 그날 가격제한폭(+반올림 여유 0.5%)을 넘는 날 — 시장 움직임으로 불가능한 단절.
-    직전 행과 `HALT_GAP_CALENDAR_DAYS`일 이상 떨어진 날(거래정지 뒤 재개)은 제외한다."""
+
+    직전 행과의 공백(달력일): <7일 → 제한폭 규칙 그대로 / 7~59일 → 그 사이에 기업행위·상장 구분 변경(`status_changes` 날짜)이
+    있으면 단절, 없으면 거래정지 뒤 재개(재개일 기준가 재평가 = 실제 손익)로 보아 단절 아님 / ≥60일 → 신원 변경 가능성으로 무조건 단절.
+    """
     from datetime import date as _d
     out = []
     for k in range(1, len(dates)):
         if adj_close[k - 1] <= 0:
             continue
-        r = adj_close[k] / adj_close[k - 1]
-        lim = _price_limit(dates[k])
-        if 1 - lim - 0.005 <= r <= 1 + lim + 0.005:
-            continue
         try:
             gap = (_d.fromisoformat(dates[k]) - _d.fromisoformat(dates[k - 1])).days
         except ValueError:
             gap = 0
-        if gap >= HALT_GAP_CALENDAR_DAYS:
+        if gap >= IDENTITY_GAP_CALENDAR_DAYS:
+            out.append(dates[k])
+            continue
+        r = adj_close[k] / adj_close[k - 1]
+        lim = _price_limit(dates[k])
+        if 1 - lim - 0.005 <= r <= 1 + lim + 0.005:
+            continue
+        if gap >= HALT_GAP_CALENDAR_DAYS and not any(dates[k - 1] < d <= dates[k] for d in status_changes):
             continue
         out.append(dates[k])
     return out
@@ -1086,6 +1095,7 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
         return out
     factors = _load_jump_aligned_corp_factors(conn, codes)
     breaks: dict = {}
+    status: dict = {}
     for i in range(0, len(codes), 500):
         chunk = codes[i:i + 500]
         ph = ",".join("?" * len(chunk))
@@ -1098,6 +1108,18 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
             f"SELECT stock_code, event_date FROM corporate_action_events WHERE stock_code IN ({ph}) "
             f"AND event_type='company_split'", tuple(chunk)).fetchall():
             breaks.setdefault(str(code), set()).add(str(ed)[:10])
+        for code, d1 in conn.execute(
+            f"SELECT stock_code, event_date FROM corporate_action_events WHERE stock_code IN ({ph})", tuple(chunk)).fetchall():
+            status.setdefault(str(code), set()).add(str(d1)[:10])
+        try:
+            for code, d1, d2 in conn.execute(
+                f"SELECT stock_code, effective_from, effective_to FROM security_master_history WHERE stock_code IN ({ph})",
+                tuple(chunk)).fetchall():
+                for dd in (d1, d2):
+                    if dd:
+                        status.setdefault(str(code), set()).add(str(dd)[:10])
+        except Exception:
+            pass   # 테이블이 없으면(합성 테스트 등) 기업행위 이력만 쓴다
         rows = conn.execute(
             f"SELECT stock_code, date, open, high, low, close, volume FROM price_history "
             f"WHERE stock_code IN ({ph}) AND date>=? AND date<=? AND close>0 ORDER BY stock_code, date",
@@ -1120,7 +1142,7 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
                     e[key][k] *= f
                 e["volume"][k] /= f
         # 계수로 설명되지 않는 제한폭 초과 단절(분류 무관) — 조정 후 시계열에서 직접 찾는다
-        found = set(_limit_breaks(ds, e["close"]))
+        found = set(_limit_breaks(ds, e["close"], tuple(sorted(status.get(code, ())))))
         e["unexplained_limit_breaks"] = sorted(found)
         e["breaks"] = sorted(set(breaks.get(code, ())) | found)
         ranges = []

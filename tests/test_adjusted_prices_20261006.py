@@ -74,6 +74,12 @@ class TestAdjustedPrices(unittest.TestCase):
         c = _db(prices)
         self.assertEqual(bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]["breaks"], [])
 
+    def test_gap_rules(self):
+        # 공백 ≥60일은 신원 변경 가능 → 무조건 단절, 7~59일은 상태 변경이 있을 때만 단절
+        self.assertEqual(bc._limit_breaks(["2024-01-02", "2024-04-15"], [1000.0, 1010.0]), ["2024-04-15"])
+        self.assertEqual(bc._limit_breaks(["2024-01-02", "2024-01-20"], [1000.0, 400.0]), [])
+        self.assertEqual(bc._limit_breaks(["2024-01-02", "2024-01-20"], [1000.0, 400.0], ("2024-01-10",)), ["2024-01-20"])
+
     def test_halt_resumption_is_not_a_break(self):
         c = _db([("2024-01-02", 1000.0), ("2024-01-15", 400.0), ("2024-01-16", 400.0)])   # 13일 공백 후 재개
         self.assertEqual(bc.load_adjusted_prices(c, ["A"], "2024-01-01", "2024-02-01")["A"]["breaks"], [])

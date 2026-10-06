@@ -40,7 +40,7 @@ class TestDataRevisionExtras(unittest.TestCase):
         c = sqlite3.connect(":memory:")
         out = bc._data_revision_extras(c)
         self.assertEqual(set(out), {"fin_disclosure_dates", "data_fix_log", "financial_facts_pit", "unit_error_excluded_periods",
-                                    "corporate_action_factors", "price_jump_audit", "price_jump_audit_by_class"})
+                                    "corporate_action_factors", "price_jump_audit"})
         self.assertTrue(all(v is None for v in out.values()))
 
 
