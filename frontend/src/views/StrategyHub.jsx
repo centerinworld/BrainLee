@@ -876,6 +876,9 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
 	                        onClick={() => setStratSort(p => ({ key:'avg', dir: p.key==='avg' && p.dir==='desc' ? 'asc' : 'desc' }))}
 	                      >avg {stratSort.key==='avg' ? (stratSort.dir==='desc' ? '▼' : '▲') : '↕'}<br/><span style={{fontSize:'0.58rem',opacity:0.6}}>(전기간 평균)</span></th>
 	                      <th style={{...thSt,minWidth:'64px',textAlign:'center',fontSize:'0.66rem'}}>양수 구간</th>
+	                      <th style={{...thSt,minWidth:'58px',textAlign:'center',fontSize:'0.66rem'}} title="6개 구간 중 가장 나쁜 구간 수익률 (결정 D3, 2026-10-07)">최악 구간</th>
+	                      <th style={{...thSt,minWidth:'58px',textAlign:'center',fontSize:'0.66rem'}} title="구간별 최대 낙폭 중 가장 나쁜 값. 한 구간이라도 기록이 없으면 '위험 지표 없음'">최대 낙폭</th>
+	                      <th style={{...thSt,minWidth:'58px',textAlign:'center',fontSize:'0.66rem'}} title="평균 수익률 ÷ |최대 낙폭| — W4·W5 뒤 1순위 정렬 기준 예정(결정 D3)">평균÷낙폭</th>
                       <th style={{...thSt,minWidth:'76px',textAlign:'center',fontSize:'0.66rem',background:'rgba(5,150,105,0.18)',borderLeft:'2px solid rgba(5,150,105,0.4)',cursor:'pointer',userSelect:'none'}}
 	                        title="클릭: 누적수익 정렬 (오름/내림 토글)"
 	                        onClick={() => setStratSort(p => ({ key:'cum', dir: p.key==='cum' && p.dir==='desc' ? 'asc' : 'desc' }))}
@@ -916,7 +919,10 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
 	                            borderBottom:'1px solid rgba(15,23,42,0.2)',
 	                            color: isSelected ? s.color : '#1e293b',whiteSpace:'nowrap',
 	                            borderLeft: isSelected ? `3px solid ${s.color}` : '3px solid transparent'}}>
-	                            {s.label}
+	                            <span style={{opacity: (strategyGovernance[s.key] || {}).tier === 'retired' ? 0.5 : 1}}>{s.label}</span>
+	                            {(strategyGovernance[s.key] || {}).tier === 'retired' && (
+	                              <span title="거버넌스 등급 퇴역(retired) — 결정 D2(2026-10-07): 숨기지 않고 표시, W6 재판정 뒤 기본 숨김 예정" style={{display:'inline-block',marginLeft:'0.35rem',padding:'0.06rem 0.34rem',borderRadius:'999px',border:'1px solid rgba(100,116,139,0.5)',background:'rgba(100,116,139,0.12)',color:'#475569',fontSize:'0.56rem',fontWeight:800,verticalAlign:'middle'}}>퇴역</span>
+	                            )}
 	                            {strategyMethodology[s.key] && (
 	                              <span style={{
 	                                display:'inline-block',
@@ -971,6 +977,18 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                                   fontSize:'0.75rem'}}>
                                   {wins}/{total}
                                 </td>
+                                {(() => {
+                                  const gm = (strategyGovernance[s.key] || {}).metrics || {};
+                                  const cell = {padding:'0.35rem 0.4rem',textAlign:'center',borderBottom:'1px solid rgba(15,23,42,0.2)',fontSize:'0.72rem'};
+                                  const none = <span style={{fontSize:'0.58rem',color:'#b45309'}}>위험 지표 없음</span>;
+                                  return (
+                                    <React.Fragment>
+                                      <td style={{...cell,color:(gm.worst_period_return_pct ?? 0) < 0 ? '#2563eb' : 'rgba(15,23,42,0.88)'}}>{gm.worst_period_return_pct != null ? `${gm.worst_period_return_pct}%` : '-'}</td>
+                                      <td style={cell}>{gm.max_drawdown_pct != null ? `${gm.max_drawdown_pct}%` : none}</td>
+                                      <td style={cell}>{gm.return_to_mdd != null ? gm.return_to_mdd.toFixed(2) : none}</td>
+                                    </React.Fragment>
+                                  );
+                                })()}
                                 <td style={{padding:'0.35rem 0.4rem',textAlign:'center',
                                   borderBottom:'1px solid rgba(15,23,42,0.2)',
                                   borderLeft:'2px solid rgba(5,150,105,0.25)',

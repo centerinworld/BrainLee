@@ -15459,6 +15459,12 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
           );
         })()}
 
+        {/* 결정 D11(2026-10-07): DART 원문 단위 의심 기간 표시 — 외부 대조 불가, 백테스트 입력에서는 제외됨 */}
+        {revenueMix?.unit_suspect && (
+          <div style={{ padding:'0.45rem 0.8rem', borderRadius:'8px', background:'rgba(220,38,38,0.08)', border:'1px solid rgba(220,38,38,0.35)', fontSize:'0.72rem', color:'#b91c1c' }}>
+            ⚠ 단위 의심 — 일부 기간 재무값이 DART 원문 자체에서 1,000배(또는 100만 배)로 공시된 것으로 보입니다. 외부(FnGuide) 대조가 안 되는 기간이라 값을 고치지 않았고 백테스트 입력에서는 제외합니다. 해당 기간: {String(revenueMix.unit_suspect).replace(/^.*?:\s*/, '')}
+          </div>
+        )}
         {/* 재무 지표 + 52주 고저가 + RS (8칸) */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(8,1fr)', gap:'0.75rem' }}>
           {[

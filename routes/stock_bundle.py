@@ -173,7 +173,10 @@ def get_revenue_mix(code: str):
                 """SELECT segment, revenue_krw, op_profit_krw, revenue_pct, check_status, report_type FROM biz_segment
                    WHERE stock_code=? AND fiscal_year=? AND check_status IN ('ok','ok_gross','single_segment')
                    ORDER BY CASE WHEN segment LIKE '[조정]%%' THEN 1 ELSE 0 END, revenue_krw DESC""", code, seg_y[0][0])]
-        return {"ok": True, "geography": geo, "product_mix_year": y, "product_mix": products,
+        # 결정 D11(2026-10-07): DART 원문 자체가 1,000배로 공시된 것으로 보이는 기간(외부 대조 불가) — 화면에 '단위 의심' 표시, 백테스트 입력에선 제외
+        us = q("SELECT config_value FROM stock_collection_config WHERE stock_code=? AND config_key='fs_quirk:dart_unit_error'", code)
+        unit_suspect = us[0][0] if us else None
+        return {"ok": True, "unit_suspect": unit_suspect, "geography": geo, "product_mix_year": y, "product_mix": products,
                 "segment_year": seg_y[0][0] if seg_y else None, "segments": segments,
                 "rd": rd, "capacity_year": cap_y[0][0] if cap_y else None, "capacity": capacity,
                 "raw_material_year": raw_y[0][0] if raw_y else None, "raw_material": raw,

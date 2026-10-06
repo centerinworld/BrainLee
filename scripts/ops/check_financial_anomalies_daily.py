@@ -29,6 +29,9 @@ def main():
     today = date.today().isoformat()
     this_month = today[:7]
     known = {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:dart_unit_error'").fetchall()}
+    # 2026-10-07(REVIEW_PLAN §14): 원화 환산을 일부러 보류한 외국기업(보고통화 표시가 '환산완료'가 아닌 종목)도 알려진 보류 — 경보 피로 방지
+    known |= {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:reporting_currency' "
+                                         "AND config_value NOT LIKE '%환산완료%'").fetchall()}
     found = []
     for r in conn.execute("""WITH m AS (SELECT stock_code, report_type, percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(total_assets)) med
                                         FROM financial_data WHERE total_assets IS NOT NULL AND total_assets<>0 GROUP BY 1,2)

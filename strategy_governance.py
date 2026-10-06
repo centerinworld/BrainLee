@@ -30,6 +30,10 @@ def classify_strategy(periods: dict) -> dict:
         "positive_periods": sum(value > 0 for value in returns),
         "non_loss_periods": sum(value >= 0 for value in returns),
         "worst_period_return_pct": round(min(returns), 2) if returns else None,
+        # 2026-10-07 결정 D3(REVIEW_PLAN §13): 평균 유지 + 최악 구간·최대 낙폭·평균÷낙폭 열 추가(정렬 기준 변경은 W4·W5 뒤).
+        # 최대 낙폭 = 구간별 MDD 중 가장 나쁜 값. 한 구간이라도 MDD가 없으면 None('위험 지표 없음').
+        "max_drawdown_pct": (round(min(float(r["mdd"]) for r in rows), 2)
+                             if rows and all(r.get("mdd") is not None for r in rows) else None),
         "risk_metrics_complete": bool(rows) and all(
             row.get("mdd") is not None
             and row.get("sharpe") is not None
@@ -37,6 +41,9 @@ def classify_strategy(periods: dict) -> dict:
             for row in rows
         ),
     }
+    mdd = metrics["max_drawdown_pct"]
+    metrics["return_to_mdd"] = (round(metrics["average_return_pct"] / abs(mdd), 3)
+                                if mdd not in (None, 0) and metrics["average_return_pct"] is not None else None)
     enough = len(returns) == 6
     avg_return = metrics["average_return_pct"] if returns else float("-inf")
     worst_return = metrics["worst_period_return_pct"] if returns else float("-inf")
