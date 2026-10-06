@@ -100,3 +100,27 @@ class TestAdjustedPrices(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGenericEngineIntegration(unittest.TestCase):
+    """W2: 공용 일반 엔진 — 이중 보정 금지·조정 단위 수량 환산 규칙."""
+
+    def test_engine_has_no_legacy_corp_action_patches(self):
+        import inspect
+        src = inspect.getsource(bc._run_generic_backtest)
+        self.assertNotIn("_rebase_positions_for_corp_actions", src)
+        self.assertNotIn("_corp_action_adjusted_entry", src)
+        self.assertIn("load_adjusted_prices", src)
+
+    def test_default_is_off(self):
+        self.assertFalse(bc.ADJUSTED_PRICES_DEFAULT)
+
+    def test_cost_is_preserved_in_adjusted_units(self):
+        # 1:1 무상증자(계수 0.5) 이전 진입: 원주가 1000, 조정가 500 → 원주 100주 = 조정 단위 200주, 원가 동일
+        f, raw_px, adj_px, budget = 0.5, 1000.0, 500.0, 100_500.0
+        qty_raw = int(budget // raw_px)
+        qty_adj = qty_raw / f
+        self.assertEqual(qty_raw, 100)
+        self.assertAlmostEqual(qty_adj * adj_px, qty_raw * raw_px)
+        # 사건 뒤 조정가 600(=원주가 600, 사건 전 대비 +20%) → 경제적 손익 +20%
+        self.assertAlmostEqual(qty_adj * 600.0 / (qty_raw * raw_px) - 1, 0.2)
