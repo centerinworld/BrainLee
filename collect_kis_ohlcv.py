@@ -306,7 +306,9 @@ def main():
     parser.add_argument('--end',   default=None,  help='종료일 YYYYMMDD (기본: 오늘)')
     parser.add_argument('--limit', type=int, default=0, help='종목 수 제한 (0=전체)')
     parser.add_argument('--days', type=int, default=0, help='최근 N일 (start/end 대신)')
-    parser.add_argument('--provisional-days', type=int, default=None, help='임시값 정정 허용 기간(일, 기본 7) — 일회성 복구용')
+    parser.add_argument('--provisional-days', type=int, default=None, help='저장된 최근 N일(달력일) 행을 다른 값으로 덮어쓰는 것을 허용하는 기간(기본 7). '
+                        '잠정 값을 확정하는 옵션이 아니다 — 당일 봉은 장후 대체거래소 거래로 계속 바뀌므로 '
+                        '오늘 날짜 행은 언제 받든 price_provisional_rows에 잠정으로 표시되고 KRX 공식 종가 수신 시 교체된다(FINANCIAL §5 실패 27)')
     parser.add_argument('--missing-trade-amount', action='store_true',
                         help='종료일 가격은 있으나 거래대금이 없는 종목만 재수집')
     args = parser.parse_args()

@@ -81,6 +81,13 @@ class IntegrityTests(unittest.TestCase):
     def test_ingestion_matching_overlap_allowed(self):
         self.add('2026-01-02',100)
         self.assertTrue(gate_price_batch(self.c,'005930',[('2026-01-02',100,100,100,100,10),('2026-01-05',102,102,102,102,10)],'test',today='2026-01-06'))
+    def test_same_day_rows_marked_provisional(self):
+        # 2026-10-07(REVIEW_PLAN §17-2): 당일 봉은 장후 거래로 계속 바뀜 → 당일 행만 잠정 표시, 지난 날짜·지수는 표시 안 함.
+        self.add('2026-01-02',100)
+        self.assertTrue(gate_price_batch(self.c,'005930',[('2026-01-02',100,100,100,100,10),('2026-01-05',102,102,102,102,10)],'test',today='2026-01-05'))
+        self.assertTrue(gate_price_batch(self.c,'^KS11',[('2026-01-05',1,1,1,1,1)],'test',today='2026-01-05'))
+        rows=[tuple(r) for r in self.c.execute('SELECT stock_code,date,close FROM price_provisional_rows')]
+        self.assertEqual(rows,[('005930','2026-01-05',102.0)])
     def test_ingestion_corrects_recent_provisional_close(self):
         # 2026-10-02: 장중 임시 종가(14110)가 공식 일봉(14210)을 영구 격리시키던 연쇄 차단 회귀 방지.
         self.add('2026-01-02',100);self.add('2026-01-05',98.6)

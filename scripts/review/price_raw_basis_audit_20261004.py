@@ -45,7 +45,15 @@ def main():
     off = pd.DataFrame([tuple(r) for r in conn.execute(
         "SELECT stock_code, bas_dt, close_price, volume, open_price, high_price, low_price FROM stock_price_daily").fetchall()],
         columns=["code", "bas_dt", "off_close", "off_vol", "off_open", "off_high", "off_low"])
+    # 2026-10-07(REVIEW_PLAN §17-2): 당일 잠정 표시 행(KRX 공식값 수신 전)은 감사 대상에서 뺀다 — 교체는 check_price_vs_krx_daily.py
+    try:
+        prov = {(r[0], r[1]) for r in conn.execute("SELECT stock_code, date FROM price_provisional_rows").fetchall()}
+    except Exception:
+        prov = set()
     conn.close()
+    if prov:
+        pg = pg[[(c, d[:10]) not in prov for c, d in zip(pg.code, pg.date)]]
+    print("잠정 표시로 제외한 행:", len(prov))
     off["date"] = pd.to_datetime(off.bas_dt, format="%Y%m%d").dt.strftime("%Y-%m-%d")
     # (2026-10-07 A5 철회 — REVIEW_PLAN §16-1: 10-02는 KRX 값이 공식 종가이고 PG가 장후 통합 현재가로 틀렸다. 제외 규칙 삭제)
     off = off.drop(columns="bas_dt").drop_duplicates(["code", "date"])

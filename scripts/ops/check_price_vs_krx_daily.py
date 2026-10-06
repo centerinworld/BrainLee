@@ -6,7 +6,13 @@
 최근 14일을 다시 받아 덮지만 10-03~05 연휴로 남아 2,115종목 종가가 KRX 공식 종가와 달랐다(평소 0건).
 검사: 공식 주가(stock_price_daily — 공공데이터·KRX Open API, 같은 KRX 원천)가 있는 최근 10거래일마다 PG 종가 ≠ 공식 종가 건수.
 결과: data_anomaly_daily(check_name='pg_close_vs_krx') + 0건이 아니면 텔레그램 알림(notifier.send).
+
+잠정 행 교체(2026-10-07, REVIEW_PLAN §17-2): 당일에 쓴 행은 price_integrity.gate_price_batch 가 price_provisional_rows 에
+잠정으로 표시한다(KIS 당일 봉은 장후 대체거래소 거래로 계속 바뀜). KRX 공식값이 들어온 날짜의 표시 행은
+값이 다르면 KRX 값으로 교체(price_history_fix_backup·data_fix_log, 거래량 0 행은 종가만 — 거래정지일 시가·고가·저가 관례)하고
+표시를 지운다. 표시 없는 행의 불일치는 교체하지 않고 알림만(원인 확인 대상). --no-repair 로 보고만.
 """
+import argparse
 import json
 import sys
 from datetime import date, datetime
@@ -17,9 +23,60 @@ sys.path.insert(0, str(ROOT))
 from db_compat import connect_primary_db  # noqa: E402
 
 
+def repair_provisional(conn, days):
+    """KRX 공식값이 있는 날짜의 잠정 표시 행 → 공식값으로 교체 후 표시 해제. 반환: {날짜: (교체, 표시 해제)}"""
+    out = {}
+    run_id = f"provisional_to_krx_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    now = datetime.now().isoformat(timespec="seconds")
+    total = 0
+    for d in days:
+        iso = f"{d[:4]}-{d[4:6]}-{d[6:]}"
+        rows = [tuple(r) for r in conn.execute("""
+            SELECT p.stock_code, p.open, p.high, p.low, p.close, p.volume, s.open_price, s.high_price, s.low_price, s.close_price, s.volume
+            FROM price_provisional_rows m JOIN price_history p ON p.stock_code=m.stock_code AND p.date=m.date
+            JOIN stock_price_daily s ON s.stock_code=m.stock_code AND s.bas_dt=?
+            WHERE m.date=? AND s.close_price>0""", (d, iso)).fetchall()]
+        fixed = 0
+        for code, po, ph, pl, pc, pv, ko, kh, kl, kc, kv in rows:
+            if kv and kv > 0:
+                new = (ko or po, kh or ph, kl or pl, kc, kv)
+            else:
+                new = (po, ph, pl, kc, pv)
+            if all(abs((a or 0) - (b or 0)) <= 0.5 for a, b in zip((po, ph, pl, pc, pv), new)):
+                continue
+            conn.execute("SELECT set_config('app.price_basis_checked','1', true)")
+            conn.execute("""INSERT INTO price_history_fix_backup(run_id,stock_code,date,old_open,old_high,old_low,old_close,old_volume,
+                            new_open,new_high,new_low,new_close,new_volume,reason,fixed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         (run_id, code, iso, po, ph, pl, pc, pv, *new, "당일 잠정 값 → KRX 공식값(REVIEW_PLAN §17-2)", now))
+            conn.execute("UPDATE price_history SET open=?, high=?, low=?, close=?, volume=? WHERE stock_code=? AND date=?", (*new, code, iso))
+            fixed += 1
+        cleared = conn.execute("""DELETE FROM price_provisional_rows m USING stock_price_daily s
+                                  WHERE m.date=? AND s.stock_code=m.stock_code AND s.bas_dt=? AND s.close_price>0""", (iso, d)).rowcount
+        out[iso] = (fixed, cleared)
+        total += fixed
+    if total:
+        conn.execute("SELECT setval('data_fix_log_id_seq',(SELECT MAX(id) FROM data_fix_log))")
+        conn.execute("INSERT INTO data_fix_log(fixed_at,table_name,scope,row_count,fix_rule,old_value_summary,new_value_summary,source,run_id) VALUES (?,?,?,?,?,?,?,?,?)",
+                     (now, "price_history", "당일 잠정 표시 행", total, "KRX 공식값 수신 → 다른 칸 교체(거래량 0 행은 종가만)",
+                      json.dumps(out, ensure_ascii=False), "KRX 공식", "scripts/ops/check_price_vs_krx_daily.py", run_id))
+    conn.commit()
+    return out
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--no-repair", action="store_true", help="잠정 행 교체 없이 보고만")
+    a = ap.parse_args()
     conn = connect_primary_db(timeout=600)
     days = [r[0] for r in conn.execute("SELECT DISTINCT bas_dt FROM stock_price_daily ORDER BY bas_dt DESC LIMIT 10").fetchall()]
+    import price_integrity
+    price_integrity.ensure_schema(conn)
+    conn.commit()
+    if not a.no_repair:
+        rep = repair_provisional(conn, days)
+        print("잠정 행 → KRX 공식값 (교체, 표시 해제):", json.dumps(rep, ensure_ascii=False))
+    pending = [tuple(r) for r in conn.execute("SELECT date, COUNT(*) FROM price_provisional_rows GROUP BY 1 ORDER BY 1").fetchall()]
+    print("KRX 확정 대기 잠정 행:", pending)
     res = {}
     rows = []
     for d in days:

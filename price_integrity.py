@@ -135,6 +135,11 @@ CREATE TABLE IF NOT EXISTS price_ingestion_quarantine (
  batch_id TEXT PRIMARY KEY, stock_code TEXT NOT NULL, source TEXT NOT NULL,
  reason TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS price_provisional_rows (
+ stock_code TEXT NOT NULL, date TEXT NOT NULL, source TEXT NOT NULL,
+ close DOUBLE PRECISION, written_at TEXT NOT NULL,
+ PRIMARY KEY(stock_code,date)
+);
 """
 
 
@@ -415,9 +420,28 @@ def gate_price_batch(conn, code, rows, source, *, today=None, provisional_days=0
             ON CONFLICT(batch_id) DO NOTHING''',
             (batch,code,source,reason,payload,datetime.now().isoformat(timespec='seconds')))
         return False
+    if len(code) == 6 and code.isalnum():  # 주식·ETF(영문 포함 코드) — 지수·환율 제외
+        _mark_provisional(conn, code, [r for r in rows if str(r[0])[:10] == today], source)
     if hasattr(conn, '_connection'):
         conn.execute("SELECT set_config('app.price_basis_checked','1',true)")
     return True
+
+
+def _mark_provisional(conn, code, rows, source):
+    """당일 행 = 잠정 값으로 표시(2026-10-07, FINANCIAL §5 실패 8·27).
+
+    KIS 일봉의 당일 봉은 장 마감 뒤에도 장후 대체거래소(NXT) 거래로 계속 바뀐다(10-06 실측: 18시 저장값과
+    21:45 재조회 60종목 중 52종목 종가·거래량 다름). 그래서 당일에 쓴 행은 KRX 공식 종가 확정 전까지 잠정이다.
+    표시된 행은 scripts/ops/check_price_vs_krx_daily.py 가 KRX 공식값이 들어오면 공식값으로 교체하고 표시를 지우며,
+    가격 감사(price_raw_basis_audit)는 표시가 남은 행을 기준에서 뺀다.
+    """
+    if not rows:
+        return
+    now = datetime.now().isoformat(timespec='seconds')
+    for r in rows:
+        conn.execute('''INSERT INTO price_provisional_rows(stock_code,date,source,close,written_at) VALUES(?,?,?,?,?)
+            ON CONFLICT(stock_code,date) DO UPDATE SET source=excluded.source, close=excluded.close, written_at=excluded.written_at''',
+            (code, str(r[0])[:10], source, float(r[4]), now))
 
 
 def gate_gap_fill_row(conn, code, day, row, source):
