@@ -2,6 +2,7 @@
 v12.py -- run_backtest_v12()
 Split out of backtest.py on 2026-09-03. Pure relocation, no logic changed.
 """
+import backtest_common as _bc
 import json
 import uuid
 import math
@@ -25,6 +26,8 @@ from backtest_common import (
     _rebase_positions_for_corp_actions,
     _rsi,
     _save_result,
+    is_excluded_day,
+    load_adjusted_prices,
     init_backtest_db,
     logger,
     sqlite3,
@@ -39,7 +42,9 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                       take_profit_pct,
                       strict_exec: bool = True,
                       asof_mktcap: bool = True,
-                      selection_order: str = "score"):
+                      selection_order: str = "score",
+                      adjusted_prices: bool = False,
+                      adj_stats: dict = None):
     """
     V12는 섹터별 상대강도를 계산해야 해서 별도 함수로 구현.
     섹터 alpha = 해당 섹터 평균 3개월 수익률 - KOSPI 3개월 수익률
@@ -112,13 +117,34 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
         stock_data[sc] = {'dates': dates, 'prices': prices, 'volumes': vols, 'opens': opens,
                           'sim_start_i': sim_start_i}
 
+    # W3(Stock_Strategy, D12 ②): 조정 가격 로더 — 신호·손익은 조정 시계열, 체결 기록은 원주가. 켜면 아래 재기준(_rebase_*)은 쓰지 않는다(이중 보정 금지).
+    adj_stats = adj_stats if adj_stats is not None else {}
+    adj_stats.update({'enabled': bool(adjusted_prices), 'candidate_skips_excluded': 0, 'break_liquidations': 0,
+                      'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0, 'zero_volume_skipped_buys': 0,
+                      'misaligned_skipped': 0, 'stocks_with_breaks': 0})
+    if adjusted_prices and stock_data:
+        _ap = load_adjusted_prices(conn, list(stock_data.keys()), warmup_start, end_date)
+        for sc, sd in list(stock_data.items()):
+            e = _ap.get(sc)
+            if not e or e['dates'] != sd['dates']:
+                adj_stats['misaligned_skipped'] += 1
+                sd.update({'raw_prices': sd['prices'], 'adj_factor': [1.0] * len(sd['dates']), 'breaks': [],
+                           'excluded_ranges': [], 'break_disclosed': {}})
+                continue
+            sd['raw_prices'] = sd['prices']
+            sd['prices'] = e['close']; sd['volumes'] = e['volume']
+            sd['opens'] = e['open']
+            sd['adj_factor'] = e['adj_factor']; sd['breaks'] = e['breaks']
+            sd['excluded_ranges'] = e['excluded_ranges']; sd['break_disclosed'] = e.get('break_disclosed', {})
+            adj_stats['stocks_with_breaks'] += 1 if e['breaks'] else 0
+
     # 날짜→인덱스 맵
     date_idx = {sc: {dt: idx for idx, dt in enumerate(d['dates'])}
                 for sc, d in stock_data.items()}
     # 2026-10-06(docs/Stock_Strategy.md S28): 원주가(price_history)는 무상증자·액면분할일에 가격이 끊긴다.
     # 확정 기업행위(가격 단절이 실제 관측된 날의 확정 계수만)로 보유 포지션을 재기준해 가짜 손절·가짜 손실을 막는다
     # (golden_cross·sector 등 8개 전략과 같은 방식). 계수 미확정(예: 인적분할 077500)은 D12 결정 대상이라 그대로.
-    _ca_factors = _load_jump_aligned_corp_factors(conn, list(stock_data.keys()))
+    _ca_factors = {} if adjusted_prices else _load_jump_aligned_corp_factors(conn, list(stock_data.keys()))
     _ca_prev_day = None
 
     positions = {}
@@ -193,8 +219,31 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
     v12_pending_sells: list = []
     v12_pending_buys: list = []
 
+    def _v12_close_at(sc, pos, sd, i, price, reason, day_):
+        """보유 종목을 조정 단위 `price`로 즉시 청산(단절 처리용)."""
+        nonlocal cash, v12_pending_sells
+        _amt, _pct = _net_profit(pos['entry_price'], price, pos['qty'], pos.get('mkt_cap_억', 500))
+        cash += pos['qty'] * pos['entry_price'] + _amt
+        _f = sd['adj_factor'][i]
+        trades.append({'stock_code': sc, 'entry_date': pos['entry_date'], 'exit_date': day_,
+                       'entry_price': pos['entry_price'], 'exit_price': price, 'qty': pos['qty'],
+                       'profit_pct': _pct, 'profit_amt': _amt, 'exit_reason': reason,
+                       'exit_price_raw': round(price / _f, 4) if _f else price,
+                       'entry_price_raw': pos.get('entry_price_raw'), 'qty_raw': pos.get('qty_raw')})
+        del positions[sc]
+        v12_pending_sells = [(c_, r_) for c_, r_ in v12_pending_sells if c_ != sc]
+
     for day in sim_dates:
-        _rebase_positions_for_corp_actions(_ca_factors, positions, _ca_prev_day, day, ('entry_price', 'peak_price'), 'qty')
+        if adjusted_prices:
+            # 단절 당일: 공시 근거 없이 보유 중이던 종목은 직전 거래일 종가로 청산 처리(가짜 손익 방지)
+            for sc, pos in list(positions.items()):
+                sd = stock_data[sc]
+                i = date_idx.get(sc, {}).get(day)
+                if i is not None and i > 0 and day in sd.get('breaks', ()):
+                    _v12_close_at(sc, pos, sd, i, sd['prices'][i - 1], '단절 당일 청산(공시 근거 없음)', day)
+                    adj_stats['break_day_liquidations'] += 1
+        else:
+            _rebase_positions_for_corp_actions(_ca_factors, positions, _ca_prev_day, day, ('entry_price', 'peak_price'), 'qty')
         _ca_prev_day = day
         # ── strict_exec: 전일 신호 → 오늘 시가 체결 (Codex 계약) ──
         if strict_exec:
@@ -205,11 +254,14 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                 im = date_idx.get(sc, {})
                 if day not in im:
                     _still.append((sc, reason)); continue
+                if adjusted_prices and (stock_data[sc]['volumes'][im[day]] or 0) <= 0:
+                    adj_stats['zero_volume_deferred_sells'] += 1   # 거래 불가능한 날 — 다음 거래일로 이월
+                    _still.append((sc, reason)); continue
                 px = stock_data[sc]['opens'][im[day]]
                 pos = positions.pop(sc)
                 _v12_pnl_amt, _v12_pnl_pct = _net_profit(pos['entry_price'], px, pos['qty'], pos.get('mkt_cap_억', 500))
                 cash += pos['qty'] * pos['entry_price'] + _v12_pnl_amt
-                trades.append({
+                _tr = {
                     'stock_code':  sc,
                     'entry_date':  pos['entry_date'],
                     'exit_date':   day,
@@ -219,7 +271,12 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                     'profit_pct':  _v12_pnl_pct,
                     'profit_amt':  _v12_pnl_amt,
                     'exit_reason': reason,
-                })
+                }
+                if adjusted_prices:
+                    _ff = stock_data[sc]['adj_factor'][im[day]]
+                    _tr.update({'exit_price_raw': round(px / _ff, 4) if _ff else px,
+                                'entry_price_raw': pos.get('entry_price_raw'), 'qty_raw': pos.get('qty_raw')})
+                trades.append(_tr)
             v12_pending_sells = _still
             for sc in v12_pending_buys:
                 if sc in positions or len(positions) >= max_positions:
@@ -231,6 +288,23 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                 if px <= 0:
                     continue
                 budget = min(per_stock, cash * 0.99)
+                if adjusted_prices:
+                    if (stock_data[sc]['volumes'][im[day]] or 0) <= 0:
+                        adj_stats['zero_volume_skipped_buys'] += 1
+                        continue
+                    _ff = stock_data[sc]['adj_factor'][im[day]] or 1.0
+                    _rpx = px / _ff
+                    qty_raw = int(budget / _rpx)
+                    if qty_raw < 1 or qty_raw * _rpx > cash:
+                        continue
+                    qty = qty_raw / _ff            # 원주가 기준 정수 주식 → 조정 단위
+                    cash -= qty_raw * _rpx
+                    positions[sc] = {
+                        'entry_date': day, 'entry_price': px, 'qty': qty,
+                        'peak_price': px, 'hold_days': 0,
+                        'entry_price_raw': round(_rpx, 4), 'qty_raw': qty_raw,
+                    }
+                    continue
                 qty = int(budget / px)
                 if qty < 1 or qty * px > cash:
                     continue
@@ -252,6 +326,12 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                 continue
             i  = idx_map[day]
             sd = stock_data[sc]
+            if adjusted_prices and sd.get('breaks') and i + 1 < len(sd['dates']):
+                _nb = sd['dates'][i + 1]
+                if _nb in sd['breaks'] and (sd.get('break_disclosed') or {}).get(_nb) and sd['break_disclosed'][_nb] <= day:
+                    _v12_close_at(sc, pos, sd, i, sd['prices'][i], '단절 전 청산(D12, 공시 후)', day)
+                    adj_stats['break_liquidations'] += 1
+                    continue
             sec      = sector_map.get(sc, '기타')
             s_info   = _hot_sec.get(sec, {})
             reason = _check_sell_v12(i, sd['prices'], pos, stop_loss, stop_loss_pct, take_profit_pct,
@@ -323,11 +403,14 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
 
                 p = sd['prices']
                 curr = p[i]
+                if adjusted_prices and is_excluded_day(sd, day):
+                    adj_stats['candidate_skips_excluded'] += 1
+                    continue
 
-                # 시총 2000억+ (as-of): 신호일 기준 주가×상장주식수
+                # 시총 2000억+ (as-of): 신호일 기준 주가×상장주식수 (상장주식 수는 그 시점 단위라 원주가를 곱한다)
                 if asof_mktcap:
                     _sh = _v12_shares_asof(sc, day)
-                    if _sh <= 0 or _sh * curr / 1e8 < 2000:
+                    if _sh <= 0 or _sh * sd.get('raw_prices', p)[i] / 1e8 < 2000:
                         continue
 
                 # 개별 종목 RS: 섹터 평균 아웃퍼폼 (KOSPI보다 엄격)
@@ -482,14 +565,18 @@ def run_backtest_v12(start_date: str, end_date: str,
                      asof_mktcap: bool = False,  # 2026-07-17 as-of 재검증: current 대비 악화로 기각 → False 유지 (signal_experiment_ledger: v12/sector_precondition)
                      take_profit_pct: float = 0.25,  # 2026-08-09 파라미터화(텐버거 population 캡처 실험용), 기본값 기존과 동일
                      selection_order: str = "score",  # 2026-10-06 D13: "score"(개별 RS 순, 사용자 결정) | "code"(비교용)
+                     adjusted_prices: bool = None,    # W3: None이면 backtest_common.ADJUSTED_PRICES_DEFAULT
                      run_name: str = None, run_id: str = None) -> str:
     """V12는 섹터 계산이 필요하므로 별도 흐름."""
     init_backtest_db()
+    adjusted_prices = _bc.ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
+    adj_stats: dict = {}
     run_name = run_name or f"V12 섹터대세 {start_date[:7]}~{end_date[:7]}"
     _v12_params = {"per_stock": per_stock, "max_positions": max_positions,
                    "stop_loss": -0.07, "take_profit_pct": take_profit_pct,
                    "strict_exec": True, "asof_mktcap": asof_mktcap,
                    "selection_order": selection_order,
+                   "adjusted_prices": True if adjusted_prices else None,
                    "start": start_date, "end": end_date}
     if run_id is None:
         run_id = str(uuid.uuid4())[:8]
@@ -524,6 +611,7 @@ def run_backtest_v12(start_date: str, end_date: str,
             stop_loss=-0.07, stop_loss_pct=-0.07, take_profit_pct=take_profit_pct,
             asof_mktcap=asof_mktcap,
             selection_order=selection_order,
+            adjusted_prices=adjusted_prices, adj_stats=adj_stats,
         )
 
         # 종목명 매핑
@@ -563,6 +651,7 @@ def run_backtest_v12(start_date: str, end_date: str,
             f"총 거래: {metrics['total_trades']}건  승률: {metrics['win_rate']}%  "
             f"CAGR: {metrics['cagr']}%  MDD: {metrics['max_drawdown_pct']}%  샤프: {metrics['sharpe']}\n"
             f"매도사유: " + " / ".join(f"{k} {v}건" for k, v in sorted(exit_reasons.items()))
+            + (f"\n조정가격(W3): {json.dumps(adj_stats, ensure_ascii=False)}" if adjusted_prices else "")
         )
         result = {
             **metrics,

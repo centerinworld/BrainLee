@@ -1,4 +1,5 @@
-"""W2 강제 테스트(REVIEW_PLAN §9-2 #1): 실제 DB 위에서 공용 일반 엔진을 돌려 단절·제외 로직이 작동하는지 확인한다.
+"""(2026-10-07 §10-2) 사전 가격 필터를 끄지 않은 실제 경로에서 시험한다 — 조정 모드는 종목을 통째로 빼지 않는다.
+W2 강제 테스트(REVIEW_PLAN §9-2 #1): 실제 DB 위에서 공용 일반 엔진을 돌려 단절·제외 로직이 작동하는지 확인한다.
 신호 함수는 코드 인자가 없으므로, 대상 종목의 조정 종가가 정확히 일치하는 날만 매수 신호를 낸다(같은 로더가 만든 값이라 일치).
 운영 DB에는 아무것도 쓰지 않는다(_save_result·_record_run_spec 패치). PostgreSQL에 접속할 수 없으면 건너뛴다."""
 import sys
@@ -32,8 +33,7 @@ def _run(code, signal_dates, start, end):
 
     captured = {}
     with mock.patch.object(bc, "_save_result", lambda run_id, result: captured.update(result)), \
-         mock.patch.object(bc, "_record_run_spec", lambda *a, **k: None), \
-         mock.patch.object(bc, "assert_research_prices", lambda *a, **k: set()):   # 엔진의 기존 가격 사전 필터(미확인 사건 종목 통째 제외)를 끈다 — 로더 로직만 시험
+         mock.patch.object(bc, "_record_run_spec", lambda *a, **k: None):
         bc._run_generic_backtest(
             "T", sig, start, end, per_stock=10_000_000, max_positions=10, run_name="engine-test", run_id="engine_test_x",
             stop_loss=-0.99, take_profit=50.0, trail_stop=-0.99, mktcap_min=0, use_market_filter=False,

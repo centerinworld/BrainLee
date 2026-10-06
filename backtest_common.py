@@ -58,7 +58,7 @@ backtest.py — AI 적극검토 전략 백테스트 엔진 v5
 
 import sqlite3 as _sqlite3
 import json
-from price_integrity import assert_research_prices
+from price_integrity import assert_research_prices, research_price_issues
 import uuid
 import math
 import re
@@ -1060,7 +1060,7 @@ SHARE_CHANGE_TOLERANCE = 0.05   # 상장주식 수가 이만큼 넘게 바뀌면
 
 
 def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = (), volumes: list = None,
-                  shares_at=None) -> list:
+                  shares_at=None, stats: dict = None) -> list:
     """조정 후 직전 거래일 대비 변동이 그날 가격제한폭(+반올림 여유 0.5%)을 넘는 날 — 시장 움직임으로 불가능한 단절.
 
     (가) 기업행위성 = 단절로 본다: 정지 없이 한도 초과 / 정지(직전 거래량 0 또는 7일 이상 공백) 뒤라도 상장주식 수가 바뀜 /
@@ -1096,6 +1096,8 @@ def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = (), volu
                 out.append(dates[k])
             elif changed is None and shares_at is not None:
                 out.append(dates[k])        # 주식 수를 알 수 없으면 가짜 손익을 피하려고 단절 처리
+                if stats is not None:       # 실제 폭락이 숨겨질 수 있는 건 — 데이터(security_share_history) 보강 대상
+                    stats["share_unknown_breaks"] = stats.get("share_unknown_breaks", 0) + 1
             continue                        # 정지 뒤 주식 수 불변 → 실제 손익
         out.append(dates[k])
     return out
@@ -1183,6 +1185,7 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
                 e["volume"][k] /= f
         # 계수로 설명되지 않는 제한폭 초과 단절(분류 무관) — 조정 후 시계열에서 직접 찾는다
         _iv = share_iv.get(code, [])
+        _lb_stats: dict = {}
 
         def _shares_at(day, _iv=_iv):
             for f_, t_, sh_ in reversed(_iv):
@@ -1190,7 +1193,8 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
                     return sh_ or None
             return None
         found = set(_limit_breaks(ds, e["close"], tuple(sorted(status.get(code, ()))),
-                                  volumes=e["volume"], shares_at=_shares_at if _iv else None))
+                                  volumes=e["volume"], shares_at=_shares_at if _iv else None, stats=_lb_stats))
+        e["share_unknown_breaks"] = _lb_stats.get("share_unknown_breaks", 0)
         e["unexplained_limit_breaks"] = sorted(found)
         e["break_disclosed"] = {b_: disclosed.get((code, b_)) for b_ in sorted(set(breaks.get(code, ())) | found)}
         e["breaks"] = sorted(set(breaks.get(code, ())) | found)
@@ -3327,9 +3331,21 @@ def _run_generic_backtest(version: str, signal_fn,
         # 2026-09-20 정책 변경: 문제 있는 종목만 제외하고 계속한다(price_integrity.
         # assert_research_prices 문서화 참고).
         universe_candidate_count = len(stock_codes)
-        excluded = assert_research_prices(conn, stock_codes, warmup_start, end_date, exclude=True)
-        if excluded:
-            stock_codes = [sc for sc in stock_codes if sc not in excluded]
+        price_issues: list = []
+        issue_dates: Dict[str, list] = {}
+        if _use_adjusted:
+            # 종목을 통째로 빼면 "2022년에 무상증자할 종목을 2021년에 미리 알고 제외"하는 미래 정보 선택 편향이 된다
+            # (REVIEW_PLAN §10-1, v4가 9/23에 고친 것과 같은 문제). 종목은 유지하고 문제 관측치가 252거래일 지표 창에서
+            # 빠질 때까지만 진입을 막는다. 확정 계수가 있는 기업행위는 조정 로더가 처리한다.
+            excluded = set()
+            price_issues = research_price_issues(conn, stock_codes, warmup_start, end_date,
+                                                 allow_confirmed_corporate_actions=True)
+            for _ic, _id, _icls in price_issues:
+                issue_dates.setdefault(str(_ic), []).append(str(_id)[:10])
+        else:
+            excluded = assert_research_prices(conn, stock_codes, warmup_start, end_date, exclude=True)
+            if excluded:
+                stock_codes = [sc for sc in stock_codes if sc not in excluded]
         # 2026-09-22: conn이 이 함수 뒷부분(강제청산 루프보다 먼저)에서 close()되므로
         # 미리 로드해 둔다 - _load_delisting_outcomes() 문서 참고.
         delisting_recovery = _load_delisting_outcomes(conn, stock_codes)
@@ -3400,7 +3416,17 @@ def _run_generic_backtest(version: str, signal_fn,
         # 보유 중 단절이 오면 그 전 거래일 종가로 청산한다.
         adj_stats = {'enabled': bool(_use_adjusted), 'candidate_skips_excluded': 0, 'break_liquidations': 0,
                      'stocks_with_breaks': 0, 'stocks_adjusted': 0, 'misaligned_skipped': 0,
-                     'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0, 'zero_volume_skipped_buys': 0}
+                     'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0, 'zero_volume_skipped_buys': 0,
+                     'share_unknown_breaks': 0, 'candidate_skips_price_issue': 0, 'price_issue_events': len(price_issues),
+                     'stocks_with_price_issue': len(issue_dates)}
+        if _use_adjusted and issue_dates:
+            for sc, sd in stock_data.items():
+                if sc in issue_dates:
+                    _blk = set()
+                    for _day in issue_dates[sc]:
+                        _k = bisect.bisect_left(sd['dates'], _day)
+                        _blk.update(sd['dates'][_k:_k + adjusted_window])
+                    sd['entry_blocked'] = _blk
         if _use_adjusted and stock_data:
             _ap = load_adjusted_prices(conn, list(stock_data.keys()), warmup_start, end_date, window=adjusted_window)
             for sc, sd in stock_data.items():
@@ -3416,6 +3442,7 @@ def _run_generic_backtest(version: str, signal_fn,
                 sd['opens'] = [0.0 if ro == 0 else eo for ro, eo in zip(sd['raw_opens'], e['open'])]
                 sd['adj_factor'] = f
                 sd['breaks'] = e['breaks']; sd['excluded_ranges'] = e['excluded_ranges']; sd['break_disclosed'] = e.get('break_disclosed', {})
+                adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
                 # 주당 재무(EPS·BPS)는 그 시점 주식 수 기준이라 조정 가격과 같은 단위로 맞춘다 —
                 # 공시일(avail) 시점의 조정 계수를 곱한다(PER·PBR = 조정가 ÷ 조정 주당값 = 경제적 값). 안 맞추면 가치 신호가 깨진다.
                 if sd.get('fins') and any(x != 1.0 for x in f):
@@ -3784,6 +3811,9 @@ def _run_generic_backtest(version: str, signal_fn,
                         if _use_adjusted and is_excluded_day(sd, day):
                             adj_stats['candidate_skips_excluded'] += 1
                             continue
+                        if _use_adjusted and day in sd.get('entry_blocked', ()):
+                            adj_stats['candidate_skips_price_issue'] += 1
+                            continue
                         # 바닥 컨플루언스 게이트 (2026-07-18 공통 모듈)
                         if chart_confluence and _chart_bottom_confluence(
                             sd['prices'], sd['opens'], sd['highs'], sd['lows'], sd.get('chart'), i) < _CHART_BOTTOM_MIN:
@@ -3819,6 +3849,9 @@ def _run_generic_backtest(version: str, signal_fn,
                             continue
                         if _use_adjusted and is_excluded_day(sd, day):
                             adj_stats['candidate_skips_excluded'] += 1
+                            continue
+                        if _use_adjusted and day in sd.get('entry_blocked', ()):
+                            adj_stats['candidate_skips_price_issue'] += 1
                             continue
                         # 바닥 컨플루언스 게이트 (2026-07-18 공통 모듈)
                         if chart_confluence and _chart_bottom_confluence(
@@ -3963,9 +3996,16 @@ def _run_generic_backtest(version: str, signal_fn,
                     "share_resolver": "security_share_history",
                     "note": "근사 상장구간·주식수 또는 주식수 미확정 종목이 하나라도 있으면 verified 승격 금지",
                 })
-                _register_universe_integrity_artifact(
-                    run_id, universe_candidate_count, excluded, warmup_start, end_date
-                )
+                if _use_adjusted:
+                    _register_universe_integrity_artifact(
+                        run_id, universe_candidate_count, set(issue_dates), warmup_start, end_date,
+                        temporal_masking=True, issue_event_count=len(price_issues),
+                        blocked_stock_days=sum(len(sd_.get('entry_blocked', ())) for sd_ in stock_data.values()),
+                    )
+                else:
+                    _register_universe_integrity_artifact(
+                        run_id, universe_candidate_count, excluded, warmup_start, end_date
+                    )
                 _register_financial_provenance_artifact(
                     run_id, financial_provenance, len(trades), strategy=_strat_key
                 )
