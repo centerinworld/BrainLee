@@ -3513,6 +3513,41 @@ def collect_local_market_structure_indicators(conn: sqlite3.Connection) -> dict[
                     "unit": "%",
                 })
 
+    # 2026-10-06: foreign_holding_daily(공공데이터포털)는 원천 API 폐지로 2026-09-23 이후 적재가 멈췄다 → 그 테이블에 없는 달은
+    # 같은 정의(월말 종목별 외국인 보유주식수·지분율)의 kiwoom_foreign_flow(ka10008)로 채운다(docs/OPEN_ITEMS.md C9).
+    if has_table("kiwoom_foreign_flow"):
+        have_ym = set()
+        if has_table("foreign_holding_daily"):
+            have_ym = {r[0] for r in conn.execute("SELECT DISTINCT substr(bas_dt,1,6) FROM foreign_holding_daily WHERE bas_dt IS NOT NULL").fetchall()}
+        rows = conn.execute(
+            """
+            WITH month_last AS (
+                SELECT substr(dt,1,6) AS ym, stock_code, MAX(dt) AS dt
+                  FROM kiwoom_foreign_flow WHERE dt IS NOT NULL GROUP BY substr(dt,1,6), stock_code
+            )
+            SELECT ml.ym, COUNT(*) AS cover_count, SUM(COALESCE(k.poss_stock_cnt, 0)) AS foreign_hold_qty_sum,
+                   AVG(k.weight) AS avg_foreign_hold_pct
+              FROM month_last ml JOIN kiwoom_foreign_flow k ON k.stock_code = ml.stock_code AND k.dt = ml.dt
+             GROUP BY ml.ym ORDER BY ml.ym
+            """
+        ).fetchall()
+        for row in rows:
+            if row["ym"] in have_ym:
+                continue
+            common = {
+                "period": _dt_to_period(row["ym"] + "01", monthly=True),
+                "source_name": "kiwoom_foreign_flow",
+                "source_detail": "월말 종목별 외국인 보유 현황 스냅샷 합산(키움 ka10008 — 공공데이터 원천 폐지 후 대체)",
+                "quality": "monthly_snapshot_derived_from_kiwoom_daily",
+            }
+            result["public:20:106"].extend([
+                {**common, "series_name": "foreign_hold_qty_sum", "value": float(row["foreign_hold_qty_sum"] or 0), "unit": "주"},
+                {**common, "series_name": "foreign_holding_cover_count", "value": int(row["cover_count"] or 0), "unit": "종목"},
+            ])
+            if row["avg_foreign_hold_pct"] is not None:
+                result["public:20:106"].append({**common, "series_name": "avg_foreign_hold_pct",
+                                                "value": round(float(row["avg_foreign_hold_pct"]), 4), "unit": "%"})
+
     if has_table("investor_trading_daily"):
         rows = conn.execute(
             """

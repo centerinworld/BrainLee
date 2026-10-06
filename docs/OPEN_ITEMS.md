@@ -23,16 +23,16 @@ FINANCIAL §9-2-7 A 표: 사업보고서 원문 2023~25(10-06 밤 7,529건 수�
 ## C. 데이터 결함·남은 작업 (판단 불필요, 순서대로)
 | # | 항목 | 원문 | 현재(10-06) |
 |---|---|---|---|
-| C1 | 가격 점프 검토 대기: `externally_confirmed_price_jump_review` 1,523 · `corporate_action_pending_confirmation` 526 · `raw_source_confirmed_jump_review` 288 · `inactive_or_noncommon_review` 524 | hermes 09-25 C절(당시 '미해결 146') | 분류명이 바뀌어 수가 다름 — 재분류 필요 |
+| C1 | (10-06 확인: 전부 `return_usable=0`으로 수익률에서 이미 제외, 가격도 대부분 공식값과 일치 — 데이터 오류 아님. 남은 건 기업행위 판정으로 수익률 재사용 여부뿐, 낮은 우선순위) 가격 점프 검토 대기: `externally_confirmed_price_jump_review` 1,523 · `corporate_action_pending_confirmation` 526 · `raw_source_confirmed_jump_review` 288 · `inactive_or_noncommon_review` 524 | hermes 09-25 C절(당시 '미해결 146') | 분류명이 바뀌어 수가 다름 — 재분류 필요 |
 | C1-2 | ETF 원주가 반영 보류 14,615행(조정 비율 0.75~1.0 밖 — 레버리지·인버스·분할 ETF로 보임, `apply_price_kis_tiebreak --etf-adjusted`가 매일 보류) | FINANCIAL §9-2-5 | 재감사 10-06: KIS만 기준 95.96% |
-| C2 | 시가·고가·저가 공식값 불일치 3~4천 행, 보통주 소수점 가격 6행 원인 분류 | FINANCIAL §9-2-5 | |
-| C3 | 필드 검증 '미분류' 원인 조사: 손익·재무상태 638·현금흐름 492·CapEx 449칸, 감가상각 1,555칸(XBRL 조정값 미수집) | FINANCIAL §8-0 | 필드 검증 `field_verif_20261006_071310` |
+| C2 | (10-06 처리: 2020~21년 3,238행은 거래정지일 — 공식 OHL이 조정 기준가라 PG 관례가 맞음, 10-02 910행은 A5와 같은 문제, 공식=marcap인데 PG만 다른 7행 정정 `ohlc_fix_20261006_133947`. 소수점 6행은 ETF 배당 조정 행이라 매일 ETF 반영 작업이 처리 예정) 시가·고가·저가 공식값 불일치 3~4천 행, 보통주 소수점 가격 6행 원인 분류 | FINANCIAL §9-2-5 | |
+| C3 | (10-06 분류 `classify_unclassified_fields_20261006.py`: 1,579칸 = DART 원문 없음 1,207(대부분 연결 회사의 별도 칸 — 원문을 한 구분만 받음, **별도 원문 추가 수집은 DART 키 필요**)·정의 차이 168·셋 다 다름 141·재작성 49·DB 오류 14(6칸 정정 `unclassified_db_error_20261006_134634`). 외부 확인 재작성값 140칸 반영 `restated_annual_20261006_134655`, 매일 자동) 필드 검증 '미분류' 원인 조사: 손익·재무상태 638·현금흐름 492·CapEx 449칸, 감가상각 1,555칸(XBRL 조정값 미수집) | FINANCIAL §8-0 | 필드 검증 `field_verif_20261006_071310` |
 | C4 | 외화 종목 환산 보류 900120(CNY)·950210(USD)·900290(통화 '?')·950170(JPY) — 이상값 감시 '새 항목'으로 매일 잡힘 | FINANCIAL §2-6 | `convert_foreign_currency_20261003.py` HOLD |
 | C5 | 매출채권 FnGuide 정의 일치 74%, 장기차입금 85% — 정의 확인 | FINANCIAL §8-0-0 | |
-| C6 | 제품별 매출 2023+ 기존 행 재파싱(옛 표 파서가 TE 셀 누락) | FINANCIAL §9-2-7 B4 | |
+| C6 | ✅ 완료(10-06): 2021~2025 재파싱, 품목 합계 = 연간 매출(2%)인 것만 — 추가·교체 3,785종목·연도 `product_mix_reparse_20261006_*` | FINANCIAL §9-2-7 B4 | |
 | C7 | 비12월 결산 보류 2행(001720·950210) | FINANCIAL §2-7 | |
-| C8 | 조합 백테스트(계좌현황 매도 규칙) 다기간 검증 — 1기간만 실시 | SIGNAL_RULES §5 | |
-| C9 | `foreign_holding_daily` 2026-09-23 이후 정지(최신 지분율은 `kiwoom_foreign_flow` 10-02까지 정상) | CLAUDE.md §9 | 원문의 '06-08 정지'는 낡음 |
+| C8 | ✅ 6기간 완료(10-06): 일관된 우위 없음(평균 −0.3% vs 원 전략 −7.9%, 나은 기간 3/6) — SIGNAL_RULES §5 | SIGNAL_RULES §5 | |
+| C9 | ✅ 설계상 폐지(공공데이터 원천 API 폐지, 2026-08-24 수집 제거) — 유일한 사용처인 퀀트지표 '월말 외국인 보유'를 없는 달은 `kiwoom_foreign_flow`로 채우게 수정(10-06). 원래 기록: `foreign_holding_daily` 2026-09-23 이후 정지(최신 지분율은 `kiwoom_foreign_flow` 10-02까지 정상) | CLAUDE.md §9 | 원문의 '06-08 정지'는 낡음 |
 | C10 | 대만 외국인 수급(접속 차단), 중국 북향자금(미구현), PMI·중국 수출(미연결) | CLAUDE.md §9 | 대체 소스 필요 |
 | C11 | Lab 전략: S16 4분기 미래 참조 수정 후 재실행, S18 재작성값 PIT 로더(선행 조건 미충족), S22 매도 소유권 | Stock_Strategy §5 | 다른 세션 진행 중 |
 
