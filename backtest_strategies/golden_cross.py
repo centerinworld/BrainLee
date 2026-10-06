@@ -12,7 +12,14 @@ from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
+import backtest_common as _bc
+from price_integrity import research_price_issues
 from backtest_common import (
+    QUALITY_DAY_CLASSES,
+    is_excluded_day,
+    last_tradable_day_before_break,
+    last_tradable_index_before,
+    load_adjusted_prices,
     _load_jump_aligned_corp_factors,
     _rebase_positions_for_corp_actions,
     DB_PATH,
@@ -77,6 +84,7 @@ def run_backtest_golden_cross(
                                             # as-of 6기간 백테스트 baseline -0.6% → oh0.7 +20.5% / oh1.0 +17.8%(3/6양수, 채택) / oh1.5 +14.9% (전 범위 강건)
     chart_confluence: bool = False,        # 2026-07-18 공통모듈: 일봉+주봉+캔들 컨플루언스(2/3) 진입게이트+고점청산
     market_ma_gate: int = None,            # KOSPI가 N일선 아래면 신규 진입만 중단(보유/청산 불변)
+    adjusted_prices: bool = None,          # W3: None이면 backtest_common.ADJUSTED_PRICES_DEFAULT
 ) -> str:
     """
     골든크로스 모멘텀 전략 (V-GC).
@@ -93,6 +101,11 @@ def run_backtest_golden_cross(
     - 2000억 이상으로 제한: 소형주 골든크로스는 약세/회복장에서 성능 급락(avg5 -11%→+28%로 개선).
     """
     init_backtest_db()
+    adjusted_prices = _bc.ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
+    adj_stats = {'enabled': adjusted_prices, 'candidate_skips_excluded': 0, 'candidate_skips_quality_day': 0,
+                 'break_liquidations': 0, 'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0,
+                 'zero_volume_skipped_buys': 0, 'share_unknown_breaks': 0, 'misaligned_skipped': 0,
+                 'stocks_with_breaks': 0, 'artifact_filter_dropped_stocks': 0}
     run_name = run_name or f"V-GC골든크로스Trail25 {start_date[:7]}~{end_date[:7]}"
     # 방법론 메타 기록 (Codex P0-2)
     _gc_params = {
@@ -102,6 +115,7 @@ def run_backtest_golden_cross(
         "avoid_overheat": avoid_overheat, "asof_mktcap": asof_mktcap,
         "chart_confluence": chart_confluence, "market_ma_gate": market_ma_gate,
         "per_stock": per_stock, "max_positions": max_positions,
+        "adjusted_prices": True if adjusted_prices else None,
         "start": start_date, "end": end_date,
     }
     if run_id is None:
@@ -206,8 +220,9 @@ def run_backtest_golden_cross(
             """, (code, warmup_start, end_date)).fetchall()
             if len(rows) < 145: continue
             c_list = [float(r[1]) for r in rows]
-            # 분할/합병 미조정 필터: 하루 ±50% 이상 변동 제거
-            has_artifact = any(
+            # 분할/합병 미조정 필터: 하루 ±50% 이상 변동 제거 — 종목을 기간 전체에서 통째로 빼므로 미래 정보 선택 편향이다.
+            # 조정 모드에서는 쓰지 않고 로더(조정·단절 처리)에 맡긴다.
+            has_artifact = (not adjusted_prices) and any(
                 c_list[i-1] > 0 and (c_list[i]/c_list[i-1] < 0.5 or c_list[i]/c_list[i-1] > 2.0)
                 for i in range(1, len(c_list))
             )
@@ -221,8 +236,38 @@ def run_backtest_golden_cross(
                 'lo': [float(r[5]) for r in rows],
                 'mkt_cap_억': round(mktcap) if mktcap else 500,
             }
-            if chart_confluence:
+            if chart_confluence and not adjusted_prices:
                 sd[code]['chart'] = _chart_prep(sd[code]['d'], sd[code]['lo'], c_list)
+
+        if adjusted_prices and sd:
+            # 조정 가격 로더: 신호·손익은 조정 시계열, 체결·가격 수준 필터·시총은 원주가(raw_c)
+            _ap = load_adjusted_prices(conn, list(sd.keys()), warmup_start, end_date)
+            _qissues = research_price_issues(conn, list(sd.keys()), warmup_start, end_date, allow_confirmed_corporate_actions=True)
+            _qdays: Dict[str, set] = {}
+            for _qc, _qd, _qcls in _qissues:
+                if _qcls in QUALITY_DAY_CLASSES:
+                    _qdays.setdefault(str(_qc), set()).add(str(_qd)[:10])
+            for code, s_ in list(sd.items()):
+                e = _ap.get(code)
+                if not e:
+                    adj_stats['misaligned_skipped'] += 1; del sd[code]; continue
+                keep = [k for k, rc in enumerate(e['raw_close']) if rc >= 500]   # 원 로직의 close>=500 행 필터(원주가 기준)
+                if [e['dates'][k] for k in keep] != s_['d']:
+                    adj_stats['misaligned_skipped'] += 1
+                    s_['raw_c'] = s_['c']; s_['f'] = [1.0] * len(s_['d']); s_['breaks'] = []; s_['excl'] = []; s_['disc'] = {}; s_['qdays'] = set()
+                    continue
+                s_['raw_c'] = [e['raw_close'][k] for k in keep]
+                s_['c'] = [e['close'][k] for k in keep]; s_['o'] = [e['open'][k] for k in keep]
+                s_['h'] = [e['high'][k] for k in keep]; s_['lo'] = [e['low'][k] for k in keep]
+                s_['v'] = [e['volume'][k] for k in keep]; s_['f'] = [e['adj_factor'][k] for k in keep]
+                s_['dates'] = s_['d']; s_['volumes'] = s_['v']
+                s_['breaks'] = e['breaks']; s_['excl'] = e['excluded_ranges']; s_['disc'] = e.get('break_disclosed', {})
+                s_['excluded_ranges'] = e['excluded_ranges']
+                s_['qdays'] = _qdays.get(code, set())
+                adj_stats['stocks_with_breaks'] += 1 if e['breaks'] else 0
+                adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
+                if chart_confluence:
+                    s_['chart'] = _chart_prep(s_['d'], s_['lo'], s_['c'])
 
         # conn은 _is_sector_buy 에서 계속 사용되므로 루프 후에 닫는다
         gc_sector_memo: dict = {}
@@ -429,10 +474,35 @@ def run_backtest_golden_cross(
             return max(max_positions, int(_gc_equity(day) // per_stock))
 
         # 2026-09-28: 보유 중 확정 기업행위(권리락·분할 등) 날 포지션을 새 주식 기준으로 재기준
-        _ca_factors = _load_jump_aligned_corp_factors(conn, list(sd.keys()))
+        _ca_factors = {} if adjusted_prices else _load_jump_aligned_corp_factors(conn, list(sd.keys()))
         _ca_prev_day = None
+
+        def _gc_close_at(code, p, i, price, reason, day_):
+            """조정 단위 `price`로 즉시 청산(단절 처리)."""
+            nonlocal cash
+            net_amt, net_pct = _net_profit(p['entry'], price, p['qty'], p.get('mkt_cap_억', sd[code].get('mkt_cap_억', 500)))
+            cash += p['entry'] * p['qty'] + net_amt
+            _f = sd[code]['f'][i]
+            trades.append({'stock_code': code, 'entry_date': p['entry_date'], 'exit_date': day_,
+                           'entry_price': p['entry'], 'exit_price': price, 'qty': p['qty'],
+                           'profit_pct': net_pct, 'profit_amt': net_amt, 'hold_days': p.get('hold', 0), 'exit_reason': reason,
+                           'exit_price_raw': round(price / _f, 4) if _f else price,
+                           'entry_price_raw': p.get('entry_raw'), 'qty_raw': p.get('qty_raw')})
+            del pos[code]
+            pending_sells.pop(code, None)
+
         for day in sim_dates:
-            _rebase_positions_for_corp_actions(_ca_factors, pos, _ca_prev_day, day, ('entry', 'peak'), 'qty')
+            if adjusted_prices:
+                for code, p in list(pos.items()):
+                    i = didx[code].get(day)
+                    if i is not None and i > 0 and day in sd[code].get('breaks', ()):
+                        _k = last_tradable_index_before(sd[code], i)
+                        _k = i - 1 if _k is None else _k
+                        _gc_close_at(code, p, i, sd[code]['c'][_k], '단절 당일 청산(공시 근거 없음·평가 불가)', day)
+                        trades[-1]['evaluation'] = 'unevaluable_break'; trades[-1]['basis_date'] = sd[code]['d'][_k]
+                        adj_stats['break_day_liquidations'] += 1
+            else:
+                _rebase_positions_for_corp_actions(_ca_factors, pos, _ca_prev_day, day, ('entry', 'peak'), 'qty')
             _ca_prev_day = day
             ym = day[:7]
 
@@ -440,16 +510,24 @@ def run_backtest_golden_cross(
             for code, reason in list(pending_sells.items()):
                 i = didx[code].get(day)
                 if i is None or code not in pos: continue
+                if adjusted_prices and (sd[code]['v'][i] or 0) <= 0:
+                    adj_stats['zero_volume_deferred_sells'] += 1   # 거래 불가능한 날 — 다음 거래일로 이월
+                    continue
                 p = pos.pop(code)
                 fill = sd[code]['o'][i]
                 net_amt, net_pct = _net_profit(
                     p['entry'], fill, p['qty'], p.get('mkt_cap_억', sd[code].get('mkt_cap_억', 500)))
                 cash += p['entry'] * p['qty'] + net_amt
-                trades.append({'stock_code': code, 'entry_date': p['entry_date'],
-                               'exit_date': day, 'entry_price': p['entry'],
-                               'exit_price': fill, 'qty': p['qty'],
-                               'profit_pct': net_pct, 'profit_amt': net_amt,
-                               'hold_days': p.get('hold', 0), 'exit_reason': reason})
+                _t = {'stock_code': code, 'entry_date': p['entry_date'],
+                      'exit_date': day, 'entry_price': p['entry'],
+                      'exit_price': fill, 'qty': p['qty'],
+                      'profit_pct': net_pct, 'profit_amt': net_amt,
+                      'hold_days': p.get('hold', 0), 'exit_reason': reason}
+                if adjusted_prices:
+                    _ff = sd[code]['f'][i]
+                    _t.update({'exit_price_raw': round(fill / _ff, 4) if _ff else fill,
+                               'entry_price_raw': p.get('entry_raw'), 'qty_raw': p.get('qty_raw')})
+                trades.append(_t)
                 del pending_sells[code]
 
             for code in list(pending_buys):
@@ -457,24 +535,45 @@ def run_backtest_golden_cross(
                 if i is None: continue
                 if code not in pos and len(pos) < _gc_limit(day):
                     fill = sd[code]['o'][i]
-                    qty = int(min(per_stock, cash) // fill)
+                    if adjusted_prices:
+                        if (sd[code]['v'][i] or 0) <= 0:
+                            adj_stats['zero_volume_skipped_buys'] += 1
+                            pending_buys.remove(code); continue
+                        _ff = sd[code]['f'][i] or 1.0
+                        _rfill = fill / _ff
+                        qty_raw = int(min(per_stock, cash) // _rfill)
+                        qty = qty_raw / _ff            # 원주가 기준 정수 주식 → 조정 단위
+                        _cost = qty_raw * _rfill
+                    else:
+                        qty = int(min(per_stock, cash) // fill)
+                        _cost = qty * fill
                     if qty > 0:
-                        cash -= qty * fill
+                        cash -= _cost
                         entry_mktcap = sd[code].get('mkt_cap_억', 500)
                         if asof_mktcap:
                             entry_shares = _gc_shares_asof(code, day)
                             if entry_shares > 0:
-                                entry_mktcap = entry_shares * fill / 1e8
+                                entry_mktcap = entry_shares * (fill / sd[code]['f'][i] if adjusted_prices else fill) / 1e8
                         pos[code] = {'entry': fill, 'entry_date': day, 'qty': qty,
                                      'hold': 0, 'peak': fill,
                                      'mkt_cap_억': entry_mktcap}
+                        if adjusted_prices:
+                            pos[code].update({'entry_raw': round(_rfill, 4), 'qty_raw': qty_raw})
                         nm[ym] = nm.get(ym, 0) + 1
                 pending_buys.remove(code)
 
             for code, p in list(pos.items()):
-                if code in pending_sells: continue
                 i = didx[code].get(day)
                 if i is None: continue
+                if adjusted_prices and sd[code].get('breaks'):
+                    _bi = bisect.bisect_right(sd[code]['breaks'], day)
+                    if _bi < len(sd[code]['breaks']):
+                        _nb = sd[code]['breaks'][_bi]
+                        if last_tradable_day_before_break(sd[code], sd[code]['disc'].get(_nb), _nb) == day:
+                            _gc_close_at(code, p, i, sd[code]['c'][i], '단절 전 청산(D12, 공시 후)', day)
+                            adj_stats['break_liquidations'] += 1
+                            continue
+                if code in pending_sells: continue
                 c = sd[code]['c'][i]
                 entry = p['entry']
                 pct = (c - entry) / entry
@@ -504,9 +603,11 @@ def run_backtest_golden_cross(
                 elif (pyramid_gain is not None and not p.get('pyr')
                       and pct >= pyramid_gain and hold >= 10):
                     # 피라미딩: 이기는 포지션에 0.5티켓 추가 (1회, 평균단가 블렌딩)
-                    add_qty = int(per_stock * 0.5 / c)
-                    if add_qty > 0 and add_qty * c <= cash:
-                        cash -= add_qty * c
+                    _pf = sd[code]['f'][i] if adjusted_prices else 1.0
+                    add_raw = int(per_stock * 0.5 / (c / _pf))
+                    add_qty = add_raw / _pf if adjusted_prices else add_raw
+                    if add_qty > 0 and add_raw * (c / _pf) <= cash:
+                        cash -= add_raw * (c / _pf)
                         p['entry'] = (entry * p['qty'] + c * add_qty) / (p['qty'] + add_qty)
                         p['qty'] += add_qty
                         p['pyr'] = True
@@ -523,10 +624,15 @@ def run_backtest_golden_cross(
                     i = didx[code].get(day)
                     if i is None or i < 145: continue
                     c = s['c'][i]
-                    if c < 1000: continue
+                    _rc = s['raw_c'][i] if adjusted_prices else c      # 가격 수준·시총은 원주가 기준
+                    if _rc < 1000: continue
+                    if adjusted_prices and is_excluded_day({'excluded_ranges': s['excl']}, day):
+                        adj_stats['candidate_skips_excluded'] += 1; continue
+                    if adjusted_prices and day in s['qdays']:
+                        adj_stats['candidate_skips_quality_day'] += 1; continue
                     if asof_mktcap:
                         sh = _gc_shares_asof(code, day)
-                        if sh <= 0 or sh * c / 1e8 < min_mktcap:
+                        if sh <= 0 or sh * _rc / 1e8 < min_mktcap:
                             continue
                     ma20 = _ma(s['c'][:i+1], 20)
                     ma60 = _ma(s['c'][:i+1], 60)
@@ -645,6 +751,7 @@ def run_backtest_golden_cross(
             f"총 거래: {n_trades}건  승률: {win_rate}%  평균: {avg_pct:+.1f}%\n"
             f"총수익률: {total_ret_pct:+.2f}%  CAGR: {cagr:+.2f}%  MDD: {max_dd:.1f}%\n"
             f"매도사유: " + " / ".join(f"{k} {v}건" for k, v in sorted(exit_reasons.items()))
+            + (f"\n조정가격(W3): {json.dumps(adj_stats, ensure_ascii=False)}" if adjusted_prices else "")
         )
 
         conn.close()
