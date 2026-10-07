@@ -1060,8 +1060,10 @@ PRICE_RELATED_EVENT_TYPES = (
 SHARE_CHANGE_TOLERANCE = 0.05   # 상장주식 수가 이만큼 넘게 바뀌면 기업행위성(가격 단절의 원인)으로 본다
 
 
+LIQUIDATION_WINDOW_ROWS = 8   # 상장폐지 직전 정리매매(보통 7거래일 + 재개일) — 가격제한폭이 없어 큰 변동이 실제 손익이다
+
 def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = (), volumes: list = None,
-                  shares_at=None, stats: dict = None) -> list:
+                  shares_at=None, stats: dict = None, exempt_from: str = None) -> list:
     """조정 후 직전 거래일 대비 변동이 그날 가격제한폭(+반올림 여유 0.5%)을 넘는 날 — 시장 움직임으로 불가능한 단절.
 
     (가) 기업행위성 = 단절로 본다: 정지 없이 한도 초과 / 정지(직전 거래량 0 또는 7일 이상 공백) 뒤라도 상장주식 수가 바뀜 /
@@ -1092,6 +1094,8 @@ def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = (), volu
         lim = _price_limit(dates[k])
         if 1 - lim - 0.005 <= r <= 1 + lim + 0.005:
             continue
+        if exempt_from and dates[k] >= exempt_from:
+            continue          # 정리매매 구간: 가격제한폭 없음 → 한도 초과는 단절이 아니라 실제 손익
         if halted:
             if changed is True or any(dates[k - 1] < d <= dates[k] for d in status_changes):
                 out.append(dates[k])
@@ -1163,6 +1167,7 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
     status: dict = {}
     disclosed: dict = {}   # (code, event_date) → 최초 공시(접수) 일자
     split_filings: dict = {}   # code → [(사건일, 접수일)] — 분할·합병 보고서
+    closed_codes: dict = {}    # 마스터에 열린 구간이 없는(상장폐지) 종목 → 마지막 종료일
     share_iv: dict = {}    # code → [(from, to, shares)]
     for i in range(0, len(codes), 500):
         chunk = codes[i:i + 500]
@@ -1198,6 +1203,14 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
                 share_iv.setdefault(str(code), []).append((str(d1)[:10], str(d2)[:10] if d2 else None, float(sh or 0)))
         except Exception:
             pass
+        try:
+            for code, mx_, open_ in conn.execute(
+                f"SELECT stock_code, MAX(COALESCE(effective_to,'9999-12-31')), BOOL_OR(effective_to IS NULL) "
+                f"FROM security_master_history WHERE stock_code IN ({ph}) GROUP BY stock_code", tuple(chunk)).fetchall():
+                if not open_:
+                    closed_codes[str(code)] = str(mx_)[:10]
+        except Exception:
+            pass   # 합성 테스트(sqlite)·BOOL_OR 미지원 환경
         try:
             for code, d1, d2 in conn.execute(
                 f"SELECT stock_code, effective_from, effective_to FROM security_master_history WHERE stock_code IN ({ph})",
@@ -1237,7 +1250,11 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
                 if f_ <= day and (t_ is None or day < t_):
                     return sh_ or None
             return None
-        found = set(_limit_breaks(ds, e["close"], tuple(sorted(status.get(code, ()))),
+        _ex = None
+        if code in closed_codes and len(ds) > LIQUIDATION_WINDOW_ROWS:
+            _ex = ds[-LIQUIDATION_WINDOW_ROWS]
+        e["liquidation_window_from"] = _ex
+        found = set(_limit_breaks(ds, e["close"], tuple(sorted(status.get(code, ()))), exempt_from=_ex,
                                   volumes=e["volume"], shares_at=_shares_at if _iv else None, stats=_lb_stats))
         e["share_unknown_breaks"] = _lb_stats.get("share_unknown_breaks", 0)
         e["unexplained_limit_breaks"] = sorted(found)
@@ -3334,7 +3351,7 @@ def _run_generic_backtest(version: str, signal_fn,
         execution_timing="next_open",
         market_cap_mode=("asof_approx" if asof_mktcap else "current"),
         allocation_rule="dynamic_slot_count_fixed_ticket",
-        universe_version="security_master_history_v1_mixed_approx" if asof_mktcap else "stock_universe_current",
+        universe_version=("security_master_history_v3_pit_delisted" if (asof_mktcap and _use_adjusted) else "security_master_history_v1_mixed_approx") if asof_mktcap else "stock_universe_current",
     )
 
     try:
@@ -3388,7 +3405,23 @@ def _run_generic_backtest(version: str, signal_fn,
             fin_all.setdefault(sc, []).append(r[1:])
 
         # as-of 모드는 현재 유니버스를 읽지 않고 신호일에 유효한 security master를 사용한다.
-        if asof_mktcap:
+        if asof_mktcap and _use_adjusted:
+            # N1(Stock_Strategy §24-4): 종목 목록 = **시뮬레이션 기간 중 하루라도** 마스터상 상장(거래 가능)이던 종목 전부 — 상장폐지 종목 포함.
+            # 이력 길이(≥200행) 조건을 기간 전체 행 수로 걸면 시작 직후 폐지된 종목이 '미래에 행이 적다'는 이유로 빠진다(미래 참조).
+            # 이력 조건은 신호일마다 과거 행 수(i ≥ 60)로 판정한다(아래 후보 단계).
+            stock_codes = [r[0] for r in conn.execute("""
+                SELECT DISTINCT ph.stock_code
+                FROM price_history ph
+                JOIN security_master_history sm ON sm.stock_code=ph.stock_code
+                  AND substr(ph.date,1,10)>=sm.effective_from
+                  AND (sm.effective_to IS NULL OR substr(ph.date,1,10)<sm.effective_to)
+                  AND sm.is_tradable=1 AND sm.is_etf_etn=0
+                  AND sm.market IN ('KOSPI','KOSDAQ')
+                  AND (sm.security_type IS NULL OR sm.security_type != 'preferred')
+                WHERE ph.date>=? AND ph.date<=? AND ph.close>0
+                ORDER BY ph.stock_code
+            """, (start_date, end_date)).fetchall()]
+        elif asof_mktcap:
             stock_codes = [r[0] for r in conn.execute("""
                 SELECT ph.stock_code, COUNT(*) AS cnt
                 FROM price_history ph
@@ -3476,7 +3509,7 @@ def _run_generic_backtest(version: str, signal_fn,
                     WHERE stock_code=? AND date>=? AND date<=? AND close>0
                     ORDER BY date ASC
                 """, (sc, warmup_start, end_date)).fetchall()
-                if len(rows) < 200:
+                if len(rows) < (61 if _use_adjusted else 200):
                     continue
                 dates   = [r[0] for r in rows]
                 prices  = [float(r[1]) for r in rows]
@@ -3496,6 +3529,10 @@ def _run_generic_backtest(version: str, signal_fn,
                 }
                 if chart_confluence:
                     stock_data[sc]['chart'] = _chart_prep(dates, lows, prices)
+                if _use_adjusted:
+                    _lt = max((k for k, v in enumerate(volumes) if v > 0), default=None)
+                    stock_data[sc]['last_tradable_i'] = _lt
+                    stock_data[sc]['ends_before_period_end'] = bool(sim_dates and dates[-1] < sim_dates[-1])
             except Exception:
                 continue
 
@@ -3506,7 +3543,10 @@ def _run_generic_backtest(version: str, signal_fn,
                      'stocks_with_breaks': 0, 'stocks_adjusted': 0, 'misaligned_skipped': 0,
                      'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0, 'zero_volume_skipped_buys': 0,
                      'share_unknown_breaks': 0, 'candidate_skips_quality_day': 0, 'price_issue_events': len(price_issues),
+                     'delisted_exits': 0, 'delisted_entries': 0, 'delisted_stocks_in_universe': 0, 'pit_mktcap_missing': 0,
                      'quality_day_blocks': sum(len(v) for v in issue_dates.values()), 'break_excluded_stock_days': 0}
+        if _use_adjusted:
+            adj_stats['delisted_stocks_in_universe'] = sum(1 for _s in stock_data.values() if _s.get('ends_before_period_end'))
         if _use_adjusted and issue_dates:
             for sc, sd in stock_data.items():
                 if sc in issue_dates:
@@ -3721,6 +3761,14 @@ def _run_generic_backtest(version: str, signal_fn,
             # 1억원/1천만원 단위로 시작하고, 평가자산 1.1억원부터 11번째 슬롯을 허용한다.
             return max(1, int(_marked_equity(day) // per_stock))
 
+        def _pit_mc(sc, day_, raw_px):
+            """신호일 PIT 시총(억원) = 상장주식 수(security_share_history) × 원주가. 주식 수를 모르면 가장 보수적(최소 시총 = 최대 슬리피지)."""
+            sh = _shares_asof(sc, day_) if asof_mktcap else 0
+            if sh and sh > 0:
+                return sh * raw_px / 1e8
+            adj_stats['pit_mktcap_missing'] += 1
+            return 1.0
+
         def _close_at(sc, pos, sd, i, price, reason, day_):
             """보유 종목을 조정 단위 `price`로 즉시 청산(단절 처리용). 현금·거래 기록 갱신."""
             nonlocal cash
@@ -3831,9 +3879,11 @@ def _run_generic_backtest(version: str, signal_fn,
                 positions[sc] = {'entry_date': day, 'entry_price': curr,
                                  'qty': qty, 'cost': cost,
                                  'peak_price': curr, 'hold_days': 0,
-                                 'mkt_cap_억': sd.get('mkt_cap_억', mktcap_min)}
+                                 'mkt_cap_억': (_pit_mc(sc, day, _raw_px) if _use_adjusted else sd.get('mkt_cap_억', mktcap_min))}
                 if _use_adjusted:
                     positions[sc].update({'entry_price_raw': round(_raw_px, 4), 'qty_raw': qty_raw})
+                    if sd.get('ends_before_period_end'):
+                        adj_stats['delisted_entries'] += 1
                 provenance = dict(meta.get('financial_provenance') or {})
                 provenance.update({'stock_code': sc, 'entry_date': day})
                 financial_provenance.append(provenance)
@@ -3848,6 +3898,15 @@ def _run_generic_backtest(version: str, signal_fn,
                     continue
                 i  = im[day]
                 sd = stock_data[sc]
+                # 상장폐지·거래종료(N1 ②): 이 종목 자료가 기간 끝 전에 끝나고 오늘이 마지막 거래 가능일(거래량>0)이면 그 종가로 청산.
+                # 확정된 합병·현금 회수가 있으면(`delisting_outcomes`) 그 값을 우선. 정리매매 구간이 자료에 있으면 그 마지막 날까지 보유한 것으로 본다.
+                if _use_adjusted and sd.get('ends_before_period_end') and sd.get('last_tradable_i') == i:
+                    _rec = delisting_recovery.get(sc)
+                    _px = (_rec[0] * sd['adj_factor'][i]) if _rec else sd['prices'][i]
+                    _close_at(sc, pos, sd, i, _px, '상장폐지 청산(delisted)' + (f":{_rec[1]}" if _rec else ''), day)
+                    trades[-1]['delisted'] = True
+                    adj_stats['delisted_exits'] += 1
+                    continue
                 # 단절이 다가오고 그 사건이 공시돼 있으며 오늘이 단절 전 '거래 가능한 마지막 날'이면 오늘 종가로 사전 청산(D12 ②, §18-2).
                 # 공시 근거가 없으면 사전 청산하지 않는다 — 내일 일을 오늘 아는 미래 참조(REVIEW_PLAN §8-1 #3).
                 if _use_adjusted and sd.get('breaks'):
@@ -3896,6 +3955,8 @@ def _run_generic_backtest(version: str, signal_fn,
                                 continue
                         if value_trap_gate and value_trap_map.get(sc, False):
                             continue
+                        if _use_adjusted and i < 60:
+                            continue          # 이력 길이 조건은 신호일마다 과거 행 수로(N1 ①)
                         if not signal_fn(i, sd['sim_start_i'], sd['dates'], sd['prices'],
                                          sd['volumes'], sd['frn'], sd['inst'], sd['fins']):
                             continue
@@ -3935,6 +3996,8 @@ def _run_generic_backtest(version: str, signal_fn,
                                 continue
                         if value_trap_gate and value_trap_map.get(sc, False):
                             continue
+                        if _use_adjusted and i < 60:
+                            continue          # 이력 길이 조건은 신호일마다 과거 행 수로(N1 ①)
                         if not signal_fn(i, sd['sim_start_i'], sd['dates'], sd['prices'],
                                          sd['volumes'], sd['frn'], sd['inst'], sd['fins']):
                             continue

@@ -20,7 +20,7 @@ except Exception:  # pragma: no cover
     _HAS_DB = False
 
 
-def _run(code, signal_dates, start, end):
+def _run(code, signal_dates, start, end, asof_mktcap=False):
     """code 종목이 signal_dates에 매수 신호를 내는 엔진 실행 → (거래 목록, 통계 요약)."""
     conn = connect_primary_db(timeout=60)
     warm = bc.datetime.strptime(start, "%Y-%m-%d") - bc.timedelta(days=450)
@@ -37,7 +37,7 @@ def _run(code, signal_dates, start, end):
         bc._run_generic_backtest(
             "T", sig, start, end, per_stock=10_000_000, max_positions=10, run_name="engine-test", run_id="engine_test_x",
             stop_loss=-0.99, take_profit=50.0, trail_stop=-0.99, mktcap_min=0, use_market_filter=False,
-            asof_mktcap=False, adjusted_prices=True)
+            asof_mktcap=asof_mktcap, adjusted_prices=True)
     return [t for t in captured["trades"] if t["stock_code"] == code], captured["summary"]
 
 
@@ -91,3 +91,24 @@ class TestQualityDayBlocks(unittest.TestCase):
         self.assertNotIn("externally_confirmed_price_jump_review", bc.QUALITY_DAY_CLASSES)
         self.assertNotIn("externally_confirmed_price_jump_review", bc.UNRESOLVED_BREAK_CLASSES)
         self.assertNotIn("quarantined_basis", bc.UNRESOLVED_BREAK_CLASSES)
+
+
+@unittest.skipUnless(_HAS_DB, "PostgreSQL 접속 불가")
+class TestPitDelistedUniverse(unittest.TestCase):
+    """N1(Stock_Strategy §24-4): 시작 직후 상장폐지되는 종목이 시작 첫날 후보에 들어가고, 보유 중 폐지되면 마지막 거래 가능일 종가로 청산된다."""
+
+    def test_stock_delisted_a_month_after_start_is_candidate_and_exits_delisted(self):
+        # 066350: 마스터 종료 2015-05-20, 마지막 거래일 2015-05-19(2026-10-07 공식 표로 채운 구간) — 시작 2개월 뒤 폐지
+        trades, summary = _run("066350", {"2015-05-12"}, "2015-03-16", "2015-06-30", asof_mktcap=True)   # 보유 5일 미만이라 MA60 규칙이 먼저 청산하지 않는다
+        self.assertEqual(len(trades), 1, trades)
+        t = trades[0]
+        self.assertTrue(t["exit_reason"].startswith("상장폐지 청산"), t)
+        self.assertEqual(t["exit_date"], "2015-05-19")                # 마지막 거래 가능일(거래량>0)
+        self.assertGreater(t["exit_date"], t["entry_date"])
+        self.assertRegex(summary, r'"delisted_exits": 1')
+        self.assertRegex(summary, r'"delisted_entries": 1')
+        self.assertRegex(summary, r'"pit_mktcap_missing": 0')       # 기본값 500(현재 시총) 사용 0
+
+    def test_universe_version_name_recorded_in_source(self):
+        import inspect
+        self.assertIn("security_master_history_v3_pit_delisted", inspect.getsource(bc._run_generic_backtest))

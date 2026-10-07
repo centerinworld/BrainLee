@@ -141,6 +141,13 @@ class TestAdjustedPrices(unittest.TestCase):
         self.assertIn(DAYS[1], e["breaks"])
         self.assertIsNone(e["break_disclosed"].get(DAYS[8]))
 
+    def test_liquidation_window_moves_are_real_pnl_not_breaks(self):
+        # 상장폐지 직전 정리매매(가격제한폭 없음): 한도 초과 하락이 단절이 아니라 실제 손익
+        d = ["2024-01-%02d" % k for k in range(2, 8)]
+        px = [1000.0, 1000.0, 1000.0, 400.0, 150.0, 50.0]
+        self.assertEqual(bc._limit_breaks(d, px), [d[3], d[4], d[5]])                       # 면제 없으면 단절
+        self.assertEqual(bc._limit_breaks(d, px, exempt_from=d[3]), [])                     # 정리매매 구간이면 단절 아님
+
     def test_last_day_before_break(self):
         prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 500.0) for d in DAYS[5:]]
         e = bc.load_adjusted_prices(_db(prices), ["A"], "2024-01-01", "2024-02-01")["A"]
