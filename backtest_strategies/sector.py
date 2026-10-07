@@ -129,6 +129,10 @@ def _sector_op_yoy_inputs(conn, codes: list, calendar_year_cap: int, trade_date:
     return item
 
 
+# 진단 훅(Stock_Strategy §24-2): scripts/diag_sector_20261007.py가 채운다. 평소 None — 동작·결과에 영향 없음.
+SEC_DIAG = None
+
+
 def run_backtest_sector(
     start_date: str, end_date: str,
     buy_threshold: float = 55.0,    # 섹터 BUY 기준 점수
@@ -702,6 +706,8 @@ def run_backtest_sector(
                     scores[sk] = round(sc, 1)
 
                 sector_scores_cache[trade_date] = scores
+                if SEC_DIAG is not None:
+                    SEC_DIAG.append(('scores', trade_date, dict(scores), [k for k, v in sorted(scores.items(), key=lambda x: -x[1]) if v >= buy_threshold]))
                 sector_momentum_cache[trade_date] = momentum
 
                 # BUY 섹터 → 기존 보유 중 EXIT 대상 청산
@@ -917,6 +923,8 @@ def run_backtest_sector(
                     if n_slots <= 0:
                         break
                     picks = _sector_rs_picks(conn, sector_key, trade_date, top_n=3)
+                    if SEC_DIAG is not None:
+                        SEC_DIAG.append(('picks', trade_date, sector_key, [(pk['code'], pk['surge_score'], pk['rs3m']) for pk in picks], n_slots, sorted(positions), round(cash)))
                     for pk in picks:
                         if n_slots <= 0:
                             break
