@@ -50,6 +50,7 @@ ENTRY_CONFIRM_MIN_PCT = 3.0
 
 # 역발상(낙폭반등·저평가) 계열은 약세장이 정상 진입 구간 → 국면 필터 제외.
 REGIME_EXEMPT = {"v_recovery", "value"}
+# 미러 계좌(스탁이지 그대로 복제, REVIEW_PLAN §23-3)는 노출 합산·재진입 쿨다운 계산에서 제외 — 아래 쿼리의 NOT IN 목록
 # 공통 손절 제외(자체 청산 로직 보유, 기존 _auto_hardstop_all_strategies 정책과 동일)
 BREAKEVEN_EXEMPT = {"gpt_v18"}
 
@@ -192,7 +193,7 @@ def check_entry(conn, code: str, strategy: str, qty: int, price: float) -> dict:
     if EXPOSURE_LIMIT():
         try:
             n = conn.execute(
-                "SELECT COUNT(*) FROM peak_holding WHERE stock_code=? AND is_active=1", (code,)
+                "SELECT COUNT(*) FROM peak_holding WHERE stock_code=? AND is_active=1 AND strategy NOT IN ('peak_mirror','momentum_mirror','value_mirror')", (code,)
             ).fetchone()[0]
             if n >= MAX_POS_PER_STOCK():
                 reasons.append(f"exposure_stock: {code} 이미 {n}개 전략이 보유 (상한 {MAX_POS_PER_STOCK()})")
@@ -202,7 +203,7 @@ def check_entry(conn, code: str, strategy: str, qty: int, price: float) -> dict:
                     "SELECT COALESCE(SUM(ph.buy_price*ph.quantity),0), "
                     "COALESCE(SUM(CASE WHEN su.sector_large=? THEN ph.buy_price*ph.quantity END),0) "
                     "FROM peak_holding ph LEFT JOIN stock_universe su ON su.stock_code=ph.stock_code "
-                    "WHERE ph.is_active=1", (sector,)
+                    "WHERE ph.is_active=1 AND ph.strategy NOT IN ('peak_mirror','momentum_mirror','value_mirror')", (sector,)
                 ).fetchone()
                 tot, in_sec = float(tot or 0), float(in_sec or 0)
                 new_amt = float(price) * int(qty)
@@ -223,7 +224,7 @@ def check_entry(conn, code: str, strategy: str, qty: int, price: float) -> dict:
             logger.warning(f"[가드] 시총 하한 판정 실패(fail-open): {e}")
     if REENTRY_COOLDOWN_DAYS() > 0:
         try:
-            r = conn.execute("SELECT MAX(sold_at) FROM peak_holding WHERE stock_code=? AND is_active=0", (code,)).fetchone()
+            r = conn.execute("SELECT MAX(sold_at) FROM peak_holding WHERE stock_code=? AND is_active=0 AND strategy NOT IN ('peak_mirror','momentum_mirror','value_mirror')", (code,)).fetchone()
             if r and r[0]:
                 last = datetime.fromisoformat(str(r[0])[:19].replace("T", " "))
                 days = (datetime.now() - last).days

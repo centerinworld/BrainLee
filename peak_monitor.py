@@ -96,7 +96,13 @@ SESSION_FILE = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_session.
 _EXIT_MISS_COUNTS: dict[tuple[str, str], int] = {}
 # 2026-10-07: 가드가 거부(409)한 가상매수는 그날 다시 시도하지 않는다 — 10분마다 같은 거부 반복(10-06 밤 480건) 방지
 _BUY_REJECTED_TODAY: set[tuple[str, str, str]] = set()
+# 2026-10-07(REVIEW_PLAN §23-2 ③): 거부 사유별 재시도 — shadow(하루 내내 불변)는 당일 중지, 노출 한도 등은 60분 뒤 재시도
+_BUY_RETRY_AFTER: dict[tuple[str, str], datetime] = {}
+BUY_RETRY_MINUTES = 60
 _LAST_POST_STATUS: dict[str, int] = {}
+_LAST_POST_BODY: dict[str, str] = {}
+# 미러 가상계좌(스탁이지 그대로 복제, REVIEW_PLAN §23-3 · Stock_Strategy §11) — 운영 키와 별도로 기록
+MIRROR_SUFFIX = "_mirror"
 EXIT_MISS_CONFIRM_COUNT = 2
 
 
@@ -408,6 +414,7 @@ def api_post(path: str, data: dict) -> dict | None:
         timeout = API_TIMEOUT_UPDATE if path == "/api/trend/update" else API_TIMEOUT_DEFAULT
         r = httpx.post(f"{BASE_API}{path}", json=data, timeout=timeout)
         _LAST_POST_STATUS[path] = r.status_code
+        _LAST_POST_BODY[path] = r.text[:2000]
         if not r.is_success:
             # 2026-10-07: 거부 사유(409 = 가상매매 가드: shadow·노출 한도 등)를 남긴다 — 예전엔 'DB 저장 실패'로만 보였다
             logger.warning(f"[API POST] {path} HTTP {r.status_code}: {r.text[:200]}")
@@ -452,6 +459,66 @@ def calc_quantity(price: float, budget: int = MAX_BUDGET) -> int:
 
 
 # ──────────────────────────────────────────────────────────────
+# 미러 계좌 동기화 (2026-10-07, REVIEW_PLAN §23-3 · Stock_Strategy S29·§11)
+# ──────────────────────────────────────────────────────────────
+def sync_mirror(strategy: str, site_holdings: list, site_exits: list, now_str: str) -> dict:
+    """스탁이지 보유 목록과 <strategy>_mirror 가상계좌를 맞춘다.
+
+    규칙: 사이트에 있고 미러에 없으면 매수(위험게이트·공통 손절 없음 — 서버가 mirror=True·미러 키만 허용),
+    미러에 있고 사이트에 없으면 연속 EXIT_MISS_CONFIRM_COUNT회 확인 후 매도(사이트 이탈표에 있으면 즉시).
+    가격: price/sell_price = 감지 시점 현재가(따라 샀을 때), source_price = 스탁이지 기재 매수가·매도가(일치 판정).
+    알림 없음(운영 계좌가 이미 알린다).
+    """
+    key = strategy + MIRROR_SUFFIX
+    out = {"bought": 0, "sold": 0, "fail": 0}
+    db_all = api_get(f"/api/trend/holdings?strategy={key}")
+    if db_all is None:
+        logger.warning(f"[미러] {key} 보유 조회 실패 — 이번 회차 건너뜀")
+        return out
+    active = {h["stock_name"]: h for h in db_all if h.get("is_active")}
+    site = {h["name"]: h for h in site_holdings if h.get("name")}
+    exits = {e["name"]: e for e in site_exits if e.get("name")}
+    for name, h in site.items():
+        _EXIT_MISS_COUNTS[(key, name)] = 0
+        price = h.get("current_price") or h.get("buy_price") or 0
+        if name in active:
+            api_post_background("/api/trend/update", {"stock_name": name, "strategy": key, "current_price": price,
+                                                      "hold_days": max(h.get("hold_days", 0) or 0, 0), "profit_pct": h.get("profit_pct", 0)})
+            continue
+        if not price:
+            continue
+        r = api_post("/api/trend/buy", {
+            "stock_name": name, "stock_code": h.get("stock_code") or "", "sector": h.get("sector", ""),
+            "sector_score": h.get("sector_score", 0), "buy_price": price, "quantity": calc_quantity(price),
+            "entry_date": h.get("entry_date") or now_str[:10], "hold_days": 0, "detected_at": now_str,
+            "strategy": key, "mirror": True, "source_price": h.get("buy_price") or None,
+        })
+        if r and r.get("status") == "ok":
+            out["bought"] += 1
+            logger.info(f"[미러] {key} 매수 {name} 현재가={price:,.0f} 스탁이지 매수가={float(h.get('buy_price') or 0):,.0f}")
+        else:
+            out["fail"] += 1
+    for name, db_h in active.items():
+        if name in site:
+            continue
+        mk = (key, name)
+        _EXIT_MISS_COUNTS[mk] = int(_EXIT_MISS_COUNTS.get(mk, 0)) + 1
+        if name not in exits and _EXIT_MISS_COUNTS[mk] < EXIT_MISS_CONFIRM_COUNT:
+            continue
+        e = exits.get(name) or {}
+        cur = db_h.get("current_price") or db_h.get("buy_price") or 0
+        r = api_post("/api/trend/sell", {"stock_name": name, "strategy": key, "sell_price": cur, "sold_at": now_str,
+                                         "source_price": e.get("sell_price") or None})
+        if r and r.get("status") == "ok":
+            _EXIT_MISS_COUNTS[mk] = 0
+            out["sold"] += 1
+            logger.info(f"[미러] {key} 매도 {name} 현재가={float(cur or 0):,.0f} 스탁이지 매도가={e.get('sell_price')}")
+        else:
+            out["fail"] += 1
+    return out
+
+
+# ──────────────────────────────────────────────────────────────
 # 단일 전략 1회 실행
 # ──────────────────────────────────────────────────────────────
 def run_once(session: StockeasySession, strategy: str) -> None:
@@ -485,6 +552,14 @@ def run_once(session: StockeasySession, strategy: str) -> None:
     data.setdefault("exits", [])
     site_holdings = data["holdings"]
     site_exits    = data["exits"]
+
+    # 미러 계좌 먼저(운영 계좌 처리 중 continue·return 과 무관하게) — REVIEW_PLAN §23-3
+    try:
+        m = sync_mirror(strategy, site_holdings, site_exits, now_str)
+        if any(m.values()):
+            logger.info(f"[미러] {strategy}{MIRROR_SUFFIX} {m}")
+    except Exception as e:
+        logger.warning(f"[미러] {strategy} 동기화 오류: {e}")
 
     # ── DB 포지션 취득 ────────────────────────────────────────
     db_all         = api_get(f"/api/trend/holdings?strategy={strategy}") or []
@@ -564,6 +639,9 @@ def run_once(session: StockeasySession, strategy: str) -> None:
 
         if (strategy, name, today_str) in _BUY_REJECTED_TODAY:
             continue
+        _retry_at = _BUY_RETRY_AFTER.get((strategy, name))
+        if _retry_at and datetime.now() < _retry_at:
+            continue
         _LAST_POST_STATUS.pop("/api/trend/buy", None)
         result = api_post("/api/trend/buy", {
             "stock_name":   name,
@@ -597,8 +675,16 @@ def run_once(session: StockeasySession, strategy: str) -> None:
                 logger.info(f"[알림] ✅ [{strategy_name}] {name} 신규편입 텔레그램 발송")
         else:
             if _LAST_POST_STATUS.get("/api/trend/buy") == 409:
-                _BUY_REJECTED_TODAY.add((strategy, name, today_str))
-                logger.info(f"[신규편입] {name}: 가드 거부(409) — 오늘은 재시도 안 함")
+                try:
+                    reasons = (json.loads(_LAST_POST_BODY.get("/api/trend/buy") or "{}").get("detail") or {}).get("reasons") or []
+                except Exception:
+                    reasons = []
+                if reasons and all(str(x).startswith("shadow_strategy") for x in reasons):
+                    _BUY_REJECTED_TODAY.add((strategy, name, today_str))
+                    logger.info(f"[신규편입] {name}: shadow 거부 — 오늘은 재시도 안 함")
+                else:
+                    _BUY_RETRY_AFTER[(strategy, name)] = datetime.now() + timedelta(minutes=BUY_RETRY_MINUTES)
+                    logger.info(f"[신규편입] {name}: 가드 거부({'; '.join(map(str, reasons))[:120]}) — {BUY_RETRY_MINUTES}분 뒤 재시도")
             else:
                 logger.warning(f"[신규편입] {name}: DB 저장 실패 result={result}")
 

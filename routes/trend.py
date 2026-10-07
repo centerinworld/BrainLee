@@ -322,6 +322,20 @@ def _safe_float(v, default=0.0) -> float:
         return float(default)
 
 
+# 2026-10-07(REVIEW_PLAN §23-3, Stock_Strategy S29·§11): 스탁이지를 그대로 따라가는 '미러' 가상계좌.
+# 위험게이트(shadow·노출 한도)·공통 손절·본전 스톱을 적용하지 않고, 스탁이지 기재 가격을 source_price로 함께 저장한다.
+# 운영 계좌(peak·momentum·value)는 기존 규칙 그대로 — 두 계좌 성과 차이가 곧 안전장치 효과.
+MIRROR_STRATEGIES = {"peak_mirror", "momentum_mirror", "value_mirror"}
+
+
+def _ensure_source_price_columns(conn) -> None:
+    for tbl in ("peak_holding", "peak_trade"):
+        try:
+            conn.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS source_price DOUBLE PRECISION")
+        except Exception:
+            pass
+
+
 def _normalize_strategy_key(strategy: str | None) -> str | None:
     if not strategy:
         return None
@@ -542,6 +556,7 @@ def _auto_hardstop_all_strategies(conn) -> int:
         FROM peak_holding ph
         WHERE ph.is_active = 1
           AND ph.strategy != 'gpt_v18'
+          AND ph.strategy NOT IN ('peak_mirror','momentum_mirror','value_mirror')  -- 미러 계좌는 스탁이지 편출만 따름(REVIEW_PLAN §23-3 D-S29-3)
     """).fetchall()
 
     sold = 0
@@ -1117,12 +1132,15 @@ def trend_buy(payload: dict):
     sector     = payload.get("sector", "")
     entry_reason_text = payload.get("entry_reason_text", "")
     entry_reason_json = payload.get("entry_reason_json", "")
+    source_price = float(payload.get("source_price") or 0) or None
+    is_mirror = bool(payload.get("mirror")) and strategy in MIRROR_STRATEGIES
 
     if not stock_name or not buy_price:
         raise HTTPException(status_code=400, detail="stock_name, buy_price 필수")
 
     conn = _db()
     _ensure_peak_holding_reason_columns(conn)
+    _ensure_source_price_columns(conn)
     if not stock_code:
         for tbl in ("stock_universe", "stock_meta", "listed_company_info"):
             row = conn.execute(
@@ -1155,7 +1173,7 @@ def trend_buy(payload: dict):
         (stock_name, strategy)
     ).fetchone()
     if not active:
-        gate = _paper_buy_gate(stock_code, strategy, quantity, buy_price)
+        gate = {"decision": "BUY_ALLOWED"} if is_mirror else _paper_buy_gate(stock_code, strategy, quantity, buy_price)
         if gate["decision"] != "BUY_ALLOWED":
             conn.close()
             raise HTTPException(status_code=409, detail={
@@ -1165,12 +1183,12 @@ def trend_buy(payload: dict):
         holding_cursor = conn.execute(
             "INSERT INTO peak_holding (stock_code,stock_name,sector,buy_price,current_price,quantity,"
             "entry_date,hold_days,profit_pct,is_active,strategy,detected_at,updated_at,"
-            "entry_reason_text,entry_reason_json,entry_reason_updated_at) "
+            "entry_reason_text,entry_reason_json,entry_reason_updated_at,source_price) "
             "VALUES (?,?,?,?,?,?,?,0,0.0,1,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,?,?,"
-            "CASE WHEN NULLIF(?, '') IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END)",
+            "CASE WHEN NULLIF(?, '') IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,?)",
             (
                 stock_code or None, stock_name, sector, buy_price, buy_price, quantity,
-                entry_date, strategy, entry_reason_text, entry_reason_json, entry_reason_text,
+                entry_date, strategy, entry_reason_text, entry_reason_json, entry_reason_text, source_price,
             )
         )
         holding_id = holding_cursor.lastrowid
@@ -1180,9 +1198,9 @@ def trend_buy(payload: dict):
                 (stock_name, entry_date, strategy),
             ).fetchone()[0]
         trade_cursor = conn.execute(
-            "INSERT INTO peak_trade (stock_name,tx_type,price,quantity,total_amount,profit,profit_pct,tx_at,strategy) "
-            "VALUES (?,?,?,?,?,0,0.0,CURRENT_TIMESTAMP,?)",
-            (stock_name, "buy", buy_price, quantity, round(buy_price * quantity), strategy)
+            "INSERT INTO peak_trade (stock_name,tx_type,price,quantity,total_amount,profit,profit_pct,tx_at,strategy,source_price) "
+            "VALUES (?,?,?,?,?,0,0.0,CURRENT_TIMESTAMP,?,?)",
+            (stock_name, "buy", buy_price, quantity, round(buy_price * quantity), strategy, source_price)
         )
         _record_paper_trade(
             conn, strategy=strategy, side="buy", code=stock_code, name=stock_name,
@@ -1251,8 +1269,10 @@ def trend_sell(payload: dict):
     profit     = float(payload.get("profit") or 0)
     profit_pct = float(payload.get("profit_pct") or 0)
     sold_at    = payload.get("sold_at") or _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    source_price = float(payload.get("source_price") or 0) or None
 
     conn = _db()
+    _ensure_source_price_columns(conn)
     row = conn.execute(
         "SELECT id,quantity,strategy,buy_price,COALESCE(stock_code,'') FROM peak_holding "
         "WHERE stock_name=? AND strategy=? AND is_active=1 ORDER BY id DESC LIMIT 1",
@@ -1272,9 +1292,9 @@ def trend_sell(payload: dict):
         (sell_price, sold_at, sell_price, profit_pct, stock_name, strategy)
     )
     trade_cursor = conn.execute(
-        "INSERT INTO peak_trade (holding_id,stock_name,tx_type,price,quantity,total_amount,profit,profit_pct,tx_at,strategy) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (holding_id, stock_name, "sell", sell_price, qty, round(sell_price * qty), profit, profit_pct, sold_at, row_strategy or "peak")
+        "INSERT INTO peak_trade (holding_id,stock_name,tx_type,price,quantity,total_amount,profit,profit_pct,tx_at,strategy,source_price) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (holding_id, stock_name, "sell", sell_price, qty, round(sell_price * qty), profit, profit_pct, sold_at, row_strategy or "peak", source_price)
     )
     _record_paper_trade(
         conn, strategy=row_strategy or "peak", side="sell", code=stock_code, name=stock_name,

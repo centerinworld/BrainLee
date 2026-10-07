@@ -563,6 +563,14 @@ def authorize_strategy_order(
     decision_source: str,
 ) -> dict:
     """Universal fail-closed gateway for every strategy-originated order."""
+    if strategy_key and str(strategy_key).endswith("_mirror"):
+        # 스탁이지 미러 가상계좌는 기록 전용 — 어떤 설정으로도 실주문 경로에 들어올 수 없다(REVIEW_PLAN §23-3, 2026-10-07)
+        return {
+            "decision": "BLOCKED_RISK",
+            "reasons": [f"mirror strategy {strategy_key} is paper-only (never live)"],
+            "gates": {},
+            "gate_decision_id": None,
+        }
     if not strategy_key:
         return {
             "decision": "BLOCKED_RISK",

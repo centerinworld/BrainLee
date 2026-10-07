@@ -9,6 +9,8 @@
   blocks_1d   : 최근 1일 virtual_guard_log 차단·shadow 기록(전략·가드별)
   dup_sells   : 같은 전략·종목·날짜 매도 2건 이상의 초과 행 수(실현 손익 왜곡)
 결과: research_outputs/stockeasy_mirror/<날짜>.json + history.jsonl(한 줄 요약 누적)
+2026-10-07(REVIEW_PLAN §23-3): 운영 계좌(peak·momentum·value)와 미러 계좌(<전략>_mirror)를 두 줄로 측정.
+  미러는 source_gap_pct(우리 source_price ÷ 스탁이지 매수가 − 1)가 0이어야 하고 일치율 100%가 목표.
 """
 import json
 import sys
@@ -28,16 +30,24 @@ def main():
     conn = connect_primary_db(readonly=True)
     since = (datetime.now() - timedelta(days=1)).isoformat(sep=" ", timespec="seconds")
     res = {"at": datetime.now().isoformat(timespec="seconds"), "strategies": {}}
-    for s in STRATS:
-        d = fetch_strategy_api(s)
-        ours = {r[0]: (r[1], r[2]) for r in conn.execute(
-            "SELECT stock_code, stock_name, buy_price FROM peak_holding WHERE strategy=? AND is_active=1", (s,)).fetchall()}
+    try:
+        conn.execute("SELECT source_price FROM peak_holding LIMIT 1").fetchone()
+        src_col = "source_price"
+    except Exception:
+        conn.rollback()
+        src_col = "NULL"
+    for base in STRATS:
+      d = fetch_strategy_api(base)
+      for s in (base, base + "_mirror"):
+        ours = {r[0]: (r[1], r[2], r[3]) for r in conn.execute(
+            f"SELECT stock_code, stock_name, buy_price, {src_col} FROM peak_holding WHERE strategy=? AND is_active=1", (s,)).fetchall()}
         if d is None:
             res["strategies"][s] = {"site_ok": False, "ours": len(ours)}
             continue
         site = {(h.get("stock_code") or ""): (h.get("name"), float(h.get("buy_price") or 0)) for h in d.get("holdings") or []}
         both = sorted(set(site) & set(ours))
         gaps = [round((float(ours[c][1] or 0) / site[c][1] - 1) * 100, 2) for c in both if site[c][1] and ours[c][1]]
+        src_gaps = [round((float(ours[c][2]) / site[c][1] - 1) * 100, 2) for c in both if site[c][1] and ours[c][2]]
         blocks = [tuple(r) for r in conn.execute(
             "SELECT guard, decision, COUNT(*) FROM virtual_guard_log WHERE strategy=? AND logged_at>=? GROUP BY 1,2", (s, since)).fetchall()]
         res["strategies"][s] = {
@@ -46,6 +56,7 @@ def main():
             "ours_only": [f"{c} {ours[c][0]}" for c in sorted(set(ours) - set(site))],
             "match_pct": round(len(both) / len(set(site) | set(ours)) * 100, 1) if (site or ours) else 100.0,
             "entry_gap_pct": gaps,
+            "source_gap_pct": src_gaps,
             "blocks_1d": [list(b) for b in blocks],
         }
     res["dup_sells"] = {r[0]: int(r[1]) for r in conn.execute(

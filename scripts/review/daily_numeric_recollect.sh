@@ -47,8 +47,9 @@ case "$1" in
     step $PY scripts/ops/check_price_vs_krx_daily.py                          # 원주가 종가 = KRX 공식 종가 확인(보고·알림만, 평소 0건 — §5 실패 27)
     step $PY scripts/ops/sync_new_listings.py --apply                         # 신규 상장 매일 편입(마스터) + 상장일~가격 첫 날 KIS 원주가 채움(2026-10-05, 예전엔 월 1회 편입)
     step $PY $R/fetch_kis_raw_daily_20261004.py --etf-all --max-codes 60       # ETF·ETN 원주가(KIS) 원문 — 하루 60종목(~1시간), 가격 대조 근거
-    step $PY $R/price_raw_basis_audit_20261004.py                            # 가격 원주가 3소스(공식·marcap·KIS) 전수 감사(읽기 전용) → price_raw_basis_audit_20261004/summary.json
+    step $PY $R/price_raw_basis_audit_20261004.py --phase pre_apply          # 가격 원주가 3소스 전수 감사 — ETF 반영 입력용(공식 기록 아님, REVIEW_PLAN §23-2 ①)
     step $PY $R/apply_price_kis_tiebreak_20261004.py --etf-adjusted --daily --apply   # ETF 배당 조정값 → KIS 원주가(조정 비율 0.75~1.0·OHLC 정합·감사 6시간 이내만, 2026-10-05 매일 자동 승인)
+    step $PY $R/price_raw_basis_audit_20261004.py --phase post_apply         # 반영 후 재감사 = 그날 공식 가격 일치율(summary_post_apply.json·history.jsonl)
     step $PY $R/verify_backlog_identity_20261004.py                          # 수주잔고 원문 항등식 측정(읽기 전용)
     step $PY $R/apply_restated_annual_20261004.py --apply                     # 재작성값 중 외부(FnGuide·네이버)가 확인한 칸만 반영(2026-10-06 — FnGuide 원문이 매일 늘어남)
     step $PY scripts/ops/check_financial_anomalies_daily.py                   # 재무 이상값 감시(보고만): 단위 300배·미래 기간·연결/별도 1,000배 → data_anomaly_daily

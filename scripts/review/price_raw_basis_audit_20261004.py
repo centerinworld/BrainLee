@@ -36,6 +36,12 @@ def ratio_kind(r):
 
 
 def main():
+    # 2026-10-07(REVIEW_PLAN §23-2 ①): 매일 ETF 원주가 반영 '전'(반영 입력)과 '후'(공식 기록) 두 번 실행한다.
+    # summary_<phase>.json 을 따로 남기고 history.jsonl 에 한 줄씩 누적 — 그날 공식 일치율은 post_apply 값.
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--phase", choices=["pre_apply", "post_apply", "adhoc"], default="adhoc")
+    phase = ap.parse_args().phase
     OUT.mkdir(parents=True, exist_ok=True)
     conn = connect_primary_db(timeout=1800, readonly=True)
     conn.execute("SET statement_timeout='1800s'")
@@ -134,7 +140,13 @@ def main():
     oh_bad[["code", "date", "open", "high", "low", "close", "off_open", "off_high", "off_low", "off_close"]].to_csv(OUT / "ohlc_mismatch_rows.csv", index=False)
     frac[["code", "date", "open", "high", "low", "close"]].to_csv(OUT / "fractional_stock_rows.csv", index=False)
     by_year = bad.groupby(bad.date.str[:4]).size().to_dict()
-    json.dump({"stats": dict(st), "mismatch_by_year": by_year}, open(OUT / "summary.json", "w"), ensure_ascii=False, indent=1)
+    from datetime import datetime as _dt
+    summ = {"phase": phase, "at": _dt.now().isoformat(timespec="seconds"), "stats": dict(st), "mismatch_by_year": by_year}
+    json.dump(summ, open(OUT / "summary.json", "w"), ensure_ascii=False, indent=1)
+    json.dump(summ, open(OUT / f"summary_{phase}.json", "w"), ensure_ascii=False, indent=1)
+    with open(OUT / "history.jsonl", "a") as _f:
+        _f.write(json.dumps({"phase": phase, "at": summ["at"], "match_pct": st.get("기준 대비 일치율(%)"),
+                             "kis_only_mismatch": st.get("불일치[KIS만] 값 다름"), "provisional_excluded": len(prov)}, ensure_ascii=False, default=str) + "\n")
     for k, v in st.items():
         print(f"{k}: {v:,}" if isinstance(v, int) else f"{k}: {v}")
     print("연도별 불일치:", by_year)

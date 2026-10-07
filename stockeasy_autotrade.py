@@ -22,10 +22,11 @@ PER_STOCK_BUDGET = int(os.getenv("STOCKEASY_PER_STOCK_BUDGET_KRW", "2000000"))
 # 버그로 인해 활성 보유종목의 수익금이 항상 0원으로 표시되던 문제 수정).
 TREND_HOLDING_TICKET_KRW = 10_000_000
 ENABLE_LIVE = (os.getenv("STOCKEASY_LIVE_AUTOTRADE", "false").lower() == "true")
+# 미러 가상계좌(…_mirror, REVIEW_PLAN §23-3)는 스탁이지 복제 기록용이라 승인 목록에 넣어도 실주문 불가(2026-10-07)
 LIVE_APPROVED_STRATEGIES = {
     value.strip()
     for value in os.getenv("STOCKEASY_LIVE_APPROVED_STRATEGIES", "").split(",")
-    if value.strip()
+    if value.strip() and not value.strip().endswith("_mirror")
 }
 
 # ── Live order guard rails (fail-close) ─────────────────────────
@@ -513,7 +514,7 @@ def _sync_one_strategy(strategy: str) -> dict:
     }
 
     # A global switch alone must never promote a strategy into live trading.
-    live_enabled = _is_live_window() and live_for_strategy and strategy in LIVE_APPROVED_STRATEGIES
+    live_enabled = _is_live_window() and live_for_strategy and strategy in LIVE_APPROVED_STRATEGIES and not str(strategy).endswith("_mirror")
     market_open = _is_kr_market_open()
     nxt_time = _is_nxt_time()
     buy_done, sell_done, buy_fail, sell_fail = [], [], [], []

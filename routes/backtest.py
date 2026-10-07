@@ -138,7 +138,7 @@ def _strategy_rankings_for_regime() -> dict:
 async def start_backtest(payload: dict):
     """백테스트 비동기 실행. 즉시 run_id 반환."""
     start   = payload.get("start_date", "2023-04-01")
-    end     = payload.get("end_date",   "2025-12-31")
+    end     = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s   = float(payload.get("per_stock", 10_000_000))
     name    = payload.get("name", f"백테스트 {start[:7]}~{end[:7]}")
     run_id  = str(uuid.uuid4())[:8]
@@ -185,7 +185,7 @@ def list_backtests():
 async def start_backtest_v1(payload: dict):
     """V트렌드 MA정배열 (MA20>MA60>MA120 + RSI + 거래량) 백테스트."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-05-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-05-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V트렌드 MA {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -217,7 +217,7 @@ async def start_backtest_v1_dart(payload: dict):
 async def start_backtest_vbr(payload: dict):
     """V8 52W돌파 모멘텀 백테스트 (52주 고점 65%+ + MA정배열 + 거래량 모멘텀)."""
     start  = payload.get("start_date", "2020-01-01")
-    end    = payload.get("end_date",   "2026-03-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2026-03-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V8 52W돌파 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -240,7 +240,7 @@ async def start_backtest_vbr(payload: dict):
 def _deprecated_v1dart(payload: dict):
     """V트렌드 + DART 수주공시 ★2 이상 필터 백테스트 (비교용, 삭제됨)."""
     start     = payload.get("start_date", "2021-01-01")
-    end       = payload.get("end_date",   "2025-12-31")
+    end       = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s     = float(payload.get("per_stock", 10_000_000))
     dart_min  = int(payload.get("dart_min_signal", 2))
     name      = payload.get("name", f"V트렌드+DART★{dart_min} {start[:7]}~{end[:7]}")
@@ -268,7 +268,7 @@ def _deprecated_v1dart(payload: dict):
 async def start_backtest_v8(payload: dict):
     """V8 수출선행 (HS무역통계 YoY+MA60변곡) 백테스트."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-05-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-05-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V8 수출선행 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -294,7 +294,7 @@ async def start_backtest_v8(payload: dict):
 async def start_backtest_golden_cross(payload: dict):
     """V12 골든크로스 모멘텀 백테스트 (Trail25%/30%, RS6M 랭킹, 분할필터)."""
     start  = payload.get("start_date", "2020-01-01")
-    end    = payload.get("end_date",   "2026-03-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2026-03-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V12골든크로스 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -320,7 +320,7 @@ async def start_backtest_golden_cross(payload: dict):
 async def start_backtest_recovery(payload: dict):
     """V-RECOVERY 낙폭과대 반등 전략 — 데이터 실증: MA60 -25%이상 하방 종목 3배 달성률 69%"""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V-RECOVERY낙폭반등 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -347,7 +347,7 @@ async def start_backtest_minervini(payload: dict):
     """Minervini Trend Template — RS강도(KOSPI대비 근사)+이동평균정렬+200일선상승
     +52주위치+Stage2. 2026-09-19 소유자가 찾은 xang1234/stock-screener(GitHub) 포팅."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"Minervini Trend Template {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -373,7 +373,7 @@ async def start_backtest_minervini(payload: dict):
 async def start_backtest_turnaround(payload: dict):
     """V-TURNAROUND 흑자전환 특화 — BQ 실증: 흑자전환 종목 평균 6.14x (우량성장주 3.48x의 1.77배)"""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V-TURNAROUND흑자전환 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -399,7 +399,7 @@ async def start_backtest_turnaround(payload: dict):
 async def start_backtest_deep_recovery(payload: dict):
     """V-DEEP 깊은낙폭집중 전략 — MA60 -25~-60% 실증 최강구간 집중"""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V-DEEP깊은낙폭 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -425,7 +425,7 @@ async def start_backtest_deep_recovery(payload: dict):
 async def start_backtest_low_base_breakout(payload: dict):
     """V-LOWBASE 저점기반돌파 전략 — 실증: 3배+종목 86%가 MA60 ±15%이내, V-GC 직전 진입"""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V-LOWBASE저점기반 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -451,7 +451,7 @@ async def start_backtest_low_base_breakout(payload: dict):
 async def start_backtest_high_profit(payload: dict):
     """V13 고수익 집중 전략 — 임원매수+성장섹터+계약/수주 복합 필터"""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V13고수익집중 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -479,7 +479,7 @@ async def start_backtest_sector(payload: dict):
     섹터 BUY 신호 발생 시 해당 섹터 급등 후보 TOP3 집중 매수.
     """
     start  = payload.get("start_date", "2022-01-01")
-    end    = payload.get("end_date",   "2026-03-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2026-03-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     buy_th = float(payload.get("buy_threshold", 55.0))
     name   = payload.get("name", f"V-SECTOR섹터집중 {start[:7]}~{end[:7]}")
@@ -508,7 +508,7 @@ async def start_backtest_sector(payload: dict):
 async def start_backtest_v10(payload: dict):
     """V10 이익폭발 백테스트 비동기 실행."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V10 이익폭발 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -534,7 +534,7 @@ async def start_backtest_v10(payload: dict):
 async def start_backtest_v11(payload: dict):
     """V11 흑자전환 백테스트 비동기 실행."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V11 흑자전환 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -565,7 +565,7 @@ async def start_backtest_v10_hs(payload: dict):
 def _deprecated_v10_hs(payload: dict):
     """V10 이익폭발 + HS 수출 YoY 필터 백테스트 (보너스 효과 검증용, 삭제됨)."""
     start  = payload.get("start_date", "2020-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     hs_min = float(payload.get("hs_yoy_min", 10.0))
     name   = payload.get("name", f"V10+HS수출≥{hs_min:.0f}% {start[:7]}~{end[:7]}")
@@ -597,7 +597,7 @@ async def start_backtest_v11_hs(payload: dict):
 def _deprecated_v11_hs(payload: dict):
     """V11 흑자전환 + HS 수출 YoY 필터 백테스트 (보너스 효과 검증용, 삭제됨)."""
     start  = payload.get("start_date", "2020-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     hs_min = float(payload.get("hs_yoy_min", 10.0))
     name   = payload.get("name", f"V11+HS수출≥{hs_min:.0f}% {start[:7]}~{end[:7]}")
@@ -624,7 +624,7 @@ def _deprecated_v11_hs(payload: dict):
 async def start_backtest_v12(payload: dict):
     """V12 섹터대세 백테스트 비동기 실행."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V12 섹터대세 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -650,7 +650,7 @@ async def start_backtest_v12(payload: dict):
 async def start_backtest_regime_adaptive(payload: dict):
     """레짐 적응형 전략 (Meta-V): BULL→V1 MA추세, BEAR→V7 흑자전환 자동 전환."""
     start  = payload.get("start_date", "2020-03-01")
-    end    = payload.get("end_date",   "2025-05-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-05-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"레짐 적응형 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -676,7 +676,7 @@ async def start_backtest_regime_adaptive(payload: dict):
 async def start_backtest_composite(payload: dict):
     """V10 복합 스코어링 전략: 100점 중 60점 이상 고품질 신호만 매수 — 승률 45%+ 목표."""
     start  = payload.get("start_date", "2020-03-01")
-    end    = payload.get("end_date",   "2025-05-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-05-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     thresh = int(payload.get("score_threshold", 60))
     name   = payload.get("name", f"V10 복합스코어링 {start[:7]}~{end[:7]}")
@@ -704,7 +704,7 @@ async def start_backtest_composite(payload: dict):
 async def start_backtest_v1_value(payload: dict):
     """V1 가치매수 (Graham 내재가치 25%+ 할인) 백테스트 비동기 실행."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V1 가치매수 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -730,7 +730,7 @@ async def start_backtest_v1_value(payload: dict):
 async def start_backtest_v2(payload: dict):
     """V2 재무스크리너 (수익성 스코어 ≥ 3점) 백테스트 비동기 실행."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V2 재무스크리너 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
@@ -756,7 +756,7 @@ async def start_backtest_v2(payload: dict):
 async def start_backtest_v5(payload: dict):
     """V5 수급 주도 모멘텀 (기관+외국인 동반 순매수 + MA정배열) 백테스트 비동기 실행."""
     start  = payload.get("start_date", "2018-01-01")
-    end    = payload.get("end_date",   "2025-12-31")
+    end    = _bt.confirmed_end_date(payload.get("end_date",   "2025-12-31"))
     per_s  = float(payload.get("per_stock", 10_000_000))
     name   = payload.get("name", f"V5 수급모멘텀 {start[:7]}~{end[:7]}")
     run_id = str(uuid.uuid4())[:8]
