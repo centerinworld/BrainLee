@@ -65,6 +65,8 @@ import re
 import argparse
 import logging
 import bisect
+import random
+import contextvars
 from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
@@ -1039,6 +1041,8 @@ INDICATOR_MAX_WINDOW = 252   # 신호 지표(52주 고점 등)의 최대 창(거
 
 
 # W2(Stock_Strategy): 공용 일반 엔진이 조정 가격 로더를 쓰는지. 기본 False(기존 결과 불변) — 비교 실행 스크립트가 켠다.
+# 분포 측정 스크립트용: 스레드별로 선택 순서를 강제('code'|'score'|'random:N'). 평소 None.
+SELECTION_ORDER_OVERRIDE: "contextvars.ContextVar" = contextvars.ContextVar('selection_order_override', default=None)
 ADJUSTED_PRICES_DEFAULT = False
 
 PRICE_LIMIT_CHANGE_DATE = "2015-06-15"   # 이전 ±15%, 이후 ±30%
@@ -1060,6 +1064,20 @@ PRICE_RELATED_EVENT_TYPES = (
 SHARE_CHANGE_TOLERANCE = 0.05   # 상장주식 수가 이만큼 넘게 바뀌면 기업행위성(가격 단절의 원인)으로 본다
 
 
+# §26-2 ③: 신호일 기준 과거 행 수(오늘 포함) 최소값 — 전략이 쓰는 가장 긴 지표 창. 목록에 없으면 60.
+MIN_HISTORY_ROWS_DEFAULT = 60
+MIN_HISTORY_ROWS = {
+    '_is_buy_v1': 120,               # MA120(없으면 필터 생략되므로 짧은 이력이 느슨해짐)·52주 위치
+    '_is_buy_value': 60,             # MA60
+    '_is_buy_v2': 60,                # MA60
+    '_is_buy_v5': 120,               # MA120
+    '_is_buy_v10': 61,               # MA60 + 직전 종가
+    '_is_buy_v11': 252,              # 52주 고점·저점(252행)
+    '_is_buy_hidden_rev': 253,       # 52주 고저(i-252..i)·MA120
+    '_is_buy_minervini': 252,        # MA200(+20일 전 MA200은 220행)·52주
+    '_is_buy_peg_standalone': 60,    # MA60
+}
+DELISTING_CONFIRM_DAYS = 10    # §26-2 ②: 마지막 가격일과 마스터 종료일 차이가 이 일수 이내여야 '폐지 청산'
 LIQUIDATION_WINDOW_ROWS = 8   # 상장폐지 직전 정리매매(보통 7거래일 + 재개일) — 가격제한폭이 없어 큰 변동이 실제 손익이다
 
 def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = (), volumes: list = None,
@@ -1351,6 +1369,7 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
         if code in closed_codes and len(ds) > LIQUIDATION_WINDOW_ROWS:
             _ex = ds[-LIQUIDATION_WINDOW_ROWS]
         e["liquidation_window_from"] = _ex
+        e["master_closed_to"] = closed_codes.get(code)   # 마스터상 폐지 확정이면 마지막 종료일(§26-2 ②)
         found = set(_limit_breaks(ds, e["close"], tuple(sorted(status.get(code, ()))), exempt_from=_ex,
                                   volumes=e["volume"], shares_at=_shares_at if _iv else None, stats=_lb_stats))
         e["share_unknown_breaks"] = _lb_stats.get("share_unknown_breaks", 0)
@@ -3329,7 +3348,8 @@ def _run_generic_backtest(version: str, signal_fn,
                            value_trap_max_concentration: float = 50.0,
                            value_trap_extreme_concentration: float = 75.0,
                            adjusted_prices: bool = None,     # W2: None이면 ADJUSTED_PRICES_DEFAULT
-                           adjusted_window: int = INDICATOR_MAX_WINDOW) -> str:
+                           adjusted_window: int = INDICATOR_MAX_WINDOW,
+                           selection_order: str = None) -> str:     # §26-2 ①: None이면 조정가격 모드 'score', 아니면 'code'(옛 동작)
     """V10/V11 공통 백테스트 실행기 (V4 run_backtest 구조 재활용).
     use_market_filter=False: V11 흑자전환처럼 하락장에서도 매수해야 하는 전략에 사용.
     strategy_key: DB에 저장할 전략 키 (v10, v11, v_trend 등). None이면 'combo' 기본값.
@@ -3385,6 +3405,8 @@ def _run_generic_backtest(version: str, signal_fn,
     end_date = confirmed_end_date(end_date)  # 잠정(KRX 확정 전) 가격 제외 — REVIEW_PLAN §23-2 ②
     init_backtest_db()
     _use_adjusted = ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
+    _min_rows = MIN_HISTORY_ROWS.get(getattr(signal_fn, '__name__', ''), MIN_HISTORY_ROWS_DEFAULT)
+    _sel_order = selection_order or SELECTION_ORDER_OVERRIDE.get() or ('score' if _use_adjusted else 'code')
     # 백테스트는 라이브 화면과 달리 실행 시작 시점의 데이터로 고정해야 한다.
     # 이 값을 사양에도 남겨 동일 run hash가 살아있는 데이터 갱신을 다시 읽지 않게 한다.
     effective_data_asof_ts = data_asof_ts or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -3435,6 +3457,8 @@ def _run_generic_backtest(version: str, signal_fn,
             "chart_confluence": chart_confluence,
             "sell_signal_fn": getattr(sell_signal_fn, "__name__", None),
             "entry_bonus_fn": getattr(entry_bonus_fn, "__name__", None),
+            "selection_order": _sel_order,
+            "min_history_rows": _min_rows if _use_adjusted else None,
             "data_asof_ts": effective_data_asof_ts,
             "fast_crash_gate": fast_crash_gate,
             "fast_crash_drop": fast_crash_drop if fast_crash_gate else None,
@@ -3650,7 +3674,7 @@ def _run_generic_backtest(version: str, signal_fn,
                      'stocks_with_breaks': 0, 'stocks_adjusted': 0, 'misaligned_skipped': 0,
                      'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0, 'zero_volume_skipped_buys': 0,
                      'share_unknown_breaks': 0, 'candidate_skips_quality_day': 0, 'price_issue_events': len(price_issues),
-                     'delisted_exits': 0, 'delisted_entries': 0, 'delisted_stocks_in_universe': 0, 'pit_mktcap_missing': 0,
+                     'delisted_exits': 0, 'unevaluable_delistings': 0, 'delisted_entries': 0, 'delisted_stocks_in_universe': 0, 'pit_mktcap_missing': 0,
                      'quality_day_blocks': sum(len(v) for v in issue_dates.values()), 'break_excluded_stock_days': 0}
         if _use_adjusted:
             adj_stats['delisted_stocks_in_universe'] = sum(1 for _s in stock_data.values() if _s.get('ends_before_period_end'))
@@ -3674,6 +3698,15 @@ def _run_generic_backtest(version: str, signal_fn,
                 sd['adj_factor'] = f
                 sd['breaks'] = e['breaks']; sd['excluded_ranges'] = e['excluded_ranges']; sd['break_disclosed'] = e.get('break_disclosed', {})
                 adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
+                # §26-2 ②: 폐지 청산은 '마스터상 폐지 확정 + 마지막 가격일이 마스터 종료일 10일 이내'일 때만. 자료만 끊긴 종목은 평가 불가로 별도 집계.
+                if sd.get('ends_before_period_end'):
+                    _mc = e.get('master_closed_to')
+                    try:
+                        from datetime import date as _d0
+                        _gap = abs((_d0.fromisoformat(_mc[:10]) - _d0.fromisoformat(sd['dates'][-1][:10])).days) if _mc else None
+                    except Exception:
+                        _gap = None
+                    sd['delisting_confirmed'] = bool(_gap is not None and _gap <= DELISTING_CONFIRM_DAYS)
                 adj_stats['break_excluded_stock_days'] += sum(1 for _d in sd['dates'] for _a, _b in e['excluded_ranges'] if _a <= _d <= _b and _d >= start_date)
                 # 주당 재무(EPS·BPS)는 그 시점 주식 수 기준이라 조정 가격과 같은 단위로 맞춘다 —
                 # 공시일(avail) 시점의 조정 계수를 곱한다(PER·PBR = 조정가 ÷ 조정 주당값 = 경제적 값). 안 맞추면 가치 신호가 깨진다.
@@ -3949,7 +3982,8 @@ def _run_generic_backtest(version: str, signal_fn,
                 _ps_g.pop(sc, None)
 
             # ── Phase B: 전일 매수 신호 → 오늘 시가/종가 집행 ────────
-            sorted_buys = sorted(_pb_g.items(), key=lambda x: x[0])
+            # §26-2 ①: 'code'(옛 동작)만 종목코드 순으로 다시 정렬한다. score·random은 Phase E가 정한 순서(삽입 순서)대로 자리를 채운다.
+            sorted_buys = sorted(_pb_g.items(), key=lambda x: x[0]) if _sel_order == 'code' else list(_pb_g.items())
             for sc, meta in sorted_buys:
                 if sc in positions or len(positions) >= _dynamic_limit(day):
                     continue
@@ -4012,7 +4046,11 @@ def _run_generic_backtest(version: str, signal_fn,
                     _px = (_rec[0] * sd['adj_factor'][i]) if _rec else sd['prices'][i]
                     _close_at(sc, pos, sd, i, _px, '상장폐지 청산(delisted)' + (f":{_rec[1]}" if _rec else ''), day)
                     trades[-1]['delisted'] = True
-                    adj_stats['delisted_exits'] += 1
+                    if sd.get('delisting_confirmed'):
+                        adj_stats['delisted_exits'] += 1
+                    else:
+                        trades[-1]['evaluation'] = 'unevaluable_delisting'   # 마스터상 폐지가 아닌데 자료만 끊김 — 손익은 마지막 거래일 종가, 별도 집계
+                        adj_stats['unevaluable_delistings'] += 1
                     continue
                 # 단절이 다가오고 그 사건이 공시돼 있으며 오늘이 단절 전 '거래 가능한 마지막 날'이면 오늘 종가로 사전 청산(D12 ②, §18-2).
                 # 공시 근거가 없으면 사전 청산하지 않는다 — 내일 일을 오늘 아는 미래 참조(REVIEW_PLAN §8-1 #3).
@@ -4042,83 +4080,55 @@ def _run_generic_backtest(version: str, signal_fn,
             free_slots = _dynamic_limit(day) - len(positions) + len(_ps_g)
             if free_slots > 0 and monthly_buys.get(month_key, 0) < max_new_per_month:
                 cap = max_new_per_month - monthly_buys.get(month_key, 0)
-                if entry_bonus_fn is not None:
-                    # 보너스 있는 종목 우선 진입 — 무보너스 종목끼리는 기존(dict) 순서 유지 (stable sort)
-                    sigs = []
-                    for sc, sd in stock_data.items():
-                        if sc in positions or sc in _ps_g or sc in _pb_g:
+                # §26-2 ①: 후보를 모두 모은 뒤 정렬해서 채운다(종목코드 순 선착순 제거).
+                # 점수 = (entry_bonus_fn 값, 3개월 수익률) 내림차순, 동점은 종목코드. 시장 수익률은 같은 날 모든 종목에 같으므로 순서에 영향 없음.
+                # selection_order: 'code'(종목코드 순, 비교용·옛 동작) | 'score' | 'random:N'(재현 가능한 무작위, 분포 측정용)
+                sigs = []
+                for sc, sd in stock_data.items():
+                    if sc in positions or sc in _ps_g or sc in _pb_g:
+                        continue
+                    im = date_idx.get(sc, {})
+                    if day not in im:
+                        continue
+                    i = im[day]
+                    if asof_mktcap:
+                        sh = _shares_asof(sc, day)
+                        if sh <= 0 or sh * sd.get('raw_prices', sd['prices'])[i] / 1e8 < mktcap_min:
                             continue
-                        im = date_idx.get(sc, {})
-                        if day not in im:
+                    if avoid_overheat is not None and i >= 40:
+                        _c40 = sd['prices'][i - 40]
+                        if _c40 > 0 and (sd['prices'][i] / _c40 - 1) > avoid_overheat:
                             continue
-                        i = im[day]
-                        if asof_mktcap:
-                            sh = _shares_asof(sc, day)
-                            if sh <= 0 or sh * sd.get('raw_prices', sd['prices'])[i] / 1e8 < mktcap_min:
-                                continue
-                        if avoid_overheat is not None and i >= 40:
-                            _c40 = sd['prices'][i - 40]
-                            if _c40 > 0 and (sd['prices'][i] / _c40 - 1) > avoid_overheat:
-                                continue
-                        if value_trap_gate and value_trap_map.get(sc, False):
-                            continue
-                        if _use_adjusted and i < 60:
-                            continue          # 이력 길이 조건은 신호일마다 과거 행 수로(N1 ①)
-                        if not signal_fn(i, sd['sim_start_i'], sd['dates'], sd['prices'],
-                                         sd['volumes'], sd['frn'], sd['inst'], sd['fins']):
-                            continue
-                        if _use_adjusted and is_excluded_day(sd, day):
-                            adj_stats['candidate_skips_excluded'] += 1
-                            continue
-                        if _use_adjusted and day in sd.get('entry_blocked', ()):
-                            adj_stats['candidate_skips_quality_day'] += 1
-                            continue
-                        # 바닥 컨플루언스 게이트 (2026-07-18 공통 모듈)
-                        if chart_confluence and _chart_bottom_confluence(
-                            sd['prices'], sd['opens'], sd['highs'], sd['lows'], sd.get('chart'), i) < _CHART_BOTTOM_MIN:
-                            continue
-                        sigs.append((sc, float(entry_bonus_fn(sc, day) or 0.0)))
-                    sigs.sort(key=lambda x: -x[1])
-                    for sc, _ in sigs[:cap]:
-                        _pb_g[sc] = {
-                            'financial_provenance': _financial_provenance_for(sc, stock_data[sc], day)
-                        }
+                    if value_trap_gate and value_trap_map.get(sc, False):
+                        continue
+                    if _use_adjusted and i + 1 < _min_rows:
+                        continue          # 이력 길이 조건은 신호일마다 과거 행 수로(N1 ①)
+                    if not signal_fn(i, sd['sim_start_i'], sd['dates'], sd['prices'],
+                                     sd['volumes'], sd['frn'], sd['inst'], sd['fins']):
+                        continue
+                    if _use_adjusted and is_excluded_day(sd, day):
+                        adj_stats['candidate_skips_excluded'] += 1
+                        continue
+                    if _use_adjusted and day in sd.get('entry_blocked', ()):
+                        adj_stats['candidate_skips_quality_day'] += 1
+                        continue
+                    # 바닥 컨플루언스 게이트 (2026-07-18 공통 모듈)
+                    if chart_confluence and _chart_bottom_confluence(
+                        sd['prices'], sd['opens'], sd['highs'], sd['lows'], sd.get('chart'), i) < _CHART_BOTTOM_MIN:
+                        continue
+                    sigs.append((sc, float(entry_bonus_fn(sc, day) or 0.0) if entry_bonus_fn is not None else 0.0,
+                                 (sd['prices'][i] / sd['prices'][i - 63] - 1.0) if i >= 63 and sd['prices'][i - 63] > 0 else float('-inf')))
+                if _sel_order == 'score':
+                    sigs.sort(key=lambda x: (-x[1], -x[2], x[0]))
+                elif _sel_order.startswith('random:'):
+                    sigs.sort(key=lambda x: x[0])
+                    random.Random(f'{_sel_order}:{day}').shuffle(sigs)
                 else:
-                    for sc, sd in stock_data.items():
-                        if len(_pb_g) >= cap:
-                            break
-                        if sc in positions or sc in _ps_g or sc in _pb_g:
-                            continue
-                        im = date_idx.get(sc, {})
-                        if day not in im:
-                            continue
-                        i = im[day]
-                        if asof_mktcap:
-                            sh = _shares_asof(sc, day)
-                            if sh <= 0 or sh * sd.get('raw_prices', sd['prices'])[i] / 1e8 < mktcap_min:
-                                continue
-                        if avoid_overheat is not None and i >= 40:
-                            _c40 = sd['prices'][i - 40]
-                            if _c40 > 0 and (sd['prices'][i] / _c40 - 1) > avoid_overheat:
-                                continue
-                        if value_trap_gate and value_trap_map.get(sc, False):
-                            continue
-                        if _use_adjusted and i < 60:
-                            continue          # 이력 길이 조건은 신호일마다 과거 행 수로(N1 ①)
-                        if not signal_fn(i, sd['sim_start_i'], sd['dates'], sd['prices'],
-                                         sd['volumes'], sd['frn'], sd['inst'], sd['fins']):
-                            continue
-                        if _use_adjusted and is_excluded_day(sd, day):
-                            adj_stats['candidate_skips_excluded'] += 1
-                            continue
-                        if _use_adjusted and day in sd.get('entry_blocked', ()):
-                            adj_stats['candidate_skips_quality_day'] += 1
-                            continue
-                        # 바닥 컨플루언스 게이트 (2026-07-18 공통 모듈)
-                        if chart_confluence and _chart_bottom_confluence(
-                            sd['prices'], sd['opens'], sd['highs'], sd['lows'], sd.get('chart'), i) < _CHART_BOTTOM_MIN:
-                            continue
-                        _pb_g[sc] = {'financial_provenance': _financial_provenance_for(sc, sd, day)}
+                    sigs.sort(key=lambda x: (-x[1], x[0]))   # code: 보너스 순, 무보너스는 종목코드 순
+                for sc, _b, _s in sigs[:cap]:
+                    _pb_g[sc] = {
+                        'financial_provenance': _financial_provenance_for(sc, stock_data[sc], day)
+                    }
 
             # ── 에쿼티 ────────────────────────────────────────────────
             equity_curve.append({'date': day, 'equity': round(_marked_equity(day))})
