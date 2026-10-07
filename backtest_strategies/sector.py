@@ -12,7 +12,14 @@ from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
+import backtest_common as _bc
+from price_integrity import research_price_issues
 from backtest_common import (
+    QUALITY_DAY_CLASSES,
+    is_excluded_day,
+    last_tradable_day_before_break,
+    last_tradable_index_before,
+    load_adjusted_prices,
     _load_jump_aligned_corp_factors,
     _rebase_positions_for_corp_actions,
     SignalEvidenceLedger,
@@ -167,6 +174,7 @@ def run_backtest_sector(
     # TASK_PARTIAL_TP_P3 (2026-09-13, Gemini 고차원 검증): 단일 초대형 종목(에코프로 등)
     # 편중성 분해 및 비편중 유니버스 검증용 종목 제외 파라미터. 기본 None(전체 대상).
     exclude_codes: list[str] | tuple[str, ...] | None = None,
+    adjusted_prices: bool = None,     # W3: None이면 backtest_common.ADJUSTED_PRICES_DEFAULT
     strict_exec: bool = True,         # 2026-07-13 기본화 (Codex 계약): D종가 신호 → D+1 시가 체결.
                                       # 검증: same_close avg6 +29.2%(5/6) → next_open +31.4%(5/6) — 전략 유효성 유지.
     run_name: str = None,
@@ -180,6 +188,10 @@ def run_backtest_sector(
     - 섹터 점수가 EXIT 이하로 하락해도 최소 보유기간 전에는 섹터 청산 보류
     """
     init_backtest_db()
+    adjusted_prices = _bc.ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
+    adj_stats = {'enabled': adjusted_prices, 'candidate_skips_excluded': 0, 'candidate_skips_quality_day': 0,
+                 'break_liquidations': 0, 'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0,
+                 'zero_volume_skipped_buys': 0, 'share_unknown_breaks': 0, 'misaligned_skipped': 0, 'stocks_with_breaks': 0}
     run_name = run_name or f"V-SECTOR섹터집중 {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
     _record_run_spec(
@@ -189,6 +201,7 @@ def run_backtest_sector(
          "min_sector_hold_days": min_sector_hold_days, "strict_exec": strict_exec,
          "per_stock": per_stock, "max_positions": max_positions,
          "asof_mktcap": asof_mktcap,
+         "adjusted_prices": True if adjusted_prices else None,
          "start": start_date, "end": end_date},
         signal_timing="close_D",
         execution_timing=("next_open" if strict_exec else "same_close"),
@@ -265,6 +278,45 @@ def run_backtest_sector(
         # 영업일 목록
         trade_dates = sorted(set(r[1] for r in rows_p if r[1] >= start_date))
 
+        # W3(Stock_Strategy, D12 ②): 조정 가격 로더 — 신호·손익은 조정 시계열, 체결 수량·시총은 원주가.
+        # ⚠️ 후보군 `_SECTOR_GROUPS`(수동 선정 70종목)의 생존 편향은 이 이관으로 해결되지 않는다.
+        adjf: Dict[str, Dict[str, float]] = {}      # code → {date: 조정 계수}
+        adj_e: Dict[str, dict] = {}                 # code → 로더 항목(breaks·excluded_ranges·break_disclosed·volume)
+        adj_qdays: Dict[str, set] = {}
+        adj_dix: Dict[str, Dict[str, int]] = {}
+        if adjusted_prices and price_data:
+            _ap = load_adjusted_prices(conn, list(price_data.keys()), price_load_start, end_date)
+            _qi = research_price_issues(conn, list(price_data.keys()), price_load_start, end_date, allow_confirmed_corporate_actions=True)
+            for _qc, _qd, _qcls in _qi:
+                if _qcls in QUALITY_DAY_CLASSES:
+                    adj_qdays.setdefault(str(_qc), set()).add(str(_qd)[:10])
+            for code in list(price_data.keys()):
+                e = _ap.get(code)
+                if not e or set(e['dates']) != set(price_data[code].keys()):
+                    adj_stats['misaligned_skipped'] += 1
+                    continue
+                fmap = dict(zip(e['dates'], e['adj_factor']))
+                adjf[code] = fmap
+                price_data[code] = {d: (v[0] * fmap[d], v[1] * fmap[d], v[2] * fmap[d], (v[3] * fmap[d]) if v[3] is not None else None)
+                                    for d, v in price_data[code].items()}
+                adj_e[code] = e
+                adj_dix[code] = {d: k for k, d in enumerate(e['dates'])}
+                adj_stats['stocks_with_breaks'] += 1 if e['breaks'] else 0
+                adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
+
+        def _af(code: str, day: str) -> float:
+            return adjf.get(code, {}).get(day, 1.0) or 1.0
+
+        def _buy_size(code: str, day: str, px: float, budget: float):
+            """(조정 단위 수량, 원가). 조정 모드는 원주가 기준 정수 주식 → 조정 단위(수량 ÷ 계수)로 환산."""
+            if adjusted_prices:
+                f = _af(code, day)
+                raw_px = px / f
+                qty_raw = int(budget / raw_px)
+                return qty_raw / f, qty_raw * raw_px, qty_raw, raw_px
+            q = int(budget / px)
+            return q, q * px, q, px
+
         # 시총 맵 (거래비용 슬리피지 티어용)
         mc_map = {}
         if not asof_mktcap:
@@ -294,6 +346,8 @@ def run_backtest_sector(
             return 0.0
 
         def _cost_mktcap(code: str, day: str, price: float) -> float:
+            if adjusted_prices:
+                price = price / (adjf.get(code, {}).get(day, 1.0) or 1.0)   # 시총은 원주가 기준
             if asof_mktcap:
                 shares = _shares_asof_sector(code, day)
                 return shares * price / 100_000_000 if shares > 0 else 1000.0
@@ -380,10 +434,49 @@ def run_backtest_sector(
             return items
 
         # 2026-09-28: 보유 중 확정 기업행위(권리락·분할 등) 날 포지션을 새 주식 기준으로 재기준
-        _ca_factors = _load_jump_aligned_corp_factors(conn, list(price_data.keys()))
+        _ca_factors = {} if adjusted_prices else _load_jump_aligned_corp_factors(conn, list(price_data.keys()))
         _ca_prev_day = None
+
+        def _sec_close_at(code, price, reason, day_):
+            """조정 단위 `price`로 즉시 청산(단절 처리)."""
+            nonlocal cash
+            pos_ = positions.pop(code)
+            sector_assignments.pop(code, None)
+            _amt, _net = _net_profit_scaled(pos_["buy_price"], price, pos_.get("qty", 1), _cost_mktcap(code, day_, price))
+            cash += pos_["buy_price"] * pos_.get("qty", 1) + _amt
+            all_trades.append({"date": day_, "code": code, "action": "SELL", "price": price, "pnl_pct": round(_net, 2),
+                               "reason": reason, "qty": pos_.get("qty", 1), "entry_price": pos_["buy_price"],
+                               "pnl_krw": round(_amt), "price_raw": round(price / _af(code, day_), 4),
+                               "entry_price_raw": pos_.get("entry_price_raw"), "qty_raw": pos_.get("qty_raw")})
+            nonlocal sec_pending_sells
+            sec_pending_sells = [t for t in sec_pending_sells if t[0] != code]
+            return all_trades[-1]
+
         for i, trade_date in enumerate(trade_dates):
-            _rebase_positions_for_corp_actions(_ca_factors, positions, _ca_prev_day, trade_date, ('buy_price', 'peak'), 'qty')
+            if adjusted_prices:
+                for code in list(positions.keys()):
+                    e = adj_e.get(code)
+                    if not e or not e['breaks']:
+                        continue
+                    k = adj_dix[code].get(trade_date)
+                    if k is not None and k > 0 and trade_date in e['breaks']:
+                        # 단절 당일: 공시 근거 없이 보유 중이면 정지 직전 거래 가능일 종가로 청산(평가 불가 표시)
+                        kk = last_tradable_index_before(e, k)
+                        kk = k - 1 if kk is None else kk
+                        px_ = price_data[code][e['dates'][kk]][0]
+                        t_ = _sec_close_at(code, px_, "단절 당일 청산(공시 근거 없음·평가 불가)", trade_date)
+                        t_["evaluation"] = "unevaluable_break"; t_["basis_date"] = e['dates'][kk]
+                        adj_stats['break_day_liquidations'] += 1
+                        continue
+                    bi = bisect.bisect_right(e['breaks'], trade_date)
+                    if bi < len(e['breaks']):
+                        nb = e['breaks'][bi]
+                        if last_tradable_day_before_break(e, (e.get('break_disclosed') or {}).get(nb), nb) == trade_date \
+                                and trade_date in price_data[code]:
+                            _sec_close_at(code, price_data[code][trade_date][0], "단절 전 청산(D12, 공시 후)", trade_date)
+                            adj_stats['break_liquidations'] += 1
+            else:
+                _rebase_positions_for_corp_actions(_ca_factors, positions, _ca_prev_day, trade_date, ('buy_price', 'peak'), 'qty')
             _ca_prev_day = trade_date
             # ── strict_exec: 전일 신호 → 오늘 시가 체결 ──
             if strict_exec:
@@ -395,6 +488,9 @@ def run_backtest_sector(
                     # F07 fix: 시가 결측(pdata[3] is None)도 "당일 미거래"와 동일하게 대기시킨다 —
                     # 종가를 대신 시가로 체결하지 않는다.
                     if pdata is None or pdata[3] is None:
+                        _still.append((code, reason, fraction)); continue
+                    if adjusted_prices and code in adj_e and (adj_e[code]['volume'][adj_dix[code][trade_date]] or 0) <= 0:
+                        adj_stats['zero_volume_deferred_sells'] += 1      # 거래 불가능한 날 — 다음 거래일로 이월
                         _still.append((code, reason, fraction)); continue
                     px = pdata[3]
                     pos = positions[code]
@@ -436,17 +532,23 @@ def run_backtest_sector(
                     if pdata is None or pdata[3] is None:
                         continue  # 당일 미거래(또는 시가 결측) → 주문 만료
                     px = pdata[3]
+                    if adjusted_prices and code in adj_e and (adj_e[code]['volume'][adj_dix[code][trade_date]] or 0) <= 0:
+                        adj_stats['zero_volume_skipped_buys'] += 1
+                        continue
                     budget = min(per_stock, cash * 0.99)
-                    qty = int(budget / px)
-                    if qty < 1 or qty * px > cash:
+                    qty, _cost, _qraw, _rpx = _buy_size(code, trade_date, px, budget)
+                    if qty < 1 or _cost > cash:
                         continue  # 현금 부족 → 주문 거부 (현금 음수 금지)
-                    cash -= qty * px
+                    cash -= _cost
                     positions[code] = {"buy_price": px, "peak": px, "qty": qty,
                                        "sector": sector_key, "entry_date": trade_date,
                                        "entry_sector_score": meta.get("sector_score", 0), "pyramid_adds": 0}
+                    if adjusted_prices:
+                        positions[code].update({"entry_price_raw": round(_rpx, 4), "qty_raw": _qraw})
                     sector_assignments[code] = sector_key
                     all_trades.append({"date": trade_date, "code": code, "action": "BUY",
-                                       "price": px, "sector": sector_key, "qty": qty, **meta})
+                                       "price": px, "sector": sector_key, "qty": qty, **meta,
+                                       **({"price_raw": round(_rpx, 4), "qty_raw": _qraw} if adjusted_prices else {})})
                 sec_pending_buys = []
             # ─────── 보유 종목 현재가 업데이트 & 매도 체크 ───────
             to_sell = []
@@ -646,10 +748,10 @@ def run_backtest_sector(
                             continue
                         add_px = pdata[0]
                         add_budget = min(per_stock * pyramid_add_pct, cash * 0.99)
-                        add_qty = int(add_budget / add_px)
-                        if add_qty < 1 or add_qty * add_px > cash:
+                        add_qty, _acost, _araw, _arpx = _buy_size(code, trade_date, add_px, add_budget)
+                        if add_qty < 1 or _acost > cash:
                             continue  # 현금 부족 → 스킵(음수 금지)
-                        cash -= add_qty * add_px
+                        cash -= _acost
                         old_qty = pos["qty"]
                         new_qty = old_qty + add_qty
                         # 가중평균 단가로 원가 재계산 — 이후 손절/추적손절/익절 판단이 이 기준으로 이뤄짐
@@ -722,7 +824,7 @@ def run_backtest_sector(
                             (c, d3m, as_of)
                         ).fetchone() or (0,))[0] or 0.0
                         _sh_r = _shares_asof_sector(c, as_of)
-                        mktcap_r = (_sh_r * p_now[0] / 1e8) if _sh_r > 0 else 1000
+                        mktcap_r = (_sh_r * (p_now[0] / _af(c, as_of)) / 1e8) if _sh_r > 0 else 1000
                         inst_int_r = inst3m_r / max(1, mktcap_r) * 100
                         # RS 리더 점수 (3M 모멘텀 60% + 기관집중도 40%)
                         sel_score = rs3m * 0.6 + inst_int_r * 40
@@ -824,6 +926,11 @@ def run_backtest_sector(
                         pdata = price_data.get(code, {}).get(trade_date)
                         if not pdata:
                             continue
+                        if adjusted_prices and code in adj_e:
+                            if is_excluded_day(adj_e[code], trade_date):
+                                adj_stats['candidate_skips_excluded'] += 1; continue
+                            if trade_date in adj_qdays.get(code, ()):
+                                adj_stats['candidate_skips_quality_day'] += 1; continue
                         _meta = {
                             "sector_score": scores.get(sector_key, 0),
                             "sector_ret1": momentum.get(sector_key, {}).get("ret1"),
@@ -844,10 +951,10 @@ def run_backtest_sector(
                             continue
                         buy_p = pdata[0]
                         budget = min(per_stock, cash * 0.99)
-                        qty = int(budget / buy_p)
-                        if qty < 1 or qty * buy_p > cash:
+                        qty, _cost, _qraw, _rpx = _buy_size(code, trade_date, buy_p, budget)
+                        if qty < 1 or _cost > cash:
                             continue  # 현금 부족 → 주문 거부
-                        cash -= qty * buy_p
+                        cash -= _cost
                         positions[code] = {"buy_price": buy_p, "peak": buy_p, "qty": qty,
                                            "sector": sector_key, "entry_date": trade_date,
                                            "entry_sector_score": _meta.get("sector_score", 0), "pyramid_adds": 0}
@@ -916,7 +1023,8 @@ def run_backtest_sector(
         alpha = portfolio_return - kospi_ret
         summary = (f"V-SECTOR {start_date[:7]}~{end_date[:7]} | "
                    f"매수{n_buy}건 매도{n_sell}건 | 자본수익{portfolio_return:.1f}% | "
-                   f"평균거래{avg_trade_return:.1f}% | 승률{win_rate:.0f}% | KOSPI대비α{alpha:+.1f}%")
+                   f"평균거래{avg_trade_return:.1f}% | 승률{win_rate:.0f}% | KOSPI대비α{alpha:+.1f}%"
+                   + (f"\n조정가격(W3): {json.dumps(adj_stats, ensure_ascii=False)}" if adjusted_prices else ""))
 
         import json as _json
         conn.execute("""
