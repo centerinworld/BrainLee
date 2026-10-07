@@ -67,6 +67,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+FINGERPRINT_VERSION = "v2"   # D16: NUMERIC 정확 합계(2026-10-07). v1 = float SUM 후 ROUND(…,4)
+
+
 def source_snapshot(
     conn: sqlite3.Connection,
     start_date: str | None = None,
@@ -90,12 +93,16 @@ def source_snapshot(
     today = datetime.now().date().isoformat()
     upper = min(end_date or today, today)
     lower = start_date or "0000-01-01"
+    # 2026-10-07 D16(REVIEW_PLAN §29-2): 실수(float) 합계는 병렬 집계 순서에 따라 소수 넷째 자리가 흔들려
+    # 같은 데이터인데 지문이 달라졌다(측정 61건 중 3~4종). 행마다 NUMERIC으로 바꿔 더하면 합이 정확해
+    # 순서와 무관하다. 지문 버전을 함께 넣어 옛(v1) run과 섞어 비교하지 않는다.
     payload = {
+        "fingerprint_version": FINGERPRINT_VERSION,
         "price_history": one(
             """SELECT COUNT(*),MIN(date),MAX(date),
-                      ROUND(COALESCE(SUM(close),0),4),
-                      ROUND(COALESCE(SUM(volume),0),4),
-                      ROUND(COALESCE(SUM(close*((id%1009)+1)),0),4)
+                      COALESCE(SUM(ROUND(CAST(close AS NUMERIC),4)),0),
+                      COALESCE(SUM(ROUND(CAST(volume AS NUMERIC),4)),0),
+                      COALESCE(SUM(ROUND(CAST(close AS NUMERIC),4)*((id%1009)+1)),0)
                FROM price_history WHERE date>=? AND date<=? AND date<?""",
             (lower, upper, today),
         ),
@@ -120,6 +127,7 @@ def source_snapshot(
     }
     revision_canonical = json.dumps(revision, sort_keys=True, ensure_ascii=True, default=str)
     return {
+        "fingerprint_version": FINGERPRINT_VERSION,
         "fingerprint": hashlib.sha256(canonical.encode()).hexdigest()[:16],
         "revision_fingerprint": hashlib.sha256(revision_canonical.encode()).hexdigest()[:16],
         "period": [lower, upper],
