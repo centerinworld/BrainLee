@@ -47,7 +47,8 @@ pd.DataFrame(trades, columns=["strategy", "period", "run_id", "stock_code", "ent
 vt = conn.execute(
     """SELECT strategy, stock_code, CAST(entry_date AS TEXT), CAST(sold_at AS TEXT), buy_price,
               COALESCE(NULLIF(sold_price,0), NULLIF(sell_price,0)), profit_pct, quantity
-       FROM peak_holding WHERE is_active=0""").fetchall()
+       FROM peak_holding WHERE is_active=0
+         AND strategy NOT IN ('peak_mirror','momentum_mirror','value_mirror')""").fetchall()  # 스탁이지 복제 거래는 연구 표본 제외(REVIEW_PLAN §25-2 ③)
 mc = {r[0]: r[1] for r in conn.execute(
     "SELECT DISTINCT ON (stock_code) stock_code, market_cap FROM stock_universe ORDER BY stock_code, base_date DESC").fetchall()}
 v = pd.DataFrame([tuple(r) for r in vt], columns=["strategy", "stock_code", "entry_date", "sold_at", "buy_price", "sell_price", "profit_pct", "qty"])

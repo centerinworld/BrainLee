@@ -1108,41 +1108,135 @@ def _limit_breaks(dates: list, adj_close: list, status_changes: tuple = (), volu
     return out
 
 
-def confirmed_end_date(end, conn=None):
-    """연구 경로는 KRX 확정 가격만 — 잠정 표시 행이 있는 가장 이른 날짜 전날로 end를 자른다(2026-10-07, REVIEW_PLAN §23-2 ②).
+PROVISIONAL_DATE_CUT_RATIO = 0.5   # 그날 가격 행 중 잠정 비율이 이 이상이면 날짜째 제외(REVIEW_PLAN §25-2 ①)
 
-    당일 가격은 장중 매분(`crud.bulk_insert_price_history`)·18시 KIS 저장분 모두 잠정이고, KRX 공식 종가가 들어오면
-    `scripts/ops/check_price_vs_krx_daily.py`가 교체한다(`price_provisional_rows`, FINANCIAL §5 실패 27).
-    end가 그 날짜 이상이면 잘라서 로그에 남긴다. 표가 없거나 조회 실패면 end 그대로(실패해도 백테스트는 계속).
-    """
-    if not end:
-        return end
-    raw = str(end)
-    iso = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}" if len(raw) == 8 and raw.isdigit() else raw[:10]
+
+def _provisional_dates(conn):
+    """잠정 표시 날짜별 (표시 행 수, 그날 price_history 행 수). PG가 아니거나 표가 없으면 None(호출자 트랜잭션을 건드리지 않음)."""
+    if not hasattr(conn, "_connection"):
+        return None   # SQLite(테스트·레거시) 연결 — 잠정 표시 표 없음
+    # 표가 없어도 오류가 나지 않게(오류 → 호출자 트랜잭션 중단·롤백 위험) 존재 확인 먼저
+    if not conn.execute("SELECT to_regclass('price_provisional_rows')").fetchone()[0]:
+        return None
+    return {str(d)[:10]: (int(n), int(t or 0)) for d, n, t in conn.execute(
+        "SELECT m.date, COUNT(*), (SELECT COUNT(*) FROM price_history p WHERE p.date=m.date) "
+        "FROM price_provisional_rows m GROUP BY m.date").fetchall()}
+
+
+def _with_conn(conn, fn, default):
     own = conn is None
-    if not own and not hasattr(conn, "_connection"):
-        return end   # SQLite(테스트·레거시) 연결 — 잠정 표시 표 없음. 호출자 트랜잭션을 건드리지 않는다
     try:
         if own:
             conn = connect_primary_db(timeout=30, readonly=True)
-        # 표가 없어도 오류가 나지 않게(오류 → 호출자 트랜잭션 중단·롤백 위험) 존재 확인 먼저
-        if not conn.execute("SELECT to_regclass('price_provisional_rows')").fetchone()[0]:
-            return end
-        row = conn.execute("SELECT MIN(date) FROM price_provisional_rows").fetchone()
-        first = str(row[0])[:10] if row and row[0] else None
+        return fn(conn)
     except Exception:
-        return end
+        return default
     finally:
         if own and conn is not None:
             try:
                 conn.close()
             except Exception:
                 pass
+
+
+def confirmed_end_date(end, conn=None):
+    """연구 경로는 KRX 확정 가격만 — 잠정 표시가 '그날 대부분'인 가장 이른 날짜 전날로 end를 자른다(2026-10-07, REVIEW_PLAN §23-2 ②·§25-2 ①).
+
+    당일 가격은 장중 매분(`crud.bulk_insert_price_history`)·18시 KIS 저장분 모두 잠정이고, KRX 공식 종가가 들어오면
+    `scripts/ops/check_price_vs_krx_daily.py`가 교체한다(`price_provisional_rows`, FINANCIAL §5 실패 27).
+    날짜 컷은 그날 가격 행의 `PROVISIONAL_DATE_CUT_RATIO`(50%) 이상이 잠정인 날만 — KRX 일별에 끝내 없는 행(ETN·일부 ETF·정지 종목)이
+    몇 줄 남아도 모든 백테스트가 그 날짜 앞에서 멈추지 않게 한다. 남은 개별 행은 `provisional_rows`로 그 행만 뺀다.
+    표가 없거나 조회 실패면 end 그대로(실패해도 백테스트는 계속).
+    """
+    if not end:
+        return end
+    raw = str(end)
+    iso = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}" if len(raw) == 8 and raw.isdigit() else raw[:10]
+    if conn is not None and not hasattr(conn, "_connection"):
+        return end
+    dates = _with_conn(conn, _provisional_dates, None)
+    if not dates:
+        return end
+    cut_dates = sorted(d for d, (n, t) in dates.items() if t and n / t >= PROVISIONAL_DATE_CUT_RATIO)
+    first = cut_dates[0] if cut_dates else None
     if not first or iso < first:
         return end
     cut = (datetime.strptime(first, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
     logger.warning("[확정가격] end %s → %s (잠정 가격 %s 이후 제외 — KRX 공식값 수신 전)", iso, cut, first)
     return cut.replace("-", "") if len(raw) == 8 and raw.isdigit() else cut
+
+
+_REQ_END_COL_OK = False
+
+
+def record_requested_end(run_id, requested_end, actual_end=None):
+    """run 기록에 요청 end를 남긴다 — `backtest_runs.end_date`는 실제(잠정 컷 뒤) end, `requested_end_date`는 요청값(REVIEW_PLAN §25-2 ②).
+
+    라우트 → 래퍼 → 엔진 순서로 end가 전달되며 앞에서 이미 잘린 값이 뒤로 넘어간다. 그래서 '요청 ≠ 실제'를 본 호출자(원래 요청을
+    아는 쪽)만 덮어쓰고, 요청 = 실제인 호출자는 비어 있을 때만 채운다 — 스레드 실행 순서와 상관없이 원래 요청이 남는다.
+    실패해도 백테스트는 계속."""
+    global _REQ_END_COL_OK
+    if not run_id or not requested_end or not IS_POSTGRES:
+        return
+    try:
+        conn = connect_primary_db(timeout=30)
+        try:
+            if not _REQ_END_COL_OK:
+                if not conn.execute("SELECT 1 FROM information_schema.columns WHERE table_name='backtest_runs' "
+                                    "AND column_name='requested_end_date'").fetchone():
+                    conn.execute("ALTER TABLE backtest_runs ADD COLUMN IF NOT EXISTS requested_end_date TEXT")
+                _REQ_END_COL_OK = True
+            overwrite = actual_end is not None and str(actual_end) != str(requested_end)
+            sql = ("UPDATE backtest_runs SET requested_end_date=? WHERE run_id=?" if overwrite else
+                   "UPDATE backtest_runs SET requested_end_date=COALESCE(requested_end_date, ?) WHERE run_id=?")
+            conn.execute(sql, (str(requested_end), run_id))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("[확정가격] requested_end_date 기록 실패 run=%s (비치명적)", run_id)
+
+
+def with_confirmed_end(fn):
+    """전략 실행 함수 공용 진입점 — end_date를 `confirmed_end_date`로 자르고 요청 end를 run 기록에 남긴다(REVIEW_PLAN §25-2 ④).
+
+    전략 30개가 자체 `price_history` 조회를 써서 로더 쪽 보호가 닿지 않는다. `backtest.py`가 재내보내는 `run_backtest*` 전부에
+    씌우므로 `import backtest` 경유(라우트·rerun 스크립트 `getattr(bt, ...)`)는 모두 확정 가격만 쓴다.
+    `backtest_strategies.*`를 직접 import하는 스크립트는 보호 밖 — 새 재실행 스크립트는 `backtest` 경유 필수(테스트로 강제)."""
+    import functools
+
+    @functools.wraps(fn)
+    def _wrapped(start_date, end_date, *args, **kwargs):
+        actual = confirmed_end_date(end_date)
+        rid = kwargs.get("run_id")
+        if rid:
+            record_requested_end(rid, end_date, actual)
+        out = fn(start_date, actual, *args, **kwargs)
+        if not rid and isinstance(out, str):
+            record_requested_end(out, end_date, actual)
+        return out
+    _wrapped.__confirmed_end__ = True
+    return _wrapped
+
+
+def provisional_rows(conn, start, end) -> set:
+    """날짜 컷에 걸리지 않은 잠정 행 {(종목, 'YYYY-MM-DD')} — 로더가 그 행만 결측 처리한다(REVIEW_PLAN §25-2 ①(b)).
+
+    2거래일 넘게 남는 행은 `check_price_vs_krx_daily.py`의 '오래 남은 표시' 알림이 잡는다(§19-2)."""
+    if conn is not None and not hasattr(conn, "_connection"):
+        return set()
+    s_iso = str(start)[:10] if "-" in str(start) else f"{str(start)[:4]}-{str(start)[4:6]}-{str(start)[6:8]}"
+    e_iso = str(end)[:10] if "-" in str(end) else f"{str(end)[:4]}-{str(end)[4:6]}-{str(end)[6:8]}"
+
+    def _q(c):
+        if not c.execute("SELECT to_regclass('price_provisional_rows')").fetchone()[0]:
+            return set()
+        return {(str(a), str(b)[:10]) for a, b in c.execute(
+            "SELECT stock_code, date FROM price_provisional_rows WHERE date>=? AND date<=?", (s_iso, e_iso)).fetchall()}
+    out = _with_conn(conn, _q, set())
+    if out:
+        logger.warning("[확정가격] %s~%s 잠정 개별 행 %d건 제외(KRX 공식값 없음)", s_iso, e_iso, len(out))
+    return out
 
 
 def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
@@ -1158,6 +1252,7 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
         단절을 가로질러 보유 중이던 포지션은 사건 전 마지막 거래일 종가로 청산 처리해야 한다(근거 없는 계수를 만들지 않는다, 원칙 0).
     """
     end = confirmed_end_date(end, conn)
+    prov = provisional_rows(conn, start, end)   # 날짜 컷에 안 걸린 잠정 개별 행 — 그 행만 결측(§25-2 ①)
     codes = sorted(set(stock_codes))
     out: dict = {}
     if not codes:
@@ -1225,6 +1320,8 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
             f"WHERE stock_code IN ({ph}) AND date>=? AND date<=? AND close>0 ORDER BY stock_code, date",
             tuple(chunk) + (start, end)).fetchall()
         for code, d, o_, h_, l_, c_, v_ in rows:
+            if prov and (str(code), str(d)[:10]) in prov:
+                continue
             e = out.setdefault(str(code), {"dates": [], "open": [], "high": [], "low": [], "close": [],
                                            "volume": [], "raw_close": [], "raw_open": [], "adj_factor": []})
             e["dates"].append(str(d)[:10]); e["raw_close"].append(float(c_))
@@ -2864,6 +2961,7 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
     _run_generic_backtest와 동일하나 signal_fn에 _sc(stock_code) 키워드 인자를 전달.
     V10+HS, V11+HS처럼 시그널 함수가 종목 코드 접근이 필요한 경우 사용.
     """
+    _requested_end = end_date
     end_date = confirmed_end_date(end_date)  # 잠정(KRX 확정 전) 가격 제외 — REVIEW_PLAN §23-2 ②
     init_backtest_db()
     if run_id is None:
@@ -2878,6 +2976,7 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
         conn = connect_primary_db(timeout=120)
         conn.execute("UPDATE backtest_runs SET status='running' WHERE run_id=?", (run_id,))
         conn.commit()
+    record_requested_end(run_id, _requested_end, end_date)   # 요청·실제 end 둘 다 남김(§25-2 ②)
 
     try:
         warmup_start = (datetime.strptime(start_date, '%Y-%m-%d')
@@ -2943,6 +3042,7 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
             }
 
         stock_data: Dict[str, dict] = {}
+        prov = provisional_rows(conn, warmup_start, end_date)   # 잠정 개별 행 제외(§25-2 ①)
         for sc in stock_codes:
             rows = conn.execute("""
                 SELECT date, close, COALESCE(volume,0),
@@ -2951,6 +3051,8 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
                 WHERE stock_code=? AND date>=? AND date<=? AND close>0
                 ORDER BY date ASC
             """, (sc, warmup_start, end_date)).fetchall()
+            if prov:
+                rows = [r for r in rows if (sc, str(r[0])[:10]) not in prov]
             if len(rows) < 200:
                 continue
             dates   = [r[0] for r in rows]
@@ -3279,6 +3381,7 @@ def _run_generic_backtest(version: str, signal_fn,
     재실행해도 항상 동일한 결과를 보장한다. None이면 실행 시작 시각으로 자동 고정하고
     그 값을 run spec에 저장한다.
     """
+    _requested_end = end_date
     end_date = confirmed_end_date(end_date)  # 잠정(KRX 확정 전) 가격 제외 — REVIEW_PLAN §23-2 ②
     init_backtest_db()
     _use_adjusted = ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
@@ -3299,6 +3402,7 @@ def _run_generic_backtest(version: str, signal_fn,
         conn.execute("UPDATE backtest_runs SET status='running', strategy=? WHERE run_id=?",
                      (_strat_key, run_id))
         conn.commit()
+    record_requested_end(run_id, _requested_end, end_date)   # 요청·실제 end 둘 다 남김(§25-2 ②)
 
     # Older SQLite snapshots do not have financial_data.updated_at. Keep the
     # reproducibility filter where supported without breaking those databases.
@@ -3498,6 +3602,7 @@ def _run_generic_backtest(version: str, signal_fn,
 
         # 종목별 데이터 로드 (assert_research_prices는 이미 위에서 exclude=True로 처리됨)
         stock_data: Dict[str, dict] = {}
+        prov = provisional_rows(conn, warmup_start, end_date)   # 잠정 개별 행 제외(§25-2 ①)
         for sc in stock_codes:
             try:
                 rows = conn.execute("""
@@ -3509,6 +3614,8 @@ def _run_generic_backtest(version: str, signal_fn,
                     WHERE stock_code=? AND date>=? AND date<=? AND close>0
                     ORDER BY date ASC
                 """, (sc, warmup_start, end_date)).fetchall()
+                if prov:
+                    rows = [r for r in rows if (sc, str(r[0])[:10]) not in prov]
                 if len(rows) < (61 if _use_adjusted else 200):
                     continue
                 dates   = [r[0] for r in rows]

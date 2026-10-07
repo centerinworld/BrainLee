@@ -58,6 +58,13 @@ from backtest_strategies.v8 import run_backtest_v8
 from backtest_strategies.value import run_backtest_value
 
 
+# 확정 가격만(REVIEW_PLAN §25-2 ④): 재내보내는 전략 실행 함수 전부에 잠정 날짜 컷·요청 end 기록을 씌운다.
+from backtest_common import with_confirmed_end as _with_confirmed_end  # noqa: E402
+for _n in [n for n in list(globals()) if n.startswith("run_backtest")]:
+    globals()[_n] = _with_confirmed_end(globals()[_n])
+del _n
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--start',     default='2023-04-01')
