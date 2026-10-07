@@ -44,6 +44,13 @@ from backtest_common import (
     sqlite3,
 )
 
+# 진단 훅(Stock_Strategy §22-3): scripts/diag_gc_196170_20261007.py가 채운다. 평소에는 None — 동작·결과에 영향 없음.
+GC_DIAG = None            # list면 날짜별 후보·순위·체결을 기록
+GC_DIAG_WATCH: set = set()  # 탈락 단계를 추적할 종목 코드
+GC_DIAG_NO_BLOCK = False    # True면 제외 구간·품질일 차단을 끄고 '차단이 없었다면 후보였을' 종목을 기록(차단 효과 측정용)
+GC_DIAG_NO_BLOCK = False    # True면 제외 구간·품질일 차단을 끄고 '차단이 없었다면 후보였을' 종목을 기록(차단 효과 측정용)
+
+
 def run_backtest_golden_cross(
     start_date: str, end_date: str,
     per_stock: float = 10_000_000,
@@ -101,6 +108,8 @@ def run_backtest_golden_cross(
     - 2000억 이상으로 제한: 소형주 골든크로스는 약세/회복장에서 성능 급락(avg5 -11%→+28%로 개선).
     """
     init_backtest_db()
+    _diag = GC_DIAG
+    _dg = (lambda code, day, line: _diag.append(('reject', day, code, line)) if code in GC_DIAG_WATCH else None) if _diag is not None else (lambda *a: None)
     adjusted_prices = _bc.ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
     adj_stats = {'enabled': adjusted_prices, 'candidate_skips_excluded': 0, 'candidate_skips_quality_day': 0,
                  'break_liquidations': 0, 'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0,
@@ -532,7 +541,11 @@ def run_backtest_golden_cross(
 
             for code in list(pending_buys):
                 i = didx[code].get(day)
-                if i is None: continue
+                if i is None:
+                    if _diag is not None: _diag.append(('fill', day, code, 'no_row'))
+                    continue
+                if _diag is not None and not (code not in pos and len(pos) < _gc_limit(day)):
+                    _diag.append(('fill', day, code, f'no_slot pos={len(pos)} limit={_gc_limit(day)}'))
                 if code not in pos and len(pos) < _gc_limit(day):
                     fill = sd[code]['o'][i]
                     if adjusted_prices:
@@ -547,6 +560,7 @@ def run_backtest_golden_cross(
                     else:
                         qty = int(min(per_stock, cash) // fill)
                         _cost = qty * fill
+                    if _diag is not None: _diag.append(('fill', day, code, f'qty={qty} cash={round(cash)} fill={round(fill)}'))
                     if qty > 0:
                         cash -= _cost
                         entry_mktcap = sd[code].get('mkt_cap_억', 500)
@@ -620,23 +634,28 @@ def run_backtest_golden_cross(
                 hot_map = _hot_sectors_of(day) if hot_sector_boost else {}
                 cands = []
                 for code, s in sd.items():
-                    if code in pos or code in pending_buys or code in pending_sells: continue
+                    _blk_flag = None
+                    if code in pos or code in pending_buys or code in pending_sells: _dg(code, day, 623); continue
                     i = didx[code].get(day)
-                    if i is None or i < 145: continue
+                    if i is None or i < 145: _dg(code, day, 625); continue
                     c = s['c'][i]
                     _rc = s['raw_c'][i] if adjusted_prices else c      # 가격 수준·시총은 원주가 기준
-                    if _rc < 1000: continue
+                    if _rc < 1000: _dg(code, day, 628); continue
                     if adjusted_prices and is_excluded_day({'excluded_ranges': s['excl']}, day):
-                        adj_stats['candidate_skips_excluded'] += 1; continue
+                        adj_stats['candidate_skips_excluded'] += 1; _dg(code, day, 630)
+                        if not GC_DIAG_NO_BLOCK: continue
+                        _blk_flag = 'excluded'
                     if adjusted_prices and day in s['qdays']:
-                        adj_stats['candidate_skips_quality_day'] += 1; continue
+                        adj_stats['candidate_skips_quality_day'] += 1; _dg(code, day, 632)
+                        if not GC_DIAG_NO_BLOCK: continue
+                        _blk_flag = 'quality'
                     if asof_mktcap:
                         sh = _gc_shares_asof(code, day)
                         if sh <= 0 or sh * _rc / 1e8 < min_mktcap:
-                            continue
+                            _dg(code, day, 636); continue
                     ma20 = _ma(s['c'][:i+1], 20)
                     ma60 = _ma(s['c'][:i+1], 60)
-                    if not (ma20 and ma60 and ma20 > ma60): continue
+                    if not (ma20 and ma60 and ma20 > ma60): _dg(code, day, 639); continue
                     # 최근 cross_days 내 골든크로스 발생 체크
                     crossed = False
                     for back in range(2, cross_days + 1):
@@ -645,24 +664,24 @@ def run_backtest_golden_cross(
                         m60b = _ma(s['c'][:i-back+1], 60)
                         if m20b and m60b and m20b <= m60b:
                             crossed = True; break
-                    if not crossed: continue
+                    if not crossed: _dg(code, day, 648); continue
                     # 거래량 확인
                     v5 = sum(s['v'][max(0, i-4):i+1]) / 5
                     v20 = sum(s['v'][max(0, i-19):i+1]) / 20
-                    if v20 <= 0 or v5 < v20 * vol_ratio: continue
+                    if v20 <= 0 or v5 < v20 * vol_ratio: _dg(code, day, 652); continue
                     # RS6M
-                    if i < 126: continue
+                    if i < 126: _dg(code, day, 654); continue
                     prev126 = s['c'][i - 126]
-                    if prev126 <= 0: continue
+                    if prev126 <= 0: _dg(code, day, 656); continue
                     k6m = _get_k6m(day)
-                    if k6m is None: continue
+                    if k6m is None: _dg(code, day, 658); continue
                     rs6m = (c / prev126 - 1) * 100 - k6m
-                    if rs6m < rs6m_min: continue
+                    if rs6m < rs6m_min: _dg(code, day, 660); continue
                     # 과열 회피 (2026-07-13 실증: 60일 +100% 급등 종목의 6개월 -30%하락률 37~41%, 기준율 3.6배)
                     if avoid_overheat is not None and i >= 40:
                         _c40 = s['c'][i - 40]
                         if _c40 > 0 and (c / _c40 - 1) > avoid_overheat:
-                            continue
+                            _dg(code, day, 665); continue
                     # 섹터 보너스: BUY 섹터 종목 우선순위 상승
                     sector_bonus = 10.0 if _get_stock_sector_key(code) else 0.0
                     if sector_bonus > 0 and _is_sector_buy(conn, code, day, threshold=55.0,
@@ -685,11 +704,15 @@ def run_backtest_golden_cross(
                     # 바닥 컨플루언스 게이트 (2026-07-18 공통모듈)
                     if chart_confluence and _chart_bottom_confluence(
                     s['c'], s['o'], s['h'], s['lo'], s.get('chart'), i) < _CHART_BOTTOM_MIN:
-                        continue
+                        _dg(code, day, 688); continue
+                    if _blk_flag and _diag is not None:
+                        _diag.append(('blocked_pass', day, code, _blk_flag))
                     cands.append((code, c, rs6m + sector_bonus))
 
                 cands.sort(key=lambda x: -x[2])  # RS6M+섹터보너스 내림차순
                 available = max(0, _gc_limit(day) - len(pos) - len(pending_buys))
+                if _diag is not None:
+                    _diag.append(('cands', day, [(c_, round(sc_, 2)) for c_, _p, sc_ in cands], available, nm.get(ym, 0), sorted(pos)))
                 queued_now = 0
                 for code, price, _ in cands:
                     if queued_now >= available: break

@@ -16,8 +16,8 @@ def _db(prices, audit=(), events=()):
     c.execute("CREATE TABLE corporate_action_events (stock_code TEXT, event_date TEXT, event_type TEXT, adjustment_status TEXT, backward_price_factor REAL, evidence_rcept_no TEXT, evidence_report_name TEXT)")
     c.executemany("INSERT INTO price_history VALUES ('A',?,?,?,?,?,?)", [(d, p, p, p, p, 1000.0) for d, p in prices])
     c.executemany("INSERT INTO price_jump_audit VALUES (?,?,?,?,0)", audit)
-    c.executemany("INSERT INTO corporate_action_events (stock_code,event_date,event_type,adjustment_status,backward_price_factor,evidence_rcept_no) VALUES (?,?,?,?,?,?)",
-                  [tuple(e) + (None,) * (6 - len(e)) for e in events])
+    c.executemany("INSERT INTO corporate_action_events (stock_code,event_date,event_type,adjustment_status,backward_price_factor,evidence_rcept_no,evidence_report_name) VALUES (?,?,?,?,?,?,?)",
+                  [tuple(e) + (None,) * (7 - len(e)) for e in events])
     return c
 
 
@@ -121,6 +121,25 @@ class TestAdjustedPrices(unittest.TestCase):
         self.assertEqual(bc.last_tradable_day_before_break(e, "2024-01-03", days[9]), days[3])     # 공시 후, 정지 전 마지막 거래일
         self.assertIsNone(bc.last_tradable_day_before_break(e, "2024-01-09", days[9]))            # 정지 후 공시 → 팔 수 없음(평가 불가)
         self.assertIsNone(bc.last_tradable_day_before_break(e, None, days[9]))                    # 공시 근거 없음
+
+    def test_borrowed_disclosure_rules(self):
+        # 단절: DAYS[8]. 회사분할 결정 공시(주요사항보고서)가 사건일(=다른 event_date)과 무관하게 접수일 기준 365일 안이면 빌린다
+        prices = [(d, 1000.0) for d in DAYS[:8]] + [(DAYS[8], 400.0), (DAYS[9], 400.0)]
+        ev_decision = ("A", "2023-06-01", "reduction_or_cancellation", "not_price_adjusting", None, "20240102000001", "주요사항보고서(회사분할결정)")
+        ev_split = ("A", DAYS[8], "company_split", "not_price_adjusting", None, None, None)
+        e = bc.load_adjusted_prices(_db(prices, events=[ev_decision, ev_split]), ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertEqual(e["break_disclosed"].get(DAYS[8]), "2024-01-02")
+        # 주요사항보고서가 아닌 공시(예: 권리락)는 빌리지 않는다
+        ev_other = ("A", "2023-06-01", "reduction_or_cancellation", "not_price_adjusting", None, "20240102000001", "권리락(분할)")
+        e = bc.load_adjusted_prices(_db(prices, events=[ev_other, ev_split]), ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertIsNone(e["break_disclosed"].get(DAYS[8]))
+        # 공시와 단절 사이에 다른 단절이 있으면 그 공시는 앞 사건 것이라 빌리지 않는다
+        prices2 = [(DAYS[0], 1000.0), (DAYS[1], 400.0)] + [(d, 400.0) for d in DAYS[2:8]] + [(DAYS[8], 150.0), (DAYS[9], 150.0)]
+        ev_early = ("A", "2023-06-01", "reduction_or_cancellation", "not_price_adjusting", None, "20240101000001", "주요사항보고서(회사분할결정)")
+        ev_split2 = ("A", DAYS[8], "company_split", "not_price_adjusting", None, None, None)
+        e = bc.load_adjusted_prices(_db(prices2, events=[ev_early, ev_split2]), ["A"], "2024-01-01", "2024-02-01")["A"]
+        self.assertIn(DAYS[1], e["breaks"])
+        self.assertIsNone(e["break_disclosed"].get(DAYS[8]))
 
     def test_last_day_before_break(self):
         prices = [(d, 1000.0) for d in DAYS[:5]] + [(d, 500.0) for d in DAYS[5:]]

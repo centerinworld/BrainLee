@@ -1143,9 +1143,11 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
             f"SELECT stock_code, event_date, evidence_rcept_no, evidence_report_name FROM corporate_action_events WHERE stock_code IN ({ph}) "
             f"AND event_type IN ({_et})", tuple(chunk) + tuple(PRICE_RELATED_EVENT_TYPES)).fetchall():
             status.setdefault(str(code), set()).add(str(d1)[:10])
-            if rc and rn and ("분할" in str(rn) or "합병" in str(rn)) and len(str(rc)) >= 8 and str(rc)[:8].isdigit():
-                # 회사분할·합병은 결정 공시(접수)가 사건일보다 훨씬 앞서 나오고, 같은 건이 다른 사건일·유형으로 기록되기도 한다 — 종목별로 모아 둔다
-                split_filings.setdefault(str(code), []).append((str(d1)[:10], str(rc)[:4] + "-" + str(rc)[4:6] + "-" + str(rc)[6:8]))
+            if rc and rn and "주요사항보고서" in str(rn) and ("분할" in str(rn) or "합병" in str(rn)) \
+                    and len(str(rc)) >= 8 and str(rc)[:8].isdigit():
+                # 회사분할·분할합병·합병 '결정 공시(주요사항보고서)'와 그 기재정정만 다른 사건일의 단절 공시로 빌릴 수 있다
+                # (REVIEW_PLAN §20-1 ①) — 같은 건이 다른 사건일·유형으로 기록되기도 하기 때문. 접수일·보고서명을 모아 둔다.
+                split_filings.setdefault(str(code), []).append((str(rc)[:4] + "-" + str(rc)[4:6] + "-" + str(rc)[6:8], str(rn)))
             if rc and len(str(rc)) >= 8 and str(rc)[:8].isdigit():
                 rc8 = str(rc)[:4] + "-" + str(rc)[4:6] + "-" + str(rc)[6:8]
                 cur_d = disclosed.setdefault((str(code), str(d1)[:10]), rc8)
@@ -1203,13 +1205,19 @@ def load_adjusted_prices(conn, stock_codes: list, start: str, end: str,
         e["unexplained_limit_breaks"] = sorted(found)
         e["break_disclosed"] = {b_: disclosed.get((code, b_)) for b_ in sorted(set(breaks.get(code, ())) | found)}
         from datetime import date as _dd, timedelta as _td
-        for b_ in e["break_disclosed"]:
-            cands = [r_ for d_, r_ in split_filings.get(code, ())
-                     if (_dd.fromisoformat(b_) - _td(days=365)).isoformat() <= d_ <= b_]
+        e["borrowed_disclosures"] = []
+        _all_breaks = sorted(e["break_disclosed"])
+        for b_ in _all_breaks:
+            lo = (_dd.fromisoformat(b_) - _td(days=365)).isoformat()
+            # ③ 창 기준은 공시 접수일(사건일 아님), ② 공시와 이 단절 사이에 다른 단절이 이미 있었으면 그 공시는 앞 사건 것이라 빌리지 않는다
+            cands = [(f_, n_) for f_, n_ in split_filings.get(code, ())
+                     if lo <= f_ <= b_ and not any(f_ < b2 < b_ for b2 in _all_breaks)]
             if cands:
-                first = min(cands)
+                f_, n_ = min(cands)
                 cur = e["break_disclosed"][b_]
-                e["break_disclosed"][b_] = first if cur is None or first < cur else cur
+                if cur is None or f_ < cur:
+                    e["break_disclosed"][b_] = f_
+                    e["borrowed_disclosures"].append((b_, f_, n_))   # ④ 빌린 공시 목록(결과에 남김)
         e["breaks"] = sorted(set(breaks.get(code, ())) | found)
         ranges = []
         for b in e["breaks"]:
