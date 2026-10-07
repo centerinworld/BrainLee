@@ -94,6 +94,9 @@ SESSION_FILE = "/Volumes/Realtek_NVME/stock_dashboard/runtime/stockeasy_session.
 
 # 편출 오탐 방지: 1회 누락으로 즉시 편출 확정하지 않음
 _EXIT_MISS_COUNTS: dict[tuple[str, str], int] = {}
+# 2026-10-07: 가드가 거부(409)한 가상매수는 그날 다시 시도하지 않는다 — 10분마다 같은 거부 반복(10-06 밤 480건) 방지
+_BUY_REJECTED_TODAY: set[tuple[str, str, str]] = set()
+_LAST_POST_STATUS: dict[str, int] = {}
 EXIT_MISS_CONFIRM_COUNT = 2
 
 
@@ -404,6 +407,7 @@ def api_post(path: str, data: dict) -> dict | None:
     try:
         timeout = API_TIMEOUT_UPDATE if path == "/api/trend/update" else API_TIMEOUT_DEFAULT
         r = httpx.post(f"{BASE_API}{path}", json=data, timeout=timeout)
+        _LAST_POST_STATUS[path] = r.status_code
         if not r.is_success:
             # 2026-10-07: 거부 사유(409 = 가상매매 가드: shadow·노출 한도 등)를 남긴다 — 예전엔 'DB 저장 실패'로만 보였다
             logger.warning(f"[API POST] {path} HTTP {r.status_code}: {r.text[:200]}")
@@ -558,6 +562,9 @@ def run_once(session: StockeasySession, strategy: str) -> None:
         qty   = calc_quantity(price)
         total = round(price * qty)
 
+        if (strategy, name, today_str) in _BUY_REJECTED_TODAY:
+            continue
+        _LAST_POST_STATUS.pop("/api/trend/buy", None)
         result = api_post("/api/trend/buy", {
             "stock_name":   name,
             "sector":       h.get("sector", ""),
@@ -589,7 +596,11 @@ def run_once(session: StockeasySession, strategy: str) -> None:
             if sent:
                 logger.info(f"[알림] ✅ [{strategy_name}] {name} 신규편입 텔레그램 발송")
         else:
-            logger.warning(f"[신규편입] {name}: DB 저장 실패 result={result}")
+            if _LAST_POST_STATUS.get("/api/trend/buy") == 409:
+                _BUY_REJECTED_TODAY.add((strategy, name, today_str))
+                logger.info(f"[신규편입] {name}: 가드 거부(409) — 오늘은 재시도 안 함")
+            else:
+                logger.warning(f"[신규편입] {name}: DB 저장 실패 result={result}")
 
     # ══ Case 2: 이탈 감지 ════════════════════════════════════
     for db_h in db_active:

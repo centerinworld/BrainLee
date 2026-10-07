@@ -533,7 +533,7 @@ PROVISIONAL_MARK_SQL = """
 CREATE OR REPLACE FUNCTION mark_same_day_price_provisional() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
  INSERT INTO price_provisional_rows(stock_code,date,source,close,written_at)
- VALUES (NEW.stock_code, substr(NEW.date,1,10), 'db_trigger:'||COALESCE(NULLIF(current_setting('application_name',true),''),'unknown'),
+ VALUES (NEW.stock_code, substr(NEW.date,1,10), 'db_trigger:'||COALESCE(NULLIF(current_setting('application_name',true),''),'unknown')||' pid='||pg_backend_pid()||' port='||COALESCE(inet_client_port()::text,'local'),
          NEW.close, to_char(now(),'YYYY-MM-DD"T"HH24:MI:SS'))
  ON CONFLICT(stock_code,date) DO UPDATE SET close=EXCLUDED.close, written_at=EXCLUDED.written_at;
  RETURN NULL;
