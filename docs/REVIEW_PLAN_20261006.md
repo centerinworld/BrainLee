@@ -886,3 +886,38 @@ W5는 아래가 끝난 뒤 시작한다. 순서대로:
 | 27-1 전체 테스트 재실행 | 대기 — Lab 세션이 `backtest_common.py`(§26-2 ①②③)를 아직 커밋 전. 커밋 확인 뒤 전체 테스트 1회 → 결과 이 줄에 |
 | 27-2 ② 서버 재시작 | 대기 — 같은 이유. Lab 커밋 뒤 `safe_restart_backend.sh` |
 | 다음: §26-2 ① | **Lab 세션이 이미 진행 중이라 실행 AI(이 세션)는 손대지 않음**: 작업본 `backtest_common.py`에 `selection_order`('code'|'score'|'random:N')·`SELECTION_ORDER_OVERRIDE`·후보 전체 수집 후 정렬(점수 = entry_bonus_fn, 3개월 수익률 내림차순, 동점 종목코드)이 들어가 있고, 13:31부터 `scripts/rerun_w5_selection_dist_20261007.py`(code·score·random 분포, `backtest` 모듈 경유 `run_one` → 확정 가격 래퍼 적용됨) 6개 프로세스 실행 중. 같은 파일을 두 세션이 동시에 고치면 충돌하고, 동시에 측정을 돌리면 데이터 지문·부하가 섞임. §26-2 ②③(폐지 청산 10일·`MIN_HISTORY_ROWS`)도 같은 작업본에 있음. 결과 확인·검토는 Lab 커밋 뒤 |
+
+## 28. §27 후속(afeace6) 검토 + Lab 세션 §26-2 진행분 사전 점검 — 2026-10-07 (읽기 전용)
+
+### 28-1. 판단 — 맞음
+- 다른 세션이 `backtest_common.py`를 미커밋 상태로 고치는 중에 손대지 않은 것, 측정을 겹쳐 돌리지 않은 것 — 맞다.
+- `check_w5_provisional_residual.py` 13:32 잔여 0·겹침 0 확인. W5 직전 재실행은 필수로 둔다.
+
+### 28-2. Lab 세션 미커밋 변경 사전 점검 (git diff 읽기, 14시 무렵 상태)
+설계는 §26-2와 맞다: ① `selection_order` 기본 = 조정 모드 'score'(보너스 → 3개월 수익률 → 종목코드), `random:N`은 종목코드 정렬 후 `Random('random:N:날짜')`로 섞어 재현 가능 ② `master_closed_to` + `DELISTING_CONFIRM_DAYS=10`, 아니면 `unevaluable_delisting` 별도 집계 ③ `MIN_HISTORY_ROWS` 전략별 창(v1 120·v5 120·v11 252·minervini 252 …). 지금 실행 중인 측정은 8개 프로세스(v_trend·v1_value·v2·v5·v10·v11·vbr·minervini, 각 random 12).
+
+결과를 받기 전에 확인할 것 (Lab 세션 커밋 뒤 이 세션이 검토):
+| # | 확인 | 이유 | 방법 |
+|---|---|---|---|
+| ① | **측정 코드 = 커밋 코드** | 측정이 미커밋 코드로 돌고 있다. 커밋 전에 코드를 더 고치면 결과가 어느 코드의 것인지 알 수 없다 | 결과 파일에 측정 시작 시 `backtest_common.py`·전략 파일 해시(또는 `git diff` 해시)가 있는지 확인. 없으면 커밋본 해시와 측정 시작 시각 이후 파일 수정 시각을 대조, 다르면 재측정 |
+| ② | **데이터 지문 고정** | 측정이 00:20 야간 수집을 넘기면 run마다 지문이 달라져 분포가 섞인다(N1 비교 무효 쌍 10/48과 같은 원인) | run별 데이터 지문이 한 값인지 확인. 섞였으면 지문별로 나눠 같은 지문 안의 분포만 사용 |
+| ③ | `MIN_HISTORY_ROWS`가 함수 이름(`signal_fn.__name__`)으로 찾는다 → 래퍼·partial이면 조용히 기본 60 | 이력 기준이 의도와 다르게 적용될 수 있다 | run 기록의 `min_history_rows`가 8개 전략 모두 표의 값과 같은지(기본 60으로 떨어진 전략이 없는지) |
+| ④ | 'code' 순서가 옛 동작과 같은지 | code = '옛 동작 비교용'인데 보너스 정렬이 앞에 붙었다 | 보너스 없는 전략은 옛 기준선과 같은 지문에서 결과 동일한지 1구간 확인 |
+| ⑤ | 판정 방식 | 단일 run 수익률 금지(§26-3) | 전략×구간별 random 12회 중앙값·하위 25%·범위, score가 분포 어디에 있는지(백분위). score가 분포 상위에 치우치면 '점수 순이 운을 이긴다'는 근거, 중앙 부근이면 점수 효과 없음 |
+
+### 28-3. 순서
+Lab 세션 커밋 → 전체 테스트 재실행(708 기록) → 서버 재시작(§27-2 ②) → 28-2 ①~⑤ 검토 → §26-3의 2~5단계. 스탁이지 §25-3은 복구 시 병행.
+
+### 28-4. §28-2 ①② 처리 기록 (실행 AI: Claude Opus 5.5, 2026-10-07 13:38 — 측정 중 스냅샷)
+Lab 세션의 측정 스크립트(`rerun_w5_selection_dist_20261007.py`, 미추적·실행 중)는 고치지 않았다. 대신 run마다 이미 기록되는 지문을 모아 판정하는 읽기 전용 도구를 만들었다.
+- **기존 기록**: `backtest_run_specs.parameter_json`에 run마다 `_code_fingerprint`(**실행 순간 파일 내용** sha256 — `backtest.py`·`backtest_common.py`·`portfolio_engine.py`·`run_registry.py`·`security_master.py`·호출 전략 파일, 미커밋 변경 포함)와 `_source_snapshot.revision_fingerprint`(데이터 지문)·`_data_revision_extras`가 남는다. `git_commit` 열은 HEAD만 적으므로 **코드 판정 근거로 쓰지 않는다**(아래처럼 HEAD가 움직이면 같은 코드도 다르게 찍힘).
+- **도구**: `scripts/review/check_run_fingerprints.py --name-like 'w2_sel_%' --since <시각> --label <라벨>` → 코드 지문 종류 수, 기록 해시 vs 지금 작업본 vs git HEAD(파일별), 데이터 지문별 run 수 → `research_outputs/run_fingerprints/<라벨>.json` + `.history.jsonl`.
+- **13:38 실측**(본 측정 13:31:20~ 32건, 시험 실행 포함 13:00~ 61건):
+
+| 항목 | 결과 |
+|---|---|
+| ① 코드 지문 | 61건 모두 1종. `backtest_common.py` = **`1bd92b489b571203`**(작업본 지금과 같음, git HEAD와 다름 = Lab 미커밋 변경), `backtest.py` `a270497192d296a4`(HEAD와 같음), 전략 파일 8개 모두 HEAD와 같음. `git_commit` 기록은 `d59e4fd` 27건·`a8576c2` 34건으로 갈렸지만 이는 13:2x 제 커밋(a8576c2)으로 HEAD가 움직인 것뿐 — 실행 파일 내용은 동일. **Lab 커밋 뒤 판정**: 커밋된 `backtest_common.py` 해시가 `1bd92b489b571203`이면 측정 = 커밋 코드, 다르면 재측정(도구의 `head_same_as_recorded`) |
+| ② 데이터 지문 | 61건 모두 `792d185ba626ce6b` 1종(`_data_revision_extras`도 1종). 가격 표 마지막 수정 11:26:41 이후 변화 없음. 측정이 00:20 야간 수집을 넘기면 갈림 → 끝난 뒤 도구 재실행으로 확인 |
+| 섞임 주의 | ⓐ 13:21~13:31 **minervini 시험 실행 27건**(같은 이름 `w2_sel_*`, 그중 `running`으로 멈춘 3건 6dc25111·ad83b065·0c7132e5)이 본 측정과 같은 이름이라, 분포 집계는 `created_at ≥ 13:31:20` 또는 결과 JSON 기준으로 할 것 ⓑ spec 없는 run 1건(99b34b45, 실행 중 — 끝나면 채워짐) |
+
+Lab 세션 결과 파일(`research_outputs/w5_selection_dist_20261007*.json`)에도 시작 시점 지문(위 두 값)을 넣는 것은 Lab 세션 몫 — 넣지 않으면 이 도구의 결과 파일을 짝으로 둔다.
