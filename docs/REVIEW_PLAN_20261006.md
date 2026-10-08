@@ -1190,3 +1190,45 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 - 화면: '정정 전' 탭·전진 검증 배지·생존 편향 메모 표시는 프런트(A9 배포)에서 — API 필드는 준비됨.
 - 재발 감시(§34-4 ③): 10-09부터 `already_sold_same_entry` 일 집계, 같은 날 반복 매도 신규 0 확인 → Stock_Strategy §11-5 한 줄.
 - gpt_v18 5건 판정(35-1).
+
+## 36. 검토 기록 — §35 실행분 재점검 (Codex, 2026-10-08)
+
+### 36-1. 결론
+- §35의 큰 방향은 적절하다. W6 등급 결정은 §34-3의 위임 판단과 일치한다: v12는 paper_core 유지, v8은 60거래일 전진 검증 조건부 paper_core, minervini는 retired, earnings_conviction·contract_momentum은 validation_queue 유지, sector_focus·golden_cross는 offensive_satellite 유지.
+- gpt_v18 5건 보류 판단도 적절하다. 같은 날 매도처럼 보여도 수량이 다른 묶음이 섞여 있어 이번 결함(매도된 보유 재활성화)의 증거만으로 삭제하면 안 된다.
+- 다만 중복 매도 cleanup은 `peak_trade` 삭제만으로 끝내면 불완전하다. 반복 매도 경로는 먼저 `peak_holding`의 `sell_price`·`sold_at`·`profit_pct`를 갱신하고 그 다음 `peak_trade`를 넣는다. 따라서 두 번째 이후 `peak_trade`를 삭제해도 `peak_holding`이 마지막 매도값을 들고 남을 수 있다.
+
+### 36-2. 확인한 문제
+- 읽기 전용 DB 확인: `strategy_w5_distribution`은 `w5_20261008` 126행으로 적재되어 있다.
+- cleanup 백업 확인: `peak_trade_duplicate_sell_backup_20261008`에 run_id `dup_sell_cleanup_20261008_220421`, 111행 백업이 있다.
+- cleanup 후에도 2026-10-08 value 청산 보유 7건에서 `peak_holding`과 남아 있는 첫 `peak_trade`가 불일치한다. 예: SK하이닉스 보유 id 80은 `peak_holding.sold_at=2026-10-08 14:14:53`, `sell_price=1,719,500`, `profit_pct=-5.47`이나 남은 첫 매도는 `tx_at=2026-10-08 10:13:02`, `price=1,732,000`, `profit_pct=-4.78`이다. 삼성전자·두산·SGC에너지·신세계·TYM·LS도 같은 유형이다.
+- 이 상태에서는 거래내역 기준 손익은 정정됐어도, 보유/청산 화면이나 `peak_holding` 기반 검증·리포트는 여전히 마지막 반복 매도값을 사용할 수 있다. §34-4의 "첫 sell만 보존" 취지를 만족하려면 `peak_holding`도 첫 sell 기준으로 되돌려야 한다.
+- `routes/backtest.get_backtest_matrix`는 W5 표의 최신 라벨을 `MAX(w5_label)`로 고른다. 현재는 `w5_20261008` 하나라 문제가 없지만, 라벨 문자열 정렬이 시간 순서를 보장하지 않으므로 다음 라벨이 추가되면 잘못된 분포를 고를 수 있다.
+- `tests/test_governance_w6_20261008.py`는 등급 덮어쓰기만 검증한다. W5 표 적재, 매트릭스 오버레이, 최신 라벨 선택, cleanup 후 `peak_holding` 동기화는 테스트가 없다.
+
+### 36-3. 실행 지시
+1. **중복 매도 보정 보완**
+   - `scripts/ops/cleanup_duplicate_virtual_sells_20261008.py`에 보정 모드를 추가하거나 별도 readback 스크립트를 만든다. 삭제 후보 묶음별로 남긴 첫 `peak_trade`를 기준으로 대응 `peak_holding`의 `sell_price`·`sold_at`·`current_price`·`profit_pct`·`updated_at`을 맞춘다.
+   - 대응 키는 가능한 한 `holding_id`를 우선한다. 현재 `peak_trade`에 holding id가 없으면 `strategy + stock_name + sold_at 날짜 + quantity`로 후보를 좁히되, 같은 날짜·같은 수량의 보유가 2개 이상이면 자동 갱신하지 말고 수동 검토 목록에 남긴다.
+   - 적용 전 dry-run에는 갱신 대상 holding id, 현재 holding 값, 보존된 첫 trade 값, 애매한 후보를 출력한다. 적용 후에는 `peak_holding`과 첫 `peak_trade`의 `sold_at/tx_at`, `sell_price/price`, `profit_pct` 불일치가 0인지 읽기 전용으로 검증한다.
+   - 이미 삭제된 111행은 백업 테이블이 있으므로 복구 없이 보정 가능하다. 단, 쓰기 실행 전에는 기존 백업 테이블과 별도로 `peak_holding` 변경 전 row 백업을 남긴다.
+
+2. **W5 라벨 선택 개선**
+   - `MAX(w5_label)` 대신 `created_at DESC, w5_label DESC` 기준으로 최신 라벨을 고른다. 더 안전한 장기안은 `is_active` 또는 `published_at` 컬럼을 추가해 매트릭스가 명시적으로 활성 라벨만 사용하게 하는 것이다.
+   - 매트릭스 응답의 `w5_distribution_label`은 유지한다. 프런트에는 이 값을 노출해 사용자가 어떤 W5 분포가 적용됐는지 확인할 수 있게 한다.
+
+3. **테스트 보강**
+   - `apply_governance_decision` 테스트는 유지한다.
+   - 추가로 W5 분포 행을 주입했을 때 `get_backtest_matrix`가 `total_return_pct/mdd`를 중앙값으로 바꾸고 `pre_correction_*`를 보존하는 테스트를 넣는다.
+   - cleanup 보정은 작은 임시 DB/트랜잭션 fixture로 "중복 trade 삭제 + holding 첫 sell 동기화 + 모호한 후보 skip"을 검증한다.
+
+4. **진행 결정**
+   - W6 등급 결정은 §35 그대로 진행한다.
+   - 중복 매도 정리는 "완료"가 아니라 "trade 삭제 완료, holding 보정 필요"로 상태를 바꾼다.
+   - gpt_v18 5건은 보류 유지. 보류 해제 전에는 gpt_v18 매도 경로와 같은 날 재매수 여부를 먼저 확인한다.
+
+## 36. 실행 기록 — gpt_v18 판정·화면 정리 (실행 AI: Claude Opus 5.5, 2026-10-08 22:30)
+- **gpt_v18 5건 = 정상 거래(삭제 안 함)**: 묶음마다 매도 2건이 서로 다른 보유 2개에 1:1 대응하고, 보유의 `sold_at`이 각 매도 시각과 같다(한화에어로스페이스 보유 92·96, KB금융 93·97, NAVER 95·98(매수→매도→매수→매도), 현대차 135·91, SK하이닉스 90·133). 결함(보유 1개를 여러 번 매도)이 아니다.
+- **중복 집계 기준 정정**(`check_stockeasy_mirror.py`): 중복 = 그날 매도 건수 − 그날 매도된 서로 다른 보유 수. 현재 0. (정리 전 value 신세계처럼 보유 1개·매도 6건이면 5로 잡힘)
+- **화면(전략 허브, 커밋 06d125d, 22:27 재시작으로 배포)**: 퇴역 기본 숨김 + '퇴역 포함 보기'(D2), '정정 전 값 보기'(D9 — 10-04 선택 run 값, 최악·낙폭 열과 등급은 W5 기준 고정), 배지 '전진 검증 중'(v8)·'⚠ 생존 편향'(sector_focus·megatrend)·'결정 유지'(v12·golden_cross, 툴팁에 기계 산정 등급), 등급 한국어 표기, 기준 안내(무작위 12회 중앙값), 선택 전략 구간 카드에 W5 범위·정정 전 값. 시험 빌드·배포 빌드 통과, **브라우저 육안 확인은 못 함**.
+- 다른 세션의 StrategyHub 미커밋 변경(10-05~06, 탭 정리·추천 패널)은 커밋에 넣지 않았다(작업본·배포 빌드에는 이미 포함 — 10-08 22:21 이전부터).
