@@ -12,7 +12,15 @@ from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
+import backtest_common as _bc
+from price_integrity import research_price_issues
 from backtest_common import (
+    DELISTING_CONFIRM_DAYS,
+    QUALITY_DAY_CLASSES,
+    is_excluded_day,
+    last_tradable_day_before_break,
+    last_tradable_index_before,
+    load_adjusted_prices,
     _load_jump_aligned_corp_factors,
     _rebase_positions_for_corp_actions,
     SignalEvidenceLedger,
@@ -60,6 +68,7 @@ def run_backtest_contract_momentum(
                            # 에서 개선, 방향 일치. signal_experiment_ledger: contract_momentum/
                            # max_hold_240_to_400_holdout_20260810.
     data_asof_ts: str = None,
+    adjusted_prices: bool = None,   # W5b(REVIEW_PLAN §32-3): None이면 backtest_common.ADJUSTED_PRICES_DEFAULT
     run_name: str = None,
     run_id: str = None,
 ) -> str:
@@ -82,6 +91,13 @@ def run_backtest_contract_momentum(
          공시 다음 거래일 시가 매수, 동일일 복수신호는 ratio·ai_score 내림차순 우선.
     매도: 손절-8% / 추적손절-25%(이익10%+ 발동) / 만기400거래일(2026-08-10 240→400, 홀드아웃 검증 채택).
     """
+    adjusted_prices = _bc.ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
+    # 조정 모드(W5b 공통 규칙): 신호·손익 = 조정 시계열(보유 재기준 대신). 유니버스는 원래부터 공시 이벤트 기반(폐지 종목 포함).
+    # '분할/합병 필터'·'260행 이상'(기간 전체 = 미래 정보) 미사용 — 신호일 이력(pos ≥ 260)은 그대로. 거래대금은 금액이라 조정과 무관.
+    adj_stats = {'enabled': adjusted_prices, 'candidate_skips_excluded': 0, 'candidate_skips_quality_day': 0,
+                 'break_liquidations': 0, 'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0,
+                 'zero_volume_skipped_buys': 0, 'stocks_with_breaks': 0, 'share_unknown_breaks': 0,
+                 'delisted_exits': 0, 'unevaluable_delistings': 0, 'delisted_entries': 0, 'pit_mktcap_missing': 0}
     init_backtest_db()
     run_name = run_name or f"V-CONTRACT-MOMENTUM {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
@@ -94,9 +110,11 @@ def run_backtest_contract_momentum(
          "stop": stop, "trail": trail,
          "max_hold": max_hold, "max_positions": max_positions, "per_stock": per_stock,
          "total_capital": total_capital, "start": start_date, "end": end_date,
-         "data_asof_ts": effective_data_asof_ts},
+         "data_asof_ts": effective_data_asof_ts,
+         "adjusted_prices": True if adjusted_prices else None},
         signal_timing="close_D", execution_timing="next_open",
         market_cap_mode="not_applicable", allocation_rule="fixed_slot",
+        **({"universe_version": "event_driven_dart_contracts_adjusted"} if adjusted_prices else {}),
     )
 
     conn = sqlite3.connect(DB_PATH, timeout=120)
@@ -185,7 +203,37 @@ def run_backtest_contract_momentum(
 
         codes = sorted({e[0] for e in events_raw})
         sd: Dict[str, dict] = {}
-        for code in codes:
+        if adjusted_prices:
+            _codes = sorted({str(c_) for c_ in codes})
+            _ap = load_adjusted_prices(conn, _codes, warmup_start, end_date)
+            _qdays: Dict[str, set] = {}
+            for _qc, _qd, _qcls in research_price_issues(conn, _codes, warmup_start, end_date, allow_confirmed_corporate_actions=True):
+                if _qcls in QUALITY_DAY_CLASSES:
+                    _qdays.setdefault(str(_qc), set()).add(str(_qd)[:10])
+            for code in _codes:
+                e = _ap.get(code)
+                if not e or not e['dates'] or not any(start_date <= d <= end_date for d in e['dates']):
+                    continue
+                d_list = [str(d)[:10] for d in e['dates']]
+                sd[code] = {
+                    'd': d_list, 'dates': d_list,
+                    'c': list(e['close']), 'o': list(e['open']), 'h': list(e['high']), 'lo': list(e['low']),
+                    'v': list(e['volume']), 'volumes': list(e['volume']),
+                    'raw_c': list(e['raw_close']), 'f': list(e['adj_factor']),
+                    'breaks': list(e['breaks']), 'excluded_ranges': list(e['excluded_ranges']),
+                    'disc': e.get('break_disclosed', {}) or {}, 'qdays': _qdays.get(code, set()),
+                    'master_closed_to': e.get('master_closed_to'),
+                    'mkt_cap_억': 300,
+                }
+                adj_stats['stocks_with_breaks'] += 1 if e['breaks'] else 0
+                adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
+            for code, s_ in sd.items():
+                _amt = {str(d)[:10]: (float(a_) if a_ and a_ > 0 else float(c_) * float(v_ or 0))
+                        for d, a_, c_, v_ in conn.execute(
+                            "SELECT date, COALESCE(trade_amount,0), close, COALESCE(volume,0) FROM price_history "
+                            "WHERE stock_code=? AND date>=? AND date<=? AND close>0", (code, warmup_start, end_date)).fetchall()}
+                s_['amt'] = [_amt.get(d, 0.0) for d in s_['d']]
+        for code in ([] if adjusted_prices else codes):
             # 2026-08-09: trade_amount(KRX ACC_TRDVAL)가 2026-07~08 전종목 0으로 채워지던
             # 인프라버그를 발견·수정(scheduler.py _job_krx_daily) + 결측분 백필했으나,
             # signal_engine.py/screener.py처럼 close×volume 폴백도 방어적으로 추가해
@@ -253,6 +301,11 @@ def run_backtest_contract_momentum(
             if pos is None or pos < 260:
                 continue
             i0 = pos - 1  # 신호 확인 시점(공시일 당일 종가 기준)
+            if adjusted_prices:
+                if is_excluded_day(s, s['d'][i0]) or is_excluded_day(s, s['d'][pos]):
+                    adj_stats['candidate_skips_excluded'] += 1; continue
+                if s['d'][i0] in s['qdays']:
+                    adj_stats['candidate_skips_quality_day'] += 1; continue
             ma20 = sum(s['c'][i0-19:i0+1]) / 20
             avg20_amt = sum(s['amt'][i0-19:i0+1]) / 20
             if ma20 <= 0 or avg20_amt < 2_000_000_000:
@@ -290,6 +343,43 @@ def run_backtest_contract_momentum(
         sim_dates = sorted(set(d for s in sd.values() for d in s['d'] if start_date <= d <= end_date))
 
         cash = total_capital
+        trades = []
+        pending_sells: list = []
+        pos: Dict[str, dict] = {}
+        if adjusted_prices and sim_dates:
+            from datetime import date as _d0
+            for code, s_ in sd.items():
+                s_['last_tradable_i'] = max((k for k, v_ in enumerate(s_['v']) if v_ > 0), default=None)
+                s_['ends_before_period_end'] = s_['d'][-1] < sim_dates[-1]
+                _mc = s_.get('master_closed_to')
+                try:
+                    _gap = abs((_d0.fromisoformat(_mc[:10]) - _d0.fromisoformat(s_['d'][-1][:10])).days) if _mc else None
+                except Exception:
+                    _gap = None
+                s_['delisting_confirmed'] = bool(_gap is not None and _gap <= DELISTING_CONFIRM_DAYS)
+
+        def _pit_mc(code, day_, raw_px):
+            """신호일 시총(억원) = 상장주식 수 × 원주가. 주식 수를 모르면 가장 보수적(최대 슬리피지)."""
+            sh_ = (lambda _c, _d: 0.0)(code, day_)
+            if sh_ > 0:
+                return sh_ * raw_px / 1e8
+            adj_stats['pit_mktcap_missing'] += 1
+            return 1.0
+
+        def _close_now(code, p, i, price, reason, day_):
+            """조정 단위 `price`로 즉시 청산(단절·폐지 처리)."""
+            nonlocal cash, pending_sells
+            pnl_, net_pct_ = _net_profit(p['entry'], price, p['shares'], p.get('mkt_cap_억', 300))
+            cash += p['shares'] * p['entry'] + pnl_
+            _f = sd[code]['f'][i]
+            trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': day_,
+                           'entry': p['entry'], 'exit': price, 'pnl_pct': net_pct_,
+                           'reason': reason, 'pnl': round(pnl_, 0),
+                           'exit_raw': round(price / _f, 4) if _f else price,
+                           'entry_raw': p.get('entry_raw'), 'shares_raw': p.get('shares_raw')})
+            del pos[code]
+            pending_sells = [(c_, r_) for c_, r_ in pending_sells if c_ != code]
+
         pos: Dict[str, dict] = {}
         trades = []
         pending_sells: list = []
@@ -297,7 +387,7 @@ def run_backtest_contract_momentum(
         equity_curve: list = []  # 2026-08-13: MDD/Sharpe 계산용 일별 자산평가(현금+보유포지션 시가평가)
 
         # 2026-09-28: 보유 중 확정 기업행위(권리락·분할 등) 날 포지션을 새 주식 기준으로 재기준
-        _ca_factors = _load_jump_aligned_corp_factors(conn, list(sd.keys()))
+        _ca_factors = {} if adjusted_prices else _load_jump_aligned_corp_factors(conn, list(sd.keys()))
         _ca_prev_day = None
         for day in sim_dates:
             _rebase_positions_for_corp_actions(_ca_factors, pos, _ca_prev_day, day, ('entry', 'peak'), 'shares')
@@ -312,13 +402,30 @@ def run_backtest_contract_momentum(
                 px = sd[code]['o'][i]
                 if px <= 0:
                     _still.append((code, reason)); continue
+                if adjusted_prices and (sd[code]['v'][i] or 0) <= 0:
+                    adj_stats['zero_volume_deferred_sells'] += 1   # 거래 불가능한 날 — 다음 거래일로 이월
+                    _still.append((code, reason)); continue
                 p = pos.pop(code)
                 pnl, net_pct = _net_profit(p['entry'], px, p['shares'], 300)
                 cash += p['shares'] * p['entry'] + pnl
                 trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': day,
                                 'entry': p['entry'], 'exit': px, 'pnl_pct': net_pct,
                                 'reason': reason, 'pnl': round(pnl, 0)})
+                if adjusted_prices:
+                    _ff = sd[code]['f'][i]
+                    trades[-1].update({'exit_raw': round(px / _ff, 4) if _ff else px,
+                                       'entry_raw': p.get('entry_raw'), 'shares_raw': p.get('shares_raw')})
             pending_sells = _still
+            if adjusted_prices:
+                for code, p in list(pos.items()):
+                    i = didx[code].get(day)
+                    if i is not None and i > 0 and day in sd[code]['breaks']:
+                        _k = last_tradable_index_before(sd[code], i)
+                        _k = i - 1 if _k is None else _k
+                        _close_now(code, p, i, sd[code]['c'][_k], '단절 당일 청산(공시 근거 없음·평가 불가)', day)
+                        trades[-1]['evaluation'] = 'unevaluable_break'; trades[-1]['basis_date'] = sd[code]['d'][_k]
+                        adj_stats['break_day_liquidations'] += 1
+
             for code in pending_buys:
                 if code in pos or len(pos) >= max_positions:
                     continue
@@ -326,6 +433,27 @@ def run_backtest_contract_momentum(
                 if i is None:
                     continue
                 px = sd[code]['o'][i]
+                if adjusted_prices:
+                    if is_excluded_day(sd[code], day):   # 계수 미확정 단절 제외 구간(단절 당일 포함)에는 체결도 하지 않는다(D12 ②)
+                        adj_stats['excluded_fill_cancels'] = adj_stats.get('excluded_fill_cancels', 0) + 1
+                        continue
+                    if px <= 0 or (sd[code]['v'][i] or 0) <= 0:
+                        adj_stats['zero_volume_skipped_buys'] += 1
+                        continue
+                    _ff = sd[code]['f'][i] or 1.0
+                    _rpx = px / _ff
+                    if cash < _rpx * 10:
+                        continue
+                    budget = min(per_stock, cash * 0.99)
+                    shares_raw = int(budget // _rpx)
+                    if shares_raw <= 0:
+                        continue
+                    cash -= shares_raw * _rpx
+                    pos[code] = {'entry': px, 'shares': shares_raw / _ff, 'buy_date': day, 'hold': 0, 'peak': px,
+                                 'entry_raw': round(_rpx, 4), 'shares_raw': shares_raw}
+                    if sd[code].get('ends_before_period_end'):
+                        adj_stats['delisted_entries'] += 1
+                    continue
                 if px <= 0 or cash < px * 10:
                     continue
                 budget = min(per_stock, cash * 0.99)
@@ -340,6 +468,27 @@ def run_backtest_contract_momentum(
                 i = didx[code].get(day)
                 if i is None:
                     continue
+                if adjusted_prices:
+                    s_ = sd[code]
+                    # 상장폐지·거래종료(N1 ②·§26-2 ②): 자료가 기간 끝 전에 끝나고 오늘이 마지막 거래 가능일이면 그 종가로 청산
+                    if s_.get('ends_before_period_end') and s_.get('last_tradable_i') == i:
+                        _close_now(code, p, i, s_['c'][i], '상장폐지 청산(delisted)', day)
+                        trades[-1]['delisted'] = True
+                        if s_.get('delisting_confirmed'):
+                            adj_stats['delisted_exits'] += 1
+                        else:
+                            trades[-1]['evaluation'] = 'unevaluable_delisting'
+                            adj_stats['unevaluable_delistings'] += 1
+                        continue
+                    # 계수 미확정 단절이 공시돼 있고 오늘이 그 전 '거래 가능한 마지막 날'이면 오늘 종가로 사전 청산(D12 ②)
+                    if s_['breaks']:
+                        _bi = bisect.bisect_right(s_['breaks'], day)
+                        if _bi < len(s_['breaks']):
+                            _nb = s_['breaks'][_bi]
+                            if last_tradable_day_before_break(s_, s_['disc'].get(_nb), _nb) == day:
+                                _close_now(code, p, i, s_['c'][i], '단절 전 청산(D12, 공시 후)', day)
+                                adj_stats['break_liquidations'] += 1
+                                continue
                 curr = sd[code]['c'][i]
                 if curr <= 0:
                     continue
@@ -425,7 +574,8 @@ def run_backtest_contract_momentum(
         """, (round(total_return, 2), len(completed), round(win_rate, 1),
               round(max_dd, 2),
               json.dumps({"trades": trades, "sharpe": sharpe, "pl_ratio": pl_ratio,
-                          "max_drawdown_pct": round(max_dd, 2)}), run_id))
+                          "max_drawdown_pct": round(max_dd, 2),
+                          **({"adjusted_stats_w5b": adj_stats} if adjusted_prices else {})}), run_id))
         conn.commit()
         try:  # daily mark-to-market curve -> backtest_equity_curve (2026-09-26); never break the run itself
             import backtest_equity
