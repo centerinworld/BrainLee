@@ -18,7 +18,30 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import backtest_common as bc  # noqa: E402
 from scripts.rerun_all_after_audit_rebuild import _all_selected_specs  # noqa: E402
+import scripts.rerun_w2_generic_compare_20261006 as _w2  # noqa: E402
 from scripts.rerun_w2_generic_compare_20261006 import run_one, GENERIC  # noqa: E402
+
+
+class _TradeView(dict):
+    """전략마다 다른 거래 기록 키(sector_focus·golden_cross: code·date·action·pnl_krw)를 일반 엔진 키로 읽게 한다."""
+    _ALIAS = {"stock_code": ("stock_code", "code"), "entry_date": ("entry_date", "buy_date", "date"),
+              "exit_date": ("exit_date", "sell_date", "date"), "profit_amt": ("profit_amt", "pnl", "pnl_krw")}
+
+    def __getitem__(self, k):
+        for a in self._ALIAS.get(k, (k,)):
+            if a in self and dict.__getitem__(self, a) is not None:
+                return dict.__getitem__(self, a)
+        return 0 if k == "profit_amt" else None
+
+
+_orig_loads = _w2.json.loads
+
+
+def _loads_tradeview(s, *a, **kw):
+    v = _orig_loads(s, *a, **kw)
+    if isinstance(v, dict) and isinstance(v.get("trades"), list):
+        v["trades"] = [_TradeView(t) if isinstance(t, dict) else t for t in v["trades"]]
+    return v
 
 PARAM_ORDER = {"v12"}                    # selection_order를 함수 인자로 받는 전략
 FIXED_RANK = {"golden_cross", "sector_focus"}
@@ -34,8 +57,11 @@ def one(strategy, spec, order):
     elif strategy not in FIXED_RANK:
         tok = bc.SELECTION_ORDER_OVERRIDE.set(order)
     try:
+        if strategy in FIXED_RANK:      # 거래 기록 키가 다른 전략 — run_one 안의 json.loads만 바꿔 읽는다
+            _w2.json.loads = _loads_tradeview
         r = run_one(strategy, sp, f"w5a_{order}")
     finally:
+        _w2.json.loads = _orig_loads
         if tok is not None:
             bc.SELECTION_ORDER_OVERRIDE.reset(tok)
     r.pop("keys", None)
