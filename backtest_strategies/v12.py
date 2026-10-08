@@ -295,6 +295,9 @@ def _run_backtest_v12(conn, warmup_start, start_date, end_date, sim_dates,
                     continue
                 budget = min(per_stock, cash * 0.99)
                 if adjusted_prices:
+                    if adjusted_prices and is_excluded_day(stock_data[sc], day):   # 제외 구간(단절 당일 포함)에는 체결도 하지 않는다(D12 ②, 2026-10-08)
+                        adj_stats['excluded_fill_cancels'] = adj_stats.get('excluded_fill_cancels', 0) + 1
+                        continue
                     if (stock_data[sc]['volumes'][im[day]] or 0) <= 0:
                         adj_stats['zero_volume_skipped_buys'] += 1
                         continue

@@ -3,7 +3,7 @@
 
 판정 기준(D14): 주 수치 = 무작위 12회 중앙값, 함께 하위25%·범위·MDD 중앙. score(점수 순)는 재현용 참고값 — 분포 내 위치만 표시.
 같은 데이터 지문(v2: fingerprint_version + 가격 합계 정확값 + extras) 안의 run만 센다. 지문이 갈리면 표에 '지문 n종'을 적는다.
-사용: analyze_w5a_20261008.py [--out research_outputs/w5a_20261008_summary.json]
+사용: analyze_w5a_20261008.py [--prefix w5a_20261008|w5b_20261008] [--out …_summary.json]
 """
 import argparse, glob, json, statistics as st, sys
 from pathlib import Path
@@ -22,12 +22,14 @@ def _rank(rets, v):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--out", default=str(ROOT / "research_outputs" / "w5a_20261008_summary.json"))
+    ap = argparse.ArgumentParser(); ap.add_argument("--prefix", default="w5a_20261008")
+    ap.add_argument("--out", default=None)
     a = ap.parse_args()
+    a.out = a.out or str(ROOT / "research_outputs" / f"{a.prefix}_summary.json")
     from db_compat import connect_primary_db
-    files = sorted(glob.glob(str(ROOT / "research_outputs" / "w5a_20261008_*.json")))
+    files = sorted(glob.glob(str(ROOT / "research_outputs" / f"{a.prefix}_*.json")))
     files = [f for f in files if not f.endswith("_summary.json")]
-    data = {Path(f).stem.replace("w5a_20261008_", ""): json.load(open(f)) for f in files}
+    data = {Path(f).stem.replace(f"{a.prefix}_", ""): json.load(open(f)) for f in files}
     ids = [r["run_id"] for d in data.values() for per in d["runs"].values() for r in per.values()]
     c = connect_primary_db(timeout=60, readonly=True)
     spec = {}

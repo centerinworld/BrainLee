@@ -549,6 +549,9 @@ def run_backtest_golden_cross(
                 if code not in pos and len(pos) < _gc_limit(day):
                     fill = sd[code]['o'][i]
                     if adjusted_prices:
+                        if adjusted_prices and is_excluded_day({'excluded_ranges': sd[code]['excl']}, day):   # 제외 구간(단절 당일 포함)에는 체결도 하지 않는다(D12 ②, 2026-10-08)
+                            adj_stats['excluded_fill_cancels'] = adj_stats.get('excluded_fill_cancels', 0) + 1
+                            pending_buys.remove(code); continue
                         if (sd[code]['v'][i] or 0) <= 0:
                             adj_stats['zero_volume_skipped_buys'] += 1
                             pending_buys.remove(code); continue

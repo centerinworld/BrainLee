@@ -536,6 +536,9 @@ def run_backtest_sector(
                     if pdata is None or pdata[3] is None:
                         continue  # 당일 미거래(또는 시가 결측) → 주문 만료
                     px = pdata[3]
+                    if adjusted_prices and is_excluded_day(adj_e.get(code, {}), trade_date):   # 제외 구간(단절 당일 포함)에는 체결도 하지 않는다(D12 ②, 2026-10-08)
+                        adj_stats['excluded_fill_cancels'] = adj_stats.get('excluded_fill_cancels', 0) + 1
+                        continue
                     if adjusted_prices and code in adj_e and (adj_e[code]['volume'][adj_dix[code][trade_date]] or 0) <= 0:
                         adj_stats['zero_volume_skipped_buys'] += 1
                         continue

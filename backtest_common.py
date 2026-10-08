@@ -4033,6 +4033,10 @@ def _run_generic_backtest(version: str, signal_fn,
                 if monthly_buys.get(month_key, 0) >= max_new_per_month:
                     continue
                 i  = im[day]
+                if _use_adjusted and is_excluded_day(sd, day):
+                    # 계수 미확정 단절 제외 구간(단절 당일 포함)에는 체결도 하지 않는다 — 신호일이 단절 전날이어도(D12 ②, 2026-10-08)
+                    adj_stats['excluded_fill_cancels'] = adj_stats.get('excluded_fill_cancels', 0) + 1
+                    continue
                 if _use_adjusted and (sd['volumes'][i] or 0) <= 0:
                     adj_stats['zero_volume_skipped_buys'] += 1
                     continue
