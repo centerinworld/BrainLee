@@ -681,7 +681,7 @@ def run_once(session: StockeasySession, strategy: str) -> None:
                     reasons = []
                 if reasons and all(str(x).startswith(("shadow_strategy", "already_sold_same_entry")) for x in reasons):
                     _BUY_REJECTED_TODAY.add((strategy, name, today_str))
-                    logger.info(f"[신규편입] {name}: shadow 거부 — 오늘은 재시도 안 함")
+                    logger.info(f"[신규편입] {name}: 거부({'; '.join(map(str, reasons))[:80]}) — 오늘은 재시도 안 함")
                 else:
                     _BUY_RETRY_AFTER[(strategy, name)] = datetime.now() + timedelta(minutes=BUY_RETRY_MINUTES)
                     logger.info(f"[신규편입] {name}: 가드 거부({'; '.join(map(str, reasons))[:120]}) — {BUY_RETRY_MINUTES}분 뒤 재시도")

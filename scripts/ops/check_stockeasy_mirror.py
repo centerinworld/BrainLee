@@ -62,10 +62,19 @@ def main():
     res["dup_sells"] = {r[0]: int(r[1]) for r in conn.execute(
         """SELECT strategy, SUM(n-1) FROM (SELECT strategy, stock_name, substr(tx_at::text,1,10) d, COUNT(*) n FROM peak_trade
            WHERE tx_type='sell' GROUP BY 1,2,3 HAVING COUNT(*)>1) x GROUP BY 1""").fetchall()}
+    # 2026-10-08(REVIEW_PLAN §34-4 ③): 매도된 보유 재활성화 거부(already_sold_same_entry) 일 집계 — 반복 매도 재발 감시
+    try:
+        _log = ROOT / "logs" / "peak_monitor.launchd.log"
+        _today = datetime.now().strftime("%Y-%m-%d")
+        res["already_sold_rejects_today"] = sum(
+            1 for _l in _log.read_text(encoding="utf-8", errors="ignore").splitlines()
+            if _l.startswith(_today) and "already_sold_same_entry" in _l and "오늘은 재시도 안 함" in _l) if _log.exists() else None
+    except Exception:
+        res["already_sold_rejects_today"] = None
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f"{datetime.now():%Y-%m-%d}.json").write_text(json.dumps(res, ensure_ascii=False, indent=1))
     line = {"at": res["at"], **{s: {k: v.get(k) for k in ("site", "ours", "both", "match_pct")} for s, v in res["strategies"].items()},
-            "dup_sells": res["dup_sells"]}
+            "dup_sells": res["dup_sells"], "already_sold_rejects_today": res.get("already_sold_rejects_today")}
     with open(OUT / "history.jsonl", "a") as f:
         f.write(json.dumps(line, ensure_ascii=False) + "\n")
     print(json.dumps(line, ensure_ascii=False))

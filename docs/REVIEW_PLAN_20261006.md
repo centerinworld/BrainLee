@@ -1168,3 +1168,25 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 3. **재발 감시**
    - `already_sold_same_entry` 409 카운트를 모니터 로그에 일 단위로 집계한다. 10-09부터 같은 전략/종목/편입일 반복 매도 신규 발생이 0인지 확인한다.
    - 모니터가 같은 사유를 그날 재시도하지 않는지 로그로 확인하고, 1일 후 Stock_Strategy §11-5 측정 이력에 한 줄 추가한다.
+
+## 35. 실행 기록 — §34 결정 반영 (실행 AI: Claude Opus 5.5, 2026-10-08 22시)
+
+### 35-1. 중복 매도 정리 (`scripts/ops/cleanup_duplicate_virtual_sells_20261008.py`, 기본 dry-run)
+- dry-run 1차(§34-4 ② 기준 그대로): value 25·peak 85·momentum 1·gpt_v18 5 — 예상과 일치. 그러나 **gpt_v18은 정리하면 실현손익이 오히려 나빠짐**(−775만 → −1,006만) → 묶음별 분류: gpt_v18 5건 중 3묶음은 **수량이 서로 다름**(KB금융 74/79주, 현대차 19/20주, SK하이닉스 5/7주 — 같은 날 재매수·재매도로 보이는 별개 거래), 이번 결함(모니터 재편입)과 무관한 전략.
+- §34-2의 '같은 보유 판정' 취지에 맞춰 기준을 좁힘: **대상 전략 value·peak·momentum만, 묶음 안 매도 수량이 모두 같을 때만, 매도 시각 없는 6행 제외**. dry-run 2차: value 25·peak 85·momentum 1 — 예상과 일치(분류: peak 완전 동일 61·수량 같고 가격 다름 24, value 수량 같고 가격 다름 25, momentum 완전 동일 1).
+- **적용**: 111행 백업(`peak_trade_duplicate_sell_backup_20261008`, run_id `dup_sell_cleanup_20261008_220421`) 후 삭제. 결과 `research_outputs/virtual_sell_cleanup_20261008_apply.json`. 실현손익: value −1억1,383만 → −7,558만, peak −2,974만 → −669만, momentum 변화 없음(지운 행 손익 0).
+- 검증: 같은 기준 남은 중복 = gpt_v18 5(보류)뿐.
+- **gpt_v18 5건 보류 — 재검토 필요**: 수량 같은 2묶음(한화에어로스페이스 9/9주 20분 간격, NAVER 62/62주)은 반복 매도일 수 있고, 3묶음은 별개 거래로 보인다. gpt_v18 매도 경로(모니터 아님)를 확인한 뒤 판정.
+
+### 35-2. W6 등급 반영
+- `strategy_w5_distribution` 표(126행 = 21전략 × 6구간, `scripts/ops/load_w5_distribution_20261008.py`): 중앙값·하위25%·범위·MDD 중앙·score·code·무작위 수·순서 메모·데이터 지문·대표 run_id.
+- `routes/backtest.get_backtest_matrix`: 표가 있으면 구간 수익률 = W5 중앙값, MDD = W5 MDD 중앙(있을 때). 이전 선택 run 값은 `pre_correction_return_pct`·`pre_correction_mdd`·`pre_correction_run_id`로 보존(D9 '정정 전'). 응답에 `w5_distribution_label`. 표를 못 읽으면 경고 로그 + 이전 동작.
+- `strategy_governance.GOVERNANCE_DECISIONS` + `apply_governance_decision`: §34-3 결정을 기계 산정 위에 덮어씀. 기계 등급과 다르면 `machine_tier`·`machine_reason`을 남김. 테스트 4건.
+- 결과(매트릭스, legacy 제외): paper_core 2(**v8 — `forward_validation_pending_60d`**, **v12 — 기계 산정은 validation_queue(평균 17.5 < 20)**), offensive_satellite 2(sector_focus — '수동 후보군 생존 편향 미해결' 메모, **golden_cross — 기계 산정은 retired(플러스 구간 3/6 < 4)**), validation_queue 2(earnings_conviction·contract_momentum), retired 14(minervini 포함). megatrend에 섹터 생존 편향 메모.
+- **전략센터 자동 가상매매 상위 5개**(퇴역 제외·어댑터 있음): sector_focus·golden_cross·earnings_conviction·contract_momentum·v8 — 정확히 5개(v12는 어댑터 없음), minervini 제외. `_select_strategy_center_top_five()`가 retired를 제외함을 코드로 확인.
+- 주의: 등급 기준 숫자(평균 ≥20 등)는 이전 매트릭스 값에 맞춰 정한 것이라 W5 중앙값 기준에서는 v12·golden_cross처럼 결정과 어긋날 수 있다 — 기준 재보정은 별도 과제(결정 덮어쓰기로 당분간 유지).
+
+### 35-3. 남은 것
+- 화면: '정정 전' 탭·전진 검증 배지·생존 편향 메모 표시는 프런트(A9 배포)에서 — API 필드는 준비됨.
+- 재발 감시(§34-4 ③): 10-09부터 `already_sold_same_entry` 일 집계, 같은 날 반복 매도 신규 0 확인 → Stock_Strategy §11-5 한 줄.
+- gpt_v18 5건 판정(35-1).

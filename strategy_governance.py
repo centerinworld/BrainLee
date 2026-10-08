@@ -82,6 +82,44 @@ def classify_strategy(periods: dict) -> dict:
     }
 
 
+# 2026-10-08 W6(REVIEW_PLAN §34-3, 사용자 위임 검토자 결정): 기계 산정 등급 위에 얹는 명시적 결정.
+# 입력은 W5 분포(무작위 12회 중앙값, D14). 기계 산정과 다르면 machine_tier를 함께 남겨 차이를 숨기지 않는다.
+GOVERNANCE_DECISIONS = {
+    "v12": {"tier": "paper_core", "reason": "W6 결정: 유지 — 무작위 순서 하위25% 평균 +10.8, 6구간 중 5구간 중앙값 플러스",
+            "source": "REVIEW_PLAN §34-3"},
+    "v8": {"tier": "paper_core", "flag": "forward_validation_pending_60d",
+           "reason": "W6 결정: 60거래일 전진 검증 조건부 승격 — 하위25% 평균 +12.7(21개 중 최고), 21.12~22.10 0%는 시장 필터로 거래 없음",
+           "source": "REVIEW_PLAN §34-3"},
+    "minervini": {"tier": "retired", "reason": "W6 결정: 퇴역 — 이전 +19.2는 종목코드 순 선착순의 운, W5 중앙값 평균 +5.5",
+                  "source": "REVIEW_PLAN §34-3"},
+    "earnings_conviction": {"tier": "validation_queue", "reason": "W6 결정: 대기 유지 — 최악 구간 −29.5, 선택 운 분포 미측정",
+                            "source": "REVIEW_PLAN §34-3"},
+    "contract_momentum": {"tier": "validation_queue", "reason": "W6 결정: 대기 유지 — 최악 구간 −19.4, 선택 운 분포 미측정",
+                          "source": "REVIEW_PLAN §34-3"},
+    "golden_cross": {"tier": "offensive_satellite", "reason": "W6 결정: 현 등급 유지(순위 고정 전략, 플러스 구간 3/6)",
+                     "source": "REVIEW_PLAN §34-3"},
+    "sector_focus": {"tier": "offensive_satellite", "note": "수동 후보군 생존 편향 미해결 — 핵심 승격 금지",
+                     "reason": "W6 결정: 현 등급 유지", "source": "REVIEW_PLAN §34-3"},
+    "megatrend": {"note": "섹터 필터 후보군 생존 편향 미해결(폐지 종목 섹터 미상)", "source": "REVIEW_PLAN §33-1"},
+}
+
+
+def apply_governance_decision(strategy_key: str, governance: dict) -> dict:
+    """기계 산정 결과에 W6 결정을 덮어쓴다. tier를 바꾸면 machine_tier·machine_reason을 남긴다."""
+    d = GOVERNANCE_DECISIONS.get(strategy_key)
+    if not d:
+        return governance
+    out = dict(governance)
+    if d.get("tier") and d["tier"] != governance.get("tier"):
+        out["machine_tier"], out["machine_reason"] = governance.get("tier"), governance.get("reason")
+    if d.get("tier"):
+        out["tier"], out["reason"] = d["tier"], d.get("reason", out.get("reason"))
+    for k in ("flag", "note", "source"):
+        if d.get(k):
+            out[f"decision_{k}"] = d[k]
+    return out
+
+
 def summarize_governance(strategies: list[dict]) -> dict:
     counts = {tier: 0 for tier in (
         "live_eligible", "paper_core", "offensive_satellite", "validation_queue", "retired"
