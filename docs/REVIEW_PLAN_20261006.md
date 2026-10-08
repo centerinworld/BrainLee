@@ -1011,3 +1011,37 @@ Lab 세션 결과 파일(`research_outputs/w5_selection_dist_20261007*.json`)에
 
 ### 32-3. 다음
 D17 커밋(①④) → 이어받은 실행 세션이 D15 → 분포 표 '동일' → §31-3 조건 확인 → W5(10-08 낮). W5 자체가 전 전략 무작위 12회를 포함하므로 D17 전략의 분포 측정을 따로 할 필요는 없다.
+
+## 32. 실행 기록 — D16·D17 이어받기·D15·W5 준비·W5a 시작 (실행 AI: Claude Opus 5.5, 2026-10-07 23시 ~ 10-08 20시)
+> 역할 변경: 2026-10-07 22:40 사용자 지시 "너가 실행 AI야 너가 모든걸 진행해" — 이 세션이 실행까지 맡는다.
+
+### 32-1. 완료
+| 항목 | 커밋 | 내용·확인 |
+|---|---|---|
+| D16 지문 v2 | 5d087b1 | `run_registry.source_snapshot`: 행별 `ROUND(CAST(close AS NUMERIC),4)` 합계(정확한 십진 합 → 합치는 순서 무관) + `fingerprint_version="v2"`. 5회 동일·테스트 3건. **N1 무효 10쌍 재판정**: 행 수·날짜·정수 합계·extras 모두 같고 가중 합계만 0.01 흔들림 → 48/48 유효(`research_outputs/w2_generic_compare_20261006.json`에 `pair_valid_v2`) |
+| D17 커밋 확인 | f9947d2(D17 세션) | 전체 테스트 713 통과 뒤 커밋. `_sort_selection_candidates`(score: 1차·2차 점수 → 종목코드 / random: 코드 정렬 후 날짜 시드 섞기 / code), 후보 전부 수집 후 채움, 숨은 2차 정렬 없음 확인. 참고: D17 전략은 **기본값이 기준선 모드에서도 score**(일반 엔진은 조정 모드만 score) — 이 전략들의 옛 결과와 달라질 수 있음 |
+| D15 | 31d78fd | `hidden_rev` 가드 `i < 120` → `i < 252`, 52주 고저 창 고정(`max(0, …)` 제거). **vbr 조정 모드 score 6구간: 새 가드·옛 가드·10-07 측정(253행) 거래 서명 6/6 동일**(엔진 `MIN_HISTORY_ROWS=253`과 같은 조건이라 예상대로). 테스트 2건(200행 → 신호 없음, 300행 → 신호) — 옛 가드면 200행에서 신호가 나는 입력이라 구분됨. 결과 `research_outputs/d15_vbr_verify_20261008.json` |
+| 병렬 실행 잠금 | 31d78fd | 병렬 첫 실행에서 `_ensure_backtest_pg_triggers`의 동시 `CREATE OR REPLACE` → `tuple concurrently updated`(비치명적, 로그만). `pg_advisory_xact_lock` 추가 → 8스레드×5회 오류 0 |
+| 분포 표 '동일' | 31d78fd | `analyze_w5_selection_dist_20261007.py`: 무작위·code·score 모두 같으면 `동일(순서 무관)`, 동점은 `(+같음 k)` |
+| W5 직전 점검 | 07cf93f | `check_w5_provisional_residual.py`가 W5 구간 끝(2026-03-31) 뒤 잔여 잠정 행을 겹침에서 제외. 10-06 잔여 86행(대부분 영숫자 신형 코드, KRX 일별에 없음)은 전부 구간 밖 → `ok` |
+
+### 32-2. 나머지 전략 선택 순서 조사 (§31-3 후속, 읽기 전용)
+D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_conviction·earnings_supply_discovery·extreme_dd_volume·high_profit_compound·low_base_breakout·megatrend·moonshot_turnaround·recovery·se_momentum·turnaround·v4(base)·golden_cross) — **전부 점수(또는 거래대금) 내림차순 정렬 후 채움**(`candidates.sort(reverse=True)`·`buy_pool.sort`·SQL `ORDER BY 거래대금 DESC`·`_run_portfolio` score 정렬). 종목코드 순 선착순 **없음**. 단 selection_order 인자가 없어 **선택 운의 크기는 미측정** → W6에서 '순서 분포 미측정(점수 순 고정)'으로 표시(D14의 '순서 무관'과 구분).
+
+### 32-3. W5 범위 결정 — **W5a(이관 완료 11개) / W5b(나머지 16개)로 나눈다**
+이관 안 한 전략의 기준 표(§26-3 4번):
+| 전략 | 기업행위 처리 | 유니버스 | 선택 |
+|---|---|---|---|
+| deep_recovery·extreme_dd_volume·low_base_breakout·megatrend | **없음(원주가 — S28 가짜 급락 그대로)** | PIT 마스터 + 현재 stock_universe 혼용 | 점수 정렬 |
+| v8 | **없음** | PIT 마스터 + 현재 | selection_order 있음(D17) |
+| contract_momentum·earnings_conviction·earnings_supply_discovery·high_profit_compound·moonshot_turnaround·recovery | 보유 재기준(`_rebase_positions_for_corp_actions`) — 신호 시계열은 원주가 | 현재 stock_universe | 점수 정렬 |
+| se_momentum·turnaround·v4·composite·regime_adaptive | 계수(`corp_action_factors`) | 혼용/현재 | 점수 정렬(regime_adaptive는 인자) |
+→ 이 16개를 지금 등급 매기면 **알려진 결함(가짜 급락·생존 편향)이 등급에 들어간다**(§22-4·§26-3 원칙 위반). 그래서:
+- **W5a(지금)**: 일반 엔진 8 + v12 + golden_cross + sector_focus — 조정 가격·PIT·선택 순서 처리 완료. `scripts/run_w5a_20261008.py`, 10-08 20:35 시작(11 프로세스), 야간 수집 00:20 전 종료 예상(10-07 측정 기준 ~70~90분).
+- **W5b(다음)**: 16개 전략을 W3와 같은 체크리스트(수준 필터=원주가·비율 신호=조정 시계열·PIT 유니버스·폐지 청산·선택 순서)로 이관 → 옵트인 비교 → W5b 실행. 우선순위: 가격 보정이 아예 없는 5개(deep_recovery·extreme_dd_volume·low_base_breakout·megatrend·v8) 먼저.
+- W6 등급: W5a 전략은 D14 분포 기준으로 판정 가능. W5b 전 16개는 '기준 정리 전'으로 표시하고 등급 변경 보류.
+
+### 32-4. 진행 중 / 다음
+1. W5a 종료 → `check_run_fingerprints.py`로 코드·데이터 지문 1종 확인 → 분포 표(중앙값·하위25%·범위·MDD) Stock_Strategy 기록.
+2. W5b 이관 5개(보정 없음) 착수.
+3. 스탁이지 §25-3 확인(복구 여부), 10-08 KIS 원인 판정(§21-2) 결과 확인.
