@@ -12,8 +12,17 @@ from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
+import bisect
+import backtest_common as _bc
+from price_integrity import research_price_issues
 from backtest_common import (
     DB_PATH,
+    DELISTING_CONFIRM_DAYS,
+    QUALITY_DAY_CLASSES,
+    is_excluded_day,
+    last_tradable_day_before_break,
+    last_tradable_index_before,
+    load_adjusted_prices,
     EMP_DB_PATH,
     _calc_metrics,
     _date_to_ym,
@@ -66,7 +75,9 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                      stop_loss_pct, take_profit_pct, max_hold_days,
                      strict_exec: bool = True,
                      data_asof_ts: str = None,
-                     selection_order: str = None):
+                     selection_order: str = None,
+                     adjusted_prices: bool = False,
+                     adj_stats: dict = None):
     """
     V8 선행지표 멀티팩터 포트폴리오 시뮬레이터.
 
@@ -145,7 +156,24 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
     # ── 종목 목록: 수출 데이터 있는 종목만 (trade_all 키셋)
     #    + price_history에서 충분한 데이터 보유 확인 ─────────────
     export_stocks = set(trade_all.keys())
-    stock_codes = [r[0] for r in conn.execute("""
+    if adj_stats is None:
+        adj_stats = {}
+    adj_stats.update({'enabled': bool(adjusted_prices), 'candidate_skips_excluded': 0, 'candidate_skips_quality_day': 0,
+                      'break_liquidations': 0, 'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0,
+                      'zero_volume_skipped_buys': 0, 'stocks_with_breaks': 0, 'share_unknown_breaks': 0,
+                      'delisted_exits': 0, 'unevaluable_delistings': 0, 'delisted_entries': 0})
+    if adjusted_prices:
+        # W5b(REVIEW_PLAN §32-3): 유니버스 = 기간 중 상장(폐지 포함)이던 수출 데이터 보유 종목(PIT 마스터).
+        # 기간 전체 200행 조건·하루 3배/−80% '데이터 품질 필터'(종목 통째 제외 = 미래 정보)는 쓰지 않는다.
+        stock_codes = sorted({r[0] for r in conn.execute("""
+            SELECT DISTINCT sm.stock_code FROM security_master_history sm
+            WHERE sm.is_tradable=1 AND sm.is_etf_etn=0 AND sm.market IN ('KOSPI','KOSDAQ')
+              AND (sm.security_type IS NULL OR sm.security_type != 'preferred')
+              AND sm.effective_from <= ? AND (sm.effective_to IS NULL OR sm.effective_to > ?)
+              AND LENGTH(sm.stock_code)=6
+        """, (end_date, start_date)).fetchall()} & export_stocks)
+    else:
+      stock_codes = [r[0] for r in conn.execute("""
         SELECT ph.stock_code, COUNT(*) AS cnt
         FROM price_history ph
         INNER JOIN (
@@ -154,8 +182,8 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
         ) su ON ph.stock_code = su.stock_code
         WHERE ph.date>=? AND ph.date<=? AND ph.close>0
         GROUP BY ph.stock_code HAVING COUNT(*) >= 200
-    """, (warmup_start, end_date)).fetchall()
-    if r[0] in export_stocks]
+      """, (warmup_start, end_date)).fetchall()
+      if r[0] in export_stocks]
 
     tradable_intervals: Dict[str, list] = {}
     for sc, effective_from, effective_to in conn.execute("""
@@ -175,7 +203,54 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
 
     # ── 종목별 가격 데이터 로드 ────────────────────────────────
     stock_data: Dict[str, dict] = {}
-    for sc in stock_codes:
+    if adjusted_prices and stock_codes:
+        _ap = load_adjusted_prices(conn, stock_codes, warmup_start, end_date)
+        _qdays: Dict[str, set] = {}
+        for _qc, _qd, _qcls in research_price_issues(conn, stock_codes, warmup_start, end_date, allow_confirmed_corporate_actions=True):
+            if _qcls in QUALITY_DAY_CLASSES:
+                _qdays.setdefault(str(_qc), set()).add(str(_qd)[:10])
+        _sim_last = sim_dates[-1] if sim_dates else end_date
+        from datetime import date as _d0
+        for sc in stock_codes:
+            e = _ap.get(sc)
+            if not e or not e['dates'] or not any(start_date <= d <= end_date for d in e['dates']):
+                continue
+            dates = [str(d)[:10] for d in e['dates']]
+            f = list(e['adj_factor'])
+            fins = []
+            for _r in fin_all.get(sc, []):
+                # 주당 재무(EPS·BPS)는 공시일 시점 계수로 조정 가격과 같은 단위로(PBR = 조정가 ÷ 조정 BPS)
+                _r = list(_r)
+                _av = str(_r[10])[:10] if len(_r) > 10 and _r[10] else None
+                if _av and any(x != 1.0 for x in f):
+                    _k = bisect.bisect_left(dates, _av)
+                    _ff = f[_k] if _k < len(f) else 1.0
+                    if _ff != 1.0:
+                        for _c in (4, 5):
+                            if _r[_c] is not None:
+                                _r[_c] = _r[_c] * _ff
+                fins.append(tuple(_r))
+            _mc = e.get('master_closed_to')
+            try:
+                _gap = abs((_d0.fromisoformat(_mc[:10]) - _d0.fromisoformat(dates[-1])).days) if _mc else None
+            except Exception:
+                _gap = None
+            stock_data[sc] = {
+                'dates': dates, 'prices': list(e['close']), 'volumes': list(e['volume']), 'opens': list(e['open']),
+                'volume': list(e['volume']),
+                'frn': [0.0] * len(dates), 'inst': [0.0] * len(dates), 'fins': fins,
+                'sim_start_i': next((idx for idx, dt in enumerate(dates) if dt >= start_date), len(dates)),
+                'trade': trade_all.get(sc, {}), 'emp': emp_all.get(sc, {}),
+                'raw_prices': list(e['raw_close']), 'f': f,
+                'breaks': list(e['breaks']), 'excluded_ranges': list(e['excluded_ranges']),
+                'disc': e.get('break_disclosed', {}) or {}, 'qdays': _qdays.get(sc, set()),
+                'last_tradable_i': max((k for k, v_ in enumerate(e['volume']) if v_ > 0), default=None),
+                'ends_before_period_end': dates[-1] < _sim_last,
+                'delisting_confirmed': bool(_gap is not None and _gap <= DELISTING_CONFIRM_DAYS),
+            }
+            adj_stats['stocks_with_breaks'] += 1 if e['breaks'] else 0
+            adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
+    for sc in ([] if adjusted_prices else stock_codes):
         rows = conn.execute("""
             SELECT date, close, COALESCE(volume,0),
                    COALESCE(frn_net_buy,0), COALESCE(inst_net_buy,0),
@@ -216,6 +291,20 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
 
     date_idx = {sc: {dt: idx for idx, dt in enumerate(d['dates'])}
                 for sc, d in stock_data.items()}
+
+    def _close_now(sc, pos, i, price, reason, day_):
+        """조정 단위 `price`로 즉시 청산(단절·폐지 처리)."""
+        nonlocal cash, v8_pending_sells
+        _pa, _np = _net_profit(pos['entry_price'], price, pos['qty'], pos.get('mkt_cap_억', 500))
+        cash += pos['qty'] * pos['entry_price'] + _pa
+        _f = stock_data[sc]['f'][i]
+        trades.append({'stock_code': sc, 'entry_date': pos['entry_date'], 'exit_date': day_,
+                       'entry_price': pos['entry_price'], 'exit_price': price, 'qty': pos['qty'],
+                       'profit_pct': _np, 'profit_amt': _pa, 'exit_reason': reason,
+                       'exit_price_raw': round(price / _f, 4) if _f else price,
+                       'entry_price_raw': pos.get('entry_raw'), 'qty_raw': pos.get('qty_raw')})
+        positions.pop(sc, None)
+        v8_pending_sells = [(c_, r_) for c_, r_ in v8_pending_sells if c_ != sc]
 
     total_capital = per_stock * max_positions
     # 2026-07-16 개선: 고정슬롯 P&L 누산 → 실제 현금원장. 매수 시 가용현금 검사+차감,
@@ -425,6 +514,9 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                     _still.append((sc, reason)); continue
                 i = im[day]
                 px = stock_data[sc]['opens'][i]
+                if adjusted_prices and (stock_data[sc]['volumes'][i] or 0) <= 0:
+                    adj_stats['zero_volume_deferred_sells'] += 1   # 거래 불가능한 날 — 다음 거래일로 이월
+                    _still.append((sc, reason)); continue
                 pos = positions.pop(sc)
                 _pnl_amt, _net_pct = _net_profit(pos['entry_price'], px, pos['qty'], pos.get('mkt_cap_억', 500))
                 cash += pos['qty'] * pos['entry_price'] + _pnl_amt
@@ -439,7 +531,20 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                     'profit_amt':  _pnl_amt,
                     'exit_reason': reason,
                 })
+                if adjusted_prices:
+                    _ff = stock_data[sc]['f'][i]
+                    trades[-1].update({'exit_price_raw': round(px / _ff, 4) if _ff else px,
+                                       'entry_price_raw': pos.get('entry_raw'), 'qty_raw': pos.get('qty_raw')})
             v8_pending_sells = _still
+            if adjusted_prices:
+                for sc, pos in list(positions.items()):
+                    i = date_idx.get(sc, {}).get(day)
+                    if i is not None and i > 0 and day in stock_data[sc]['breaks']:
+                        _k = last_tradable_index_before(stock_data[sc], i)
+                        _k = i - 1 if _k is None else _k
+                        _close_now(sc, pos, i, stock_data[sc]['prices'][_k], '단절 당일 청산(공시 근거 없음·평가 불가)', day)
+                        trades[-1]['evaluation'] = 'unevaluable_break'; trades[-1]['basis_date'] = stock_data[sc]['dates'][_k]
+                        adj_stats['break_day_liquidations'] += 1
             for sc in v8_pending_buys:
                 if sc in positions or len(positions) >= max_positions:
                     continue
@@ -453,6 +558,28 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                 if px <= 0:
                     continue
                 budget = min(per_stock, cash * 0.99)
+                if adjusted_prices:
+                    if (stock_data[sc]['volumes'][i] or 0) <= 0:
+                        adj_stats['zero_volume_skipped_buys'] += 1
+                        continue
+                    _ff = stock_data[sc]['f'][i] or 1.0
+                    _rpx = px / _ff
+                    qty_raw = int(budget / _rpx)
+                    if qty_raw < 1 or qty_raw * _rpx > cash:
+                        continue
+                    cash -= qty_raw * _rpx
+                    positions[sc] = {
+                        'entry_date': day, 'entry_price': px,
+                        'qty': qty_raw / _ff,                 # 원주가 기준 정수 주식 → 조정 단위
+                        'peak_price': px, 'hold_days': 0,
+                        'entry_raw': round(_rpx, 4), 'qty_raw': qty_raw,
+                    }
+                    if stock_data[sc].get('ends_before_period_end'):
+                        adj_stats['delisted_entries'] += 1
+                    provenance = dict(v8_pending_buy_provenance.get(sc) or {})
+                    provenance.update({'stock_code': sc, 'entry_date': day})
+                    financial_provenance.append(provenance)
+                    continue
                 qty = int(budget / px)
                 if qty < 1 or qty * px > cash:
                     continue  # 현금 부족 → 주문 거부
@@ -476,6 +603,26 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                 continue
             i      = im[day]
             sd     = stock_data[sc]
+            if adjusted_prices:
+                # 상장폐지·거래종료(N1 ②·§26-2 ②): 자료가 기간 끝 전에 끝나고 오늘이 마지막 거래 가능일이면 그 종가로 청산
+                if sd.get('ends_before_period_end') and sd.get('last_tradable_i') == i:
+                    _close_now(sc, pos, i, sd['prices'][i], '상장폐지 청산(delisted)', day)
+                    trades[-1]['delisted'] = True
+                    if sd.get('delisting_confirmed'):
+                        adj_stats['delisted_exits'] += 1
+                    else:
+                        trades[-1]['evaluation'] = 'unevaluable_delisting'
+                        adj_stats['unevaluable_delistings'] += 1
+                    continue
+                # 계수 미확정 단절이 공시돼 있고 오늘이 그 전 '거래 가능한 마지막 날'이면 오늘 종가로 사전 청산(D12 ②)
+                if sd['breaks']:
+                    _bi = bisect.bisect_right(sd['breaks'], day)
+                    if _bi < len(sd['breaks']):
+                        _nb = sd['breaks'][_bi]
+                        if last_tradable_day_before_break(sd, sd['disc'].get(_nb), _nb) == day:
+                            _close_now(sc, pos, i, sd['prices'][i], '단절 전 청산(D12, 공시 후)', day)
+                            adj_stats['break_liquidations'] += 1
+                            continue
             reason = _check_sell_v8(i, sd['prices'], pos, trade_sc=sd['trade'], d=day)
             if reason is None:
                 continue
@@ -524,6 +671,11 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                 if not _is_tradable_day(sc, day):
                     continue
                 i = im[day]
+                if adjusted_prices:
+                    if is_excluded_day(sd, day):
+                        adj_stats['candidate_skips_excluded'] += 1; continue
+                    if day in sd['qdays']:
+                        adj_stats['candidate_skips_quality_day'] += 1; continue
                 if not _is_buy_v8_signal(sc, sd, i, day):
                     continue
                 score = _score_entry(i, sd['prices'], sd['volumes'], sc=sc, day=day, hs_data=trade_all)
@@ -610,7 +762,8 @@ def run_backtest_v8(start_date: str, end_date: str,
                     max_positions: int = 10,
                     run_name: str = None, run_id: str = None,
                     data_asof_ts: str = None,
-                    selection_order: str = None) -> str:
+                    selection_order: str = None,
+                    adjusted_prices: bool = None) -> str:
     """
     V8 수출 선행지표 멀티팩터 백테스트.
     HS 무역통계(월별 수출 YoY) + 고용 데이터를 선행 신호로 활용.
@@ -621,13 +774,16 @@ def run_backtest_v8(start_date: str, end_date: str,
     (backtest_common._run_generic_backtest 참조). 'YYYY-MM-DD HH:MM:SS'를 주면 그
     시각 기준 데이터로 고정. None(기본값)이면 기존과 동일하게 항상 최신 데이터 사용.
     """
+    adjusted_prices = _bc.ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
+    _adj_stats: dict = {}
     init_backtest_db()
     run_name = run_name or f"V8 수출선행 {start_date[:7]}~{end_date[:7]}"
     _sel_order = _resolve_selection_order(selection_order, default="score")
     _v8_params = {"per_stock": per_stock, "max_positions": max_positions,
                   "stop_loss_pct": 0.10, "take_profit_pct": 0.30, "max_hold_days": 252,
                   "strict_exec": True, "start": start_date, "end": end_date,
-                  "data_asof_ts": data_asof_ts, "selection_order": _sel_order}
+                  "data_asof_ts": data_asof_ts, "selection_order": _sel_order,
+                  "adjusted_prices": True if adjusted_prices else None}
     if run_id is None:
         run_id = str(uuid.uuid4())[:8]
         conn = sqlite3.connect(DB_PATH, timeout=120)
@@ -649,7 +805,8 @@ def run_backtest_v8(start_date: str, end_date: str,
     # "not_applicable"로 정정(as-of 리트로핏 대상 아님 — 고칠 시총필터 자체가 없음).
     _record_run_spec(run_id, "v8", "v8_v2_strict_20260714", _v8_params,
                      signal_timing="close_D", execution_timing="next_open",
-                     market_cap_mode="not_applicable", allocation_rule="fixed_slot")
+                     market_cap_mode="not_applicable", allocation_rule="fixed_slot",
+                     **({"universe_version": "security_master_history_v3_pit_delisted"} if adjusted_prices else {}))
     try:
         warmup_start = (datetime.strptime(start_date, '%Y-%m-%d')
                         - timedelta(days=450)).strftime('%Y-%m-%d')
@@ -674,6 +831,8 @@ def run_backtest_v8(start_date: str, end_date: str,
             max_hold_days=252,       # 최대 1년 보유 (선행지표 실현 대기)
             data_asof_ts=data_asof_ts,
             selection_order=_sel_order,
+            adjusted_prices=adjusted_prices,
+            adj_stats=_adj_stats,
         )
 
         # 종목명 매핑
@@ -720,6 +879,7 @@ def run_backtest_v8(start_date: str, end_date: str,
             f"CAGR: {metrics['cagr']}%  MDD: {metrics['max_drawdown_pct']}%  샤프: {metrics['sharpe']}\n"
             f"손익비: {metrics['pl_ratio']}배  총손익: {metrics.get('total_profit_amt',0):,}원\n"
             f"매도사유: " + " / ".join(f"{k} {v}건" for k, v in sorted(exit_reasons.items()))
+            + (f"\n조정가격(W5b): {json.dumps(_adj_stats, ensure_ascii=False)}" if adjusted_prices else "")
         )
         result = {
             **metrics,
