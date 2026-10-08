@@ -341,6 +341,9 @@ def run_backtest_extreme_dd_volume(
                     fill = sd[code]['o'][i]
                     budget = min(per_stock, cash * 0.99)
                     if adjusted_prices:
+                        if is_excluded_day(sd[code], day):   # 계수 미확정 단절 제외 구간(단절 당일 포함)에는 체결도 하지 않는다(D12 ②)
+                            adj_stats['excluded_fill_cancels'] = adj_stats.get('excluded_fill_cancels', 0) + 1
+                            pending_buys.remove(code); continue
                         if (sd[code]['v'][i] or 0) <= 0 or fill <= 0:
                             adj_stats['zero_volume_skipped_buys'] += 1
                             pending_buys.remove(code); continue
