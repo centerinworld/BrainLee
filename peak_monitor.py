@@ -679,7 +679,7 @@ def run_once(session: StockeasySession, strategy: str) -> None:
                     reasons = (json.loads(_LAST_POST_BODY.get("/api/trend/buy") or "{}").get("detail") or {}).get("reasons") or []
                 except Exception:
                     reasons = []
-                if reasons and all(str(x).startswith("shadow_strategy") for x in reasons):
+                if reasons and all(str(x).startswith(("shadow_strategy", "already_sold_same_entry")) for x in reasons):
                     _BUY_REJECTED_TODAY.add((strategy, name, today_str))
                     logger.info(f"[신규편입] {name}: shadow 거부 — 오늘은 재시도 안 함")
                 else:

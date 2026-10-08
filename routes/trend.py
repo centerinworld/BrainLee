@@ -1152,9 +1152,18 @@ def trend_buy(payload: dict):
 
     # 중복 방지
     dup = conn.execute(
-        "SELECT id FROM peak_holding WHERE stock_name=? AND entry_date=? AND strategy=?",
+        "SELECT id, is_active, sold_at FROM peak_holding WHERE stock_name=? AND entry_date=? AND strategy=?",
         (stock_name, entry_date, strategy)
     ).fetchone()
+    if dup and not dup[1] and dup[2]:
+        # 2026-10-08: 이미 매도(sold_at 있음)한 같은 편입일 보유를 다시 활성화하지 않는다.
+        # 공통 손절이 판 뒤 스탁이지에 아직 남아 있으면 모니터가 같은 편입일로 다시 매수를 보내고, 예전엔 여기서
+        # is_active=1로 되살려(위험게이트도 건너뜀) → 다시 손절 → 같은 날 반복 매도(10-08 value 6종목 3~6회, 6~7월 peak 85행)였다.
+        conn.close()
+        raise HTTPException(status_code=409, detail={
+            "message": "이미 매도한 같은 편입일 보유 — 재활성화하지 않음", "decision": "BLOCKED_RISK",
+            "reasons": ["already_sold_same_entry"],
+        })
     if dup:
         conn.execute(
             "UPDATE peak_holding SET is_active=1, current_price=?, "
