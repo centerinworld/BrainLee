@@ -118,7 +118,10 @@ def _ensure_backtest_pg_triggers() -> None:
     from price_integrity import native_script
     conn = connect_primary_db(timeout=120)
     try:
+        # 2026-10-08: 병렬 실행이 처음에 동시에 CREATE OR REPLACE를 하면 'tuple concurrently updated'가 난다
+        # (비치명적이지만 W5 병렬 실행에서 로그가 쌓임) → 트랜잭션 잠금으로 한 번에 하나씩.
         native_script(conn, """
+SELECT pg_advisory_xact_lock(7300120801);
 CREATE OR REPLACE FUNCTION trg_backtest_update_done_fn() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN

@@ -27,6 +27,20 @@ def _load_specs(run_ids):
     c.close()
 def fp(r):
     return _SPEC.get(r["run_id"]) or r.get("run_id")
+
+def _rank(rets, v):
+    """분포 내 위치 — '그 값보다 낮은 무작위 run 수/n'. 같은 값이 있으면 '+같음 k'를 붙인다(REVIEW_PLAN §29-1 보완:
+    전부 같은 값인데 0/12로 찍혀 최악처럼 보이던 문제)."""
+    below = sum(1 for x in rets if x < v - 1e-9); ties = sum(1 for x in rets if abs(x - v) <= 1e-9)
+    return f"{below}/{len(rets)}" + (f"(+같음 {ties})" if ties else "")
+
+
+def _rank_pair(rets, c, s):
+    if max(rets) - min(rets) <= 1e-9 and abs(c - rets[0]) <= 1e-9 and abs(s - rets[0]) <= 1e-9:
+        return "동일(순서 무관)"
+    return f"{_rank(rets, c)}·{_rank(rets, s)}"
+
+
 rows = []; summary = []
 _all = [json.load(open(f)) for f in files]
 _load_specs(r['run_id'] for d in _all for per in d['strategies'].values() for lab in per.values() for r in lab.values())
@@ -41,9 +55,8 @@ for f, d in zip(files, _all):
             if len(rets) < 3:
                 rows.append((strat, lab, "—", "—", len(rets), "", "", "", "", "")); continue
             c, s = runs["code"]["ret"], runs["score"]["ret"]
-            rank_c = sum(1 for x in rets if x < c); rank_s = sum(1 for x in rets if x < s)
             rows.append((strat, lab, f"{c:+.1f}", f"{s:+.1f}", len(rets), f"{st.median(rets):+.1f}", f"{q(rets,.25):+.1f}",
-                         f"{min(rets):+.1f}~{max(rets):+.1f}", f"{st.median(mdds):.1f}", f"{rank_c}/{len(rets)}·{rank_s}/{len(rets)}"))
+                         f"{min(rets):+.1f}~{max(rets):+.1f}", f"{st.median(mdds):.1f}", _rank_pair(rets, c, s)))
         summary.append((strat, len(all_fp)))
 print("| 전략 | 구간 | code(옛) | score | 무작위 n | 중앙값 | 하위25% | 범위 | MDD중앙 | 분포 내 순위 code·score |")
 print("|---|---|---|---|---|---|---|---|---|---|")

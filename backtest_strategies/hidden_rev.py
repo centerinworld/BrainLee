@@ -35,7 +35,9 @@ def _is_buy_hidden_rev(
     이론 아닌 실증: 2020~2025 982,889 시점 분석에서
     이 조합이 winRate 18.5%, 리프트 1.64x로 최고 성과 확인
     """
-    if i < sim_start_i or i < 120:
+    # 2026-10-08 D15(REVIEW_PLAN §30-1): '52주'는 252행 — 이력이 1년 미만이면 52주 고저를 짧은 구간으로 계산하게 되므로
+    # 신호 없음. 화면 신호·기준선·조정 모드가 같은 정의를 쓰도록 함수 안에서 막는다(엔진 MIN_HISTORY_ROWS=253과 같은 값).
+    if i < sim_start_i or i < 252:
         return False
     curr = prices[i]
 
@@ -51,8 +53,8 @@ def _is_buy_hidden_rev(
         return False
 
     # [A] 52주 범위 상위 65%+
-    low_52w  = min(prices[max(0, i-252):i+1])
-    high_52w = max(prices[max(0, i-252):i+1])
+    low_52w  = min(prices[i-252:i+1])
+    high_52w = max(prices[i-252:i+1])
     if high_52w <= low_52w:
         return False
     pos_52w = (curr - low_52w) / (high_52w - low_52w) * 100
