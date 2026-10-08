@@ -71,6 +71,9 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
     const [strategySignals, setStrategySignals] = React.useState({});
     const [strategySignalsLoading, setStrategySignalsLoading] = React.useState(false);
     const [stratSort, setStratSort] = React.useState({ key: null, dir: 'desc' });  // 매트릭스 정렬 (avg|cum)
+    // 2026-10-08 W6(REVIEW_PLAN §34-3·§35): 퇴역 기본 숨김(D2) · '정정 전' 값 보기(D9)
+    const [showRetired, setShowRetired] = React.useState(false);
+    const [showPreCorrection, setShowPreCorrection] = React.useState(false);
     const [marketRegime, setMarketRegime] = React.useState(null);
     const [strategyResearch, setStrategyResearch] = React.useState(null);
     const [usMinervini, setUsMinervini] = React.useState(null);
@@ -213,7 +216,13 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
     const PERIOD_RETURNS = Object.fromEntries(
       (backtestMatrix?.strategies || []).map(item => [
         item.strategy,
-        matrixPeriodOrder.map(period => item.periods?.[period]?.total_return_pct ?? null),
+        matrixPeriodOrder.map(period => {
+          const row = item.periods?.[period];
+          if (!row) return null;
+          // W5 분포가 적용된 매트릭스는 total_return_pct = 무작위 12회 중앙값, 이전 선택 run 값은 pre_correction_return_pct
+          return showPreCorrection && row.pre_correction_return_pct !== undefined
+            ? (row.pre_correction_return_pct ?? null) : (row.total_return_pct ?? null);
+        }),
       ]),
     );
     const matrixResults = (backtestMatrix?.strategies || []).flatMap(item => Object.values(item.periods || {}));
@@ -239,6 +248,14 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
     const strategyGovernance = Object.fromEntries(
       (backtestMatrix?.strategies || []).map(item => [item.strategy, item.governance || {}]),
     );
+    const TIER_KO = { live_eligible:'실전 승인', paper_core:'종이운용 핵심', offensive_satellite:'공격 위성', validation_queue:'검증 대기', retired:'퇴역' };
+    const governanceBadges = (g) => {
+      const b = [];
+      if (g?.decision_flag === 'forward_validation_pending_60d') b.push({ text:'전진 검증 중', color:'#7c3aed', title:'60거래일 전진 검증 조건부 승격(W6 결정, REVIEW_PLAN §34-3)' });
+      if (g?.decision_note) b.push({ text:'⚠ 생존 편향', color:'#b45309', title:g.decision_note });
+      if (g?.machine_tier && g.machine_tier !== g.tier) b.push({ text:'결정 유지', color:'#0f766e', title:`기계 산정 등급: ${TIER_KO[g.machine_tier] || g.machine_tier} — ${g.machine_reason || ''} / 적용: ${g.reason || ''}` });
+      return b;
+    };
     const matrixStrategyByKey = Object.fromEntries((backtestMatrix?.strategies || []).map(item => [item.strategy, item]));
     const availableStrategies = STRATEGY_HUB_STRATEGIES.filter(strategy =>
       (strategyMethodology[strategy.key]?.results || []).length > 0
@@ -668,6 +685,12 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
             background:'rgba(15,118,110,0.08)',border:'1px solid rgba(37,99,235,0.25)',
             color:'#0f766e',fontSize:'0.72rem',lineHeight:1.6}}>
             실전 승인 {backtestMatrix.governance.counts?.live_eligible || 0}개 · 종이운용 핵심 {backtestMatrix.governance.counts?.paper_core || 0}개 · 공격 위성 {backtestMatrix.governance.counts?.offensive_satellite || 0}개 · 검증 대기 {backtestMatrix.governance.counts?.validation_queue || 0}개 · 퇴역 {backtestMatrix.governance.counts?.retired || 0}개. 자동매매는 비활성화 상태입니다.
+            {backtestMatrix.w5_distribution_label && (
+              <div style={{marginTop:4,color:'#334155'}}>
+                구간 수익률 기준: <b>무작위 선택 순서 12회 중앙값</b>(W5 {backtestMatrix.w5_distribution_label}, 같은 데이터 지문) — 순서가 고정된 전략은 1회 값.
+                이전(10-04 선택 run) 값은 매트릭스의 '정정 전 값 보기'로 볼 수 있습니다. 등급은 W6 결정(2026-10-08) 반영.
+              </div>
+            )}
           </div>
         )}
 
@@ -712,8 +735,11 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
               </div>
               <div style={{display:'flex',gap:'0.35rem',flexWrap:'wrap',justifyContent:'flex-end'}}>
                 <span style={{fontSize:'0.64rem',fontWeight:800,padding:'0.18rem 0.45rem',borderRadius:5,border:'1px solid rgba(15,23,42,0.2)',color:'#334155'}}>
-                  {selectedGovernance.tier || 'unknown'}
+                  {TIER_KO[selectedGovernance.tier] || selectedGovernance.tier || 'unknown'}
                 </span>
+                {governanceBadges(selectedGovernance).map(b => (
+                  <span key={b.text} title={b.title} style={{fontSize:'0.64rem',fontWeight:800,padding:'0.18rem 0.45rem',borderRadius:5,border:`1px solid ${b.color}55`,color:b.color}}>{b.text}</span>
+                ))}
                 <span style={{fontSize:'0.64rem',fontWeight:800,padding:'0.18rem 0.45rem',borderRadius:5,border:'1px solid rgba(217,119,6,0.35)',color:'#b45309'}}>
                   {selectedGovernance.verification_status || strategyMethodology[selectedStrat]?.label || '검증 상태 없음'}
                 </span>
@@ -736,6 +762,13 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                   <div style={{fontSize:'0.58rem',lineHeight:1.35,color:'rgba(15,23,42,0.68)',marginTop:3}}>
                     MDD {row?.mdd != null ? `${Number(row.mdd).toFixed(1)}%` : '-'} · 거래 {row?.trade_count ?? '-'}
                   </div>
+                  {row?.w5 && (
+                    <div style={{fontSize:'0.56rem',lineHeight:1.35,color:'#475569',marginTop:2}}
+                      title={row.w5.n_random ? `무작위 ${row.w5.n_random}회 · 하위25% ${row.w5.q25_return_pct != null ? Number(row.w5.q25_return_pct).toFixed(1) + '%' : '-'} · 점수 순 ${row.w5.score_return_pct != null ? Number(row.w5.score_return_pct).toFixed(1) + '%' : '-'}` : '선택 순서 고정 전략(1회 값)'}>
+                      {row.w5.n_random ? `범위 ${Number(row.w5.min_return_pct).toFixed(0)}~${Number(row.w5.max_return_pct).toFixed(0)}%` : '순서 고정'}
+                      {row.pre_correction_return_pct != null && ` · 정정 전 ${row.pre_correction_return_pct >= 0 ? '+' : ''}${Number(row.pre_correction_return_pct).toFixed(1)}%`}
+                    </div>
+                  )}
                   <div style={{fontSize:'0.56rem',color:row?.methodology?.run_hash ? '#047857' : '#b45309',marginTop:3}}>
                     {row?.methodology?.run_hash ? `run ${String(row.methodology.run_hash).slice(0, 8)}` : 'run 기록 없음'}
                   </div>
@@ -860,6 +893,20 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                 <span style={{fontSize:'0.66rem',color:'#b45309',fontWeight:600}}>
                   실행 명세·run hash가 없는 결과는 레거시 참고값이며 전략 추천과 순위 산정에 사용하지 않습니다.
                 </span>
+                <label style={{fontSize:'0.68rem',display:'flex',alignItems:'center',gap:4,cursor:'pointer'}}>
+                  <input type="checkbox" checked={showRetired} onChange={e => setShowRetired(e.target.checked)} />
+                  퇴역 포함 보기 ({availableStrategies.filter(s => (strategyGovernance[s.key] || {}).tier === 'retired').length})
+                </label>
+                {backtestMatrix?.w5_distribution_label && (
+                  <label style={{fontSize:'0.68rem',display:'flex',alignItems:'center',gap:4,cursor:'pointer'}}
+                    title="정정 전 = 10-04 선택 run(종목코드 순 선착순·현재 종목 목록·기업행위 미보정 등이 섞인 값). 최악 구간·낙폭 열과 등급은 항상 현재(W5) 기준">
+                    <input type="checkbox" checked={showPreCorrection} onChange={e => setShowPreCorrection(e.target.checked)} />
+                    정정 전 값 보기
+                  </label>
+                )}
+                {showPreCorrection && (
+                  <span style={{fontSize:'0.64rem',fontWeight:800,color:'#b91c1c'}}>정정 전(10-04) 값 표시 중 — 비교 참고용</span>
+                )}
               </div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.78rem'}}>
@@ -888,7 +935,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                     </tr>
                   </thead>
                   <tbody>
-                    {availableStrategies.map(s => {
+                    {availableStrategies.filter(s => showRetired || (strategyGovernance[s.key] || {}).tier !== 'retired' || s.key === selectedStrat).map(s => {
                         // 평균/누적을 PERIOD_RETURNS에서 직접 계산 (하드코딩 avgRet 불일치 방지, 2026-07-11 재검증)
                         const rets0 = PERIOD_RETURNS[s.key] || [];
                         const valid0 = rets0.filter(v => v != null);
@@ -921,8 +968,11 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
 	                            borderLeft: isSelected ? `3px solid ${s.color}` : '3px solid transparent'}}>
 	                            <span style={{opacity: (strategyGovernance[s.key] || {}).tier === 'retired' ? 0.5 : 1}}>{s.label}</span>
 	                            {(strategyGovernance[s.key] || {}).tier === 'retired' && (
-	                              <span title="거버넌스 등급 퇴역(retired) — 결정 D2(2026-10-07): 숨기지 않고 표시, W6 재판정 뒤 기본 숨김 예정" style={{display:'inline-block',marginLeft:'0.35rem',padding:'0.06rem 0.34rem',borderRadius:'999px',border:'1px solid rgba(100,116,139,0.5)',background:'rgba(100,116,139,0.12)',color:'#475569',fontSize:'0.56rem',fontWeight:800,verticalAlign:'middle'}}>퇴역</span>
+	                              <span title="거버넌스 등급 퇴역(retired) — W6 재판정(2026-10-08) 뒤 기본 숨김, '퇴역 포함 보기'로 표시" style={{display:'inline-block',marginLeft:'0.35rem',padding:'0.06rem 0.34rem',borderRadius:'999px',border:'1px solid rgba(100,116,139,0.5)',background:'rgba(100,116,139,0.12)',color:'#475569',fontSize:'0.56rem',fontWeight:800,verticalAlign:'middle'}}>퇴역</span>
 	                            )}
+	                            {governanceBadges(strategyGovernance[s.key]).map(b => (
+	                              <span key={b.text} title={b.title} style={{display:'inline-block',marginLeft:'0.35rem',padding:'0.06rem 0.34rem',borderRadius:'999px',border:`1px solid ${b.color}66`,background:`${b.color}14`,color:b.color,fontSize:'0.56rem',fontWeight:800,verticalAlign:'middle'}}>{b.text}</span>
+	                            ))}
 	                            {strategyMethodology[s.key] && (
 	                              <span style={{
 	                                display:'inline-block',
