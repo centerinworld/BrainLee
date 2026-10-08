@@ -1232,3 +1232,56 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 - **중복 집계 기준 정정**(`check_stockeasy_mirror.py`): 중복 = 그날 매도 건수 − 그날 매도된 서로 다른 보유 수. 현재 0. (정리 전 value 신세계처럼 보유 1개·매도 6건이면 5로 잡힘)
 - **화면(전략 허브, 커밋 06d125d, 22:27 재시작으로 배포)**: 퇴역 기본 숨김 + '퇴역 포함 보기'(D2), '정정 전 값 보기'(D9 — 10-04 선택 run 값, 최악·낙폭 열과 등급은 W5 기준 고정), 배지 '전진 검증 중'(v8)·'⚠ 생존 편향'(sector_focus·megatrend)·'결정 유지'(v12·golden_cross, 툴팁에 기계 산정 등급), 등급 한국어 표기, 기준 안내(무작위 12회 중앙값), 선택 전략 구간 카드에 W5 범위·정정 전 값. 시험 빌드·배포 빌드 통과, **브라우저 육안 확인은 못 함**.
 - 다른 세션의 StrategyHub 미커밋 변경(10-05~06, 탭 정리·추천 패널)은 커밋에 넣지 않았다(작업본·배포 빌드에는 이미 포함 — 10-08 22:21 이전부터).
+
+## 37. 실행 기록 — §36-3(검토) 조치 (실행 AI: Claude Opus 5.5, 2026-10-08 22:35)
+> 번호 주의: §36이 두 개(검토 기록 1194행·실행 기록 1230행). 이 절부터 §37.
+
+### 37-1. 중복 매도 정리 후 보유 보정 — 상태: **trade 삭제 + holding 보정 완료(2건 수동 검토)**
+- `scripts/ops/sync_holdings_after_dup_sell_cleanup_20261008.py`(기본 dry-run): 정리 때 남긴 첫 매도(keep_ids 16)에 대응하는 비활성 보유를 `holding_id` → 없으면 strategy+종목+매도일+수량으로 찾고, 후보 2개 이상이면 건너뜀.
+- dry-run: 대응 14 · 애매 0 · 대응 없음 2. **적용**: 보유 14행 백업(`peak_holding_dup_sell_sync_backup_20261008`, run_id `dup_sell_holding_sync_20261008_223123`) 후 `sell_price·sold_at·current_price·profit_pct`(sold_price가 있으면 같이)를 첫 매도로. **적용 후 불일치 0**, 재실행 dry-run 갱신 대상 0. 예: value SK하이닉스 보유 80 → 10:13:02·1,732,000·−4.78%(검토자 예시와 일치).
+- **수동 검토 2건 → §39에서 처리 완료(trade 273·433 백업 후 삭제)**. 원래 기록: **(다른 날 반복 매도 — 같은 날 기준 정리에서 빠짐)**: peak 에이치브이엠 보유 88(5/18 21:55 −0.4% 매도 → 5/19 15:29 −8.03% 재매도, 보유 = 5/19 값), peak 삼화콘덴서 보유 155(수량 0, 6/18 −41.3% 이상가 → 6/19 −10.9%, 보유 = 6/19 값). 어느 매도가 실제인지 기록만으로 확정 불가 → 자동 보정 안 함. 제안: 둘 다 '보유 = 마지막 매도'와 맞는 쪽(5/19·6/19)을 남기고 앞선 매도(trade 273·433)를 백업 후 삭제 — 사용자 확인 후.
+- 주의: `peak_trade.tx_at`은 text이고 6~7월 일부 행은 UTC·KST가 섞여 9시간 어긋난다(유진테크 06:28 vs 15:28) → 그 시기 '첫 매도' 순서는 근사.
+
+### 37-2. W5 라벨 선택 — `MAX(w5_label)` → `ORDER BY created_at DESC, w5_label DESC LIMIT 1`
+- `routes/backtest.py`: `_latest_w5_label`·`_w5_rows`·`_apply_w5_overlay`로 분리(동작 동일). 운영 매트릭스 재확인: `w5_20261008`, 등급 수 동일. 화면 안내문에 라벨 표시는 이미 있음(§36).
+- 장기안(is_active/published_at 열)은 라벨이 2개 이상 생길 때.
+
+### 37-3. 테스트 보강 — `tests/test_dup_sell_followups_20261008.py` 3건
+- 최신 라벨 = created_at 순(문자열 MAX 아님) / 오버레이가 수익률·MDD를 W5로 바꾸고 pre_correction_* 보존, W5 없는 구간은 그대로 / 보유 보정: 유일 후보만 갱신, 같은 날·같은 수량 2개는 애매로 건너뜀.
+- ~~이 테스트는 운영 DB를 건드리지 않도록 메모리 SQLite 표로 로직만 검사한다~~ → **정정(§39)**: 처음 버전은 `routes.backtest`를 import해 import 때 `init_backtest_db()`가 PostgreSQL에 연결했다. W5 헬퍼를 부작용 없는 `w5_overlay.py`로 옮긴 뒤로는 DB 접속 없이 돈다(검증: 접속 불가 주소로 4/4 통과). 로직은 메모리 SQLite 표로 검사(운영 DB는 PostgreSQL).
+
+## 38. 검증 — 삼성전기(009150) 게이트 보완·정본 재동기화 (다른 세션 작업, 2026-10-08 22:37 run `repair_009150_numeric_status_20261008_223752`)
+
+### 38-1. 맞음
+- **게이트(`data_write_gate.py` 170~181행)**: CFS에서 `자산 − 부채 − 지배주주 자본` 양수 차이(자산의 20% 이하)를 비지배지분으로 허용. FINANCIAL §2-1(연결 total_equity = 지배주주지분)과 일치. OFS·음수 차이·부채/자본 오매칭 보정 경로는 그대로. 테스트 7/7 통과.
+- **비지배지분 외부 대조**: 우리 `자산−부채−지배자본` = FnGuide `자본총계 − 지배주주지분` — **CFS 10개 기간 전부 일치**(예: 2026Q2 2,986억, 2025 연간 2,556억).
+- **재동기화**: 원장(year≥2023) 키 중복 0, 백업 35행·`data_fix_log` 36행 확인, 동기화된 정본 = 원본 행(값 동일).
+- **FnGuide 원문(10-04) 대조**: 정본 2023+ 111칸 중 **107칸 일치**. 불일치 4칸은 전부 아래 38-2의 낡은 행.
+
+### 38-2. 오류 — 정본에 낡은 별도(OFS) 연간 행 3개가 남아 있음
+| 정본 키 | 영업이익(정본) | FnGuide | 원본 행 |
+|---|---:|---:|---|
+| 2023 연간 OFS (quarter=4) | 2,198억 | 1,459억 | 130257 — **원장에 없음** |
+| 2024 연간 OFS (quarter=4) | 1조 1,525억 | 2,436억 | 130255 — 없음 (순이익도 4,374 vs 4,278) |
+| 2025 연간 OFS (quarter=4) | 1조 4,035억 | 3,559억 | 130253 — 없음 |
+- 원장의 올바른 행(id 632010·632008·632006, `dart_ofs_backfill` 10-03)은 **quarter=0** 연간 키로 저장돼 있고, 재동기화가 그 키(quarter=0)로 정본을 새로 만들었다 → 정본에 **같은 연간 OFS가 두 벌**(quarter 0 = 정확, quarter 4 = 낡음·틀림). 재동기화 스크립트는 원장 행만 순회해 원본이 사라진 정본 행을 정리하지 않는다.
+- 보고의 "재동기화 후 canonical mismatch 0"은 **정본 ↔ 자기 원본 행** 비교라 이 낡은 행(원본이 없어 JOIN에서 빠짐)을 잡지 못한다. 외부(FnGuide) 대조가 필요했다(원칙 0).
+- 정본 읽기 함수 `signal_data_gate.read_financials_failclosed`는 `ORDER BY year DESC, quarter DESC` → 연간 조회 시 **quarter=4 낡은 행이 먼저** 나온다. 현재 운영 코드에서 이 함수 호출처는 없음(BigQuery 동기화·감사 스크립트가 표를 읽음).
+
+### 38-3. 전체 규모 (읽기 전용 측정)
+- 정본에서 **연간 행이 quarter 0과 4로 두 벌 공존하는 (종목·연도·연결/별도) 묶음 10,354개**.
+- **원본 행(`source_row_id`)이 원장에 없는 정본 행 14,769행**.
+→ 삼성전기만의 문제가 아니라 정본 표 전체의 '연간 키 표기 불일치 + 원본 사라진 행' 문제.
+
+### 38-4. 제안 (결정 필요 — 정본 대량 정리)
+1. 연간 키를 하나로 정한다(원장 최신 적재는 quarter=0 — FINANCIAL 정본 기준 확인 후).
+2. 원본 행이 원장에 없는 정본 행: 같은 키(표기 통일 후)의 원장 행이 있으면 그 행으로 재동기화, 없으면 백업 후 삭제 후보 목록(dry-run 수량 먼저).
+3. 재동기화 검증은 '정본 ↔ 원본' 비교에 더해 **FnGuide 원문 대조**와 **원본 없는 정본 행 0**을 완료 조건으로.
+4. `read_financials_failclosed`는 연간 조회 시 키 표기에 무관하게 한 행만 고르도록(또는 1번 통일 뒤 그대로).
+
+## 39. 실행 기록 — §37 검토(P2·P2·P3)와 수동 2건 결정 반영 (실행 AI: Claude Opus 5.5, 2026-10-08 22:55)
+- **[P2] 테스트의 DB 연결**: W5 헬퍼(`_latest_w5_label`·`_w5_rows`·`_apply_w5_overlay`)를 import 부작용 없는 `w5_overlay.py`로 이동, `routes/backtest.py`는 그 모듈에서 import. `tests/test_dup_sell_followups_20261008.py`는 `w5_overlay`를 import → 접속 불가 주소(`POSTGRES_DATABASE_URL=...:1`)로도 4/4 통과. §37-3 문구 정정.
+- **[P2] dry-run 읽기 전용**: `sync_holdings_after_dup_sell_cleanup_20261008.py`·`cleanup_duplicate_virtual_sells_20261008.py` 모두 `connect_primary_db(timeout=120, readonly=not a.apply)`. 보정 dry-run 재실행: 갱신 대상 0.
+- **[P3] NULL 정렬**: `ORDER BY created_at DESC NULLS LAST, w5_label DESC`. 테스트 1건 추가(created_at NULL 라벨을 고르지 않음).
+- **수동 2건(검토자 승인)**: peak 에이치브이엠 trade 273(5/18 21:55 −0.4%)·삼화콘덴서 trade 433(6/18 −41.3%, 수량 0) → 기존 백업 표 `peak_trade_duplicate_sell_backup_20261008`에 row_json 저장(run_id `dup_sell_cross_day_cleanup_20261008_225538`, 2행) 후 삭제, `data_fix_log` 기록. 남은 매도 284(5/19 15:29 115,700 −8.03%)·435(6/19 11:00:47 169,800 −10.87%) = 보유 88·155와 일치. `virtual_cash_ledger` 참조 0(검토자 확인).
+- **중복 매도 정리 상태: 완료** — trade 113행 삭제(111 + 2, 백업 2묶음), 보유 14행 보정(백업), 보유 단위 중복 집계 0.

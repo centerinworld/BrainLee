@@ -27,6 +27,7 @@ from merged_simulator import MergeConfig, persist_merged_run, pnl_concentration,
 from run_registry import derive_status, register_run_set, registry as selected_registry, select_run
 from security_master import resolve_security
 from strategy_governance import apply_governance_decision, classify_strategy, summarize_governance
+from w5_overlay import _apply_w5_overlay, _latest_w5_label, _w5_rows
 from config import IS_POSTGRES
 from db_compat import connect_primary_db
 
@@ -1543,45 +1544,18 @@ def get_backtest_matrix(include_legacy: bool = Query(False)):
 
     # 2026-10-08 W6(REVIEW_PLAN §34-4 ①): W5 분포(무작위 12회 중앙값, D14)가 있으면 구간 수익률을 그것으로 바꾸고
     # 이전 선택 run 값은 pre_correction_*로 보존한다(D9 '정정 전'). 표가 없으면 이전 동작 그대로.
-    w5_label = None
+    w5_label, _w5rows = None, []
     try:
         _w5c = connect_primary_db(timeout=30, readonly=True)
         try:
-            if _w5c.execute("SELECT to_regclass('strategy_w5_distribution')").fetchone()[0]:
-                _lab = _w5c.execute("SELECT MAX(w5_label) FROM strategy_w5_distribution").fetchone()
-                w5_label = _lab[0] if _lab else None
-                _w5rows = _w5c.execute(
-                    "SELECT strategy, period_label, median_return_pct, q25_return_pct, min_return_pct, max_return_pct, "
-                    "mdd_median_pct, score_return_pct, n_random, order_note, data_fingerprint, representative_run_id "
-                    "FROM strategy_w5_distribution WHERE w5_label=?", (w5_label,)).fetchall() if w5_label else []
-            else:
-                _w5rows = []
+            w5_label = _latest_w5_label(_w5c)
+            _w5rows = _w5_rows(_w5c, w5_label) if w5_label else []
         finally:
             _w5c.close()
     except Exception:
         logger.exception("[matrix] W5 분포 표 읽기 실패 — 이전 선택 run 값 사용")
-        _w5rows = []
-    _w5 = {}
-    for r in _w5rows:
-        _w5.setdefault(str(r[0]), {})[str(r[1])] = r
-    for strategy in ordered:
-        rows = _w5.get(strategy["strategy"])
-        if not rows:
-            continue
-        for lab, r in rows.items():
-            p_ = strategy["periods"].get(lab)
-            if p_ is None:
-                continue
-            p_["pre_correction_return_pct"] = p_.get("total_return_pct")
-            p_["pre_correction_mdd"] = p_.get("mdd")
-            p_["pre_correction_run_id"] = p_.get("run_id")
-            p_["total_return_pct"] = round(float(r[2]), 2) if r[2] is not None else None
-            if r[6] is not None:
-                p_["mdd"] = round(float(r[6]), 2)
-            p_["w5"] = {"label": w5_label, "median_return_pct": r[2], "q25_return_pct": r[3], "min_return_pct": r[4],
-                        "max_return_pct": r[5], "mdd_median_pct": r[6], "score_return_pct": r[7], "n_random": r[8],
-                        "order_note": r[9], "data_fingerprint": r[10], "representative_run_id": r[11]}
-        strategy["w5_applied"] = w5_label
+        w5_label, _w5rows = None, []
+    _apply_w5_overlay(ordered, _w5rows, w5_label)
 
     for strategy in ordered:
         strategy["governance"] = apply_governance_decision(

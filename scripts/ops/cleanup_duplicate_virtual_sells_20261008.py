@@ -33,7 +33,7 @@ def main():
     ap.add_argument("--strategies", default="value,peak,momentum")
     a = ap.parse_args()
     expect = {k: int(v) for k, v in (x.split("=") for x in a.expect.split(",") if x)}
-    conn = connect_primary_db(timeout=120)
+    conn = connect_primary_db(timeout=120, readonly=not a.apply)   # dry-run은 읽기 전용(§39)
     cols = [r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name='peak_trade' ORDER BY ordinal_position").fetchall()]
     rows = [dict(zip(cols, r)) for r in conn.execute(f"SELECT {','.join(cols)} FROM peak_trade WHERE tx_type='sell' ORDER BY tx_at, id").fetchall()]
     targets = {x for x in a.strategies.split(",") if x}
