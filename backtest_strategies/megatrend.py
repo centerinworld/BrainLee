@@ -12,8 +12,16 @@ from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
+import backtest_common as _bc
+from price_integrity import research_price_issues
 from backtest_common import (
     DB_PATH,
+    DELISTING_CONFIRM_DAYS,
+    QUALITY_DAY_CLASSES,
+    is_excluded_day,
+    last_tradable_day_before_break,
+    last_tradable_index_before,
+    load_adjusted_prices,
     _final_liquidation_quote_for_code,
     _CHART_TOP_MIN,
     _chart_prep,
@@ -103,6 +111,7 @@ def run_backtest_megatrend(
                                     # 중단(레거시 테이블, margin_balance_daily로 대체됨) — 이 파라미터는
                                     # 연구/백테스트 전용이며 라이브 게이트로 쓰려면 소스 교체 필요.
     strict_exec: bool = True,
+    adjusted_prices: bool = None,  # W5b(REVIEW_PLAN §32-3): None이면 backtest_common.ADJUSTED_PRICES_DEFAULT
     run_name: str = None,
     run_id: str = None,
 ) -> str:
@@ -133,6 +142,20 @@ def run_backtest_megatrend(
     매도: 손실≤stop_loss(하드손절) 또는 고점대비 추적손절 trail_pct(기본 -30%, 이익권 한정)
          또는 보유기간≥max_hold(안전망) — 승자를 중간 조정에 흔들리지 않고 최대한 오래 보유.
     """
+    adjusted_prices = _bc.ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
+    # 조정 모드(deep_recovery W5b-1과 같은 규칙): 신호·손익 = 조정 시계열, 최저가(min_price)·시총 = 원주가,
+    # 기간 전체를 보고 종목을 통째로 빼던 '분할/합병 필터'·'260행 이상' 조건(미래 정보)은 쓰지 않는다(신호일 이력 i ≥ 126은 그대로).
+    # 유니버스: sector_filter가 있으면 섹터를 현재 stock_universe에서만 알 수 있어 **상장폐지 종목은 여전히 빠진다**(생존 편향 미해결 —
+    # sector_focus와 같은 한계, 결과 문서에 명시). sector_filter가 없으면 PIT 마스터(폐지 포함)로 넓힌다.
+    if adjusted_prices and not strict_exec:
+        raise ValueError("adjusted_prices는 strict_exec(다음날 시가 체결)에서만 지원")
+    if adjusted_prices and universe == "all_market":
+        asof_mktcap = True
+    adj_stats = {'enabled': adjusted_prices, 'candidate_skips_excluded': 0, 'candidate_skips_quality_day': 0,
+                 'break_liquidations': 0, 'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0,
+                 'zero_volume_skipped_buys': 0, 'stocks_with_breaks': 0, 'share_unknown_breaks': 0,
+                 'delisted_exits': 0, 'unevaluable_delistings': 0, 'delisted_entries': 0, 'pit_mktcap_missing': 0,
+                 'survivorship_note': ('sector_filter — 폐지 종목 섹터 미상으로 제외(미해결)' if sector_filter else None)}
     init_backtest_db()
     run_name = run_name or f"V-MEGATREND {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
@@ -144,11 +167,14 @@ def run_backtest_megatrend(
          "chart_confluence": chart_confluence, "max_positions": max_positions,
          "universe": universe, "min_mktcap_억": min_mktcap_억, "asof_mktcap": asof_mktcap,
          "exclude_quality_risk": exclude_quality_risk, "market_regime_gate_min": market_regime_gate_min,
-         "total_capital": total_capital, "start": start_date, "end": end_date},
+         "total_capital": total_capital, "start": start_date, "end": end_date,
+         "adjusted_prices": True if adjusted_prices else None},
         signal_timing="close_D",
         execution_timing=("next_open" if strict_exec else "same_close"),
         market_cap_mode=("asof_approx" if _asof_active else "not_applicable"),
         allocation_rule="diversified_basket",
+        **({"universe_version": "stock_universe_sector_current_adjusted" if sector_filter
+            else "security_master_history_v3_pit_delisted"} if adjusted_prices else {}),
     )
 
     conn = sqlite3.connect(DB_PATH, timeout=120)
@@ -191,6 +217,15 @@ def run_backtest_megatrend(
                   {_sector_clause}
             """, _mktcap_param + _sector_params).fetchall()
             codes = [r[0] for r in all_rows if not (r[1] and _pref_pat.search(r[1]))]
+            if adjusted_prices and not sector_filter:
+                # 섹터 제한이 없으면 기간 중 상장(폐지 포함)이던 보통주 전부(PIT 마스터)
+                codes = sorted(set(codes) | {r[0] for r in conn.execute("""
+                    SELECT DISTINCT sm.stock_code FROM security_master_history sm
+                    WHERE sm.is_tradable=1 AND sm.is_etf_etn=0 AND sm.market IN ('KOSPI','KOSDAQ')
+                      AND (sm.security_type IS NULL OR sm.security_type != 'preferred')
+                      AND sm.effective_from <= ? AND (sm.effective_to IS NULL OR sm.effective_to > ?)
+                      AND LENGTH(sm.stock_code)=6
+                """, (end_date, start_date)).fetchall()})
             mktcap_map = {r[0]: (r[2] or 300) for r in all_rows}
             sector_map: Dict[str, str] = {}
             if sector_confirm_min is not None:
@@ -216,7 +251,41 @@ def run_backtest_megatrend(
                     ",".join("?" * len(codes))), codes).fetchall()} if codes else {}
 
         sd: Dict[str, dict] = {}
-        for code in codes:
+        if adjusted_prices:
+            _codes = sorted({str(c_) for c_ in codes})
+            if _asof_active:
+                _have = set(share_intervals)
+                for code, effective_from, effective_to, shares, quality in conn.execute(
+                    """SELECT stock_code,effective_from,effective_to,shares_issued,quality
+                       FROM security_share_history ORDER BY stock_code,effective_from"""
+                ):
+                    if code in _codes and code not in _have:
+                        share_intervals.setdefault(code, []).append((effective_from, effective_to, float(shares or 0), quality))
+            _ap = load_adjusted_prices(conn, _codes, warmup_start, end_date)
+            _qdays: Dict[str, set] = {}
+            for _qc, _qd, _qcls in research_price_issues(conn, _codes, warmup_start, end_date, allow_confirmed_corporate_actions=True):
+                if _qcls in QUALITY_DAY_CLASSES:
+                    _qdays.setdefault(str(_qc), set()).add(str(_qd)[:10])
+            for code in _codes:
+                e = _ap.get(code)
+                if not e or not e['dates'] or not any(start_date <= d <= end_date for d in e['dates']):
+                    continue
+                d_list = [str(d)[:10] for d in e['dates']]
+                sd[code] = {
+                    'd': d_list, 'dates': d_list,
+                    'c': list(e['close']), 'o': list(e['open']), 'h': list(e['high']), 'lo': list(e['low']),
+                    'v': list(e['volume']), 'volumes': list(e['volume']),
+                    'raw_c': list(e['raw_close']), 'f': list(e['adj_factor']),
+                    'breaks': list(e['breaks']), 'excluded_ranges': list(e['excluded_ranges']),
+                    'disc': e.get('break_disclosed', {}) or {}, 'qdays': _qdays.get(code, set()),
+                    'master_closed_to': e.get('master_closed_to'),
+                    'mkt_cap_억': 300,
+                }
+                adj_stats['stocks_with_breaks'] += 1 if e['breaks'] else 0
+                adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
+                if chart_confluence:
+                    sd[code]['chart'] = _chart_prep(d_list, sd[code]['lo'], sd[code]['c'])
+        for code in ([] if adjusted_prices else codes):
             rows = conn.execute("""
                 SELECT date, close, COALESCE(open, close) AS o,
                        COALESCE(high, close) AS h, COALESCE(low, close) AS lo
@@ -265,6 +334,39 @@ def run_backtest_megatrend(
                 return True
             return regime_score_vals[idx] >= market_regime_gate_min
         didx = {c: {d: i for i, d in enumerate(s['d'])} for c, s in sd.items()}
+        if adjusted_prices and sim_dates:
+            from datetime import date as _d0
+            for code, s_ in sd.items():
+                s_['last_tradable_i'] = max((k for k, v_ in enumerate(s_['v']) if v_ > 0), default=None)
+                s_['ends_before_period_end'] = s_['d'][-1] < sim_dates[-1]
+                _mc = s_.get('master_closed_to')
+                try:
+                    _gap = abs((_d0.fromisoformat(_mc[:10]) - _d0.fromisoformat(s_['d'][-1][:10])).days) if _mc else None
+                except Exception:
+                    _gap = None
+                s_['delisting_confirmed'] = bool(_gap is not None and _gap <= DELISTING_CONFIRM_DAYS)
+
+        def _pit_mc(code, day_, raw_px):
+            """신호일 시총(억원) = 상장주식 수 × 원주가. 주식 수를 모르면 가장 보수적(최대 슬리피지)."""
+            sh_ = _shares_asof_mt(code, day_)
+            if sh_ > 0:
+                return sh_ * raw_px / 1e8
+            adj_stats['pit_mktcap_missing'] += 1
+            return 1.0
+
+        def _close_now(code, p, i, price, reason, day_):
+            """조정 단위 `price`로 즉시 청산(단절·폐지 처리)."""
+            nonlocal cash, pending_sells
+            pnl_, net_pct_ = _net_profit(p['entry'], price, p['shares'], p.get('mkt_cap_억', 300))
+            cash += p['shares'] * p['entry'] + pnl_
+            _f = sd[code]['f'][i]
+            trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': day_,
+                           'entry': p['entry'], 'exit': price, 'pnl_pct': net_pct_,
+                           'reason': reason, 'pnl': round(pnl_, 0),
+                           'exit_raw': round(price / _f, 4) if _f else price,
+                           'entry_raw': p.get('entry_raw'), 'shares_raw': p.get('shares_raw')})
+            del pos[code]
+            pending_sells = [(c_, r_) for c_, r_ in pending_sells if c_ != code]
 
         earn_fins: Dict[str, list] = {}
         if require_earnings_accel and sd:
@@ -401,15 +503,32 @@ def run_backtest_megatrend(
                     px = sd[code]['o'][i]
                     if px <= 0:
                         _still.append((code, reason)); continue
+                    if adjusted_prices and (sd[code]['v'][i] or 0) <= 0:
+                        adj_stats['zero_volume_deferred_sells'] += 1   # 거래 불가능한 날 — 다음 거래일로 이월
+                        _still.append((code, reason)); continue
                     p = pos.pop(code)
                     pnl, net_pct = _net_profit(p['entry'], px, p['shares'], p.get('mkt_cap_억', 300))
                     cash += p['shares'] * p['entry'] + pnl
-                    trades.append({
+                    _t = {
                         'code': code, 'buy_date': p['buy_date'], 'sell_date': day,
                         'entry': p['entry'], 'exit': px,
                         'pnl_pct': net_pct, 'reason': reason, 'pnl': round(pnl, 0),
-                    })
+                    }
+                    if adjusted_prices:
+                        _ff = sd[code]['f'][i]
+                        _t.update({'exit_raw': round(px / _ff, 4) if _ff else px,
+                                   'entry_raw': p.get('entry_raw'), 'shares_raw': p.get('shares_raw')})
+                    trades.append(_t)
                 pending_sells = _still
+                if adjusted_prices:
+                    for code, p in list(pos.items()):
+                        i = didx[code].get(day)
+                        if i is not None and i > 0 and day in sd[code]['breaks']:
+                            _k = last_tradable_index_before(sd[code], i)
+                            _k = i - 1 if _k is None else _k
+                            _close_now(code, p, i, sd[code]['c'][_k], '단절 당일 청산(공시 근거 없음·평가 불가)', day)
+                            trades[-1]['evaluation'] = 'unevaluable_break'; trades[-1]['basis_date'] = sd[code]['d'][_k]
+                            adj_stats['break_day_liquidations'] += 1
                 for code in pending_buys:
                     if code in pos or len(pos) >= max_positions:
                         continue
@@ -417,6 +536,25 @@ def run_backtest_megatrend(
                     if i is None:
                         continue
                     px = sd[code]['o'][i]
+                    if adjusted_prices:
+                        if px <= 0 or (sd[code]['v'][i] or 0) <= 0:
+                            adj_stats['zero_volume_skipped_buys'] += 1
+                            continue
+                        _ff = sd[code]['f'][i] or 1.0
+                        _rpx = px / _ff
+                        if cash < _rpx * 10:
+                            continue
+                        budget = min(per_stock, cash * 0.99)
+                        shares_raw = int(budget // _rpx)
+                        if shares_raw <= 0:
+                            continue
+                        cash -= shares_raw * _rpx
+                        pos[code] = {'entry': px, 'shares': shares_raw / _ff, 'buy_date': day, 'hold': 0,
+                                     'peak': px, 'mkt_cap_억': _pit_mc(code, day, _rpx),
+                                     'entry_raw': round(_rpx, 4), 'shares_raw': shares_raw}
+                        if sd[code].get('ends_before_period_end'):
+                            adj_stats['delisted_entries'] += 1
+                        continue
                     if px <= 0 or cash < px * 10:
                         continue
                     budget = min(per_stock, cash * 0.99)
@@ -433,6 +571,27 @@ def run_backtest_megatrend(
                 i = didx[code].get(day)
                 if i is None:
                     continue
+                if adjusted_prices:
+                    s_ = sd[code]
+                    # 상장폐지·거래종료(N1 ②·§26-2 ②): 자료가 기간 끝 전에 끝나고 오늘이 마지막 거래 가능일이면 그 종가로 청산
+                    if s_.get('ends_before_period_end') and s_.get('last_tradable_i') == i:
+                        _close_now(code, p, i, s_['c'][i], '상장폐지 청산(delisted)', day)
+                        trades[-1]['delisted'] = True
+                        if s_.get('delisting_confirmed'):
+                            adj_stats['delisted_exits'] += 1
+                        else:
+                            trades[-1]['evaluation'] = 'unevaluable_delisting'
+                            adj_stats['unevaluable_delistings'] += 1
+                        continue
+                    # 계수 미확정 단절이 공시돼 있고 오늘이 그 전 '거래 가능한 마지막 날'이면 오늘 종가로 사전 청산(D12 ②)
+                    if s_['breaks']:
+                        _bi = bisect.bisect_right(s_['breaks'], day)
+                        if _bi < len(s_['breaks']):
+                            _nb = s_['breaks'][_bi]
+                            if last_tradable_day_before_break(s_, s_['disc'].get(_nb), _nb) == day:
+                                _close_now(code, p, i, s_['c'][i], '단절 전 청산(D12, 공시 후)', day)
+                                adj_stats['break_liquidations'] += 1
+                                continue
                 curr = sd[code]['c'][i]
                 if curr <= 0:
                     continue
@@ -481,11 +640,17 @@ def run_backtest_megatrend(
                         continue
                     c_arr = s['c']
                     curr = c_arr[i]
-                    if curr <= 0 or curr < min_price:
+                    _rc = s['raw_c'][i] if adjusted_prices else curr   # 최저가·시총은 원주가 기준
+                    if curr <= 0 or _rc < min_price:
                         continue
+                    if adjusted_prices:
+                        if is_excluded_day(s, day):
+                            adj_stats['candidate_skips_excluded'] += 1; continue
+                        if day in s['qdays']:
+                            adj_stats['candidate_skips_quality_day'] += 1; continue
                     if _asof_active:
                         _sh = _shares_asof_mt(code, day)
-                        if _sh <= 0 or _sh * curr / 1e8 < min_mktcap_억:
+                        if _sh <= 0 or _sh * _rc / 1e8 < min_mktcap_억:
                             continue
                     ret6m = curr / c_arr[i - 126] - 1 if c_arr[i - 126] > 0 else -1
                     if ret6m < ret6m_min:
@@ -544,7 +709,8 @@ def run_backtest_megatrend(
         avg_ret = sum(t['pnl_pct'] for t in trades) / len(trades) if trades else 0.0
         summary = (f"V-MEGATREND 구조테마추종(반도체+전력기기+조선+화장품ODM) | {start_date}~{end_date} | "
                    f"총수익률:{total_return:.1f}% | 승률:{win_rate:.1f}% | "
-                   f"거래:{len(trades)}건 | 평균:{avg_ret:.1f}%")
+                   f"거래:{len(trades)}건 | 평균:{avg_ret:.1f}%"
+                   + (f"\n조정가격(W5b): {json.dumps(adj_stats, ensure_ascii=False)}" if adjusted_prices else ""))
 
         conn.execute("""
             UPDATE backtest_runs
