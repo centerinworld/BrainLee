@@ -59,9 +59,16 @@ def main():
             "source_gap_pct": src_gaps,
             "blocks_1d": [list(b) for b in blocks],
         }
+    # 2026-10-08: 중복 = 그날 매도 건수 − 그날 매도된 서로 다른 보유 수. 같은 날 다른 보유를 각각 판 정상 거래
+    # (gpt_v18 5묶음: 보유 92·96 등 각 매도가 다른 보유에 대응)는 세지 않는다. 결함(같은 보유 반복 매도)은 보유 1개에 매도 여러 건.
     res["dup_sells"] = {r[0]: int(r[1]) for r in conn.execute(
-        """SELECT strategy, SUM(n-1) FROM (SELECT strategy, stock_name, substr(tx_at::text,1,10) d, COUNT(*) n FROM peak_trade
-           WHERE tx_type='sell' GROUP BY 1,2,3 HAVING COUNT(*)>1) x GROUP BY 1""").fetchall()}
+        """SELECT t.strategy, SUM(GREATEST(t.n - COALESCE(h.m, 1), 0)) FROM
+             (SELECT strategy, stock_name, substr(tx_at::text,1,10) d, COUNT(*) n FROM peak_trade
+              WHERE tx_type='sell' AND tx_at IS NOT NULL GROUP BY 1,2,3 HAVING COUNT(*)>1) t
+           LEFT JOIN (SELECT strategy, stock_name, substr(sold_at::text,1,10) d, COUNT(*) m FROM peak_holding
+              WHERE sold_at IS NOT NULL GROUP BY 1,2,3) h
+             ON h.strategy=t.strategy AND h.stock_name=t.stock_name AND h.d=t.d
+           GROUP BY 1 HAVING SUM(GREATEST(t.n - COALESCE(h.m, 1), 0)) > 0""").fetchall()}
     # 2026-10-08(REVIEW_PLAN §34-4 ③): 매도된 보유 재활성화 거부(already_sold_same_entry) 일 집계 — 반복 매도 재발 감시
     try:
         _log = ROOT / "logs" / "peak_monitor.launchd.log"
