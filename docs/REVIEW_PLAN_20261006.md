@@ -1125,3 +1125,46 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 - **원인**: 공통 손절(`_auto_hardstop_all_strategies`)이 매도 → 스탁이지에는 아직 보유 → 모니터가 같은 편입일로 `/api/trend/buy` → **중복 방지 분기가 매도된 행을 `is_active=1`로 되살림(위험게이트도 건너뜀)** → 다시 손절 → 반복. Stock_Strategy §11-3 #4의 peak 85행(06~07월)도 같은 경로로 추정.
 - **수정**: 같은 편입일 행이 이미 매도(`sold_at`)됐으면 재활성화하지 않고 409 `already_sold_same_entry`. 모니터는 이 사유를 shadow처럼 '그날 재시도 안 함'. 테스트 1건.
 - **정리(사용자 결정 대기)**: 중복 매도 행 삭제(value 25·peak 85·momentum 1·gpt_v18 5) — 백업 후 '같은 보유·같은 날 두 번째 이후 매도' 삭제 제안. 데이터 삭제라 실행 전 확인 필요.
+
+## 34. 검토자 기록 — W6 등급·중복 매도 정리 결정 방향 (Codex, 2026-10-08)
+
+### 34-1. 다른 AI 진행 내용 점검
+- **W5/W6 근거는 대체로 적절하다.** D16(`5d087b1`)·D17(`f9947d2`)·D15(`31d78fd`)·W5a(`07cf93f`)·반복 매도 방지(`a69ce12`) 흐름이 문서와 커밋 이력에 맞고, W5a/W5b 906건이 코드 지문 1종·데이터 지문 1종(`182375ca445971fd`)으로 실행됐다는 기록도 일관된다.
+- **D14 해석도 적절하다.** 순서 민감 전략은 score 단일값이 아니라 무작위 12회 중앙값·하위25%를 주 수치로 보는 것이 맞다. 특히 minervini의 이전 +19.2는 코드 순 선착순 운이 크게 섞였다는 설명이 설득력 있다.
+- **W5b 이관 범위 판단도 적절하다.** 퇴역 6개는 재판정 대상으로 다시 올릴 때만 이관한다는 판단은 D4(퇴역 전략은 후보 계산하지 않음)와 일관된다.
+- **반복 매도 원인 판단도 적절하다.** `routes/trend.py`의 중복 방지 분기가 이미 매도된 같은 편입일 보유를 재활성화하던 경로가 실제 value 25행·과거 peak 85행 설명과 맞고, `a69ce12`의 `already_sold_same_entry` 차단은 재발 방지 방향으로 맞다.
+
+### 34-2. 보완해야 할 점 / 오류 가능성
+- **v8 승격은 '조건부 paper_core'로만 처리한다.** W5상 v8은 평균 +20.9·하위25% +12.7·최악 −8.1로 가장 안정적이지만, 21.12~22.10의 0%는 수익 방어라기보다 KOSPI>MA120 필터로 거래하지 않은 결과다. 따라서 즉시 핵심 전략으로 홍보하지 말고, 60거래일 전진 검증 라벨과 함께 종이운용 대상에 편입한다.
+- **sector_focus는 유지하되 승격/핵심화 금지.** W5 수익률은 좋지만 수동 후보군 70종목이 현재 시점 목록이라 생존 편향이 남아 있다. 화면·문서에는 "생존 편향 미해결"을 표시해야 하며, 이 한계가 풀리기 전에는 paper_core 후보로 올리지 않는다.
+- **earnings_conviction·contract_momentum은 수치만 보면 유혹적이지만 유지가 맞다.** 평균은 높지만 최악 구간이 각각 −29.5·−19.4이고, 점수 고정이라 선택 운 분포가 없다. 승격은 selection_order 분포 또는 별도 S30 워크포워드 뒤에만 재검토한다.
+- **중복 매도 정리는 DELETE 전 dry-run이 필수다.** 문서상 예상 수량(value 25·peak 85·momentum 1·gpt_v18 5)과 실제 산출 수량이 다르면 삭제하지 않는다. 특히 `peak_trade`와 `peak_holding`의 연결 키가 완전하지 않을 수 있으므로, 같은 보유 판정은 `strategy + stock_code/stock_name + entry_date + tx_at 날짜 + tx_type='sell'` 기준으로 잡고 사람이 읽을 수 있는 CSV/JSON 샘플을 남긴다.
+
+### 34-3. 결정
+| 항목 | 결정 |
+|---|---|
+| v12 | `paper_core` 유지 |
+| v8 | **60거래일 전진 검증 조건부 `paper_core` 승격**. 화면에는 "전진 검증 중" 표시 |
+| minervini | `retired`로 퇴역 |
+| earnings_conviction·contract_momentum | `validation_queue` 유지 |
+| sector_focus·golden_cross | 현 등급 유지. sector_focus는 "수동 후보군 생존 편향 미해결" 표시 |
+| 퇴역 중 상위 전략(earnings_supply_discovery·vbr·v10 등) | 퇴역 유지. 재승격은 S30/추가 분포 측정 뒤 |
+| 중복 매도 기록 | **정리 승인**, 단 dry-run 수량이 문서 예상과 일치할 때만 백업 후 두 번째 이후 sell 삭제 |
+
+### 34-4. 실행 지시 / 개선 방향
+1. **W6 등급 반영**
+   - W5 분포 통계를 매트릭스 입력으로 교체한다. 이전 값은 D9대로 "정정 전(10-04)" 탭/상태로 보존한다.
+   - 등급은 34-3 결정대로 반영한다. `v8`은 `paper_core`이지만 `forward_validation_pending_60d` 같은 표시를 함께 남긴다.
+   - `sector_focus`·`megatrend`에는 생존 편향 메모를 화면과 문서에 유지한다. 특히 sector_focus는 현 등급 유지일 뿐 핵심 승격이 아니다.
+   - `minervini`가 퇴역하면 `STRATEGY_CENTER_PAPER_ENGINES`에 어댑터가 남아 있어도 `_select_strategy_center_top_five()`가 retired를 제외하는지 확인한다. 필요하면 문구만 남기고 자동 후보에서는 빠지게 둔다.
+
+2. **중복 매도 정리**
+   - `scripts/ops/cleanup_duplicate_virtual_sells_20261008.py`를 만들거나 기존 운영 스크립트에 추가한다. 기본은 dry-run, `--apply` 때만 쓰기.
+   - dry-run 출력: 전략별 후보 수, 삭제 후보 id 목록, 보존될 첫 sell id, 손익 전후 합계, 샘플 20건.
+   - 백업 테이블 예: `peak_trade_duplicate_sell_backup_20261008(run_id, backed_up_at, row_json)` 또는 기존 규칙에 맞는 이름. 삭제 전 후보 전체를 백업한다.
+   - apply 조건: dry-run 후보가 `value=25`, `peak=85`, `momentum=1`, `gpt_v18=5`와 일치해야 한다. 다르면 멈추고 §34-2에 재검토 기록을 추가한다.
+   - apply 후 검증: 같은 기준으로 중복 0, 전략별 실현손익이 "첫 sell만 보존" 기준과 일치, `check_stockeasy_mirror.py`의 중복 매도 카운트가 0 또는 설명 가능한 값.
+
+3. **재발 감시**
+   - `already_sold_same_entry` 409 카운트를 모니터 로그에 일 단위로 집계한다. 10-09부터 같은 전략/종목/편입일 반복 매도 신규 발생이 0인지 확인한다.
+   - 모니터가 같은 사유를 그날 재시도하지 않는지 로그로 확인하고, 1일 후 Stock_Strategy §11-5 측정 이력에 한 줄 추가한다.
