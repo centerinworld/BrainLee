@@ -18,6 +18,8 @@ from backtest_common import (
     _net_profit,
     _record_run_spec,
     _register_execution_artifacts,
+    _resolve_selection_order,
+    _sort_selection_candidates,
     init_backtest_db,
     logger,
     sqlite3,
@@ -37,6 +39,7 @@ def run_backtest_dual_conviction(
     dedup_months: bool = True,
     run_name: str = None,
     run_id: str = None,
+    selection_order: str = None,
 ) -> str:
     """
     V-DUALCONVICTION — 임원 자사주 매수(dart_insider_holdings) + 회사 자사주
@@ -60,12 +63,13 @@ def run_backtest_dual_conviction(
     init_backtest_db()
     run_name = run_name or f"V-DUALCONVICTION {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
+    _sel_order = _resolve_selection_order(selection_order, default="score")
     _record_run_spec(
         run_id, "dual_conviction", "dual_conviction_v1_20260901",
         {"window_days": window_days, "stop": stop, "trail": trail,
          "max_hold": max_hold, "max_positions": max_positions,
          "per_stock": per_stock, "total_capital": total_capital,
-         "start": start_date, "end": end_date},
+         "start": start_date, "end": end_date, "selection_order": _sel_order},
         signal_timing="close_D", execution_timing="next_open",
         market_cap_mode="not_applicable",
         allocation_rule="fixed_slot",
@@ -240,7 +244,8 @@ def run_backtest_dual_conviction(
             pending_codes = set(pending_buys)
             slots = max_positions - len(pos) - len(pending_codes)
             if slots > 0:
-                for code in buy_pool.get(day, []):
+                candidates = [(code, 0.0, 0.0) for code in buy_pool.get(day, [])]
+                for code, _score, _secondary in _sort_selection_candidates(candidates, _sel_order, day):
                     if slots <= 0:
                         break
                     if code in pos or code in pending_codes:
@@ -281,6 +286,5 @@ def run_backtest_dual_conviction(
         except Exception:
             pass
         raise
-
 
 

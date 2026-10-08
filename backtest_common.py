@@ -1045,6 +1045,28 @@ INDICATOR_MAX_WINDOW = 252   # 신호 지표(52주 고점 등)의 최대 창(거
 SELECTION_ORDER_OVERRIDE: "contextvars.ContextVar" = contextvars.ContextVar('selection_order_override', default=None)
 ADJUSTED_PRICES_DEFAULT = False
 
+
+def _resolve_selection_order(selection_order: str = None, default: str = "score") -> str:
+    order = selection_order or SELECTION_ORDER_OVERRIDE.get() or default
+    if order == "code" or order == "score" or str(order).startswith("random:"):
+        return str(order)
+    raise ValueError(f"unsupported selection_order: {order}")
+
+
+def _sort_selection_candidates(candidates: list, selection_order: str, day: str) -> list:
+    """
+    Sort buy candidates for D17/W5 selection-order tests.
+    Candidate tuples must start with (stock_code, primary_score, secondary_score, ...).
+    """
+    if selection_order == "score":
+        return sorted(candidates, key=lambda x: (-float(x[1]), -float(x[2]), str(x[0])))
+    if selection_order.startswith("random:"):
+        ordered = sorted(candidates, key=lambda x: str(x[0]))
+        random.Random(f"{selection_order}:{day}").shuffle(ordered)
+        return ordered
+    return sorted(candidates, key=lambda x: str(x[0]))
+
+
 PRICE_LIMIT_CHANGE_DATE = "2015-06-15"   # 이전 ±15%, 이후 ±30%
 HALT_GAP_CALENDAR_DAYS = 7                # 직전 행과 이만큼 이상 떨어지면 거래정지 후 재개로 본다(재개일 기준가 재평가 = 실제 손익)
 
@@ -2975,7 +2997,8 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
                                    per_stock: float, max_positions: int,
                                    run_name: str, run_id: str,
                                    stop_loss: float, take_profit: float,
-                                   mktcap_min: int = 1000) -> str:    # 기본값 1000억 (억원 단위)
+                                   mktcap_min: int = 1000,
+                                   selection_order: str = None) -> str:    # 기본값 1000억 (억원 단위)
     """
     _run_generic_backtest와 동일하나 signal_fn에 _sc(stock_code) 키워드 인자를 전달.
     V10+HS, V11+HS처럼 시그널 함수가 종목 코드 접근이 필요한 경우 사용.
@@ -2996,6 +3019,7 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
         conn.execute("UPDATE backtest_runs SET status='running' WHERE run_id=?", (run_id,))
         conn.commit()
     record_requested_end(run_id, _requested_end, end_date)   # 요청·실제 end 둘 다 남김(§25-2 ②)
+    _sel_order = _resolve_selection_order(selection_order, default="score")
 
     try:
         warmup_start = (datetime.strptime(start_date, '%Y-%m-%d')
@@ -3164,8 +3188,9 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
 
             # 매수 체크
             if market_bullish and len(portfolio) < max_positions:
+                sigs = []
                 for sc, sd in stock_data.items():
-                    if sc in portfolio or len(portfolio) >= max_positions:
+                    if sc in portfolio:
                         continue
                     i = date_idx.get(sc, {}).get(sim_date, -1)
                     if i < 0 or i < sd['sim_start_i']:
@@ -3177,15 +3202,25 @@ def _run_generic_backtest_with_sc(version: str, signal_fn,
                         _sc=sc,
                     )
                     if buy:
-                        curr = sd['prices'][i]
-                        qty = max(1, int(per_stock / curr))
-                        if cash >= curr * qty:
-                            cash -= curr * qty
-                            portfolio[sc] = {
-                                'entry_date': sim_date, 'entry_price': curr,
-                                'qty': qty, 'peak': curr, 'days_held': 0,
-                                'mkt_cap_억': sd.get('mkt_cap_억', mktcap_min),
-                            }
+                        momentum_3m = (
+                            sd['prices'][i] / sd['prices'][i - 63] - 1.0
+                            if i >= 63 and sd['prices'][i - 63] > 0 else float("-inf")
+                        )
+                        sigs.append((sc, momentum_3m, 0.0))
+                for sc, _score, _secondary in _sort_selection_candidates(sigs, _sel_order, sim_date):
+                    if len(portfolio) >= max_positions:
+                        break
+                    sd = stock_data[sc]
+                    i = date_idx.get(sc, {}).get(sim_date, -1)
+                    curr = sd['prices'][i]
+                    qty = max(1, int(per_stock / curr))
+                    if cash >= curr * qty:
+                        cash -= curr * qty
+                        portfolio[sc] = {
+                            'entry_date': sim_date, 'entry_price': curr,
+                            'qty': qty, 'peak': curr, 'days_held': 0,
+                            'mkt_cap_억': sd.get('mkt_cap_억', mktcap_min),
+                        }
 
             total_val = cash + sum(
                 pos['qty'] * (stock_data[sc]['prices'][date_idx[sc].get(sim_date, -1)]

@@ -28,6 +28,9 @@ from backtest_common import (
     _final_liquidation_quote_for_code,
     _rsi,
     _save_result,
+    _score_entry,
+    _resolve_selection_order,
+    _sort_selection_candidates,
     init_backtest_db,
     logger,
     sqlite3,
@@ -62,7 +65,8 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                      per_stock, max_positions,
                      stop_loss_pct, take_profit_pct, max_hold_days,
                      strict_exec: bool = True,
-                     data_asof_ts: str = None):
+                     data_asof_ts: str = None,
+                     selection_order: str = None):
     """
     V8 선행지표 멀티팩터 포트폴리오 시뮬레이터.
 
@@ -86,6 +90,7 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
     # ── 수출 + 고용 데이터 로드 ────────────────────────────────
     trade_all = _load_trade_signals()    # {sc: {ym: export_val}}
     emp_all   = _load_employment_signals()  # {sc: {ym: worker_cnt}}
+    _sel_order = _resolve_selection_order(selection_order, default="score")
 
     # ── KOSPI 시장 필터 ────────────────────────────────────────
     kospi_rows = conn.execute("""
@@ -509,9 +514,8 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
 
         # 매수 스캔
         if len(positions) < max_positions:
+            candidates = []
             for sc, sd in stock_data.items():
-                if len(positions) >= max_positions:
-                    break
                 if sc in positions:
                     continue
                 im = date_idx.get(sc, {})
@@ -522,6 +526,22 @@ def _run_backtest_v8(conn, warmup_start, start_date, end_date, sim_dates,
                 i = im[day]
                 if not _is_buy_v8_signal(sc, sd, i, day):
                     continue
+                score = _score_entry(i, sd['prices'], sd['volumes'], sc=sc, day=day, hs_data=trade_all)
+                momentum_3m = (
+                    sd['prices'][i] / sd['prices'][i - 63] - 1.0
+                    if i >= 63 and sd['prices'][i - 63] > 0 else float('-inf')
+                )
+                candidates.append((sc, score, momentum_3m))
+            for sc, _score, _momentum in _sort_selection_candidates(candidates, _sel_order, day):
+                if len(positions) >= max_positions:
+                    break
+                if sc in positions:
+                    continue
+                sd = stock_data[sc]
+                im = date_idx.get(sc, {})
+                if day not in im:
+                    continue
+                i = im[day]
                 if strict_exec:
                     if sc not in v8_pending_buys and \
                        len(positions) + len(v8_pending_buys) < max_positions:
@@ -589,7 +609,8 @@ def run_backtest_v8(start_date: str, end_date: str,
                     per_stock: float = 10_000_000,
                     max_positions: int = 10,
                     run_name: str = None, run_id: str = None,
-                    data_asof_ts: str = None) -> str:
+                    data_asof_ts: str = None,
+                    selection_order: str = None) -> str:
     """
     V8 수출 선행지표 멀티팩터 백테스트.
     HS 무역통계(월별 수출 YoY) + 고용 데이터를 선행 신호로 활용.
@@ -602,10 +623,11 @@ def run_backtest_v8(start_date: str, end_date: str,
     """
     init_backtest_db()
     run_name = run_name or f"V8 수출선행 {start_date[:7]}~{end_date[:7]}"
+    _sel_order = _resolve_selection_order(selection_order, default="score")
     _v8_params = {"per_stock": per_stock, "max_positions": max_positions,
                   "stop_loss_pct": 0.10, "take_profit_pct": 0.30, "max_hold_days": 252,
                   "strict_exec": True, "start": start_date, "end": end_date,
-                  "data_asof_ts": data_asof_ts}
+                  "data_asof_ts": data_asof_ts, "selection_order": _sel_order}
     if run_id is None:
         run_id = str(uuid.uuid4())[:8]
         conn = sqlite3.connect(DB_PATH, timeout=120)
@@ -651,6 +673,7 @@ def run_backtest_v8(start_date: str, end_date: str,
             take_profit_pct=0.30,    # 선행 매수 → 충분한 상승 기다림
             max_hold_days=252,       # 최대 1년 보유 (선행지표 실현 대기)
             data_asof_ts=data_asof_ts,
+            selection_order=_sel_order,
         )
 
         # 종목명 매핑

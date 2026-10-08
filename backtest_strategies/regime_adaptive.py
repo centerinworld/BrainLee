@@ -29,6 +29,9 @@ from backtest_common import (
     _register_execution_artifacts,
     _final_liquidation_quote_for_code,
     _save_result,
+    _score_entry,
+    _resolve_selection_order,
+    _sort_selection_candidates,
     init_backtest_db,
     logger,
     sqlite3,
@@ -40,7 +43,8 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
                                   strict_exec: bool = True,
                                   run_name: str = None,
                                   run_id: str = None,
-                                  data_asof_ts: str = None) -> str:
+                                  data_asof_ts: str = None,
+                                  selection_order: str = None) -> str:
     """
     레짐 적응형 전략 (Meta-V):
       - BULL (KOSPI > MA120): V1 MA추세 신호 → 추세추종
@@ -57,8 +61,10 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
     """
     init_backtest_db()
     _strat_key = 'regime_adaptive'
+    _sel_order = _resolve_selection_order(selection_order, default="score")
     _ra_params = {"per_stock": per_stock, "max_positions": max_positions, "strict_exec": strict_exec,
-                  "start": start_date, "end": end_date, "data_asof_ts": data_asof_ts}
+                  "start": start_date, "end": end_date, "data_asof_ts": data_asof_ts,
+                  "selection_order": _sel_order}
     if run_id is None:
         run_id = str(uuid.uuid4())[:8]
         conn = sqlite3.connect(DB_PATH, timeout=120)
@@ -334,9 +340,8 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
             # 매수 (레짐별 신호 함수 전환)
             month_key = day[:7]
             if len(positions) < max_positions:
+                candidates = []
                 for sc, sd in stock_data.items():
-                    if len(positions) >= max_positions:
-                        break
                     if sc in positions:
                         continue
                     im = date_idx.get(sc, {})
@@ -359,6 +364,23 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
 
                     if not signal_ok:
                         continue
+                    score = _score_entry(i, sd['prices'], sd['volumes'], sc=sc, day=day)
+                    momentum_3m = (
+                        sd['prices'][i] / sd['prices'][i - 63] - 1.0
+                        if i >= 63 and sd['prices'][i - 63] > 0 else float('-inf')
+                    )
+                    candidates.append((sc, score, momentum_3m, cur_regime, stop_val, take_val, is_bull))
+
+                for sc, _score, _momentum, cur_regime, stop_val, take_val, is_bull in _sort_selection_candidates(candidates, _sel_order, day):
+                    if len(positions) >= max_positions:
+                        break
+                    if sc in positions:
+                        continue
+                    sd = stock_data[sc]
+                    im = date_idx.get(sc, {})
+                    if day not in im:
+                        continue
+                    i = im[day]
                     if strict_exec:
                         if sc not in [x[0] for x in ra_pending_buys] and \
                            len(positions) + len(ra_pending_buys) < max_positions:
@@ -499,4 +521,3 @@ def run_backtest_regime_adaptive(start_date: str, end_date: str,
 # ══════════════════════════════════════════════════════════════
 #  복합 스코어링 시그널 (100점 기반 선택적 매수)
 # ══════════════════════════════════════════════════════════════
-

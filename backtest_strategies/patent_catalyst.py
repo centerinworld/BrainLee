@@ -19,6 +19,8 @@ from backtest_common import (
     _record_run_spec,
     _register_execution_artifacts,
     _release_date,
+    _resolve_selection_order,
+    _sort_selection_candidates,
     init_backtest_db,
     logger,
     sqlite3,
@@ -39,6 +41,7 @@ def run_backtest_patent_catalyst(
     asof_mktcap: bool = True,
     run_name: str = None,
     run_id: str = None,
+    selection_order: str = None,
 ) -> str:
     """
     V-PATENT-CATALYST — 적자기업 특허/기술이전/R&D계약/라이선스 공시 촉매 전략.
@@ -62,12 +65,14 @@ def run_backtest_patent_catalyst(
     init_backtest_db()
     run_name = run_name or f"V-PATENT-CATALYST {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
+    _sel_order = _resolve_selection_order(selection_order, default="score")
     _record_run_spec(
         run_id, "patent_catalyst", "patent_catalyst_v1_20260809",
         {"dilution_max": dilution_max, "min_mktcap_억": min_mktcap_억, "stop": stop,
          "trail": trail, "max_hold": max_hold, "max_positions": max_positions,
          "per_stock": per_stock, "asof_mktcap": asof_mktcap,
-         "total_capital": total_capital, "start": start_date, "end": end_date},
+         "total_capital": total_capital, "start": start_date, "end": end_date,
+         "selection_order": _sel_order},
         signal_timing="close_D", execution_timing="next_open",
         market_cap_mode=("asof_approx" if asof_mktcap else "not_applicable"),
         allocation_rule="fixed_slot",
@@ -179,6 +184,7 @@ def run_backtest_patent_catalyst(
             return 0.0
 
         buy_pool: Dict[str, list] = {}
+        event_score: Dict[tuple, float] = {}
         for code, rd in events_raw:
             s = sd.get(code)
             if not s or code not in didx:
@@ -199,9 +205,12 @@ def run_backtest_patent_catalyst(
             if entry_date < start_date or entry_date > end_date:
                 continue
             if asof_mktcap:
-                mc = _shares_asof_pc(code, entry_date)
-                if mc <= 0:
+                shares = _shares_asof_pc(code, entry_date)
+                if shares <= 0:
                     continue
+                event_score[(entry_date, code)] = shares * s['o'][pos] / 1e8
+            else:
+                event_score[(entry_date, code)] = 0.0
             buy_pool.setdefault(entry_date, []).append(code)
         for d in buy_pool:
             buy_pool[d] = sorted(set(buy_pool[d]))
@@ -270,7 +279,11 @@ def run_backtest_patent_catalyst(
             pending_codes = set(pending_buys)
             slots = max_positions - len(pos) - len(pending_codes)
             if slots > 0:
-                for code in buy_pool.get(day, []):
+                candidates = [
+                    (code, event_score.get((day, code), 0.0), 0.0)
+                    for code in buy_pool.get(day, [])
+                ]
+                for code, _score, _secondary in _sort_selection_candidates(candidates, _sel_order, day):
                     if slots <= 0:
                         break
                     if code in pos or code in pending_codes:
@@ -311,6 +324,5 @@ def run_backtest_patent_catalyst(
         except Exception:
             pass
         raise
-
 
 

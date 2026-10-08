@@ -968,3 +968,46 @@ Lab 세션 결과 파일(`research_outputs/w5_selection_dist_20261007*.json`)에
 
 **W5 시작 조건 정정**: 실행 AI 보고는 "D14·vbr이 정해지면 W5 시작 가능"이지만, **§29-2 D17(자체 루프 전략 7개의 코드 순 선착순)도 W5 전 필수**다 — 빠뜨리면 그 전략들만 종목코드 배열로 등급이 매겨진다. 순서는 §29-4(2번 항목만 30-1로 대체).
 **원자료 보존**: `research_outputs/`가 git 제외라 분포 원자료가 커밋에 없다. W6 등급 근거가 되므로 ① 분포표(md)는 Stock_Strategy에 이미 전재됨 — 충분 ② 원자료 JSON은 `research_outputs/w5_selection_dist_20261007_*.json` 경로·sha256을 Stock_Strategy에 한 줄 기록(지워지면 재현 근거가 사라졌음을 알 수 있게).
+
+### 30-3. D17 반영 — 2026-10-07 (실행)
+- `backtest_common._run_generic_backtest_with_sc`와 자체 루프 전략(`regime_adaptive`, `v8`, `dual_conviction`, `patent_catalyst`, `segment_revenue_divergence`)에 공통 `selection_order=score|code|random:N`을 반영했다. 후보를 전부 모은 뒤 정렬해 슬롯을 채우므로 W5에서 코드 순 선착순으로 등급이 매겨지는 문제를 막는다. `segment_revenue_divergence`는 기존 점수 정렬을 확인하고 같은 공통 정렬 함수로 연결했다.
+- W5 재실행 스크립트는 §30-2 답대로 D14 분포 기준, D16 지문 v2, D15 52주 정의, 그리고 위 D17을 포함한 뒤 진행한다. 검증: `venv/bin/python -m py_compile ...`, `venv/bin/python -m pytest tests/test_d17_selection_order_20261007.py tests/test_selection_delisting_history_20261007.py tests/test_v12_selection_order_20261006.py` → 7 passed / 6 skipped.
+
+## 31. D16(5d087b1) 검토 + 세션 분담 결정 — 2026-10-07 23시 (읽기 전용)
+
+### 31-1. D16 — 승인 (§29의 '정수 반올림' 대신 정확한 숫자형 합계를 쓴 변경 포함)
+- `run_registry.source_snapshot`: 행마다 `ROUND(CAST(close AS NUMERIC),4)` 후 합계 → 정확한 십진 합이라 합치는 순서와 무관. 정수 반올림보다 낫다(지수·환율처럼 소수 가격의 변화도 잡음). 테스트(순서 무관·1원 감지) + 5회 동일 확인.
+- N1 무효 10쌍 재판정(행 수·날짜·정수 합계·기업행위 동일, 가중 합계만 0.01 흔들림) → 48/48 유효, 재실행 불필요 — 받아들인다.
+- 확인한 점: 가격 지문은 run 기간(`date >= start AND date <= end AND date < 오늘`)으로 한정 → 장중 당일 쓰기는 과거 구간 지문에 영향 없다. **단 `financial_data`는 `MAX(updated_at)` 전역값**이라 낮에 재무 표를 쓰는 작업이 하나라도 돌면 모든 run 지문이 바뀐다 → W5 실행 창 안에 `financial_data`·`fin_disclosure_dates`·`corporate_action_events`를 쓰는 예약 작업이 없는지 launchd·스케줄러 목록으로 먼저 확인하고, 끝난 뒤 `check_run_fingerprints.py`로 1종인지 확인.
+
+### 31-2. 세션 분담 — 결정: **안 1(D17 세션이 마치고 커밋 → 이 실행 세션이 이어받음)**
+- 이유: D17 세션이 8개 파일을 이미 미커밋으로 고치고 테스트 7건까지 돌렸다. 멈추고 넘겨받으면 반쯤 된 변경의 의도를 다시 해석해야 해서 위험이 더 크다.
+- **경계 규칙**: D17 세션 = D17(+ 그 세션이 적은 D15 `i < 252`)까지 하고 커밋. 이 세션 = 커밋 뒤 ① D17 커밋 검토 요청(검토자에게) ② D15가 그 커밋에 없으면 반영 ③ 분포 표 '동일' 표시 ④ 잔여 잠정 행 점검 ⑤ W5. 두 세션이 같은 파일을 동시에 고치지 않는다.
+- D15 결과 확인: 함수 가드 `i < 252` 적용 뒤 vbr 조정 모드 6구간 score 결과가 이미 측정된 253행 결과와 **같아야** 한다(다르면 원인 기록).
+
+### 31-3. W5 시점 — 내일(10-08) 낮, 단 조건부
+- 야간 수집(00:20~06:00)을 피하는 것은 맞다. 낮에 돌릴 때 확인할 것: 31-1의 전역 지문 요소 3개를 쓰는 낮 작업 없음, 10-08 오전 KRX 반영으로 10-06 잠정 행이 교체됐는지(`check_w5_provisional_residual.py` '진행 가능'), 10-08 KIS 원인 판정(§21-2) 작업과 서버 부하 겹침 피하기.
+- W5 실행 범위가 크다(전 전략 × 6구간 × 14 순서). 시작 전에 전략 수 × run 시간으로 예상 소요를 계산해 오늘 밤 00:20 전에 끝나는지 적고, 넘으면 둘로 나눠 각각 지문 1종인지 확인.
+
+## 32. D17 반영(미커밋, §30-3) 검토 — 2026-10-07 23시 (읽기 전용)
+
+### 32-1. 확인 — 설계 승인
+- 공통 헬퍼 `_resolve_selection_order`·`_sort_selection_candidates`(backtest_common 1049~): score = (주 점수, 보조 점수, 종목코드), random:N = 코드 정렬 후 `Random('random:N:날짜')`, code = 코드 순. 일반 엔진과 같은 규칙.
+- 8개 전략 모두 "후보 전부 모음 → 정렬 → 채움", 루프 안 `break`는 자리 찬 뒤에만. 전략별 주 점수:
+  - `_run_generic_backtest_with_sc`(v1_dart·v10_hs·v11_hs) = 3개월 수익률
+  - regime_adaptive·v8 = 기존 `_score_entry` + 보조 3개월 수익률
+  - segment_revenue_divergence = 기존 `event_meta.score` + 보조 `segment_yoy`(원래 정렬 키 보존 확인)
+  - dual_conviction·patent_catalyst = 진입일 시가 기준 시총(`shares × open`)
+- 숨은 2차 정렬: segment의 `buy_pool = sorted(set(...))`는 이제 후보 목록 생성용이고 최종 순서는 헬퍼가 정함 — 문제없음.
+
+### 32-2. 보완 (커밋 전·W5 전)
+| # | 문제 | 방법 |
+|---|---|---|
+| ① | **아직 커밋 전**(`git status`: backtest_common + 전략 8개 + REVIEW_PLAN 수정 상태) | 커밋 → 그 해시를 W5 코드 지문 기준으로 기록. 이 실행 세션은 그 뒤에 이어받음(§31-2) |
+| ② | 기본값이 **모든 모드에서 score**다. 일반 엔진은 기준선(비조정) 모드에서 'code'를 유지해 옛 결과를 재현하는데, 이 8개 전략은 기준선 모드도 바뀐다 → 이번 커밋 뒤 이 전략들을 다시 돌리면 화면의 옛 결과와 다르다 | W5가 전부 다시 돌리므로 막을 필요는 없다. 대신 ⓐ run 사양에 `selection_order`가 들어가는 것 확인(코드에 있음) ⓑ Stock_Strategy에 "D17 이후 8개 전략은 기준선 모드도 score — 이전 run과 직접 비교 금지" 한 줄 |
+| ③ | dual_conviction·patent_catalyst 점수 = `shares × s['o']`(시총). 지금은 원주가라 맞다. **나중에 조정 가격으로 이관하면 미래 참조**가 된다(금액 수준 값) | 해당 줄에 주석 "원주가 전용 — 조정 이관 시 raw 가격 사용" + 이관 체크리스트에 추가 |
+| ④ | 검증이 합성 테스트뿐(7 통과·6 건너뜀 — 건너뛴 것은 실DB 필요 테스트로 보임) | 커밋 전 8개 전략을 실데이터 1구간씩 score·code 두 순서로 1회 실행해 오류 없음·거래 수 >0(원래 거래가 있던 전략) 확인. 건너뛴 6건의 사유를 기록 |
+| ⑤ | D15(`hidden_rev` 가드 `i < 252`)가 이 변경에 없다 | §31-2대로 이어받는 실행 세션이 반영 |
+
+### 32-3. 다음
+D17 커밋(①④) → 이어받은 실행 세션이 D15 → 분포 표 '동일' → §31-3 조건 확인 → W5(10-08 낮). W5 자체가 전 전략 무작위 12회를 포함하므로 D17 전략의 분포 측정을 따로 할 필요는 없다.

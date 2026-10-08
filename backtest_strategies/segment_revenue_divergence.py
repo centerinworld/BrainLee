@@ -19,6 +19,8 @@ from backtest_common import (
     _record_run_spec,
     _register_execution_artifacts,
     _release_date,
+    _resolve_selection_order,
+    _sort_selection_candidates,
     init_backtest_db,
     logger,
     sqlite3,
@@ -42,6 +44,7 @@ def run_backtest_segment_revenue_divergence(
     max_hold: int = 365,
     run_name: str = None,
     run_id: str = None,
+    selection_order: str = None,
 ) -> str:
     """
     V-SEGDIVERGENCE — 연결 매출은 평평하지만 특정 사업부 매출이 강하게 성장하는
@@ -50,6 +53,7 @@ def run_backtest_segment_revenue_divergence(
     init_backtest_db()
     run_name = run_name or f"V-SEGDIVERGENCE {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
+    _sel_order = _resolve_selection_order(selection_order, default="score")
     _record_run_spec(
         run_id, "segment_revenue_divergence", "segment_revenue_divergence_v1_20260902",
         {
@@ -68,6 +72,7 @@ def run_backtest_segment_revenue_divergence(
             "total_capital": total_capital,
             "start": start_date,
             "end": end_date,
+            "selection_order": _sel_order,
         },
         signal_timing="close_D",
         execution_timing="next_open",
@@ -250,11 +255,7 @@ def run_backtest_segment_revenue_divergence(
             event_meta[(entry_date, code)] = event
             buy_pool.setdefault(entry_date, []).append(code)
         for day in buy_pool:
-            buy_pool[day] = sorted(
-                set(buy_pool[day]),
-                key=lambda code: event_meta[(day, code)]["score"],
-                reverse=True,
-            )
+            buy_pool[day] = sorted(set(buy_pool[day]))
 
         sim_dates = sorted(set(d for s in sd.values() for d in s["d"] if start_date <= d <= end_date))
         cash = total_capital
@@ -296,7 +297,15 @@ def run_backtest_segment_revenue_divergence(
 
             slots = max_positions - len(pos)
             if slots > 0:
-                for code in buy_pool.get(day, []):
+                candidates = [
+                    (
+                        code,
+                        event_meta[(day, code)]["score"],
+                        event_meta[(day, code)]["segment_yoy"],
+                    )
+                    for code in buy_pool.get(day, [])
+                ]
+                for code, _score, _secondary in _sort_selection_candidates(candidates, _sel_order, day):
                     if slots <= 0 or code in pos:
                         break
                     i = didx[code].get(day)
@@ -389,6 +398,5 @@ def run_backtest_segment_revenue_divergence(
         except Exception:
             pass
         raise
-
 
 

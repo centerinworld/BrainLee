@@ -50,7 +50,8 @@ def run_backtest_v1_dart(start_date: str, end_date: str,
                          per_stock: float = 10_000_000,
                          max_positions: int = 10,
                          dart_min_signal: int = 2,
-                         run_name: str = None, run_id: str = None) -> str:
+                         run_name: str = None, run_id: str = None,
+                         selection_order: str = None) -> str:
     """
     [알려진 한계 2026-10-07] 이 전략이 쓰는 `_run_generic_backtest_with_sc`는 가격 이상 종목을 기간 전체에서 통째로 제외한다(미래 정보 선택 편향, REVIEW_PLAN §10-1) — 조정 모드(시점별 차단)가 아직 없다. 성과 해석 시 주의.
    
@@ -80,11 +81,11 @@ def run_backtest_v1_dart(start_date: str, end_date: str,
         run_id=run_id,
         stop_loss=-0.08, take_profit=0.20,
         mktcap_min=1000,    # 1000억+ (억원 단위)
+        selection_order=selection_order,
     )
 
 
 # ══════════════════════════════════════════════════════════════
 #  V10 매수 시그널 — 이익 폭발 (에스티팜·에이피알·삼양식품 유형)
 # ══════════════════════════════════════════════════════════════
-
 
