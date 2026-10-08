@@ -12,7 +12,15 @@ from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 
+import backtest_common as _bc
+from price_integrity import research_price_issues
 from backtest_common import (
+    DELISTING_CONFIRM_DAYS,
+    QUALITY_DAY_CLASSES,
+    is_excluded_day,
+    last_tradable_day_before_break,
+    last_tradable_index_before,
+    load_adjusted_prices,
     _load_jump_aligned_corp_factors,
     _rebase_positions_for_corp_actions,
     SignalEvidenceLedger,
@@ -73,6 +81,7 @@ def run_backtest_recovery(
                                     # 신용잔고<1% lift 1.21x(학습)/1.11x(검증) > 1~3% 1.15x/1.05x > 3%+ 0.91x/0.94x
                                     # — 단조·학습검증 방향일치(signal_experiment_ledger 확인). None=미적용(기본값),
                                     # 실전 반영 전 실행 백테스트(A/B) 검증 필요.
+    adjusted_prices: bool = None,   # W5b(REVIEW_PLAN §32-3): None이면 backtest_common.ADJUSTED_PRICES_DEFAULT
     run_name: str = None,
     run_id: str = None,
 ) -> str:
@@ -100,6 +109,17 @@ def run_backtest_recovery(
     - 최대 보유 240일
     """
     init_backtest_db()
+    adjusted_prices = _bc.ADJUSTED_PRICES_DEFAULT if adjusted_prices is None else bool(adjusted_prices)
+    # 조정 모드(deep_recovery W5b-1과 같은 규칙): 신호·손익 = 조정 시계열(보유 재기준 대신), 최저가·시총 = 원주가,
+    # 유니버스 = 기간 중 상장(폐지 포함) PIT 마스터, '분할/합병 필터'·'90행 이상'(기간 전체 = 미래 정보) 미사용.
+    if adjusted_prices and not strict_exec:
+        raise ValueError("adjusted_prices는 strict_exec(다음날 시가 체결)에서만 지원")
+    if adjusted_prices:
+        asof_mktcap = True
+    adj_stats = {'enabled': adjusted_prices, 'candidate_skips_excluded': 0, 'candidate_skips_quality_day': 0,
+                 'break_liquidations': 0, 'break_day_liquidations': 0, 'zero_volume_deferred_sells': 0,
+                 'zero_volume_skipped_buys': 0, 'stocks_with_breaks': 0, 'share_unknown_breaks': 0,
+                 'delisted_exits': 0, 'unevaluable_delistings': 0, 'delisted_entries': 0, 'pit_mktcap_missing': 0}
     run_name = run_name or f"V-RECOVERY낙폭반등 {start_date[:7]}~{end_date[:7]}"
     run_id = run_id or str(uuid.uuid4())[:8]
     _record_run_spec(
@@ -114,11 +134,13 @@ def run_backtest_recovery(
          "strict_exec": strict_exec, "chart_confluence": chart_confluence,
          "fin_health": fin_health,
          "per_stock": per_stock, "max_positions": max_positions,
-         "start": start_date, "end": end_date},
+         "start": start_date, "end": end_date,
+         "adjusted_prices": True if adjusted_prices else None},
         signal_timing="close_D",
         execution_timing=("next_open" if strict_exec else "same_close"),
         market_cap_mode=("asof_approx" if asof_mktcap else "current"),
         allocation_rule="fixed_slot",
+        **({"universe_version": "security_master_history_v3_pit_delisted"} if adjusted_prices else {}),
     )
 
     conn = sqlite3.connect(DB_PATH, timeout=120)
@@ -164,6 +186,15 @@ def run_backtest_recovery(
               AND LENGTH(p.stock_code)=6
               AND p.stock_code GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
         """, (start_date, end_date, _rec_mktcap_min)).fetchall()
+        if adjusted_prices:
+            codes = [(r[0], None) for r in conn.execute("""
+                SELECT DISTINCT sm.stock_code FROM security_master_history sm
+                WHERE sm.is_tradable=1 AND sm.is_etf_etn=0 AND sm.market IN ('KOSPI','KOSDAQ')
+                  AND (sm.security_type IS NULL OR sm.security_type != 'preferred')
+                  AND sm.effective_from <= ? AND (sm.effective_to IS NULL OR sm.effective_to > ?)
+                  AND LENGTH(sm.stock_code)=6
+                ORDER BY sm.stock_code
+            """, (end_date, start_date)).fetchall()]
 
         # 2026-08-12: 발행주식수를 stock_universe.shares_issued(현재값 고정)로 쓰던
         # 것을 security_share_history 기반 정확한 as-of 값으로 교체(공용 패턴, V-EARNINGS/
@@ -189,7 +220,33 @@ def run_backtest_recovery(
             return 0.0
 
         sd: Dict[str, dict] = {}
-        for code, mktcap in codes:
+        if adjusted_prices:
+            _codes = sorted({str(c_) for c_, _m in codes})
+            _ap = load_adjusted_prices(conn, _codes, warmup_start, end_date)
+            _qdays: Dict[str, set] = {}
+            for _qc, _qd, _qcls in research_price_issues(conn, _codes, warmup_start, end_date, allow_confirmed_corporate_actions=True):
+                if _qcls in QUALITY_DAY_CLASSES:
+                    _qdays.setdefault(str(_qc), set()).add(str(_qd)[:10])
+            for code in _codes:
+                e = _ap.get(code)
+                if not e or not e['dates'] or not any(start_date <= d <= end_date for d in e['dates']):
+                    continue
+                d_list = [str(d)[:10] for d in e['dates']]
+                sd[code] = {
+                    'd': d_list, 'dates': d_list,
+                    'c': list(e['close']), 'v': list(e['volume']), 'volumes': list(e['volume']),
+                    'h': list(e['high']), 'lo': list(e['low']), 'o': list(e['open']),
+                    'raw_c': list(e['raw_close']), 'f': list(e['adj_factor']),
+                    'breaks': list(e['breaks']), 'excluded_ranges': list(e['excluded_ranges']),
+                    'disc': e.get('break_disclosed', {}) or {}, 'qdays': _qdays.get(code, set()),
+                    'master_closed_to': e.get('master_closed_to'),
+                    'mkt_cap_억': 300,
+                }
+                adj_stats['stocks_with_breaks'] += 1 if e['breaks'] else 0
+                adj_stats['share_unknown_breaks'] += e.get('share_unknown_breaks', 0)
+                if chart_confluence:
+                    sd[code]['chart'] = _chart_prep(d_list, sd[code]['lo'], sd[code]['c'])
+        for code, mktcap in ([] if adjusted_prices else codes):
             rows = conn.execute("""
                 SELECT date, close, COALESCE(volume,0) AS v, COALESCE(high,close) AS h, COALESCE(low,close) AS lo,
                        COALESCE(open, close) AS o
@@ -218,6 +275,39 @@ def run_backtest_recovery(
             d for s in sd.values() for d in s['d'] if start_date <= d <= end_date
         ))
         didx = {c: {d: i for i, d in enumerate(s['d'])} for c, s in sd.items()}
+        if adjusted_prices and sim_dates:
+            from datetime import date as _d0
+            for code, s_ in sd.items():
+                s_['last_tradable_i'] = max((k for k, v_ in enumerate(s_['v']) if v_ > 0), default=None)
+                s_['ends_before_period_end'] = s_['d'][-1] < sim_dates[-1]
+                _mc = s_.get('master_closed_to')
+                try:
+                    _gap = abs((_d0.fromisoformat(_mc[:10]) - _d0.fromisoformat(s_['d'][-1][:10])).days) if _mc else None
+                except Exception:
+                    _gap = None
+                s_['delisting_confirmed'] = bool(_gap is not None and _gap <= DELISTING_CONFIRM_DAYS)
+
+        def _pit_mc(code, day_, raw_px):
+            """신호일 시총(억원) = 상장주식 수 × 원주가. 주식 수를 모르면 가장 보수적(최대 슬리피지)."""
+            sh_ = _shares_asof_rec(code, day_)
+            if sh_ > 0:
+                return sh_ * raw_px / 1e8
+            adj_stats['pit_mktcap_missing'] += 1
+            return 1.0
+
+        def _close_now(code, p, i, price, reason, day_):
+            """조정 단위 `price`로 즉시 청산(단절·폐지 처리)."""
+            nonlocal cash, pending_sells
+            pnl_, net_pct_ = _net_profit(p['entry'], price, p['shares'], p.get('mkt_cap_억', 300))
+            cash += p['shares'] * p['entry'] + pnl_
+            _f = sd[code]['f'][i]
+            trades.append({'code': code, 'buy_date': p['buy_date'], 'sell_date': day_,
+                           'entry': p['entry'], 'exit': price, 'pnl_pct': net_pct_,
+                           'reason': reason, 'pnl': round(pnl_, 0),
+                           'exit_raw': round(price / _f, 4) if _f else price,
+                           'entry_raw': p.get('entry_raw'), 'shares_raw': p.get('shares_raw')})
+            del pos[code]
+            pending_sells = [(c_, r_) for c_, r_ in pending_sells if c_ != code]
 
         # 주도섹터 부스트 (실험용, V-GC와 동일: as-of sector_large 평균 ret20 상위 2섹터)
         rec_sec_of: Dict[str, str] = {}
@@ -457,7 +547,7 @@ def run_backtest_recovery(
         pending_buys: list = []    # strict_exec: code — 익일 시가 체결 대기
 
         # 2026-09-28: 보유 중 확정 기업행위(권리락·분할 등) 날 포지션을 새 주식 기준으로 재기준
-        _ca_factors = _load_jump_aligned_corp_factors(conn, list(sd.keys()))
+        _ca_factors = {} if adjusted_prices else _load_jump_aligned_corp_factors(conn, list(sd.keys()))
         _ca_prev_day = None
         for day in sim_dates:
             _rebase_positions_for_corp_actions(_ca_factors, pos, _ca_prev_day, day, ('entry', 'peak'), 'shares')
@@ -474,6 +564,9 @@ def run_backtest_recovery(
                     px = sd[code]['o'][i]
                     if px <= 0:
                         _still.append((code, reason)); continue
+                    if adjusted_prices and (sd[code]['v'][i] or 0) <= 0:
+                        adj_stats['zero_volume_deferred_sells'] += 1   # 거래 불가능한 날 — 다음 거래일로 이월
+                        _still.append((code, reason)); continue
                     p = pos.pop(code)
                     pnl, net_pct = _net_profit(p['entry'], px, p['shares'], p.get('mkt_cap_억', 300))
                     cash += p['shares'] * p['entry'] + pnl
@@ -482,7 +575,20 @@ def run_backtest_recovery(
                         'entry': p['entry'], 'exit': px,
                         'pnl_pct': net_pct, 'reason': reason, 'pnl': round(pnl, 0),
                     })
+                    if adjusted_prices:
+                        _ff = sd[code]['f'][i]
+                        trades[-1].update({'exit_raw': round(px / _ff, 4) if _ff else px,
+                                           'entry_raw': p.get('entry_raw'), 'shares_raw': p.get('shares_raw')})
                 pending_sells = _still
+                if adjusted_prices:
+                    for code, p in list(pos.items()):
+                        i = didx[code].get(day)
+                        if i is not None and i > 0 and day in sd[code]['breaks']:
+                            _k = last_tradable_index_before(sd[code], i)
+                            _k = i - 1 if _k is None else _k
+                            _close_now(code, p, i, sd[code]['c'][_k], '단절 당일 청산(공시 근거 없음·평가 불가)', day)
+                            trades[-1]['evaluation'] = 'unevaluable_break'; trades[-1]['basis_date'] = sd[code]['d'][_k]
+                            adj_stats['break_day_liquidations'] += 1
                 for code in pending_buys:
                     if code in pos or len(pos) >= max_positions:
                         continue
@@ -490,6 +596,30 @@ def run_backtest_recovery(
                     if i is None:
                         continue  # 당일 미거래 → 주문 만료
                     px = sd[code]['o'][i]
+                    if adjusted_prices:
+                        if px <= 0 or (sd[code]['v'][i] or 0) <= 0:
+                            adj_stats['zero_volume_skipped_buys'] += 1
+                            continue
+                        _ff = sd[code]['f'][i] or 1.0
+                        _rpx = px / _ff
+                        if cash < _rpx:
+                            continue
+                        budget = min(per_stock, cash * 0.99)
+                        shares_raw = int(budget // _rpx)
+                        if shares_raw < 1:
+                            continue
+                        cash -= shares_raw * _rpx
+                        pos[code] = {
+                            'entry': px, 'shares': shares_raw / _ff, 'buy_date': day,
+                            'hold': 0, 'peak': px, 'mkt_cap_억': _pit_mc(code, day, _rpx),
+                            'entry_raw': round(_rpx, 4), 'shares_raw': shares_raw,
+                        }
+                        trades.append({'code': code, 'buy_date': day, 'entry': px,
+                                       'shares': shares_raw / _ff, 'action': 'buy',
+                                       'entry_raw': round(_rpx, 4), 'shares_raw': shares_raw})
+                        if sd[code].get('ends_before_period_end'):
+                            adj_stats['delisted_entries'] += 1
+                        continue
                     if px <= 0 or cash < px:
                         continue
                     budget = min(per_stock, cash * 0.99)
@@ -511,6 +641,27 @@ def run_backtest_recovery(
             for code, p in list(pos.items()):
                 i = didx[code].get(day)
                 if i is None: continue
+                if adjusted_prices:
+                    s_ = sd[code]
+                    # 상장폐지·거래종료(N1 ②·§26-2 ②): 자료가 기간 끝 전에 끝나고 오늘이 마지막 거래 가능일이면 그 종가로 청산
+                    if s_.get('ends_before_period_end') and s_.get('last_tradable_i') == i:
+                        _close_now(code, p, i, s_['c'][i], '상장폐지 청산(delisted)', day)
+                        trades[-1]['delisted'] = True
+                        if s_.get('delisting_confirmed'):
+                            adj_stats['delisted_exits'] += 1
+                        else:
+                            trades[-1]['evaluation'] = 'unevaluable_delisting'
+                            adj_stats['unevaluable_delistings'] += 1
+                        continue
+                    # 계수 미확정 단절이 공시돼 있고 오늘이 그 전 '거래 가능한 마지막 날'이면 오늘 종가로 사전 청산(D12 ②)
+                    if s_['breaks']:
+                        _bi = bisect.bisect_right(s_['breaks'], day)
+                        if _bi < len(s_['breaks']):
+                            _nb = s_['breaks'][_bi]
+                            if last_tradable_day_before_break(s_, s_['disc'].get(_nb), _nb) == day:
+                                _close_now(code, p, i, s_['c'][i], '단절 전 청산(D12, 공시 후)', day)
+                                adj_stats['break_liquidations'] += 1
+                                continue
                 curr = sd[code]['c'][i]
                 if curr <= 0: continue
 
@@ -601,10 +752,16 @@ def run_backtest_recovery(
                 v = s['v']
                 lo = s['lo']
                 curr = c[i]
-                if curr < 500: continue  # 최소 주가
+                _rc = s['raw_c'][i] if adjusted_prices else curr   # 최저가·시총은 원주가 기준
+                if _rc < 500: continue  # 최소 주가
+                if adjusted_prices:
+                    if is_excluded_day(s, day):
+                        adj_stats['candidate_skips_excluded'] += 1; continue
+                    if day in s['qdays']:
+                        adj_stats['candidate_skips_quality_day'] += 1; continue
                 if asof_mktcap:
                     sh = _shares_asof_rec(code, day)
-                    if sh <= 0 or sh * curr / 1e8 < 200:
+                    if sh <= 0 or sh * _rc / 1e8 < 200:
                         continue
 
                 # [F] MA60 계산
@@ -733,7 +890,8 @@ def run_backtest_recovery(
                      max(1, len(sell_trades)))
         summary = (f"[V-RECOVERY] {start_date[:7]}~{end_date[:7]} "
                    f"수익률={portfolio_return:+.1f}% 승률={win_rate:.0f}% "
-                   f"거래={len(sell_trades)}건 avg={avg_trade:+.1f}%")
+                   f"거래={len(sell_trades)}건 avg={avg_trade:+.1f}%"
+                   + (f"\n조정가격(W5b): {json.dumps(adj_stats, ensure_ascii=False)}" if adjusted_prices else ""))
         print(summary)
 
         conn.execute("""
