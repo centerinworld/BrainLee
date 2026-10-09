@@ -199,13 +199,13 @@ def main():
         ch = code_set[i:i + 400]
         ph = ",".join("?" * len(ch))
         for r in conn.execute(f"""SELECT id,stock_code,year,quarter,is_annual,{','.join(FIN)} FROM financial_data
-                                  WHERE report_type='OFS' AND year>=2025 AND stock_code IN ({ph})""", ch).fetchall():
+                                  WHERE report_type='OFS' AND year>=2025 AND stock_code IN ({ph}) ORDER BY quarter ASC""", ch).fetchall():
             r = tuple(r)
             k = "A" if r[4] else f"Q{r[3]}"
             fd_rows.setdefault((r[1], r[2], k), r)
         for r in conn.execute(f"""SELECT id,stock_code,year,quarter,is_annual,operating_cf,investing_cf,financing_cf,capex,
                                          operating_cf_q,investing_cf_q,financing_cf_q,capex_q FROM cash_flow_data
-                                  WHERE report_type='OFS' AND year>=2025 AND stock_code IN ({ph})""", ch).fetchall():
+                                  WHERE report_type='OFS' AND year>=2025 AND stock_code IN ({ph}) ORDER BY quarter ASC""", ch).fetchall():
             r = tuple(r)
             k = "A" if r[4] else f"Q{r[3]}"
             cf_rows.setdefault((r[1], r[2], k), r)

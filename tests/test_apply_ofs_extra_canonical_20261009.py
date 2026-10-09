@@ -46,3 +46,21 @@ def test_canonical_sync_backs_up_existing_and_skips_gate_refused():
     assert out["fd_refused"] == 1 and out["fd_synced"] == 0
     assert conn.execute("SELECT COUNT(*) FROM canonical_financial_data_backup_ofs_extra_20261009 WHERE run_id='t_run'").fetchone()[0] == 1
     assert conn.execute("SELECT revenue FROM canonical_financial_data WHERE stock_code='000660'").fetchone()[0] == 10e8
+
+
+def test_q0_preferred_over_q4_when_both_annual_rows_exist():
+    conn = _conn()
+    # q=4 연간 행과 q=0 연간 행이 둘 다 존재하는 경우
+    conn.execute("INSERT INTO financial_data VALUES (10,'009150',2025,4,1,'OFS','t',400e8,40e8,30e8,900e8,300e8,600e8,NULL,NULL,NULL,NULL,NULL)")
+    conn.execute("INSERT INTO financial_data VALUES (11,'009150',2025,0,1,'OFS','t',450e8,45e8,35e8,950e8,350e8,600e8,NULL,NULL,NULL,NULL,NULL)")
+    # ORDER BY quarter ASC로 쿼리할 때 id=11 (q=0)이 setdefault로 먼저 잡히는지 확인
+    rows = conn.execute("SELECT id,stock_code,year,quarter,is_annual FROM financial_data WHERE report_type='OFS' ORDER BY quarter ASC").fetchall()
+    fd_rows = {}
+    for r in rows:
+        r = tuple(r)
+        k = "A" if r[4] else f"Q{r[3]}"
+        fd_rows.setdefault((r[1], r[2], k), r)
+    selected = fd_rows[('009150', 2025, 'A')]
+    assert selected[0] == 11, f"q=0 행(id=11)이 선택되어야 함, 실제={selected[0]}"
+    assert selected[3] == 0, "quarter는 0이어야 함"
+
