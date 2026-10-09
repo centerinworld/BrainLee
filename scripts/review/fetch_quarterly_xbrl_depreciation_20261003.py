@@ -80,6 +80,7 @@ def get_json(url: str, params: dict, key: str) -> dict | None:
 
 
 def get_xbrl(params: dict, key: str) -> bytes | None:
+    LAST_STATUS[0] = "?"  # 10-09 검토 반영: 이전 호출 상태가 남지 않게 매 호출 초기화
     if not dart_keys.allow(key):
         raise Quota()
     for attempt in range(4):
