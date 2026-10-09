@@ -32,6 +32,18 @@ RAW_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_fnltt")
 sys.path.insert(0, str(ROOT / "scripts" / "review"))
 from financial_rereview_20261002 import extract  # noqa: E402
 KEY = {"revenue": "revenue", "operating_profit": "operating_profit"}
+# --precision(2026-10-09): '확정'이지만 |DB − FnGuide| > 200만원인 칸(억 단위 반올림값 등 — 검증 허용오차 0.5%가 가림)까지 확장
+KEY_P = {**KEY, "total_assets": "total_assets", "total_liabilities": "total_liabilities"}
+BS = ("total_assets", "total_liabilities", "total_equity")
+SRCS = [SRC, ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_2021_2022.jsonl"]
+
+
+def key_of(f, fs):
+    if f == "net_income":
+        return "ni_parent" if fs == "CFS" else "ni_total"
+    if f == "total_equity":
+        return "equity_parent" if fs == "CFS" else "equity_total"
+    return KEY_P[f]
 TOL = 2e6
 _spec = importlib.util.spec_from_file_location("apply_ofs_extra", ROOT / "scripts" / "review" / "apply_ofs_extra_20261009.py")
 _ofs = importlib.util.module_from_spec(_spec)
@@ -40,10 +52,13 @@ _spec.loader.exec_module(_ofs)
 
 def load_raw(codes):
     t = {}
-    for line in open(SRC):
-        d = json.loads(line)
-        if d.get("ok") and d.get("fs") and d["code"] in codes:
-            t[(d["code"], d["year"], d["q"], d["fs"])] = d
+    for src in SRCS:
+        if not src.exists():
+            continue
+        for line in open(src):
+            d = json.loads(line)
+            if d.get("ok") and d.get("fs") and d["code"] in codes:
+                t.setdefault((d["code"], d["year"], d["q"], d["fs"]), d)  # 첫 파일(2023+ 재수집) 우선
     return t
 
 
@@ -60,7 +75,7 @@ def ytd(code, y, q, fs, k):
 
 
 def candidates(raw, code, y, q, fs, f):
-    k = KEY[f]
+    k = key_of(f, fs)
     g = lambda yy, qq: raw.get((code, yy, qq, fs))  # noqa: E731
     out = []
     if q == 0:
@@ -74,11 +89,13 @@ def candidates(raw, code, y, q, fs, f):
         x = g(y, q)
         if x and (x.get("vals") or {}).get(k) is not None:
             out.append((f"{q}분기 보고서 값", x["vals"][k]))
-        if q in (2, 3):  # 누적 차분: 이번 보고서 누적 − 직전 보고서 누적(Q1 보고서는 누적 칸이 3개월 값)
+        if q in (2, 3) and f not in BS:  # 누적 차분(흐름 항목만): 이번 보고서 누적 − 직전 보고서 누적(Q1 보고서는 누적 칸이 3개월 값)
             cur = ytd(code, y, q, fs, k)
             prev = ytd(code, y, q - 1, fs, k) if q == 3 else (ytd(code, y, 1, fs, k) or ((g(y, 1) or {}).get("vals") or {}).get(k))
             if cur is not None and prev is not None:
                 out.append((f"{q}분기 = 이번 누적 − 직전 누적(원문 누적 칸)", cur - prev))
+    elif q == 4 and f in BS:  # 재무상태표 4분기 = 기말 = 연간 값
+        out += [(f"Q4(재무상태) = {label}", av) for label, av in candidates(raw, code, y, 0, fs, f)]
     elif q == 4:
         y3 = ytd(code, y, 3, fs, k)
         if y3 is not None:
@@ -95,9 +112,15 @@ def candidates(raw, code, y, q, fs, f):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--precision", action="store_true", help="'확정'이지만 |DB−FnGuide|>200만원인 손익·재무상태 칸")
     a = ap.parse_args()
     conn = connect_primary_db(timeout=600, readonly=not a.apply)
-    cells = [tuple(r) for r in conn.execute("""SELECT stock_code, year, quarter, report_type, field, db_value, fnguide_value, naver_value
+    if a.precision:
+        cells = [tuple(r) for r in conn.execute(f"""SELECT stock_code, year, quarter, report_type, field, db_value, fnguide_value, naver_value
+                    FROM financial_field_verification WHERE status LIKE '확정%%' AND db_value IS NOT NULL AND fnguide_value IS NOT NULL
+                    AND ABS(db_value - fnguide_value) > {TOL} AND field IN ({','.join("'" + f + "'" for f in list(KEY_P) + ['net_income', 'total_equity'])})""").fetchall()]
+    else:
+        cells = [tuple(r) for r in conn.execute("""SELECT stock_code, year, quarter, report_type, field, db_value, fnguide_value, naver_value
                                                FROM financial_field_verification WHERE cause LIKE '외부 2곳%%'""").fetchall()]
     excl = {r[0] for r in conn.execute("""SELECT stock_code FROM stock_collection_config WHERE config_key IN
         ('fs_quirk:reporting_currency','fs_quirk:unit_scale_fixed','fs_quirk:dart_unit_error')
@@ -137,11 +160,11 @@ def main():
                                (code, y, fs) if q == 0 else (code, y, fs, q)).fetchall():
             if rr[1] is not None and abs(float(rr[1]) - newv) <= 0.5:
                 continue  # no-op 제외
-            plan.append((rr[0], code, y, q, fs, f, rr[1], newv, f"P5: {lab} = FnGuide = 네이버(DB만 다름)"))
+            plan.append((rr[0], code, y, q, fs, f, rr[1], newv, f"P5{'-정밀도' if a.precision else ''}: {lab} = FnGuide" + ("(확정이었으나 200만원 초과 차이)" if a.precision else " = 네이버(DB만 다름)")))
     res = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "apply" if a.apply else "dry_run", "cells": len(cells),
            "stats": dict(st), "fix": len(plan), "keep": len(keep), "fix_sample": plan[:40], "keep_list": keep}
     if a.apply and plan:
-        run_id = f"p5_external_agree_{datetime.now():%Y%m%d_%H%M%S}"
+        run_id = f"p5_{'precision' if a.precision else 'external_agree'}_{datetime.now():%Y%m%d_%H%M%S}"
         now = datetime.now().isoformat(timespec="seconds")
         bk = "financial_data_backup_p5_20261009"
         conn.execute(f"CREATE TABLE IF NOT EXISTS {bk} AS SELECT *, CAST(NULL AS TEXT) run_id FROM financial_data WHERE false")
@@ -158,7 +181,7 @@ def main():
         conn.execute("SELECT setval('data_fix_log_id_seq', (SELECT MAX(id) FROM data_fix_log))")
         conn.execute("""INSERT INTO data_fix_log(fixed_at,table_name,scope,row_count,fix_rule,old_value_summary,new_value_summary,source,run_id)
                         VALUES (?,?,?,?,?,?,?,?,?)""",
-                     (now, "financial_data", "현행 검증 '외부 2곳 일치·DB 다름' 칸", len(plan),
+                     (now, "financial_data", "'확정'이나 DB−FnGuide 200만원 초과 칸(정밀도)" if a.precision else "현행 검증 '외부 2곳 일치·DB 다름' 칸", len(plan),
                       "FnGuide = 네이버 ≠ DB인 칸 중 DART 원문 후보(당기·재작성·Q4 파생)가 FnGuide와 200만원 이내 일치할 때만 원문값으로",
                       json.dumps(dict(st), ensure_ascii=False)[:900], "DART 원문값", "scripts/review/fix_external_agree_db_diff_20261009.py", run_id))
         conn.commit()
@@ -176,7 +199,9 @@ def main():
         res["field_verification_after"] = (pr.stdout or pr.stderr).strip().splitlines()[-1:]
         print("readback", res["post_readback"], "정본", {k: v for k, v in res["canonical_sync"].items() if not k.endswith("sample")},
               "재측정", res["field_verification_after"], flush=True)
-    out = ROOT / "research_outputs" / "financial_rereview_20261002" / f"p5_external_agree_20261009_{'apply' if a.apply else 'dry'}.json"
+    out = ROOT / "research_outputs" / "financial_rereview_20261002" / f"p5_{'precision' if a.precision else 'external_agree'}_20261009_{'apply' if a.apply else 'dry'}.json"
+    if out.exists() and a.apply:
+        out = out.with_name(out.stem + f"_{datetime.now():%H%M%S}.json")  # 기존 적용 결과 보존(L24)
     out.write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str))
     print(json.dumps({k: res[k] for k in ("mode", "cells", "stats", "fix", "keep")}, ensure_ascii=False))
 
