@@ -138,33 +138,37 @@ class Dart:
 
 
 def _parent_by_name(rows, kind, total, col="thstrm_amount"):
-    """지배주주 귀속 값을 계정명·순서로 찾고 '지배 + 비지배 = 전체'로 검산한다(2026-10-03).
+    """지배주주 귀속 값을 계정명으로 찾고 '지배 + 비지배 = 전체'로 검산한다(2026-10-03, 2026-10-09 개선).
 
-    오래된 공시는 표준 ID 없이 이름만 있고 오타도 있다('지배지주 지분순이익'). 손익계산서에서는 순이익 귀속 행이
-    총포괄이익 귀속 행보다 먼저 나오므로 '지배'(비지배 제외)가 든 **첫 행**을 쓰고, 바로 뒤 '비지배' 행과 합쳐
-    전체 순이익(또는 자본총계)과 맞을 때만 채택한다. 비지배 행이 없으면 지배 값이 전체와 같을 때만 채택."""
+    공시에 따라 비지배가 지배보다 먼저 나오거나, BS에서 자본금·기타자본 등으로 지배-비지배 간격이
+    수 행 이상 떨어져 있을 수 있다. 같은 표(sj_div) 안의 지배·비지배 후보들 중
+    '지배 + 비지배 = 전체'(허용오차 max(1e6, 0.5%))를 만족하는 지배주주 값을 채택한다.
+    비지배가 없으면 지배 값이 전체와 같을 때만 채택."""
+    if total is None:
+        return None
     sjs = ("IS", "CIS") if kind == "ni" else ("BS",)
+    tol = max(1e6, abs(total) * 0.005)
     for sj in sjs:
         seq = [r for r in rows if r.get("sj_div") == sj]
-        for idx, r in enumerate(seq):
+        parents, ncis = [], []
+        for r in seq:
             nm = (r.get("account_nm") or "").replace(" ", "")
+            amt = num(r.get(col))
+            if amt is None:
+                continue
             if "지배" in nm and "비지배" not in nm and "포괄" not in nm:
-                p = num(r.get(col))
-                if p is None:
-                    continue
-                nci = None
-                for r2 in seq[idx + 1: idx + 4]:
-                    if "비지배" in (r2.get("account_nm") or ""):
-                        nci = num(r2.get(col))
-                        break
-                if total is None:
-                    return None
-                if nci is not None and abs(p + nci - total) <= max(1e6, abs(total) * 0.005):
+                parents.append(amt)
+            elif "비지배" in nm and "포괄" not in nm:
+                ncis.append(amt)
+        for p in parents:
+            for nci in ncis:
+                if abs(p + nci - total) <= tol:
                     return p
-                if nci is None and abs(p - total) <= max(1e6, abs(total) * 0.005):
-                    return p
-                return None
+        for p in parents:
+            if abs(p - total) <= tol:
+                return p
     return None
+
 
 
 def extract(rows, col="thstrm_amount"):
