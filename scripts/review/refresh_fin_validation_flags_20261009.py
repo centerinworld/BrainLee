@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""재무(매출·영업이익·순이익) 옛 대조 기록 재검증 — 화면 '재확인 필요' 거짓 경고 정리 (2026-10-09). 기본 dry-run, --apply 때만 쓴다.
+"""재무(매출·영업이익·순이익, 10-09 재무상태표 추가) 옛 대조 기록 재검증 — 화면 '재확인 필요' 거짓 경고 정리 (2026-10-09). 기본 dry-run, --apply 때만 쓴다.
 
 배경: 종목 데이터 품질 화면(`/api/dashboard/data-quality`)의 '재무제표(매출·영업이익)' 항목은 `cf_validation_flags`의
 FIN_NAVER·FIN_CROSS 행(2026-05·08 배치)으로 판정한다. 그 뒤 DB 재무 값이 정정됐는데(예: 에이엘티 2024 매출 442.75억 → 366.67억 =
@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 from db_compat import connect_primary_db  # noqa: E402
 
 BACKUP = "cf_validation_flags_backup_fin_refresh_20261009"
-FIELDS = ("revenue", "operating_profit", "net_income")
+FIELDS = ("revenue", "operating_profit", "net_income", "total_assets", "total_liabilities", "total_equity")  # 10-09 재무상태표 추가(화면 재무상태표 항목도 FIN_CROSS 사용)
 
 
 def main():
@@ -93,7 +93,7 @@ def main():
         conn.execute("SELECT setval('data_fix_log_id_seq',(SELECT MAX(id) FROM data_fix_log))")
         conn.execute("""INSERT INTO data_fix_log(fixed_at,table_name,scope,row_count,fix_rule,old_value_summary,new_value_summary,source,run_id)
                         VALUES (?,?,?,?,?,?,?,?,?)""",
-                     (now, "cf_validation_flags", f"FIN_NAVER·FIN_CROSS 매출·영업이익·순이익 {len(stocks)}종목", len(plan),
+                     (now, "cf_validation_flags", f"FIN_NAVER·FIN_CROSS 손익·재무상태 {len(stocks)}종목", len(plan),
                       "현행 검증(financial_field_verification) 확정 항목의 옛 대조 기록을 현재 값으로 재검증(오분류 판정 제거)",
                       json.dumps(res["status_before"], ensure_ascii=False), "CONFIRMED", "scripts/review/refresh_fin_validation_flags_20261009.py", run_id))
         conn.commit()
@@ -111,7 +111,7 @@ def main():
                 ok = (str(r[5]).upper() == "CONFIRMED" and r[6] is None
                       and not (r[1] is None) != (db_v is None) and (r[1] is None or abs(float(r[1]) - float(db_v)) <= 1)
                       and (r[2] is None) == (fg_v is None) and (r[2] is None or abs(float(r[2]) - float(fg_v)) <= 1)
-                      and (r[4] is None) == (db_v is None)
+                      and (r[4] is None) == (db_v is None) and (r[4] is None or abs(float(r[4]) - float(db_v)) <= 1)
                       and (r[7] != "FIN_NAVER" or ((r[3] is None) == (new_seibro is None) and (r[3] is None or abs(float(r[3]) - float(new_seibro)) <= 1))))
                 if not ok:
                     bad.append(r[0])
