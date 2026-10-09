@@ -130,5 +130,9 @@ def read_financials_failclosed(conn, stock_code: str, *, year=None, quarter=None
     if as_of is not None:
         sql += " AND updated_at <= ?"
         params.append(as_of)
-    sql += " ORDER BY year DESC, quarter DESC"
+    sql += (
+        " ORDER BY year DESC,"
+        " CASE WHEN is_annual = 1 AND quarter = 0 THEN 0 ELSE 1 END,"
+        " quarter DESC"
+    )
     return conn.execute(sql, params).fetchall()

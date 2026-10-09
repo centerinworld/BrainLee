@@ -101,6 +101,18 @@ class SignalDataGateTests(unittest.TestCase):
         self.assertEqual(rows[0]["revenue"], 100)
         self.assertEqual(rows[0]["total_equity"], 400)
 
+    def test_annual_financial_read_prefers_quarter_zero(self):
+        self.c.execute(
+            "INSERT INTO canonical_financial_data(id,stock_code,year,quarter,is_annual,report_type,"
+            " revenue,operating_profit,net_income,total_assets,total_liabilities,total_equity,updated_at)"
+            " VALUES(10,'005930',2025,4,1,'CFS',444,44,4,1000,600,400,'2026-01-01T00:00:00')")
+        self.c.execute(
+            "INSERT INTO canonical_financial_data(id,stock_code,year,quarter,is_annual,report_type,"
+            " revenue,operating_profit,net_income,total_assets,total_liabilities,total_equity,updated_at)"
+            " VALUES(11,'005930',2025,0,1,'CFS',555,55,5,1000,600,400,'2026-01-02T00:00:00')")
+        rows = read_financials_failclosed(self.c, "005930", year=2025, is_annual=True, fields=("revenue",))
+        self.assertEqual(rows[0]["revenue"], 555)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

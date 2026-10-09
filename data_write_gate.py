@@ -167,7 +167,25 @@ def gate_financial_row(conn: sqlite3.Connection, p: Dict[str, Any]) -> Tuple[boo
                     scale = max(abs(ta_f), 1.0)
                     liabilities_match_assets = abs(tl_f - ta_f) / scale < 0.03
                     equity_match_assets = abs(te_f - ta_f) / scale < 0.03
-                    if liabilities_match_assets and not equity_match_assets and abs(te_f) > scale * 0.03:
+                    # FINANCIAL_STATEMENTS.md §2-1: 연결(CFS) total_equity는 지배주주 귀속 자본이다.
+                    # 따라서 자산 - 부채 - 지배자본 = 비지배지분일 수 있으며, 이 경우 항등식 위반으로
+                    # 보정하거나 차단하면 정상 CFS 행이 canonical에서 누락된다.
+                    if (
+                        q.get("report_type") == "CFS"
+                        and diff > 0
+                        # REVIEW_PLAN §45: 상한은 '지배자본 ≥ 전체 자본(자산−부채)의 5%'. 'diff ≤ 지배자본'은 비지배지분이
+                        # 지배지분보다 큰 지주사(예: CJ 2023 비지배 12.4조 > 지배 5.5조, FnGuide 자본총계·지배 일치)를 막았다.
+                        # 단위 오류(지배자본이 1/1000로 들어옴 → 0.1%)는 여전히 막는다.
+                        and (
+                            (te_f > 0 and te_f >= (ta_f - tl_f) * 0.05)
+                            # 자본잠식: 전체 자본·지배자본 모두 음수여도 비지배지분(diff>0)은 정상(011810 2025 FnGuide 일치)
+                            or (te_f < 0 and ta_f - tl_f < 0)
+                        )
+                        and not liabilities_match_assets
+                        and not equity_match_assets
+                    ):
+                        _log(conn, "financial_data", q, "info", "ALLOW_CFS_PARENT_EQUITY_NCI", f"CFS 지배주주 자본 기준으로 비지배지분 허용 diff={diff}")
+                    elif liabilities_match_assets and not equity_match_assets and abs(te_f) > scale * 0.03:
                         q["total_liabilities"] = ta_f - te_f
                         _log(conn, "financial_data", q, "warn", "FIX_LIABILITY_TOTAL_MATCH", f"부채총계가 자산총계로 오매칭 diff={diff}")
                     elif equity_match_assets and not liabilities_match_assets and abs(tl_f) > scale * 0.03:
