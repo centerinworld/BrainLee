@@ -77,23 +77,73 @@ def main():
         fd_rows[(r[1], r[2], q_key)] = (r[0], r[5], r[6])
 
     for code, year, quarter, field, db_val, fg_val in targets:
-        # 연간(q=0) 또는 분기(q=1..3)
-        q_code = quarter
-        fpath = RAW_DIR / code / f"{year}_{q_code}_CFS.json.gz"
-        if not fpath.exists():
-            skipped["원문파일없음"] += 1
-            continue
+        # Q4 처리: 독립 공시 파일이 없으므로 연간 사업보고서(_0_) 및 1~3분기 파일 활용
+        if quarter == 4:
+            p0 = RAW_DIR / code / f"{year}_0_CFS.json.gz"
+            if not p0.exists():
+                skipped["원문파일없음"] += 1
+                continue
+            try:
+                raw0 = json.loads(gzip.decompress(p0.read_bytes()))
+                ext0 = extract(raw0 if isinstance(raw0, list) else raw0.get("list", []))
+            except Exception:
+                skipped["원문파싱에러"] += 1
+                continue
 
-        try:
-            raw = json.loads(gzip.decompress(fpath.read_bytes()))
-            rows = raw if isinstance(raw, list) else raw.get("list", [])
-            ext = extract(rows)
-        except Exception:
-            skipped["원문파싱에러"] += 1
-            continue
+            if field == "total_equity":
+                new_val = ext0.get("equity_parent")
+            else:  # net_income
+                ann_ni = ext0.get("ni_parent")
+                new_val = None
+                # 방법 A: 연간 - (1Q + 2Q + 3Q)
+                qs_ni = []
+                for qi in (1, 2, 3):
+                    p_i = RAW_DIR / code / f"{year}_{qi}_CFS.json.gz"
+                    if p_i.exists():
+                        try:
+                            raw_i = json.loads(gzip.decompress(p_i.read_bytes()))
+                            ext_i = extract(raw_i if isinstance(raw_i, list) else raw_i.get("list", []))
+                            qs_ni.append(ext_i.get("ni_parent"))
+                        except Exception:
+                            pass
+                if ann_ni is not None and len(qs_ni) == 3 and all(x is not None for x in qs_ni):
+                    cand_a = ann_ni - sum(qs_ni)
+                    if close(cand_a, fg_val):
+                        new_val = cand_a
 
-        target_key = "ni_parent" if field == "net_income" else "equity_parent"
-        new_val = ext.get(target_key)
+                # 방법 B: 연간 - 3분기 누적(thstrm_add_amount) [FnGuide 방식]
+                if new_val is None and ann_ni is not None:
+                    p3 = RAW_DIR / code / f"{year}_3_CFS.json.gz"
+                    if p3.exists():
+                        try:
+                            raw3 = json.loads(gzip.decompress(p3.read_bytes()))
+                            ext3_ytd = extract(raw3 if isinstance(raw3, list) else raw3.get("list", []), "thstrm_add_amount")
+                            q3_ytd_ni = ext3_ytd.get("ni_parent")
+                            if q3_ytd_ni is not None:
+                                cand_b = ann_ni - q3_ytd_ni
+                                if close(cand_b, fg_val):
+                                    new_val = cand_b
+                        except Exception:
+                            pass
+
+        else:
+            q_code = quarter
+            fpath = RAW_DIR / code / f"{year}_{q_code}_CFS.json.gz"
+            if not fpath.exists():
+                skipped["원문파일없음"] += 1
+                continue
+
+            try:
+                raw = json.loads(gzip.decompress(fpath.read_bytes()))
+                rows = raw if isinstance(raw, list) else raw.get("list", [])
+                ext = extract(rows)
+            except Exception:
+                skipped["원문파싱에러"] += 1
+                continue
+
+            target_key = "ni_parent" if field == "net_income" else "equity_parent"
+            new_val = ext.get(target_key)
+
 
         if new_val is None:
             skipped["지배값추출불가"] += 1
