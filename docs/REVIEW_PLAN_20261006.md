@@ -1480,7 +1480,7 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 | # | 지적 | 처리 |
 |---|---|---|
 | 1 | 에이엘티 정리는 이미 적용됨 | 확인: `fin_flags_refresh_20261009_104908` — 백업 13,146·data_fix_log 13,146·readback planned 13,146 = read 13,146·불일치 0·pass, 적용 후 dry-run 0. 화면 `/api/dashboard/data-quality/172670` '재무제표 ✅ 3중 검증'. OPEN_ITEMS C3-3·§51-2·FINANCIAL §7 '완료'로 정정 |
-| 2 | readback이 resolved_value를 NULL 여부만 봄 | 숫자 비교(`|resolved − DB| ≤ 1`) 추가. 이 보완 중 **추가 발견**: 현행 확정인데 resolved ≠ DB인 행 1,716(총자산 1,424·총자본 292) — 스크립트 대상이 손익 3필드뿐이라 재무상태표 FIN_CROSS가 빠졌던 것(000040 2023 총자본 기록 224.0억 vs DB 205.5억 등, AMBIGUOUS 81). 대상에 total_assets·total_liabilities·total_equity 추가 → dry-run 1,716행/732종목, **사용자 실행 대기** |
+| 2 | readback이 resolved_value를 NULL 여부만 봄 | 숫자 비교(`|resolved − DB| ≤ 1`) 추가. 이 보완 중 **추가 발견**: 현행 검증(`financial_field_verification`)은 확정인데 옛 `cf_validation_flags` FIN_CROSS 기록이 낡은 행 1,716(총자산 1,424·총자본 292·총부채 0, 옛 플래그 상태 CONFIRMED 1,622·AMBIGUOUS 81·CLOSE_MATCH 13) — 스크립트 대상이 손익 3필드뿐이라 재무상태표 FIN_CROSS가 빠졌던 것(000040 2023 총자본 기록 224.0억 vs DB 205.5억 등, AMBIGUOUS 81). 대상에 total_assets·total_liabilities·total_equity 추가 → dry-run 1,716행/732종목, **사용자 실행 대기** |
 | 3 | DART 빈 성공 2건 문구 | '정상 빈 응답(013) 재확인'으로 정정(001570·001720도 013) |
 | 4 | OFS 행 수는 시점값 | 문서에 '진행 중, 최신은 파일·로그 확인'으로 정정 |
 | 5 | 지표 이름 분리 | FINANCIAL §7에 고정: 대조분 일치율 / 전체 확정률 / 원 단위 정밀도(10-09: 72.29%, 정밀도 87.69% = 억원 반올림 9,564/77,702) |
@@ -1494,3 +1494,4 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 | 4 | 001080 표현 | '재요청 결과 013으로 확인, 구버전 빈 행은 적용 입력에서 제외됨' |
 | 5·6 | 커밋 상태·OFS readback 설명 | 맞음 — 변경 없음 |
 - 10-09 15시: 재무상태표 1,716행 사용자 적용 완료 `fin_flags_refresh_20261009_105614` — readback planned 1,716 = read 1,716·불일치 0·pass(resolved 숫자 비교 포함 코드), 백업·data_fix_log 각 1,716, 적용 후 dry-run 0(손익·재무상태 현행 확정 14,862행 전부 현재 값). §53 기록은 ab0631c에 포함됨.
+- 6차 검토(10-09 15시) 반영: 1,716행 설명을 '현행 검증은 확정인데 옛 cf_validation_flags FIN_CROSS 기록이 낡은 행'으로 정정(옛 상태 CONFIRMED 1,622·AMBIGUOUS 81·CLOSE_MATCH 13, 필드 총자산 1,424·총자본 292·총부채 0). 화면 확인 근거: Claude가 적용 후 `GET /api/dashboard/data-quality/172670`(재무제표 '✅ DART·FnGuide·Naver 3중 검증')·`/000040`(재무상태표 '✅ DART·FnGuide 2중 검증')을 직접 호출해 확인 — 검토자는 미호출.
