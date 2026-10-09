@@ -112,15 +112,20 @@ def _ensure_log(conn) -> None:
     global _LOG_SCHEMA_OK
     if _LOG_SCHEMA_OK:
         return
+    changed = False
     conn.execute(
         "CREATE TABLE IF NOT EXISTS virtual_guard_log ("
         "id SERIAL PRIMARY KEY, logged_at TIMESTAMP DEFAULT now(), stock_code TEXT, strategy TEXT, "
         "guard TEXT, decision TEXT, detail TEXT)"
     )
+    changed = True
     cols = {row[1] for row in conn.execute("PRAGMA table_info(virtual_guard_log)").fetchall()}
     for col, ddl in _LOG_EXTRA_COLUMNS:
         if col not in cols:
             conn.execute(f"ALTER TABLE virtual_guard_log ADD COLUMN IF NOT EXISTS {col} {ddl}")
+            changed = True
+    if changed:
+        conn.commit()
     _LOG_SCHEMA_OK = True
 
 

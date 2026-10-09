@@ -341,6 +341,7 @@ def _ensure_source_price_columns(conn) -> None:
     global _SOURCE_PRICE_COLS_OK
     if _SOURCE_PRICE_COLS_OK:
         return
+    ok = True
     for tbl in ("peak_holding", "peak_trade"):
         cols = {row[1] for row in conn.execute(f"PRAGMA table_info({tbl})").fetchall()}
         if "source_price" not in cols:
@@ -348,8 +349,15 @@ def _ensure_source_price_columns(conn) -> None:
                 conn.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS source_price DOUBLE PRECISION")
                 conn.commit()   # 잠금을 바로 풀어 이후 조회가 막히지 않게
             except Exception:
-                pass
-    _SOURCE_PRICE_COLS_OK = True
+                try:
+                    conn.rollback()   # PostgreSQL: 실패한 DDL로 중단된 트랜잭션을 풀어 이후 조회가 막히지 않게
+                except Exception:
+                    pass
+                ok = False
+                continue
+            cols = {row[1] for row in conn.execute(f"PRAGMA table_info({tbl})").fetchall()}
+            ok = ok and "source_price" in cols
+    _SOURCE_PRICE_COLS_OK = ok
 
 
 def _normalize_strategy_key(strategy: str | None) -> str | None:
