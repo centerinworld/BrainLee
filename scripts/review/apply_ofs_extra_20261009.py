@@ -202,6 +202,7 @@ def main():
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--codes", default="")
     ap.add_argument("--src", default="", help="원문 jsonl 파일명(기본 dart_cf_ofs_extra.jsonl)")
+    ap.add_argument("--min-year", type=int, default=2025, help="원장·원문 비교 최소 연도(기본 2025; 별도 연간 2023~24 적재 시 2023)")
     ap.add_argument("--fiscal-nondec", default="", choices=["", "CFS", "OFS"],
                     help="PLAN P10: 비12월 결산(리츠 제외, fiscal_keyed 종목)만, 지정 구분, 회계 키(to_fiscal)로 판정 — 2025~2026 회계연도")
     a = ap.parse_args()
@@ -224,7 +225,7 @@ def main():
         ('fs_quirk:reporting_currency','fs_quirk:unit_scale_fixed','fs_quirk:dart_unit_error')""" + ("" if a.fiscal_nondec else
         """ OR (config_key='fs_quirk:fiscal_month' AND config_value<>'12')""")).fetchall()}
     # 원장은 2025년 이후만 읽는다 → 원문도 같은 범위로(10-09: 회계 키 모드에서 2023~24 원문이 '원장 행 없음'으로 보여 중복 삽입될 뻔함)
-    truth = {k: v for k, v in truth.items() if k[0] not in excl and k[1] >= 2025}
+    truth = {k: v for k, v in truth.items() if k[0] not in excl and k[1] >= a.min_year}
     keys = sorted({(k[0], k[1]) for k in truth})
     print(f"원문 {len(truth)}건, 종목-연도 {len(keys)} (제외 종목 {len(excl)})", flush=True)
     locks = {(r[0], r[1], r[2]) for r in conn.execute("SELECT stock_code, year, table_name FROM data_lock WHERE is_locked=1").fetchall()}
@@ -234,7 +235,7 @@ def main():
             protected.add((tbl, r[0], r[1]))
     fg = {}
     for r in conn.execute("""SELECT stock_code, year, quarter, field, fnguide_value FROM financial_field_verification
-                             WHERE report_type=? AND year>=2025 AND fnguide_value IS NOT NULL""", (FS,)).fetchall():
+                             WHERE report_type=? AND year>=? AND fnguide_value IS NOT NULL""", (FS, a.min_year)).fetchall():
         fg[(r[0], r[1], r[2], r[3])] = float(r[4])
     code_set = sorted({k[0] for k in keys})
     fd_rows, cf_rows = {}, {}
@@ -243,14 +244,14 @@ def main():
         ch = code_set[i:i + 400]
         ph = ",".join("?" * len(ch))
         for r in conn.execute(f"""SELECT id,stock_code,year,quarter,is_annual,{','.join(FIN)} FROM financial_data
-                                  WHERE report_type=? AND year>=2025 AND stock_code IN ({ph}) ORDER BY quarter ASC""", [FS] + ch).fetchall():
+                                  WHERE report_type=? AND year>=? AND stock_code IN ({ph}) ORDER BY quarter ASC""", [FS, a.min_year] + ch).fetchall():
             r = tuple(r)
             k = "A" if r[4] else f"Q{r[3]}"
             fd_rows.setdefault((r[1], r[2], k), r)
             fd_all.setdefault((r[1], r[2], k), []).append(r)
         for r in conn.execute(f"""SELECT id,stock_code,year,quarter,is_annual,operating_cf,investing_cf,financing_cf,capex,
                                          operating_cf_q,investing_cf_q,financing_cf_q,capex_q FROM cash_flow_data
-                                  WHERE report_type=? AND year>=2025 AND stock_code IN ({ph}) ORDER BY quarter ASC""", [FS] + ch).fetchall():
+                                  WHERE report_type=? AND year>=? AND stock_code IN ({ph}) ORDER BY quarter ASC""", [FS, a.min_year] + ch).fetchall():
             r = tuple(r)
             k = "A" if r[4] else f"Q{r[3]}"
             cf_rows.setdefault((r[1], r[2], k), r)
@@ -455,7 +456,11 @@ def main():
         print("재측정", res["field_verification_after"], flush=True)
     # 2026-10-09 검토 반영: 실행 모드별로 산출물 이름을 나눠 서로 덮어쓰지 않게(이전엔 P10·전 종목·시험 원문이 같은 이름)
     tag = (f"nondec_{FS}" if a.fiscal_nondec else (f"src_{Path(a.src).stem}" if a.src else ("codes" if codes else "full")))
-    out = ROOT / "research_outputs" / "financial_rereview_20261002" / f"ofs_extra_{tag}_20261009_{'apply' if a.apply else 'dry'}.json"
+    _planned = (res.get("post_readback") or {}).get("planned_cells", 0)
+    kind = "dry" if not a.apply else ("apply" if _planned > 0 else "apply_noop")  # 10-09: 계획 0건 재실행이 실제 적용 결과를 덮지 않게
+    out = ROOT / "research_outputs" / "financial_rereview_20261002" / f"ofs_extra_{tag}_20261009_{kind}.json"
+    if kind == "apply" and out.exists():
+        out = out.with_name(out.stem + f"_{datetime.now():%H%M%S}.json")  # 같은 모드로 두 번 적용해도 앞 결과 보존
     out.write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str))
     print(json.dumps({k: res[k] for k in ("mode", "stats", "fd_update", "cf_update", "fd_insert_rows", "cf_insert_rows", "held", "capex_def_candidates")}, ensure_ascii=False))
 

@@ -109,6 +109,7 @@ def main():
     ap.add_argument("--ofs-extra", action="store_true",
                     help="연결(CFS) 회사의 별도(OFS) 재무제표를 따로 받는다 — 2025~2026 분기·연간, 출력 dart_cf_ofs_extra.jsonl(2026-10-09: "
                          "기본 모드는 CFS가 있으면 OFS를 요청하지 않아 별도 분기 현금흐름·재무상태가 DB에 없음 = 현행 검증 '미확인(DB 없음)' 최대 원인)")
+    ap.add_argument("--ofs-annual-years", default="", help="--ofs-extra와 함께: 연도 지정 사업보고서만(예: 2023,2024) — FnGuide 표시 기간(최근 3년) 별도 연간용(10-09)")
     ap.add_argument("--nondec-2026", default="", choices=["", "CFS", "OFS"],
                     help="비12월 결산(리츠 제외) 종목의 DART 2026년 3분기·사업보고서(회계 2026 연도의 3분기·연간)를 지정 구분으로만 받는다 — "
                          "출력 dart_cf_nondec_2026_<구분>.jsonl(2026-10-09 PLAN P10: 기본 JOBS가 (2026,3)·(2026,0)을 포함하지 않아 비12월 회계 2026 칸이 DB 없음)")
@@ -123,6 +124,9 @@ def main():
         NO_FALLBACK = True
         JOBS = [(2025, 1), (2025, 2), (2025, 3), (2025, 0), (2026, 1), (2026, 2)]
         OUT = OUT.with_name("dart_cf_ofs_extra.jsonl")
+        if a.ofs_annual_years:
+            JOBS = [(int(y), 0) for y in a.ofs_annual_years.split(",") if y]
+            OUT = OUT.with_name(f"dart_cf_ofs_extra_annual_{a.ofs_annual_years.replace(',', '_')}.jsonl")
     if a.prev_only:
         JOBS = [j for j in JOBS if j[1] == 0]
     if a.years:
