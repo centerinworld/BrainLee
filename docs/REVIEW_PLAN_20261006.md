@@ -1495,3 +1495,16 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 | 5·6 | 커밋 상태·OFS readback 설명 | 맞음 — 변경 없음 |
 - 10-09 15시: 재무상태표 1,716행 사용자 적용 완료 `fin_flags_refresh_20261009_105614` — readback planned 1,716 = read 1,716·불일치 0·pass(resolved 숫자 비교 포함 코드), 백업·data_fix_log 각 1,716, 적용 후 dry-run 0(손익·재무상태 현행 확정 14,862행 전부 현재 값). §53 기록은 ab0631c에 포함됨.
 - 6차 검토(10-09 15시) 반영: 1,716행 설명을 '현행 검증은 확정인데 옛 cf_validation_flags FIN_CROSS 기록이 낡은 행'으로 정정(옛 상태 CONFIRMED 1,622·AMBIGUOUS 81·CLOSE_MATCH 13, 필드 총자산 1,424·총자본 292·총부채 0). 화면 확인 근거: Claude가 적용 후 `GET /api/dashboard/data-quality/172670`(재무제표 '✅ DART·FnGuide·Naver 3중 검증')·`/000040`(재무상태표 '✅ DART·FnGuide 2중 검증')을 직접 호출해 확인 — 검토자는 미호출.
+
+## 54. 수정계획(PLAN_99_99_NUMERIC_20261009) 검토 반영 + 사용자 지시 (Claude Opus 5.5, 2026-10-09 16시)
+| # | 지적·지시 | 처리 |
+|---|---|---|
+| 1 | 99.999%·99.99% 표현 혼재 | 계획서 '99.99%'는 과거 인용('기존 99.99%')에만, 결정·절 제목 99.999%로 통일. FINANCIAL §7·OPEN_ITEMS C3-4 문구 정정 |
+| 2 | P1 정본(canonical) 반영을 차단 조건으로 | **구현**: `apply_ofs_extra_20261009.py`에 `canonical_sync` — 바뀐/새 원장 행 → 게이트(`gate_financial_row`·`gate_cashflow_row`) → `upsert_canonical_*`(연간 quarter=0), 기존 정본 행 백업, readback(손익·현금흐름 칸), 게이트 거부는 정본 미변경·보류. 전체 pass에 포함. 테스트 `tests/test_apply_ofs_extra_canonical_20261009.py` 2건 + `test_data_write_gate_balance_identity.py` 11건 = **13 passed** |
+| 3 | P3 CapEx 조건 강화 | 행마다 ① 원문 유형·무형 분리 ② 기존 = 합 ③ 새 유형값 = 그 칸 FnGuide → 정정, **FnGuide 없으면 값 유지·후보만**(`capex_def_candidates_ofs_extra_20261009`). 스크립트 반영 — 3종목 고정 테스트 원문 dry-run: 정정 10·후보 17(이전 27칸 정정에서 축소) |
+| 4 | P7 '값 의미 불변' 단정 금지 | 조건(구분·기간·재작성 여부·지배/전체 일치 + FnGuide·DB 반올림 일치)·근거(rcept_no·account_id) 필수로 계획 수정(스크립트 미작성) |
+| 5 | D-1 승인 전 표현 | 계획서 머리에 표현 규칙: '예외 포함 시 미달 / 예외 별도 표시 시 목표 가능' |
+| 6 | 일정 과감 | §3을 '낙관 추정'으로 표시 |
+| 7 | 가격을 별도 계획으로 | **사용자 반대 → 이 계획에 포함**. §5-1 C를 작업 PX1~PX6으로 올림 |
+| 사용자 | 우선순위 | **1순위 재무제표(손익·재무상태·현금흐름) > 2순위 주가 등 가격 > 3순위 투자(CapEx)·감가상각** — §2 작업마다 순위 표시, §3 일정·D-2 반영 |
+

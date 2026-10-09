@@ -30,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from db_compat import connect_primary_db  # noqa: E402
+from data_write_gate import gate_cashflow_row, gate_financial_row, upsert_canonical_cashflow, upsert_canonical_financial  # noqa: E402
 
 SRC = ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_ofs_extra.jsonl"
 TAG = "dart_ofs_extra_20261009"
@@ -109,6 +110,62 @@ def targets(truth, code, year):
     return out
 
 
+FD_COLS = ("revenue", "operating_profit", "net_income", "total_assets", "total_liabilities", "total_equity",
+           "capital_stock", "eps", "bps", "dps", "roe")
+CFC_COLS = ("operating_cf", "investing_cf", "financing_cf", "capex", "cash_end", "depreciation")
+
+
+def canonical_sync(conn, run_id, now, fd_ids, cf_ids):
+    """원장 행 → 게이트 → 정본 upsert(연간 키는 quarter=0), 기존 정본 행 백업, readback. 게이트 거부 행은 정본을 건드리지 않고 보류."""
+    out = {"fd_rows": len(fd_ids), "cf_rows": len(cf_ids), "fd_synced": 0, "cf_synced": 0,
+           "fd_refused": 0, "cf_refused": 0, "refused_sample": [], "readback_mismatch": 0, "mismatch_sample": []}
+    specs = (("financial_data", "canonical_financial_data", FD_COLS, fd_ids, gate_financial_row, upsert_canonical_financial, "fd"),
+             ("cash_flow_data", "canonical_cashflow_data", CFC_COLS, cf_ids, gate_cashflow_row, upsert_canonical_cashflow, "cf"))
+    synced_keys = []
+    for raw, canon, cols, ids, gate, upsert, tag in specs:
+        if not ids:
+            continue
+        bk = f"{canon}_backup_ofs_extra_20261009"
+        conn.execute(f"CREATE TABLE IF NOT EXISTS {bk} AS SELECT *, CAST(NULL AS TEXT) run_id FROM {canon} WHERE false")
+        rows = []
+        idl = sorted(ids)
+        for i in range(0, len(idl), 1000):
+            part = idl[i:i + 1000]
+            rows += [dict(r) for r in conn.execute(
+                f"SELECT id, stock_code, year, quarter, is_annual, report_type, data_source, {','.join(cols)} FROM {raw} "
+                f"WHERE id IN ({','.join('?' * len(part))})", part).fetchall()]
+        for r in rows:
+            q = 0 if r["is_annual"] else r["quarter"]
+            conn.execute(f"INSERT INTO {bk} SELECT *, ? FROM {canon} WHERE stock_code=? AND year=? AND quarter=? AND is_annual=? AND report_type=?",
+                         (run_id, r["stock_code"], r["year"], q, 1 if r["is_annual"] else 0, r["report_type"]))
+            payload = {k: r[k] for k in ("stock_code", "year", "is_annual", "report_type", "data_source") + cols}
+            payload["quarter"] = q
+            ok, fixed, reason = gate(conn, payload)
+            if not ok:
+                out[f"{tag}_refused"] += 1
+                if len(out["refused_sample"]) < 30:
+                    out["refused_sample"].append((raw, r["id"], r["stock_code"], r["year"], q, reason))
+                continue
+            upsert(conn, fixed, source_row_id=r["id"], decision_reason=run_id)
+            out[f"{tag}_synced"] += 1
+            synced_keys.append((canon, cols, r, q))
+    conn.commit()
+    for canon, cols, r, q in synced_keys:
+        c = conn.execute(f"SELECT {','.join(cols)} FROM {canon} WHERE stock_code=? AND year=? AND quarter=? AND is_annual=? AND report_type=?",
+                         (r["stock_code"], r["year"], q, 1 if r["is_annual"] else 0, r["report_type"])).fetchone()
+        # 게이트가 고친 칸(예: 부채=자산 오매핑 수리)은 원장과 다를 수 있어 원장 값이 아니라 '행 존재 + 원장과 같은 칸 수'로 보지 않고,
+        # 핵심 손익·현금흐름 칸만 원장과 비교한다(재무상태는 게이트 수리 가능).
+        keyc = ("revenue", "operating_profit", "net_income") if canon == "canonical_financial_data" else ("operating_cf", "investing_cf", "financing_cf")
+        bad = c is None or any((r[k] is None) != (c[cols.index(k)] is None) or
+                               (r[k] is not None and abs(float(r[k]) - float(c[cols.index(k)])) > 0.5) for k in keyc)
+        if bad:
+            out["readback_mismatch"] += 1
+            if len(out["mismatch_sample"]) < 20:
+                out["mismatch_sample"].append((canon, r["stock_code"], r["year"], q, r["report_type"]))
+    out["pass"] = out["readback_mismatch"] == 0
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
@@ -157,6 +214,7 @@ def main():
     upd_fd, upd_cf = [], []          # (row_id, code, year, quarter, is_ann, col, old, new, rule)
     ins_fd, ins_cf = [], []          # (code, year, quarter, is_ann, {col: val}, value_type)
     held = []
+    capex_cand = []  # (row_id, code, year, 기간, 칸, 기존=유형+무형, 새 유형값, 합, FnGuide) — 값 유지, 후보만
     for code, year in keys:
         for k, (fin, cum, qv) in targets(truth, code, year).items():
             fq = 0 if k == "A" else int(k[1])
@@ -231,9 +289,15 @@ def main():
                             upd_cf.append((crow[0], code, year, crow[3], crow[4], col, None, new, "빈 칸 = DART 별도 원문"))
                             st["cf_fill"] += 1
                         elif sumv is not None and close(oc, sumv) and not close(sumv, new):
-                            # §2 정의: capex = 유형자산의 증가(무형은 별도). 기존 값이 같은 원문의 유형+무형 합이면 정의 오류 → 유형만으로 정정
-                            upd_cf.append((crow[0], code, year, crow[3], crow[4], col, old, new, "정의 정정: 기존=유형+무형 합(같은 DART 원문), §2 capex=유형만"))
-                            st["cf_fix_capex_def"] += 1
+                            # §2 정의: capex = 유형자산의 증가(무형은 별도). 기존 값 = 같은 원문의 유형+무형 합(행마다 확인).
+                            # 10-09 검토 반영: 교체는 그 칸 FnGuide가 새 유형값과 일치할 때만, FnGuide 없으면 '후보'로만 기록(값 유지)
+                            if confirmed:
+                                upd_cf.append((crow[0], code, year, crow[3], crow[4], col, old, new,
+                                               f"정의 정정: 기존=유형+무형 합(같은 DART 원문), 새 유형값 = FnGuide({jn}), §2 capex=유형만"))
+                                st["cf_fix_capex_def"] += 1
+                            else:
+                                capex_cand.append((crow[0], code, year, k, col, old, new, sumv, ext))
+                                st["cf_capex_def_candidate"] += 1
                         elif confirmed and not close(judge_old, abs(ext) if c == "capex" else ext):
                             upd_cf.append((crow[0], code, year, crow[3], crow[4], col, old, new, f"DART 별도 원문 = FnGuide({jn}), 기존 값 불일치"))
                             st["cf_fix_fnguide"] += 1
@@ -242,10 +306,17 @@ def main():
                             held.append(("cash_flow_data", code, year, k, col, old, new, ext))
     res = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "apply" if a.apply else "dry_run", "stats": dict(st),
            "fd_update": len(upd_fd), "cf_update": len(upd_cf), "fd_insert_rows": len(ins_fd), "cf_insert_rows": len(ins_cf),
-           "held": len(held), "held_sample": held[:40], "update_sample": (upd_fd + upd_cf)[:40]}
+           "held": len(held), "held_sample": held[:40],
+           "capex_def_candidates": len(capex_cand), "capex_def_candidate_sample": capex_cand[:40], "update_sample": (upd_fd + upd_cf)[:40]}
     if a.apply:
         run_id = f"ofs_extra_apply_{datetime.now():%Y%m%d_%H%M%S}"
         now = datetime.now().isoformat(timespec="seconds")
+        conn.execute("""CREATE TABLE IF NOT EXISTS capex_def_candidates_ofs_extra_20261009
+                        (run_id TEXT, row_id BIGINT, stock_code TEXT, year INT, period TEXT, field TEXT,
+                         current_value DOUBLE PRECISION, candidate_value DOUBLE PRECISION, dart_ppe_plus_intangible DOUBLE PRECISION,
+                         fnguide_value DOUBLE PRECISION, created_at TEXT)""")
+        conn.executemany("INSERT INTO capex_def_candidates_ofs_extra_20261009 VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                         [(run_id,) + tuple(c) + (now,) for c in capex_cand])
         for tbl, ups in (("financial_data", upd_fd), ("cash_flow_data", upd_cf)):
             bk = f"{tbl}_backup_ofs_extra_20261009"
             conn.execute(f"CREATE TABLE IF NOT EXISTS {bk} AS SELECT *, CAST(NULL AS TEXT) run_id FROM {tbl} WHERE false")
@@ -305,6 +376,13 @@ def main():
                                 "inserted_cells": {k: len(v) for k, v in logs.items()}, "held": len(held),
                                 "pass": checks == planned and not bad}
         print("readback", json.dumps({k: v for k, v in res["post_readback"].items() if k != "mismatch_sample"}, ensure_ascii=False), flush=True)
+        # 정본(canonical) 동기화 — 10-09 검토 반영(완료 조건): 원장(financial_data·cash_flow_data)만 바꾸면
+        # crud.upsert_financial_data 경로의 정본과 어긋난다 → 바뀐/새 행을 게이트 통과 후 정본에 반영, 기존 정본 행 백업, readback
+        res["canonical_sync"] = canonical_sync(conn, run_id, now,
+                                               {u[0] for u in upd_fd} | {r[0] for r in logs["financial_data"]},
+                                               {u[0] for u in upd_cf} | {r[0] for r in logs["cash_flow_data"]})
+        print("정본 동기화", json.dumps({k: v for k, v in res["canonical_sync"].items() if not k.endswith("sample")}, ensure_ascii=False), flush=True)
+        res["post_readback"]["pass"] = res["post_readback"]["pass"] and res["canonical_sync"]["pass"]
         # 원문 후보 적재 뒤 FnGuide 대조로 재측정(확정 여부는 이 결과로만 말한다)
         import subprocess
         conn.close()
@@ -314,7 +392,7 @@ def main():
         print("재측정", res["field_verification_after"], flush=True)
     out = ROOT / "research_outputs" / "financial_rereview_20261002" / f"ofs_extra_apply_20261009_{'apply' if a.apply else 'dry'}.json"
     out.write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str))
-    print(json.dumps({k: res[k] for k in ("mode", "stats", "fd_update", "cf_update", "fd_insert_rows", "cf_insert_rows", "held")}, ensure_ascii=False))
+    print(json.dumps({k: res[k] for k in ("mode", "stats", "fd_update", "cf_update", "fd_insert_rows", "cf_insert_rows", "held", "capex_def_candidates")}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
