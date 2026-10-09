@@ -33,6 +33,7 @@ RAW_DART = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_fnltt")
 OUT = ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_full.jsonl"
 JOBS = [(y, q) for y in (2023, 2024, 2025) for q in (1, 2, 3, 0)] + [(2026, 1), (2026, 2)]
 lock = threading.Lock()
+SYSTEM_STATUS = {"010", "011", "012", "021", "100", "101", "800", "900", "901"}  # 키·IP·점검·시스템 오류
 NO_FALLBACK = False  # --ofs-extra: 지정한 fs만 요청(연결 회사의 별도 재무제표를 따로 받음)
 
 
@@ -47,10 +48,17 @@ def fetch(key, corp, year, q, fs):
         except Exception:
             time.sleep(2 + attempt * 2)
             continue
-        if d.get("status") == "020":
+        st = d.get("status")
+        if st == "020":
             raise RuntimeError("quota")
-        return d.get("list") or [] if d.get("status") == "000" else []
-    return None
+        if st == "000":
+            return d.get("list") or [], st
+        if st == "013":  # 조회된 데이터 없음 = 정상 빈 응답(그 구분의 보고서가 없음)
+            return [], st
+        if st in SYSTEM_STATUS:  # 2026-10-09 검토 반영: 점검(800)·키 오류·시스템 오류를 '빈 성공'으로 저장하지 않고 중단
+            raise RuntimeError(f"dart_status_{st}")
+        return None, st  # 그 밖의 비정상 상태: 실패로 기록(ok=false, 다음 실행에서 재시도)
+    return None, "network"
 
 
 def worker(key, items, fh, done):
@@ -58,9 +66,14 @@ def worker(key, items, fh, done):
         for year, q in JOBS:
             if (code, year, q) in done:
                 continue
-            rows, used = None, None
+            rows, used, statuses = None, None, []
             for fs in ([fs0] if NO_FALLBACK else [fs0] + [x for x in ("CFS", "OFS") if x != fs0]):
-                rows = fetch(key, corp, year, q, fs)
+                got, st = fetch(key, corp, year, q, fs)
+                statuses.append(st)
+                if got is None:  # 비정상 응답 — 빈 결과로 덮지 않는다
+                    rows = None
+                    break
+                rows = got
                 if rows:
                     used = fs
                     break
@@ -69,7 +82,7 @@ def worker(key, items, fh, done):
                 rawp.mkdir(parents=True, exist_ok=True)
                 (rawp / f"{year}_{q}_{used}.json.gz").write_bytes(gzip.compress(json.dumps(rows, ensure_ascii=False).encode()))
             rec = {"code": code, "year": year, "q": q, "fs": used, "vals": extract(rows) if rows else {}, "ok": rows is not None,
-                   "parent_checked": True}
+                   "parent_checked": True, "dart_status": statuses}
             # 2026-10-03: 사업보고서는 전기 칸(직전 연도 재작성값)도 저장 — FnGuide·네이버가 표시하는 최신 재작성값의 원문
             if rows and q == 0:
                 rec["vals_prev"] = extract(rows, "frmtrm_amount")
@@ -125,7 +138,11 @@ def main():
         targets = [t for t in targets if t[0] in keep]
     if a.limit:
         targets = targets[: a.limit]
-    corp = Dart().corp_codes()
+    try:
+        corp = Dart().corp_codes()
+    except Exception as e:  # 2026-10-09: corpCode.xml만 점검(상태 800)인 날이 있음 → 캐시 사용(신규 상장 일부 누락 가능)
+        corp = json.load(open(ROOT / "data_cache" / "dart_corp_codes.json"))
+        print(f"기업코드 API 실패({type(e).__name__}) → 캐시 {len(corp)}사 사용", flush=True)
     done = set()
     if OUT.exists():
         last = {}
@@ -141,6 +158,8 @@ def main():
                 needs = d["q"] == 0 and bool(d.get("fs")) and "vals_prev" not in d
             if a.refetch_raw:
                 needs = bool(d.get("fs")) and not (RAW_DART / k[0] / f"{k[1]}_{k[2]}_{d['fs']}.json.gz").exists()
+            if a.ofs_extra and not d.get("fs") and "013" not in (d.get("dart_status") or []):
+                needs = True  # 2026-10-09: 상태 없이 빈 행(구버전 '빈 성공')은 정상 '데이터 없음'(013)으로 확인될 때까지 재요청
             if not needs:
                 done.add(k)
     items = [(c, corp[c], fs) for c, fs in targets if c in corp]
@@ -170,6 +189,13 @@ def main():
                 print(f"키 한도 소진({e}) → 다음 키 {'있음' if nxt else '없음 — 내일 재개'}", flush=True)
                 cur = nxt
 
+    import fcntl  # 2026-10-09: 같은 출력 파일을 두 프로세스가 동시에 쓰면 중복 수집 → 이미 실행 중이면 종료
+    _lk = open(str(OUT) + ".lock", "w")
+    try:
+        fcntl.flock(_lk, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print(f"이미 실행 중({OUT.name}) — 종료", flush=True)
+        return
     with open(OUT, "a") as fh:
         ths = [threading.Thread(target=run, args=(k, ch)) for k, ch in zip(order[:worker_count], chunks)]
         for t in ths:

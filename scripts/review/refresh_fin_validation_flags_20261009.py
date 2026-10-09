@@ -49,8 +49,18 @@ def main():
         db_v, fg_v, nv_v, vst = r[len(cols):]
         new_seibro = nv_v if old["flag_type"] == "FIN_NAVER" else old.get("seibro_value")
         changed = []
-        if old.get("dart_value") is None or db_v is None or abs(float(old["dart_value"] or 0) - float(db_v or 0)) > 1:
+
+        def diff(a, b):
+            return (a is None) != (b is None) or (a is not None and abs(float(a) - float(b)) > 1)
+        # 2026-10-09 검토 반영: 경고 제거 대상만이 아니라 '옛 대조 기록 전체를 현재 값으로' — 외부 칸·resolved 칸도 비교
+        if diff(old.get("dart_value"), db_v):
             changed.append("dart_value")
+        if diff(old.get("fnguide_value"), fg_v):
+            changed.append("fnguide_value")
+        if old["flag_type"] == "FIN_NAVER" and diff(old.get("seibro_value"), nv_v):
+            changed.append("seibro_value(naver)")
+        if diff(old.get("resolved_value"), db_v):
+            changed.append("resolved_value")
         if str(old.get("status") or "").upper() != "CONFIRMED":
             changed.append("status")
         if old.get("ai_verdict"):
@@ -88,10 +98,37 @@ def main():
                       json.dumps(res["status_before"], ensure_ascii=False), "CONFIRMED", "scripts/review/refresh_fin_validation_flags_20261009.py", run_id))
         conn.commit()
         res.update({"applied": True, "run_id": run_id, "backup_table": BACKUP})
+        # 적용 후 다시 읽어 확인(readback): 행 수·값·상태가 계획과 같은지
+        want = {p[0]["id"]: p for p in plan}
+        got, bad = 0, []
+        ids = list(want)
+        for i in range(0, len(ids), 1000):
+            part = ids[i:i + 1000]
+            for r in conn.execute(f"""SELECT id, dart_value, fnguide_value, seibro_value, resolved_value, status, ai_verdict, flag_type
+                                      FROM cf_validation_flags WHERE id IN ({','.join('?' * len(part))})""", part).fetchall():
+                got += 1
+                old, db_v, fg_v, new_seibro, _ = want[r[0]]
+                ok = (str(r[5]).upper() == "CONFIRMED" and r[6] is None
+                      and not (r[1] is None) != (db_v is None) and (r[1] is None or abs(float(r[1]) - float(db_v)) <= 1)
+                      and (r[2] is None) == (fg_v is None) and (r[2] is None or abs(float(r[2]) - float(fg_v)) <= 1)
+                      and (r[4] is None) == (db_v is None)
+                      and (r[7] != "FIN_NAVER" or ((r[3] is None) == (new_seibro is None) and (r[3] is None or abs(float(r[3]) - float(new_seibro)) <= 1))))
+                if not ok:
+                    bad.append(r[0])
+        alt = [dict(zip(("flag_type", "year", "field", "dart_value", "fnguide_value", "seibro_value", "status", "ai_verdict"), map(lambda x: x, r)))
+               for r in conn.execute("""SELECT flag_type, year, field, dart_value, fnguide_value, seibro_value, status, ai_verdict
+                                        FROM cf_validation_flags WHERE stock_code='172670' AND flag_type IN ('FIN_NAVER','FIN_CROSS')
+                                        ORDER BY flag_type, year, field""").fetchall()]
+        res["post_readback"] = {"planned_rows": len(plan), "updated_rows_read": got, "value_or_status_mismatch": len(bad),
+                                "mismatch_ids_sample": bad[:20], "alt_172670": alt,
+                                "pass": got == len(plan) and not bad}
+        print("readback", json.dumps({k: v for k, v in res["post_readback"].items() if k != "alt_172670"}, ensure_ascii=False))
     else:
         res["applied"] = False
     out = ROOT / "research_outputs" / f"fin_flags_refresh_20261009_{'apply' if a.apply else 'dry'}.json"
     out.write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str))
+    if a.apply and not res.get("post_readback", {}).get("pass", True):
+        print("⚠️ readback 불일치 — 백업 표로 되돌릴지 검토 필요", flush=True)
     print(json.dumps({k: res[k] for k in ("mode", "fin_rows_with_confirmed_current", "rows_to_update", "stocks", "change_reasons",
                                           "status_before", "applied")}, ensure_ascii=False))
     for s in res["sample"][:5]:
