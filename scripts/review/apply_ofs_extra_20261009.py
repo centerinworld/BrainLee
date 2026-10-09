@@ -134,6 +134,21 @@ def canonical_sync(conn, run_id, now, fd_ids, cf_ids):
             rows += [dict(r) for r in conn.execute(
                 f"SELECT id, stock_code, year, quarter, is_annual, report_type, data_source, {','.join(cols)} FROM {raw} "
                 f"WHERE id IN ({','.join('?' * len(part))})", part).fetchall()]
+        # 2026-10-09: 원장 연간 두 벌(quarter 0·4)이 같은 정본 키로 들어오면 마지막 행이 덮어써 대표가 바뀐다 →
+        # 정본 키마다 대표 행 하나만(정본이 가리키는 원장 행 → quarter 0 → id 작은 순), 나머지는 건너뜀
+        by_key = {}
+        for r in rows:
+            q = 0 if r["is_annual"] else r["quarter"]
+            by_key.setdefault((r["stock_code"], r["year"], q, bool(r["is_annual"]), r["report_type"]), []).append(r)
+        rows = []
+        for (sc, yy, qq, ia, rt), grp in by_key.items():
+            if len(grp) > 1:
+                cur_src = conn.execute(f"SELECT source_row_id FROM {canon} WHERE stock_code=? AND year=? AND quarter=? AND is_annual=? AND report_type=?",
+                                       (sc, yy, qq, 1 if ia else 0, rt)).fetchone()
+                cur_src = cur_src[0] if cur_src else None
+                grp.sort(key=lambda r: (r["id"] != cur_src, r["quarter"], r["id"]))
+                out[f"{tag}_sibling_skipped"] = out.get(f"{tag}_sibling_skipped", 0) + len(grp) - 1
+            rows.append(grp[0])
         for r in rows:
             q = 0 if r["is_annual"] else r["quarter"]
             conn.execute(f"INSERT INTO {bk} SELECT *, ? FROM {canon} WHERE stock_code=? AND year=? AND quarter=? AND is_annual=? AND report_type=?",
@@ -195,6 +210,7 @@ def main():
         fg[(r[0], r[1], r[2], r[3])] = float(r[4])
     code_set = sorted({k[0] for k in keys})
     fd_rows, cf_rows = {}, {}
+    fd_all, cf_all = {}, {}  # 2026-10-09 검토 반영: 연간 원장 행 quarter 0·4 두 벌 — 정정은 같은 기간 행 전부(값 다른 것만)
     for i in range(0, len(code_set), 400):
         ch = code_set[i:i + 400]
         ph = ",".join("?" * len(ch))
@@ -203,12 +219,14 @@ def main():
             r = tuple(r)
             k = "A" if r[4] else f"Q{r[3]}"
             fd_rows.setdefault((r[1], r[2], k), r)
+            fd_all.setdefault((r[1], r[2], k), []).append(r)
         for r in conn.execute(f"""SELECT id,stock_code,year,quarter,is_annual,operating_cf,investing_cf,financing_cf,capex,
                                          operating_cf_q,investing_cf_q,financing_cf_q,capex_q FROM cash_flow_data
                                   WHERE report_type='OFS' AND year>=2025 AND stock_code IN ({ph}) ORDER BY quarter ASC""", ch).fetchall():
             r = tuple(r)
             k = "A" if r[4] else f"Q{r[3]}"
             cf_rows.setdefault((r[1], r[2], k), r)
+            cf_all.setdefault((r[1], r[2], k), []).append(r)
 
     st = collections.Counter()
     upd_fd, upd_cf = [], []          # (row_id, code, year, quarter, is_ann, col, old, new, rule)
@@ -304,6 +322,23 @@ def main():
                         else:
                             st["cf_hold"] += 1
                             held.append(("cash_flow_data", code, year, k, col, old, new, ext))
+    # 연간 두 벌 동기화: 대표 행(quarter 0 우선)에 계획된 정정을 같은 기간의 다른 연간 행에도(값이 다를 때만) 적용
+    FIN_IDX = {f: 5 + j for j, f in enumerate(FIN)}
+    CF_IDX = {"operating_cf": 5, "investing_cf": 6, "financing_cf": 7, "capex": 8}
+    for ups, allmap, idx, kind in ((upd_fd, fd_all, FIN_IDX, "fd"), (upd_cf, cf_all, CF_IDX, "cf")):
+        extra = []
+        for rid, code, year, q, ia, col, old, new, rule in ups:
+            if not ia or col not in idx:
+                continue
+            for sib in allmap.get((code, year, "A"), []):
+                if sib[0] == rid:
+                    continue
+                sv = sib[idx[col]]
+                if sv is not None and abs(float(sv) - float(new)) <= 0.5:
+                    continue
+                extra.append((sib[0], code, year, sib[3], sib[4], col, sv, new, rule + " (연간 두 벌 동기화)"))
+                st[f"{kind}_annual_sibling_sync"] += 1
+        ups.extend(extra)
     res = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "apply" if a.apply else "dry_run", "stats": dict(st),
            "fd_update": len(upd_fd), "cf_update": len(upd_cf), "fd_insert_rows": len(ins_fd), "cf_insert_rows": len(ins_cf),
            "held": len(held), "held_sample": held[:40],

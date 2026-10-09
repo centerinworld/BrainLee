@@ -145,14 +145,22 @@ def main():
             verdict, ev = "D 원문 후보 전부 다름 — 사람 판정", "; ".join(f"{l_}={x:,.0f}" for l_, x in (cs + ca)[:4])
         st[verdict] += 1
         verdicts.append((code, y, q, fs, f, dv, fg, nv, verdict, ev, cause0))
+        if verdict.startswith("A") and (code, y) in locks:
+            st["A 중 잠금(data_lock) 보류 — 정정 안 함"] += 1
         if verdict.startswith("A") and (code, y) not in locks:
-            row = conn.execute(f"""SELECT id, {f} FROM financial_data WHERE stock_code=? AND year=? AND report_type=?
-                                   AND {'is_annual' if q == 0 else 'NOT is_annual AND quarter=?'} ORDER BY id LIMIT 1""",
-                               (code, y, fs) if q == 0 else (code, y, fs, q)).fetchone()
-            if row and (row[0], f) not in protected and not _ofs.scale_jump(row[1], hit[0][1]):
-                plan.append((row[0], code, y, q, fs, f, row[1], hit[0][1], f"P4: {hit[0][0]} = FnGuide(DART 원문 + FnGuide 2소스)"))
-            else:
-                st["A 중 정정 제외(원장 없음·보호·1,000배)"] += 1
+            # 2026-10-09 검토 반영: 연간은 원장 행이 quarter 0·4 두 벌일 수 있다 → 같은 기간 행 전부를 같은 확인값으로, 값이 이미 같으면 제외(no-op)
+            rows = conn.execute(f"""SELECT id, {f} FROM financial_data WHERE stock_code=? AND year=? AND report_type=?
+                                   AND {'is_annual' if q == 0 else 'NOT is_annual AND quarter=?'} ORDER BY id""",
+                                (code, y, fs) if q == 0 else (code, y, fs, q)).fetchall()
+            if not rows:
+                st["A 중 정정 제외(원장 없음)"] += 1
+            for row in rows:
+                if row[1] is not None and abs(float(row[1]) - hit[0][1]) <= 0.5:
+                    st["A 중 이미 같은 행(no-op 제외)"] += 1
+                elif (row[0], f) in protected or _ofs.scale_jump(row[1], hit[0][1]):
+                    st["A 중 정정 제외(보호·1,000배)"] += 1
+                else:
+                    plan.append((row[0], code, y, q, fs, f, row[1], hit[0][1], f"P4: {hit[0][0]} = FnGuide(DART 원문 + FnGuide 2소스)"))
     by_field = collections.Counter((v[4], v[8][:1]) for v in verdicts)
     res = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "apply" if a.apply else "dry_run", "cells": len(cells),
            "verdicts": dict(st), "by_field_verdict": {f"{k[0]}|{k[1]}": n for k, n in by_field.items()},

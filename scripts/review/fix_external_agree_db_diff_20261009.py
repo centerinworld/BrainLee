@@ -112,6 +112,7 @@ def main():
             st["제외 종목(외화·비12월·단위)"] += 1; keep.append((code, y, q, f, "제외 종목")); continue
         if (code, y) in locks:
             st["잠금"] += 1; keep.append((code, y, q, f, "data_lock")); continue
+        # 연간은 원장 두 벌(quarter 0·4) 가능 — 첫 행으로 판정하되, 정정은 아래에서 같은 기간 행 전부(값 다른 것만)
         row = conn.execute(f"""SELECT id, {f} FROM financial_data WHERE stock_code=? AND year=? AND report_type=?
                                AND {'is_annual' if q == 0 else 'NOT is_annual AND quarter=?'} ORDER BY id LIMIT 1""",
                            (code, y, fs) if q == 0 else (code, y, fs, q)).fetchone()
@@ -131,7 +132,12 @@ def main():
         if _ofs.scale_jump(row[1], newv):
             st["1,000배 급변"] += 1; keep.append((code, y, q, f, "1,000배 급변")); continue
         st["정정(" + lab.split("(")[0].split(" =")[0] + ")"] += 1
-        plan.append((row[0], code, y, q, fs, f, row[1], newv, f"P5: {lab} = FnGuide = 네이버(DB만 다름)"))
+        for rr in conn.execute(f"""SELECT id, {f} FROM financial_data WHERE stock_code=? AND year=? AND report_type=?
+                                   AND {'is_annual' if q == 0 else 'NOT is_annual AND quarter=?'} ORDER BY id""",
+                               (code, y, fs) if q == 0 else (code, y, fs, q)).fetchall():
+            if rr[1] is not None and abs(float(rr[1]) - newv) <= 0.5:
+                continue  # no-op 제외
+            plan.append((rr[0], code, y, q, fs, f, rr[1], newv, f"P5: {lab} = FnGuide = 네이버(DB만 다름)"))
     res = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "apply" if a.apply else "dry_run", "cells": len(cells),
            "stats": dict(st), "fix": len(plan), "keep": len(keep), "fix_sample": plan[:40], "keep_list": keep}
     if a.apply and plan:

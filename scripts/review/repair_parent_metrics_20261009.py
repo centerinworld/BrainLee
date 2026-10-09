@@ -33,7 +33,8 @@ RAW_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_fnltt")
 
 
 def close(a, b):
-    return a is not None and b is not None and abs(a - b) <= max(2e6, abs(b) * 0.005)
+    # 2026-10-09 Claude 보완(REVIEW_PLAN §56·§57): 0.5% 상대 허용은 1조 원이면 50억까지 일치로 봄 → P4·P5와 같은 200만원 절대 기준
+    return a is not None and b is not None and abs(a - b) <= 2e6
 
 
 def main():
@@ -50,8 +51,7 @@ def main():
     cur.execute(f"""
         SELECT v.stock_code, v.year, v.quarter, v.field, v.db_value, v.fnguide_value
         FROM financial_field_verification v
-        WHERE v.run_id = 'field_verif_20261009_112633'
-          AND v.report_type = 'CFS'
+        WHERE v.report_type = 'CFS'
           AND v.field IN ('net_income', 'total_equity')
           AND v.status = '원인 조사'
           AND v.db_value IS NOT NULL
@@ -71,12 +71,25 @@ def main():
         FROM financial_data
         WHERE report_type = 'CFS' AND year >= 2023
     """)
-    fd_rows = {}
+    fd_rows = collections.defaultdict(list)  # 연간은 원장 두 벌(quarter 0·4) 가능 → 같은 기간 행 전부
     for r in cur.fetchall():
         q_key = 0 if r[4] else r[3]
-        fd_rows[(r[1], r[2], q_key)] = (r[0], r[5], r[6])
+        fd_rows[(r[1], r[2], q_key)].append((r[0], r[5], r[6]))
+    excl = {r[0] for r in conn.execute("""SELECT stock_code FROM stock_collection_config WHERE config_key IN
+        ('fs_quirk:reporting_currency','fs_quirk:unit_scale_fixed','fs_quirk:dart_unit_error')
+        OR (config_key='fs_quirk:fiscal_month' AND config_value<>'12')""").fetchall()}
+    locks = {(r[0], r[1]) for r in conn.execute("SELECT stock_code, year FROM data_lock WHERE is_locked=1 AND table_name='financial_data'").fetchall()}
+    protected = {(r[0], r[1]) for r in conn.execute(
+        "SELECT row_id, field_name FROM financial_fix_log WHERE run_id LIKE 'restated_annual_%%' OR run_id LIKE 'fx_krw_%%'").fetchall()}
 
     for code, year, quarter, field, db_val, fg_val in targets:
+        target_key = "ni_parent" if field == "net_income" else "equity_parent"
+        if code in excl:
+            skipped["제외 종목(외화·비12월·단위)"] += 1
+            continue
+        if (code, year) in locks:
+            skipped["잠금(data_lock)"] += 1
+            continue
         # Q4 처리: 독립 공시 파일이 없으므로 연간 사업보고서(_0_) 및 1~3분기 파일 활용
         if quarter == 4:
             p0 = RAW_DIR / code / f"{year}_0_CFS.json.gz"
@@ -155,14 +168,20 @@ def main():
             continue
 
         # DB row_id 찾기
-        fd_info = fd_rows.get((code, year, quarter))
-        if not fd_info:
+        infos = fd_rows.get((code, year, quarter)) or []
+        if not infos:
             skipped["DB원장행없음"] += 1
             continue
-
-        rid = fd_info[0]
-        rule = f"DART {target_key} 추출 성공 = FnGuide 일치 (기존값={db_val:,.0f} → 새지배값={new_val:,.0f})"
-        updates.append((rid, code, year, quarter, field, db_val, new_val, fg_val, rule))
+        for rid, ni_now, eq_now in infos:
+            cur_v = ni_now if field == "net_income" else eq_now
+            if cur_v is not None and abs(float(cur_v) - new_val) <= 0.5:
+                skipped["이미 같은 행(no-op)"] += 1
+                continue
+            if (rid, field) in protected:
+                skipped["보호 칸"] += 1
+                continue
+            rule = f"DART {target_key} 추출 성공 = FnGuide 일치 (기존값={(cur_v or 0):,.0f} → 새지배값={new_val:,.0f})"
+            updates.append((rid, code, year, quarter, field, cur_v, new_val, fg_val, rule))
 
     print(f"\n검증 결과:")
     print(f"  교체 가능(DART 지배값 == FnGuide): {len(updates)}건")
@@ -227,6 +246,15 @@ def main():
     print("정본 동기화 결과:", json.dumps({k: v for k, v in canon_res.items() if not k.endswith("sample")}, ensure_ascii=False))
 
     conn.close()
+    # 2026-10-09 Claude 보완: 결과 파일 + 적용 직후 재측정(다른 적용 스크립트와 같은 절차)
+    import subprocess
+    pr = subprocess.run([sys.executable, str(ROOT / "scripts" / "review" / "build_field_verification_20261003.py")],
+                        capture_output=True, text=True, cwd=str(ROOT))
+    after = (pr.stdout or pr.stderr).strip().splitlines()[-1:]
+    print("재측정", after)
+    out = ROOT / "research_outputs" / "financial_rereview_20261002" / "repair_parent_20261009_apply.json"
+    out.write_text(json.dumps({"run_id": run_id, "updates": len(updates), "skipped": dict(skipped), "readback_mismatch": bad,
+                               "canonical_sync": canon_res, "field_verification_after": after}, ensure_ascii=False, indent=1, default=str))
 
 
 if __name__ == "__main__":

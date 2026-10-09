@@ -70,7 +70,14 @@ def main():
                                     cf.operating_cf,cf.investing_cf,cf.financing_cf,cf.capex,cf.depreciation,
                                     cf.operating_cf_q,cf.investing_cf_q,cf.financing_cf_q,cf.capex_q,cf.depreciation_q
                              FROM financial_data f LEFT JOIN cash_flow_data cf USING(stock_code,year,quarter,is_annual,report_type)
-                             WHERE f.year>=2022""").fetchall():
+                             LEFT JOIN canonical_financial_data cn ON cn.stock_code=f.stock_code AND cn.year=f.year
+                                  AND cn.is_annual=(CASE WHEN f.is_annual THEN 1 ELSE 0 END) AND cn.report_type=f.report_type
+                                  AND cn.quarter=(CASE WHEN f.is_annual THEN 0 ELSE f.quarter END)
+                             WHERE f.year>=2022
+                             -- 2026-10-09: 원장 연간 행이 quarter 0·4 두 벌(약 2.9만 종목-연도, 절반은 값 다름)이라 정렬 없이 setdefault 하면
+                             -- 어느 행으로 판정할지 정해지지 않았다 → 정본(canonical)이 고른 원장 행 우선, 다음 quarter 0, 다음 id 순
+                             ORDER BY f.stock_code, f.year, f.report_type, f.is_annual, CASE WHEN f.is_annual THEN 0 ELSE f.quarter END,
+                                      CASE WHEN cn.source_row_id = f.id THEN 0 ELSE 1 END, f.quarter, f.id""").fetchall():
         r = tuple(r)
         code, y, q, ann, fs = r[:5]
         k = (code, y, 0 if ann else q, fs)

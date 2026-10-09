@@ -109,9 +109,16 @@ def main():
     ap.add_argument("--ofs-extra", action="store_true",
                     help="연결(CFS) 회사의 별도(OFS) 재무제표를 따로 받는다 — 2025~2026 분기·연간, 출력 dart_cf_ofs_extra.jsonl(2026-10-09: "
                          "기본 모드는 CFS가 있으면 OFS를 요청하지 않아 별도 분기 현금흐름·재무상태가 DB에 없음 = 현행 검증 '미확인(DB 없음)' 최대 원인)")
+    ap.add_argument("--nondec-2026", default="", choices=["", "CFS", "OFS"],
+                    help="비12월 결산(리츠 제외) 종목의 DART 2026년 3분기·사업보고서(회계 2026 연도의 3분기·연간)를 지정 구분으로만 받는다 — "
+                         "출력 dart_cf_nondec_2026_<구분>.jsonl(2026-10-09 PLAN P10: 기본 JOBS가 (2026,3)·(2026,0)을 포함하지 않아 비12월 회계 2026 칸이 DB 없음)")
     ap.add_argument("--out-name", default="", help="출력 jsonl 파일명(기본 dart_cf_full.jsonl 또는 dart_cf_<연도범위>.jsonl)")
     a = ap.parse_args()
     global OUT, JOBS, NO_FALLBACK
+    if a.nondec_2026:
+        NO_FALLBACK = True
+        JOBS = [(2026, 3), (2026, 0)]
+        OUT = OUT.with_name(f"dart_cf_nondec_2026_{a.nondec_2026}.jsonl")
     if a.ofs_extra:
         NO_FALLBACK = True
         JOBS = [(2025, 1), (2025, 2), (2025, 3), (2025, 0), (2026, 1), (2026, 2)]
@@ -131,6 +138,12 @@ def main():
                         (y_lo, y_hi)).fetchall()
     conn.close()
     targets = [(r[0], "CFS" if r[1] == 0 else "OFS") for r in rows]
+    if a.nondec_2026:
+        _c = connect_primary_db(timeout=60, readonly=True)
+        nd = {r[0] for r in _c.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:fiscal_month' AND config_value<>'12'").fetchall()}
+        nd -= {r[0] for r in _c.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:fiscal_period' AND config_value='REIT_6M'").fetchall()}
+        _c.close()
+        targets = [(c, a.nondec_2026) for c, _ in targets if c in nd]
     if a.ofs_extra:  # CFS 회사만, 별도로 요청(원래 OFS 회사는 기본 모드가 이미 받음)
         targets = [(c, "OFS") for c, fs in targets if fs == "CFS"]
     if a.codes:

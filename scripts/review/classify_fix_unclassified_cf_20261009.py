@@ -93,8 +93,12 @@ def main():
             verdict, ev = "D 원문 후보 전부 다름 — 사람 판정", "; ".join(f"{c[0]}={c[1]:,.0f}" for c in cs[:3])
         st[verdict] += 1
         verdicts.append((code, y, q, fs, f, dv, fg, nv, verdict, ev, cause0))
-        if not verdict.startswith("A") or (code, y) in locks:
+        if not verdict.startswith("A"):
             continue
+        if (code, y) in locks:
+            st["A 중 잠금(data_lock) 보류 — 정정 안 함"] += 1  # 2026-10-09 검토 반영: A 잔여를 사유별로 분리
+            continue
+        n_before = len(plan)
         lab, cmpv, cumv = hit[0]
         cond = "is_annual" if q == 0 else "NOT is_annual AND quarter=?"
         rows = conn.execute(f"SELECT id, {f}, {f}_q FROM cash_flow_data WHERE stock_code=? AND year=? AND report_type=? AND {cond}",
@@ -116,6 +120,8 @@ def main():
                     st["A 중 보호·1,000배 제외"] += 1
                     continue
                 plan.append((r[0], code, y, q, fs, col, old, new, f"P4-2: {lab} = FnGuide(DART 원문 + FnGuide 2소스)"))
+        if len(plan) == n_before:
+            st["A 중 이미 원문값(no-op) — 정정 안 함"] += 1
     res = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "apply" if a.apply else "dry_run", "cells": len(cells),
            "verdicts": dict(st), "fix_cells": len(plan), "fix_sample": plan[:30], "sample_by_verdict": {}}
     for v in verdicts:
