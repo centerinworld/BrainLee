@@ -33,6 +33,7 @@ RAW_DART = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_fnltt")
 OUT = ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_full.jsonl"
 JOBS = [(y, q) for y in (2023, 2024, 2025) for q in (1, 2, 3, 0)] + [(2026, 1), (2026, 2)]
 lock = threading.Lock()
+NO_FALLBACK = False  # --ofs-extra: 지정한 fs만 요청(연결 회사의 별도 재무제표를 따로 받음)
 
 
 def fetch(key, corp, year, q, fs):
@@ -58,7 +59,7 @@ def worker(key, items, fh, done):
             if (code, year, q) in done:
                 continue
             rows, used = None, None
-            for fs in ([fs0] + [x for x in ("CFS", "OFS") if x != fs0]):
+            for fs in ([fs0] if NO_FALLBACK else [fs0] + [x for x in ("CFS", "OFS") if x != fs0]):
                 rows = fetch(key, corp, year, q, fs)
                 if rows:
                     used = fs
@@ -92,9 +93,16 @@ def main():
     ap.add_argument("--prev-only", action="store_true",
                     help="사업보고서 중 전기 칸(vals_prev)이 없는 것만 다시 받는다(재작성값 확보용, 2026-10-03)")
     ap.add_argument("--years", default="", help="예: 2016-2022 (지정 시 해당 연도 1Q·반기·3Q·사업보고서, 출력 dart_cf_<범위>.jsonl)")
+    ap.add_argument("--ofs-extra", action="store_true",
+                    help="연결(CFS) 회사의 별도(OFS) 재무제표를 따로 받는다 — 2025~2026 분기·연간, 출력 dart_cf_ofs_extra.jsonl(2026-10-09: "
+                         "기본 모드는 CFS가 있으면 OFS를 요청하지 않아 별도 분기 현금흐름·재무상태가 DB에 없음 = 현행 검증 '미확인(DB 없음)' 최대 원인)")
     ap.add_argument("--out-name", default="", help="출력 jsonl 파일명(기본 dart_cf_full.jsonl 또는 dart_cf_<연도범위>.jsonl)")
     a = ap.parse_args()
-    global OUT, JOBS
+    global OUT, JOBS, NO_FALLBACK
+    if a.ofs_extra:
+        NO_FALLBACK = True
+        JOBS = [(2025, 1), (2025, 2), (2025, 3), (2025, 0), (2026, 1), (2026, 2)]
+        OUT = OUT.with_name("dart_cf_ofs_extra.jsonl")
     if a.prev_only:
         JOBS = [j for j in JOBS if j[1] == 0]
     if a.years:
@@ -110,6 +118,8 @@ def main():
                         (y_lo, y_hi)).fetchall()
     conn.close()
     targets = [(r[0], "CFS" if r[1] == 0 else "OFS") for r in rows]
+    if a.ofs_extra:  # CFS 회사만, 별도로 요청(원래 OFS 회사는 기본 모드가 이미 받음)
+        targets = [(c, "OFS") for c, fs in targets if fs == "CFS"]
     if a.codes:
         keep = {c.strip() for c in a.codes.split(",") if c.strip()}
         targets = [t for t in targets if t[0] in keep]

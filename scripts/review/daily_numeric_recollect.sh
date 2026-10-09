@@ -25,6 +25,7 @@ case "$1" in
     step $PY $R/test_quarterly_xbrl_20261003.py                              # 1회: 대형사 분기 주석 XBRL 시험(결과 있으면 건너뜀)
     step $PY $R/fetch_dart_cashflow_20261002.py --repair-parent              # 2023+ 지배주주 보완
     step $PY $R/fetch_dart_cashflow_20261002.py --prev-only                  # 2023+ 재작성값(전기 칸)
+    step $PY $R/fetch_dart_cashflow_20261002.py --ofs-extra                  # 연결 회사의 별도(OFS) 2025~26 분기·연간 원문(2026-10-09: 현행 검증 '미확인(DB 없음)' 25,071칸 중 ~21,000칸이 별도 — 기본 모드는 CFS 있으면 OFS 미요청)
     step $PY $R/fetch_xbrl_depreciation_20261003.py --exit-on-quota          # 감가상각 XBRL
     step $PY $R/fetch_xbrl_depreciation_20261003.py --exit-on-quota --redo-missing-adj   # 조정 감가상각 누락분 재수집(원문 zip 저장)
     step $PY $R/fetch_quarterly_xbrl_depreciation_20261003.py --exit-on-quota # 자산 2조↑ 분기·반기 XBRL 감가상각 구성요소(YTD, 테이블에서 3개월 차분)
