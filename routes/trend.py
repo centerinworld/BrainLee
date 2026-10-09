@@ -328,12 +328,28 @@ def _safe_float(v, default=0.0) -> float:
 MIRROR_STRATEGIES = {"peak_mirror", "momentum_mirror", "value_mirror"}
 
 
+_SOURCE_PRICE_COLS_OK = False
+
+
 def _ensure_source_price_columns(conn) -> None:
+    """source_price 열 보장 — 열이 이미 있으면 ALTER를 실행하지 않는다(프로세스당 1회 확인).
+
+    2026-10-09 정정: 예전엔 매수·매도마다 `ALTER TABLE … ADD COLUMN IF NOT EXISTS`를 실행했다. PostgreSQL은 열이 있어도
+    표 배타 잠금(ACCESS EXCLUSIVE)을 잡으므로, 잠금을 쥔 채 매수 게이트가 다른 연결로 peak_holding을 조회하면 서로 기다리다
+    시간 초과 → 10-08 백엔드 DB 연결 풀(20+20) 고갈(장중 주가·수급 수신 오류 966건) — REVIEW_PLAN §46.
+    """
+    global _SOURCE_PRICE_COLS_OK
+    if _SOURCE_PRICE_COLS_OK:
+        return
     for tbl in ("peak_holding", "peak_trade"):
-        try:
-            conn.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS source_price DOUBLE PRECISION")
-        except Exception:
-            pass
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({tbl})").fetchall()}
+        if "source_price" not in cols:
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS source_price DOUBLE PRECISION")
+                conn.commit()   # 잠금을 바로 풀어 이후 조회가 막히지 않게
+            except Exception:
+                pass
+    _SOURCE_PRICE_COLS_OK = True
 
 
 def _normalize_strategy_key(strategy: str | None) -> str | None:

@@ -103,14 +103,25 @@ _LOG_EXTRA_COLUMNS = (
 )
 
 
+_LOG_SCHEMA_OK = False
+
+
 def _ensure_log(conn) -> None:
+    """2026-10-09: 표·열 보장은 프로세스당 1회. 예전엔 판정을 기록할 때마다 ALTER 12번 — PostgreSQL은 열이 있어도
+    표 배타 잠금을 잡아 동시 매수 판정끼리 줄을 세웠다(10-08 연결 풀 고갈 원인 중 하나, REVIEW_PLAN §46)."""
+    global _LOG_SCHEMA_OK
+    if _LOG_SCHEMA_OK:
+        return
     conn.execute(
         "CREATE TABLE IF NOT EXISTS virtual_guard_log ("
         "id SERIAL PRIMARY KEY, logged_at TIMESTAMP DEFAULT now(), stock_code TEXT, strategy TEXT, "
         "guard TEXT, decision TEXT, detail TEXT)"
     )
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(virtual_guard_log)").fetchall()}
     for col, ddl in _LOG_EXTRA_COLUMNS:
-        conn.execute(f"ALTER TABLE virtual_guard_log ADD COLUMN IF NOT EXISTS {col} {ddl}")
+        if col not in cols:
+            conn.execute(f"ALTER TABLE virtual_guard_log ADD COLUMN IF NOT EXISTS {col} {ddl}")
+    _LOG_SCHEMA_OK = True
 
 
 def _log(conn, code: str, strategy: str, guard: str, decision: str, detail: str,
