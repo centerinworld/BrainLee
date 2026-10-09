@@ -131,17 +131,38 @@ def main():
     conn.execute("""CREATE TABLE IF NOT EXISTS data_quality_metrics_daily (run_id TEXT, measured_at TEXT, area TEXT, total_cells INT,
                     confirmed INT, investigating INT, db_missing INT, confirmed_eok_rounded INT, match_rate_compared DOUBLE PRECISION,
                     confirm_rate_all DOUBLE PRECISION, precision_rate DOUBLE PRECISION)""")
+    # 2026-10-09 D-1(조건부 승인): '설명된 예외'는 분모에서 빼지 않는다 — 외부 확정률(confirm_rate_all)과 별도로 해결률을 기록.
+    # 해결 = 확정 + 원문 근거가 붙은 설명된 예외(financial_field_exception, 미확정 칸만) + 대상 아님(같은 표 reason_code='NOT_APPLICABLE')
+    conn.execute("""CREATE TABLE IF NOT EXISTS financial_field_exception (stock_code TEXT, year INT, quarter INT, report_type TEXT, field TEXT,
+                    reason_code TEXT, dart_evidence TEXT, db_value DOUBLE PRECISION, fnguide_value DOUBLE PRECISION, naver_value DOUBLE PRECISION,
+                    exclusion_reason TEXT, approved_basis TEXT, run_id TEXT, created_at TEXT,
+                    PRIMARY KEY (stock_code, year, quarter, report_type, field))""")
+    for col in ("explained_exception INT", "not_applicable INT", "resolution_rate DOUBLE PRECISION", "exception_share DOUBLE PRECISION"):
+        try:
+            conn.execute(f"ALTER TABLE data_quality_metrics_daily ADD COLUMN IF NOT EXISTS {col}")
+        except Exception:
+            conn.rollback()
+    exc = {tuple(r[:5]): r[5] for r in conn.execute(
+        "SELECT stock_code, year, quarter, report_type, field, reason_code FROM financial_field_exception").fetchall()}
     for area, fs_ in areas.items():
         sub = [r for r in rows if r[4] in fs_]
         cf = [r for r in sub if r[8].startswith("확정")]
         inv = sum(1 for r in sub if r[8].startswith("원인"))
         miss = sum(1 for r in sub if r[8].startswith("미확인"))
         eok = sum(1 for r in cf if r[5] not in (None, 0) and abs(r[5]) % 1e8 < 0.5 and r[6] is not None and abs(r[6]) % 1e8 >= 0.5)
-        conn.execute("INSERT INTO data_quality_metrics_daily VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        un = [r for r in sub if not r[8].startswith("확정")]
+        ex_n = sum(1 for r in un if exc.get(tuple(r[:5])) not in (None, "NOT_APPLICABLE"))
+        na_n = sum(1 for r in un if exc.get(tuple(r[:5])) == "NOT_APPLICABLE")
+        conn.execute("""INSERT INTO data_quality_metrics_daily (run_id, measured_at, area, total_cells, confirmed, investigating, db_missing,
+                        confirmed_eok_rounded, match_rate_compared, confirm_rate_all, precision_rate, explained_exception, not_applicable,
+                        resolution_rate, exception_share) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                      (run_id, now, area, len(sub), len(cf), inv, miss, eok,
                       round(100 * len(cf) / (len(cf) + inv), 4) if cf or inv else None,
                       round(100 * len(cf) / len(sub), 4) if sub else None,
-                      round(100 * (len(cf) - eok) / len(cf), 4) if cf else None))
+                      round(100 * (len(cf) - eok) / len(cf), 4) if cf else None,
+                      ex_n, na_n,
+                      round(100 * (len(cf) + ex_n + na_n) / len(sub), 4) if sub else None,
+                      round(100 * ex_n / len(sub), 4) if sub else None))
     conn.commit()
     print(run_id, len(rows), "필드", dict(st))
 

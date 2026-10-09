@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from db_compat import connect_primary_db  # noqa: E402
 
-SRCS = [ROOT / "research_outputs" / "financial_rereview_20261002" / n for n in ("dart_cf_full.jsonl", "dart_cf_ofs_extra.jsonl")]
+SRCS = [ROOT / "research_outputs" / "financial_rereview_20261002" / n for n in ("dart_cf_full.jsonl", "dart_cf_ofs_extra.jsonl", "dart_cf_ofs_extra_annual_2023_2024.jsonl")]
 FMAP = {"operating_cf": "ocf", "investing_cf": "icf", "financing_cf": "fcf"}
 TOL = 2e6
 _spec = importlib.util.spec_from_file_location("apply_ofs_extra", ROOT / "scripts" / "review" / "apply_ofs_extra_20261009.py")

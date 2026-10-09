@@ -58,7 +58,7 @@ def load(codes, fiscal=False):
     행을 옮기지 않는다 — 회계 키로 이미 정리된 원장 행(fs_quirk:fiscal_keyed)에 대해 값만 판정(§5 실패 26 재발 방지)."""
     t = {}
     srcs = [SRC] if not fiscal else [SRC.with_name(n) for n in ("dart_cf_full.jsonl", "dart_cf_ofs_extra.jsonl",
-                                                                 "dart_cf_nondec_2026_CFS.jsonl", "dart_cf_nondec_2026_OFS.jsonl")]
+                                                                 "dart_cf_nondec_2026_CFS.jsonl", "dart_cf_nondec_2026_OFS.jsonl", "dart_cf_ofs_extra_annual_2023_2024.jsonl")]
     if fiscal:
         import fiscal_period
     for src in srcs:
@@ -162,7 +162,7 @@ def canonical_sync(conn, run_id, now, fd_ids, cf_ids):
                 cur_src = conn.execute(f"SELECT source_row_id FROM {canon} WHERE stock_code=? AND year=? AND quarter=? AND is_annual=? AND report_type=?",
                                        (sc, yy, qq, 1 if ia else 0, rt)).fetchone()
                 cur_src = cur_src[0] if cur_src else None
-                grp.sort(key=lambda r: (r["id"] != cur_src, r["quarter"], r["id"]))
+                grp.sort(key=lambda r: (r["id"] != cur_src, 99 if r["quarter"] is None else r["quarter"], r["id"]))  # quarter NULL 행 대비(10-09)
                 out[f"{tag}_sibling_skipped"] = out.get(f"{tag}_sibling_skipped", 0) + len(grp) - 1
             rows.append(grp[0])
         for r in rows:
@@ -202,6 +202,7 @@ def main():
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--codes", default="")
     ap.add_argument("--src", default="", help="원문 jsonl 파일명(기본 dart_cf_ofs_extra.jsonl)")
+    ap.add_argument("--annual-only", action="store_true", help="연간 키(A)만 처리 — 사업보고서만 받은 원문(예: 별도 연간 2023·24)에서 1~3분기 없이 Q4 행을 만들지 않게(10-09)")
     ap.add_argument("--min-year", type=int, default=2025, help="원장·원문 비교 최소 연도(기본 2025; 별도 연간 2023~24 적재 시 2023)")
     ap.add_argument("--fiscal-nondec", default="", choices=["", "CFS", "OFS"],
                     help="PLAN P10: 비12월 결산(리츠 제외, fiscal_keyed 종목)만, 지정 구분, 회계 키(to_fiscal)로 판정 — 2025~2026 회계연도")
@@ -264,6 +265,8 @@ def main():
     capex_cand = []  # (row_id, code, year, 기간, 칸, 기존=유형+무형, 새 유형값, 합, FnGuide) — 값 유지, 후보만
     for code, year in keys:
         for k, (fin, cum, qv) in targets(truth, code, year).items():
+            if a.annual_only and k != "A":
+                continue
             fq = 0 if k == "A" else int(k[1])
             quarter, is_ann = (0, True) if k == "A" else (fq, False)
             # financial_data

@@ -35,7 +35,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "review"))
 from db_compat import connect_primary_db  # noqa: E402
 from financial_rereview_20261002 import extract  # noqa: E402
 
-SRCS = [ROOT / "research_outputs" / "financial_rereview_20261002" / n for n in ("dart_cf_full.jsonl", "dart_cf_ofs_extra.jsonl")]
+SRCS = [ROOT / "research_outputs" / "financial_rereview_20261002" / n for n in ("dart_cf_full.jsonl", "dart_cf_ofs_extra.jsonl", "dart_cf_ofs_extra_annual_2023_2024.jsonl")]
 RAW_DIR = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_fnltt")
 FIELDS = ("revenue", "operating_profit", "net_income", "total_assets", "total_liabilities", "total_equity")
 FLOW = {"revenue", "operating_profit", "net_income"}
