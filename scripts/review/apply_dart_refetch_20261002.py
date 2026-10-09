@@ -221,9 +221,16 @@ def main():
     for k in sorted(stats):
         print(k, stats[k])
     print(f"financial_data 변경 {len(fin_changes)}필드 / cash_flow_data 변경 {len(cf_changes)}필드")
+    # 2026-10-09 검토 반영: 전체 수량·전체 변경 목록을 파일로 남겨 다른 AI가 재검토 가능하게(이전엔 표본 200만 저장, 전체 수량은 stdout뿐)
+    full = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "apply" if a.apply else "dry_run", "src": SRC.name,
+            "min_year": a.min_year, "stats": {"|".join(k): v for k, v in sorted(stats.items())},
+            "fin_changes": len(fin_changes), "cf_changes": len(cf_changes),
+            "fin_by_field": dict(collections.Counter(c[6] for c in fin_changes)), "cf_by_field": dict(collections.Counter(c[6] for c in cf_changes)),
+            "fin": fin_changes, "cf": cf_changes}
+    json.dump(full, open(SRC.parent / f"apply_full_{SRC.stem}_min{a.min_year}_{'apply' if a.apply else 'dry'}.json", "w"), default=str, ensure_ascii=False)
     if not a.apply:
         json.dump({"fin": fin_changes[:200], "cf": cf_changes[:200]}, open(SRC.parent / "apply_preview.json", "w"), default=str, ensure_ascii=False)
-        print("dry-run — 미리보기 apply_preview.json (적용은 --apply)")
+        print(f"dry-run — 미리보기 apply_preview.json, 전체 apply_full_{SRC.stem}_min{a.min_year}_dry.json (적용은 --apply)")
         return
 
     if a.unlock_covered:

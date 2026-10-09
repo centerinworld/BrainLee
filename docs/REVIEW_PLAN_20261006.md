@@ -1569,3 +1569,9 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 3. **보류 파일**: `scripts/review/rekey_fiscal_nondec_20261004.py` 작업본 수정(입력에 `dart_cf_nondec_2026_CFS/OFS.jsonl` 추가 — Claude 작성 아님)은 실행 금지·커밋 금지. 커밋 때 파일 지정으로 제외. 작성자가 의도를 밝히지 않으면 P10 설계 때 `git checkout`으로 되돌릴지 사용자 확인.
 4. **P13 미완료**: 대표 행 고정은 검증 빌더·`canonical_sync`만. 화면·전략·백테스트가 원장 연간 행을 정렬 없이 읽는 곳 점검은 P13에서(처리 완료 아님).
 
+## 60. P1 전 종목 dry-run 검토 반영 (Claude Opus 5.5, 2026-10-09 18:45)
+1. 완료 조건: 적용 후 dry-run의 **추가 update·insert 0**(`fd_update`·`cf_update`·`fd_insert_rows`·`cf_insert_rows`). 보류(held 182)·CapEx 정의 후보(1,779, 값 유지)는 남는 것이 정상 — 'dry-run 0'은 이 뜻으로만 쓴다(PLAN §7 앞선 기록 포함).
+2. 수집 파일: 15,764줄 = 고유 키 15,762 + 001080 2026Q1·Q2 중복 2줄(구버전 빈 행 → 013 재응답, 둘 다 값 없음). 상태 없음 337 = 값 있는 구버전 335 + 빈 행 2. 적용 입력은 'ok·fs=OFS·값 있음'만, 중복 시 파일 마지막 줄 우선 → 001080은 입력 제외.
+3. 산출물 이름 모드별 분리(`ofs_extra_<모드>_20261009_<dry|apply>.json`) — 전 종목 적용 결과는 `ofs_extra_full_20261009_apply.json`.
+4. 삽입값은 '원문 후보 적재'(확정 아님), 확정률은 적용 후 재측정 결과로만.
+

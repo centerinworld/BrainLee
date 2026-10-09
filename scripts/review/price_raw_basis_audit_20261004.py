@@ -41,7 +41,12 @@ def main():
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", choices=["pre_apply", "post_apply", "adhoc"], default="adhoc")
-    phase = ap.parse_args().phase
+    ap.add_argument("--scope", choices=["all", "target"], default="all",
+                    help="target = 99.999% 검증 대상(보통주·외국주권·주식예탁증권·우선주, PLAN D-5 — ETF·ETN·SPAC·리츠 제외). "
+                         "결과는 *_scope_target 파일로만(일일 기록·history.jsonl 미기록)")
+    _args = ap.parse_args()
+    phase, scope = _args.phase, _args.scope
+    sfx = "" if scope == "all" else "_scope_target"
     OUT.mkdir(parents=True, exist_ok=True)
     conn = connect_primary_db(timeout=1800, readonly=True)
     conn.execute("SET statement_timeout='1800s'")
@@ -56,6 +61,12 @@ def main():
         prov = {(r[0], r[1]) for r in conn.execute("SELECT stock_code, date FROM price_provisional_rows").fetchall()}
     except Exception:
         prov = set()
+    if scope == "target":
+        tgt = {r[0] for r in conn.execute("""SELECT DISTINCT stock_code FROM security_master_history
+            WHERE security_type IN ('주권','외국주권','주식예탁증권','preferred') AND COALESCE(stock_name,'') NOT LIKE '%%스팩%%'""").fetchall()}
+        n0 = len(pg)
+        pg = pg[pg.code.isin(tgt)]
+        print(f"검증 대상 범위(D-5): {len(tgt)}종목, PG 행 {n0:,} → {len(pg):,}")
     conn.close()
     if prov:
         pg = pg[[(c, d[:10]) not in prov for c, d in zip(pg.code, pg.date)]]
@@ -118,7 +129,7 @@ def main():
         st[f"불일치[{s}] {k}"] = int(n)
     st["불일치 종목 수"] = int(bad.code.nunique())
     st["기준 대비 일치율(%)"] = round(ok.sum() / has.sum() * 100, 4)
-    bad.drop(columns=["off_open", "off_high", "off_low"], errors="ignore").sort_values(["code", "date"]).to_csv(OUT / "mismatch_rows.csv", index=False)
+    bad.drop(columns=["off_open", "off_high", "off_low"], errors="ignore").sort_values(["code", "date"]).to_csv(OUT / f"mismatch_rows{sfx}.csv", index=False)
     # 2026-10-05(§9-2-8 #6): ① 독립 소스 수별 집계 — 공식(공공데이터·KRX Open API)과 marcap은 모두 KRX 원천이라 독립 1개, KIS만 별개
     krx = (o_ok | m_ok)
     indep = pd.Series("기준 없음", index=m.index)
@@ -137,11 +148,15 @@ def main():
     frac = m[(m.code.str.match(r"^\d{5}0$")) & ((m.open % 1 != 0) | (m.high % 1 != 0) | (m.low % 1 != 0) | (m.close % 1 != 0))]
     st["[OHLC] 보통주 소수점 가격 행"] = int(len(frac))
     oh_bad = oh[((oh.open - oh.off_open).abs() > 1) | ((oh.high - oh.off_high).abs() > 1) | ((oh.low - oh.off_low).abs() > 1)]
-    oh_bad[["code", "date", "open", "high", "low", "close", "off_open", "off_high", "off_low", "off_close"]].to_csv(OUT / "ohlc_mismatch_rows.csv", index=False)
-    frac[["code", "date", "open", "high", "low", "close"]].to_csv(OUT / "fractional_stock_rows.csv", index=False)
+    oh_bad[["code", "date", "open", "high", "low", "close", "off_open", "off_high", "off_low", "off_close"]].to_csv(OUT / f"ohlc_mismatch_rows{sfx}.csv", index=False)
+    frac[["code", "date", "open", "high", "low", "close"]].to_csv(OUT / f"fractional_stock_rows{sfx}.csv", index=False)
     by_year = bad.groupby(bad.date.str[:4]).size().to_dict()
     from datetime import datetime as _dt
-    summ = {"phase": phase, "at": _dt.now().isoformat(timespec="seconds"), "stats": dict(st), "mismatch_by_year": by_year}
+    summ = {"phase": phase, "scope": scope, "at": _dt.now().isoformat(timespec="seconds"), "stats": dict(st), "mismatch_by_year": by_year}
+    if scope != "all":
+        json.dump(summ, open(OUT / f"summary{sfx}.json", "w"), ensure_ascii=False, indent=1)
+        print(json.dumps(dict(st), ensure_ascii=False)[:1500])
+        return
     json.dump(summ, open(OUT / "summary.json", "w"), ensure_ascii=False, indent=1)
     json.dump(summ, open(OUT / f"summary_{phase}.json", "w"), ensure_ascii=False, indent=1)
     with open(OUT / "history.jsonl", "a") as _f:

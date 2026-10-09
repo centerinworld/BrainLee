@@ -123,6 +123,25 @@ def main():
         conn.executemany("""INSERT INTO financial_field_verification(stock_code,year,quarter,report_type,field,db_value,fnguide_value,naver_value,
                             status,cause,fnguide_source,fnguide_fetched,basis_version,verified_at,run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                          rows[i:i + 5000])
+    # 2026-10-09 PLAN P8: 세 지표(대조분 일치율·전체 확정률·원 단위 정밀도)를 영역별로 매일 기록 — 진척 추적(FINANCIAL §7 '지표 이름 고정')
+    areas = {"손익·재무상태": {"revenue", "operating_profit", "net_income", "total_assets", "total_liabilities", "total_equity"},
+             "현금흐름": {"operating_cf", "investing_cf", "financing_cf"}, "CapEx": {"capex"},
+             "감가상각": {"depreciation", "depreciation_amortization"}}
+    areas["합계"] = set().union(*areas.values())
+    conn.execute("""CREATE TABLE IF NOT EXISTS data_quality_metrics_daily (run_id TEXT, measured_at TEXT, area TEXT, total_cells INT,
+                    confirmed INT, investigating INT, db_missing INT, confirmed_eok_rounded INT, match_rate_compared DOUBLE PRECISION,
+                    confirm_rate_all DOUBLE PRECISION, precision_rate DOUBLE PRECISION)""")
+    for area, fs_ in areas.items():
+        sub = [r for r in rows if r[4] in fs_]
+        cf = [r for r in sub if r[8].startswith("확정")]
+        inv = sum(1 for r in sub if r[8].startswith("원인"))
+        miss = sum(1 for r in sub if r[8].startswith("미확인"))
+        eok = sum(1 for r in cf if r[5] not in (None, 0) and abs(r[5]) % 1e8 < 0.5 and r[6] is not None and abs(r[6]) % 1e8 >= 0.5)
+        conn.execute("INSERT INTO data_quality_metrics_daily VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (run_id, now, area, len(sub), len(cf), inv, miss, eok,
+                      round(100 * len(cf) / (len(cf) + inv), 4) if cf or inv else None,
+                      round(100 * len(cf) / len(sub), 4) if sub else None,
+                      round(100 * (len(cf) - eok) / len(cf), 4) if cf else None))
     conn.commit()
     print(run_id, len(rows), "필드", dict(st))
 
