@@ -42,6 +42,7 @@ public_data_collector.py — 공공데이터포털 + DART 일괄 수집기
 """
 
 from db_compat import connect_primary_db
+import re
 import sys, os, sqlite3, time, logging, argparse, requests, json, zipfile, io
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -66,6 +67,15 @@ KRX_BASE    = "https://apis.data.go.kr/1160100/service/GetKrxListedInfoService"
 DART_BASE   = "https://opendart.fss.or.kr/api"
 LEND_BASE   = "https://apis.data.go.kr/1160100/service/GetStocLendBorrInfoService"
 
+
+
+# 2026-10-09: KRX 신형 영숫자 종목코드(예: 0001A0, 2024~)를 받는다. 예전엔 숫자 6자리만 받아
+# 영숫자 코드 88종목의 공식 시세가 stock_price_daily에 한 번도 들어오지 않았다(가격은 KIS 값만 — 공식 대조·교체 불가).
+_CODE_RE = re.compile(r"^[0-9A-Z]{6}$")
+
+
+def _valid_code(code: str) -> bool:
+    return bool(_CODE_RE.match(code or "")) and code != "000000"
 
 def _get_keys():
     try:
@@ -255,7 +265,7 @@ def collect_stock_price(conn, bas_dt: str) -> int:
     saved = 0
     for it in items:
         code = str(it.get("srtnCd", "")).strip().zfill(6)
-        if not code or not code.isdigit():
+        if not code or not _valid_code(code):
             continue
         try:
             conn.execute("""
@@ -310,7 +320,7 @@ def collect_short_sell(conn, bas_dt: str) -> int:
             continue
         # ISIN → 6자리 종목코드 (KR7XXXXXXX1 구조에서 [3:9])
         code = isin[3:9]
-        if not code.isdigit():
+        if not _valid_code(code):
             continue
         bal_qty = _fval(it.get("lnbRmanStckCnt"))  # 대차잔고주수
         try:
@@ -355,7 +365,7 @@ def collect_investor_trading(conn, bas_dt: str) -> int:
     saved = 0
     for it in items:
         code = str(it.get("srtnCd", "")).strip().zfill(6)
-        if not code or not code.isdigit():
+        if not code or not _valid_code(code):
             continue
         try:
             conn.execute("""
@@ -414,7 +424,7 @@ def collect_foreign_holding(conn, bas_dt: str) -> int:
     saved = 0
     for it in items:
         code = str(it.get("srtnCd", "")).strip().zfill(6)
-        if not code or not code.isdigit():
+        if not code or not _valid_code(code):
             continue
         try:
             conn.execute("""
@@ -463,7 +473,7 @@ def collect_listed_company(conn, bas_dt: str) -> int:
     saved = 0
     for it in items:
         code = str(it.get("srtnCd", "")).strip().zfill(6)
-        if not code or not code.isdigit():
+        if not code or not _valid_code(code):
             continue
         try:
             sector = it.get("induty", "") or it.get("bizr", "")
