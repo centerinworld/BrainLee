@@ -1493,4 +1493,4 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 | 3 | OFS 수집 수치는 시점값 | §50-3 #3·§51-2에서 고정 숫자 제거, '최신은 파일·로그 기준' |
 | 4 | 001080 표현 | '재요청 결과 013으로 확인, 구버전 빈 행은 적용 입력에서 제외됨' |
 | 5·6 | 커밋 상태·OFS readback 설명 | 맞음 — 변경 없음 |
-
+- 10-09 15시: 재무상태표 1,716행 사용자 적용 완료 `fin_flags_refresh_20261009_105614` — readback planned 1,716 = read 1,716·불일치 0·pass(resolved 숫자 비교 포함 코드), 백업·data_fix_log 각 1,716, 적용 후 dry-run 0(손익·재무상태 현행 확정 14,862행 전부 현재 값). §53 기록은 ab0631c에 포함됨.
