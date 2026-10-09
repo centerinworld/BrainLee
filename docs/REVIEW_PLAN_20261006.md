@@ -1563,3 +1563,9 @@ D17 대상 밖 14개(composite·contract_momentum·deep_recovery·earnings_convi
 | 5 | OFS 전 종목 dry-run 보고 항목 | 수집 완료·파일 안정 후 원장 update/insert·정본 sync/refused·readback·재측정 run_id·적용 후 dry-run 0을 보고 |
 - 정본 반영 거부 보류는 PLAN §7-1에 11행(P5 2·P4 4·지배주주 5). 정본을 읽는 경로(`read_financials_failclosed`) 기준으로는 미완료.
 
+## 59. §58 검토(10-09) 반영 (Claude Opus 5.5, 2026-10-09 17:52)
+1. P4cf 카운터: 같은 칸이 'A DB 오류'와 'A 중 잠금 보류'에 이중 집계(합계 520 ≠ 칸 519) → 판정은 `verdicts`(칸마다 하나), 정정·보류 사유는 `actions`로 분리. 재실행: 손익 666/666, 현금흐름 519/519, actions '잠금 보류' 1.
+2. 지배주주 정본 동기화: **1차 apply JSON(`repair_parent_20261009_apply.json`)은 `canonical_sync.pass=false` — 실패**, 대표 행 하나만 반영으로 고친 뒤 **재동기화 JSON(`repair_parent_20261009_resync.json`) 기준 최종 pass**. §58의 '정본 재동기화 pass'는 이 뜻.
+3. **보류 파일**: `scripts/review/rekey_fiscal_nondec_20261004.py` 작업본 수정(입력에 `dart_cf_nondec_2026_CFS/OFS.jsonl` 추가 — Claude 작성 아님)은 실행 금지·커밋 금지. 커밋 때 파일 지정으로 제외. 작성자가 의도를 밝히지 않으면 P10 설계 때 `git checkout`으로 되돌릴지 사용자 확인.
+4. **P13 미완료**: 대표 행 고정은 검증 빌더·`canonical_sync`만. 화면·전략·백테스트가 원장 연간 행을 정렬 없이 읽는 곳 점검은 P13에서(처리 완료 아님).
+

@@ -78,6 +78,7 @@ def main():
         "SELECT row_id, field_name FROM cashflow_fix_log WHERE run_id LIKE 'restated_annual_%%' OR run_id LIKE 'fx_krw_%%'").fetchall()}
     raw = load_raw({c[0] for c in cells})
     verdicts, plan, st = [], [], collections.Counter()
+    act = collections.Counter()  # 2026-10-09 검토 반영: 판정(st)은 칸마다 하나, 정정·보류 사유는 act로 따로(이중 집계 금지)
     for code, y, q, fs, f, dv, fg, nv, cause0 in cells:
         cs = cands(raw, code, y, q, fs, FMAP[f])
         hit = [c for c in cs if abs(c[1] - fg) <= TOL]
@@ -96,7 +97,7 @@ def main():
         if not verdict.startswith("A"):
             continue
         if (code, y) in locks:
-            st["A 중 잠금(data_lock) 보류 — 정정 안 함"] += 1  # 2026-10-09 검토 반영: A 잔여를 사유별로 분리
+            act["A 중 잠금(data_lock) 보류 — 정정 안 함"] += 1  # 2026-10-09 검토 반영: A 잔여를 사유별로 분리
             continue
         n_before = len(plan)
         lab, cmpv, cumv = hit[0]
@@ -104,7 +105,7 @@ def main():
         rows = conn.execute(f"SELECT id, {f}, {f}_q FROM cash_flow_data WHERE stock_code=? AND year=? AND report_type=? AND {cond}",
                             (code, y, fs) if q == 0 else (code, y, fs, q)).fetchall()
         if not rows:
-            st["A 중 원장 행 없음"] += 1
+            act["A 중 원장 행 없음"] += 1
             continue
         for r in rows:
             changes = []
@@ -117,13 +118,13 @@ def main():
                 if old is not None and abs(old - new) <= 0.5:
                     continue
                 if ("cash_flow_data", r[0], col) in {("cash_flow_data",) + p for p in protected} or _ofs.scale_jump(old, new):
-                    st["A 중 보호·1,000배 제외"] += 1
+                    act["A 중 보호·1,000배 제외"] += 1
                     continue
                 plan.append((r[0], code, y, q, fs, col, old, new, f"P4-2: {lab} = FnGuide(DART 원문 + FnGuide 2소스)"))
         if len(plan) == n_before:
-            st["A 중 이미 원문값(no-op) — 정정 안 함"] += 1
+            act["A 중 이미 원문값(no-op) — 정정 안 함"] += 1
     res = {"at": datetime.now().isoformat(timespec="seconds"), "mode": "apply" if a.apply else "dry_run", "cells": len(cells),
-           "verdicts": dict(st), "fix_cells": len(plan), "fix_sample": plan[:30], "sample_by_verdict": {}}
+           "verdicts": dict(st), "actions": dict(act), "verdict_total": sum(st.values()), "fix_cells": len(plan), "fix_sample": plan[:30], "sample_by_verdict": {}}
     for v in verdicts:
         res["sample_by_verdict"].setdefault(v[8], [])
         if len(res["sample_by_verdict"][v[8]]) < 8:
@@ -154,7 +155,7 @@ def main():
                         VALUES (?,?,?,?,?,?,?,?,?)""",
                      (now, "cash_flow_data+financial_field_cause_review", f"현행 검증 원인 조사 현금흐름 {len(cells)}칸", len(plan),
                       "칸별 원인 판정 기록 + 'DART 원문 = FnGuide'인 칸만 원문값(분기 3개월·누적)으로",
-                      json.dumps(dict(st), ensure_ascii=False)[:900], f"정정 {len(plan)}칸", "scripts/review/classify_fix_unclassified_cf_20261009.py", run_id))
+                      json.dumps({"verdicts": dict(st), "actions": dict(act)}, ensure_ascii=False)[:900], f"정정 {len(plan)}칸", "scripts/review/classify_fix_unclassified_cf_20261009.py", run_id))
         conn.commit()
         bad = [(p[0], p[5]) for p in plan
                if abs(float(conn.execute(f"SELECT {p[5]} FROM cash_flow_data WHERE id=?", (p[0],)).fetchone()[0]) - p[7]) > 0.5]
@@ -169,7 +170,7 @@ def main():
               "재측정", res["field_verification_after"], flush=True)
     out = ROOT / "research_outputs" / "financial_rereview_20261002" / f"p4cf_cause_20261009_{'apply' if a.apply else 'dry'}.json"
     out.write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str))
-    print(json.dumps({k: res[k] for k in ("mode", "cells", "verdicts", "fix_cells")}, ensure_ascii=False))
+    print(json.dumps({k: res[k] for k in ("mode", "cells", "verdict_total", "verdicts", "actions", "fix_cells")}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
