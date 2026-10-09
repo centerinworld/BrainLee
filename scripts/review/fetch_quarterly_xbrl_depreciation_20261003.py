@@ -13,6 +13,7 @@ import argparse
 import io
 import json
 import sys
+import re
 import time
 import zipfile
 from datetime import datetime
@@ -51,6 +52,14 @@ class Quota(Exception):
     pass
 
 
+SYSTEM_STATUS = {"010", "011", "012", "021", "100", "101", "800", "900", "901"}
+LAST_STATUS = ["?"]
+
+
+class SystemError_(Exception):
+    pass
+
+
 def get_json(url: str, params: dict, key: str) -> dict | None:
     if not dart_keys.allow(key):
         raise Quota()
@@ -61,8 +70,11 @@ def get_json(url: str, params: dict, key: str) -> dict | None:
             time.sleep(2 + attempt * 2)
             continue
         time.sleep(0.3)
-        if d.get("status") == "020":
+        st = d.get("status")
+        if st == "020":
             raise Quota()
+        if st in SYSTEM_STATUS:  # 2026-10-09(PLAN L4·L26): 점검·키·시스템 오류를 빈 결과로 넘기지 않는다
+            raise SystemError_(st)
         return d
     return None
 
@@ -82,6 +94,11 @@ def get_xbrl(params: dict, key: str) -> bytes | None:
             return content
         if b"<status>020<" in content[:200]:
             raise Quota()
+        m = re.search(rb"<status>(\d+)</status>", content[:300])
+        st = m.group(1).decode() if m else "?"
+        if st in SYSTEM_STATUS:
+            raise SystemError_(st)
+        LAST_STATUS[0] = st
         return None
     return None
 
@@ -157,6 +174,7 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--min-assets", type=float, default=2e12)
     ap.add_argument("--exit-on-quota", action="store_true")
+    ap.add_argument("--need-only", action="store_true", help="현행 검증에서 감가상각이 미확정인 종목만(10-09 PLAN P2 — 호출 절약)")
     args = ap.parse_args()
     y0, y1 = (int(x) for x in args.years.split("-"))
     years = list(range(y0, y1 + 1))
@@ -168,7 +186,8 @@ def main() -> int:
                 d = json.loads(line)
             except ValueError:
                 continue
-            done.add((d.get("code"), int(d.get("year")), int(d.get("q"))))
+            if d.get("ok"):  # 10-09: 실패(ok=false) 기록은 다음 실행에서 재시도
+                done.add((d.get("code"), int(d.get("year")), int(d.get("q"))))
 
     conn = connect_primary_db(timeout=120, readonly=True)
     codes = [r[0] for r in conn.execute("""SELECT DISTINCT ON (stock_code) stock_code
@@ -176,17 +195,26 @@ def main() -> int:
               WHERE is_annual AND report_type='OFS' AND year=2024 AND total_assets>=?
                 AND stock_code ~ '^[0-9]{6}$'
               ORDER BY stock_code""", (args.min_assets,)).fetchall()]
+    if args.need_only:
+        need = {r[0] for r in conn.execute("""SELECT DISTINCT stock_code FROM financial_field_verification
+                 WHERE field IN ('depreciation','depreciation_amortization') AND status NOT LIKE '확정%%' AND quarter>0""").fetchall()}
+        codes = [c for c in codes if c in need]
     conn.close()
     if args.limit:
         codes = codes[:args.limit]
 
-    corp = Dart().corp_codes()
+    try:
+        corp = Dart().corp_codes()
+    except Exception as e:  # 기업코드 API만 점검인 날 대비(10-09)
+        corp = json.load(open(ROOT / "data_cache" / "dart_corp_codes.json"))
+        print(f"기업코드 API 실패({type(e).__name__}) → 캐시 {len(corp)}사", flush=True)
     keys = dart_keys.ordered_keys()
     ki = 0
     targets = [(c, y, q) for c in codes for y in years for q in (1, 2, 3) if (c, y, q) not in done and c in corp]
     print(f"대상 {len(targets)}보고서 ({len(codes)}종목, 완료 {len(done)}건)", flush=True)
     RAWX.mkdir(parents=True, exist_ok=True)
     with OUT.open("a") as fh:
+      try:
         for idx, (code, year, q) in enumerate(targets, 1):
             while True:
                 if ki >= len(keys):
@@ -210,7 +238,8 @@ def main() -> int:
                         continue
                     rc = it.get("rcept_no")
                     break
-            rec = {"code": code, "year": year, "q": q, "rcept_no": rc, "vals_ytd": {}, "ok": True}
+            rec = {"code": code, "year": year, "q": q, "rcept_no": rc, "vals_ytd": {}, "ok": lst is not None,
+                   "list_status": (lst or {}).get("status")}
             if rc:
                 while True:
                     if ki >= len(keys):
@@ -222,6 +251,8 @@ def main() -> int:
                     except Quota:
                         ki += 1
                         print("키 한도 → 다음 키", flush=True)
+                if not zb:
+                    rec["ok"], rec["xbrl_status"] = False, LAST_STATUS[0]
                 if zb:
                     (RAWX / f"{code}_{year}Q{q}_{rc}.zip").write_bytes(zb)
                     try:
@@ -236,6 +267,9 @@ def main() -> int:
             done.add((code, year, q))
             if idx % 50 == 0:
                 print(f"  {idx}/{len(targets)}", flush=True)
+      except SystemError_ as e:
+        print(f"DART 상태 {e}(점검·키·시스템 오류) — 중단, 다음 실행에서 이어 받음", flush=True)
+        return 0
     print("완료", flush=True)
     return 0
 

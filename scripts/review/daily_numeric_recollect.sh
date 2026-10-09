@@ -29,6 +29,7 @@ case "$1" in
     step $PY $R/fetch_xbrl_depreciation_20261003.py --exit-on-quota          # 감가상각 XBRL
     step $PY $R/fetch_xbrl_depreciation_20261003.py --exit-on-quota --redo-missing-adj   # 조정 감가상각 누락분 재수집(원문 zip 저장)
     step $PY $R/fetch_quarterly_xbrl_depreciation_20261003.py --exit-on-quota # 자산 2조↑ 분기·반기 XBRL 감가상각 구성요소(YTD, 테이블에서 3개월 차분)
+    step $PY $R/fetch_quarterly_xbrl_depreciation_20261003.py --years 2025-2026 --min-assets 0 --need-only --exit-on-quota   # PLAN P2(10-09): 감가상각 미확정 종목 전체 분기 XBRL — 수집만, 적용은 dry-run·FnGuide 일치 칸만(별도 판단)
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022            # 2016~2022 본 수집
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022 --repair-parent
     step $PY $R/fetch_dart_cashflow_20261002.py --years 2016-2022 --prev-only

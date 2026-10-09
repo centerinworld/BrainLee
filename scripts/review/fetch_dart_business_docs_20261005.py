@@ -77,6 +77,7 @@ def main():
     conn.close()
     K = Keys()
     n_doc = 0
+    skipped = []
     try:
         for i, code in enumerate(codes, 1):
             cc = cmap.get(code)
@@ -107,6 +108,13 @@ def main():
                     continue
                 b = K.get("document.xml", {"rcept_no": rc}, binary=True)
                 if b[:2] != b"PK":
+                    # 2026-10-09: 비정상 응답을 조용히 건너뛰지 않는다(PLAN 교훈 L4·L26) — 점검(800)·키·시스템 오류면 중단, 그 외는 기록
+                    m = re.search(rb"<status>(\d+)</status>", b[:300])
+                    st = m.group(1).decode() if m else "?"
+                    skipped.append((code, fy, rc, st))
+                    if st in ("800", "900", "901", "010", "011", "012", "021"):
+                        print(f"DART 문서 API 상태 {st}(점검·키·시스템 오류) — 중단, 다음 실행에서 이어 받음", flush=True)
+                        raise Quota()
                     continue
                 f.write_bytes(b)
                 n_doc += 1
@@ -120,7 +128,7 @@ def main():
             sys.exit(0)
     except StopIteration:
         pass
-    print("완료, 새 문서", n_doc, flush=True)
+    print("완료, 새 문서", n_doc, "/ 건너뜀(비정상 응답)", len(skipped), skipped[:10], flush=True)
 
 
 if __name__ == "__main__":

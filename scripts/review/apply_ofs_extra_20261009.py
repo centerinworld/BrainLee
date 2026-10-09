@@ -202,6 +202,8 @@ def main():
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--codes", default="")
     ap.add_argument("--src", default="", help="원문 jsonl 파일명(기본 dart_cf_ofs_extra.jsonl)")
+    ap.add_argument("--unit-strict", action="store_true",
+                    help="단위 오류 종목(fs_quirk:unit_scale_fixed·dart_unit_error)을 --codes로 지정해 처리 — 삽입·빈 칸 채움은 그 칸 FnGuide와 200만원 이내 일치할 때만(10-09 PLAN P10-5)")
     ap.add_argument("--annual-only", action="store_true", help="연간 키(A)만 처리 — 사업보고서만 받은 원문(예: 별도 연간 2023·24)에서 1~3분기 없이 Q4 행을 만들지 않게(10-09)")
     ap.add_argument("--min-year", type=int, default=2025, help="원장·원문 비교 최소 연도(기본 2025; 별도 연간 2023~24 적재 시 2023)")
     ap.add_argument("--fiscal-nondec", default="", choices=["", "CFS", "OFS"],
@@ -223,7 +225,7 @@ def main():
         print(f"비12월 회계 키 모드: 대상 {len(codes)}종목(비12월 {len(nd)} 중 fiscal_keyed·리츠 제외)", flush=True)
     truth = load(codes, fiscal=bool(a.fiscal_nondec))
     excl = {r[0] for r in conn.execute("""SELECT stock_code FROM stock_collection_config WHERE config_key IN
-        ('fs_quirk:reporting_currency','fs_quirk:unit_scale_fixed','fs_quirk:dart_unit_error')""" + ("" if a.fiscal_nondec else
+        ('fs_quirk:reporting_currency'""" + ("" if a.unit_strict else ",'fs_quirk:unit_scale_fixed','fs_quirk:dart_unit_error'") + """)""" + ("" if a.fiscal_nondec else
         """ OR (config_key='fs_quirk:fiscal_month' AND config_value<>'12')""")).fetchall()}
     # 원장은 2025년 이후만 읽는다 → 원문도 같은 범위로(10-09: 회계 키 모드에서 2023~24 원문이 '원장 행 없음'으로 보여 중복 삽입될 뻔함)
     truth = {k: v for k, v in truth.items() if k[0] not in excl and k[1] >= a.min_year}
@@ -238,6 +240,15 @@ def main():
     for r in conn.execute("""SELECT stock_code, year, quarter, field, fnguide_value FROM financial_field_verification
                              WHERE report_type=? AND year>=? AND fnguide_value IS NOT NULL""", (FS, a.min_year)).fetchall():
         fg[(r[0], r[1], r[2], r[3])] = float(r[4])
+    if a.unit_strict and not codes:
+        raise SystemExit("--unit-strict는 --codes(단위 오류 종목)와 함께만")
+
+    def fg_ok(code, y, fq, f, v):
+        """엄격 모드: 그 칸 FnGuide와 200만원 이내 일치할 때만 True(엄격 모드가 아니면 항상 True)."""
+        if not a.unit_strict:
+            return True
+        e = fg.get((code, y, fq, f))
+        return e is not None and v is not None and abs(abs(v) - abs(e) if f == "capex" else v - e) <= 2e6
     code_set = sorted({k[0] for k in keys})
     fd_rows, cf_rows = {}, {}
     fd_all, cf_all = {}, {}  # 2026-10-09 검토 반영: 연간 원장 행 quarter 0·4 두 벌 — 정정은 같은 기간 행 전부(값 다른 것만)
@@ -272,7 +283,7 @@ def main():
             # financial_data
             row = fd_rows.get((code, year, k))
             if row is None:
-                vals = {f: v for f, v in fin.items() if v is not None}
+                vals = {f: v for f, v in fin.items() if v is not None and fg_ok(code, year, fq, f, v)}
                 if vals and (code, year, "financial_data") not in locks:
                     ins_fd.append((code, year, quarter, is_ann, vals, None))
                     st["fd_insert_row"] += 1
@@ -285,6 +296,9 @@ def main():
                         continue
                     if ("financial_data", row[0], f) in protected or scale_jump(old, new):
                         st["fd_protected_or_scale"] += 1
+                        continue
+                    if old is None and not fg_ok(code, year, fq, f, new):
+                        st["fd_strict_hold"] += 1
                         continue
                     if old is None:
                         upd_fd.append((row[0], code, year, row[3], row[4], f, None, new, "빈 칸 = DART 별도 원문"))
@@ -305,8 +319,9 @@ def main():
             # cash_flow_data
             crow = cf_rows.get((code, year, k))
             if crow is None:
-                vals = {c: v for c, v in cum.items() if v is not None and c != "capex_sum"}
-                vals.update({c + "_q": v for c, v in qv.items() if v is not None and c != "capex_sum"})
+                vals = {c: v for c, v in cum.items() if v is not None and c != "capex_sum"
+                        and (not a.unit_strict or fg_ok(code, year, fq, c, v if k == "A" else qv.get(c)))}
+                vals.update({c + "_q": v for c, v in qv.items() if v is not None and c != "capex_sum" and fg_ok(code, year, fq, c, v)})
                 if vals and (code, year, "cash_flow_data") not in locks:
                     vt = None if k == "A" else ("derived_q4" if k == "Q4" else "cumulative→derived")
                     ins_cf.append((code, year, quarter, is_ann, vals, vt))
@@ -334,6 +349,9 @@ def main():
                             continue
                         if ("cash_flow_data", crow[0], col) in protected or scale_jump(old, new):
                             st["cf_protected_or_scale"] += 1
+                            continue
+                        if old is None and not fg_ok(code, year, fq, c, judge_new):
+                            st["cf_strict_hold"] += 1
                             continue
                         if old is None:
                             upd_cf.append((crow[0], code, year, crow[3], crow[4], col, None, new, "빈 칸 = DART 별도 원문"))
@@ -458,7 +476,7 @@ def main():
         res["field_verification_after"] = (pr.stdout or pr.stderr).strip().splitlines()[-1:] 
         print("재측정", res["field_verification_after"], flush=True)
     # 2026-10-09 검토 반영: 실행 모드별로 산출물 이름을 나눠 서로 덮어쓰지 않게(이전엔 P10·전 종목·시험 원문이 같은 이름)
-    tag = (f"nondec_{FS}" if a.fiscal_nondec else (f"src_{Path(a.src).stem}" if a.src else ("codes" if codes else "full")))
+    tag = ("unit_strict" if a.unit_strict else f"nondec_{FS}" if a.fiscal_nondec else (f"src_{Path(a.src).stem}" if a.src else ("codes" if codes else "full")))
     _planned = (res.get("post_readback") or {}).get("planned_cells", 0)
     kind = "dry" if not a.apply else ("apply" if _planned > 0 else "apply_noop")  # 10-09: 계획 0건 재실행이 실제 적용 결과를 덮지 않게
     out = ROOT / "research_outputs" / "financial_rereview_20261002" / f"ofs_extra_{tag}_20261009_{kind}.json"
