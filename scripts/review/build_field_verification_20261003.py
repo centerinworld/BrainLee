@@ -7,10 +7,11 @@ Codex 보강 의견 §9-1-3('필드 단위 확정 상태 스키마화')·§9-1-2
   2) 원문이 없는 종목·기간은 financial_source_snapshot 중 wcomp URL 행(연간, 2026-08 이후) — 구 comp 캡처는 파싱 오류가 많아 제외
   3) 네이버(naver_financial, 연결 매출·영업이익)는 보조 확인
 상태: 확정(3소스) / 확정(2소스) / 원인 조사 / 미확인(DB 없음). 외부 값이 없는 필드는 행을 만들지 않는다(= 미확인).
-허용오차 max(200만원, 0.5%). 순이익·자본은 연결=지배주주, 별도=전체(§2-1). 기준 버전 basis_version='FS-2026-10-03'.
+허용오차: DB vs FnGuide 확정 = **절대 200만원**(`close_fg`, D-7 사용자 승인 2026-10-09 — 이전 max(200만원, 0.5%)는 억 단위 반올림값을 통과시켜 폐기), 네이버(억 단위) 보조 비교만 max(200만원, 0.5%)(`close`). 순이익·자본은 연결=지배주주, 별도=전체(§2-1). 기준 버전 basis_version='FS-2026-10-03'.
 매 실행마다 전체 교체(run_id 기록). 읽기는 main.py /api/dashboard/data-quality.
 """
 import collections
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -34,7 +35,13 @@ DDL = """CREATE TABLE IF NOT EXISTS financial_field_verification (
 
 
 def close(a, b):
+    """네이버(억 단위 반올림) 보조 비교용 — 기존 허용오차."""
     return a is not None and b is not None and abs(a - b) <= max(2e6, abs(b) * 0.005)
+
+
+def close_fg(a, b):
+    """DB vs FnGuide(wcomp 백만원) 확정 판정 — 절대 200만원(D-7 사용자 승인 2026-10-09). 이전 max(200만원, 0.5%)는 억 단위 반올림값을 '확정'으로 통과시켰다."""
+    return a is not None and b is not None and abs(a - b) <= 2e6
 
 
 def main():
@@ -62,8 +69,19 @@ def main():
         # 스냅샷 수집기는 순이익·자본을 지배 우선으로 읽지만 일부 전체 기준이 섞임 → 순이익·자본은 원문에서만 확정
         ext[k] = {f: (v, "fnguide_wcomp_snapshot", str(r[3])) for f, v in zip(snap_cols, r[4:])
                   if v is not None and f not in ("net_income", "total_equity")}
+    # 네이버(2026-10-10): 모바일 API 재수집(naver_finance_api, 실적만·회계 키) 우선. 옛 naver_financial(05-27 단일 수집, 달력 분기 키·추정치 미판별)은
+    # 새 표에 그 종목이 없을 때만. 원칙(사용자 10-10): 네이버는 FnGuide 값을 쓰므로 둘은 100% 일치해야 하고, 다르면 우리 파싱 오류로 가정(목록 기록).
     nv = {(r[0], r[1], 0 if r[3] else r[2]): (r[4], r[5]) for r in map(tuple, conn.execute(
         "SELECT stock_code, year, quarter, is_annual, revenue, operating_profit FROM naver_financial").fetchall())}
+    try:
+        new_nv = {(r[0], r[1], r[2]): (r[3], r[4]) for r in map(tuple, conn.execute(
+            "SELECT stock_code, fiscal_year, quarter, revenue, operating_profit FROM naver_finance_api WHERE NOT is_estimate").fetchall())}
+    except Exception:
+        conn.rollback(); new_nv = {}
+    new_codes = {k[0] for k in new_nv}
+    nv = {k: v for k, v in nv.items() if k[0] not in new_codes}
+    nv.update(new_nv)
+    naver_mismatch = []
     db = {}
     for r in conn.execute("""SELECT f.stock_code,f.year,f.quarter,f.is_annual,f.report_type,f.revenue,f.operating_profit,f.net_income,
                                     f.total_assets,f.total_liabilities,f.total_equity,f.depreciation_amortization,
@@ -100,9 +118,11 @@ def main():
             if dv is not None and f in ABS:
                 dv = abs(dv)
             nval = (n[0] if f == "revenue" else n[1] if f == "operating_profit" else None) if n else None
+            if nval is not None and abs(nval - sv) > 5.1e7:  # 네이버 억원 표시 반올림(±0.5억) 밖 = 파싱 의심
+                naver_mismatch.append((code, y, q, fs, f, sv, nval, "naver_finance_api" if code in new_codes else "naver_financial(옛)"))
             if dv is None:
                 status, cause = "미확인(DB 없음)", None
-            elif close(dv, sv):
+            elif close_fg(dv, sv):
                 status = "확정(3소스)" if nval is not None and close(nval, sv) else "확정(2소스)"
                 cause = None
             else:
@@ -164,7 +184,14 @@ def main():
                       round(100 * (len(cf) + ex_n + na_n) / len(sub), 4) if sub else None,
                       round(100 * ex_n / len(sub), 4) if sub else None))
     conn.commit()
-    print(run_id, len(rows), "필드", dict(st))
+    # 네이버 ≠ FnGuide 목록(파싱 의심, 2026-10-10 원칙) — 매 실행 덮어씀
+    _mm = json.dumps({"run_id": run_id, "count": len(naver_mismatch), "by_source": dict(collections.Counter(x[7] for x in naver_mismatch)),
+                      "rows": naver_mismatch}, ensure_ascii=False, indent=1, default=str)
+    _od = ROOT / "research_outputs" / "financial_rereview_20261002"
+    (_od / "naver_fnguide_mismatch_latest.json").write_text(_mm)
+    (_od / "naver_fnguide_mismatch_history").mkdir(exist_ok=True)
+    (_od / "naver_fnguide_mismatch_history" / f"{run_id}.json").write_text(_mm)  # 10-10: latest 덮어쓰기로 직전 목록이 사라지지 않게
+    print(run_id, len(rows), "필드", dict(st), "네이버≠FnGuide", len(naver_mismatch))
 
 
 if __name__ == "__main__":

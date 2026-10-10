@@ -63,6 +63,7 @@ async def get_stock_bundle(code: str):
             major_holders,
             company_intel,
             revenue_mix,
+            consensus_forecast,
         ) = await asyncio.gather(
             _fetch(client, f"{base}/api/dashboard/corporate-actions/{code}?days=730"),
             _fetch(client, f"{base}/api/extra-signals/chart/{code}"),
@@ -79,6 +80,7 @@ async def get_stock_bundle(code: str):
             _fetch(client, f"{base}/api/insider/major/{code}?limit=50"),
             _fetch(client, f"{base}/api/company-intelligence/company/{code}"),
             _fetch(client, f"{base}/api/dashboard/revenue-mix/{code}"),
+            _fetch(client, f"{base}/api/dashboard/consensus-forecast/{code}"),
         )
 
     return {
@@ -97,7 +99,30 @@ async def get_stock_bundle(code: str):
         "major_holders":          major_holders,
         "company_intel":          company_intel,
         "revenue_mix":            revenue_mix,
+        "consensus_forecast":     consensus_forecast,   # 예측치 전용 그룹 — 실제 재무표와 섞지 말 것(2026-10-10)
     }
+
+
+@router.get("/api/dashboard/consensus-forecast/{code}")
+def get_consensus_forecast(code: str):
+    """네이버(FnGuide 컨센서스) 예측치 — 2026-10-10 신규. **실적이 아니다**: 실제 재무표(financial_data)와 섞지 않고,
+    검증률(build_field_verification은 NOT is_estimate만 사용)·백테스트 입력에서 제외한다. 화면은 기존 KIS 추정실적과 같은 '예측' 그룹에 출처를 붙여 표시.
+    원천: naver_finance_api(is_estimate = 네이버 열 isConsensus='Y'), 단위 원. 해당 기간 실적이 나오면 수집기가 예측 행을 지운다."""
+    from db_compat import connect_primary_db
+    conn = connect_primary_db(timeout=30, readonly=True)
+    try:
+        try:
+            rows = conn.execute("""SELECT fiscal_year, quarter, period_key, revenue, operating_profit, net_income, ni_parent, fetched_at
+                                   FROM naver_finance_api WHERE stock_code=? AND is_estimate ORDER BY fiscal_year, quarter""", (code,)).fetchall()
+        except Exception:
+            rows = []
+        items = [{"fiscal_year": r[0], "quarter": r[1], "period": r[2], "label": f"{r[0]}" + ("" if r[1] == 0 else f" {r[1]}Q") + "(E)",
+                  "revenue": r[3], "operating_profit": r[4], "net_income": r[5], "ni_parent": r[6], "fetched_at": r[7]} for r in map(tuple, rows)]
+        return {"ok": True, "is_forecast": True, "source": "네이버 증권 컨센서스(FnGuide 제공 추정치)", "unit": "원",
+                "excluded_from": ["재무 검증률", "백테스트 입력", "실제 재무표"], "items": items,
+                "note": "예측치(E)는 실적이 아닙니다. 기존 KIS 추정실적(estimated_performance)과 같은 예측 그룹으로만 표시하세요."}
+    finally:
+        conn.close()
 
 
 @router.get("/api/dashboard/revenue-mix/{code}")
