@@ -164,8 +164,30 @@ def main():
             conn.rollback()
     exc = {tuple(r[:5]): r[5] for r in conn.execute(
         "SELECT stock_code, year, quarter, report_type, field, reason_code FROM financial_field_exception").fetchall()}
-    for area, fs_ in areas.items():
-        sub = [r for r in rows if r[4] in fs_]
+    # 2026-10-10(사용자·외부 검토): 확정률을 하나로 말하지 않는다. kpi_scope로 분리 기록 —
+    #   '전체(리츠 포함)'(이전과 같은 정의) · '일반·전체'(리츠 분리) · '일반·고정분모'(기준선 칸만 = 같은 칸끼리 개선률) ·
+    #   '일반·신규 대조'(기준선 뒤 새로 들어온 칸 — 기존 품질 악화로 읽지 말 것) · '리츠(6개월 결산)'(D-8: 일반 KPI에서 분리, 별도 추적)
+    for col in ("kpi_scope TEXT", "baseline_id TEXT"):
+        try:
+            conn.execute(f"ALTER TABLE data_quality_metrics_daily ADD COLUMN IF NOT EXISTS {col}")
+        except Exception:
+            conn.rollback()
+    reit = {r[0] for r in conn.execute("""SELECT stock_code FROM stock_collection_config WHERE (config_key='fs_quirk:fiscal_period' AND config_value LIKE 'REIT%%')
+        OR (config_key='entity_category' AND config_value='reit') UNION SELECT stock_code FROM stock_universe WHERE stock_name LIKE '%%리츠%%'""").fetchall()}
+    try:
+        bl = conn.execute("SELECT baseline_id FROM financial_field_baseline ORDER BY created_at DESC LIMIT 1").fetchone()
+        baseline_id = bl[0] if bl else None
+        base = {tuple(r) for r in conn.execute("SELECT stock_code, year, quarter, report_type, field FROM financial_field_baseline WHERE baseline_id=?",
+                                               (baseline_id,)).fetchall()} if baseline_id else set()
+    except Exception:
+        conn.rollback(); baseline_id, base = None, set()
+    scopes = [("전체(리츠 포함)", rows), ("일반·전체", [r for r in rows if r[0] not in reit]), ("리츠(6개월 결산)", [r for r in rows if r[0] in reit])]
+    if base:
+        scopes += [("일반·고정분모", [r for r in rows if r[0] not in reit and tuple(r[:5]) in base]),
+                   ("일반·신규 대조", [r for r in rows if r[0] not in reit and tuple(r[:5]) not in base])]
+    for scope, srows in scopes:
+      for area, fs_ in areas.items():
+        sub = [r for r in srows if r[4] in fs_]
         cf = [r for r in sub if r[8].startswith("확정")]
         inv = sum(1 for r in sub if r[8].startswith("원인"))
         miss = sum(1 for r in sub if r[8].startswith("미확인"))
@@ -175,14 +197,14 @@ def main():
         na_n = sum(1 for r in un if exc.get(tuple(r[:5])) == "NOT_APPLICABLE")
         conn.execute("""INSERT INTO data_quality_metrics_daily (run_id, measured_at, area, total_cells, confirmed, investigating, db_missing,
                         confirmed_eok_rounded, match_rate_compared, confirm_rate_all, precision_rate, explained_exception, not_applicable,
-                        resolution_rate, exception_share) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        resolution_rate, exception_share, kpi_scope, baseline_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                      (run_id, now, area, len(sub), len(cf), inv, miss, eok,
                       round(100 * len(cf) / (len(cf) + inv), 4) if cf or inv else None,
                       round(100 * len(cf) / len(sub), 4) if sub else None,
                       round(100 * (len(cf) - eok) / len(cf), 4) if cf else None,
                       ex_n, na_n,
                       round(100 * (len(cf) + ex_n + na_n) / len(sub), 4) if sub else None,
-                      round(100 * ex_n / len(sub), 4) if sub else None))
+                      round(100 * ex_n / len(sub), 4) if sub else None, scope, baseline_id if "고정" in scope or "신규" in scope else None))
     conn.commit()
     # 네이버 ≠ FnGuide 목록(파싱 의심, 2026-10-10 원칙) — 매 실행 덮어씀
     _mm = json.dumps({"run_id": run_id, "count": len(naver_mismatch), "by_source": dict(collections.Counter(x[7] for x in naver_mismatch)),
