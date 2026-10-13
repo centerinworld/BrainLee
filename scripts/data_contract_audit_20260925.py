@@ -12,20 +12,29 @@
   universe_fresh       stock_universe.base_date age in days (the universe stopped refreshing on 2026-09-04): warn > 5, fail > 10
   date_format          rows in the last 30 days violating the expected text-date format of key tables
   unexplained_jump     unaudited >=31% close moves in the last 10 days (integer ratios = fail, otherwise warn)
-  close_verify_fresh   the official-close comparison (price_close_verify_log) ran within 5 days and its last run was ok
+  close_verify_fresh   the official-close comparison (price_close_verify_log) is fresh and not contradicted by a FINAL reference; judged by
+                       scripts/close_verify_policy.py (official_krx = final, fallback_kis = provisional, NULL = unknown provenance). A settled-but-unfinal
+                       verdict triggers at most 5 read-only re-verifications (verifier subprocess with --no-alert); this connection never writes for it.
 Thresholds are in CHECKS. Idempotent per (check_date, check_name). Exit code 2 on any FAIL.
 """
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
 from db_compat import connect_primary_db  # noqa: E402
+import close_verify_policy as policy  # noqa: E402
+
+CLOSE_VERIFY_COLUMNS = ("trade_date", "checked_at", "status", "close_mismatch", "compared", "mismatch_pct", "reference_kind")
+RECHECK_MAX_DATES_PER_DAY = 5
+RECHECK_WINDOW_DAYS = 14
 
 DDL = """CREATE TABLE IF NOT EXISTS data_contract_check_log (
   check_date TEXT NOT NULL, check_name TEXT NOT NULL, status TEXT DEFAULT 'ok', value DOUBLE PRECISION DEFAULT NULL, threshold DOUBLE PRECISION DEFAULT NULL,
@@ -33,6 +42,90 @@ DDL = """CREATE TABLE IF NOT EXISTS data_contract_check_log (
 DATE_COLS = [("price_history", "date", r"^\d{4}-\d{2}-\d{2}"), ("valuation_history", "period_end", r"^\d{4}-\d{2}-\d{2}"),
              ("strategy_feature_snapshot", "snapshot_date", r"^\d{4}-\d{2}-\d{2}$"), ("short_sell_daily", "bas_dt", r"^\d{8}$"),
              ("kiwoom_credit_balance", "dt", r"^\d{8}$")]
+
+
+
+def fetch_close_verify_rows(conn, limit: int = 50) -> list[dict]:
+    """Newest-first rows of price_close_verify_log as dicts. Read-only; tolerates a table that has no reference_kind column yet."""
+    has_kind = conn.execute("SELECT 1 FROM information_schema.columns WHERE table_name='price_close_verify_log' AND column_name='reference_kind'").fetchone()
+    cols = ", ".join(c if (c != "reference_kind" or has_kind) else "NULL AS reference_kind" for c in CLOSE_VERIFY_COLUMNS)
+    out = []
+    for r in conn.execute(f"SELECT {cols} FROM price_close_verify_log ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall():
+        try:
+            out.append({c: r[c] for c in CLOSE_VERIFY_COLUMNS})
+        except (TypeError, KeyError, IndexError):
+            out.append(dict(zip(CLOSE_VERIFY_COLUMNS, r)))
+    return out
+
+
+def recent_trade_dates(conn, limit: int = RECHECK_MAX_DATES_PER_DAY, verify_rows=()) -> list[str]:
+    """Recent KR trading dates worth re-verifying: enough price rows to judge, and no final verdict recorded yet. Oldest first."""
+    final_days = {str(r["trade_date"])[:10] for r in (verify_rows or [])
+                  if policy.row_is_final(r.get("reference_kind"), str(r["trade_date"])[:10], r.get("checked_at"))}
+    days = [str(r[0])[:10] for r in conn.execute(
+        "SELECT DISTINCT date FROM price_history WHERE date >= (CURRENT_DATE - ?)::text ORDER BY date DESC", (RECHECK_WINDOW_DAYS,)).fetchall()]
+    picked = []
+    for d in days:
+        if d in final_days:
+            continue
+        n = conn.execute("SELECT count(*) FROM price_history WHERE date=? AND stock_code ~ '^[0-9]{6}$'", (d,)).fetchone()
+        if int(n[0] or 0) < policy.OFFICIAL_MIN_ROWS:
+            continue
+        picked.append(d)
+        if len(picked) >= limit:
+            break
+    return sorted(picked)
+
+
+def _release_read_snapshot(conn) -> None:
+    """End the read snapshot so the next SELECT sees rows the verifier subprocess committed. Nothing is persisted."""
+    rb = getattr(conn, "rollback", None)
+    if callable(rb):
+        rb()
+
+
+def run_recheck(date_iso: str) -> int:
+    """Re-verify one trade date in a child process (the only writer on this path); returns its exit code."""
+    cmd = [sys.executable, str(ROOT / "scripts" / "verify_daily_close_vs_official.py"), "--date", date_iso, "--no-alert"]
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=1800).returncode
+
+
+def recheck_and_reevaluate(conn, base: dict, runner=None, dates=None, now: datetime | None = None) -> dict:
+    """Read-only re-verification: shell out per date (max 5, oldest first), re-read the log, re-derive the verdict.
+
+    No commit, no statement besides SELECT on this connection. A runner error or a run that adds no row leaves the
+    verdict exactly as it was, so a recheck can never promote a verdict by itself.
+    """
+    runner = runner or run_recheck
+    now = now or datetime.now()
+    meta = {"recheck_attempts": [], "recheck_readonly": True, "recheck_writes_persisted": 0}
+    if not policy.wants_recheck(base):
+        return {**base, **meta}
+    before = fetch_close_verify_rows(conn, limit=50)
+    if dates is None:
+        dates = recent_trade_dates(conn, limit=RECHECK_MAX_DATES_PER_DAY, verify_rows=before)
+    ran = False
+    for d in sorted(dates)[:RECHECK_MAX_DATES_PER_DAY]:
+        try:
+            meta["recheck_attempts"].append({"date": d, "returncode": runner(d)})
+            ran = True
+        except Exception as exc:  # noqa: BLE001 - an infrastructure error is not a finding
+            meta["recheck_attempts"].append({"date": d, "result": f"runner_error: {str(exc)[:80]}"})
+    if not ran:
+        return {**base, **meta}
+    _release_read_snapshot(conn)
+    after = fetch_close_verify_rows(conn, limit=50)
+    if after == before:
+        return {**base, **meta}
+    return {**policy.evaluate_close_verify_fresh(after, now=now), **meta}
+
+
+def close_verify_status(verdict: dict) -> str:
+    if verdict["verdict"] in policy.FAILING_VERDICTS:
+        return "fail"
+    if verdict["verdict"] in policy.WARN_VERDICTS:
+        return "warn"
+    return "ok"
 
 
 def main() -> int:
@@ -163,13 +256,17 @@ def main() -> int:
             conn.rollback()
     results.append(("date_format", "fail" if bad_all else "ok", float(bad_all), 0.0, json.dumps(detail, ensure_ascii=False)))
 
-    # close_verify_fresh
-    r = conn.execute("SELECT trade_date, status, checked_at FROM price_close_verify_log ORDER BY id DESC LIMIT 1").fetchone()
-    if r:
-        age = (date.today() - date.fromisoformat(str(r[0])[:10])).days
-        results.append(("close_verify_fresh", "fail" if (r[1] != "ok" or age > 5) else "ok", float(age), 5.0, f"last trade_date {r[0]} status {r[1]} ({age}d ago)"))
-    else:
-        results.append(("close_verify_fresh", "warn", None, 5.0, "no verification run recorded yet"))
+    # close_verify_fresh: judged by close_verify_policy (reference_kind provenance), not by the newest row's status alone
+    rows_cv = fetch_close_verify_rows(conn, limit=50)
+    verdict = policy.evaluate_close_verify_fresh(rows_cv, now=datetime.now())
+    verdict = recheck_and_reevaluate(conn, verdict)
+    detail_cv = {k: verdict.get(k) for k in ("verdict", "reason", "trade_date", "reference_kind", "provenance", "close_mismatch", "compared",
+                                              "last_finalizable_day", "recheck_attempts", "recheck_readonly", "freshness_verdict_shadowed")
+                 if verdict.get(k) is not None}
+    detail_cv["provenance_counts"] = policy.provenance_summary(rows_cv)
+    age_cv = verdict.get("age_days")
+    results.append(("close_verify_fresh", close_verify_status(verdict), float(age_cv) if age_cv is not None else None,
+                    float(policy.CLOSE_VERIFY_MAX_AGE_DAYS), json.dumps(detail_cv, ensure_ascii=False, default=str)))
 
     # unexplained_jump: last 10 days, close-to-close move beyond the KRX daily limit (>=31%) that price_jump_audit has not classified.
     # (integer ratios such as x10/x5/x2 are the typical signature of a mixed-basis batch like the 2026-07-12 SQLite incident)

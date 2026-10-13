@@ -20,6 +20,28 @@ ROOT = "/Volumes/Realtek_NVME/stock_dashboard/runtime"
 DB   = f"{ROOT}/stock.db"
 
 
+
+def dedupe_i2_cases(rows):
+    """I2 후보를 (종목, 연도) 사업 키 하나당 1건으로 줄인다 (2026-10-13).
+
+    같은 연간 값이 quarter=0 행과 quarter=4 행으로 중복 저장된 경우 한 건으로 세고, 연간 행(quarter 0)을 대표로 남긴다.
+    rows: (row_id, stock_code, stock_name, year, quarter, rev_억, op_억). 반환: (cases, duplicates).
+    """
+    kept, dups, order = {}, [], []
+    for row_id, code, name, year, quarter, rev, op in rows:
+        case = {"stock": code, "name": name, "year": year, "quarter": quarter, "row_id": row_id,
+                "rev_억": rev, "op_억": op}
+        key = (code, year)
+        if key not in kept:
+            kept[key] = case
+            order.append(key)
+        elif kept[key]["quarter"] != 0 and quarter == 0:
+            dups.append(kept[key])
+            kept[key] = case
+        else:
+            dups.append(case)
+    return [kept[k] for k in order], dups
+
 def run_all(conn) -> dict:
     results = {}
 
@@ -84,7 +106,7 @@ def run_all(conn) -> dict:
 
     # ── I2. 영업이익 > 매출 (비금융) ──────────────────────────────────────
     rows = conn.execute("""
-        SELECT f.stock_code, su.stock_name, f.year, f.is_annual,
+        SELECT f.id, f.stock_code, su.stock_name, f.year, f.quarter,
           ROUND(f.revenue/1e8) rev_억, ROUND(f.operating_profit/1e8) op_억
         FROM financial_data f
         JOIN stock_universe su ON su.stock_code=f.stock_code
@@ -96,12 +118,13 @@ def run_all(conn) -> dict:
           AND f.stock_code NOT LIKE '9%%'
         ORDER BY f.operating_profit/f.revenue DESC LIMIT 20
     """).fetchall()
+    cases, dups = dedupe_i2_cases(rows)
     results["I2_op_gt_rev"] = {
         "desc": "영업이익 > 매출 100억+ (비금융, CFS only, 논리 불가)",
-        "count": len(rows),
-        "pass": len(rows) == 0,
-        "cases": [{"stock": r[0], "name": r[1], "year": r[2],
-                   "rev_억": r[4], "op_억": r[5]} for r in rows],
+        "count": len(cases),
+        "pass": len(cases) == 0,
+        "cases": cases,
+        "duplicate_rows": dups,
     }
 
     # ── I3. CF 내부 일치 (OCF+ICF+FCF vs 기말현금) ───────────────────────
