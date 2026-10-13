@@ -158,22 +158,35 @@ def main():
     ki = 0
     key = KEYS[ki]
     zb = None
+    last_body = b""
     while zb is None:
         for k in KEYS:
-            c = requests.get("https://opendart.fss.or.kr/api/corpCode.xml", params={"crtfc_key": k}, timeout=60).content
+            try:
+                c = requests.get("https://opendart.fss.or.kr/api/corpCode.xml", params={"crtfc_key": k}, timeout=60).content
+            except Exception as e:
+                c = str(e).encode()
             if c[:2] == b"PK":
                 zb = c
                 break
+            last_body = c[:200]
         if zb is None:
+            # 2026-10-11: 다운로드 실패를 '한도 소진'으로 단정하지 않는다(10-10·11 밤은 DART 점검이었음) → 응답 기록 + 회사코드 캐시로 계속
+            print(f"회사코드 다운로드 실패 — 응답: {last_body.decode('utf-8', 'ignore')[:150]}", flush=True)
+            cache = ROOT / "data_cache" / "dart_corp_codes.json"
+            if cache.exists():
+                corp = json.loads(cache.read_text())
+                print(f"→ 회사코드 캐시 사용 {len(corp)}사({cache})", flush=True)
+                break
             nxt = (datetime.now() + timedelta(days=1)).replace(hour=0, minute=20, second=0)
             if exit_on_quota:
                 print("회사코드: 모든 키 한도 소진 → 종료(내일 재실행)", flush=True)
                 return
             print(f"회사코드: 모든 키 한도 소진 → {nxt} 까지 대기", flush=True)
             time.sleep(max(60, (nxt - datetime.now()).total_seconds()))
-    z = zipfile.ZipFile(io.BytesIO(zb))
-    root = ET.fromstring(z.read(z.namelist()[0]))
-    corp = {e.findtext("stock_code").strip(): e.findtext("corp_code") for e in root.iter("list") if (e.findtext("stock_code") or "").strip()}
+    if zb is not None:
+        z = zipfile.ZipFile(io.BytesIO(zb))
+        root = ET.fromstring(z.read(z.namelist()[0]))
+        corp = {e.findtext("stock_code").strip(): e.findtext("corp_code") for e in root.iter("list") if (e.findtext("stock_code") or "").strip()}
     todo = [c for c in codes if c in corp and any((c, y) not in done for y in YEARS)]
     print(f"대상 {len(todo)}종목 (완료 {len(done)}건)", flush=True)
     with open(OUT, "a") as fh:

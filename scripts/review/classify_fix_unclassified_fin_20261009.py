@@ -4,7 +4,7 @@
 칸마다 원문 후보(같은 구분·같은 기간):
   연간: 당기(그 해 사업보고서) / 재작성(다음 해 사업보고서 전기 칸, §2-5 표시값 = 재작성값)
   Q1~Q3: 그 분기 보고서 값 / Q2·Q3는 누적 차분(이번 누적 − 직전 누적)
-  Q4: 손익 = 연간 − 3분기 누적(FnGuide 방식, D-6) 및 연간 − Q1~Q3 합 / 재무상태 = 연간
+  Q4: 손익 = 연간 − 3분기 누적(FnGuide 방식, D-6 — '연간 − Q1~Q3 합' 후보는 10-10 제거) / 재무상태 = 연간
   순이익·자본(CFS): 지배(정본 정의) / 전체(FnGuide가 전체로 표시하는 경우 = 정의 차이)
 판정(우선순위):
   A 'DB 오류 — 원문(정본 정의) = FnGuide' → 정정 대상(--apply). 근거: DART 원문 + FnGuide 2소스(2-0 구조)
@@ -104,9 +104,7 @@ def cands(raw, code, y, q, fs, k):
     for lab, a in anns:
         if y3 is not None:
             out.append((f"Q4 = {lab} − 3분기 누적(FnGuide 방식)", a - y3))
-        qs = [v(g(y, i)) for i in (1, 2, 3)]
-        if all(x is not None for x in qs):
-            out.append((f"Q4 = {lab} − Q1~Q3 합", a - sum(qs)))
+        # 옛 후보 'Q4 = 연간 − Q1~Q3 합'은 D-6(2026-10-09)으로 제거 — 분류 후보가 나중에 적용 근거가 되지 않게
     return out
 
 

@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 DART_BASE = "https://opendart.fss.or.kr/api"
-CORP_XML_CACHE = Path("/tmp/CORPCODE.xml")
+CORP_XML_CACHE = Path(__file__).resolve().parents[1] / "data_cache" / "CORPCODE.xml"  # 2026-10-11: /tmp는 재부팅 시 삭제 → 점검 시간대 수집 전체 실패
 PROG_PATH = Path("/tmp/dart_product_mix_progress.json")
 
 KEYS = get_dart_api_keys()
@@ -60,13 +60,17 @@ def _get_conn():
 
 # ── corp_code 매핑 ──────────────────────────────────────────────
 def _ensure_corp_code_xml() -> Path:
-    if CORP_XML_CACHE.exists() and CORP_XML_CACHE.stat().st_size > 1_000_000:
+    import time as _t
+    if CORP_XML_CACHE.exists() and CORP_XML_CACHE.stat().st_size > 1_000_000 and _t.time() - CORP_XML_CACHE.stat().st_mtime < 7 * 86400:
         return CORP_XML_CACHE
     for _ in range(len(KEYS)):
         key = _next_key()
         if key is None:
             break
-        r = requests.get(f"{DART_BASE}/corpCode.xml", params={"crtfc_key": key}, timeout=30)
+        try:
+            r = requests.get(f"{DART_BASE}/corpCode.xml", params={"crtfc_key": key}, timeout=60)
+        except Exception:
+            continue
         try:
             zf = zipfile.ZipFile(io.BytesIO(r.content))
         except zipfile.BadZipFile:
@@ -75,9 +79,14 @@ def _ensure_corp_code_xml() -> Path:
                 _exhausted.add(key)
             continue
         data = zf.read(zf.namelist()[0])
+        CORP_XML_CACHE.parent.mkdir(parents=True, exist_ok=True)
         CORP_XML_CACHE.write_bytes(data)
         return CORP_XML_CACHE
-    raise RuntimeError("corpCode.xml 다운로드 실패 (모든 키 소진)")
+    # 2026-10-11: 다운로드 실패(점검 800 등)여도 기존 캐시가 있으면 그대로 사용(오래돼도 상장사 코드 대부분 유효)
+    if CORP_XML_CACHE.exists() and CORP_XML_CACHE.stat().st_size > 1_000_000:
+        print(f"corpCode.xml 다운로드 실패 → 기존 캐시 사용({CORP_XML_CACHE})", flush=True)
+        return CORP_XML_CACHE
+    raise RuntimeError("corpCode.xml 다운로드 실패(한도 소진 또는 DART 점검) — 캐시도 없음")
 
 
 def load_corp_map(codes: list[str]) -> dict[str, str]:

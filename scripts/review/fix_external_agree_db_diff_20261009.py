@@ -6,7 +6,7 @@ DART 원문(`dart_cf_full.jsonl`, 재수집 원문)에서 **FnGuide와 일치하
 후보(칸마다):
   - 연간: 그 해 사업보고서 당기 값 / 다음 해 사업보고서 전기 칸(재작성값, `vals_prev`)
   - Q1~Q3: 그 분기 보고서 값(손익 3개월)
-  - Q4: 연간(당기 또는 재작성) − (Q1+Q2+Q3 원문)
+  - Q4: 연간(당기 또는 재작성) − 3분기 보고서 누적(D-6, 10-09 — 이전 '− (Q1+Q2+Q3 원문)' 후보 폐기)
   일치 기준: |후보 − FnGuide| ≤ 200만원(FnGuide 백만원 표시 반올림 + Q4 파생의 반올림 누적). 차이 크기로 닫지 않는다 — 일치 후보가 없으면 값 유지·원인 기록.
 제외: 보고통화 외화·비12월 결산·단위 오류 종목, 재작성값·원화 환산 보호 칸, data_lock, 1,000배 급변.
 적용(--apply): financial_data 백업(`financial_data_backup_p5_20261009`)·financial_fix_log·data_fix_log, readback, 정본 동기화(apply_ofs_extra의 canonical_sync), build_field_verification 재측정.
@@ -101,11 +101,7 @@ def candidates(raw, code, y, q, fs, f):
         if y3 is not None:
             for label, av in candidates(raw, code, y, 0, fs, f):
                 out.append((f"Q4 = {label} − 3분기 보고서 누적(FnGuide 방식)", av - y3))
-        qs = [g(y, i) for i in (1, 2, 3)]
-        if all(z and (z.get("vals") or {}).get(k) is not None for z in qs):
-            s3 = sum(z["vals"][k] for z in qs)
-            for label, av in candidates(raw, code, y, 0, fs, f):
-                out.append((f"Q4 = {label} − (Q1+Q2+Q3 원문)", av - s3))
+        # 옛 후보 'Q4 = 연간 − (Q1+Q2+Q3 원문)'은 D-6(2026-10-09)으로 폐기 — FnGuide와 맞더라도 4분기 정의가 섞임
     return out
 
 

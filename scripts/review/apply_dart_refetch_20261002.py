@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""DART 재수집값(dart_cf_full.jsonl)으로 2023년 이후 financial_data / cash_flow_data 를 맞춘다(2026-10-02 독립 재검토).
+"""
+⚠ 2026-10-10 사용 중지 권고(--apply 금지): 2023+ dry-run 후보(재무 402·현금흐름 814필드) 중 FnGuide 값이 있는 칸에서 **새 값 = FnGuide 0칸,
+현재 DB = FnGuide 74칸(재무 40·현금흐름 34)** — 원문 jsonl(dart_cf_full.jsonl, 10-02 수집)이 이후 원문 폴더·재작성 반영보다 낡아 확정 칸을 되돌린다.
+CapEx 775필드는 정의 후보(3순위 별도). 분류: PLAN_99_99_NUMERIC §7 10-10 00:01.
+DART 재수집값(dart_cf_full.jsonl)으로 2023년 이후 financial_data / cash_flow_data 를 맞춘다(2026-10-02 독립 재검토).
 
 원칙(CLAUDE.md 재무 무결성 규칙): DART가 기준축. 값이 허용오차(max(100만원, 0.5%)) 안이면 손대지 않는다.
 다르거나 비어 있을 때만 DART 값으로 바꾸고, 바꾼 필드는 한 건씩 financial_fix_log / cashflow_fix_log 에 남긴다(run_id 필수).
@@ -8,7 +12,7 @@
   financial_data
     - 분기(Q1~Q3, is_annual=false)·연간(is_annual=true, quarter 0/4 모두): 매출·영업이익·자산·부채 = DART.
       순이익·자본은 DB가 DART 전체 또는 지배 중 하나와 맞으면 유지(기준 혼재 방지), 둘 다 아니면 DART 전체값.
-    - Q4(quarter=4, is_annual=false): 손익 = 연간 − (Q1+Q2+Q3 3개월), 재무상태 = 연간. 네 보고서가 모두 있을 때만.
+    - Q4(quarter=4, is_annual=false): 손익 = 연간 − 3분기 보고서 누적(D-6, 10-09 — 이전 연간 − Q1~Q3 3개월 합 폐기), 재무상태 = 연간. 네 보고서가 모두 있을 때만.
   cash_flow_data (영업·투자·재무·CapEx, 감가상각은 DART에 있을 때만)
     - Q1~Q3: 누적 칸 = DART 누적(YTD), 3개월 칸 = YTD − 직전 분기 YTD (Q1은 YTD).
     - Q4(is_annual=false): 누적 칸 = 연간, 3개월 칸 = 연간 − Q3 YTD.
@@ -28,12 +32,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from db_compat import connect_primary_db  # noqa: E402
+import fin_norm as fn  # noqa: E402 — 정규화 정의 한 곳(2026-10-10)
 
 SRC = ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_full.jsonl"
 # 2026-10-03: 감가상각은 제외 — DART 현금흐름표에 행이 있는 회사가 ~20%뿐이고 '유형자산 감가상각비'만이라
 # 기존 D&A(무형 포함) 값과 정의가 달라 일부만 바꾸면 종목별 정의가 섞인다. 정의 단일화 후 별도 처리(§5-4).
 CF_FIELDS = {"ocf": "operating_cf", "icf": "investing_cf", "fcf": "financing_cf", "capex": "capex"}
 ABS = {"capex", "depreciation"}
+
+
+
 
 
 def close(a, b):
@@ -56,12 +64,19 @@ def main():
     ap.add_argument("--src", default="", help="재수집 jsonl 파일명(기본 dart_cf_full.jsonl, 예: dart_cf_2016_2022.jsonl)")
     ap.add_argument("--min-year", type=int, default=2023)
     ap.add_argument("--quarterly-only", action="store_true", help="분기 칸만 적용(연간 제외)")
+    ap.add_argument("--allow-legacy-apply", default="", help="--apply 허용 승인 근거(사용자 승인 문구·날짜). 2023+·기본 원천에서는 이 값이 있어도 거부")
     ap.add_argument("--unlock-covered", action="store_true",
                     help="원문(재수집) 값이 있는 종목·연도의 data_lock을 사유와 함께 해제(2026-10-03 사용자 승인 원칙: 원문 > 잠금)")
     a = ap.parse_args()
     global SRC
     if a.src:
         SRC = SRC.with_name(a.src)
+    # 2026-10-10 실행 차단: 기본 원천(dart_cf_full.jsonl, 10-02 수집)·2023년 이후 범위는 원문 폴더·재작성·정밀도 반영보다 낡아
+    # 적용하면 FnGuide 확정 칸을 되돌린다(dry-run 분류: 새 값 = FnGuide 0, 현재 DB = FnGuide 74). 그 외(과거·P9)도 명시 승인 근거 필요.
+    if a.apply and (SRC.name == "dart_cf_full.jsonl" or a.min_year >= 2023):
+        raise RuntimeError("apply_dart_refetch --apply 차단(2026-10-10): 기본 원천/2023+ 범위는 낡은 원문 — 최신 원문 폴더 + FnGuide 대조 스크립트로 적용할 것")
+    if a.apply and not a.allow_legacy_apply.strip():
+        raise RuntimeError("apply_dart_refetch --apply 는 --allow-legacy-apply '<사용자 승인 근거>' 가 있어야 실행(과거 기간·P9 전용)")
     truth = load()
     if a.codes:
         keep = set(a.codes.split(","))
@@ -112,16 +127,16 @@ def main():
                     continue
                 ann, q1, q2, q3 = (x[1] for x in xs)
                 want = {}
-                for f in ("revenue", "operating_profit"):
-                    if all(f in z for z in (ann, q1, q2, q3)):
-                        want[f] = ann[f] - q1[f] - q2[f] - q3[f]
+                # D-6(사용자 승인 2026-10-09): 4분기 = 연간 − 3분기 보고서 누적(원문 없으면 파생 안 함)
                 nik = "ni_parent" if fs == "CFS" else "ni_total"
-                if all(nik in z for z in (ann, q1, q2, q3)):
-                    want["net_income"] = ann[nik] - q1[nik] - q2[nik] - q3[nik]
+                for f, kk in (("revenue", "revenue"), ("operating_profit", "operating_profit"), ("net_income", nik)):
+                    y3 = fn.ytd3(code, year, fs, f)  # 10-13: 표준 경로(회계 키·손실 부호·연결 순이익=지배)
+                    if ann.get(kk) is not None and y3 is not None:
+                        want[f] = fn.q4_flow(ann[kk], y3)
                 want["total_assets"] = ann.get("total_assets")
                 want["total_liabilities"] = ann.get("total_liabilities")
                 want["total_equity"] = ann.get("equity_parent") if fs == "CFS" else ann.get("equity_total")
-                rule = "Q4 = DART 연간 − (Q1+Q2+Q3), 재무상태 = 연간, 순이익·자본 지배주주 기준"
+                rule = "Q4 = DART 연간 − 3분기 보고서 누적(D-6), 재무상태 = 연간, 순이익·자본 지배주주 기준"
             cols = {"revenue": 6, "operating_profit": 7, "net_income": 8, "total_assets": 9, "total_liabilities": 10, "total_equity": 11}
             for f, new in want.items():
                 if new is None:

@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts" / "review"))
 from compare_db_vs_fnguide_raw_20261003 import RAW, parse_code  # noqa: E402
 from db_compat import connect_primary_db  # noqa: E402
+import fin_norm as fn  # noqa: E402
 from financial_rereview_20261002 import extract  # noqa: E402
 
 RAW_DART = Path("/Volumes/Realtek_NVME/stock_dashboard/data_raw/dart_fnltt")
@@ -168,7 +169,7 @@ def main():
     conn.execute("SELECT setval('data_fix_log_id_seq',(SELECT MAX(id) FROM data_fix_log))")
     conn.execute("INSERT INTO data_fix_log(fixed_at,table_name,scope,row_count,fix_rule,old_value_summary,new_value_summary,source,run_id) VALUES (?,?,?,?,?,?,?,?,?)",
                  (now, "financial_data+cash_flow_data", "연간 재작성값(외부 확인분만) + 그 종목-연도 4분기 재계산", len(plan) + len(q4["changes"]),
-                  "표시값=최신 재작성값(§2-5), 최초값은 PIT·백업 보존. 4분기 = 연간 − 1~3분기(손익)·연간(재무상태)·누적=연간/3개월=연간−3분기 누적(현금흐름)",
+                  "표시값=최신 재작성값(§2-5), 최초값은 PIT·백업 보존. 4분기 = 연간 − 3분기 보고서 누적(손익, D-6)·연간(재무상태)·누적=연간/3개월=연간−3분기 누적(현금흐름)",
                   json.dumps(dict(st), ensure_ascii=False), json.dumps(q4["stats"], ensure_ascii=False),
                   "scripts/review/apply_restated_annual_20261004.py", run_id))
     conn.commit()
@@ -219,11 +220,12 @@ def rederive_q4(conn, plan, run_id, now, write=True):
             targets = []
             if tbl == "financial_data":
                 if f in Q4_FIN_FLOW:
-                    qs = [one(lambda r, q=q: r[1] == q and not r[2], f) for q in (1, 2, 3)]
-                    if any(v in (None, "모호") for v in qs):
-                        st["1~3분기 값 없음/모호 — 건너뜀"] += 1
+                    # D-6(사용자 승인 2026-10-09): 4분기 3개월 = 연간 − 3분기 보고서 누적(FnGuide 방식). 예전 ① 연간 − 1~3분기 합은 폐기.
+                    ytd3 = fn.ytd3(code, y, fs, f)  # 공통 정의(fin_norm, 2026-10-10)
+                    if ytd3 is None:
+                        st["3분기 누적 원문 없음 — 건너뜀(D-6)"] += 1
                         continue
-                    targets = [(f, A - sum(qs))]
+                    targets = [(f, fn.q4_flow(A, ytd3))]
                 else:
                     targets = [(f, A)]
             else:
@@ -254,7 +256,7 @@ def rederive_q4(conn, plan, run_id, now, write=True):
         conn.execute(f"SELECT setval('{log}_id_seq', (SELECT COALESCE(MAX(id),1) FROM {log}))")
         conn.executemany(f"""INSERT INTO {log}(fixed_at,row_id,stock_code,year,quarter,is_annual,report_type,field_name,old_value,new_value,fix_rule,source,run_id)
                              VALUES (?,?,?,?,4,0,?,?,?,?,?,?,?)""",
-                         [(now, rid, code, y, fs, c, old, v, "4분기 재계산 — 같은 실행에서 연간 재작성값 반영", "연간(재작성) − 1~3분기 / 3분기 누적", run_id)
+                         [(now, rid, code, y, fs, c, old, v, "4분기 재계산 — 같은 실행에서 연간 재작성값 반영(D-6: 연간 − 3분기 누적)", "연간(재작성) − 3분기 보고서 누적", run_id)
                           for _, rid, c, old, v, code, y, fs in ch])
     return {"stats": dict(st), "changes": changes}
 

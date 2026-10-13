@@ -17,6 +17,17 @@ step() {
   return $rc
 }
 
+# 2026-10-11: 같은 모드 동시 실행 방지(수동 백필과 정기 실행이 겹치면 DART 요청·jsonl 중복) — 실행 중이면 이번 실행은 건너뜀
+LOCKD=research_outputs/financial_rereview_20261002/.numeric_recollect_$1.lock
+if ! mkdir "$LOCKD" 2>/dev/null; then
+  if [ -f "$LOCKD/pid" ] && kill -0 "$(cat $LOCKD/pid)" 2>/dev/null; then
+    echo "$(date '+%F %T') ⏭ $1 이미 실행 중(pid $(cat $LOCKD/pid)) — 건너뜀" >> $LOG; exit 0
+  fi
+  rm -rf "$LOCKD"; mkdir "$LOCKD"
+fi
+echo $$ > "$LOCKD/pid"
+trap 'rm -rf "$LOCKD"' EXIT
+
 case "$1" in
   dart)
     step $PY $R/fetch_dart_business_docs_20261005.py --years 2021,2022 --exit-on-quota   # 사업보고서 본문 원문 — XBRL 주석 없는 2021~22 우선(사용자 지시 2026-10-05)
@@ -44,6 +55,7 @@ case "$1" in
   fnguide)
     step $PY $R/fetch_fnguide_raw_20261003.py --max-calls 1000 --stale-days 30   # 스윕(03:15) 450건과 합쳐 일 1,500건 이내(한도 카운터가 프로세스별이라 명시적으로 나눔)
     step $PY $R/compare_db_vs_fnguide_raw_20261003.py                        # 원문 ↔ DB 대조(읽기 전용) → fnguide_raw_compare_*.json/csv
+    step $PY $R/fetch_naver_finance_api_20261010.py                          # 네이버 실적·추정치(모바일 API, 2026-10-10 — 옛 화면은 개편으로 수집 불가). 네이버 = FnGuide 100% 원칙 대조용
     step $PY $R/fetch_krx_openapi_20261005.py --kind all --max-calls 8000      # KRX Open API: 공식 주가 빈 날짜(2010~) + 파생지수·선물 이어 받기(2026-10-05)
     step $PY scripts/ops/check_stockeasy_mirror.py                           # 스탁이지 3전략 가상매매 일치도(읽기 전용, Stock_Strategy S29·§11 추적)
     step $PY scripts/ops/check_price_vs_krx_daily.py                          # 원주가 종가 = KRX 공식 종가 확인(보고·알림만, 평소 0건 — §5 실패 27)
@@ -54,6 +66,7 @@ case "$1" in
     step $PY $R/price_raw_basis_audit_20261004.py --phase post_apply         # 반영 후 재감사 = 그날 공식 가격 일치율(summary_post_apply.json·history.jsonl)
     step $PY $R/verify_backlog_identity_20261004.py                          # 수주잔고 원문 항등식 측정(읽기 전용)
     step $PY $R/apply_restated_annual_20261004.py --apply                     # 재작성값 중 외부(FnGuide·네이버)가 확인한 칸만 반영(2026-10-06 — FnGuide 원문이 매일 늘어남)
+    step $PY $R/apply_restated_quarterly_20261010.py --seibro --apply          # 분기 재작성값(다음 해 같은 분기 보고서 전년 칸) — FnGuide(빈 분기는 SEIBro 대리) 일치분만(2026-10-10, 매년 11월 3분기분 자동)
     step $PY scripts/ops/check_financial_anomalies_daily.py                   # 재무 이상값 감시(보고만): 단위 300배·미래 기간·연결/별도 1,000배 → data_anomaly_daily
     step $PY $R/build_field_verification_20261003.py                         # 현행 기준 필드 확정 상태(financial_field_verification) — 화면 품질 등급 근거
     ;;

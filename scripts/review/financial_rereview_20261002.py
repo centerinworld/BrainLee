@@ -11,7 +11,7 @@
   IS  : 연간=thstrm_amount, 분기/반기=thstrm_amount(3개월). 순이익은 전체(ProfitLoss)와 지배(…OwnersOfParent) 둘 다 기록.
   BS  : thstrm_amount. 자본은 전체(Equity)와 지배(…OwnersOfParent) 둘 다 기록.
   CF  : thstrm_amount = 연초부터 누적(YTD). 3개월 값은 직전 분기 누적과의 차.
-  Q4  : IS 3개월 = 연간 − (Q1+Q2+Q3 3개월), CF 3개월 = 연간 − Q3 누적.
+  Q4  : IS 3개월 = 연간 − 3분기 보고서 누적(D-6, 2026-10-09 — 이전 '연간 − (Q1+Q2+Q3 3개월)' 폐기), CF 3개월 = 연간 − Q3 누적.
 판정: |DB−DART| ≤ max(100만원, 0.5%) 이면 OK. 금융업(은행·보험·증권·지주)은 매출·영업이익 정의가 달라 별도 그룹.
 
 사용: venv/bin/python scripts/review/financial_rereview_20261002.py [--n 120] [--seed 20261002]
@@ -68,7 +68,7 @@ IDS = {
                      "ifrs-full_DepreciationExpense"],
 }
 NAMES = {
-    "revenue": {"매출액", "수익(매출액)", "영업수익", "매출"},
+    "revenue": {"매출액", "수익(매출액)", "영업수익", "매출", "영업수익(매출액)", "매출액(영업수익)"},  # 10-12: 085810 영업수익(매출액)
     "operating_profit": {"영업이익", "영업이익(손실)", "영업손실"},
     "ni_total": {"당기순이익", "당기순이익(손실)", "분기순이익", "분기순이익(손실)", "반기순이익", "반기순이익(손실)"},
     "depreciation": {"감가상각비", "유형자산감가상각비"},
@@ -81,6 +81,13 @@ NAMES = {
     "capex_intangible": {"무형자산의취득", "무형자산취득", "무형자산의증가", "무형자산증가"},
     "inventory": {"재고자산"},
     "capex_cip": {"건설중인자산의취득", "건설중인자산의증가", "건설중인자산취득"},
+    # 2026-10-12: 2021~22 원문 91개 파일은 현금흐름 합계에 표준 ID가 없다(예 065130 '영업활동으로 인한 현금흐름'). 합계 행 이름만(유입액·유출액·창출된 현금 제외).
+    "ocf": {"영업활동현금흐름", "영업활동으로인한현금흐름", "영업활동으로인한순현금흐름", "영업활동으로인한순현금흐름액", "영업활동순현금흐름",
+            "영업활동순현금흐름합계", "영업활동으로인한순현금흐름합계", "영업활동순현금흐름유입(유출)", "영업활동으로부터의순현금유입(유출)"},
+    "icf": {"투자활동현금흐름", "투자활동으로인한현금흐름", "투자활동으로인한순현금흐름", "투자활동으로인한순현금흐름액", "투자활동순현금흐름",
+            "투자활동순현금흐름합계", "투자활동으로인한순현금흐름합계", "투자활동순현금흐름유입(유출)", "투자활동으로부터의순현금유입(유출)"},
+    "fcf": {"재무활동현금흐름", "재무활동으로인한현금흐름", "재무활동으로인한순현금흐름", "재무활동으로인한순현금흐름액", "재무활동순현금흐름",
+            "재무활동순현금흐름합계", "재무활동으로인한순현금흐름합계", "재무활동순현금흐름유입(유출)", "재무활동으로부터의순현금유입(유출)"},
 }
 SJ = {"revenue": ("IS", "CIS"), "operating_profit": ("IS", "CIS"), "ni_total": ("IS", "CIS"), "ni_parent": ("IS", "CIS"),
       "total_assets": ("BS",), "total_liabilities": ("BS",), "equity_total": ("BS",), "equity_parent": ("BS",),
@@ -182,6 +189,14 @@ def extract(rows, col="thstrm_amount"):
             v = num(cand[0].get(col))
             if v is not None:
                 out[f] = abs(v) if f in ("capex", "capex_intangible", "capex_cip", "depreciation") else v
+    if not out.get("total_assets"):  # 10-12: 자산총계 칸이 비거나 0인 원문(238090 2021 반기, 008040 2026 반기 등) → 같은 원문의 자본과부채총계(회계 항등식)
+        eal = [r for r in rows if r.get("sj_div") == "BS" and (r.get("account_id") == "ifrs-full_EquityAndLiabilities"
+                                                               or (r.get("account_nm") or "").replace(" ", "") in ("부채와자본총계", "자본과부채총계", "부채및자본총계"))]
+        v = num(eal[0].get(col)) if eal else None
+        if v:
+            out["total_assets"] = v
+            if out.get("total_liabilities") == 0 and out.get("equity_total") is not None and v != out["equity_total"]:
+                out["total_liabilities"] = v - out["equity_total"]  # 부채총계도 0으로 적힌 원문(008040) → 자본과부채총계 − 자본총계
     if "ni_parent" not in out:
         v = _parent_by_name(rows, "ni", out.get("ni_total"), col)
         if v is not None:
@@ -190,6 +205,10 @@ def extract(rows, col="thstrm_amount"):
         v = _parent_by_name(rows, "eq", out.get("equity_total"), col)
         if v is not None:
             out["equity_parent"] = v
+    if "equity_parent" not in out and out.get("equity_total") is not None:  # 10-12: 지배 줄 없이 자본총계·비지배지분만 있는 원문(013000 2023) → 자본총계 − 비지배지분
+        nci = [num(r.get(col)) for r in rows if r.get("sj_div") == "BS" and r.get("account_id") == "ifrs-full_NoncontrollingInterests"]
+        if nci and nci[0] is not None:
+            out["equity_parent"] = out["equity_total"] - nci[0]
     return out
 
 

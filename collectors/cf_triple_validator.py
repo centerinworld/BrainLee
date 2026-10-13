@@ -4,7 +4,12 @@ cf_triple_validator.py — DART·FnGuide·Seibro 3중 현금흐름 검증 모듈
 신규 수집된 현금흐름(cash_flow_data) 행에 대해 자동으로 3중 검증 수행:
   DART    (cash_flow_data 최우선 소스 — CFS 연결 기준)
   FnGuide (cash_flow_data 보조 소스 — CFS 연결 기준)
-  Seibro  (실시간 API 독립 소스 — 항상 연결 기준)
+  Seibro  (실시간 공개 API — 연결/별도)
+  ⚠ 2026-10-09 정정: SEIBro는 FnGuide와 **같은 공급원**으로 보인다(008930 분기 매출 완전 동일, SEIBro 자체 오류도 있음 —
+    008930 영업이익 연간 570억 vs 실제 1,387억). **독립 검증원이 아니다.** 'FG ≈ Seibro'는 외부 두 곳 일치가 아니라 FnGuide 한 곳이다.
+    현행 확정 판정은 scripts/review/build_field_verification_20261003.py(FnGuide 200만원 절대, docs/FINANCIAL_STATEMENTS.md 원칙 0)가 정본이며,
+    이 모듈의 ±3% 판정은 참고 플래그(cf_validation_flags)일 뿐 확정 근거가 아니다. SEIBro는 FnGuide 빈 분기 확인용 대리값으로만 쓴다
+    (judge_fnguide_quarter_inconsistent_20261009.py — 같은 묶음 FnGuide 값과 전부 일치할 때만).
 
 비교 결과 → cf_validation_flags 에 CONFIRMED / CLOSE_MATCH / AMBIGUOUS 기록
 
@@ -18,7 +23,7 @@ cf_triple_validator.py — DART·FnGuide·Seibro 3중 현금흐름 검증 모듈
   ① DART ≈ Seibro (±3%)              → CONFIRMED  (DART 유지)
   ② DART ≈ FG (±3%), Seibro 없음     → CONFIRMED  (DART+FG 합의)
   ③ DART 3~15% ≈ Seibro 또는 FG     → CLOSE_MATCH (수동 확인 권고)
-  ④ FG ≈ Seibro (±3%) ≠ DART        → AMBIGUOUS   (DART 오류 의심, FG값 보정)
+  ④ FG ≈ Seibro (±3%) ≠ DART        → AMBIGUOUS   (DART 오류 의심 — 플래그만. 2026-10-09: FG 값 자동 보정 중단, 원칙 0)
   ⑤ DART None, FG ≈ Seibro (±3%)    → CONFIRMED  (FG 채택)
   ⑥ 15% 초과 불일치                   → AMBIGUOUS
 
@@ -446,11 +451,9 @@ def validate_recent(
                     else:
                         stats["ambiguous"] += 1
 
-                        # AMBIGUOUS 시 FG ≈ Seibro (±3%)이고 DART CFS인데 다른 경우만 보정
-                        # DART가 OFS면 Seibro(CFS)와 달라도 정상일 수 있으므로 보정 안 함
-                        if (verdict == "dart_vs_fg_seibro" and fg_원 is not None
-                                and dart_report_type == "CFS" and not dry_run):
-                            _apply_fg_correction(conn, stock_code, year, field, fg_원)
+                        # 2026-10-09 중단: 예전엔 FG ≈ Seibro ≠ DART면 FG 값으로 cash_flow_data를 덮었다(_apply_fg_correction).
+                        # SEIBro = FnGuide 같은 공급원이라 'FnGuide 단독 값 복사'가 되어 원칙 0 위반 → 플래그(cf_validation_flags)만 남기고
+                        # 정정은 DART 원문 후보가 FnGuide와 맞을 때만 하는 scripts/review/* 경로로.
 
                     logger.debug(
                         f"  {stock_code} {year} {field}: {verdict} → {status}"
@@ -477,25 +480,11 @@ def validate_recent(
     return stats
 
 
-def _apply_fg_correction(
-    conn: sqlite3.Connection,
-    stock_code: str,
-    year: int,
-    field: str,
-    fg_원: float,
-) -> None:
-    """FG ≈ Seibro ≠ DART 케이스: cash_flow_data DART 행의 해당 필드를 FG 값으로 교체."""
-    existing = conn.execute("""
-        SELECT id FROM cash_flow_data
-        WHERE stock_code=? AND year=? AND is_annual=1 AND data_source LIKE 'dart%'
-        ORDER BY id LIMIT 1
-    """, (stock_code, year)).fetchone()
-    if existing:
-        conn.execute(
-            f"UPDATE cash_flow_data SET {field}=?, data_source='dart_fg_corrected' WHERE id=?",
-            (fg_원, existing["id"])
-        )
-        logger.info(f"  → {stock_code} {year} {field} FG 값으로 보정 (dart_fg_corrected)")
+def _apply_fg_correction(*_args, **_kwargs) -> None:
+    """폐기(2026-10-09). 예전: FG ≈ Seibro ≠ DART면 cash_flow_data를 FnGuide 값으로 덮어씀(data_source='dart_fg_corrected').
+    SEIBro는 FnGuide와 같은 공급원이라 FnGuide 단독 값 복사 = 원칙 0 위반. 재사용 사고를 막기 위해 호출 시 예외.
+    정정은 DART 원문 후보가 FnGuide와 200만원 이내일 때만 하는 scripts/review/* 경로로."""
+    raise RuntimeError("_apply_fg_correction 폐기(2026-10-09): FnGuide 값 직접 복사 금지 — docs/FINANCIAL_STATEMENTS.md 원칙 0")
 
 
 # ══════════════════════════════════════════════════════════

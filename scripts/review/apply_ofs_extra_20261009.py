@@ -8,7 +8,7 @@
   - 빈 칸(행 없음 포함)  → DART 원문값으로 채운다. 이후 build_field_verification이 FnGuide와 대조해 확정/원인 조사로 판정.
   - 값이 있는 칸이 다름 → FnGuide 값이 새 DART 값과 일치할 때만 교체(FnGuide 없거나 불일치면 보류·기록).
   기간 규칙은 apply_dart_refetch_20261002.py와 같다:
-    financial_data  분기 Q1~Q3 = DART 보고서(손익 3개월), Q4 = 연간 − (Q1+Q2+Q3) / 재무상태 = 연간, 연간 = 사업보고서. 별도는 순이익·자본 = 전체.
+    financial_data  분기 Q1~Q3 = DART 보고서(손익 3개월), Q4 = 연간 − 3분기 보고서 누적(D-6, 10-09) / 재무상태 = 연간, 연간 = 사업보고서. 별도는 순이익·자본 = 전체.
     cash_flow_data  Q1~Q3 누적 = DART YTD, 3개월 = YTD 차분(Q1=YTD) / Q4 누적 = 연간, 3개월 = 연간 − Q3 YTD / 연간 누적 = 연간.
     CapEx 절대값. 감가상각은 이 원문에 없어 건드리지 않는다(XBRL 경로).
   FnGuide 대조 칸: 분기·Q4는 3개월 값(_q·손익), 연간은 누적. 같은 칸의 누적 값은 3개월 칸 판정을 따른다.
@@ -32,6 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from db_compat import connect_primary_db  # noqa: E402
+import fin_norm as fn  # noqa: E402 — 정규화 정의 한 곳(2026-10-10)
 from data_write_gate import gate_cashflow_row, gate_financial_row, upsert_canonical_cashflow, upsert_canonical_financial  # noqa: E402
 
 SRC = ROOT / "research_outputs" / "financial_rereview_20261002" / "dart_cf_ofs_extra.jsonl"
@@ -75,6 +76,9 @@ def load(codes, fiscal=False):
     return t
 
 
+
+
+
 def targets(truth, code, year):
     """(키, 손익·재무상태 dict, 현금흐름 누적 dict, 현금흐름 3개월 dict). 키 = 'Q1'..'Q4' | 'A'."""
     g = lambda q: truth.get((code, year, q))  # noqa: E731
@@ -112,9 +116,12 @@ def targets(truth, code, year):
         fin4 = {"total_assets": a.get("total_assets"), "total_liabilities": a.get("total_liabilities"), "total_equity": a.get("equity_total")}
         if q1 and q2 and q3:
             fa, f1, f2, f3 = fin_of(a), fin_of(q1), fin_of(q2), fin_of(q3)
-            for f in FLOW:
-                if all(x.get(f) is not None for x in (fa, f1, f2, f3)):
-                    fin4[f] = fa[f] - f1[f] - f2[f] - f3[f]
+            for f in FLOW:  # D-6: 4분기 = 연간 − 3분기 보고서 누적(원문 없으면 파생 안 함 — 정의 혼재 방지)
+                # 10-13: 3분기 누적은 표준 경로 fn.ytd3(회계 키→DART 키, 손실 라벨 부호, 연결 순이익=지배)로만 읽는다
+                y3 = fn.ytd3(code, year, FS, f)
+                fav = a.get("ni_parent") if (f == "net_income" and FS == "CFS" and a.get("ni_parent") is not None) else fa.get(f)
+                if fav is not None and y3 is not None:
+                    fin4[f] = fn.q4_flow(fav, y3)
         qv4 = {}
         if q3:
             for k, c in CF.items():
@@ -128,13 +135,14 @@ def targets(truth, code, year):
 
 FD_COLS = ("revenue", "operating_profit", "net_income", "total_assets", "total_liabilities", "total_equity",
            "capital_stock", "eps", "bps", "dps", "roe")
-CFC_COLS = ("operating_cf", "investing_cf", "financing_cf", "capex", "cash_end", "depreciation")
+CFC_COLS = ("operating_cf", "investing_cf", "financing_cf", "capex", "cash_end", "depreciation",
+            "operating_cf_q", "investing_cf_q", "financing_cf_q", "capex_q")  # 10-13: 분기 3개월 칸 포함(빠지면 정본 upsert가 NULL로 덮음 — 21,509행 실측)
 
 
 def canonical_sync(conn, run_id, now, fd_ids, cf_ids):
     """원장 행 → 게이트 → 정본 upsert(연간 키는 quarter=0), 기존 정본 행 백업, readback. 게이트 거부 행은 정본을 건드리지 않고 보류."""
     out = {"fd_rows": len(fd_ids), "cf_rows": len(cf_ids), "fd_synced": 0, "cf_synced": 0,
-           "fd_refused": 0, "cf_refused": 0, "refused_sample": [], "readback_mismatch": 0, "mismatch_sample": []}
+           "fd_refused": 0, "cf_refused": 0, "refused_sample": [], "readback_mismatch": 0, "mismatch_sample": [], "preserved_cells": 0}
     specs = (("financial_data", "canonical_financial_data", FD_COLS, fd_ids, gate_financial_row, upsert_canonical_financial, "fd"),
              ("cash_flow_data", "canonical_cashflow_data", CFC_COLS, cf_ids, gate_cashflow_row, upsert_canonical_cashflow, "cf"))
     synced_keys = []
@@ -171,6 +179,15 @@ def canonical_sync(conn, run_id, now, fd_ids, cf_ids):
                          (run_id, r["stock_code"], r["year"], q, 1 if r["is_annual"] else 0, r["report_type"]))
             payload = {k: r[k] for k in ("stock_code", "year", "is_annual", "report_type", "data_source") + cols}
             payload["quarter"] = q
+            # 10-13 null-preserving: 정본이 '다른' 원장 행을 가리키는데 이 행이 일부 칸만 채운(sparse) 경우, 이 행이 NULL인 칸은 기존 정본 값을 유지한다
+            # (upsert가 excluded로 전 칸을 덮기 때문). 정본이 이 행 자신을 가리키면 원장이 정본이므로 의도한 빈 칸(RAW_CONTRADICTION 등)도 그대로 전달한다.
+            prev = conn.execute(f"SELECT source_row_id, {','.join(cols)} FROM {canon} WHERE stock_code=? AND year=? AND quarter=? AND is_annual=? AND report_type=?",
+                                (r["stock_code"], r["year"], q, 1 if r["is_annual"] else 0, r["report_type"])).fetchone()
+            if prev is not None and prev[0] != r["id"]:
+                for i, c in enumerate(cols):
+                    if payload.get(c) is None and prev[1 + i] is not None:
+                        payload[c] = float(prev[1 + i])
+                        out["preserved_cells"] += 1
             ok, fixed, reason = gate(conn, payload)
             if not ok:
                 out[f"{tag}_refused"] += 1

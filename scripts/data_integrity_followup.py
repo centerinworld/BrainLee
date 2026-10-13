@@ -118,6 +118,7 @@ def followup_revenue_yoy(conn, dart, limit: int = 60) -> dict:
     log.info("revenue_extreme_yoy 대상 %d건", len(targets))
 
     confirmed_real = fixed = no_data = 0
+    would_fix = []
     for stock_code, year, revenue, prev_year, prev in targets:
         try:
             df_cur = _finstate(dart, stock_code, int(year), 0, "CFS")
@@ -142,22 +143,16 @@ def followup_revenue_yoy(conn, dart, limit: int = 60) -> dict:
             confirmed_real += 1
             continue
 
-        # 둘 중 하나라도 DART 원문과 다르면 해당 연도만 교정
+        # 2026-10-12: 보고 전용(값 변경 금지). 원칙 0(DART 파싱값 100% 불신 — FnGuide 대조로만 확정) 위반이었다:
+        # FnGuide 대체(지주사 정의·외화 환산 등 사용자 승인 예외)를 DART 원통화 값으로 매일 되돌리고 fix_log도 남기지 않았음(383800·900120·950210 등).
+        # 매출 수정은 docs/FINANCIAL_STATEMENTS.md 절차(FnGuide·네이버 대조, 백업·fix_log·readback)를 거치는 정본 스크립트에서만 한다.
         if not cur_matches:
-            cur.execute("""
-                UPDATE financial_data SET revenue=%s, data_source=data_source || '+dart_yoy_followup_repair'
-                WHERE stock_code=%s AND year=%s AND is_annual=true AND report_type='CFS'
-            """, (real_cur, stock_code, year))
-            fixed += cur.rowcount
+            would_fix.append({"stock_code": stock_code, "year": int(year), "db": float(revenue), "dart": real_cur})
         if not prev_matches:
-            cur.execute("""
-                UPDATE financial_data SET revenue=%s, data_source=data_source || '+dart_yoy_followup_repair'
-                WHERE stock_code=%s AND year=%s AND is_annual=true AND report_type='CFS'
-            """, (real_prev, stock_code, prev_year))
-            fixed += cur.rowcount
-        conn.commit()
+            would_fix.append({"stock_code": stock_code, "year": int(prev_year), "db": float(prev), "dart": real_prev})
 
-    return {"total": len(targets), "confirmed_real_event": confirmed_real, "fixed": fixed, "no_dart_data": no_data}
+    return {"total": len(targets), "confirmed_real_event": confirmed_real, "fixed": fixed, "no_dart_data": no_data,
+            "report_only": True, "dart_differs_not_applied": would_fix}
 
 
 def followup_dilution(conn, dart, limit: int = 30) -> dict:

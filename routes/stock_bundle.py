@@ -64,6 +64,7 @@ async def get_stock_bundle(code: str):
             company_intel,
             revenue_mix,
             consensus_forecast,
+            parent_vs_consolidated,
         ) = await asyncio.gather(
             _fetch(client, f"{base}/api/dashboard/corporate-actions/{code}?days=730"),
             _fetch(client, f"{base}/api/extra-signals/chart/{code}"),
@@ -81,6 +82,7 @@ async def get_stock_bundle(code: str):
             _fetch(client, f"{base}/api/company-intelligence/company/{code}"),
             _fetch(client, f"{base}/api/dashboard/revenue-mix/{code}"),
             _fetch(client, f"{base}/api/dashboard/consensus-forecast/{code}"),
+            _fetch(client, f"{base}/api/dashboard/parent-vs-consolidated/{code}"),
         )
 
     return {
@@ -100,7 +102,76 @@ async def get_stock_bundle(code: str):
         "company_intel":          company_intel,
         "revenue_mix":            revenue_mix,
         "consensus_forecast":     consensus_forecast,   # 예측치 전용 그룹 — 실제 재무표와 섞지 말 것(2026-10-10)
+        "parent_vs_consolidated": parent_vs_consolidated,  # 연결 착시(본사 정체·자회사 성장) 구분(2026-10-11)
     }
+
+
+def parent_vs_consolidated_rows(conn, code):
+    """연간 연결(CFS)·별도(OFS) 매출·영업이익과 자회사 기여(연결 − 별도). 정본 기준 원장 대표 행(연간, quarter 0 우선)."""
+    rows = {}
+    for y, fs, rev, op in conn.execute("""SELECT DISTINCT ON (year, report_type) year, report_type, revenue, operating_profit FROM financial_data
+                                          WHERE stock_code=? AND is_annual AND year>=2019 ORDER BY year, report_type, quarter, id""", (code,)).fetchall():
+        rows.setdefault(y, {})[fs] = (rev, op)
+    import sys as _s
+    from pathlib import Path as _P
+    _s.path.insert(0, str(_P(__file__).resolve().parents[1]))
+    import fin_norm as _fn
+    src = {}
+    for y in list(rows) + [yy for yy in range(2019, 2027) if yy not in rows]:
+        for fs in ("CFS", "OFS"):
+            if fs not in rows.get(y, {}) or rows[y][fs][0] is None:  # DB에 없으면 DART 원문(출처 표시)
+                rv, op = _fn.raw(code, y, 0, fs, "revenue"), _fn.raw(code, y, 0, fs, "operating_profit")
+                if rv is not None:
+                    rows.setdefault(y, {})[fs] = (rv, op)
+                    src[(y, fs)] = "DART 원문"
+    out = []
+    for y in sorted(rows):
+        c, o = rows[y].get("CFS"), rows[y].get("OFS")
+        out.append({"year": y, "cfs_revenue": c and c[0], "ofs_revenue": o and o[0], "cfs_op": c and c[1], "ofs_op": o and o[1],
+                    "subsidiary_revenue": (c[0] - o[0]) if c and o and None not in (c[0], o[0]) else None,
+                    "subsidiary_share": round((c[0] - o[0]) / c[0], 4) if c and o and c[0] and o[0] is not None else None,
+                    "source": {fs: src.get((y, fs), "원장") for fs in ("CFS", "OFS")}})
+    return out
+
+
+def parent_illusion_flag(rows):
+    """연결 착시 판정(2026-10-11): 성장이 본사가 아니라 자회사(인수·연결 범위 변화 포함)에서 나오는지.
+    ① 1년: 연결 매출 +15%↑ & 본사(별도) +5%↓  ② 3년: 연결 +30%↑ & 본사 +10%↓  ③ 자회사 비중 3년 +15%p↑  — 하나라도 해당하면 표시."""
+    r = {x["year"]: x for x in rows if x["cfs_revenue"] and x["ofs_revenue"]}
+    if not r:
+        return {"flag": None, "reason": "연결·별도 매출이 있어야 판정"}
+    yl = max(r)
+    out = {"latest_year": yl, "checks": []}
+    def g(a, b):
+        return None if not a else b / a - 1
+    if yl - 1 in r:
+        gc, go = g(r[yl - 1]["cfs_revenue"], r[yl]["cfs_revenue"]), g(r[yl - 1]["ofs_revenue"], r[yl]["ofs_revenue"])
+        out["checks"].append({"window": "1년", "cfs_growth": round(gc, 4), "ofs_growth": round(go, 4), "hit": gc >= 0.15 and go < 0.05})
+    if yl - 3 in r:
+        gc, go = g(r[yl - 3]["cfs_revenue"], r[yl]["cfs_revenue"]), g(r[yl - 3]["ofs_revenue"], r[yl]["ofs_revenue"])
+        ds = (r[yl]["subsidiary_share"] or 0) - (r[yl - 3]["subsidiary_share"] or 0)
+        out["checks"].append({"window": "3년", "cfs_growth": round(gc, 4), "ofs_growth": round(go, 4), "hit": gc >= 0.30 and go < 0.10})
+        out["checks"].append({"window": "자회사 비중 3년", "share_change_pp": round(100 * ds, 1), "hit": ds >= 0.15})
+    out["flag"] = any(c["hit"] for c in out["checks"]) if out["checks"] else None
+    hits = [c for c in out["checks"] if c["hit"]]
+    out["reason"] = ("연결 착시 주의 — " + ", ".join(
+        f"{c['window']}: 연결 {c['cfs_growth']:+.1%} vs 본사 {c['ofs_growth']:+.1%}" if "cfs_growth" in c else f"자회사 비중 {c['share_change_pp']:+.1f}%p" for c in hits)
+        if hits else "해당 없음")
+    return out
+
+
+@router.get("/api/dashboard/parent-vs-consolidated/{code}")
+def get_parent_vs_consolidated(code: str):
+    """연결 착시 구분(2026-10-11 사용자 요청, 예 099430 바이오플러스: 본사 매출 정체·연결 자회사 매출 증가) — 국내종목 페이지용 데이터.
+    프런트 표시는 OPEN_ITEMS(연결 착시 표시)로 별도 작업."""
+    from db_compat import connect_primary_db
+    conn = connect_primary_db(timeout=30, readonly=True)
+    try:
+        rows = parent_vs_consolidated_rows(conn, code)
+        return {"ok": True, "rows": rows, "illusion": parent_illusion_flag(rows),
+                "note": "자회사 기여 = 연결 − 별도(내부거래 제거 전후 차이 포함, 근사). 별도가 비어 있는 연도는 판정 제외."}
+    finally:
+        conn.close()
 
 
 @router.get("/api/dashboard/consensus-forecast/{code}")

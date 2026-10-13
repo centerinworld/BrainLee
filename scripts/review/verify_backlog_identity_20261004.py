@@ -83,6 +83,12 @@ def main():
     rows = [tuple(r) for r in conn.execute("""SELECT stock_code, fiscal_year, fiscal_quarter, report_type, backlog_amount_krw, source_excerpt
                                               FROM dart_backlog_quarterly""").fetchall()]
     st, fix, out = collections.Counter(), [], []
+    # 2026-10-11: 단위 미표기 발췌 → 같은 회사 다른 기간 발췌에 선언된 단위(최빈값)로 추정(판정만, 값 정정은 하지 않음)
+    co_unit = collections.defaultdict(collections.Counter)
+    for code, y, q, fs, v, ex in rows:
+        if ex:
+            for m in re.finditer(r"단위\s*[:：]?\s*(십억원|억원|백만원|천원|원)", ex):
+                co_unit[code][UNIT[m.group(1)]] += 1
     for code, y, q, fs, v, ex in rows:
         if not ex:
             st["원문 발췌 없음"] += 1
@@ -98,8 +104,12 @@ def main():
             continue
         declared = [s for s in sols if s[3]]
         if not declared:
+            cu = co_unit[code].most_common(1)[0][0] if co_unit[code] else None
+            if cu and v is not None and any(s[0].startswith("수주총액") and abs(s[2] * cu - v) <= max(1e3, abs(v) * 1e-6) for s in sols):
+                st["확인(항등식 일치, 회사 단위 추정)"] += 1
+                continue
             st["검증 불가(단위 미표기)"] += 1
-            out.append((code, y, q, v, None, "단위 미표기"))
+            out.append((code, y, q, v, None, "단위 미표기" + (f"(회사 단위 {cu:g}로도 불일치)" if cu else "")))
             continue
         # 2026-10-05 표본 검증: '수주총액−기납품=잔고' 후보 8/8 정답, '기초+증감=기말' 후보는 기초값을 고르는 오류(013120) → 반영은 A 유형만
         a_type = [s for s in declared if s[0].startswith("수주총액")]
@@ -111,10 +121,10 @@ def main():
         st["정정 후보(항등식≠저장값)"] += 1
         fix.append((code, y, q, fs, v, best[1], best[0]))
         out.append((code, y, q, v, best[1], best[0]))
-    n_ver = st["확인(항등식 일치)"] + st["정정 후보(항등식≠저장값)"]
+    n_ver = st["확인(항등식 일치)"] + st["확인(항등식 일치, 회사 단위 추정)"] + st["정정 후보(항등식≠저장값)"]
     print(json.dumps(dict(st), ensure_ascii=False, indent=1))
     if n_ver:
-        print(f"항등식으로 판정 가능한 행 중 저장값 일치율: {st['확인(항등식 일치)'] / n_ver * 100:.2f}% ({n_ver}행)")
+        print(f"항등식으로 판정 가능한 행 중 저장값 일치율: {(st['확인(항등식 일치)'] + st['확인(항등식 일치, 회사 단위 추정)']) / n_ver * 100:.2f}% ({n_ver}행)")
     import csv
     with open(OUT / "backlog_identity_check_20261004.csv", "w", newline="") as fh:
         w = csv.writer(fh)

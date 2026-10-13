@@ -7,7 +7,7 @@ Codex 보강 의견 §9-1-3('필드 단위 확정 상태 스키마화')·§9-1-2
   2) 원문이 없는 종목·기간은 financial_source_snapshot 중 wcomp URL 행(연간, 2026-08 이후) — 구 comp 캡처는 파싱 오류가 많아 제외
   3) 네이버(naver_financial, 연결 매출·영업이익)는 보조 확인
 상태: 확정(3소스) / 확정(2소스) / 원인 조사 / 미확인(DB 없음). 외부 값이 없는 필드는 행을 만들지 않는다(= 미확인).
-허용오차: DB vs FnGuide 확정 = **절대 200만원**(`close_fg`, D-7 사용자 승인 2026-10-09 — 이전 max(200만원, 0.5%)는 억 단위 반올림값을 통과시켜 폐기), 네이버(억 단위) 보조 비교만 max(200만원, 0.5%)(`close`). 순이익·자본은 연결=지배주주, 별도=전체(§2-1). 기준 버전 basis_version='FS-2026-10-03'.
+허용오차: DB vs FnGuide 확정 = **절대 200만원**(`close_fg`; 외화 보고통화 종목만 max(200만원, 0.1%) `close_fx` — D-9 사용자 승인 2026-10-11; D-7 사용자 승인 2026-10-09 — 이전 max(200만원, 0.5%)는 억 단위 반올림값을 통과시켜 폐기), 네이버(억 단위) 보조 비교만 max(200만원, 0.5%)(`close`). 순이익·자본은 연결=지배주주, 별도=전체(§2-1). 기준 버전 basis_version='FS-2026-10-03'.
 매 실행마다 전체 교체(run_id 기록). 읽기는 main.py /api/dashboard/data-quality.
 """
 import collections
@@ -37,6 +37,12 @@ DDL = """CREATE TABLE IF NOT EXISTS financial_field_verification (
 def close(a, b):
     """네이버(억 단위 반올림) 보조 비교용 — 기존 허용오차."""
     return a is not None and b is not None and abs(a - b) <= max(2e6, abs(b) * 0.005)
+
+
+def close_fx(a, b):
+    """D-9(사용자 승인 2026-10-11): 외화 보고통화 종목(fs_quirk:reporting_currency)은 환율 소수·원천 기준일 차이로 200만원 절대 기준을
+    원리상 맞추기 어렵다 → max(200만원, |FnGuide| × 0.1%)(환산 스크립트 fix_fx_cells·P10-3과 같은 기준)."""
+    return a is not None and b is not None and abs(a - b) <= max(2e6, abs(b) * 0.001)
 
 
 def close_fg(a, b):
@@ -82,6 +88,7 @@ def main():
     nv = {k: v for k, v in nv.items() if k[0] not in new_codes}
     nv.update(new_nv)
     naver_mismatch = []
+    fx_codes = {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:reporting_currency'").fetchall()}
     db = {}
     for r in conn.execute("""SELECT f.stock_code,f.year,f.quarter,f.is_annual,f.report_type,f.revenue,f.operating_profit,f.net_income,
                                     f.total_assets,f.total_liabilities,f.total_equity,f.depreciation_amortization,
@@ -105,6 +112,26 @@ def main():
         if not ann:
             base.pop("depreciation_amortization")
         db.setdefault(k, base)
+    # 2026-10-11: 현금흐름은 재무 행에 묶어 읽으면 ① 재무 행이 없을 때 ② 연간 두 벌(quarter 0·4)의 표기가 재무·현금흐름에서 다를 때
+    # 원장 값이 있어도 'DB 없음'으로 나왔다 → 현금흐름 원장에서 직접 대표 행(정본이 고른 행 → quarter 0 → id)을 골라 덮어쓴다.
+    cfdb = {}
+    for r in conn.execute("""SELECT c.stock_code,c.year,c.quarter,c.is_annual,c.report_type,c.operating_cf,c.investing_cf,c.financing_cf,c.capex,c.depreciation,
+                                    c.operating_cf_q,c.investing_cf_q,c.financing_cf_q,c.capex_q,c.depreciation_q
+                             FROM cash_flow_data c
+                             LEFT JOIN canonical_cashflow_data cn ON cn.stock_code=c.stock_code AND cn.year=c.year
+                                  AND cn.is_annual=(CASE WHEN c.is_annual THEN 1 ELSE 0 END) AND cn.report_type=c.report_type
+                                  AND cn.quarter=(CASE WHEN c.is_annual THEN 0 ELSE c.quarter END)
+                             WHERE c.year>=2022 AND c.quarter IS NOT NULL
+                             ORDER BY c.stock_code, c.year, c.report_type, c.is_annual, CASE WHEN c.is_annual THEN 0 ELSE c.quarter END,
+                                      CASE WHEN cn.source_row_id = c.id THEN 0 ELSE 1 END, c.quarter, c.id""").fetchall():
+        r = tuple(r)
+        code, y, q, ann, fs = r[:5]
+        k = (code, y, 0 if ann else q, fs)
+        if k in cfdb:
+            continue
+        cfdb[k] = dict(zip(["operating_cf", "investing_cf", "financing_cf", "capex", "depreciation"], r[5:10] if ann else r[10:15]))
+    for k, v in cfdb.items():
+        db.setdefault(k, {}).update(v)
     run_id = f"field_verif_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     now = datetime.now().isoformat(timespec="seconds")
     rows, st = [], collections.Counter()
@@ -122,7 +149,7 @@ def main():
                 naver_mismatch.append((code, y, q, fs, f, sv, nval, "naver_finance_api" if code in new_codes else "naver_financial(옛)"))
             if dv is None:
                 status, cause = "미확인(DB 없음)", None
-            elif close_fg(dv, sv):
+            elif (close_fx(dv, sv) if code in fx_codes else close_fg(dv, sv)):
                 status = "확정(3소스)" if nval is not None and close(nval, sv) else "확정(2소스)"
                 cause = None
             else:

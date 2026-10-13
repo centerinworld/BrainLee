@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """DART 재수집 없이 financial_data 를 DB 내부 값으로 정정한다(2026-10-02 독립 재검토 2단계).
 
-  F1 Q4(quarter=4, is_annual=false) 손익 = 연간 − (Q1+Q2+Q3).  같은 report_type, 네 값 모두 있을 때만.
+  F1 **폐기(2026-10-09, D-6)**: 옛 'Q4 손익 = 연간 − (Q1+Q2+Q3)'. 정본 4분기 정의가 '연간 − 3분기 보고서 누적'으로 바뀌어
+     이 규칙을 돌리면 4분기 정의가 다시 섞인다 → 코드에서 F1 후보를 만들지 않는다. 4분기 손익은 unify_q4_ytd3_20261009.py 경로로만.
+  (옛 F1 설명) Q4(quarter=4, is_annual=false) 손익 = 연간 − (Q1+Q2+Q3).  같은 report_type, 네 값 모두 있을 때만.
      연간 행은 is_annual 행 중 FnGuide 아닌 것 우선. 순이익은 연간·분기가 같은 기준(대부분 전체)이라는 전제 —
      표본 평가로 정답률이 오르는 필드만 적용한다.
   F2 Q4 재무상태(자산·부채·자본) = 연간 행 값.
@@ -45,14 +47,7 @@ def plan(rows, fields):
         ann = ann or g.get(("A", 0)) or g.get(("A", 4))
         q4 = g.get(4)
         if q4 and ann:
-            for f in PL:
-                if f not in fields:
-                    continue
-                qs = [g.get(i) for i in (1, 2, 3)]
-                if all(qs) and ann[f] is not None and all(x[f] is not None for x in qs):
-                    new = ann[f] - sum(x[f] for x in qs)
-                    if not close(q4[f], new):
-                        out.append((q4["id"], f, q4[f], new, "F1 Q4 = 연간 − (Q1+Q2+Q3)"))
+            # F1(Q4 손익 = 연간 − Q1~Q3 합) 폐기 — D-6(2026-10-09). 다시 켜지 말 것(4분기 정의 혼재).
             for f in BS:
                 if f in fields and ann[f] is not None and not close(q4[f], ann[f]):
                     out.append((q4["id"], f, q4[f], ann[f], "F2 Q4 재무상태 = 연간"))
