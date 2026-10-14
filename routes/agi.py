@@ -218,12 +218,28 @@ def agi_status():
 # 원문 성격이 아니다 — `/documents`와 같이 인증 없이 공개한다. 이 핸들러는 SELECT 전용이다
 # — 보고서 생성(쓰기)은 `agi.company_report.generate_and_store_report()`를 launchd
 # 스케줄(`agi_company_report_refresh_20261014.py`)로만 부르고, 이 라우터에는 쓰기가 없다.
+
+
+def _company_reports_schema() -> str | None:
+    """항상 `None`(=`public`) — 공개 HTTP 계약에는 `schema` 파라미터가 없다(설계상 의도).
+
+    테스트만 `mock.patch.object(agi_route, "_company_reports_schema", ...)`로 이 함수
+    전체를 바꿔 일회용 스키마를 가리킨다(2026-10-14 외부 검토 반영 — 이전엔 테스트가
+    `public`에 직접 INSERT/DELETE 픽스처를 넣었다 — `/documents`의 `get_service` 교체
+    패턴과 동일한 방식으로 격리했다).
+    """
+    return None
+
+
 @router.get("/company-reports")
 def list_company_reports():
+    from agi.db import qualify
+
+    schema = _company_reports_schema()
     conn = connect_readonly()
     try:
         rows = conn.execute(
-            "SELECT stock_code, template_kind, created_at, updated_at FROM company_reports "
+            f"SELECT stock_code, template_kind, created_at, updated_at FROM {qualify(schema, 'company_reports')} "
             "ORDER BY updated_at DESC"
         ).fetchall()
         items = [dict(row) for row in rows]
@@ -238,7 +254,7 @@ def get_company_report(stock_code: str):
 
     conn = connect_readonly()
     try:
-        report = get_current_report(conn, stock_code)
+        report = get_current_report(conn, stock_code, schema=_company_reports_schema())
     finally:
         conn.close()
     if report is None:
