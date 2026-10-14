@@ -257,12 +257,28 @@ def sync_internal(conn, snapshot_date: str) -> dict[str, Any]:
     for dimension, name, _ in SEMICON_RULES:
         rule_nodes[(dimension, name)] = _node(conn, source, dimension, name, parent_key=root, source_url="internal:rules", taxonomy_version=INTERNAL_VERSION)
         nodes.add(rule_nodes[(dimension, name)])
+    # 2026-10-13 D03/비교군 확장(사용자 지시 7 — "비교군을 계속 만들고 확장") — 첫 예시 OSAT.
+    osat_parent = rule_nodes[("process", "후공정 패키징·조립")]
+    osat_peer = _node(conn, source, "peer_group", "OSAT(반도체 후공정 패키징·테스트) 비교군", parent_key=osat_parent,
+                      description="패키징·테스트 매출 비중이 큰 후공정 전문 비교군", source_url="internal:curated", taxonomy_version=INTERNAL_VERSION)
+    nodes.add(osat_peer)
 
     memberships: list[dict[str, Any]] = []
     curated_peer = {
         "094970": "DART 2025 제품: PBA 32.27%, FPBA 25.83%",
         "290550": "DART 2025 제품: 스마트폰 65.04%, 전장 25.19% (연성회로/모듈 조립)",
         "054040": "DART 2025 제품: OLED-PBA 59.19%, QD/LCD 모듈 부품 32.84%",
+    }
+    # (code -> rationale, status). 'verified' = DART 제품명에 패키징/테스트 용어가 직접 있음.
+    # 036540(SFA반도체)은 제품 구분이 '메모리/비메모리'뿐이라 공정 근거가 직접 없어 'inferred'로 둔다.
+    curated_osat = {
+        "033640": ("DART 2025 제품: WLP Bumping(용역) 합계 34.15%+수출 29.23%", "verified"),
+        "330860": ("DART 2025 제품: Wafer Test 99.07%, PKG Test 0.42%", "verified"),
+        "067310": ("DART 2025 제품: PKG(패키징) 37.73%, 반도체제조 소계 41.11%", "verified"),
+        "097800": ("DART 2025 제품: PKG 77.07%, TEST 22.42% (합 99.49%)", "verified"),
+        "131970": ("DART 2025 제품: WaferTest 92.46%, PKGTest 5.93% (두산테스나)", "verified"),
+        "036540": ("sector_mid='반도체 제조업', 제품 구분은 메모리/비메모리뿐 — 공정(패키징/테스트) 직접 근거 없음(SFA반도체)", "inferred"),
+        "061970": ("DART 2025 제품: '용역매출 반도체' 98.83% — 패키징/범핑 공정명이 직접 없음(LB세미콘)", "inferred"),
     }
     for row in universe:
         code = _valid_code(row["stock_code"])
@@ -290,9 +306,17 @@ def sync_internal(conn, snapshot_date: str) -> dict[str, Any]:
             for key, confidence in ((electronics, 90), (ems, 94), (pba, 96)):
                 memberships.append({"stock_code": code, "node_key": key, "confidence": confidence, "status": "verified", "evidence_json": {"rationale": curated_peer[code], "source": "DART company_product_mix 2025 + curated peer review"}})
             memberships.append({"stock_code": code, "node_key": peer, "confidence": 98, "status": "verified", "is_primary": True, "evidence_json": {"rationale": curated_peer[code], "comparison_axis": "PBA/FPBA·OLED/스마트기기 모듈 제조", "source": "DART company_product_mix 2025"}})
+        if code in curated_osat:
+            rationale, osat_status = curated_osat[code]
+            osat_confidence = 96 if osat_status == "verified" else 75
+            memberships.append({"stock_code": code, "node_key": osat_parent, "confidence": osat_confidence, "status": osat_status,
+                                "evidence_json": {"rationale": rationale, "source": "DART company_product_mix 2025"}})
+            memberships.append({"stock_code": code, "node_key": osat_peer, "confidence": osat_confidence, "status": osat_status, "is_primary": True,
+                                "evidence_json": {"rationale": rationale, "comparison_axis": "후공정 패키징·테스트", "source": "DART company_product_mix 2025",
+                                                  "curated_basis": "2026-10-13 사용자 D03 예시 종목"}})
 
     count = replace_source_snapshot(conn, source_system=source, snapshot_date=snapshot_date, memberships=memberships)
-    record_source_run(conn, source_system=source, snapshot_date=snapshot_date, status="success", node_count=len(nodes), membership_count=count, source_url="internal:rules", payload_hash=_digest({"version": INTERNAL_VERSION, "rules": SEMICON_RULES, "curated": curated_peer}), metadata={"rule_version": INTERNAL_VERSION, "verified_peer_members": len(curated_peer)})
+    record_source_run(conn, source_system=source, snapshot_date=snapshot_date, status="success", node_count=len(nodes), membership_count=count, source_url="internal:rules", payload_hash=_digest({"version": INTERNAL_VERSION, "rules": SEMICON_RULES, "curated": curated_peer, "curated_osat": curated_osat}), metadata={"rule_version": INTERNAL_VERSION, "verified_peer_members": len(curated_peer), "osat_peer_members": len(curated_osat)})
     return {"source": source, "nodes": len(nodes), "memberships": count}
 
 

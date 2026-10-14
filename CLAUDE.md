@@ -632,6 +632,20 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 
 > 🪙 **토큰 최적화**: 이 섹션은 매 세션 자동 로드된다. **항목은 1~3문장만**, 근거/SQL/장문 분석은 `docs/`에 날짜 파일로 두고 링크만. 최근 1~2주(약 15개)만 유지하고 초과분은 [docs/CLAUDE_CHANGELOG_ARCHIVE.md](docs/CLAUDE_CHANGELOG_ARCHIVE.md) 맨 아래로 이동.
 
+### 2026-10-14(Claude AGI-06 외부 검토 5건 반영)
+- 외부 검토(Codex) 지적 반영: ① launchd `agi-company-report-refresh`를 `launchctl start`로 실제 1회 트리거해 `runs=0`→`1`(exit 0) 확인. ② `store_original='no'` 정책 스킵이 `skipped_duplicate`에 잘못 합산되던 결함 — migration **0004**(`skipped_no_store_policy` 컬럼, `public` 적용)로 수정, `_store_post`가 bool 대신 `"stored"/"duplicate"/"policy_skipped"` 3상태 반환(`agi/service.py`·`agi/repository.py`·`agi/adapters/blog.py`). ③ `test_agi_company_report_api.py`가 운영 067310 데이터 의존이던 것을 자기완결형 픽스처(`stock_code='999999'`, setUp/tearDown)로 교체. ④ 설계 문서 `AGI_06_COMPANY_REPORT_DESIGN_20261013.md` 구현 상태 갱신. ⑤ 투자포인트·리스크 섹션은 아직 범위 밖(AGI-07 과제로 명시, 임의 확장 안 함). 테스트 280 passed, 재시작·`gen_db_doc` 재생성 완료. 상세 `docs/Open_Items_AGI.md` AGI-06.
+
+### 2026-10-14(Claude AGI-06 기업 보고서 1차 구현 + API + 공개 화면)
+- 신규 테이블 `company_reports`/`company_report_sections`(migration 0003, 콘텐츠 해시 기반 revision), 조립 모듈 `agi/company_report.py`(업종 템플릿 7종 — 반도체/금융지주/의료기기/수주산업/배당유틸리티/지주SOTP/소재밸류체인/범용). 실제 보유 18종목 생성 완료(하나마이크론 067310 실제 수치가 참고한 메리츠 리포트와 일치 확인).
+- API `GET /api/agi/company-reports`·`/company-reports/{code}`(SELECT 전용) — `routes/agi.py` 기존 파일에 추가, `main.py` 수정 없음. **사용자 지시("Stock Lab에 공개화면 만들어줘")로 owner 전용→공개(인증 없음)로 전환**(`/documents`와 동급). 상세 `docs/AGI_06_COMPANY_REPORT_DESIGN_20261013.md`·`docs/AGI_06_SECTOR_REPORT_SAMPLES_20261013.md`, 진행 기록 `docs/Open_Items_AGI.md` AGI-06.
+- 자동 갱신: launchd `com.stock-dashboard.agi-company-report-refresh`(매일 07:00, `scripts/review/agi_company_report_refresh_20261014.py`) — `company_reports`+`portfolio`+`buy_candidates` 종목을 매일 재조립, 섹션 콘텐츠 해시가 같으면 쓰기 0건(바뀐 데이터만 새 revision). 1차 실행으로 47종목(기존 18+신규 29) 생성 확인.
+- 공개 화면: `frontend/src/views/CompanyReportsView.jsx` 신설(종목 검색/선택 + 개요·분기실적QoQ·마진괴리·사업구성·최근공시·업종고유 섹션, CSS 변수 사용), Stock Lab '종목 발굴'에 `company_reports` 탭 등록(`hub/modules.js`+`App.jsx`). `npm run build`→`safe_restart_backend.sh` 재시작 후 실서비스 도메인에서 인증 없이 200·count=47 확인.
+
+### 2026-10-14 Stock Lab W5 분포 재실행(최신 데이터 반영)
+- 10-08 W5/W6 재실행(`w5_20261008`) 이후 5일간 진행된 재무 정밀도(99.9%) 수정분을 반영해 이관 완료 21개 전략(일반엔진 8·v12·golden_cross·sector_focus·v8·W5b 9개) 전부를 같은 방법론(선택순서 무작위 12회 중앙값, 순위고정 전략은 단일값)으로 재실행 — `scripts/run_w5a_20261013.py`/`run_w5b_20261013.py`(기존 1008 스크립트 복제, 결과 파일만 날짜 갱신, 원본 보존), `strategy_w5_distribution`에 `w5_20261013` 라벨로 적재(126행). `w5_overlay.py`가 최신 라벨을 자동 선택해 매트릭스·전략허브에 서버 재시작 없이 반영됨(확인: `/api/backtest/matrix` `w5_distribution_label=w5_20261013`).
+- 가격 전용 전략(v_trend·golden_cross·deep_recovery 등)은 변화 0(예상대로 — 이 기간 가격 데이터는 안 바뀜). 재무/실적 신호를 쓰는 전략(v2·earnings_conviction·earnings_supply_discovery·moonshot_turnaround·recovery·sector_focus)은 구간별 ±1~14%p 변동 — 재무 재작성 반영으로 판단, 상세는 Stock_Strategy.md §9.
+- 아직 미이관 전략(~20개, 자체 루프·이벤트 패널형)은 이번 재실행 대상이 아니다 — 생존편향·원주가 미보정 상태 그대로 남아 있음(Stock_Strategy.md Phase 설계 §5 참조).
+
 ### 2026-09-24 소스/운영 저장소 통합 1~2단계 (runtime을 단일 기준으로)
 - 발견: `/Volumes/Realtek_NVME/stock_dashboard`(소스, 63커밋)와 `runtime/`(운영, 별도 git 저장소)은 **히스토리가 무관한 두 저장소**(같은 GitHub 원격). 코드는 runtime이 훨씬 앞서 있음(main.py 7,366 vs 5,549줄). 앞으로 코드 수정은 **runtime 한 곳**에서만 한다. - 1단계: runtime 미커밋 623건을 5개 논리 커밋으로 보호(`3c3a893`~`b05d613`, push 안 함, `data/`·`data_cache/`·`.verification/`·`hs_trade_lab/data/` 및 런타임 상태 json은 제외). - 2단계: 소스에만 있던 tracked 파일 80개를 덮어쓰기 없이 이식(`73965d5`) — `routes/peer_… (전문: docs/CLAUDE_CHANGELOG_ARCHIVE.md '2026-09-24 소스/운영 저장소 통합 1~2단계 (runti')
 

@@ -1,9 +1,15 @@
 # API 엔드포인트 목록 (자동 생성)
 
-> `scripts/ops/gen_api_doc.py` 생성 — 2026-09-26 기준 476개 / 그룹 55개. **수동 편집 금지**(서버 기동 후 재실행). 파라미터는 `http://127.0.0.1:8000/docs`.
+> `scripts/ops/gen_api_doc.py` 생성 — 2026-10-14 기준 522개 / 그룹 62개. **수동 편집 금지**(서버 기동 후 재실행). 파라미터는 `http://127.0.0.1:8000/docs`.
 
 ## `/` (1)
 `GET /`
+
+## `/api/admin-auth` (7)
+`POST /invest-lock`, `GET /invest-status`, `POST /invest-unlock`, `POST /login`, `POST /logout`, `POST /setup`, `GET /status`
+
+## `/api/agi` (7)
+`GET /admin/documents`, `GET /admin/documents/{document_id}`, `GET /company-reports`, `GET /company-reports/{stock_code}`, `GET /documents`, `GET /documents/{document_id}`, `GET /status`
 
 ## `/api/antigravity` (1)
 `GET /monitoring-status`
@@ -41,8 +47,8 @@
 ## `/api/dart-excel` (5)
 `POST /build`, `GET /ch-data/{code}`, `GET /download/{job_id}`, `GET /status/{job_id}`, `GET /verify/{stock_code}`
 
-## `/api/dashboard` (22)
-`GET /cashflow/{stock_code}`, `GET /chart/{stock_code}`, `GET /collection-runs`, `GET /corporate-actions/{stock_code}`, `GET /data-lineage`, `GET /data-lineage/{metric_key}`, `GET /data-quality/{stock_code}`, `GET /disclosures/{stock_code}`, `GET /estimated-performance/{stock_code}`, `GET /explainable-signals/{stock_code}`, `GET /financial-table/{stock_code}`, `GET /fundamentals/{stock_code}`, `GET /hypothesis-reports`, `GET /live-signal-outcomes/{stock_code}`, `GET /macro`, `GET /market-info/{stock_code}`, `GET /market-regime/latest`, `GET /screening/logic`, `GET /screening/triple`, `GET /sectors`, `GET /shareholder-profiles`, `GET /stats`
+## `/api/dashboard` (26)
+`GET /cashflow/{stock_code}`, `GET /chart/{stock_code}`, `GET /collection-runs`, `GET /consensus-forecast/{code}`, `GET /corporate-actions/{stock_code}`, `GET /data-lineage`, `GET /data-lineage/{metric_key}`, `GET /data-quality/{stock_code}`, `GET /disclosures/{stock_code}`, `GET /estimated-performance/{stock_code}`, `GET /explainable-signals/{stock_code}`, `GET /financial-table/{stock_code}`, `GET /fundamentals/{stock_code}`, `GET /hypothesis-reports`, `GET /live-signal-outcomes/{stock_code}`, `GET /macro`, `GET /market-info/{stock_code}`, `GET /market-regime/latest`, `GET /parent-vs-consolidated/{code}`, `GET /revenue-mix/{code}`, `GET /screening/logic`, `GET /screening/triple`, `GET /sectors`, `GET /shareholder-profiles`, `GET /stats`, `GET /stock-bundle/{code}`
 
 ## `/api/detailed-analysis` (8)
 `POST /bootstrap`, `GET /files/{file_id}/download`, `POST /normalize`, `GET /posts`, `POST /posts`, `GET /posts/{post_id}`, `GET /report-files/{report_file_id}/download`, `GET /telegram/channel-link`
@@ -65,6 +71,12 @@
 ## `/api/global-macro` (17)
 `GET /categories`, `POST /collect`, `GET /collection-log`, `GET /commodities`, `GET /commodities/correlations`, `GET /dashboard`, `GET /events`, `POST /events`, `GET /events/reactions`, `GET /events/surprises`, `GET /insights`, `GET /insights/lead-lag`, `GET /insights/regime`, `GET /latest`, `GET /roadmap`, `GET /stats`, `GET /timeseries/{code}`
 
+## `/api/hub` (1)
+`GET /status`
+
+## `/api/ibd-screener` (5)
+`POST /compute-ibd-rs`, `GET /inverse-hs-scan`, `GET /minervini-scan`, `GET /rs-rankings`, `GET /stock/{code}/rs-history`
+
 ## `/api/ingest` (4)
 `POST /fundamentals`, `POST /investor-trends`, `POST /market-price`, `POST /sectors`
 
@@ -83,8 +95,8 @@
 ## `/api/kiwoom` (18)
 `POST /conditions/events`, `POST /conditions/snapshot`, `GET /conditions/status`, `GET /data-status`, `POST /foreign-flow`, `POST /investor/collect`, `GET /investor/status`, `POST /rankings/large-trades`, `GET /rankings/large-trades/confirmation`, `GET /rankings/large-trades/latest`, `POST /realtime/snapshot`, `GET /status`, `POST /stock-info/update`, `POST /stock-universe/bulk-update`, `GET /summary/{code}`, `POST /token/refresh`, `POST /us/realtime/snapshot`, `GET /us/realtime/{ticker}`
 
-## `/api/market-indicators` (18)
-`GET /attention-confirmation`, `POST /attention-events`, `POST /attention-events/materialize-channel`, `GET /available-dates`, `GET /index-investor`, `GET /investor-top`, `GET /investor-trend`, `GET /market-cash`, `GET /market-summary`, `GET /rank-events`, `GET /short-dates`, `GET /short-foreign`, `GET /short-history`, `GET /short-monthly`, `GET /short-rank`, `GET /turnover-breakout-live`, `GET /turnover-breakout-signals`, `GET /turnover-top`
+## `/api/market-indicators` (19)
+`GET /attention-confirmation`, `POST /attention-events`, `POST /attention-events/materialize-channel`, `GET /available-dates`, `GET /index-investor`, `GET /investor-top`, `GET /investor-trend`, `GET /market-cash`, `GET /market-summary`, `GET /rank-events`, `GET /short-dates`, `GET /short-foreign`, `GET /short-history`, `GET /short-monthly`, `GET /short-rank`, `GET /turnover-breakout-live`, `GET /turnover-breakout-signals`, `GET /turnover-top`, `GET /volume-surge`
 
 ## `/api/market-radar` (15)
 `GET /all`, `GET /export-csv`, `POST /import-csv`, `POST /init-semiconductor`, `POST /refresh-cache`, `GET /sector-us-overnight-signals`, `GET /sector/{sector}/detail`, `GET /semiconductor/financial-detail`, `GET /semiconductor/financial-history`, `GET /semiconductor/financials`, `GET /semiconductor/megatrend`, `GET /semiconductor/summary`, `GET /semiconductor/us-overnight-signal`, `GET /semiconductor/valuestream`, `POST /semiconductor/valuestream/refresh`
@@ -100,6 +112,9 @@
 
 ## `/api/order-contracts` (7)
 `GET /backlog/{stock_code}`, `POST /collect/today`, `POST /collect/{stock_code}`, `GET /screener/surge`, `GET /stock/{stock_code}`, `DELETE /{contract_id}`, `PATCH /{contract_id}/verify`
+
+## `/api/paper-trading` (3)
+`POST /fill`, `POST /intake`, `GET /summary`
 
 ## `/api/peer-compare` (1)
 `GET /compare`
@@ -119,8 +134,8 @@
 ## `/api/reports` (9)
 `GET /download/{report_id}`, `POST /extract/{report_id}`, `GET /extracts/{stock_code}`, `POST /generate/{stock_code}`, `GET /latest/{stock_code}`, `GET /ready`, `GET /sector/{sector}`, `GET /sectors`, `GET /stock/{stock_code}`
 
-## `/api/research` (4)
-`GET /factor-validation`, `GET /price-integrity`, `GET /quantstats`, `GET /strategy-decay`
+## `/api/research` (5)
+`GET /factor-validation`, `GET /price-integrity`, `GET /quantstats`, `GET /strategy-decay`, `GET /us-minervini`
 
 ## `/api/search` (1)
 `GET /`
@@ -128,41 +143,47 @@
 ## `/api/sector-define` (7)
 `POST /init`, `POST /parse`, `POST /post`, `GET /post/{post_id}`, `DELETE /post/{post_id}`, `GET /posts`, `GET /special-filter`
 
-## `/api/sector-rotation` (8)
-`GET /dashboard-summary`, `GET /flow-signal-validation`, `GET /history/{sector_key}`, `GET /leadership`, `POST /refresh-cache`, `GET /rotation-map`, `GET /scores`, `GET /top-picks/{sector_key}`
+## `/api/sector-rotation` (9)
+`GET /dashboard-summary`, `GET /flow-signal-validation`, `GET /history/{sector_key}`, `GET /leadership`, `POST /refresh-cache`, `GET /rotation-map`, `GET /scores`, `GET /top-picks/{sector_key}`, `GET /us-leadlag`
 
 ## `/api/sector-taxonomy` (5)
 `GET /overview`, `GET /peer-groups`, `GET /stock/{stock_code}`, `GET /stocks`, `GET /tree`
 
-## `/api/signals` (24)
-`GET /combo-candidates`, `GET /combo-v2`, `GET /config`, `POST /config`, `PUT /config/{config_id}`, `DELETE /config/{config_id}`, `GET /consensus-revisions`, `GET /fin-screener`, `GET /high-profit-candidates`, `GET /kiwoom-conditions`, `POST /manual/{config_id}`, `GET /market`, `GET /market-regime`, `POST /market-regime/briefing`, `GET /market-regime/qa`, `GET /meta`, `GET /overheat-risk`, `GET /stock/{stock_code}`, `GET /trend-candidates`, `GET /trigger-ranking`, `GET /v10-earnings-explosion`, `GET /v11-turnaround`, `GET /v12-sector-megatrend`, `GET /value-candidates`
+## `/api/signals` (25)
+`GET /combo-candidates`, `GET /combo-status`, `GET /combo-v2`, `GET /config`, `POST /config`, `PUT /config/{config_id}`, `DELETE /config/{config_id}`, `GET /consensus-revisions`, `GET /fin-screener`, `GET /high-profit-candidates`, `GET /kiwoom-conditions`, `POST /manual/{config_id}`, `GET /market`, `GET /market-regime`, `POST /market-regime/briefing`, `GET /market-regime/qa`, `GET /meta`, `GET /overheat-risk`, `GET /stock/{stock_code}`, `GET /trend-candidates`, `GET /trigger-ranking`, `GET /v10-earnings-explosion`, `GET /v11-turnaround`, `GET /v12-sector-megatrend`, `GET /value-candidates`
 
 ## `/api/source-intelligence` (1)
 `GET /opinions`
 
-## `/api/stock-analysis-rs` (8)
-`GET /dashboard-data`, `GET /dashboard-rows`, `GET /high52-data`, `GET /high52-rows`, `POST /precompute`, `GET /theme-composition`, `POST /theme-composition/capture`, `GET /theme-composition/tags`
+## `/api/stock-analysis-rs` (9)
+`GET /dashboard-data`, `GET /dashboard-rows`, `GET /high52-data`, `GET /high52-rows`, `POST /precompute`, `GET /stock/{code}`, `GET /theme-composition`, `POST /theme-composition/capture`, `GET /theme-composition/tags`
 
 ## `/api/strategy-data-lab` (1)
+`GET /overview`
+
+## `/api/sysmap` (1)
 `GET /overview`
 
 ## `/api/task-approvals` (5)
 `POST /approve`, `GET /ledger`, `GET /pending`, `GET /policy`, `POST /revoke`
 
-## `/api/telegram` (7)
-`GET /channels`, `POST /channels`, `DELETE /channels/{channel_id}`, `POST /collect`, `GET /mentions/daily`, `GET /mentions/monthly`, `GET /mentions/weekly`
+## `/api/telegram` (11)
+`GET /channels`, `POST /channels`, `PATCH /channels/{channel_id}`, `DELETE /channels/{channel_id}`, `POST /collect`, `GET /mentions/daily`, `GET /mentions/monthly`, `GET /mentions/weekly`, `GET /posts`, `POST /rag/index`, `GET /rag/search`
 
 ## `/api/tenbagger` (46)
 `GET /action-signals`, `POST /ai-analysis-batch`, `GET /ai-analysis-list`, `GET /ai-analysis/{stock_code}`, `GET /bq-composite`, `GET /bq-sector`, `GET /collection-coverage`, `GET /custom-filter`, `GET /daily-alerts`, `GET /data-status`, `GET /empirical-scoreboard`, `GET /fp-fn-analysis`, `GET /historical-causes`, `GET /historical-scoreboard-v2`, `GET /historical-signal-discovery`, `GET /historical-tenbagger-audit`, `GET /historical-tenbaggers`, `GET /history`, `GET /liquidity-risk-scan`, `GET /quant-context/{stock_code}`, `GET /rd-patent/{stock_code}`, `GET /recovery-candidates`, `GET /results`, `POST /run`, `GET /run-history`, `GET /score-performance`, `GET /screener-v2`, `GET /screener-v3`, `GET /sector-ai-leaders`, `GET /segments/{stock_code}`, `POST /sell-check`, `GET /status`, `GET /stock-extra/{stock_code}`, `GET /stock-insight/{stock_code}`, `GET /stock-quality-signals/{stock_code}`, `GET /treasury-buyback-top`, `GET /treasury-buyback/{stock_code}`, `GET /triple-trigger-analysis`, `GET /triple-winners-by-year`, `GET /turnaround-filter`, `GET /turnaround-watch`, `GET /turnaround-watch/detail/{stock_code}`, `POST /turnaround-watch/precompute`, `GET /undervalued-filter`, `GET /valuation-history/{stock_code}`, `GET /valuation-summary`
 
-## `/api/trend` (28)
-`POST /ai-combo/execute`, `GET /ai-holdings`, `POST /buy`, `POST /cm/execute`, `GET /cm/recommendations`, `POST /combo/{combo_key}/execute`, `GET /combo/{combo_key}/status`, `POST /gc/execute`, `GET /gc/recommendations`, `GET /holdings`, `PATCH /holdings/{holding_id}/buy-price`, `GET /ledger/{strategy}`, `GET /performance`, `POST /rec/execute`, `GET /rec/recommendations`, `POST /sell`, `GET /strategy-center/top-five`, `GET /summary`, `GET /trades`, `DELETE /trades/all`, `POST /turnover/auto/start`, `GET /turnover/auto/status`, `POST /turnover/auto/stop`, `POST /turnover/execute`, `GET /turnover/recommendations`, `POST /update`, `POST /v18/execute`, `GET /v18/recommendations`
+## `/api/trend` (32)
+`POST /ai-combo/execute`, `GET /ai-holdings`, `POST /buy`, `POST /cm/execute`, `GET /cm/recommendations`, `GET /combo-positions`, `POST /combo/{combo_key}/execute`, `GET /combo/{combo_key}/status`, `POST /gc/execute`, `GET /gc/recommendations`, `GET /holdings`, `PATCH /holdings/{holding_id}/buy-price`, `GET /ledger/{strategy}`, `GET /performance`, `GET /quality-overview`, `POST /rec/execute`, `GET /rec/recommendations`, `GET /risk-parity-analysis`, `POST /sell`, `GET /strategy-center/signals/{source_strategy}`, `GET /strategy-center/top-five`, `GET /summary`, `GET /trades`, `DELETE /trades/all`, `POST /turnover/auto/start`, `GET /turnover/auto/status`, `POST /turnover/auto/stop`, `POST /turnover/execute`, `GET /turnover/recommendations`, `POST /update`, `POST /v18/execute`, `GET /v18/recommendations`
 
 ## `/api/us` (19)
 `GET /biotech/analysis`, `GET /biotech/pipeline/{ticker}`, `POST /biotech/pipeline/{ticker}/refresh`, `GET /biotech/profile/{ticker}`, `POST /biotech/refresh-pending`, `GET /biotech/refresh-status`, `GET /indices`, `GET /integrity/latest`, `POST /integrity/run`, `GET /long-term-picks`, `GET /new-opportunities`, `GET /screener`, `GET /screener/presets`, `GET /sectors`, `GET /stocks/chart/{ticker}`, `GET /stocks/detail/{ticker}`, `GET /stocks/disclosures/{ticker}`, `GET /stocks/list`, `POST /stocks/refresh/{ticker}`
 
 ## `/api/us-13f` (2)
 `GET /buffett-cash`, `GET /summary`
+
+## `/api/us-sector-rotation` (5)
+`GET /leadership`, `POST /refresh-cache`, `GET /rotation-map`, `GET /scores`, `GET /top-picks/{sector}`
 
 ## `/api/us-virtual` (8)
 `GET /candidates`, `GET /combined-summary`, `POST /execute-candidates`, `POST /order`, `GET /orders`, `GET /positions`, `POST /run-daily-rebalance`, `GET /status`

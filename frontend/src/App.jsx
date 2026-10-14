@@ -68,6 +68,7 @@ const QuantMajorIndicatorsView = React.lazy(() => import('./views/QuantMajorIndi
 const DartExcelView = React.lazy(() => import('./views/DartExcelView'));
 const SignalImpactView = React.lazy(() => import('./views/SignalImpactView'));
 const RiskGateMonitorView = React.lazy(() => import('./views/RiskGateMonitorView'));
+const CompanyReportsView = React.lazy(() => import('./views/CompanyReportsView'));
 
 // ──────────────────────────────────────────────────────────────
 // [버그 ① 수정] API_BASE를 절대경로(포트 하드코딩)에서 상대경로로 변경.
@@ -12905,7 +12906,8 @@ const NAV_ITEMS = [
   { key: 'strategy_hub_ledger',    icon: <span style={{fontSize:'14px',lineHeight:1}}>🧪</span>, label: '검증 이력' },
   { key: 'strategy_hub_factor',    icon: <span style={{fontSize:'14px',lineHeight:1}}>🔬</span>, label: '팩터 검증' },
   { key: 'strategy_hub_datalab',   icon: <span style={{fontSize:'14px',lineHeight:1}}>🧭</span>, label: '데이터 라우팅' },
-  { key: 'backtest',               icon: <FlaskConical size={17} style={{color:'#9333ea'}} />,   label: '백테스트' },
+  { key: 'strategy_hub_research',  icon: <span style={{fontSize:'14px',lineHeight:1}}>🎯</span>, label: '3배 후보 연구' },
+  { key: 'backtest',               icon: <FlaskConical size={17} style={{color:'#9333ea'}} />,   label: '백테스트 실행' },
   { key: 'exp_roadmap',            icon: <span style={{fontSize:'14px',lineHeight:1}}>🧪</span>, label: '실험 로드맵' },
   { key: 'exp_roadmap_turnaround', icon: <span style={{fontSize:'14px',lineHeight:1}}>📈</span>, label: '턴어라운드 후보' },
   { key: 'exp_roadmap_cherry',     icon: <span style={{fontSize:'14px',lineHeight:1}}>🍒</span>, label: '체리형부식 스크리닝' },
@@ -12915,6 +12917,7 @@ const NAV_ITEMS = [
   { key: 'tenbagger_proj',   icon: <span style={{fontSize:'14px',lineHeight:1}}>🚀</span>,   label: '텐버거 프로젝트' },
   { key: 'screener',         icon: <Search size={17} style={{color:'#0284c7'}} />,           label: 'AI 스크리너' },
   { key: 'megatrend',        icon: <Activity size={17} style={{color:'#15803d'}} />,         label: '메가트렌드' },
+  { key: 'company_reports', icon: <span style={{fontSize:'14px',lineHeight:1}}>🗂️</span>,   label: '기업 보고서' },
   { key: 'sector_rotation',  icon: <span style={{fontSize:'14px',lineHeight:1}}>🔄</span>,   label: '섹터 로테이션' },
   { key: 'peer_compare',     icon: <span style={{fontSize:'14px',lineHeight:1}}>⚖️</span>,   label: '동종기업 비교' },
   { key: 'sector_taxonomy',  icon: <span style={{fontSize:'14px',lineHeight:1}}>🧬</span>,   label: '종목 다중분류' },
@@ -18651,6 +18654,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
           {activeTab === 'strategy_hub_ledger'     && <StrategyHub changeStock={changeStock} changeTab={changeTab} initialHubTab="ledger" />}
           {activeTab === 'strategy_hub_factor'     && <StrategyHub changeStock={changeStock} changeTab={changeTab} initialHubTab="factor" />}
           {activeTab === 'strategy_hub_datalab'    && <StrategyHub changeStock={changeStock} changeTab={changeTab} initialHubTab="data-lab" />}
+          {activeTab === 'strategy_hub_research'   && <StrategyHub changeStock={changeStock} changeTab={changeTab} initialHubTab="research" />}
           {activeTab === 'exp_roadmap'             && <ExperimentRoadmapView initialPageTab="roadmap" />}
           {activeTab === 'exp_roadmap_turnaround'  && <ExperimentRoadmapView initialPageTab="turnaround" />}
           {activeTab === 'exp_roadmap_cherry'      && <ExperimentRoadmapView initialPageTab="cherry" />}
@@ -18665,6 +18669,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
           {activeTab === 'dart_excel' && <DartExcelView />}
           {activeTab === 'dart_contracts' && <DartContractView />}
           {activeTab === 'megatrend' && <MegatrendView setActiveTab={setActiveTab} changeStock={changeStock} />}
+          {activeTab === 'company_reports' && <CompanyReportsView />}
           {activeTab === 'trend'     && <PeakView changeStock={changeStock} changeTab={changeTab} />}
           {activeTab === 'reports'   && <SectorReports changeStock={changeStock} setActiveTab={setActiveTab} />}
           {activeTab === 'insight'   && <AIInsight />}
@@ -18672,7 +18677,7 @@ const App = ({ module = 'info', tab, isAdmin = false, onLogout, onLogin }) => {
           {activeTab === 'export_health' && <ExportHealthView changeStock={changeStock} changeTab={changeTab} />}
           {activeTab === 'telegram'  && <TelegramMentions changeStock={changeStock} changeTab={changeTab} />}
           {activeTab === 'settings'  && <SettingsView />}
-          {activeTab === 'backtest'  && <BacktestView />}
+          {activeTab === 'backtest'  && <BacktestView defaultViewMode="list" />}
           {activeTab === 'hs_trade2' && <TradeAnalysis2 />}
           {activeTab === 'employment' && <EmploymentView />}
           {activeTab === 'etf_check' && <EtfCheckView />}

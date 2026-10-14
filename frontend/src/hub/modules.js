@@ -32,10 +32,10 @@ export const MODULES = {
     // 2026-09-27(사용자 지시): 전략 센터·실험 로드맵의 페이지 내부 가로 탭을 Stock Info처럼 왼쪽 메뉴(+ 섹션)로 재배열.
     // 각 항목은 같은 컴포넌트를 initialHubTab/initialPageTab만 다르게 넘겨 그린다(hub/AppSidebar 쪽 변경 없음).
     sections: [
-      { label: '전략 센터', tabs: ['strategy_hub', 'strategy_hub_continuous', 'strategy_hub_desc', 'strategy_hub_ledger', 'strategy_hub_factor', 'strategy_hub_datalab', 'backtest'] },
+      { label: '전략 센터', tabs: ['strategy_hub', 'strategy_hub_continuous', 'strategy_hub_desc', 'strategy_hub_ledger', 'strategy_hub_factor', 'strategy_hub_datalab', 'strategy_hub_research', 'backtest'] },
       { label: '실험 로드맵', tabs: ['exp_roadmap', 'exp_roadmap_turnaround', 'exp_roadmap_cherry', 'exp_roadmap_consensus', 'exp_roadmap_hardening'] },
       { label: '매매·신호', tabs: ['trend', 'signal_impact'] },
-      { label: '종목 발굴', tabs: ['tenbagger', 'tenbagger_proj', 'dart_excel', 'screener', 'megatrend'] },
+      { label: '종목 발굴', tabs: ['tenbagger', 'tenbagger_proj', 'dart_excel', 'screener', 'megatrend', 'company_reports'] },
     ],
     hidden: [],
   },
