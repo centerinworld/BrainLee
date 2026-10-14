@@ -51,7 +51,10 @@ def main():
     ap.add_argument("--cf-chain", action="store_true", help="현금흐름 사슬 전체(연간·1~3분기 누적·3개월·4분기)를 원문 규칙값으로(fin_norm). 연결 미작성 회사는 별도 원문(fn.effective_fs)"); a = ap.parse_args()
     y0, y1 = map(int, a.years.split("-"))
     f = sorted(OUT.glob("internal_chk_*_fails.csv"))[-1]
-    rows = [r for r in csv.DictReader(open(f)) if "C4" in r["checks"] and y0 <= int(r["year"]) <= y1]
+    # 10-14: 감가상각(depreciation)은 dart_key 미지원·C14 전용 처리 — C4 정렬 대상 제외
+    _SKIP_FIELDS = {"depreciation"}
+    rows = [r for r in csv.DictReader(open(f)) if "C4" in r["checks"] and y0 <= int(r["year"]) <= y1
+            and r["field"] not in _SKIP_FIELDS]
     conn = connect_primary_db(timeout=900, readonly=not a.apply)
     locks = {(r[0], r[1], r[2]) for r in conn.execute("SELECT stock_code, year, table_name FROM data_lock WHERE is_locked=1").fetchall()}
     locked_all = set(locks)
