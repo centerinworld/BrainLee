@@ -199,7 +199,9 @@
 
 ---
 
-## 6. 전략 인벤토리 — 수치는 `pre_data_fix_20261004` 기준(2026-10-04 실행분, 재실행 뒤 갱신)
+## 6. 전략 인벤토리 — 수치는 `pre_data_fix_20261004` 기준(2026-10-04 실행분, 아래 표는 작성 당시 스냅샷 그대로 보존)
+
+> ⚠️ **아래 평균·최악 열은 갱신되지 않았다.** 이관 완료 21개 전략의 실제 최신 수치는 `w5_20261013`(2026-10-14, §9 로그)이 반영된 `/api/backtest/matrix` 또는 전략 허브 화면이 정본이다 — 이 표의 숫자로 전략을 비교하지 말 것.
 
 > 측정: `/api/backtest/matrix`(평균 = 6구간 단순평균, 최악 = 최악 구간 수익률, 단위 %), `/api/trend/strategy-center/signals/{키}`(오늘 후보 수). `—`는 미확인.
 > 레지스트리 키와 허브 라벨은 §4 S06 때문에 별도 열로 둔다.
@@ -834,6 +836,12 @@
 **§28-2 사전 점검 답(① 코드=커밋 코드, ② 지문, ③ 함수 이름 조회, ④ code 동작, ⑤ 판정)**: ① 측정 시작(13:31) 뒤 `backtest_common.py`·전략 파일을 고치지 않았다 — 측정 run 48건(+random)의 기록 코드 지문 `backtest_common.py`=`1bd92b489b571203` 1종, 지금 작업본 sha256과 동일(커밋 직전 확인). ② 구간별 데이터 지문은 1종이나 `SUM(close)` 소수 넷째 자리 흔들림으로 원본 `fingerprint` 문자열은 3~4종 — 위 "데이터 지문 메모" 방식으로 정규화해 48/48 유효. ③ score run 48건의 사양 `min_history_rows`가 8전략 모두 표와 같다(v_trend 120·v1_value 60·v2 60·v5 120·v10 61·v11 252·vbr 253·minervini 252, 기본 60으로 떨어진 전략 없음). ④ `code`는 `stock_data` 삽입 순서(=종목 SQL `ORDER BY stock_code`)가 곧 코드 순이라 옛 동작(보너스 → 종목코드)과 같음을 구조로 확인(결과 대조 run은 안 돌림). ⑤ 위 분포표와 "읽는 법" — score가 분포 상위에 치우치지 않음(대체로 중앙값 이하), 점수 효과를 성과 근거로 쓰지 않는다.
 
 **남은 것/결정**: ⓐ D14(화면·등급의 주 수치: score 단일 run vs 무작위 중앙값) ⓑ `hidden_rev.py` 슬라이스 버그 수정 여부(vbr 결과가 바뀜) ⓒ `_with_sc`·regime_adaptive·v8·dual_conviction·patent_catalyst 코드 순 선착순 정리 ⓓ §26-3 3번(§25-2)은 다른 세션 반영 확인 완료, 4번 표는 위, **5번(W5 실행)은 ⓐⓑ 결정과 지문 오탐 수정(위) 뒤에 시작** ⓔ 26-2 ④ 무효 쌍 10쌍 재실행은 W5 안에서 같은 지문으로 처리.
+
+### 2026-10-14 · Claude(Sonnet 5.5) · W5 분포 재실행(최신 데이터, w5_20261013)
+- **배경**: 사용자 확인 — 재무제표·현금흐름 정리가 99.9% 수준(docs/FINANCIAL_STATEMENTS.md §7 C13, 10-12 기준 99.69~99.97%)까지 진행됨. 10-08 이후 재무 정밀도 작업에 밀려 중단됐던 Lab 쪽을, 이미 이관 완료된 전략 범위에서 최신 데이터로 재실행.
+- **방법**: `scripts/run_w5a_20261013.py`(일반엔진 8개+v12+golden_cross+sector_focus, 10-08 스크립트와 동일 로직·출력 파일명만 갱신, 원본 10-08 파일은 보존)·`scripts/run_w5b_20261013.py`(v8+W5b 9개)로 21개 전략 전부 재실행 — 선택순서 민감 전략은 code·score·random:1~12 총 14회/구간, 순위고정 전략은 1회/구간. 4개씩 묶어 순차 실행(macOS 기본 bash 3.2가 `wait -n`을 지원하지 않아 20개 동시 실행 1차 시도는 DB 커넥션 유실로 전부 실패 — 재시도로 전부 rc=0 확인). `scripts/analyze_w5a_20261008.py --prefix w5a_20261013`/`--prefix w5b_20261013`로 요약 생성 → `scripts/ops/load_w5_distribution_20261013.py`로 `strategy_w5_distribution`에 `w5_20261013` 라벨 126행 적재. `w5_overlay.py`가 `created_at` 최신 라벨을 자동 선택하므로 서버 재시작·코드 수정 없이 매트릭스에 반영됨(확인: `/api/backtest/matrix` `w5_distribution_label=w5_20261013`).
+- **결과 비교(`w5_20261008` vs `w5_20261013`, 126개 구간 중 71개는 완전 동일)**: 가격 전용 신호 전략(v_trend·v1_value·golden_cross·deep_recovery·extreme_dd_volume·low_base_breakout·megatrend·contract_momentum)은 전 구간 diff=0.00 — 이 구간 가격 데이터가 안 바뀌었다는 것과 정확히 일치, 재현성 확인. 재무/실적 신호 전략은 작게 움직임: v2·v5 ±0.2~0.9p, sector_focus/earnings_supply_discovery ±1~5p, earnings_conviction·moonshot_turnaround·recovery 일부 구간 ±1~4p. **무작위 선택순서 민감 전략(v10·v11·v12·v8·minervini·vbr)은 12회 재추출 자체의 표본 변동으로 최대 ±21p까지 흔들림(예: v11 22.11~23.10 −3.4→−24.4)** — 이는 데이터 변화가 아니라 §9 2026-10-07 "선택 순서" 로그에서 이미 확인된 분포 폭(동일 전략도 무작위 12회 범위가 넓음)과 같은 성격이므로, 이 6개 전략의 구간별 숫자 단독 비교로 "전략이 바뀌었다"고 해석하지 않는다.
+- **한계**: 아직 미이관 전략(~20개 — composite·regime_adaptive·meta_v2·v10_hs·v11_hs·v1_dart·turnaround·high_profit_compound·tenbagger_* 등 자체 루프/이벤트 패널형)은 이번 재실행 범위 밖이다. 생존편향·원주가 미보정·선착순 선택 문제가 그대로 남아 있어 §5 Phase 설계(이관 우선순위·P1~P3)가 여전히 유효한 미해결 항목이다 — "Open Item 전부 해결"이 아니라 "이미 이관된 21개 전략의 수치만 최신화"로 범위를 한정한다.
 
 ## 10. 재현 명령 (측정 근거)
 
