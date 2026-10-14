@@ -644,6 +644,11 @@ GET /api/employment-v2/annual-top      # 사업보고서 기준 연간 인원 �
 - 자동 갱신: launchd `com.stock-dashboard.agi-company-report-refresh`(매일 07:00, `scripts/review/agi_company_report_refresh_20261014.py`) — `company_reports`+`portfolio`+`buy_candidates` 종목을 매일 재조립, 섹션 콘텐츠 해시가 같으면 쓰기 0건(바뀐 데이터만 새 revision). 1차 실행으로 47종목(기존 18+신규 29) 생성 확인.
 - 공개 화면: `frontend/src/views/CompanyReportsView.jsx` 신설(종목 검색/선택 + 개요·분기실적QoQ·마진괴리·사업구성·최근공시·업종고유 섹션, CSS 변수 사용), Stock Lab '종목 발굴'에 `company_reports` 탭 등록(`hub/modules.js`+`App.jsx`). `npm run build`→`safe_restart_backend.sh` 재시작 후 실서비스 도메인에서 인증 없이 200·count=47 확인.
 
+### 2026-10-15 Stock Lab D14~D17 실행 확인·미이관 6개 전략 티켓화
+- D14~D17(2026-10-07 검토자 결정)이 실제로 전부 코드까지 구현돼 있음을 git log로 확인(`31d78fd`·`5d087b1`·`f9947d2`) — 결정 문서와 실행 상태가 따로 논다는 걸 재확인, 다음 세션은 결정표만 보고 '미완료'로 오판하지 말 것.
+- 등록 전략 26개 중 10-14 재실행 대상 21개 외 `composite`·`high_profit_compound`·`regime_adaptive`·`se_momentum`·`turnaround`·`v4`는 PIT/조정가격 미이관 — 주간 자동 재검증(일요일 01:30)으로 신선도는 유지 중(`high_profit_compound`만 16일 지연, 수동 재실행). 이관 실행 티켓(참고 커밋·소요 추정)은 Stock_Strategy.md §9 2026-10-15.
+- 다른 세션의 미커밋 변경(`routes/backtest.py` 등, `strategy_research_guard.py`)은 Phase 1과 겹칠 수 있어 건드리지 않음 — docs/OPEN_ITEMS.md C11에 명시.
+
 ### 2026-10-14 Stock Lab W5 분포 재실행(최신 데이터 반영)
 - 10-08 W5/W6 재실행(`w5_20261008`) 이후 5일간 진행된 재무 정밀도(99.9%) 수정분을 반영해 이관 완료 21개 전략(일반엔진 8·v12·golden_cross·sector_focus·v8·W5b 9개) 전부를 같은 방법론(선택순서 무작위 12회 중앙값, 순위고정 전략은 단일값)으로 재실행 — `scripts/run_w5a_20261013.py`/`run_w5b_20261013.py`(기존 1008 스크립트 복제, 결과 파일만 날짜 갱신, 원본 보존), `strategy_w5_distribution`에 `w5_20261013` 라벨로 적재(126행). `w5_overlay.py`가 최신 라벨을 자동 선택해 매트릭스·전략허브에 서버 재시작 없이 반영됨(확인: `/api/backtest/matrix` `w5_distribution_label=w5_20261013`).
 - 가격 전용 전략(v_trend·golden_cross·deep_recovery 등)은 변화 0(예상대로 — 이 기간 가격 데이터는 안 바뀜). 재무/실적 신호를 쓰는 전략(v2·earnings_conviction·earnings_supply_discovery·moonshot_turnaround·recovery·sector_focus)은 구간별 ±1~14%p 변동 — 재무 재작성 반영으로 판단, 상세는 Stock_Strategy.md §9.
