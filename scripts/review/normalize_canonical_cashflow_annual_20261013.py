@@ -85,8 +85,24 @@ def main():
     for r in conn.execute(f"SELECT stock_code, year, report_type, quarter, source_row_id, {','.join(CUM)} FROM canonical_cashflow_data WHERE is_annual=1 AND quarter IN (0,4)").fetchall():
         canon[(r[0], r[1], r[2], r[3])] = dict(zip(("stock_code", "year", "report_type", "quarter", "source_row_id") + CUM, r))
     n_q0 = sum(1 for k in keys if (*k, 0) in canon)
+    # 원장 정밀화 후보 계산 (dry-run·apply 공통) — 10-14 외부 검토 P2: dry-run이 이 수치를 숨겨 --apply가 noop이 아님을 알 수 없었음
+    refine_groups = {}
+    for r in conn.execute(f"SELECT id, stock_code, year, report_type, quarter, {','.join(CUM)} FROM cash_flow_data WHERE is_annual ORDER BY id").fetchall():
+        refine_groups.setdefault((r[1], r[2], r[3]), []).append(dict(zip(("id","stock_code","year","report_type","quarter")+CUM, r)))
+    dr_refine_cells = dr_refine_groups = 0
+    for k, rows in refine_groups.items():
+        if len(rows) < 2:
+            continue
+        cur = conn.execute("SELECT source_row_id FROM canonical_cashflow_data WHERE stock_code=? AND year=? AND report_type=? AND is_annual=1 AND quarter=0", k).fetchone()
+        src = cur[0] if cur else None
+        rows.sort(key=lambda r: (r["id"] != src, 99 if r["quarter"] is None else r["quarter"], r["id"]))
+        upd, _ = refine(rows[0], rows[1:])
+        if upd:
+            dr_refine_groups += 1
+            dr_refine_cells += len(upd)
     res = {"at": datetime.now().isoformat(timespec="seconds"), "apply": a.apply, "annual_q4_rows": len(keys), "with_q0_row": n_q0, "q4_only": len(keys) - n_q0,
-           "keys_without_ledger_annual_row": sum(1 for k in keys if not led.get(k)), "ledger_annual_rows": sum(len(v) for v in led.values())}
+           "keys_without_ledger_annual_row": sum(1 for k in keys if not led.get(k)), "ledger_annual_rows": sum(len(v) for v in led.values()),
+           "would_refine_groups": dr_refine_groups, "would_refine_cells": dr_refine_cells}
     if not a.apply:
         print(json.dumps(res, ensure_ascii=False)); return
     run_id = f"canonical_cf_annual_norm_{datetime.now():%Y%m%d_%H%M%S}"
