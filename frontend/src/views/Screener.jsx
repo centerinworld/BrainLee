@@ -36,6 +36,8 @@ import { API, fmtKrw } from '../utils';
     const [showFinLogic, setShowFinLogic] = React.useState(false);
     const [comboFilter, setComboFilter] = React.useState('all'); // 'all'=2개↑, 'triple'=3개
     const [comboLogic, setComboLogic] = React.useState(defaultComboLogic);  // 'v1'=V5복합콤보, 'v2'=V4수급모멘텀, 'kiwoom'=키움조건식
+    const [comboStatus, setComboStatus] = React.useState(null);   // /api/signals/combo-status
+    const [comboRetry, setComboRetry] = React.useState(0);
     const [comboV2Data, setComboV2Data] = React.useState([]);
     const [comboV2Loading, setComboV2Loading] = React.useState(false);
     const [kiwoomCondData, setKiwoomCondData] = React.useState(null);
@@ -106,21 +108,23 @@ import { API, fmtKrw } from '../utils';
       finally { setHighProfitLoading(false); }
     };
 
-    // combo: 서버 사전계산 캐시 우선, 없으면 클라이언트 교집합
+    // combo: 서버 사전계산 결과만 사용한다. 예전에는 서버 캐시가 없을 때 브라우저가
+    // 가치·추세·재무 3개 목록을 점수 하한·추세 필수·하락장 차단 없이 "2개 이상 겹치면 통과"로
+    // 직접 교집합했고, 그 때문에 수백 종목(예: 577)이 추천으로 나왔다(Stock_Strategy S03).
     const fetchCombo = async () => {
       setComboLoading(true);
       try {
-        const res = await fetch(API('/api/signals/combo-candidates'));
+        const [res, st] = await Promise.all([
+          fetch(API('/api/signals/combo-candidates')),
+          fetch(API('/api/signals/combo-status')).catch(() => null),
+        ]);
+        if (st && st.ok) setComboStatus(await st.json());
         if (res.ok) {
           const data = await res.json();
-          if (data && data.length > 0) { setComboFromServer(data); setComboLoading(false); return; }
+          if (Array.isArray(data) && data.length > 0) setComboFromServer(data);
         }
       } catch(e) {}
       setComboLoading(false);
-      // 서버 캐시 없으면 로컬 3종 데이터 모두 로드 (fin 누락 버그 수정)
-      if (!trendStocks.length) fetchTrendLeading();
-      if (!valueCandidates.length) fetchValueCandidates();
-      if (!finStocks.length) fetchFinScreener();
     };
 
     // Logic-#2: 수급 주도 모멘텀
@@ -194,56 +198,31 @@ import { API, fmtKrw } from '../utils';
       finally { setRecLoading(false); }
     };
 
-    // 서버 백그라운드 계산 완료 후 자동 재시도 (캐시 cold 상태 대응)
+    // 서버 백그라운드 계산이 끝날 때까지 8초 간격으로 다시 확인(최대 12회)
     React.useEffect(() => {
-      if (comboFromServer.length > 0) return;
+      if (comboFromServer.length > 0 || (comboStatus && comboStatus.ready)) return;
+      if (comboRetry >= 12) return;
       const timer = setTimeout(async () => {
         try {
-          const res = await fetch(API('/api/signals/combo-candidates'));
+          const [res, st] = await Promise.all([
+            fetch(API('/api/signals/combo-candidates')),
+            fetch(API('/api/signals/combo-status')).catch(() => null),
+          ]);
+          if (st && st.ok) setComboStatus(await st.json());
           if (res.ok) {
             const data = await res.json();
-            if (data && data.length > 0) setComboFromServer(data);
+            if (Array.isArray(data) && data.length > 0) setComboFromServer(data);
           }
         } catch(e) {}
+        setComboRetry(n => n + 1);
       }, 8000);
       return () => clearTimeout(timer);
-    }, []);
+    }, [comboFromServer.length, comboStatus, comboRetry]);
 
-    // combo: 서버 사전계산 우선, 없으면 클라이언트 교집합
-    const comboStocks = React.useMemo(() => {
-      // 서버에서 사전계산된 데이터가 있으면 우선 사용 (3개 중복 → 2개 중복 순 정렬)
-      if (comboFromServer.length > 0) {
-        return [...comboFromServer].sort((a,b) =>
-          (b.match_count||0) - (a.match_count||0) || (b.combined_score||b.trend_score||0) - (a.combined_score||a.trend_score||0)
-        );
-      }
-      // 클라이언트 교집합 계산 (fallback)
-      // O(1) lookup maps instead of O(n) .find() per code
-      const trendMap2 = Object.fromEntries(trendStocks.map(s => [s.stock_code, s]));
-      const valueMap2 = Object.fromEntries(valueCandidates.map(s => [s.stock_code, s]));
-      const finMap2   = Object.fromEntries(finStocks.map(s => [s.stock_code, s]));
-      const allCodes   = new Set([...Object.keys(trendMap2), ...Object.keys(valueMap2), ...Object.keys(finMap2)]);
-      const result = [];
-      for (const code of allCodes) {
-        const trendS = trendMap2[code];
-        const valueS = valueMap2[code];
-        const finS   = finMap2[code];
-        const cnt = (trendS?1:0) + (valueS?1:0) + (finS?1:0);
-        if (cnt < 2) continue;
-        const base   = trendS || valueS || finS;
-        result.push({
-          ...base,
-          in_trend: !!trendS, in_value: !!valueS, in_fin: !!finS,
-          match_count: cnt,
-          trend_score: trendS?.score || 0,
-          value_score: valueS?.score || 0,
-          fin_score:   finS?.total_score || 0,
-          combined_score: (trendS?.score||0)*2 + (valueS?.score||0)*2 + (finS?.total_score||0),
-        });
-      }
-      result.sort((a,b) => b.match_count - a.match_count || b.combined_score - a.combined_score);
-      return result;
-    }, [comboFromServer, trendStocks, valueCandidates, finStocks]);
+    // combo: 서버 사전계산 결과만 사용(위 설명 참고). 3개 충족 → 2개 충족 순으로 정렬.
+    const comboStocks = React.useMemo(() => [...comboFromServer].sort((x, y) =>
+      (y.match_count||0) - (x.match_count||0) || (y.combo_score||y.combined_score||y.trend_score||0) - (x.combo_score||x.combined_score||x.trend_score||0)
+    ), [comboFromServer]);
 
     // 진입트리거 TOP20 fetch
     const fetchTriggerRanking = async () => {
@@ -1709,10 +1688,16 @@ import { API, fmtKrw } from '../utils';
           {filteredCombo.length === 0 ? (
             <div className="glass-panel" style={{padding:'3rem',textAlign:'center',color:'var(--text-secondary)'}}>
               <p style={{fontSize:'2rem',marginBottom:'0.5rem'}}>⭐</p>
-              <p>현재 2개 이상 카테고리를 동시 충족하는 종목이 없습니다.</p>
-              <p style={{fontSize:'0.78rem',marginTop:'0.4rem',color:'rgba(15,23,42,0.88)'}}>
-                가치매수·재무스크리너·추세 탭을 각각 로드한 후 다시 확인해 주세요.
-              </p>
+              {(!comboStatus || !comboStatus.ready) ? (
+                <p>서버에서 후보를 계산하는 중입니다. 잠시 후 자동으로 표시됩니다.</p>
+              ) : (<>
+                <p>현재 조건을 충족하는 종목이 없습니다.</p>
+                <p style={{fontSize:'0.78rem',marginTop:'0.4rem',color:'rgba(15,23,42,0.88)'}}>
+                  {comboStatus.meta?.kospi_bullish === false
+                    ? 'KOSPI가 60일 이동평균 아래라 신규 콤보 편입을 차단 중입니다.'
+                    : `조건: ${comboStatus.meta?.rules?.need || '2개 이상 충족 + 추세 필수'} · 점수 하한 통과 추세 ${comboStatus.meta?.score_min_pass?.trend ?? '-'} / 가치 ${comboStatus.meta?.score_min_pass?.value ?? '-'} / 재무 ${comboStatus.meta?.score_min_pass?.fin ?? '-'}`}
+                </p>
+              </>)}
             </div>
           ) : (
             filteredCombo.map(s => {

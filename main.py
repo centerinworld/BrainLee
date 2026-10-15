@@ -184,6 +184,7 @@ from routes.company_intelligence import router as _company_intelligence_router
 from routes.investment_decisions import router as _investment_decisions_router
 from routes.task_approvals import router as _task_approvals_router
 from routes.research_lab import router as _research_lab_router
+from routes.agi            import router as _agi_router
 from routes.portfolio_access import router as _portfolio_access_router
 from routes.insider            import router as _insider_router
 from routes.notices            import router as _notices_router
@@ -247,6 +248,9 @@ app.include_router(_investment_decisions_router, prefix="/api/investment-decisio
 app.include_router(_task_approvals_router, prefix="/api/task-approvals", tags=["task-approvals"])
 # 2026-09-25: 연구 산출물(research_outputs) 읽기 전용 조회 — 전략센터 "🔬 팩터 검증" 탭. DB 쓰기 없음.
 app.include_router(_research_lab_router, prefix="/api/research", tags=["research-lab"])
+# 2026-10-11: AGI 원문 보관 조회(AGI-02 첫 수직 슬라이스). /api/research/*는 research_lab이 소유하므로
+# 계약 확정 namespace는 /api/agi/* 다. GET 전용·무부작용(SELECT만) — 신설 AGI 테이블만 읽는다.
+app.include_router(_agi_router, prefix="/api/agi", tags=["agi"])
 # 2026-09-26: 계좌현황 열람 로그인(서버가 비밀번호 확인 → 열람 쿠키). security_gate.py의 viewer 단계와 짝.
 app.include_router(_portfolio_access_router, prefix="/api/portfolio-access", tags=["portfolio-access"])
 # 2026-08-26: routes/insider.py·routes/notices.py는 완성되어 있었으나 여기 등록이 빠져
@@ -1087,6 +1091,7 @@ def _run_screener_precompute():
                 all_codes = set(trend_map) | set(value_map) | set(fin_map)
 
                 combo = []
+                _pool_pass = {'trend': 0, 'value': 0, 'fin': 0}   # 점수 하한 통과 수(Stock_Strategy P0-3 진단용)
                 for code in all_codes:
                     in_t = code in trend_map
                     in_v = code in value_map
@@ -1106,6 +1111,9 @@ def _run_screener_precompute():
                     if in_f and f_score < COMBO_FIN_SCORE_MIN:
                         in_f = False
 
+                    _pool_pass['trend'] += 1 if in_t else 0
+                    _pool_pass['value'] += 1 if in_v else 0
+                    _pool_pass['fin'] += 1 if in_f else 0
                     cnt = (1 if in_t else 0) + (1 if in_v else 0) + (1 if in_f else 0)
                     if cnt < 2:
                         continue  # 유효 스크리너 2개 미만이면 제외
@@ -1132,6 +1140,15 @@ def _run_screener_precompute():
 
                 combo.sort(key=lambda x: (x['match_count'], x.get('combo_score', 0)), reverse=True)
                 _signal_cache['combo_candidates'] = {'data': combo, 'at': _t.time()}
+                # 콤보가 왜 이 개수인지 화면·API가 설명할 수 있게 단계별 수를 남긴다(Stock_Strategy P0-3)
+                _signal_cache['combo_meta'] = {
+                    'at': _t.time(), 'kospi_bullish': bool(_kospi_bullish),
+                    'raw_pool': {'trend': len(trend_data), 'value': len(value_data), 'fin': len(fin_data)},
+                    'score_min_pass': dict(_pool_pass),
+                    'rules': {'trend_min': COMBO_TREND_SCORE_MIN, 'value_min': COMBO_VALUE_SCORE_MIN,
+                              'fin_min': COMBO_FIN_SCORE_MIN, 'need': '2개 이상 충족 + 추세 필수 + KOSPI>MA60'},
+                    'count': len(combo),
+                }
 
                 logger.info(f"[스크리너사전계산] 추세={len(trend_data)} 가치={len(value_data)} 재무={len(fin_data)} 적극검토={len(combo)}")
 

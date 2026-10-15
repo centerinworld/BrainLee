@@ -253,7 +253,44 @@ def get_combo_candidates():
     ttl = 1800 if _is_market_open() else 14400
     if cached and (_t.time() - cached.get("at", 0)) < ttl:
         return cached["data"]
-    return []
+    # 캐시가 없거나 오래됐으면 서버 사전계산을 한 번만 시작한다(예전엔 빈 배열만 돌려줘서
+    # 화면이 느슨한 클라이언트 교집합으로 대체했다 — Stock_Strategy S03).
+    _start_combo_precompute()
+    return cached.get("data", []) if cached else []
+
+
+def _start_combo_precompute() -> None:
+    import threading as _thr
+    cache = _cache()
+    if cache.get("_computing_combo_precompute"):
+        return
+    cache["_computing_combo_precompute"] = True
+
+    def _run():
+        try:
+            import main as _main
+            _main._run_screener_precompute()
+        except Exception as e:
+            logger.error(f"[combo 사전계산] {e}")
+        finally:
+            cache.pop("_computing_combo_precompute", None)
+
+    _thr.Thread(target=_run, daemon=True, name="ComboPrecompute").start()
+
+
+# ── GET /api/signals/combo-status ──────────────────────────────
+@router.get("/combo-status")
+def get_combo_status():
+    """콤보 후보가 '계산 중'인지 '조건 충족 종목 없음'인지, 단계별 개수와 함께 알려 준다."""
+    cache = _cache()
+    cached = cache.get("combo_candidates", {})
+    meta = cache.get("combo_meta") or {}
+    return {
+        "ready": bool(cached),
+        "computing": bool(cache.get("_computing_combo_precompute") or cache.get("_computing_fin_screener")),
+        "count": len(cached.get("data", [])) if cached else None,
+        "meta": meta,
+    }
 
 
 # ── GET /api/signals/combo-v2 ──────────────────────────────────
