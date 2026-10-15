@@ -59,6 +59,14 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 # ──────────────────────────────────────────────────────────────
 import config
 
+# 2026-10-11: 현금 산술은 서버와 **같은 순수 모듈**을 쓴다(모니터가 DB 엔진을 끌어오지 않게 분리).
+from virtual_cash_math import (  # noqa: E402
+    LIMIT_INSUFFICIENT_CASH,
+    OVERDRAFT_TOLERANCE_KRW,
+    plan_buy_quantity,
+    required_cash,
+)
+
 STOCKEASY_EMAIL    = getattr(config, "STOCKEASY_EMAIL",    "")
 STOCKEASY_PASSWORD = getattr(config, "STOCKEASY_PASSWORD", "")
 BASE_API           = "http://127.0.0.1:8000"
@@ -461,16 +469,120 @@ def calc_quantity(price: float, budget: int = MAX_BUDGET) -> int:
 # ──────────────────────────────────────────────────────────────
 # 미러 계좌 동기화 (2026-10-07, REVIEW_PLAN §23-3 · Stock_Strategy S29·§11)
 # ──────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
+# 미러 매수 보류 상태 (2026-10-11 P0: 현금 부족 409 를 매 회차 재시도하던 결함)
+#
+# 실측 사고: momentum_mirror 잔액이 917만원인데 미러는 편입마다 고정 1,000만원을 주문해
+# `POST /api/trend/buy` 가 500(원장 초과인출) → peak_monitor 는 "DB 저장 실패" 로 보고 30분마다
+# 같은 2건을 영원히 재시도했다(09:58·10:28·10:58·11:23·11:53 `fail:2`).
+# 이제는 (전략·종목·편입일) 로 **보류**하고 **잔액 또는 후보 가격이 바뀔 때만** 다시 시도한다.
+# ──────────────────────────────────────────────────────────────
+_MIRROR_BUY_HOLDS: dict[tuple[str, str, str], dict] = {}
+_MIRROR_HOLD_LOGGED: set[tuple[str, str, str]] = set()
+BALANCE_CHANGE_EPSILON = 0.5  # 서버가 원 단위로 반올림해 내려주므로 1원 미만은 '동일'로 본다
+
+
+def mirror_hold_key(strategy_key: str, name: str, entry_date: str) -> tuple[str, str, str]:
+    return (strategy_key, str(name or ""), str(entry_date or ""))
+
+
+def mirror_buy_is_held(key: tuple[str, str, str], *, price: float | None, balance: float | None) -> dict | None:
+    """보류 중이면 보류 기록을, 재시도해도 되면 None 을 돌려준다.
+
+    재시도 조건(planner 확정): **현금 잔액이 바뀌었거나 후보 가격이 바뀐 경우에만**.
+    둘 다 그대로면 주문을 아예 보내지 않는다(잔액 < 1건 예산인 계좌에서 무한 재시도 방지).
+    """
+    hold = _MIRROR_BUY_HOLDS.get(key)
+    if not hold:
+        return None
+    if balance is not None and hold.get("balance") is not None:
+        if abs(float(balance) - float(hold["balance"])) > BALANCE_CHANGE_EPSILON:
+            return None
+    if price is not None and hold.get("price") is not None:
+        if abs(float(price) - float(hold["price"])) > 1e-9:
+            return None
+    return hold
+
+
+def mirror_buy_hold(
+    key: tuple[str, str, str],
+    *,
+    price: float | None,
+    balance: float | None,
+    reason: str,
+    target_quantity: int,
+    affordable_quantity: int | None = None,
+    note: str = "",
+) -> None:
+    """보류를 기록한다(사유·목표수량·잔액·가격). 같은 상태가 반복되면 로그는 1회만."""
+    _MIRROR_BUY_HOLDS[key] = {
+        "reason": reason,
+        "price": float(price) if price is not None else None,
+        "balance": float(balance) if balance is not None else None,
+        "target_quantity": int(target_quantity or 0),
+        "affordable_quantity": None if affordable_quantity is None else int(affordable_quantity),
+        "held_at": datetime.now().isoformat(timespec="seconds"),
+        "note": note,
+    }
+    if key not in _MIRROR_HOLD_LOGGED:
+        _MIRROR_HOLD_LOGGED.add(key)
+        logger.warning(
+            "[미러] %s %s 보류 — %s (목표=%s주 잔액=%s 가격=%s%s) · 잔액이나 가격이 바뀔 때만 재시도",
+            key[0], key[1], reason, target_quantity,
+            "-" if balance is None else f"{float(balance):,.0f}",
+            "-" if price is None else f"{float(price):,.0f}",
+            f" 가능={affordable_quantity}주" if affordable_quantity is not None else "",
+        )
+
+
+def mirror_buy_release(key: tuple[str, str, str]) -> None:
+    """매수 성공·편입 소멸 시 보류 해제(사전이 무한히 자라지 않게)."""
+    _MIRROR_BUY_HOLDS.pop(key, None)
+    _MIRROR_HOLD_LOGGED.discard(key)
+
+
+def _mirror_cash(key: str) -> float | None:
+    """미러 계좌의 **가용 현금**을 서버에서 읽는다(모니터는 별도 프로세스라 DB 를 직접 보지 않는다)."""
+    perf = api_get("/api/trend/performance")
+    if not isinstance(perf, dict):
+        return None
+    row = ((perf.get("strategies") or {}).get(key) or {})
+    cash = row.get("cash")
+    try:
+        return float(cash)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mirror_rejection_reason(r: dict | None) -> tuple[str, dict]:
+    """409 본문에서 사유와 서버가 계산한 잔액/최대가능수량을 꺼낸다(추측하지 않는다)."""
+    if _LAST_POST_STATUS.get("/api/trend/buy") != 409:
+        return "", {}
+    try:
+        body = json.loads(_LAST_POST_BODY.get("/api/trend/buy") or "{}")
+    except ValueError:
+        return "", {}
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if not isinstance(detail, dict):
+        return "", {}
+    reasons = detail.get("reasons") or []
+    reason = next((str(x) for x in reasons if x), "")
+    return reason, detail
+
+
 def sync_mirror(strategy: str, site_holdings: list, site_exits: list, now_str: str) -> dict:
     """스탁이지 보유 목록과 <strategy>_mirror 가상계좌를 맞춘다.
 
     규칙: 사이트에 있고 미러에 없으면 매수(위험게이트·공통 손절 없음 — 서버가 mirror=True·미러 키만 허용),
     미러에 있고 사이트에 없으면 연속 EXIT_MISS_CONFIRM_COUNT회 확인 후 매도(사이트 이탈표에 있으면 즉시).
+    수량(2026-10-11 정책 ①): 목표 = 1,000만원 예산이되 **계좌 잔액 기반 최대가능수량으로 제한**한다.
+    잔액이 0주면 주문하지 않고 보류한다(0주 주문 금지). 부분 체결은 목표수량·제한사유를 주문에 실어
+    서버가 보유행에 감사 기록으로 남기게 한다.
     가격: price/sell_price = 감지 시점 현재가(따라 샀을 때), source_price = 스탁이지 기재 매수가·매도가(일치 판정).
     알림 없음(운영 계좌가 이미 알린다).
     """
     key = strategy + MIRROR_SUFFIX
-    out = {"bought": 0, "sold": 0, "fail": 0}
+    out = {"bought": 0, "sold": 0, "held": 0, "fail": 0}
     db_all = api_get(f"/api/trend/holdings?strategy={key}")
     if db_all is None:
         logger.warning(f"[미러] {key} 보유 조회 실패 — 이번 회차 건너뜀")
@@ -478,6 +590,12 @@ def sync_mirror(strategy: str, site_holdings: list, site_exits: list, now_str: s
     active = {h["stock_name"]: h for h in db_all if h.get("is_active")}
     site = {h["name"]: h for h in site_holdings if h.get("name")}
     exits = {e["name"]: e for e in site_exits if e.get("name")}
+
+    # 편입이 사라진 종목의 보류는 정리한다(사전 무한 증가 방지).
+    for hold_key in [k for k in _MIRROR_BUY_HOLDS if k[0] == key and k[1] not in site]:
+        mirror_buy_release(hold_key)
+
+    remaining_cash = _mirror_cash(key)  # 이번 회차에 아직 안 쓴 현금
     for name, h in site.items():
         _EXIT_MISS_COUNTS[(key, name)] = 0
         price = h.get("current_price") or h.get("buy_price") or 0
@@ -487,17 +605,58 @@ def sync_mirror(strategy: str, site_holdings: list, site_exits: list, now_str: s
             continue
         if not price:
             continue
+        entry_date = h.get("entry_date") or now_str[:10]
+        hold_key = mirror_hold_key(key, name, entry_date)
+        held = mirror_buy_is_held(hold_key, price=price, balance=remaining_cash)
+        if held:
+            out["held"] += 1
+            continue
+
+        target_qty = calc_quantity(price)
+        plan = plan_buy_quantity(target_qty, price, remaining_cash)
+        if plan["quantity"] <= 0:
+            # 살 수 있는 수량이 0 — 0주 주문을 만들지 않고 보류한다(정책 ①).
+            mirror_buy_hold(
+                hold_key, price=price, balance=remaining_cash, reason=LIMIT_INSUFFICIENT_CASH,
+                target_quantity=target_qty, affordable_quantity=plan.get("affordable_quantity") or 0,
+                note="잔액으로 1주도 살 수 없음",
+            )
+            out["held"] += 1
+            continue
+
         r = api_post("/api/trend/buy", {
             "stock_name": name, "stock_code": h.get("stock_code") or "", "sector": h.get("sector", ""),
-            "sector_score": h.get("sector_score", 0), "buy_price": price, "quantity": calc_quantity(price),
-            "entry_date": h.get("entry_date") or now_str[:10], "hold_days": 0, "detected_at": now_str,
+            "sector_score": h.get("sector_score", 0), "buy_price": price, "quantity": plan["quantity"],
+            "target_quantity": target_qty, "limit_reason": plan["limit_reason"] or "",
+            "entry_date": entry_date, "hold_days": 0, "detected_at": now_str,
             "strategy": key, "mirror": True, "source_price": h.get("buy_price") or None,
         })
         if r and r.get("status") == "ok":
             out["bought"] += 1
-            logger.info(f"[미러] {key} 매수 {name} 현재가={price:,.0f} 스탁이지 매수가={float(h.get('buy_price') or 0):,.0f}")
+            mirror_buy_release(hold_key)
+            if remaining_cash is not None:
+                remaining_cash = max(0.0, remaining_cash - required_cash(plan["quantity"], price))
+            limit_note = (
+                f" · 부분체결(목표 {target_qty}주 → {plan['quantity']}주, {plan['limit_reason']})"
+                if plan["limit_reason"] else ""
+            )
+            logger.info(
+                f"[미러] {key} 매수 {name} 현재가={price:,.0f} 수량={plan['quantity']:,}주 "
+                f"스탁이지 매수가={float(h.get('buy_price') or 0):,.0f}{limit_note}"
+            )
         else:
-            out["fail"] += 1
+            reason, detail = _mirror_rejection_reason(r)
+            if reason == LIMIT_INSUFFICIENT_CASH:
+                # 서버가 준 잔액/최대가능수량을 그대로 보류 기록에 남긴다(추측 금지).
+                server_balance = detail.get("balance", remaining_cash)
+                mirror_buy_hold(
+                    hold_key, price=price, balance=server_balance, reason=reason,
+                    target_quantity=int(detail.get("quantity") or target_qty),
+                    affordable_quantity=detail.get("max_affordable_quantity"),
+                )
+                out["held"] += 1
+            else:
+                out["fail"] += 1
     for name, db_h in active.items():
         if name in site:
             continue

@@ -29,7 +29,19 @@ from sqlalchemy.orm import Session
 
 import db_compat
 from database import get_db
-from virtual_trading_ledger import account_summary, available_cash, record_trade
+from virtual_trading_ledger import (
+    InsufficientVirtualCash,
+    LIMIT_INSUFFICIENT_CASH,
+    OVERDRAFT_TOLERANCE_KRW,
+    account_summary,
+    available_cash,
+    max_affordable_quantity,
+    merge_reason_json,
+    projected_balance,
+    record_trade,
+    required_cash,
+    sizing_note,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1157,6 +1169,10 @@ def trend_buy(payload: dict):
     entry_reason_text = payload.get("entry_reason_text", "")
     entry_reason_json = payload.get("entry_reason_json", "")
     source_price = float(payload.get("source_price") or 0) or None
+    # 2026-10-11: 부분 체결 감사 — 호출자가 '원래 몇 주를 사려 했고 왜 줄었는지'를 함께 보낸다.
+    target_quantity = int(payload.get("target_quantity") or 0) or None
+    limit_reason = (payload.get("limit_reason") or "").strip() or None
+    sizing_audit: dict | None = None  # 부분 체결 감사 기록(응답에도 그대로 노출)
     is_mirror = bool(payload.get("mirror")) and strategy in MIRROR_STRATEGIES
 
     if not stock_name or not buy_price:
@@ -1213,6 +1229,39 @@ def trend_buy(payload: dict):
                 "message": "가상매수 위험게이트 차단", "decision": gate["decision"],
                 "reasons": gate.get("reasons") or [],
             })
+        # 2026-10-11 진단 결함: 이 엔드포인트는 **현금을 보지 않고** 주문 행부터 만들었다. 잔액이
+        # 모자라면 원장(`record_trade`)이 ValueError 를 던져 HTTP 500 이 되고, 호출자(peak_monitor)는
+        # "DB 저장 실패" 로만 보고 60분마다 영원히 재시도했다(실측: momentum_mirror 잔액 9,175,022원에
+        # 217주×45,950원 / 225주×44,250원 = 예산 1,000만원 포지션 2건이 같은 잔액에서 연속 거부).
+        # 판정식은 원장과 **같은** `projected_balance`/`OVERDRAFT_TOLERANCE_KRW` 를 쓴다(갈라지면 500 재발).
+        _balance = available_cash(conn, strategy, 100_000_000.0)
+        if projected_balance(_balance, quantity, buy_price) < OVERDRAFT_TOLERANCE_KRW:
+            conn.close()
+            _max_qty = max_affordable_quantity(_balance, buy_price)
+            logger.warning(
+                "[trend/buy] 현금 부족 거절 — strategy=%s code=%s qty=%s price=%s 잔액=%.2f 필요=%.2f 최대가능=%s주",
+                strategy, stock_code or stock_name, quantity, buy_price,
+                float(_balance), required_cash(quantity, buy_price), _max_qty,
+            )
+            raise HTTPException(status_code=409, detail={
+                "message": "가상매수 현금 부족", "decision": "BLOCKED_CASH",
+                "reasons": [LIMIT_INSUFFICIENT_CASH], "strategy": strategy,
+                "balance": round(float(_balance), 2), "quantity": int(quantity),
+                "target_quantity": int(target_quantity or quantity),
+                "price": float(buy_price), "required": round(required_cash(quantity, buy_price), 2),
+                "projected_balance": round(projected_balance(_balance, quantity, buy_price), 2),
+                "max_affordable_quantity": int(_max_qty),
+            })
+        # 부분 체결(목표수량 > 실제 매수수량)이면 목표·사유를 보유행 사유 JSON 에 **보존**한다
+        # (성과 왜곡을 감사 가능하게 — 기존 사유 JSON 이 있으면 병합해 다른 경로 기록을 지우지 않는다).
+        if (target_quantity and target_quantity != quantity) or limit_reason:
+            sizing_audit = sizing_note(
+                target_quantity=target_quantity or quantity, filled_quantity=quantity,
+                limit_reason=limit_reason, price=buy_price, balance=float(_balance),
+                affordable_quantity=max_affordable_quantity(_balance, buy_price),
+                decision_source="peak_monitor.sync_mirror" if is_mirror else "trend/buy",
+            )
+            entry_reason_json = merge_reason_json(entry_reason_json, sizing_audit)
         holding_cursor = conn.execute(
             "INSERT INTO peak_holding (stock_code,stock_name,sector,buy_price,current_price,quantity,"
             "entry_date,hold_days,profit_pct,is_active,strategy,detected_at,updated_at,"
@@ -1235,13 +1284,31 @@ def trend_buy(payload: dict):
             "VALUES (?,?,?,?,?,0,0.0,CURRENT_TIMESTAMP,?,?)",
             (stock_name, "buy", buy_price, quantity, round(buy_price * quantity), strategy, source_price)
         )
-        _record_paper_trade(
-            conn, strategy=strategy, side="buy", code=stock_code, name=stock_name,
-            holding_id=int(holding_id), qty=quantity, price=buy_price,
-            trade_id=int(trade_cursor.lastrowid), occurred_at=_dt.now().strftime("%Y-%m-%d %H:%M:%S"),
-        )
+        try:
+            _record_paper_trade(
+                conn, strategy=strategy, side="buy", code=stock_code, name=stock_name,
+                holding_id=int(holding_id), qty=quantity, price=buy_price,
+                trade_id=int(trade_cursor.lastrowid), occurred_at=_dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+        except InsufficientVirtualCash as exc:
+            # 사전 점검과 원장 사이에 잔액이 바뀌는 경합(동시 주문·스케줄러)까지 막는 2차 방어선.
+            # 원장 예외를 그대로 올리면 500 이 되고 호출자가 영원히 재시도하므로 409 로 변환한다.
+            conn.rollback()
+            conn.close()
+            raise HTTPException(status_code=409, detail={
+                "message": "가상매수 현금 부족", "decision": "BLOCKED_CASH",
+                "reasons": [LIMIT_INSUFFICIENT_CASH],
+                "target_quantity": int(target_quantity or quantity), **exc.detail(),
+            }) from None
     conn.commit(); conn.close()
-    return {"status": "ok", "stock_name": stock_name}
+    return {
+        "status": "ok",
+        "stock_name": stock_name,
+        "filled_quantity": int(quantity),
+        "target_quantity": int(target_quantity or quantity),
+        "limit_reason": limit_reason,
+        "sizing_partial": bool(sizing_audit and sizing_audit.get("partial")),
+    }
 
 
 # ── POST /api/trend/update ──────────────────────────────────────

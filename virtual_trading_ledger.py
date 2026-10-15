@@ -1,16 +1,27 @@
 """Auditable cash and transaction-cost ledger for strategy-center paper trading."""
 from __future__ import annotations
 
-import os
 from datetime import datetime
 
 from config import IS_POSTGRES
 from database import engine
-
-BUY_COMMISSION_RATE = float(os.getenv("VIRTUAL_BUY_COMMISSION_RATE", "0.00015"))
-SELL_COMMISSION_RATE = float(os.getenv("VIRTUAL_SELL_COMMISSION_RATE", "0.00015"))
-SELL_TAX_RATE = float(os.getenv("VIRTUAL_SELL_TAX_RATE", "0.0020"))
-SLIPPAGE_RATE = float(os.getenv("VIRTUAL_SLIPPAGE_RATE", "0.0005"))
+from virtual_cash_math import (  # noqa: F401  — 기존 `virtual_trading_ledger.X` import 경로 호환 재노출
+    BUY_COMMISSION_RATE,
+    InsufficientVirtualCash,
+    LIMIT_INSUFFICIENT_CASH,
+    OVERDRAFT_TOLERANCE_KRW,
+    SELL_COMMISSION_RATE,
+    SELL_TAX_RATE,
+    SIZING_NOTE_KEY,
+    SLIPPAGE_RATE,
+    buy_cost_breakdown,
+    max_affordable_quantity,
+    merge_reason_json,
+    plan_buy_quantity,
+    projected_balance,
+    required_cash,
+    sizing_note,
+)
 
 DDL = """
 CREATE TABLE IF NOT EXISTS virtual_cash_accounts (
@@ -73,6 +84,7 @@ def initialize_account(conn, strategy: str, initial_cash: float) -> float:
     return float(row[0])
 
 
+
 def available_cash(conn, strategy: str, initial_cash: float) -> float:
     return initialize_account(conn, strategy, initial_cash)
 
@@ -127,13 +139,18 @@ def record_trade(
         return {"inserted": False, "skipped": "no_matching_buy", "balance_after": None, "realized_pnl_net": 0.0}
 
     balance = initialize_account(conn, strategy, initial_cash)
-    gross = float(quantity) * float(price)
-    # cost_rates(2026-09-28): paper_execution이 백테스트와 같은 비용(backtest_common._tx_cost:
-    # 수수료 0.015% + 매도세 0.18% + 시총구간 슬리피지)을 쓰도록 비율을 직접 넘긴다.
     rates = cost_rates or {}
-    fee = gross * float(rates.get("fee", BUY_COMMISSION_RATE if side == "buy" else SELL_COMMISSION_RATE))
-    tax = gross * float(rates.get("tax", SELL_TAX_RATE)) if side == "sell" else 0.0
-    slippage = gross * float(rates.get("slippage", SLIPPAGE_RATE))
+    if side == "buy":
+        # 매수 비용은 `buy_cost_breakdown` 하나로 계산한다(초과인출 사전판정과 같은 식).
+        costs = buy_cost_breakdown(quantity, price, cost_rates=cost_rates)
+        gross, fee, slippage, tax = costs["gross"], costs["fee"], costs["slippage"], 0.0
+    else:
+        gross = float(quantity) * float(price)
+        # cost_rates(2026-09-28): paper_execution이 백테스트와 같은 비용(backtest_common._tx_cost:
+        # 수수료 0.015% + 매도세 0.18% + 시총구간 슬리피지)을 쓰도록 비율을 직접 넘긴다.
+        fee = gross * float(rates.get("fee", SELL_COMMISSION_RATE))
+        tax = gross * float(rates.get("tax", SELL_TAX_RATE))
+        slippage = gross * float(rates.get("slippage", SLIPPAGE_RATE))
     buy_costs = 0.0
     if side == "sell" and holding_id is not None:
         cost = conn.execute(
@@ -145,8 +162,16 @@ def record_trade(
     realized_net = float(gross_profit) - buy_costs - fee - tax - slippage if side == "sell" else 0.0
     cash_delta = -(gross + fee + slippage) if side == "buy" else gross - fee - tax - slippage
     balance_after = balance + cash_delta
-    if balance_after < -0.5:
-        raise ValueError(f"virtual cash would become negative: {balance_after:.2f}")
+    if balance_after < OVERDRAFT_TOLERANCE_KRW:
+        raise InsufficientVirtualCash(
+            strategy=strategy,
+            balance=balance,
+            quantity=quantity,
+            price=price,
+            projected=balance_after,
+            max_quantity=max_affordable_quantity(balance, price, cost_rates=cost_rates),
+            cost_rates=cost_rates,
+        )
     now = datetime.now().isoformat(timespec="seconds")
     conn.execute(
         """INSERT INTO virtual_cash_ledger(
