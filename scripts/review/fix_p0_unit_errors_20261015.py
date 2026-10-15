@@ -271,6 +271,9 @@ def main() -> None:
             print(f"  PASS id={fd_id}")
 
     print(f"\n[완료] 수정 {len(fixed_ids)}행, 예외 등록 {exc_inserted}건, readback_fail={fail}, run_id={RUN_ID}")
+    if fail:
+        import sys
+        sys.exit(1)
 
 
 if __name__ == "__main__":
