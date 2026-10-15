@@ -14,6 +14,14 @@
  */
 import React from 'react';
 import { API } from '../utils';
+import {
+  anyResearchSectionVisible,
+  formatCount,
+  formatPercent,
+  formatSignedPercent,
+  strategyResearchGate,
+  visibleResearchSections,
+} from './strategyResearchGate';
 import BacktestView from './BacktestView';
 import FactorValidationPanel, { QuantStatsPanel } from './FactorValidationPanel';
 import PriceIntegrityCard from './PriceIntegrityCard';
@@ -68,6 +76,13 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
   const StrategyHub = ({ changeStock, changeTab, initialHubTab = 'matrix' }) => {
     const [hubTab, setHubTab]             = React.useState(initialHubTab);
     const [selectedStrat, setSelectedStrat] = React.useState('high_profit_compound');
+    // 전략을 고르면 성과 매트릭스는 그대로 두고 그 아래/옆에 추천 종목 패널만 연다(2026-10-05)
+    const [picked, setPicked] = React.useState(false);
+    const pickRef = React.useRef(null);
+    const pickStrategy = () => {
+      setPicked(true);
+      setTimeout(() => pickRef.current?.scrollIntoView({ behavior:'smooth', block:'start' }), 80);
+    };
     const [strategySignals, setStrategySignals] = React.useState({});
     const [strategySignalsLoading, setStrategySignalsLoading] = React.useState(false);
     const [stratSort, setStratSort] = React.useState({ key: null, dir: 'desc' });  // 매트릭스 정렬 (avg|cum)
@@ -317,6 +332,11 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
       ? strategyResearch.strategy_rankings.top.slice(0, 5)
       : [];
     const researchEval = strategyResearch?.evaluation || {};
+    // ── 전략 연구 정적 요약 fail-closed 게이트 (2026-10-11) ──────────────────
+    // API가 검증 불통과 시 evaluation/current_rankings 를 null 로 보낸다. 종전 화면은
+    // `(x || 0) * 100` 으로 null 을 0.0% 로 위장했다 → 값이 없으면 패널 자체를 숨긴다.
+    const researchGate = strategyResearchGate(strategyResearch);
+    const researchSections = visibleResearchSections(researchGate);
     const usMinerviniVariants = Array.isArray(usMinervini?.variants) ? usMinervini.variants : [];
     const usMinerviniBest = usMinerviniVariants
       .slice()
@@ -386,12 +406,12 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
           <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>실시간 추천 종목 + 과거 백테스트 성과</span>
         </div>
 
-        {historyAuditNotice && <div style={{padding:'0.55rem 0.7rem',border:'1px solid rgba(217,119,6,0.45)',borderRadius:8,background:'rgba(120,83,12,0.14)',color:'#b45309',fontSize:'0.75rem',lineHeight:1.45}}>
+        {hubTab==='matrix' && historyAuditNotice && <div style={{padding:'0.55rem 0.7rem',border:'1px solid rgba(217,119,6,0.45)',borderRadius:8,background:'rgba(120,83,12,0.14)',color:'#b45309',fontSize:'0.75rem',lineHeight:1.45}}>
           {historyAuditNotice}
         </div>}
 
         {/* ── 현재 시장 국면 ── */}
-	        {marketRegime && (() => {
+	        {hubTab==='matrix' && marketRegime && (() => {
           const diff = marketRegime.diff_pct || 0;
           const regimeColor = regime==='BULL' ? '#dc2626' : regime==='BEAR' ? '#2563eb' : '#9333ea';
           const regimeBg    = regime==='BULL' ? 'rgba(220,38,38,0.06)' : regime==='BEAR' ? 'rgba(37,99,235,0.06)' : 'rgba(168,85,247,0.06)';
@@ -480,8 +500,18 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
           );
 	        })()}
 
-        {strategyResearch && (
+        {hubTab==='research' && researchGate.blocked && (
+          <div data-testid="strategy-research-blocked-banner"
+            style={{padding:'0.7rem 0.95rem',border:'1px solid rgba(217,119,6,0.45)',borderRadius:8,
+              background:'rgba(120,83,12,0.14)',color:'#b45309',fontSize:'0.74rem',lineHeight:1.55}}>
+            <strong style={{fontWeight:800}}>⚠️ 전략 연구 요약 차단 — 성과·추천 미표시</strong>
+            <div style={{marginTop:3}}>{researchGate.notice}</div>
+          </div>
+        )}
+
+        {hubTab==='research' && strategyResearch && anyResearchSectionVisible(researchSections) && (
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:'0.75rem'}}>
+            {researchSections.datasetStats && (
             <div className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.55rem'}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.6rem',flexWrap:'wrap'}}>
                 <strong style={{fontSize:'0.84rem',color:'#2563eb'}}>3배 라벨 연구 요약</strong>
@@ -491,10 +521,10 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:'0.45rem'}}>
                 {[
-                  { label:'스냅샷 행수', value: Number(strategyResearch?.dataset?.snapshot_rows || 0).toLocaleString() },
-                  { label:'커버 종목', value: Number(strategyResearch?.dataset?.stocks_covered || 0).toLocaleString() },
-                  { label:'12개월 라벨', value: Number(strategyResearch?.dataset?.label_3x_12m_rows || 0).toLocaleString() },
-                  { label:'월 스냅샷 수', value: Number(strategyResearch?.dataset?.snapshot_months || 0).toLocaleString() },
+                  { label:'스냅샷 행수', value: formatCount(strategyResearch?.dataset?.snapshot_rows, 0) },
+                  { label:'커버 종목', value: formatCount(strategyResearch?.dataset?.stocks_covered, 0) },
+                  { label:'12개월 라벨', value: formatCount(strategyResearch?.dataset?.label_3x_12m_rows, 0) },
+                  { label:'월 스냅샷 수', value: formatCount(strategyResearch?.dataset?.snapshot_months, 0) },
                 ].map(item => (
                   <div key={item.label} style={{padding:'0.5rem 0.6rem',borderRadius:8,background:'rgba(15,23,42,0.03)',border:'1px solid rgba(15,23,42,0.2)'}}>
                     <div style={{fontSize:'0.64rem',color:'var(--text-secondary)',marginBottom:3}}>{item.label}</div>
@@ -506,15 +536,17 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                 월말 기준 snapshot에서 6개월/12개월 최대 상승률 라벨을 다시 만들고, 휴리스틱 점수와 ML 확률을 함께 비교합니다.
               </div>
             </div>
+            )}
 
+            {researchSections.evaluation && (
             <div className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.55rem'}}>
               <strong style={{fontSize:'0.84rem',color:'#b45309'}}>휴리스틱 vs ML 상위 추천 품질</strong>
               <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:'0.45rem'}}>
                 {[
-                  { label:'휴리스틱 Top10 정밀도', value:`${(((researchEval?.heuristic_top10?.precision || 0) * 100)).toFixed(1)}%`, tone:'#b45309' },
-                  { label:'ML Top10 정밀도', value:`${(((researchEval?.ml_top10?.precision || 0) * 100)).toFixed(1)}%`, tone:'#047857' },
-                  { label:'휴리스틱 Top20 평균수익', value:`${(((researchEval?.heuristic_top20?.avg_forward_ret_12m || 0) * 100)).toFixed(1)}%`, tone:'#b45309' },
-                  { label:'ML Top20 평균수익', value:`${(((researchEval?.ml_top20?.avg_forward_ret_12m || 0) * 100)).toFixed(1)}%`, tone:'#047857' },
+                  { label:'휴리스틱 Top10 정밀도', value: formatPercent(researchEval?.heuristic_top10?.precision), tone:'#b45309' },
+                  { label:'ML Top10 정밀도', value: formatPercent(researchEval?.ml_top10?.precision), tone:'#047857' },
+                  { label:'휴리스틱 Top20 평균수익', value: formatPercent(researchEval?.heuristic_top20?.avg_forward_ret_12m), tone:'#b45309' },
+                  { label:'ML Top20 평균수익', value: formatPercent(researchEval?.ml_top20?.avg_forward_ret_12m), tone:'#047857' },
                 ].map(item => (
                   <div key={item.label} style={{padding:'0.5rem 0.6rem',borderRadius:8,background:'rgba(15,23,42,0.03)',border:'1px solid rgba(15,23,42,0.2)'}}>
                     <div style={{fontSize:'0.64rem',color:'var(--text-secondary)',marginBottom:3}}>{item.label}</div>
@@ -526,6 +558,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                 목표는 평균 수익률보다 월별 상위 추천의 적중률을 높이는 것입니다. 이 패널은 12개월 내 3배 달성 라벨 기준으로 상위 추천 품질을 비교합니다.
               </div>
             </div>
+            )}
 
             {usMinervini && (
               <div className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.55rem'}}>
@@ -567,7 +600,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
               </div>
             )}
 
-            {strategyResearch?.quality_factor_validation && (
+            {researchSections.qualityValidation && strategyResearch?.quality_factor_validation && (
               <div className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.55rem'}}>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.6rem',flexWrap:'wrap'}}>
                   <strong style={{fontSize:'0.84rem',color:'#0284c7'}}>수주·품질 지표 검증</strong>
@@ -577,11 +610,11 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:'0.45rem'}}>
                   {[
-                    { label:'선수금/계약부채', value:`+${((qAdvance.avg_12m || 0) * 100).toFixed(1)}%`, sub:`3배 ${Number(qAdvance.triple_12m || 0).toFixed(1)}%`, tone:'#047857' },
-                    { label:'최근 수주계약', value:`+${((qOrder.avg_12m || 0) * 100).toFixed(1)}%`, sub:`3배 ${Number(qOrder.triple_12m || 0).toFixed(1)}%`, tone:'#047857' },
-                    { label:'Top20 기본', value:`+${((qBaseTop20.avg_12m || 0) * 100).toFixed(1)}%`, sub:`3배 ${Number(qBaseTop20.triple_12m || 0).toFixed(1)}%`, tone:'#1e293b' },
-                    { label:'라벨 Top10 보조', value:`+${((qSweepTop10Best.test_avg12 || 0) * 100).toFixed(1)}%`, sub:`기본 +${((qSweepTop10Base.avg_12m || 0) * 100).toFixed(1)}%`, tone:(qSweepTop10Best.test_avg12 || 0) >= (qSweepTop10Base.avg_12m || 0) ? '#047857' : '#dc2626' },
-                    { label:'실행 Top10 보조', value:`${Number(qBtOverlayTop10.total_return_pct || 0).toFixed(1)}%`, sub:`기본 ${Number(qBtModelTop10.total_return_pct || 0).toFixed(1)}%`, tone:(qBtOverlayTop10.total_return_pct || 0) >= (qBtModelTop10.total_return_pct || 0) ? '#047857' : '#dc2626' },
+                    { label:'선수금/계약부채', value: formatSignedPercent(qAdvance.avg_12m), sub:`3배 ${formatPercent(qAdvance.triple_12m, 1)}`, tone:'#047857' },
+                    { label:'최근 수주계약', value: formatSignedPercent(qOrder.avg_12m), sub:`3배 ${formatPercent(qOrder.triple_12m, 1)}`, tone:'#047857' },
+                    { label:'Top20 기본', value: formatSignedPercent(qBaseTop20.avg_12m), sub:`3배 ${formatPercent(qBaseTop20.triple_12m, 1)}`, tone:'#1e293b' },
+                    { label:'라벨 Top10 보조', value: formatSignedPercent(qSweepTop10Best.test_avg12), sub:`기본 ${formatSignedPercent(qSweepTop10Base.avg_12m)}`, tone:(qSweepTop10Best.test_avg12 || 0) >= (qSweepTop10Base.avg_12m || 0) ? '#047857' : '#dc2626' },
+                    { label:'실행 Top10 보조', value: formatPercent(qBtOverlayTop10.total_return_pct, 1, { raw: true }), sub:`기본 ${formatPercent(qBtModelTop10.total_return_pct, 1, { raw: true })}`, tone:(qBtOverlayTop10.total_return_pct || 0) >= (qBtModelTop10.total_return_pct || 0) ? '#047857' : '#dc2626' },
                   ].map(item => (
                     <div key={item.label} style={{padding:'0.5rem 0.6rem',borderRadius:8,background:'rgba(15,23,42,0.03)',border:'1px solid rgba(15,23,42,0.2)'}}>
                       <div style={{fontSize:'0.64rem',color:'var(--text-secondary)',marginBottom:3}}>{item.label}</div>
@@ -611,15 +644,16 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
               </div>
             )}
 
+            {researchSections.rankings && (
             <div className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.55rem'}}>
               <strong style={{fontSize:'0.84rem',color:'#15803d'}}>현재 국면 전략 우선순위</strong>
               {matrixVerified ? <div style={{display:'flex',flexDirection:'column',gap:'0.42rem'}}>
                 {currentStrategyRanks.map((item, idx) => (
                   <button key={item.strategy}
-                    onClick={() => { setSelectedStrat(item.strategy); setHubTab('stocks'); }}
+                    onClick={() => { setSelectedStrat(item.strategy); pickStrategy(); }}
                     style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.65rem',padding:'0.5rem 0.65rem',borderRadius:8,cursor:'pointer',background:idx===0?'rgba(22,163,74,0.12)':'rgba(15,23,42,0.03)',border:`1px solid ${idx===0?'rgba(22,163,74,0.28)':'rgba(15,23,42,0.06)'}`,color:'rgba(15,23,42,0.88)'}}>
                     <span style={{fontSize:'0.74rem',fontWeight:700}}>{idx + 1}. {item.label}</span>
-                    <span style={{fontSize:'0.8rem',fontWeight:900,color:item.avg_ret >= 0 ? '#047857' : '#2563eb'}}>{item.avg_ret >= 0 ? '+' : ''}{Number(item.avg_ret || 0).toFixed(1)}%</span>
+                    <span style={{fontSize:'0.8rem',fontWeight:900,color:(item.avg_ret ?? 0) >= 0 ? '#047857' : '#2563eb'}}>{formatSignedPercent(item.avg_ret, 1, { raw: true })}</span>
                   </button>
                 ))}
               </div> : (
@@ -633,7 +667,9 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                   : '시장 국면은 표시하되 백테스트 검증이 끝날 때까지 전략 추천에는 연결하지 않습니다.'}
               </div>
             </div>
+            )}
 
+            {researchSections.rankings && (
             <div className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.55rem'}}>
               <strong style={{fontSize:'0.84rem',color:'#6d28d9'}}>현재 3배 후보 비교</strong>
               <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:'0.6rem'}}>
@@ -665,10 +701,11 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                 </div>
               </div>
             </div>
+            )}
           </div>
         )}
 
-        {(backtestMatrixError || (backtestMatrix && !matrixVerified)) && (
+        {hubTab==='matrix' && (backtestMatrixError || (backtestMatrix && !matrixVerified)) && (
           <div style={{padding:'0.65rem 0.9rem',borderRadius:6,
             background:'rgba(234,88,12,0.08)',border:'1px solid rgba(234,88,12,0.3)',
             color:'#c2410c',fontSize:'0.72rem',lineHeight:1.55}}>
@@ -680,7 +717,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
           </div>
         )}
 
-        {backtestMatrix?.governance && (
+        {hubTab==='matrix' && backtestMatrix?.governance && (
           <div style={{padding:'0.7rem 0.9rem',borderRadius:8,
             background:'rgba(15,118,110,0.08)',border:'1px solid rgba(37,99,235,0.25)',
             color:'#0f766e',fontSize:'0.72rem',lineHeight:1.6}}>
@@ -694,38 +731,26 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
           </div>
         )}
 
-	        {/* ── 3. 탭 + 로직 선택 드롭다운 (1개 행) ── */}
-	        <div style={{display:'flex',gap:'0.4rem',alignItems:'center',flexWrap:'wrap'}}>
-	          {[
-	            { key:'matrix', label:'📊 성과 매트릭스' },
-	            { key:'continuous', label:'💰 1억원 연속운용' },
-	            { key:'desc',   label:'📘 전략 설명' },
-	            { key:'ledger', label:'🧪 검증 이력' },
-	            { key:'factor', label:'🔬 팩터 검증' },
-	            { key:'data-lab', label:'🧭 데이터 라우팅' },
-	          ].filter(t => t.key !== 'factor' || showFactorTab).map(t => (
-            <button key={t.key}
-              onClick={() => setHubTab(t.key)}
-              style={hubTabStyle(t.key)}>
-              {t.label}
-            </button>
-          ))}
-          <span style={{width:'1px',height:'22px',background:'var(--glass-border)',flexShrink:0}} />
-          <select
-            value={selectedStrat}
-            onChange={e => { setSelectedStrat(e.target.value); setHubTab('stocks'); }}
-            style={{padding:'0.28rem 0.65rem',borderRadius:'8px',fontSize:'0.8rem',
-              background:'rgba(217,119,6,0.1)',color:'rgba(15,23,42,0.88)',
-              border:'1px solid rgba(217,119,6,0.35)',cursor:'pointer',outline:'none',minWidth:'195px'}}
-          >
-            {availableStrategies.map(s => (
-              <option key={s.key} value={s.key}>{s.label}</option>
-            ))}
-          </select>
-        </div>
+	        {/* ── 3. 전략 선택 (탭 버튼은 왼쪽 메뉴와 중복이라 제거, 2026-10-05) ── */}
+		        {hubTab === 'matrix' && (
+		        <div style={{display:'flex',gap:'0.5rem',alignItems:'center',flexWrap:'wrap'}}>
+		          <span style={{fontSize:'0.74rem',color:'var(--text-secondary)'}}>전략 선택 → 현재 추천 종목</span>
+		          <select
+		            value={selectedStrat}
+		            onChange={e => { setSelectedStrat(e.target.value); pickStrategy(); }}
+		            style={{padding:'0.28rem 0.65rem',borderRadius:'8px',fontSize:'0.8rem',
+		              background:'rgba(217,119,6,0.1)',color:'rgba(15,23,42,0.88)',
+		              border:'1px solid rgba(217,119,6,0.35)',cursor:'pointer',outline:'none',minWidth:'195px'}}
+		          >
+		            {availableStrategies.map(s => (
+		              <option key={s.key} value={s.key}>{s.label}</option>
+		            ))}
+		          </select>
+		        </div>
+		        )}
 
-        {selectedMatrixStrategy && (
-          <div className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.75rem',border:'1px solid rgba(37,99,235,0.22)'}}>
+        {hubTab === 'matrix' && picked && selectedMatrixStrategy && (
+          <div ref={pickRef} className="glass-panel" style={{padding:'0.85rem 1rem',display:'flex',flexDirection:'column',gap:'0.75rem',border:'1px solid rgba(37,99,235,0.22)'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.8rem',flexWrap:'wrap'}}>
               <div>
                 <div style={{fontSize:'0.9rem',fontWeight:900,color:sel.color || '#1e293b'}}>{selectedMatrixStrategy.label || sel.label}</div>
@@ -852,16 +877,16 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'0.8rem',flexWrap:'wrap',marginBottom:'0.6rem'}}>
               <strong style={{fontSize:'0.86rem',color:'#7e22ce'}}>V-SECTOR 주도섹터 전략</strong>
               <span style={{fontSize:'0.72rem',color:'var(--text-secondary)'}}>
-                run {strategyAudit.sector_focus?.results?.[0]?.methodology?.run_hash || '선택 필요'}
+                run {strategyMethodology.sector_focus?.results?.[0]?.methodology?.run_hash || '선택 필요'}
               </span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(6,minmax(78px,1fr))',gap:'0.35rem',marginBottom:'0.75rem'}}>
               {STRATEGY_HUB_PERIOD_LABELS.map((label, i) => {
-                const v = PERIOD_RETURNS.sector_focus[i];
+                const v = PERIOD_RETURNS.sector_focus?.[i] ?? null;
                 return (
                   <div key={label} style={{padding:'0.45rem 0.5rem',borderRadius:6,background:'rgba(0,0,0,0.18)',border:'1px solid rgba(15,23,42,0.2)'}}>
                     <div style={{whiteSpace:'pre-line',fontSize:'0.62rem',color:'var(--text-secondary)',lineHeight:1.25}}>{label}</div>
-                    <div style={{fontSize:'0.9rem',fontWeight:900,color:clrRet(v),marginTop:3}}>{fmtRet(v)}</div>
+                    <div style={{fontSize:'0.9rem',fontWeight:900,color:clrRet(v),marginTop:3}}>{v == null ? '-' : fmtRet(v)}</div>
                   </div>
                 );
               })}
@@ -960,7 +985,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
                           style={{background: isSelected ? 'rgba(217,119,6,0.07)' : si%2===0 ? 'transparent' : 'rgba(15,23,42,0.013)', cursor:'pointer'}}
                           onMouseOver={e => e.currentTarget.style.background='rgba(15,23,42,0.045)'}
                           onMouseOut={e => e.currentTarget.style.background= isSelected ? 'rgba(217,119,6,0.07)' : si%2===0 ? 'transparent' : 'rgba(15,23,42,0.013)'}
-                          onClick={() => { setSelectedStrat(s.key); setHubTab('stocks'); }}
+                          onClick={() => { setSelectedStrat(s.key); pickStrategy(); }}
                         >
                           <td style={{padding:'0.42rem 0.75rem',fontWeight:isSelected?900:700,
 	                            borderBottom:'1px solid rgba(15,23,42,0.2)',
@@ -1548,7 +1573,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
 	                      const isSelected = selectedStrat === r.key;
 	                      return (
 	                        <tr key={r.key}
-	                          onClick={() => { setSelectedStrat(r.key); setHubTab('stocks'); }}
+	                          onClick={() => { setSelectedStrat(r.key); pickStrategy(); }}
 	                          style={{cursor:'pointer',background:isSelected ? 'rgba(22,163,74,0.08)' : i%2 ? 'rgba(15,23,42,0.012)' : 'transparent'}}
 	                        >
 	                          <td style={{padding:'0.42rem 0.55rem',textAlign:'center',borderBottom:'1px solid rgba(15,23,42,0.2)',color:i<3 ? '#15803d' : 'rgba(15,23,42,0.88)',fontWeight:800}}>{i+1}</td>
@@ -1642,7 +1667,7 @@ const STRATEGY_HUB_CONTINUOUS_RETURNS = {};
           </div>
         )}
 
-        {(hubTab === 'stocks' || (!hubTab)) && (
+        {hubTab === 'matrix' && picked && ['v4','v5'].includes(selectedStrat) && (
           <Screener
             key={sel.key}
             defaultTab={sel.screenTab || 'combo'}

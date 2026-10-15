@@ -30,6 +30,17 @@ from strategy_governance import apply_governance_decision, classify_strategy, su
 from w5_overlay import _apply_w5_overlay, _latest_w5_label, _w5_rows
 from config import IS_POSTGRES
 from db_compat import connect_primary_db
+from strategy_research_guard import (
+    STATUS_USABLE,
+    apply_strategy_research_verdict,
+    collect_canonical_stats,
+    evaluate_strategy_research,
+    extract_declared_table,
+    extract_run_hash,
+    extract_train_end_date,
+    resolve_run_spec,
+    static_summary_meta,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1292,64 +1303,135 @@ def get_hardening_plan():
     }
 
 
+_ROUTE_DERIVED_STRATEGY_RESEARCH_KEYS = (
+    "strategy_rankings",
+    "quality_factor_validation",
+    "quality_overlay_sweep",
+    "quality_overlay_monthly_backtest",
+)
+
+
+def _assemble_strategy_research_summary_payload(
+    payload: dict,
+    verdict: dict,
+    *,
+    quality_factor_validation=None,
+    quality_overlay_sweep=None,
+    quality_overlay_monthly_backtest=None,
+    strategy_rankings=None,
+) -> dict:
+    """Add derived strategy-research outputs only after a usable verdict."""
+    out = dict(payload)
+    if verdict.get("status") == STATUS_USABLE:
+        out.update({
+            "quality_factor_validation": quality_factor_validation,
+            "quality_overlay_sweep": quality_overlay_sweep,
+            "quality_overlay_monthly_backtest": quality_overlay_monthly_backtest,
+            "strategy_rankings": strategy_rankings,
+        })
+    else:
+        # Do not permit route-derived rankings or return-bearing quality artifacts
+        # to bypass the verdict's current_rankings/evaluation withholding.
+        for key in _ROUTE_DERIVED_STRATEGY_RESEARCH_KEYS:
+            out.pop(key, None)
+    return apply_strategy_research_verdict(out, verdict)
+
+
 @router.get("/strategy-research/summary")
 def get_strategy_research_summary():
+    raw_text = None
+    parse_error = None
     payload = {}
     if RESEARCH_SUMMARY_PATH.exists():
         try:
-            payload = json.loads(RESEARCH_SUMMARY_PATH.read_text())
+            raw_text = RESEARCH_SUMMARY_PATH.read_text()
+            payload = json.loads(raw_text)
+            if not isinstance(payload, dict):
+                parse_error = f"unexpected JSON root: {type(payload).__name__}"
+                payload = {}
         except Exception as e:
-            payload = {"error": str(e)}
+            parse_error = f"{type(e).__name__}: {e}"
+            payload = {}
 
-    quality_payload = None
-    if QUALITY_FACTOR_VALIDATION_PATH.exists():
-        try:
-            quality_payload = json.loads(QUALITY_FACTOR_VALIDATION_PATH.read_text())
-        except Exception as e:
-            quality_payload = {"error": str(e)}
-    overlay_sweep_payload = None
-    if QUALITY_OVERLAY_SWEEP_PATH.exists():
-        try:
-            overlay_sweep_payload = json.loads(QUALITY_OVERLAY_SWEEP_PATH.read_text())
-        except Exception as e:
-            overlay_sweep_payload = {"error": str(e)}
-    overlay_monthly_backtest_payload = None
-    if QUALITY_OVERLAY_MONTHLY_BACKTEST_PATH.exists():
-        try:
-            overlay_monthly_backtest_payload = json.loads(QUALITY_OVERLAY_MONTHLY_BACKTEST_PATH.read_text())
-        except Exception as e:
-            overlay_monthly_backtest_payload = {"error": str(e)}
+    # --- P0 fail-closed 검증 (2026-10-11) ----------------------------------
+    # 정적 요약은 자기 주장(self-reported)일 뿐이다. 표기 테이블·수치·기준일·PIT·
+    # run spec 을 라이브 canonical(`strategy_feature_snapshot`)과 대조하고, 하나라도
+    # 불일치/부재/증명 불가면 순위·수익률을 매수·승격 근거로 노출하지 않는다.
+    #   판정 로직: strategy_research_guard.py (읽기 전용, SELECT 만)
+    summary_meta = static_summary_meta(RESEARCH_SUMMARY_PATH, raw_text, parse_error)
+    try:
+        _sconn = _db()
+        canonical_stats = collect_canonical_stats(
+            _sconn, extract_declared_table(payload), extract_train_end_date(payload)
+        )
+        run_spec = resolve_run_spec(_sconn, extract_run_hash(payload))
+    except Exception as e:
+        logger.exception("strategy research canonical cross-check failed")
+        canonical_stats = {"error": f"{type(e).__name__}: {e}"}
+        run_spec = {"required": False, "run_hash": None, "found": False,
+                    "table_rows": None, "error": None}
+    verdict = evaluate_strategy_research(payload, canonical_stats, summary_meta, run_spec)
+    research_usable = verdict["status"] == STATUS_USABLE
+    if not research_usable:
+        logger.warning(
+            "strategy research summary blocked (fail-closed): %s", ", ".join(verdict["reasons"])
+        )
 
-    # 기존 JSON에 유동성 필터 미적용 시 serve-time에 적용
-    cr = payload.get("current_rankings", {})
-    if cr and "liquidity_filtered" not in cr:
-        ml = _filter_liquid_rankings(cr.get("ml_top20", []))
-        hu = _filter_liquid_rankings(cr.get("heuristic_top20", []))
-        payload = {
-            **payload,
-            "current_rankings": {
-                **cr,
-                "ml_top20": ml[:20],
-                "heuristic_top20": hu[:20],
-                "quality_overlay_top10": _quality_overlay_current_rankings(10),
-            },
-        }
-    elif cr:
-        payload = {
-            **payload,
-            "current_rankings": {
-                **cr,
-                "quality_overlay_top10": _quality_overlay_current_rankings(10),
-            },
-        }
+    # Quality artifacts and derived rankings are read only after the summary is proven usable.
+    # A blocked response reads no supplemental research output and cannot re-expose it.
+    if research_usable:
+        quality_payload = None
+        if QUALITY_FACTOR_VALIDATION_PATH.exists():
+            try:
+                quality_payload = json.loads(QUALITY_FACTOR_VALIDATION_PATH.read_text())
+            except Exception as e:
+                quality_payload = {"error": str(e)}
+        overlay_sweep_payload = None
+        if QUALITY_OVERLAY_SWEEP_PATH.exists():
+            try:
+                overlay_sweep_payload = json.loads(QUALITY_OVERLAY_SWEEP_PATH.read_text())
+            except Exception as e:
+                overlay_sweep_payload = {"error": str(e)}
+        overlay_monthly_backtest_payload = None
+        if QUALITY_OVERLAY_MONTHLY_BACKTEST_PATH.exists():
+            try:
+                overlay_monthly_backtest_payload = json.loads(QUALITY_OVERLAY_MONTHLY_BACKTEST_PATH.read_text())
+            except Exception as e:
+                overlay_monthly_backtest_payload = {"error": str(e)}
 
-    return _json_safe({
-        **payload,
-        "quality_factor_validation": quality_payload,
-        "quality_overlay_sweep": overlay_sweep_payload,
-        "quality_overlay_monthly_backtest": overlay_monthly_backtest_payload,
-        "strategy_rankings": _strategy_rankings_for_regime(),
-    })
+        # Existing JSON receives a liquidity filter only in the proven usable path.
+        cr = payload.get("current_rankings", {})
+        if cr and "liquidity_filtered" not in cr:
+            ml = _filter_liquid_rankings(cr.get("ml_top20", []))
+            hu = _filter_liquid_rankings(cr.get("heuristic_top20", []))
+            payload = {
+                **payload,
+                "current_rankings": {
+                    **cr,
+                    "ml_top20": ml[:20],
+                    "heuristic_top20": hu[:20],
+                    "quality_overlay_top10": _quality_overlay_current_rankings(10),
+                },
+            }
+        elif cr:
+            payload = {
+                **payload,
+                "current_rankings": {
+                    **cr,
+                    "quality_overlay_top10": _quality_overlay_current_rankings(10),
+                },
+            }
+
+    if research_usable:
+        return _json_safe(_assemble_strategy_research_summary_payload(
+            payload,
+            verdict,
+            quality_factor_validation=quality_payload,
+            quality_overlay_sweep=overlay_sweep_payload,
+            quality_overlay_monthly_backtest=overlay_monthly_backtest_payload,
+            strategy_rankings=_strategy_rankings_for_regime(),
+        ))
+    return _json_safe(_assemble_strategy_research_summary_payload(payload, verdict))
 
 
 @router.post("/strategy-research/rebuild")
