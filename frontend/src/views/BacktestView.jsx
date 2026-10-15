@@ -16,14 +16,14 @@ import { Activity } from 'lucide-react';
 import { API } from '../utils';
 
 // ── BacktestView (module-level: App 재렌더와 무관하게 안정적인 컴포넌트 identity 유지) ──
-  const BacktestView = ({ externalViewMode } = {}) => {
+  const BacktestView = ({ externalViewMode, defaultViewMode } = {}) => {
     const embedded = !!externalViewMode;  // StrategyHub에 내장 시 헤더·탭 숨김
     const [list,       setList]       = React.useState([]);
     const [detail,     setDetail]     = React.useState(null);
     const [running,    setRunning]    = React.useState(false);
     const [runAllBusy, setRunAllBusy] = React.useState(false);
     const [pollId,     setPollId]     = React.useState(null);
-    const [viewMode,   setViewMode]   = React.useState(externalViewMode || 'matrix'); // 'matrix'|'desc'|'list'
+    const [viewMode,   setViewMode]   = React.useState(externalViewMode || defaultViewMode || 'matrix'); // 'matrix'|'desc'|'list'
     React.useEffect(() => { if (externalViewMode) setViewMode(externalViewMode); }, [externalViewMode]);
     const [matrixData, setMatrixData] = React.useState(null);
     const [catalog,    setCatalog]    = React.useState([]);

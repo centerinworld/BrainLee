@@ -11,7 +11,7 @@ export default function StockLlmView() {
   return (
     <div className="ki-embed">
       <div className="sm-top">
-        <span className="sm-muted">Brian_RAG 하이브리드 RAG 에이전트 — 로그인 창이 뜨면 관리자 비밀번호를 입력하세요.</span>
+        <span className="sm-muted">Brian_RAG 하이브리드 RAG 에이전트 (인사이트 분석 및 검색)</span>
         <span className="sm-spacer" />
         <a className="adm-btn" href={LLM_PATH} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> 새 탭에서 열기</a>
       </div>

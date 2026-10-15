@@ -56,5 +56,5 @@ export default function Root() {
   // 예전에는 여기서 null 을 돌려줘 App 이 통째로 사라졌다 다시 만들어졌고, 그 바람에 「내 투자」 잠금 해제 상태 등 화면 상태가 초기화됐다.
   const shownTab = tab && moduleOfTab(tab) === module ? tab : (lastTab(module) || mod.defaultTab);
   const app = <App module={module} tab={shownTab} isAdmin={session.authenticated} onLogout={session.logout} onLogin={session.refresh} />;
-  return module === 'admin' ? <AdminGate session={session}>{app}</AdminGate> : app;
+  return (module === 'admin' || module === 'stock-llm') ? <AdminGate session={session}>{app}</AdminGate> : app;
 }
