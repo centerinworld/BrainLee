@@ -1,0 +1,1888 @@
+{
+  "run_at": "2026-10-01T16:50:59",
+  "database": "postgresql",
+  "scope": "non_financial_market_data_only",
+  "excluded": [
+    "financial statements",
+    "cash flows"
+  ],
+  "sections": {
+    "tables": {
+      "price_history": {
+        "columns_checked": [
+          "close",
+          "created_at",
+          "date",
+          "frn_net_buy",
+          "frn_net_buy_amt",
+          "high",
+          "id",
+          "ind_net_buy",
+          "ind_net_buy_amt",
+          "inst_net_buy",
+          "inst_net_buy_amt",
+          "low",
+          "open",
+          "stock_code",
+          "trade_amount",
+          "volume"
+        ],
+        "row_count": 10327607,
+        "distinct_stock_codes": 4790,
+        "min_date": "2010-01-04",
+        "max_date": "2026-10-01",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "stock_price_daily": {
+        "columns_checked": [
+          "bas_dt",
+          "change_pct",
+          "close_price",
+          "created_at",
+          "high_price",
+          "id",
+          "low_price",
+          "market",
+          "market_cap",
+          "open_price",
+          "shares",
+          "stock_code",
+          "stock_name",
+          "trade_amt",
+          "volume",
+          "vs"
+        ],
+        "row_count": 925890,
+        "distinct_stock_codes": 3113,
+        "min_date": "2020-01-02",
+        "max_date": "2026-09-29",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "investor_trading_daily": {
+        "columns_checked": [
+          "bas_dt",
+          "created_at",
+          "frgn_buy",
+          "frgn_net",
+          "frgn_sell",
+          "id",
+          "indv_buy",
+          "indv_net",
+          "indv_sell",
+          "inst_buy",
+          "inst_net",
+          "inst_sell",
+          "stock_code",
+          "stock_name"
+        ],
+        "row_count": 4519957,
+        "distinct_stock_codes": 2651,
+        "min_date": "2018-04-23",
+        "max_date": "2026-07-10",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "kiwoom_investor_daily": {
+        "columns_checked": [
+          "acc_trde_prica",
+          "acc_trde_qty",
+          "bank",
+          "close_pric",
+          "dt",
+          "etc_corp",
+          "etc_fnnc",
+          "fnnc_invt",
+          "frgnr_invsr",
+          "ind_invsr",
+          "insrnc",
+          "invtrt",
+          "natfor",
+          "natn",
+          "orgn",
+          "penfnd_etc",
+          "samo_fund",
+          "stock_code",
+          "updated_at"
+        ],
+        "row_count": 4721646,
+        "distinct_stock_codes": 2786,
+        "min_date": "2017-07-27",
+        "max_date": "2026-09-23",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "kiwoom_foreign_flow": {
+        "columns_checked": [
+          "change_qty",
+          "close_price",
+          "dt",
+          "limit_exhaust_rate",
+          "poss_stock_cnt",
+          "raw_json",
+          "stock_code",
+          "updated_at",
+          "weight"
+        ],
+        "row_count": 314130,
+        "distinct_stock_codes": 2698,
+        "min_date": "2026-03-12",
+        "max_date": "2026-09-23",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "foreign_holding_daily": {
+        "columns_checked": [
+          "bas_dt",
+          "created_at",
+          "frgn_hold_pct",
+          "frgn_hold_qty",
+          "frgn_limit_pct",
+          "id",
+          "stock_code",
+          "stock_name"
+        ],
+        "row_count": 304260,
+        "distinct_stock_codes": 2698,
+        "min_date": "2026-03-12",
+        "max_date": "2026-09-23",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "short_sell_daily": {
+        "columns_checked": [
+          "bas_dt",
+          "borrow_bal_amt",
+          "borrow_bal_pct",
+          "borrow_bal_qty",
+          "created_at",
+          "id",
+          "short_amt",
+          "short_qty",
+          "short_rdpt_qty",
+          "stock_code",
+          "stock_name"
+        ],
+        "row_count": 3948036,
+        "distinct_stock_codes": 4104,
+        "min_date": "2020-01-02",
+        "max_date": "2026-09-29",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "short_rank_daily": {
+        "columns_checked": [
+          "bas_dt",
+          "created_at",
+          "id",
+          "isin_cd",
+          "lnb_bal",
+          "lnb_ccl_stck_cnt",
+          "lnb_rman_stck_cnt",
+          "lnb_scrt_dcd",
+          "rcal_rdpt_stck_cnt",
+          "rdpt_stck_cnt",
+          "stock_code",
+          "stock_name"
+        ],
+        "row_count": 3997374,
+        "distinct_stock_codes": 3185,
+        "min_date": "2020-01-02",
+        "max_date": "2026-09-29",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 32315
+      },
+      "short_sector_daily": {
+        "columns_checked": [
+          "bas_dt",
+          "created_at",
+          "id",
+          "isin_cd",
+          "sic_cd",
+          "sic_nm",
+          "stck_brw_bal",
+          "stck_brw_rto",
+          "stck_lndn_bal",
+          "stck_lndn_rto",
+          "stock_code",
+          "stock_name"
+        ],
+        "row_count": 3983400,
+        "distinct_stock_codes": 3067,
+        "min_date": "2020-01-02",
+        "max_date": "2026-09-29",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 2109
+      },
+      "short_sale_daily": {
+        "columns_checked": [
+          "collected_at",
+          "short_amount_ratio",
+          "short_amt",
+          "short_qty",
+          "short_volume_ratio",
+          "source",
+          "stock_code",
+          "trade_amount",
+          "trade_date",
+          "trade_volume"
+        ],
+        "row_count": 5000,
+        "distinct_stock_codes": 153,
+        "min_date": "2026-07-01",
+        "max_date": "2026-09-29",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "short_foreign_trade": {
+        "columns_checked": [
+          "bas_dt",
+          "created_at",
+          "forg_lnb_ccl_amt",
+          "forg_lnb_ccl_stck_cnt",
+          "id",
+          "ntiv_lnb_ccl_amt",
+          "ntiv_lnb_ccl_stck_cnt",
+          "sum_lnb_ccl_amt",
+          "sum_lnb_ccl_stck_cnt"
+        ],
+        "row_count": 4582,
+        "min_date": "2008-01-02",
+        "max_date": "2026-09-29",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "kiwoom_credit_balance": {
+        "columns_checked": [
+          "credit_balance_amt",
+          "credit_balance_qty",
+          "credit_ratio",
+          "dt",
+          "new_credit_qty",
+          "raw_json",
+          "repay_credit_qty",
+          "stock_code",
+          "updated_at"
+        ],
+        "row_count": 4091327,
+        "distinct_stock_codes": 2680,
+        "min_date": "2019-02-18",
+        "max_date": "2026-09-23",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "kiwoom_margin_daily": {
+        "columns_checked": [
+          "base_date",
+          "credit_balance",
+          "credit_buy_balance",
+          "credit_ratio",
+          "credit_sell_balance",
+          "loan_balance",
+          "raw_json",
+          "short_balance",
+          "source_api_id",
+          "stock_code",
+          "updated_at"
+        ],
+        "row_count": 94533,
+        "distinct_stock_codes": 1357,
+        "min_date": "2026-03-27",
+        "max_date": "2026-09-23",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "margin_balance_daily": {
+        "columns_checked": [
+          "collected_at",
+          "credit_amount",
+          "credit_balance",
+          "credit_ratio",
+          "data_source",
+          "dt",
+          "id",
+          "short_balance",
+          "stock_code"
+        ],
+        "row_count": 94314,
+        "distinct_stock_codes": 1357,
+        "min_date": "2026-03-27",
+        "max_date": "2026-09-23",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      },
+      "broker_program_stock_daily": {
+        "columns_checked": [
+          "buy_amt_krw",
+          "buy_qty",
+          "change_rate",
+          "close_price",
+          "dt",
+          "market_channel",
+          "net_buy_amt_krw",
+          "net_buy_qty",
+          "raw_json",
+          "sell_amt_krw",
+          "sell_qty",
+          "source",
+          "stock_code",
+          "trade_volume",
+          "updated_at"
+        ],
+        "row_count": 1850641,
+        "distinct_stock_codes": 2771,
+        "min_date": "2020-12-02",
+        "max_date": "2026-09-23",
+        "invalid_date_rows": 0,
+        "future_date_rows": 0,
+        "duplicate_keys": 0
+      }
+    },
+    "price_history_validity": {
+      "invalid_ohlcv_rows": 268775,
+      "sample": [
+        {
+          "stock_code": "254120",
+          "date": "2026-09-23",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 910.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "000300",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 4200.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "001470",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 5820.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "001570",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 9900.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "001840",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 2215.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "002410",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 1935.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "002630",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 913.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "004920",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 907.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "005030",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 486.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "005110",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 1254.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "007110",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 603.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "008600",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 2620.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "009310",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 5330.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "009440",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 756.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "011000",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 2670.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "011810",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 3530.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "014160",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 655.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "015020",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 928.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "016790",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 994.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "017040",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 932.0,
+          "volume": 0.0,
+          "trade_amount": null
+        }
+      ]
+    },
+    "canonical_price_quality": {
+      "skipped": true,
+      "reason": "QueryCanceled: canceling statement due to statement timeout",
+      "note": "Optional view-level quality distribution timed out; authoritative source-table OHLCV checks still ran on price_history."
+    },
+    "canonical_extreme_returns": {
+      "skipped": true,
+      "reason": "QueryCanceled: canceling statement due to statement timeout",
+      "note": "Optional returns-view jump scan timed out; source-table OHLCV checks still ran on price_history."
+    },
+    "price_cross_source": {
+      "price_history_vs_stock_price_daily_mismatch_rows": 0,
+      "sample": []
+    },
+    "derived_bars": {
+      "basis": "Derived from price_history daily rows; no separate weekly/monthly OHLCV storage table was found.",
+      "weekly": {
+        "periods": 0,
+        "invalid_periods": 0
+      },
+      "monthly": {
+        "periods": 0,
+        "invalid_periods": 0
+      }
+    },
+    "active_stock_price_freshness": {
+      "global_latest_price_date": "2026-10-01",
+      "active_common_stale_over_10_days": 2713,
+      "sample": [
+        {
+          "stock_code": "000020",
+          "stock_name": "동화약품",
+          "last_date": null
+        },
+        {
+          "stock_code": "000040",
+          "stock_name": "KR모터스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000050",
+          "stock_name": "경방",
+          "last_date": null
+        },
+        {
+          "stock_code": "000070",
+          "stock_name": "삼양홀딩스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000080",
+          "stock_name": "하이트진로",
+          "last_date": null
+        },
+        {
+          "stock_code": "000087",
+          "stock_name": "하이트진로2우B",
+          "last_date": null
+        },
+        {
+          "stock_code": "000100",
+          "stock_name": "유한양행",
+          "last_date": null
+        },
+        {
+          "stock_code": "000105",
+          "stock_name": "유한양행우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000120",
+          "stock_name": "CJ대한통운",
+          "last_date": null
+        },
+        {
+          "stock_code": "000140",
+          "stock_name": "하이트진로홀딩스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000145",
+          "stock_name": "하이트진로홀딩스우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000150",
+          "stock_name": "두산",
+          "last_date": null
+        },
+        {
+          "stock_code": "000155",
+          "stock_name": "두산우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000157",
+          "stock_name": "두산2우B",
+          "last_date": null
+        },
+        {
+          "stock_code": "000180",
+          "stock_name": "성창기업지주",
+          "last_date": null
+        },
+        {
+          "stock_code": "000210",
+          "stock_name": "DL",
+          "last_date": null
+        },
+        {
+          "stock_code": "000215",
+          "stock_name": "DL우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000220",
+          "stock_name": "유유제약",
+          "last_date": null
+        },
+        {
+          "stock_code": "000225",
+          "stock_name": "유유제약1우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000227",
+          "stock_name": "유유제약2우B",
+          "last_date": null
+        },
+        {
+          "stock_code": "000230",
+          "stock_name": "일동홀딩스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000240",
+          "stock_name": "한국앤컴퍼니",
+          "last_date": null
+        },
+        {
+          "stock_code": "000250",
+          "stock_name": "삼천당제약",
+          "last_date": null
+        },
+        {
+          "stock_code": "000270",
+          "stock_name": "기아",
+          "last_date": null
+        },
+        {
+          "stock_code": "000300",
+          "stock_name": "DH오토넥스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000320",
+          "stock_name": "노루홀딩스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000325",
+          "stock_name": "노루홀딩스우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000370",
+          "stock_name": "한화손해보험",
+          "last_date": null
+        },
+        {
+          "stock_code": "000390",
+          "stock_name": "SP삼화",
+          "last_date": null
+        },
+        {
+          "stock_code": "000400",
+          "stock_name": "롯데손해보험",
+          "last_date": null
+        }
+      ]
+    },
+    "investor_trading_daily_validity": {
+      "negative_buy_sell_rows": 0,
+      "net_formula_mismatch_rows": 4390046
+    },
+    "investor_price_cross_source": {
+      "mismatch_rows": 2651179,
+      "sample": [
+        {
+          "stock_code": "000050",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 15634.0,
+          "investor_frgn_net": 222.0,
+          "price_inst_net_buy": -3317.0,
+          "investor_inst_net": 1.0
+        },
+        {
+          "stock_code": "000070",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -77.0,
+          "investor_frgn_net": 133.0,
+          "price_inst_net_buy": 1232.0,
+          "investor_inst_net": 101.0
+        },
+        {
+          "stock_code": "000080",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -6430.0,
+          "investor_frgn_net": 625.0,
+          "price_inst_net_buy": -1955.0,
+          "investor_inst_net": 322.0
+        },
+        {
+          "stock_code": "000100",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 59775.0,
+          "investor_frgn_net": 11888.0,
+          "price_inst_net_buy": -18744.0,
+          "investor_inst_net": 2591.0
+        },
+        {
+          "stock_code": "000120",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 2468.0,
+          "investor_frgn_net": 2250.0,
+          "price_inst_net_buy": 14415.0,
+          "investor_inst_net": 1675.0
+        },
+        {
+          "stock_code": "000140",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 1795.0,
+          "investor_frgn_net": 59.0,
+          "price_inst_net_buy": -405.0,
+          "investor_inst_net": 32.0
+        },
+        {
+          "stock_code": "000150",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -5342.0,
+          "investor_frgn_net": 72071.0,
+          "price_inst_net_buy": 7096.0,
+          "investor_inst_net": 42646.0
+        },
+        {
+          "stock_code": "000155",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 5046.0,
+          "investor_frgn_net": 4136.0,
+          "price_inst_net_buy": -315.0,
+          "investor_inst_net": 2.0
+        },
+        {
+          "stock_code": "000157",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 687.0,
+          "investor_frgn_net": 407.0,
+          "price_inst_net_buy": -342.0,
+          "investor_inst_net": 0.0
+        },
+        {
+          "stock_code": "000210",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 29448.0,
+          "investor_frgn_net": 2572.0,
+          "price_inst_net_buy": -13543.0,
+          "investor_inst_net": 1359.0
+        },
+        {
+          "stock_code": "000240",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 16715.0,
+          "investor_frgn_net": 1192.0,
+          "price_inst_net_buy": -5326.0,
+          "investor_inst_net": 1048.0
+        },
+        {
+          "stock_code": "000250",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -12649.0,
+          "investor_frgn_net": 8947.0,
+          "price_inst_net_buy": 10999.0,
+          "investor_inst_net": 7964.0
+        },
+        {
+          "stock_code": "000270",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -1436.0,
+          "investor_frgn_net": 98784.0,
+          "price_inst_net_buy": 71990.0,
+          "investor_inst_net": 38792.0
+        },
+        {
+          "stock_code": "000320",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -17.0,
+          "investor_frgn_net": 41.0,
+          "price_inst_net_buy": 1208.0,
+          "investor_inst_net": 27.0
+        },
+        {
+          "stock_code": "000370",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 294802.0,
+          "investor_frgn_net": 2782.0,
+          "price_inst_net_buy": 96075.0,
+          "investor_inst_net": 636.0
+        },
+        {
+          "stock_code": "000390",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 22854.0,
+          "investor_frgn_net": 343.0,
+          "price_inst_net_buy": 3338.0,
+          "investor_inst_net": 74.0
+        },
+        {
+          "stock_code": "000400",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 147039.0,
+          "investor_frgn_net": 552.0,
+          "price_inst_net_buy": -3545.0,
+          "investor_inst_net": 19.0
+        },
+        {
+          "stock_code": "000430",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 46435.0,
+          "investor_frgn_net": 293.0,
+          "price_inst_net_buy": -4965.0,
+          "investor_inst_net": 6.0
+        },
+        {
+          "stock_code": "000480",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 12687.0,
+          "investor_frgn_net": 97.0,
+          "price_inst_net_buy": -737.0,
+          "investor_inst_net": 57.0
+        },
+        {
+          "stock_code": "000490",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 86811.0,
+          "investor_frgn_net": 769.0,
+          "price_inst_net_buy": -429.0,
+          "investor_inst_net": 0.0
+        }
+      ]
+    },
+    "foreign_holding_validity": {
+      "invalid_qty_or_pct_rows": 0
+    },
+    "kiwoom_foreign_flow_validity": {
+      "invalid_rows": 156316
+    },
+    "short_credit_lending_validity": {
+      "short_sell_daily": {
+        "invalid_rows": 0,
+        "sample": []
+      },
+      "short_rank_daily": {
+        "invalid_rows": 0,
+        "sample": []
+      },
+      "short_sector_daily": {
+        "invalid_rows": 0,
+        "sample": []
+      },
+      "short_sale_daily": {
+        "invalid_rows": 0,
+        "sample": []
+      },
+      "kiwoom_credit_balance": {
+        "invalid_rows": 391,
+        "sample": [
+          {
+            "stock_code": "033270",
+            "dt": "20260304",
+            "credit_balance_qty": 281267.0,
+            "credit_balance_amt": 6783.0,
+            "credit_ratio": 123.5,
+            "new_credit_qty": 43645.0,
+            "repay_credit_qty": 39798.0,
+            "raw_json": "{\"dt\": \"20260304\", \"cur_prc\": \"-18740\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-1510\", \"trde_qty\": \"76410\", \"new\": \"43645\", \"rpya\": \"39798\", \"remn\": \"281267\", \"amt\": \"6783\", \"pre\": \"3847\", \"shr_rt\": \"123.50\", \"remn_rt\": \"1.71\"}",
+            "updated_at": "2026-06-20 15:25:47"
+          },
+          {
+            "stock_code": "034120",
+            "dt": "20260323",
+            "credit_balance_qty": 350130.0,
+            "credit_balance_amt": 6487.0,
+            "credit_ratio": 154.91,
+            "new_credit_qty": 10188.0,
+            "repay_credit_qty": 8040.0,
+            "raw_json": "{\"dt\": \"20260323\", \"cur_prc\": \"-16500\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-760\", \"trde_qty\": \"37792\", \"new\": \"10188\", \"rpya\": \"8040\", \"remn\": \"350130\", \"amt\": \"6487\", \"pre\": \"2148\", \"shr_rt\": \"154.91\", \"remn_rt\": \"1.88\"}",
+            "updated_at": "2026-06-20 15:37:51"
+          },
+          {
+            "stock_code": "036800",
+            "dt": "20260407",
+            "credit_balance_qty": 21363.0,
+            "credit_balance_amt": 439.0,
+            "credit_ratio": -18.94,
+            "new_credit_qty": -1505.0,
+            "repay_credit_qty": 94.0,
+            "raw_json": "{\"dt\": \"20260407\", \"cur_prc\": \"+24300\", \"pred_pre_sig\": \"2\", \"pred_pre\": \"+350\", \"trde_qty\": \"4255\", \"new\": \"-1505\", \"rpya\": \"94\", \"remn\": \"21363\", \"amt\": \"439\", \"pre\": \"-1599\", \"shr_rt\": \"-18.94\", \"remn_rt\": \"0.20\"}",
+            "updated_at": "2026-06-20 15:31:03"
+          },
+          {
+            "stock_code": "038070",
+            "dt": "20260512",
+            "credit_balance_qty": 323085.0,
+            "credit_balance_amt": 3041.0,
+            "credit_ratio": 330.86,
+            "new_credit_qty": 117700.0,
+            "repay_credit_qty": 115448.0,
+            "raw_json": "{\"dt\": \"20260512\", \"cur_prc\": \"-6040\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-40\", \"trde_qty\": \"87598\", \"new\": \"117700\", \"rpya\": \"115448\", \"remn\": \"323085\", \"amt\": \"3041\", \"pre\": \"2252\", \"shr_rt\": \"330.86\", \"remn_rt\": \"3.47\"}",
+            "updated_at": "2026-07-07 13:49:24"
+          },
+          {
+            "stock_code": "000490",
+            "dt": "20260213",
+            "credit_balance_qty": 1673277.0,
+            "credit_balance_amt": 17630.0,
+            "credit_ratio": 149.89,
+            "new_credit_qty": 1281494.0,
+            "repay_credit_qty": 959740.0,
+            "raw_json": "{\"dt\": \"20260213\", \"cur_prc\": \"-11710\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-90\", \"trde_qty\": \"974828\", \"new\": \"1281494\", \"rpya\": \"959740\", \"remn\": \"1673277\", \"amt\": \"17630\", \"pre\": \"321754\", \"shr_rt\": \"149.89\", \"remn_rt\": \"5.79\"}",
+            "updated_at": "2026-06-20 15:39:37"
+          },
+          {
+            "stock_code": "001270",
+            "dt": "20260224",
+            "credit_balance_qty": 102791.0,
+            "credit_balance_amt": 6845.0,
+            "credit_ratio": 122.86,
+            "new_credit_qty": 246238.0,
+            "repay_credit_qty": 248649.0,
+            "raw_json": "{\"dt\": \"20260224\", \"cur_prc\": \"-98400\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-4900\", \"trde_qty\": \"157310\", \"new\": \"246238\", \"rpya\": \"248649\", \"remn\": \"102791\", \"amt\": \"6845\", \"pre\": \"-2411\", \"shr_rt\": \"122.86\", \"remn_rt\": \"0.98\"}",
+            "updated_at": "2026-06-20 14:56:23"
+          },
+          {
+            "stock_code": "001270",
+            "dt": "20260227",
+            "credit_balance_qty": 129392.0,
+            "credit_balance_amt": 9107.0,
+            "credit_ratio": 101.71,
+            "new_credit_qty": 113105.0,
+            "repay_credit_qty": 127462.0,
+            "raw_json": "{\"dt\": \"20260227\", \"cur_prc\": \"-90300\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-6200\", \"trde_qty\": \"83565\", \"new\": \"113105\", \"rpya\": \"127462\", \"remn\": \"129392\", \"amt\": \"9107\", \"pre\": \"-14357\", \"shr_rt\": \"101.71\", \"remn_rt\": \"1.24\"}",
+            "updated_at": "2026-06-20 14:56:23"
+          },
+          {
+            "stock_code": "001270",
+            "dt": "20260313",
+            "credit_balance_qty": 120434.0,
+            "credit_balance_amt": 8017.0,
+            "credit_ratio": 123.4,
+            "new_credit_qty": 82813.0,
+            "repay_credit_qty": 81399.0,
+            "raw_json": "{\"dt\": \"20260313\", \"cur_prc\": \"-81500\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-5300\", \"trde_qty\": \"47250\", \"new\": \"82813\", \"rpya\": \"81399\", \"remn\": \"120434\", \"amt\": \"8017\", \"pre\": \"1414\", \"shr_rt\": \"123.40\", \"remn_rt\": \"1.15\"}",
+            "updated_at": "2026-06-20 14:56:23"
+          },
+          {
+            "stock_code": "001750",
+            "dt": "20260618",
+            "credit_balance_qty": 61366.0,
+            "credit_balance_amt": 1089.0,
+            "credit_ratio": 103.61,
+            "new_credit_qty": 22159.0,
+            "repay_credit_qty": 5167.0,
+            "raw_json": "{\"dt\": \"20260618\", \"cur_prc\": \"+20800\", \"pred_pre_sig\": \"2\", \"pred_pre\": \"+700\", \"trde_qty\": \"87412\", \"new\": \"22159\", \"rpya\": \"5167\", \"remn\": \"61366\", \"amt\": \"1089\", \"pre\": \"16992\", \"shr_rt\": \"103.61\", \"remn_rt\": \"0.47\"}",
+            "updated_at": "2026-06-20 15:30:56"
+          },
+          {
+            "stock_code": "003120",
+            "dt": "20260224",
+            "credit_balance_qty": 80862.0,
+            "credit_balance_amt": 1678.0,
+            "credit_ratio": 118.89,
+            "new_credit_qty": 29981.0,
+            "repay_credit_qty": 14780.0,
+            "raw_json": "{\"dt\": \"20260224\", \"cur_prc\": \"-26550\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-1750\", \"trde_qty\": \"43991\", \"new\": \"29981\", \"rpya\": \"14780\", \"remn\": \"80862\", \"amt\": \"1678\", \"pre\": \"15201\", \"shr_rt\": \"118.89\", \"remn_rt\": \"0.60\"}",
+            "updated_at": "2026-06-20 15:30:26"
+          }
+        ]
+      },
+      "kiwoom_margin_daily": {
+        "invalid_rows": 0,
+        "sample": []
+      },
+      "margin_balance_daily": {
+        "invalid_rows": 0,
+        "sample": []
+      },
+      "short_foreign_trade": {
+        "sum_formula_mismatch_rows": 0
+      },
+      "short_sell_vs_rank_borrow_balance": {
+        "mismatch_rows": 0,
+        "sample": []
+      }
+    },
+    "program_trading_validity": {
+      "invalid_or_net_mismatch_rows": 0,
+      "sample": []
+    }
+  },
+  "issues": [
+    {
+      "severity": "CRITICAL",
+      "area": "investor",
+      "check": "net_formula_mismatch",
+      "count": 4390046,
+      "detail": "buy - sell must equal net for individual/institution/foreign flows",
+      "sample": []
+    },
+    {
+      "severity": "CRITICAL",
+      "area": "price",
+      "check": "price_history_invalid_ohlcv",
+      "count": 268775,
+      "detail": "6-digit Korean stock rows must have positive OHLC, high/low envelope consistency, and nonnegative volume/amount",
+      "sample": [
+        {
+          "stock_code": "254120",
+          "date": "2026-09-23",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 910.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "000300",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 4200.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "001470",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 5820.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "001570",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 9900.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "001840",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 2215.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "002410",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 1935.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "002630",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 913.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "004920",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 907.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "005030",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 486.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "005110",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 1254.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "007110",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 603.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "008600",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 2620.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "009310",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 5330.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "009440",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 756.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "011000",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 2670.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "011810",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 3530.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "014160",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 655.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "015020",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 928.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "016790",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 994.0,
+          "volume": 0.0,
+          "trade_amount": null
+        },
+        {
+          "stock_code": "017040",
+          "date": "2026-09-21",
+          "open": 0.0,
+          "high": 0.0,
+          "low": 0.0,
+          "close": 932.0,
+          "volume": 0.0,
+          "trade_amount": null
+        }
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "area": "foreign_flow",
+      "check": "invalid_kiwoom_foreign_flow",
+      "count": 156316,
+      "detail": "kiwoom foreign holding/weight fields outside valid ranges",
+      "sample": []
+    },
+    {
+      "severity": "CRITICAL",
+      "area": "short_rank_daily",
+      "check": "duplicate_grain",
+      "count": 32315,
+      "detail": "short_rank_daily has duplicate rows at grain (stock_code, bas_dt)",
+      "sample": [
+        {
+          "stock_code": null,
+          "bas_dt": "20260828",
+          "n": 59
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260902",
+          "n": 59
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260903",
+          "n": 59
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260901",
+          "n": 59
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260831",
+          "n": 59
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260825",
+          "n": 58
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260826",
+          "n": 58
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260827",
+          "n": 58
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260731",
+          "n": 56
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260803",
+          "n": 56
+        }
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "area": "short_sector_daily",
+      "check": "duplicate_grain",
+      "count": 2109,
+      "detail": "short_sector_daily has duplicate rows at grain (stock_code, bas_dt, sic_cd)",
+      "sample": [
+        {
+          "stock_code": null,
+          "bas_dt": "20260804",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260810",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260805",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260803",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260812",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260806",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260807",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260811",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260813",
+          "sic_cd": "1",
+          "n": 64
+        },
+        {
+          "stock_code": null,
+          "bas_dt": "20260731",
+          "sic_cd": "1",
+          "n": 63
+        }
+      ]
+    },
+    {
+      "severity": "CRITICAL",
+      "area": "kiwoom_credit_balance",
+      "check": "invalid_nonnegative_or_ratio_fields",
+      "count": 391,
+      "detail": "kiwoom_credit_balance contains negative quantities/amounts or invalid ratio range",
+      "sample": [
+        {
+          "stock_code": "033270",
+          "dt": "20260304",
+          "credit_balance_qty": 281267.0,
+          "credit_balance_amt": 6783.0,
+          "credit_ratio": 123.5,
+          "new_credit_qty": 43645.0,
+          "repay_credit_qty": 39798.0,
+          "raw_json": "{\"dt\": \"20260304\", \"cur_prc\": \"-18740\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-1510\", \"trde_qty\": \"76410\", \"new\": \"43645\", \"rpya\": \"39798\", \"remn\": \"281267\", \"amt\": \"6783\", \"pre\": \"3847\", \"shr_rt\": \"123.50\", \"remn_rt\": \"1.71\"}",
+          "updated_at": "2026-06-20 15:25:47"
+        },
+        {
+          "stock_code": "034120",
+          "dt": "20260323",
+          "credit_balance_qty": 350130.0,
+          "credit_balance_amt": 6487.0,
+          "credit_ratio": 154.91,
+          "new_credit_qty": 10188.0,
+          "repay_credit_qty": 8040.0,
+          "raw_json": "{\"dt\": \"20260323\", \"cur_prc\": \"-16500\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-760\", \"trde_qty\": \"37792\", \"new\": \"10188\", \"rpya\": \"8040\", \"remn\": \"350130\", \"amt\": \"6487\", \"pre\": \"2148\", \"shr_rt\": \"154.91\", \"remn_rt\": \"1.88\"}",
+          "updated_at": "2026-06-20 15:37:51"
+        },
+        {
+          "stock_code": "036800",
+          "dt": "20260407",
+          "credit_balance_qty": 21363.0,
+          "credit_balance_amt": 439.0,
+          "credit_ratio": -18.94,
+          "new_credit_qty": -1505.0,
+          "repay_credit_qty": 94.0,
+          "raw_json": "{\"dt\": \"20260407\", \"cur_prc\": \"+24300\", \"pred_pre_sig\": \"2\", \"pred_pre\": \"+350\", \"trde_qty\": \"4255\", \"new\": \"-1505\", \"rpya\": \"94\", \"remn\": \"21363\", \"amt\": \"439\", \"pre\": \"-1599\", \"shr_rt\": \"-18.94\", \"remn_rt\": \"0.20\"}",
+          "updated_at": "2026-06-20 15:31:03"
+        },
+        {
+          "stock_code": "038070",
+          "dt": "20260512",
+          "credit_balance_qty": 323085.0,
+          "credit_balance_amt": 3041.0,
+          "credit_ratio": 330.86,
+          "new_credit_qty": 117700.0,
+          "repay_credit_qty": 115448.0,
+          "raw_json": "{\"dt\": \"20260512\", \"cur_prc\": \"-6040\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-40\", \"trde_qty\": \"87598\", \"new\": \"117700\", \"rpya\": \"115448\", \"remn\": \"323085\", \"amt\": \"3041\", \"pre\": \"2252\", \"shr_rt\": \"330.86\", \"remn_rt\": \"3.47\"}",
+          "updated_at": "2026-07-07 13:49:24"
+        },
+        {
+          "stock_code": "000490",
+          "dt": "20260213",
+          "credit_balance_qty": 1673277.0,
+          "credit_balance_amt": 17630.0,
+          "credit_ratio": 149.89,
+          "new_credit_qty": 1281494.0,
+          "repay_credit_qty": 959740.0,
+          "raw_json": "{\"dt\": \"20260213\", \"cur_prc\": \"-11710\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-90\", \"trde_qty\": \"974828\", \"new\": \"1281494\", \"rpya\": \"959740\", \"remn\": \"1673277\", \"amt\": \"17630\", \"pre\": \"321754\", \"shr_rt\": \"149.89\", \"remn_rt\": \"5.79\"}",
+          "updated_at": "2026-06-20 15:39:37"
+        },
+        {
+          "stock_code": "001270",
+          "dt": "20260224",
+          "credit_balance_qty": 102791.0,
+          "credit_balance_amt": 6845.0,
+          "credit_ratio": 122.86,
+          "new_credit_qty": 246238.0,
+          "repay_credit_qty": 248649.0,
+          "raw_json": "{\"dt\": \"20260224\", \"cur_prc\": \"-98400\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-4900\", \"trde_qty\": \"157310\", \"new\": \"246238\", \"rpya\": \"248649\", \"remn\": \"102791\", \"amt\": \"6845\", \"pre\": \"-2411\", \"shr_rt\": \"122.86\", \"remn_rt\": \"0.98\"}",
+          "updated_at": "2026-06-20 14:56:23"
+        },
+        {
+          "stock_code": "001270",
+          "dt": "20260227",
+          "credit_balance_qty": 129392.0,
+          "credit_balance_amt": 9107.0,
+          "credit_ratio": 101.71,
+          "new_credit_qty": 113105.0,
+          "repay_credit_qty": 127462.0,
+          "raw_json": "{\"dt\": \"20260227\", \"cur_prc\": \"-90300\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-6200\", \"trde_qty\": \"83565\", \"new\": \"113105\", \"rpya\": \"127462\", \"remn\": \"129392\", \"amt\": \"9107\", \"pre\": \"-14357\", \"shr_rt\": \"101.71\", \"remn_rt\": \"1.24\"}",
+          "updated_at": "2026-06-20 14:56:23"
+        },
+        {
+          "stock_code": "001270",
+          "dt": "20260313",
+          "credit_balance_qty": 120434.0,
+          "credit_balance_amt": 8017.0,
+          "credit_ratio": 123.4,
+          "new_credit_qty": 82813.0,
+          "repay_credit_qty": 81399.0,
+          "raw_json": "{\"dt\": \"20260313\", \"cur_prc\": \"-81500\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-5300\", \"trde_qty\": \"47250\", \"new\": \"82813\", \"rpya\": \"81399\", \"remn\": \"120434\", \"amt\": \"8017\", \"pre\": \"1414\", \"shr_rt\": \"123.40\", \"remn_rt\": \"1.15\"}",
+          "updated_at": "2026-06-20 14:56:23"
+        },
+        {
+          "stock_code": "001750",
+          "dt": "20260618",
+          "credit_balance_qty": 61366.0,
+          "credit_balance_amt": 1089.0,
+          "credit_ratio": 103.61,
+          "new_credit_qty": 22159.0,
+          "repay_credit_qty": 5167.0,
+          "raw_json": "{\"dt\": \"20260618\", \"cur_prc\": \"+20800\", \"pred_pre_sig\": \"2\", \"pred_pre\": \"+700\", \"trde_qty\": \"87412\", \"new\": \"22159\", \"rpya\": \"5167\", \"remn\": \"61366\", \"amt\": \"1089\", \"pre\": \"16992\", \"shr_rt\": \"103.61\", \"remn_rt\": \"0.47\"}",
+          "updated_at": "2026-06-20 15:30:56"
+        },
+        {
+          "stock_code": "003120",
+          "dt": "20260224",
+          "credit_balance_qty": 80862.0,
+          "credit_balance_amt": 1678.0,
+          "credit_ratio": 118.89,
+          "new_credit_qty": 29981.0,
+          "repay_credit_qty": 14780.0,
+          "raw_json": "{\"dt\": \"20260224\", \"cur_prc\": \"-26550\", \"pred_pre_sig\": \"5\", \"pred_pre\": \"-1750\", \"trde_qty\": \"43991\", \"new\": \"29981\", \"rpya\": \"14780\", \"remn\": \"80862\", \"amt\": \"1678\", \"pre\": \"15201\", \"shr_rt\": \"118.89\", \"remn_rt\": \"0.60\"}",
+          "updated_at": "2026-06-20 15:30:26"
+        }
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "area": "investor",
+      "check": "price_history_vs_investor_flow_mismatch",
+      "count": 2651179,
+      "detail": "price_history embedded investor net buy disagrees with investor_trading_daily",
+      "sample": [
+        {
+          "stock_code": "000050",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 15634.0,
+          "investor_frgn_net": 222.0,
+          "price_inst_net_buy": -3317.0,
+          "investor_inst_net": 1.0
+        },
+        {
+          "stock_code": "000070",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -77.0,
+          "investor_frgn_net": 133.0,
+          "price_inst_net_buy": 1232.0,
+          "investor_inst_net": 101.0
+        },
+        {
+          "stock_code": "000080",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -6430.0,
+          "investor_frgn_net": 625.0,
+          "price_inst_net_buy": -1955.0,
+          "investor_inst_net": 322.0
+        },
+        {
+          "stock_code": "000100",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 59775.0,
+          "investor_frgn_net": 11888.0,
+          "price_inst_net_buy": -18744.0,
+          "investor_inst_net": 2591.0
+        },
+        {
+          "stock_code": "000120",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 2468.0,
+          "investor_frgn_net": 2250.0,
+          "price_inst_net_buy": 14415.0,
+          "investor_inst_net": 1675.0
+        },
+        {
+          "stock_code": "000140",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 1795.0,
+          "investor_frgn_net": 59.0,
+          "price_inst_net_buy": -405.0,
+          "investor_inst_net": 32.0
+        },
+        {
+          "stock_code": "000150",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -5342.0,
+          "investor_frgn_net": 72071.0,
+          "price_inst_net_buy": 7096.0,
+          "investor_inst_net": 42646.0
+        },
+        {
+          "stock_code": "000155",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 5046.0,
+          "investor_frgn_net": 4136.0,
+          "price_inst_net_buy": -315.0,
+          "investor_inst_net": 2.0
+        },
+        {
+          "stock_code": "000157",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 687.0,
+          "investor_frgn_net": 407.0,
+          "price_inst_net_buy": -342.0,
+          "investor_inst_net": 0.0
+        },
+        {
+          "stock_code": "000210",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 29448.0,
+          "investor_frgn_net": 2572.0,
+          "price_inst_net_buy": -13543.0,
+          "investor_inst_net": 1359.0
+        },
+        {
+          "stock_code": "000240",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 16715.0,
+          "investor_frgn_net": 1192.0,
+          "price_inst_net_buy": -5326.0,
+          "investor_inst_net": 1048.0
+        },
+        {
+          "stock_code": "000250",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -12649.0,
+          "investor_frgn_net": 8947.0,
+          "price_inst_net_buy": 10999.0,
+          "investor_inst_net": 7964.0
+        },
+        {
+          "stock_code": "000270",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -1436.0,
+          "investor_frgn_net": 98784.0,
+          "price_inst_net_buy": 71990.0,
+          "investor_inst_net": 38792.0
+        },
+        {
+          "stock_code": "000320",
+          "date": "2026-07-10",
+          "price_frn_net_buy": -17.0,
+          "investor_frgn_net": 41.0,
+          "price_inst_net_buy": 1208.0,
+          "investor_inst_net": 27.0
+        },
+        {
+          "stock_code": "000370",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 294802.0,
+          "investor_frgn_net": 2782.0,
+          "price_inst_net_buy": 96075.0,
+          "investor_inst_net": 636.0
+        },
+        {
+          "stock_code": "000390",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 22854.0,
+          "investor_frgn_net": 343.0,
+          "price_inst_net_buy": 3338.0,
+          "investor_inst_net": 74.0
+        },
+        {
+          "stock_code": "000400",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 147039.0,
+          "investor_frgn_net": 552.0,
+          "price_inst_net_buy": -3545.0,
+          "investor_inst_net": 19.0
+        },
+        {
+          "stock_code": "000430",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 46435.0,
+          "investor_frgn_net": 293.0,
+          "price_inst_net_buy": -4965.0,
+          "investor_inst_net": 6.0
+        },
+        {
+          "stock_code": "000480",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 12687.0,
+          "investor_frgn_net": 97.0,
+          "price_inst_net_buy": -737.0,
+          "investor_inst_net": 57.0
+        },
+        {
+          "stock_code": "000490",
+          "date": "2026-07-10",
+          "price_frn_net_buy": 86811.0,
+          "investor_frgn_net": 769.0,
+          "price_inst_net_buy": -429.0,
+          "investor_inst_net": 0.0
+        }
+      ]
+    },
+    {
+      "severity": "HIGH",
+      "area": "price",
+      "check": "active_common_price_stale",
+      "count": 2713,
+      "detail": "Active common-stock universe has no recent price_history row within 10 days of global latest date",
+      "sample": [
+        {
+          "stock_code": "000020",
+          "stock_name": "동화약품",
+          "last_date": null
+        },
+        {
+          "stock_code": "000040",
+          "stock_name": "KR모터스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000050",
+          "stock_name": "경방",
+          "last_date": null
+        },
+        {
+          "stock_code": "000070",
+          "stock_name": "삼양홀딩스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000080",
+          "stock_name": "하이트진로",
+          "last_date": null
+        },
+        {
+          "stock_code": "000087",
+          "stock_name": "하이트진로2우B",
+          "last_date": null
+        },
+        {
+          "stock_code": "000100",
+          "stock_name": "유한양행",
+          "last_date": null
+        },
+        {
+          "stock_code": "000105",
+          "stock_name": "유한양행우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000120",
+          "stock_name": "CJ대한통운",
+          "last_date": null
+        },
+        {
+          "stock_code": "000140",
+          "stock_name": "하이트진로홀딩스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000145",
+          "stock_name": "하이트진로홀딩스우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000150",
+          "stock_name": "두산",
+          "last_date": null
+        },
+        {
+          "stock_code": "000155",
+          "stock_name": "두산우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000157",
+          "stock_name": "두산2우B",
+          "last_date": null
+        },
+        {
+          "stock_code": "000180",
+          "stock_name": "성창기업지주",
+          "last_date": null
+        },
+        {
+          "stock_code": "000210",
+          "stock_name": "DL",
+          "last_date": null
+        },
+        {
+          "stock_code": "000215",
+          "stock_name": "DL우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000220",
+          "stock_name": "유유제약",
+          "last_date": null
+        },
+        {
+          "stock_code": "000225",
+          "stock_name": "유유제약1우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000227",
+          "stock_name": "유유제약2우B",
+          "last_date": null
+        },
+        {
+          "stock_code": "000230",
+          "stock_name": "일동홀딩스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000240",
+          "stock_name": "한국앤컴퍼니",
+          "last_date": null
+        },
+        {
+          "stock_code": "000250",
+          "stock_name": "삼천당제약",
+          "last_date": null
+        },
+        {
+          "stock_code": "000270",
+          "stock_name": "기아",
+          "last_date": null
+        },
+        {
+          "stock_code": "000300",
+          "stock_name": "DH오토넥스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000320",
+          "stock_name": "노루홀딩스",
+          "last_date": null
+        },
+        {
+          "stock_code": "000325",
+          "stock_name": "노루홀딩스우",
+          "last_date": null
+        },
+        {
+          "stock_code": "000370",
+          "stock_name": "한화손해보험",
+          "last_date": null
+        },
+        {
+          "stock_code": "000390",
+          "stock_name": "SP삼화",
+          "last_date": null
+        },
+        {
+          "stock_code": "000400",
+          "stock_name": "롯데손해보험",
+          "last_date": null
+        }
+      ]
+    },
+    {
+      "severity": "MEDIUM",
+      "area": "price",
+      "check": "canonical_price_quality_view_timeout",
+      "count": 1,
+      "detail": "canonical_price_history_v quality distribution query timed out and was skipped; optimize/materialize this view if it is required for routine audits",
+      "sample": []
+    },
+    {
+      "severity": "MEDIUM",
+      "area": "price",
+      "check": "canonical_returns_view_timeout",
+      "count": 1,
+      "detail": "canonical_price_returns_v jump scan timed out and was skipped; optimize/materialize this view if it is required for routine audits",
+      "sample": []
+    }
+  ]
+}

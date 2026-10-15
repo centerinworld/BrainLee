@@ -1,0 +1,6007 @@
+{
+  "run_at": "2026-09-30T23:26:17",
+  "scope": {
+    "start": "2026-08-01",
+    "end": "2026-09-30",
+    "codes": 219,
+    "tables": [
+      "portfolio",
+      "watchlist",
+      "buy_candidates"
+    ]
+  },
+  "items": [
+    {
+      "code": "000150",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 1521000.0,
+          "new": 1519000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1515000.0,
+          "new": 1512000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 1391000.0,
+          "new": 1381000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 70635.0,
+          "new": 72347.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "000210",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 50800.0,
+          "new": 50500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "000250",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 166600.0,
+          "new": 165700.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "000430",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 5050.0,
+          "new": 5020.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 4820.0,
+          "new": 4835.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 4830.0,
+          "new": 4850.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 4800.0,
+          "new": 4795.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 4670.0,
+          "new": 4580.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 85831.0,
+          "new": 87486.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "000500",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 315500.0,
+          "new": 319000.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 324000.0,
+          "new": 321500.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 318000.0,
+          "new": 318500.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "volume",
+          "old": 153677.0,
+          "new": 154317.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "000660",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 2620493.0,
+          "new": 2625165.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1863000.0,
+          "new": 1862000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 1775000.0,
+          "new": 1765000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 2898303.0,
+          "new": 2939411.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "000880",
+      "kis_rows": 40,
+      "diff_count": 63,
+      "sample_diffs": [
+        {
+          "date": "2026-08-03",
+          "field": "open",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "high",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "low",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "close",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "open",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "high",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "low",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "close",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-05",
+          "field": "open",
+          "old": 83800.0,
+          "new": 100599.0
+        },
+        {
+          "date": "2026-08-05",
+          "field": "high",
+          "old": 83800.0,
+          "new": 100599.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "000990",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 131700.0,
+          "new": 132000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 126100.0,
+          "new": 126900.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 126200.0,
+          "new": 127100.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 313117.0,
+          "new": 331961.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 141400.0,
+          "new": 140000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 141200.0,
+          "new": 139800.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 1016882.0,
+          "new": 1053657.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "001440",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 31900.0,
+          "new": 31600.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 31350.0,
+          "new": 30950.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 30200.0,
+          "new": 30025.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 30150.0,
+          "new": 29500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 1590543.0,
+          "new": 1690035.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "001750",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 19320.0,
+          "new": 19180.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 19300.0,
+          "new": 19210.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 19290.0,
+          "new": 19160.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 3332.0,
+          "new": 3333.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "002210",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 1250.0,
+          "new": 1290.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 1310.0,
+          "new": 1292.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1285.0,
+          "new": 1265.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "low",
+          "old": 1116.0,
+          "new": 1239.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 1262.0,
+          "new": 1251.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 29881.0,
+          "new": 29898.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "002680",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "003230",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1218000.0,
+          "new": 1215000.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "003490",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "high",
+          "old": 31650.0,
+          "new": 31400.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 31650.0,
+          "new": 31400.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 31400.0,
+          "new": 31700.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 2818896.0,
+          "new": 2860534.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "004365",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "004650",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 9350.0,
+          "new": 9330.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 9190.0,
+          "new": 9240.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 9310.0,
+          "new": 9300.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "004690",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 130100.0,
+          "new": 130900.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "004710",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 9730.0,
+          "new": 9800.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 9760.0,
+          "new": 9810.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 9930.0,
+          "new": 9900.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "004980",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 8250.0,
+          "new": 8210.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 8250.0,
+          "new": 8140.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 8260.0,
+          "new": 8210.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 25339.0,
+          "new": 25979.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "005090",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "005380",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 460573.0,
+          "new": 524899.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 357000.0,
+          "new": 353500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "005387",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "005490",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 314500.0,
+          "new": 316500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 165587.0,
+          "new": 168228.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 306000.0,
+          "new": 304000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 229084.0,
+          "new": 233678.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "005830",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "005850",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 48550.0,
+          "new": 48300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 50200.0,
+          "new": 50600.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 92388.0,
+          "new": 92917.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "005930",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 13938673.0,
+          "new": 13939111.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 286500.0,
+          "new": 285500.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 286500.0,
+          "new": 285500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "005935",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 2986552.0,
+          "new": 2992563.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 222000.0,
+          "new": 220000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 222000.0,
+          "new": 220000.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "006110",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 54100.0,
+          "new": 53900.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 58500.0,
+          "new": 58000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 204186.0,
+          "new": 208185.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 60900.0,
+          "new": 60800.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 127625.0,
+          "new": 129487.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "006120",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 57200.0,
+          "new": 57500.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 61300.0,
+          "new": 60400.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 60700.0,
+          "new": 60300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 63400.0,
+          "new": 63900.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 25929.0,
+          "new": 25942.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 65600.0,
+          "new": 65300.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 35516.0,
+          "new": 36377.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "006220",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 9950.0,
+          "new": 9710.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 9500.0,
+          "new": 9550.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 9560.0,
+          "new": 9570.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "006260",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 322500.0,
+          "new": 321500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 317500.0,
+          "new": 315500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 81847.0,
+          "new": 82428.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "006400",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 530000.0,
+          "new": 533000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 319624.0,
+          "new": 324344.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 515000.0,
+          "new": 511000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 357946.0,
+          "new": 362398.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "006730",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 10590.0,
+          "new": 10600.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 10620.0,
+          "new": 10670.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 198528.0,
+          "new": 201628.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "006800",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "006980",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 17420.0,
+          "new": 17410.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "007660",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 113500.0,
+          "new": 112900.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 119200.0,
+          "new": 118900.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "007810",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 66400.0,
+          "new": 65600.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 75000.0,
+          "new": 74700.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 74900.0,
+          "new": 74100.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 1329257.0,
+          "new": 1370761.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "008970",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "009150",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 599185.0,
+          "new": 619225.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1501000.0,
+          "new": 1507000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 1537000.0,
+          "new": 1528000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 545138.0,
+          "new": 585326.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "009830",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 27400.0,
+          "new": 27450.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 27600.0,
+          "new": 27450.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 29400.0,
+          "new": 29200.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "009900",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "010120",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 207000.0,
+          "new": 205500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 203000.0,
+          "new": 204500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 298795.0,
+          "new": 304267.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "010140",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 20450.0,
+          "new": 20250.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 19450.0,
+          "new": 19330.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 5687857.0,
+          "new": 5746198.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "010170",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 17720.0,
+          "new": 17700.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 16850.0,
+          "new": 16600.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 6459238.0,
+          "new": 6718007.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "010820",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 6110.0,
+          "new": 6240.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 6270.0,
+          "new": 6300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 6130.0,
+          "new": 6170.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 442684.0,
+          "new": 447605.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "010950",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 153200.0,
+          "new": 154300.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 156500.0,
+          "new": 155600.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "011230",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 2715.0,
+          "new": 2690.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 2685.0,
+          "new": 2680.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 2655.0,
+          "new": 2660.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 2690.0,
+          "new": 2660.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 95652.0,
+          "new": 100861.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "011560",
+      "kis_rows": 40,
+      "diff_count": 8,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 24250.0,
+          "new": 24300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 23200.0,
+          "new": 23350.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 38068.0,
+          "new": 38561.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 23150.0,
+          "new": 22950.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 47748.0,
+          "new": 47877.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "high",
+          "old": 23750.0,
+          "new": 23800.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 23650.0,
+          "new": 23600.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 30473.0,
+          "new": 32431.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "011760",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 26150.0,
+          "new": 25950.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 25150.0,
+          "new": 25100.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "011790",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 89100.0,
+          "new": 89400.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 90500.0,
+          "new": 91600.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 169008.0,
+          "new": 174786.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 92600.0,
+          "new": 92000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 196983.0,
+          "new": 204720.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "012330",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 200263.0,
+          "new": 227443.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 369000.0,
+          "new": 367500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "012450",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 94088.0,
+          "new": 98030.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1031000.0,
+          "new": 1021000.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "013030",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 37750.0,
+          "new": 37700.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 36700.0,
+          "new": 36500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 26072.0,
+          "new": 26146.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "014680",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 238000.0,
+          "new": 236500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 240000.0,
+          "new": 237000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 52509.0,
+          "new": 52575.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "014830",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 60200.0,
+          "new": 60100.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "017650",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-18",
+          "field": "open",
+          "old": 0.0,
+          "new": 10800.0
+        },
+        {
+          "date": "2026-09-18",
+          "field": "high",
+          "old": 0.0,
+          "new": 10800.0
+        },
+        {
+          "date": "2026-09-18",
+          "field": "low",
+          "old": 0.0,
+          "new": 10800.0
+        },
+        {
+          "date": "2026-09-21",
+          "field": "open",
+          "old": 0.0,
+          "new": 10800.0
+        },
+        {
+          "date": "2026-09-21",
+          "field": "high",
+          "old": 0.0,
+          "new": 10800.0
+        },
+        {
+          "date": "2026-09-21",
+          "field": "low",
+          "old": 0.0,
+          "new": 10800.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "017670",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 87000.0,
+          "new": 87100.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 87700.0,
+          "new": 88200.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 459936.0,
+          "new": 468993.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "017900",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "018260",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 221000.0,
+          "new": 220500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "019010",
+      "kis_rows": 40,
+      "diff_count": 9,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 5190.0,
+          "new": 4990.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 4880.0,
+          "new": 4920.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 4860.0,
+          "new": 4835.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 243816.0,
+          "new": 244580.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 4815.0,
+          "new": 4870.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 385701.0,
+          "new": 387686.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "low",
+          "old": 4475.0,
+          "new": 4470.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 4500.0,
+          "new": 4525.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 172940.0,
+          "new": 180235.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "019170",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 9270.0,
+          "new": 9250.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "022100",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 20050.0,
+          "new": 19990.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "024110",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "027050",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1292.0,
+          "new": 1288.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 1280.0,
+          "new": 1288.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 51240.0,
+          "new": 53357.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 1277.0,
+          "new": 1278.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 39956.0,
+          "new": 40107.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "027710",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 1130.0,
+          "new": 1125.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1124.0,
+          "new": 1120.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "031330",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "031980",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "032500",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 19340.0,
+          "new": 19510.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 19540.0,
+          "new": 19560.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 18910.0,
+          "new": 18800.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 186723.0,
+          "new": 190161.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 18800.0,
+          "new": 18960.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 88403.0,
+          "new": 93665.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "032580",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 7930.0,
+          "new": 7910.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 1005281.0,
+          "new": 1016473.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "033170",
+      "kis_rows": 40,
+      "diff_count": 74,
+      "sample_diffs": [
+        {
+          "date": "2026-08-03",
+          "field": "open",
+          "old": 354.0,
+          "new": 1770.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "high",
+          "old": 370.0,
+          "new": 1850.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "low",
+          "old": 347.0,
+          "new": 1735.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "close",
+          "old": 354.0,
+          "new": 1770.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "volume",
+          "old": 231873.0,
+          "new": 46374.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "open",
+          "old": 341.0,
+          "new": 1705.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "high",
+          "old": 372.0,
+          "new": 1860.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "low",
+          "old": 340.0,
+          "new": 1700.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "close",
+          "old": 340.0,
+          "new": 1700.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "volume",
+          "old": 269502.0,
+          "new": 53900.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "033240",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 25950.0,
+          "new": 25800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 26200.0,
+          "new": 26350.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 64815.0,
+          "new": 65221.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 26300.0,
+          "new": 26350.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 39489.0,
+          "new": 39946.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "033790",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "034020",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 2458087.0,
+          "new": 2545969.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 82700.0,
+          "new": 81700.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 81400.0,
+          "new": 82000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 1512317.0,
+          "new": 1579398.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "034230",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 9550.0,
+          "new": 9540.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 9360.0,
+          "new": 9390.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 322343.0,
+          "new": 327489.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "035420",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 196000.0,
+          "new": 194700.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "036190",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 34550.0,
+          "new": 34450.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 33800.0,
+          "new": 33750.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 1206.0,
+          "new": 1223.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "036630",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 7640.0,
+          "new": 7650.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 7690.0,
+          "new": 7770.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "low",
+          "old": 7700.0,
+          "new": 7760.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 7710.0,
+          "new": 7760.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 3926.0,
+          "new": 4145.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 1646.0,
+          "new": 2341.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "036810",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 31250.0,
+          "new": 31200.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 31350.0,
+          "new": 31550.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 89479.0,
+          "new": 92346.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "036930",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "039030",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 472000.0,
+          "new": 473000.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 476500.0,
+          "new": 473500.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 479500.0,
+          "new": 481500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 508000.0,
+          "new": 497000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 502000.0,
+          "new": 495500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 108648.0,
+          "new": 109045.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "039440",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "039830",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 15740.0,
+          "new": 15610.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "high",
+          "old": 16000.0,
+          "new": 15820.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 15900.0,
+          "new": 15770.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 24497.0,
+          "new": 24859.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "042000",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 15080.0,
+          "new": 15000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 17800.0,
+          "new": 18030.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "042660",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 730191.0,
+          "new": 735885.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 80700.0,
+          "new": 79600.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "high",
+          "old": 81800.0,
+          "new": 81500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 80600.0,
+          "new": 80000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 475955.0,
+          "new": 494649.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "042700",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 243000.0,
+          "new": 243500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 250500.0,
+          "new": 252000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 729608.0,
+          "new": 744200.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "045660",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 8500.0,
+          "new": 8510.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 8590.0,
+          "new": 8580.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "047810",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 149244.0,
+          "new": 194091.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 128400.0,
+          "new": 127500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "048410",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 6760.0,
+          "new": 6820.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 6790.0,
+          "new": 6830.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 6870.0,
+          "new": 6850.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 6950.0,
+          "new": 6970.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 782281.0,
+          "new": 798463.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "052400",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 37850.0,
+          "new": 37800.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 25647.0,
+          "new": 26614.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "054950",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 15003.0,
+          "new": 35003.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 23200.0,
+          "new": 23000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 23150.0,
+          "new": 23000.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "057540",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "058860",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 2465.0,
+          "new": 2450.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 2590.0,
+          "new": 2575.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "064290",
+      "kis_rows": 40,
+      "diff_count": 9,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 326836.0,
+          "new": 326871.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 56100.0,
+          "new": 55600.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 55000.0,
+          "new": 54800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 53600.0,
+          "new": 54600.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 365085.0,
+          "new": 369140.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 57300.0,
+          "new": 57200.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 56800.0,
+          "new": 56300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 353836.0,
+          "new": 357055.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 328068.0,
+          "new": 328752.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "064400",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 70000.0,
+          "new": 69400.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "064760",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 283000.0,
+          "new": 286000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 298000.0,
+          "new": 300000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 84602.0,
+          "new": 84895.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "067000",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 1146.0,
+          "new": 1142.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1136.0,
+          "new": 1131.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 1137.0,
+          "new": 1148.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 51666.0,
+          "new": 51701.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "067310",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 45950.0,
+          "new": 45650.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 45350.0,
+          "new": 45950.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 1217901.0,
+          "new": 1280190.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "067390",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "068270",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 178100.0,
+          "new": 177400.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "072870",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 13500.0,
+          "new": 13290.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 13040.0,
+          "new": 13150.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 13220.0,
+          "new": 13170.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 13300.0,
+          "new": 13370.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 14403.0,
+          "new": 14407.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "077360",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 13200.0,
+          "new": 13140.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "078130",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 3410.0,
+          "new": 3470.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 3435.0,
+          "new": 3490.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 3440.0,
+          "new": 3495.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 74656.0,
+          "new": 77418.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "078600",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 86800.0,
+          "new": 86200.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 92000.0,
+          "new": 92800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 303606.0,
+          "new": 310277.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 90300.0,
+          "new": 89800.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 121952.0,
+          "new": 124120.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "079550",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 40477.0,
+          "new": 50443.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 708000.0,
+          "new": 704000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 699000.0,
+          "new": 692000.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "079650",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 6060.0,
+          "new": 6010.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 831528.0,
+          "new": 868152.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "082270",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 10420.0,
+          "new": 10480.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 10280.0,
+          "new": 10460.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 10390.0,
+          "new": 10680.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 10160.0,
+          "new": 10090.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 121551.0,
+          "new": 123984.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 10150.0,
+          "new": 10220.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 113374.0,
+          "new": 115014.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "083450",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 49300.0,
+          "new": 49250.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 51400.0,
+          "new": 51200.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 168643.0,
+          "new": 171594.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "083650",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 60500.0,
+          "new": 59900.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 60000.0,
+          "new": 60500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 180843.0,
+          "new": 191492.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "084370",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 150200.0,
+          "new": 149400.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 161800.0,
+          "new": 163600.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "085620",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "085910",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "086520",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 81300.0,
+          "new": 81900.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 606783.0,
+          "new": 623548.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 79200.0,
+          "new": 78800.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 699014.0,
+          "new": 709895.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "089890",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "091590",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 6370.0,
+          "new": 6090.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 5960.0,
+          "new": 5920.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "high",
+          "old": 7230.0,
+          "new": 6190.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 6690.0,
+          "new": 6160.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 853724.0,
+          "new": 1153509.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 6350.0,
+          "new": 6400.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 459286.0,
+          "new": 471973.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "092460",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 16290.0,
+          "new": 16300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 16500.0,
+          "new": 16590.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 6815.0,
+          "new": 6876.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "094970",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "095340",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 205000.0,
+          "new": 203500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 116672.0,
+          "new": 118058.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "095570",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "099430",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 3390.0,
+          "new": 3315.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 3300.0,
+          "new": 3285.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 3350.0,
+          "new": 3310.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 96427.0,
+          "new": 97204.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 398998.0,
+          "new": 401953.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "101160",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "101360",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "101490",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 44400.0,
+          "new": 44350.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 44350.0,
+          "new": 44100.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 45400.0,
+          "new": 45300.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 172286.0,
+          "new": 175728.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "102710",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 42850.0,
+          "new": 43050.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 43650.0,
+          "new": 43050.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 46000.0,
+          "new": 46100.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 47400.0,
+          "new": 47450.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 79951.0,
+          "new": 80292.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "107640",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 40400.0,
+          "new": 40250.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 40250.0,
+          "new": 39900.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 36787.0,
+          "new": 37601.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "108490",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 302500.0,
+          "new": 300000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 301500.0,
+          "new": 301000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 284000.0,
+          "new": 281500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 206889.0,
+          "new": 214426.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 286500.0,
+          "new": 285000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 194015.0,
+          "new": 198444.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "112290",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 78220.0,
+          "new": 78299.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 10490.0,
+          "new": 10520.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 12410.0,
+          "new": 12580.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 1164880.0,
+          "new": 1202265.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "114810",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 14990.0,
+          "new": 14860.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 14630.0,
+          "new": 14770.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 14780.0,
+          "new": 14900.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 344225.0,
+          "new": 346118.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "122640",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 31100.0,
+          "new": 31200.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 31600.0,
+          "new": 31400.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 32200.0,
+          "new": 32000.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 33500.0,
+          "new": 33550.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 397865.0,
+          "new": 407186.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "122990",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "high",
+          "old": 6650.0,
+          "new": 6640.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 6590.0,
+          "new": 6510.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 6630.0,
+          "new": 6620.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 6610.0,
+          "new": 6550.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 6730.0,
+          "new": 6720.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 6630.0,
+          "new": 6720.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 53789.0,
+          "new": 54110.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "124500",
+      "kis_rows": 40,
+      "diff_count": 8,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 28900.0,
+          "new": 29000.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 29100.0,
+          "new": 29300.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 29700.0,
+          "new": 29750.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 29100.0,
+          "new": 29150.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 29100.0,
+          "new": 29250.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 115733.0,
+          "new": 121120.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 28750.0,
+          "new": 28800.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 83905.0,
+          "new": 89248.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "126340",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 83000.0,
+          "new": 81900.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 86400.0,
+          "new": 86800.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 85400.0,
+          "new": 84900.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 85300.0,
+          "new": 84300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 78274.0,
+          "new": 83122.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 92500.0,
+          "new": 92300.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 282853.0,
+          "new": 291999.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "128820",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 313408.0,
+          "new": 315524.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 4030.0,
+          "new": 4055.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 3815.0,
+          "new": 4015.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 4045.0,
+          "new": 4030.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "volume",
+          "old": 90846.0,
+          "new": 90863.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "131290",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 298500.0,
+          "new": 297000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 116934.0,
+          "new": 117433.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "131760",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "131970",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 94200.0,
+          "new": 93700.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 90100.0,
+          "new": 90700.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 161740.0,
+          "new": 170992.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "141080",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "143540",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 1025.0,
+          "new": 1009.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1005.0,
+          "new": 1003.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "160980",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 25350.0,
+          "new": 25500.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 26350.0,
+          "new": 26150.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 26950.0,
+          "new": 26850.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "high",
+          "old": 27150.0,
+          "new": 27100.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 25700.0,
+          "new": 25800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 25950.0,
+          "new": 26200.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 103610.0,
+          "new": 107212.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "161580",
+      "kis_rows": 40,
+      "diff_count": 8,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 32550.0,
+          "new": 32650.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 33700.0,
+          "new": 33800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 33800.0,
+          "new": 34300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 453107.0,
+          "new": 473252.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 38300.0,
+          "new": 38500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 2307021.0,
+          "new": 2354574.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 39450.0,
+          "new": 39200.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 567651.0,
+          "new": 599612.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "166090",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 58900.0,
+          "new": 58700.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 56600.0,
+          "new": 56700.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 56700.0,
+          "new": 57000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 67120.0,
+          "new": 69605.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "172670",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "174900",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 19170.0,
+          "new": 19210.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 19440.0,
+          "new": 19220.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 19710.0,
+          "new": 19600.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "175330",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 30250.0,
+          "new": 30150.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 30600.0,
+          "new": 30900.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 298657.0,
+          "new": 299975.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "183300",
+      "kis_rows": 40,
+      "diff_count": 53,
+      "sample_diffs": [
+        {
+          "date": "2026-08-03",
+          "field": "open",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "high",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "low",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "close",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "open",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "high",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "low",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "close",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-05",
+          "field": "open",
+          "old": 54400.0,
+          "new": 21799.0
+        },
+        {
+          "date": "2026-08-05",
+          "field": "high",
+          "old": 54400.0,
+          "new": 21799.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "187870",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "189300",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 67600.0,
+          "new": 68000.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 68700.0,
+          "new": 68100.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 66600.0,
+          "new": 66500.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 25953.0,
+          "new": 26489.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "189860",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 5120.0,
+          "new": 5240.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 5030.0,
+          "new": 4940.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 4880.0,
+          "new": 4765.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 98629.0,
+          "new": 103970.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "195870",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 60100.0,
+          "new": 59700.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 61300.0,
+          "new": 61200.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 61900.0,
+          "new": 62200.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 133291.0,
+          "new": 135331.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "196170",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "200470",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 7950.0,
+          "new": 7820.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 8280.0,
+          "new": 8210.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 8240.0,
+          "new": 8160.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 7730.0,
+          "new": 7790.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 797170.0,
+          "new": 829071.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "205500",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 1860.0,
+          "new": 1826.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 1752.0,
+          "new": 1755.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 1800.0,
+          "new": 1774.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 1700.0,
+          "new": 1750.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 1727.0,
+          "new": 1777.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 108952.0,
+          "new": 122530.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "213420",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 29150.0,
+          "new": 29250.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 128670.0,
+          "new": 129759.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "214370",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 38800.0,
+          "new": 39300.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 39050.0,
+          "new": 39350.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 40050.0,
+          "new": 40200.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "214450",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "215000",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 35900.0,
+          "new": 35750.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 11125.0,
+          "new": 11138.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "215600",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 2270.0,
+          "new": 2255.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 2255.0,
+          "new": 2240.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "218410",
+      "kis_rows": 40,
+      "diff_count": 9,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 58100.0,
+          "new": 58200.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 58700.0,
+          "new": 59000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 58800.0,
+          "new": 58600.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 56500.0,
+          "new": 56800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 56600.0,
+          "new": 57300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 256491.0,
+          "new": 280246.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 58500.0,
+          "new": 58000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 58300.0,
+          "new": 57800.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 258057.0,
+          "new": 269201.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "226950",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "228340",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 3370.0,
+          "new": 3385.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 3440.0,
+          "new": 3485.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 3740.0,
+          "new": 3770.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 1180796.0,
+          "new": 1262913.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "229640",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "230240",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 14500.0,
+          "new": 14300.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 13920.0,
+          "new": 13810.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 13500.0,
+          "new": 13630.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 134056.0,
+          "new": 138584.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "237690",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 90800.0,
+          "new": 91300.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "241710",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 127100.0,
+          "new": 127300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 125100.0,
+          "new": 125800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 87583.0,
+          "new": 88133.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 131000.0,
+          "new": 130300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 130600.0,
+          "new": 129600.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 78323.0,
+          "new": 78597.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "249420",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "251370",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 7410.0,
+          "new": 7490.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 7640.0,
+          "new": 7620.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 8010.0,
+          "new": 7930.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 110742.0,
+          "new": 113412.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "252990",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 18110.0,
+          "new": 17930.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 19790.0,
+          "new": 19970.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 508069.0,
+          "new": 516670.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "263750",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 32100.0,
+          "new": 34000.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 33950.0,
+          "new": 34150.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 33700.0,
+          "new": 33900.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "267260",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 713000.0,
+          "new": 708000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 685000.0,
+          "new": 681000.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 120427.0,
+          "new": 121842.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "272110",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 29950.0,
+          "new": 29750.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 30250.0,
+          "new": 30300.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 74188.0,
+          "new": 74379.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "274090",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 11880.0,
+          "new": 12310.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 12280.0,
+          "new": 12470.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 12940.0,
+          "new": 12930.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 12650.0,
+          "new": 12800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 12710.0,
+          "new": 12810.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 513429.0,
+          "new": 532681.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "278470",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 369000.0,
+          "new": 368500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "280360",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 125000.0,
+          "new": 124300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "high",
+          "old": 128300.0,
+          "new": 127800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 127100.0,
+          "new": 126300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 11377.0,
+          "new": 11397.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "low",
+          "old": 122400.0,
+          "new": 124300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 124300.0,
+          "new": 125200.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 10512.0,
+          "new": 10532.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "281740",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 10800.0,
+          "new": 10780.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 10680.0,
+          "new": 10650.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 11500.0,
+          "new": 11200.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 11380.0,
+          "new": 11150.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 541198.0,
+          "new": 579132.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 11500.0,
+          "new": 11580.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 975078.0,
+          "new": 1006904.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "289930",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "high",
+          "old": 8250.0,
+          "new": 8190.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 8060.0,
+          "new": 7980.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 8150.0,
+          "new": 8120.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 8080.0,
+          "new": 8130.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 48357.0,
+          "new": 48742.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 7940.0,
+          "new": 7990.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 32630.0,
+          "new": 33398.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "290550",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 22850.0,
+          "new": 22450.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 22050.0,
+          "new": 22300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 22300.0,
+          "new": 22150.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 255198.0,
+          "new": 259009.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 23000.0,
+          "new": 22750.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 22350.0,
+          "new": 22600.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 261567.0,
+          "new": 263537.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "290650",
+      "kis_rows": 40,
+      "diff_count": 111,
+      "sample_diffs": [
+        {
+          "date": "2026-08-03",
+          "field": "open",
+          "old": 46800.0,
+          "new": 45326.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "high",
+          "old": 50100.0,
+          "new": 48522.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "low",
+          "old": 42150.0,
+          "new": 40823.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "close",
+          "old": 48550.0,
+          "new": 47021.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "volume",
+          "old": 524485.0,
+          "new": 541533.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "open",
+          "old": 48100.0,
+          "new": 46585.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "high",
+          "old": 59300.0,
+          "new": 57433.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "low",
+          "old": 48100.0,
+          "new": 46585.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "close",
+          "old": 58700.0,
+          "new": 56852.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "volume",
+          "old": 489895.0,
+          "new": 505818.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "295310",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 64200.0,
+          "new": 64000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 64100.0,
+          "new": 63100.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 58700.0,
+          "new": 58200.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 244457.0,
+          "new": 246618.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 59800.0,
+          "new": 59400.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 79173.0,
+          "new": 84278.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "298040",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 2890000.0,
+          "new": 2901000.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 2919000.0,
+          "new": 2901000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 2892000.0,
+          "new": 2896000.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "298380",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 50700.0,
+          "new": 50800.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 49900.0,
+          "new": 50200.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 341052.0,
+          "new": 353309.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 49050.0,
+          "new": 49300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 377848.0,
+          "new": 380995.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "310200",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 1940.0,
+          "new": 1932.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 1895.0,
+          "new": 1900.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 2080.0,
+          "new": 2040.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 804790.0,
+          "new": 829060.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "high",
+          "old": 2120.0,
+          "new": 2160.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 2090.0,
+          "new": 2095.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 270549.0,
+          "new": 293344.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "310210",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 145500.0,
+          "new": 146500.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 150000.0,
+          "new": 146700.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 145700.0,
+          "new": 147300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 136800.0,
+          "new": 137700.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 95734.0,
+          "new": 96528.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 131700.0,
+          "new": 132400.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 57425.0,
+          "new": 57811.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "314130",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "316140",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 35500.0,
+          "new": 35350.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 36150.0,
+          "new": 36400.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 1685648.0,
+          "new": 1709911.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 36200.0,
+          "new": 36400.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 1520605.0,
+          "new": 1529024.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "319660",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 131900.0,
+          "new": 130900.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 144200.0,
+          "new": 144800.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "322310",
+      "kis_rows": 40,
+      "diff_count": 8,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 13960.0,
+          "new": 13840.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 13900.0,
+          "new": 13920.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 14020.0,
+          "new": 14100.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 78715.0,
+          "new": 82786.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 14910.0,
+          "new": 14870.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 14730.0,
+          "new": 14860.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 88714.0,
+          "new": 90024.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 116421.0,
+          "new": 118003.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "329180",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 689463.0,
+          "new": 718908.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 444000.0,
+          "new": 441000.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "340570",
+      "kis_rows": 40,
+      "diff_count": 17,
+      "sample_diffs": [
+        {
+          "date": "2026-08-03",
+          "field": "open",
+          "old": 58000.0,
+          "new": 29353.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "high",
+          "old": 59100.0,
+          "new": 29910.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "low",
+          "old": 57400.0,
+          "new": 29050.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "close",
+          "old": 57700.0,
+          "new": 29201.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "volume",
+          "old": 35199.0,
+          "new": 69549.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "open",
+          "old": 57300.0,
+          "new": 28999.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "high",
+          "old": 64000.0,
+          "new": 32390.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "low",
+          "old": 57300.0,
+          "new": 28999.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "close",
+          "old": 63500.0,
+          "new": 32137.0
+        },
+        {
+          "date": "2026-08-04",
+          "field": "volume",
+          "old": 168540.0,
+          "new": 333018.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "347700",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 23450.0,
+          "new": 23300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 21400.0,
+          "new": 21250.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 896934.0,
+          "new": 921385.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "347850",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 44650.0,
+          "new": 44500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "348340",
+      "kis_rows": 40,
+      "diff_count": 7,
+      "sample_diffs": [
+        {
+          "date": "2026-08-03",
+          "field": "open",
+          "old": 26250.0,
+          "new": 17500.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "high",
+          "old": 28800.0,
+          "new": 19200.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "low",
+          "old": 25200.0,
+          "new": 16800.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "close",
+          "old": 27700.0,
+          "new": 18466.0
+        },
+        {
+          "date": "2026-08-03",
+          "field": "volume",
+          "old": 303635.0,
+          "new": 455452.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 19800.0,
+          "new": 19570.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 20150.0,
+          "new": 20050.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "352820",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 157100.0,
+          "new": 156300.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 157700.0,
+          "new": 156800.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "353200",
+      "kis_rows": 40,
+      "diff_count": 8,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 109100.0,
+          "new": 109800.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 111700.0,
+          "new": 112300.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 119200.0,
+          "new": 119400.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 122500.0,
+          "new": 123300.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 1329026.0,
+          "new": 1363903.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 131900.0,
+          "new": 130300.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 131600.0,
+          "new": 130200.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 1486487.0,
+          "new": 1523919.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "376900",
+      "kis_rows": 40,
+      "diff_count": 6,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 28300.0,
+          "new": 28050.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "low",
+          "old": 28900.0,
+          "new": 29100.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 29000.0,
+          "new": 29250.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 440091.0,
+          "new": 450606.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 27550.0,
+          "new": 27400.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 142303.0,
+          "new": 146487.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "389650",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "394280",
+      "kis_rows": 40,
+      "diff_count": 9,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 9640.0,
+          "new": 9690.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 9880.0,
+          "new": 9790.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 9720.0,
+          "new": 9840.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 99356.0,
+          "new": 103437.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "high",
+          "old": 9990.0,
+          "new": 9950.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 9980.0,
+          "new": 9880.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 97699.0,
+          "new": 103325.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 10030.0,
+          "new": 10010.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 121503.0,
+          "new": 128064.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "396300",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "397030",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "398120",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "402030",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 13080.0,
+          "new": 12960.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 13040.0,
+          "new": 13080.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 12710.0,
+          "new": 12610.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 11560.0,
+          "new": 11647.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "405100",
+      "kis_rows": 40,
+      "diff_count": 4,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 49259.0,
+          "new": 89259.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 14250.0,
+          "new": 14210.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 14130.0,
+          "new": 14210.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 16016.0,
+          "new": 16273.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "408470",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 30594.0,
+          "new": 30595.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 4995.0,
+          "new": 4920.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "high",
+          "old": 5110.0,
+          "new": 5090.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "low",
+          "old": 4900.0,
+          "new": 4915.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 4900.0,
+          "new": 4915.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "420770",
+      "kis_rows": 40,
+      "diff_count": 1,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 118900.0,
+          "new": 119500.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "425420",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "440110",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 81400.0,
+          "new": 81600.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 79900.0,
+          "new": 80900.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 826788.0,
+          "new": 834385.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "441270",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "443060",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 240000.0,
+          "new": 239000.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 241500.0,
+          "new": 245500.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 51353.0,
+          "new": 52034.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 235500.0,
+          "new": 237500.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 60383.0,
+          "new": 60544.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "451220",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "452400",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "low",
+          "old": 5510.0,
+          "new": 5530.0
+        },
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 5510.0,
+          "new": 5630.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 5600.0,
+          "new": 5630.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "454910",
+      "kis_rows": 40,
+      "diff_count": 2,
+      "sample_diffs": [
+        {
+          "date": "2026-09-22",
+          "field": "close",
+          "old": 71500.0,
+          "new": 71000.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 71400.0,
+          "new": 70800.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "456160",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "462350",
+      "kis_rows": 40,
+      "diff_count": 8,
+      "sample_diffs": [
+        {
+          "date": "2026-09-11",
+          "field": "volume",
+          "old": 99990.0,
+          "new": 100012.0
+        },
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 6650.0,
+          "new": 6600.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "close",
+          "old": 6790.0,
+          "new": 6840.0
+        },
+        {
+          "date": "2026-09-28",
+          "field": "volume",
+          "old": 177131.0,
+          "new": 185076.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "low",
+          "old": 6250.0,
+          "new": 6350.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 6490.0,
+          "new": 6450.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 208175.0,
+          "new": 209839.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "missing",
+          "old": null,
+          "new": {
+            "date": "2026-09-30",
+            "open": 6330.0,
+            "high": 6520.0,
+            "low": 5730.0,
+            "close": 5930.0,
+            "volume": 499848.0,
+            "inst_net_buy": 0.0,
+            "frn_net_buy": 0.0
+          }
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "475830",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "476830",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "487580",
+      "kis_rows": 40,
+      "diff_count": 17,
+      "sample_diffs": [
+        {
+          "date": "2026-08-18",
+          "field": "volume",
+          "old": 365676.0,
+          "new": 367077.0
+        },
+        {
+          "date": "2026-08-19",
+          "field": "volume",
+          "old": 293847.0,
+          "new": 296591.0
+        },
+        {
+          "date": "2026-08-20",
+          "field": "volume",
+          "old": 322123.0,
+          "new": 324953.0
+        },
+        {
+          "date": "2026-08-21",
+          "field": "volume",
+          "old": 316477.0,
+          "new": 319441.0
+        },
+        {
+          "date": "2026-08-24",
+          "field": "volume",
+          "old": 234241.0,
+          "new": 235447.0
+        },
+        {
+          "date": "2026-08-25",
+          "field": "volume",
+          "old": 202574.0,
+          "new": 202707.0
+        },
+        {
+          "date": "2026-08-26",
+          "field": "volume",
+          "old": 101295.0,
+          "new": 102055.0
+        },
+        {
+          "date": "2026-08-27",
+          "field": "volume",
+          "old": 109799.0,
+          "new": 111969.0
+        },
+        {
+          "date": "2026-08-28",
+          "field": "volume",
+          "old": 84414.0,
+          "new": 84422.0
+        },
+        {
+          "date": "2026-08-31",
+          "field": "volume",
+          "old": 92676.0,
+          "new": 92695.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "491000",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "492220",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "494120",
+      "kis_rows": 40,
+      "diff_count": 0,
+      "sample_diffs": [],
+      "status": "ok"
+    },
+    {
+      "code": "499790",
+      "kis_rows": 40,
+      "diff_count": 5,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 36950.0,
+          "new": 36700.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 39150.0,
+          "new": 39350.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 31741.0,
+          "new": 31910.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "close",
+          "old": 38400.0,
+          "new": 38650.0
+        },
+        {
+          "date": "2026-09-30",
+          "field": "volume",
+          "old": 30581.0,
+          "new": 31081.0
+        }
+      ],
+      "status": "repaired"
+    },
+    {
+      "code": "950160",
+      "kis_rows": 40,
+      "diff_count": 3,
+      "sample_diffs": [
+        {
+          "date": "2026-09-23",
+          "field": "close",
+          "old": 15890.0,
+          "new": 15800.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "close",
+          "old": 15220.0,
+          "new": 15060.0
+        },
+        {
+          "date": "2026-09-29",
+          "field": "volume",
+          "old": 975183.0,
+          "new": 993891.0
+        }
+      ],
+      "status": "repaired"
+    }
+  ]
+}

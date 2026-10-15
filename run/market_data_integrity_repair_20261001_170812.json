@@ -1,0 +1,15 @@
+{
+  "run_id": "market_data_integrity_repair_20261001_170812",
+  "price_history_backup_rows": -1,
+  "price_history_close_only_repaired": 265802,
+  "price_history_envelope_repaired": 5839,
+  "kiwoom_foreign_flow_backup_rows": 156316,
+  "kiwoom_foreign_flow_close_abs_repaired": 156316,
+  "kiwoom_credit_balance_backup_rows": 391,
+  "kiwoom_credit_balance_raw_json_ratio_repaired": 364,
+  "kiwoom_credit_balance_qty_abs_repaired": 155,
+  "short_rank_daily_backup_rows": 64513,
+  "short_rank_daily_duplicates_deleted": 64513,
+  "short_sector_daily_backup_rows": 51088,
+  "short_sector_daily_duplicates_deleted": 51088
+}

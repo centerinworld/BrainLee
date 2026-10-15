@@ -1,0 +1,191 @@
+{
+  "run_at": "2026-10-01T17:32:34",
+  "end": "2026-10-01",
+  "target_count": 23,
+  "items": [
+    {
+      "stock_code": "230980",
+      "stock_name": "비유테크놀러지",
+      "last_date": "2026-06-04",
+      "start": "20260605",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "008500",
+      "stock_name": "일정실업",
+      "last_date": "2026-06-29",
+      "start": "20260630",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "230360",
+      "stock_name": "에코마케팅",
+      "last_date": "2026-06-29",
+      "start": "20260630",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "032980",
+      "stock_name": "바이온",
+      "last_date": "2026-06-30",
+      "start": "20260701",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "101390",
+      "stock_name": "아이엠",
+      "last_date": "2026-06-30",
+      "start": "20260701",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "106520",
+      "stock_name": "노블엠앤비",
+      "last_date": "2026-06-30",
+      "start": "20260701",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "227100",
+      "stock_name": "프로브잇",
+      "last_date": "2026-06-30",
+      "start": "20260701",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "222160",
+      "stock_name": "NPX",
+      "last_date": "2026-07-06",
+      "start": "20260707",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "203690",
+      "stock_name": "아크솔루션스",
+      "last_date": "2026-07-07",
+      "start": "20260708",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "012510",
+      "stock_name": "더존비즈온",
+      "last_date": "2026-07-14",
+      "start": "20260715",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "057050",
+      "stock_name": "현대홈쇼핑",
+      "last_date": "2026-07-16",
+      "start": "20260717",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "060240",
+      "stock_name": "스타코링크",
+      "last_date": "2026-07-23",
+      "start": "20260724",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "043090",
+      "stock_name": "더테크놀로지",
+      "last_date": "2026-08-07",
+      "start": "20260808",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "031440",
+      "stock_name": "신세계푸드",
+      "last_date": "2026-08-10",
+      "start": "20260811",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "299900",
+      "stock_name": "위지윅스튜디오",
+      "last_date": "2026-08-14",
+      "start": "20260815",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "269620",
+      "stock_name": "시스웍",
+      "last_date": "2026-08-24",
+      "start": "20260825",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "082640",
+      "stock_name": "동양생명",
+      "last_date": "2026-08-28",
+      "start": "20260829",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "096610",
+      "stock_name": "알에프세미",
+      "last_date": "2026-09-02",
+      "start": "20260903",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "121850",
+      "stock_name": "코이즈",
+      "last_date": "2026-09-11",
+      "start": "20260912",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "006380",
+      "stock_name": "카프로",
+      "last_date": "2026-09-16",
+      "start": "20260917",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "008290",
+      "stock_name": "원풍물산",
+      "last_date": "2026-09-18",
+      "start": "20260919",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "046070",
+      "stock_name": "코다코",
+      "last_date": "2026-09-18",
+      "start": "20260919",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    },
+    {
+      "stock_code": "082660",
+      "stock_name": "코스나인",
+      "last_date": "2026-09-18",
+      "start": "20260919",
+      "kis_rows": 0,
+      "status": "no_kis_rows"
+    }
+  ]
+}
