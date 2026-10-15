@@ -43,7 +43,7 @@ def main():
     # 2026-10-04 사고 재발 방지: 재실행이 이미 옮긴 행을 다시 옮겼다(출처 추정이 회계 키 행을 DART 표기로 오인) → 완료 종목은 값 판정만
     keyed = {r[0] for r in conn.execute("SELECT stock_code FROM stock_collection_config WHERE config_key='fs_quirk:fiscal_keyed' AND config_value='1'").fetchall()}
     dart = collections.defaultdict(list)  # code -> [(fiscal_year, fq, fs, vals)]
-    for fn in ("dart_cf_2016_2022.jsonl", "dart_cf_full.jsonl"):
+    for fn in ("dart_cf_2016_2022.jsonl", "dart_cf_full.jsonl", "dart_cf_nondec_2026_CFS.jsonl", "dart_cf_nondec_2026_OFS.jsonl"):
         p = SRC / fn
         if p.exists():
             for line in open(p):

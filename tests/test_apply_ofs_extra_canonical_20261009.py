@@ -117,3 +117,33 @@ def test_q4_derivation_reads_the_q3_cumulative_through_fin_norm_ytd3(monkeypatch
     assert fin4["revenue"] == 10e8 and fin4["operating_profit"] == -26e8
     assert fin4["net_income"] == 2.5e8 - 30e8          # consolidated net income = parent basis
     assert ("000001", 2025, "CFS", "revenue") in calls and ("000001", 2025, "CFS", "net_income") in calls
+
+
+def test_cashflow_readback_fails_when_a_q_field_differs():
+    """10-13 외부 검토 P1: readback compared only operating/investing/financing cumulative cells, so a wrong q field still passed."""
+    conn = _conn()
+    conn.execute("INSERT INTO cash_flow_data VALUES (1,'009150',2026,2,0,'OFS','t',90e8,-30e8,-8e8,20e8,NULL,NULL,40e8,-10e8,-3e8,9e8)")
+    # the gate is the only thing between ledger and canonical; make it silently alter a q cell to prove readback now sees it
+    real_gate = mod.gate_cashflow_row
+
+    def tampering_gate(c, p):
+        ok, fixed, reason = real_gate(c, p)
+        fixed = dict(fixed); fixed["capex_q"] = 1.0
+        return ok, fixed, reason
+
+    orig_specs_gate = mod.gate_cashflow_row
+    mod.gate_cashflow_row = tampering_gate
+    try:
+        out = mod.canonical_sync(conn, "t_run", "2026-10-13T00:00:00", set(), {1})
+    finally:
+        mod.gate_cashflow_row = orig_specs_gate
+    assert out["pass"] is False and out["readback_mismatch"] == 1
+    sample = out["mismatch_sample"][0]
+    assert sample[5] == 1 and sample[6][0][0] == "capex_q"
+
+
+def test_cashflow_readback_passes_for_a_faithful_sync_including_q_fields():
+    conn = _conn()
+    conn.execute("INSERT INTO cash_flow_data VALUES (1,'009150',2026,2,0,'OFS','t',90e8,-30e8,-8e8,20e8,NULL,NULL,40e8,-10e8,-3e8,9e8)")
+    out = mod.canonical_sync(conn, "t_run", "2026-10-13T00:00:00", set(), {1})
+    assert out["pass"] is True and out["readback_mismatch"] == 0

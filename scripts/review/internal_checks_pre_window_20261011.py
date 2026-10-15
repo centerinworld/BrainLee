@@ -30,6 +30,25 @@ IS = ("revenue", "operating_profit", "net_income")
 CF = ("operating_cf", "investing_cf", "financing_cf")
 
 
+def _dep_sum(code, y, fs, col):
+    """현금흐름표 조정 중 이름에 '감가상각'이 들어가는 행들의 합(무형·대손·상각후원가 제외) — FnGuide 2023~24 대조 78%(한 행 31%). 행이 없으면 None."""
+    import gzip
+    import json
+    import re
+    p = fn.RAW_DART / code / f"{y}_0_{fs}.json.gz"
+    if not p.exists():
+        return None
+    vals = []
+    for r in json.loads(gzip.decompress(p.read_bytes())):
+        nm = r.get("account_nm") or ""
+        if r.get("sj_div") == "CF" and "감가상각" in nm and not re.search(r"무형|대손|상각후원가", nm):
+            try:
+                vals.append(abs(float(str(r.get(col) or "").replace(",", ""))))
+            except ValueError:
+                pass
+    return sum(vals) if vals else None
+
+
 def main():
     conn = connect_primary_db(timeout=900)
     excl = {r[0] for r in conn.execute("""SELECT stock_code FROM stock_collection_config WHERE config_key IN ('fs_quirk:reporting_currency')
@@ -41,10 +60,10 @@ def main():
         k = (code, y, fs)
         fd[k].setdefault(0 if ia else q, dict(zip(IS + ("total_assets", "total_liabilities", "total_equity"), r[5:])))
     cfd = collections.defaultdict(dict)
-    for r in conn.execute("""SELECT stock_code, year, quarter, is_annual, report_type, operating_cf, investing_cf, financing_cf, operating_cf_q, investing_cf_q, financing_cf_q
+    for r in conn.execute("""SELECT stock_code, year, quarter, is_annual, report_type, operating_cf, investing_cf, financing_cf, operating_cf_q, investing_cf_q, financing_cf_q, depreciation
                              FROM cash_flow_data WHERE year BETWEEN 2016 AND 2022 AND quarter IS NOT NULL ORDER BY id""").fetchall():
         code, y, q, ia, fs = r[:5]
-        cfd[(code, y, fs)].setdefault(0 if ia else q, dict(zip(CF + tuple(f + "_q" for f in CF), r[5:])))
+        cfd[(code, y, fs)].setdefault(0 if ia else q, dict(zip(CF + tuple(f + "_q" for f in CF) + ("depreciation",), r[5:])))
     # 10-12: 사유 확정 칸(financial_field_exception — 원문 모순·연간 원문 없음·원문 음수 공시·단위 오기 등). 분모에 그대로 두고 따로 센다
     exc = {}
     for r in conn.execute("SELECT stock_code, year, quarter, report_type, field, reason_code FROM financial_field_exception WHERE year BETWEEN 2016 AND 2022").fetchall():
@@ -156,6 +175,14 @@ def main():
             if cand and not any(abs(c - A) <= T for c in cand):
                 bad.append("C4 원문 ≠ DB")
             rec(y, "현금흐름", not bad, (code, y, 0, fs, f), "; ".join(bad), rb=bool(cand))
+    # 10-13 C14: 감가상각 연간 = 현금흐름표 조정 '감가상각비' 행(FINANCIAL §2 정의) — 사업보고서 당기 칸 또는 다음 해 사업보고서 전기 칸과 대조. 구성요소(유형+사용권 등)는 정의가 아니다
+    for (code, y, fs), d in cfd.items():
+        if code in excl or 0 not in d or d[0].get("depreciation") is None:
+            continue
+        rfs = fn.effective_fs(code, y, fs)
+        cand = [c for c in (_dep_sum(code, y + 1, rfs, "frmtrm_amount"), _dep_sum(code, y, rfs, "thstrm_amount")) if c is not None]  # 10-13 정의 구체화: 조정 감가상각 행들의 합
+        bad = ["C4 원문 ≠ DB(감가상각)"] if cand and not any(abs(c - d[0]["depreciation"]) <= T for c in cand) else []
+        rec(y, "감가상각", not bad, (code, y, 0, fs, "depreciation"), "; ".join(bad), rb=bool(cand))
     # 값을 비우고 사유를 기록한 칸(4분기 계산 불가 등)도 분모에 넣는다 — 분모를 줄여 비율을 올리지 않음
     for (code, y, q, fs, f), rc in exc.items():
         if code in excl or (code, y, q, fs, f) in seen:

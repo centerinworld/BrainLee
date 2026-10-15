@@ -46,21 +46,34 @@ def one(label, order, adjusted):
             "break_exits": sum(1 for t in tr if str(t.get("exit_reason", "")).startswith("단절"))}
 
 
+def pair(label, order):
+    """같은 순서(seed)의 기준선·조정을 바로 연달아 실행. 데이터 지문이 다르면 그 짝만 최대 2회 재실행(REVIEW_PLAN §18-3)."""
+    for attempt in range(3):
+        b = one(label, order, False)
+        a_ = one(label, order, True)
+        ok = b["data_fp"] == a_["data_fp"]
+        if ok or attempt == 2:
+            return {"baseline": b, "adjusted": a_, "valid": ok, "attempts": attempt + 1}
+
+
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--random", type=int, default=12); a = ap.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--random", type=int, default=12)
+    ap.add_argument("--periods", default=",".join(PERIODS))
+    ap.add_argument("--out", default=str(OUT))
+    a = ap.parse_args()
+    out = Path(a.out)
     res = {"started": datetime.now().isoformat(timespec="seconds"), "periods": {}}
-    for label in PERIODS:
-        item = {}
-        for mode, flag in (("baseline", False), ("adjusted", True)):
-            item[mode] = {"score": one(label, "score", flag)}
-            item[mode]["random"] = [one(label, f"random:{k}", flag) for k in range(a.random)]
-        res["periods"][label] = item
-        OUT.write_text(json.dumps(res, ensure_ascii=False, indent=1))
+    for label in [x for x in a.periods.split(",") if x in PERIODS]:
+        pairs = [pair(label, "score")] + [pair(label, f"random:{k}") for k in range(a.random)]
+        res["periods"][label] = {"pairs": pairs, "valid_pairs": sum(1 for p in pairs if p["valid"]), "total_pairs": len(pairs)}
+        out.write_text(json.dumps(res, ensure_ascii=False, indent=1))
         for mode in ("baseline", "adjusted"):
-            rr = [x["ret"] for x in item[mode]["random"]]
-            print(label, mode, "score", item[mode]["score"]["ret"], "random median", round(st.median(rr), 2), "p25", round(sorted(rr)[len(rr)//4], 2), "sd", round(st.pstdev(rr), 2), flush=True)
+            rr = sorted(p[mode]["ret"] for p in pairs if p["valid"] and p["baseline"]["ret"] is not None)
+            if rr:
+                print(label, mode, "유효짝", f"{len(rr)}/{len(pairs)}", "중앙", round(st.median(rr), 2), "p25", round(rr[len(rr)//4], 2), "sd", round(st.pstdev(rr), 2), flush=True)
     res["finished"] = datetime.now().isoformat(timespec="seconds")
-    OUT.write_text(json.dumps(res, ensure_ascii=False, indent=1))
+    out.write_text(json.dumps(res, ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":

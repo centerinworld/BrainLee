@@ -146,6 +146,7 @@ def canonical_sync(conn, run_id, now, fd_ids, cf_ids):
     specs = (("financial_data", "canonical_financial_data", FD_COLS, fd_ids, gate_financial_row, upsert_canonical_financial, "fd"),
              ("cash_flow_data", "canonical_cashflow_data", CFC_COLS, cf_ids, gate_cashflow_row, upsert_canonical_cashflow, "cf"))
     synced_keys = []
+    preserved = set()  # (정본, 원장 id, 칸) — null-preserving으로 기존 정본 값을 유지한 칸은 readback에서 원장 NULL과 달라도 정상
     for raw, canon, cols, ids, gate, upsert, tag in specs:
         if not ids:
             continue
@@ -187,6 +188,7 @@ def canonical_sync(conn, run_id, now, fd_ids, cf_ids):
                 for i, c in enumerate(cols):
                     if payload.get(c) is None and prev[1 + i] is not None:
                         payload[c] = float(prev[1 + i])
+                        preserved.add((canon, r["id"], c))
                         out["preserved_cells"] += 1
             ok, fixed, reason = gate(conn, payload)
             if not ok:
@@ -203,13 +205,17 @@ def canonical_sync(conn, run_id, now, fd_ids, cf_ids):
                          (r["stock_code"], r["year"], q, 1 if r["is_annual"] else 0, r["report_type"])).fetchone()
         # 게이트가 고친 칸(예: 부채=자산 오매핑 수리)은 원장과 다를 수 있어 원장 값이 아니라 '행 존재 + 원장과 같은 칸 수'로 보지 않고,
         # 핵심 손익·현금흐름 칸만 원장과 비교한다(재무상태는 게이트 수리 가능).
-        keyc = ("revenue", "operating_profit", "net_income") if canon == "canonical_financial_data" else ("operating_cf", "investing_cf", "financing_cf")
+        # 10-13 외부 검토 P1: 현금흐름 readback은 원장이 값을 가진 칸 전부(분기 3개월 q 칸 포함)를 비교한다 — 예전엔 누적 3칸만 봐서 q 칸이 틀려도 통과했다
+        keyc = ("revenue", "operating_profit", "net_income") if canon == "canonical_financial_data" else tuple(k for k in CFC_COLS if r[k] is not None)
+        keyc = tuple(k for k in keyc if (canon, r["id"], k) not in preserved)
         bad = c is None or any((r[k] is None) != (c[cols.index(k)] is None) or
                                (r[k] is not None and abs(float(r[k]) - float(c[cols.index(k)])) > 0.5) for k in keyc)
         if bad:
             out["readback_mismatch"] += 1
             if len(out["mismatch_sample"]) < 20:
-                out["mismatch_sample"].append((canon, r["stock_code"], r["year"], q, r["report_type"]))
+                out["mismatch_sample"].append((canon, r["stock_code"], r["year"], q, r["report_type"], r["id"],
+                                           [(k, r[k], None if c is None else c[cols.index(k)]) for k in keyc
+                                            if c is None or (r[k] is None) != (c[cols.index(k)] is None) or (r[k] is not None and abs(float(r[k]) - float(c[cols.index(k)])) > 0.5)][:4]))
     out["pass"] = out["readback_mismatch"] == 0
     return out
 
